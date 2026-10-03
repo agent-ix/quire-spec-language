@@ -38,6 +38,7 @@
 )]
 
 use std::collections::{BTreeMap, HashMap};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use agent_ix_extraction_frontend::lift::{lift, LiftOutcome, LiftRequest};
@@ -330,22 +331,22 @@ impl PackageDocument {
         if let Some((document_pointer, inexact, lexeme)) = first_inexact_number(document.root()) {
             return Err(noncanonical_number(document_pointer, inexact, lexeme));
         }
-        let tree = value_of(document.root()).map_err(|lexeme| {
-            malformed_declaration(
-                "$".to_owned(),
-                None,
-                None,
-                format!("package document number {lexeme} has no serde_json representation"),
-            )
-        })?;
         let jcs_digest = *quire_canonical::sha256(&document, INTAKE_DIGEST_LIMITS)
             .map_err(digest_refusal)?
             .as_bytes();
+        let tree = value_of(document.root()).map_err(view_refusal)?;
+        let ir = match json_of(document.root()) {
+            Ok(json) => json,
+            Err(fault) => {
+                quire_canonical::drop_value(tree);
+                return Err(view_refusal(match fault {
+                    BuildFault::Scalar(never) => match never {},
+                    BuildFault::Empty => BuildFault::Empty,
+                }));
+            }
+        };
         Ok(Self {
-            bundle: agent_ix_semantic_ir::json::Json::Object(vec![(
-                "ir".to_owned(),
-                json_of(document.root()),
-            )]),
+            bundle: agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), ir)]),
             tree,
             jcs_digest,
         })
@@ -755,92 +756,139 @@ enum Scalar<'d> {
     String(&'d str),
 }
 
-/// `root` as a tree of `T`, built over an explicit heap stack: a document of
-/// any depth builds on any thread stack. `scalar` makes a `T` from a null,
-/// boolean, number or string; `array` and `object` close a container from its
-/// finished children, in document order. The first `scalar` error ends the
-/// build, after `discard` has taken every finished subtree the build holds.
+/// Why [`build`] returned no tree.
+#[derive(Debug, PartialEq, Eq)]
+enum BuildFault<E> {
+    /// A scalar's conversion failed.
+    Scalar(E),
+    /// The walk finished with no value for the root: a reader tree always
+    /// has one, so this is a bug, reported rather than guessed past.
+    Empty,
+}
+
+/// How [`Builder`] closes one node at its exit.
+enum Shape {
+    /// A scalar: its value was pushed at enter.
+    Leaf,
+    /// An array of this many children.
+    Array(usize),
+    /// An object with these member names, in document order.
+    Object(Vec<String>),
+}
+
+/// [`build`]'s walk (ADR-030): a node's exit closes it from the values its
+/// children's exits left on `results`, so a tree of any depth builds on a
+/// constant native stack.
+struct Builder<'d, T, E, S, A, O> {
+    scalar: S,
+    array: A,
+    object: O,
+    results: Vec<T>,
+    nodes: std::marker::PhantomData<(&'d (), E)>,
+}
+
+impl<T, E, S, A, O> Builder<'_, T, E, S, A, O> {
+    /// The last `count` finished values, in document order.
+    fn take(&mut self, count: usize) -> Vec<T> {
+        let from = self.results.len().saturating_sub(count);
+        self.results.split_off(from)
+    }
+}
+
+impl<'d, T, E, S, A, O> quire_walk::Walk for Builder<'d, T, E, S, A, O>
+where
+    S: FnMut(Scalar<'d>) -> Result<T, E>,
+    A: Fn(Vec<T>) -> T,
+    O: Fn(Vec<(String, T)>) -> T,
+{
+    type Node = quire_canonical::NodeRef<'d>;
+    type Frame = Shape;
+    type Stop = E;
+
+    fn enter(
+        &mut self,
+        node: quire_canonical::NodeRef<'d>,
+        children: &mut quire_walk::Children<'_, quire_canonical::NodeRef<'d>>,
+    ) -> ControlFlow<E, Shape> {
+        let leaf = match node.node() {
+            Node::Array(items) => {
+                let count = items.len();
+                children.extend(items);
+                return ControlFlow::Continue(Shape::Array(count));
+            }
+            Node::Object(members) => {
+                let mut names = Vec::with_capacity(members.len());
+                for (name, member) in members {
+                    names.push(name.to_owned());
+                    children.push(member);
+                }
+                return ControlFlow::Continue(Shape::Object(names));
+            }
+            Node::Null => Scalar::Null,
+            Node::Bool(value) => Scalar::Bool(value),
+            Node::Number(number) => Scalar::Number(number),
+            Node::String(text) => Scalar::String(text),
+        };
+        match (self.scalar)(leaf) {
+            Ok(value) => {
+                self.results.push(value);
+                ControlFlow::Continue(Shape::Leaf)
+            }
+            Err(error) => ControlFlow::Break(error),
+        }
+    }
+
+    fn exit(&mut self, shape: Shape) -> ControlFlow<E> {
+        let closed = match shape {
+            Shape::Leaf => return ControlFlow::Continue(()),
+            Shape::Array(count) => {
+                let items = self.take(count);
+                (self.array)(items)
+            }
+            Shape::Object(names) => {
+                let values = self.take(names.len());
+                (self.object)(names.into_iter().zip(values).collect())
+            }
+        };
+        self.results.push(closed);
+        ControlFlow::Continue(())
+    }
+}
+
+/// `root` as a tree of `T`, built by a [`Builder`] walk. `scalar` makes a `T`
+/// from a null, boolean, number or string; `array` and `object` close a
+/// container from its finished children, in document order. The first
+/// `scalar` error ends the build, after `discard` has taken every finished
+/// value the walk holds.
 fn build<'d, T, E>(
     root: quire_canonical::NodeRef<'d>,
-    mut scalar: impl FnMut(Scalar<'d>) -> Result<T, E>,
+    scalar: impl FnMut(Scalar<'d>) -> Result<T, E>,
     array: impl Fn(Vec<T>) -> T,
     object: impl Fn(Vec<(String, T)>) -> T,
     discard: impl Fn(T),
-) -> Result<T, E> {
-    /// One open container: its finished children and the children to come.
-    enum Frame<'d, T> {
-        Array(Vec<T>, quire_canonical::Items<'d>),
-        Object(Vec<(String, T)>, String, quire_canonical::Members<'d>),
-    }
-    let mut open: Vec<Frame<'d, T>> = Vec::new();
-    let mut next = Some(root);
-    let mut finished: Option<T> = None;
-    loop {
-        if let Some(node) = next.take() {
-            let leaf = match node.node() {
-                Node::Array(items) => {
-                    open.push(Frame::Array(Vec::new(), items));
-                    None
-                }
-                Node::Object(members) => {
-                    open.push(Frame::Object(Vec::new(), String::new(), members));
-                    None
-                }
-                Node::Null => Some(scalar(Scalar::Null)),
-                Node::Bool(value) => Some(scalar(Scalar::Bool(value))),
-                Node::Number(number) => Some(scalar(Scalar::Number(number))),
-                Node::String(text) => Some(scalar(Scalar::String(text))),
-            };
-            match leaf {
-                None => {}
-                Some(Ok(value)) => finished = Some(value),
-                Some(Err(error)) => {
-                    for frame in open {
-                        match frame {
-                            Frame::Array(children, _) => children.into_iter().for_each(&discard),
-                            Frame::Object(children, _, _) => {
-                                children.into_iter().for_each(|(_, child)| discard(child));
-                            }
-                        }
-                    }
-                    return Err(error);
-                }
-            }
-        }
-        if let Some(value) = finished.take() {
-            match open.last_mut() {
-                None => return Ok(value),
-                Some(Frame::Array(children, _)) => children.push(value),
-                Some(Frame::Object(children, name, _)) => {
-                    children.push((std::mem::take(name), value));
-                }
-            }
-        }
-        match open.last_mut() {
-            // Only a finished root leaves no open container, and it returned
-            // above, so this arm is never reached.
-            None => continue,
-            Some(Frame::Array(_, items)) => next = items.next(),
-            Some(Frame::Object(_, name, members)) => {
-                next = members.next().map(|(member, value)| {
-                    *name = member.to_owned();
-                    value
-                });
-            }
-        }
-        if next.is_none() {
-            finished = open.pop().map(|frame| match frame {
-                Frame::Array(children, _) => array(children),
-                Frame::Object(children, _, _) => object(children),
-            });
+) -> Result<T, BuildFault<E>> {
+    let mut builder = Builder {
+        scalar,
+        array,
+        object,
+        results: Vec::new(),
+        nodes: std::marker::PhantomData,
+    };
+    match quire_walk::walk(&mut builder, root) {
+        ControlFlow::Continue(()) => builder.results.pop().ok_or(BuildFault::Empty),
+        ControlFlow::Break(error) => {
+            builder.results.into_iter().for_each(discard);
+            Err(BuildFault::Scalar(error))
         }
     }
 }
 
 /// `node` as `agent-ix-semantic-ir`'s `Json`, each number by its lexeme.
-fn json_of(node: quire_canonical::NodeRef<'_>) -> agent_ix_semantic_ir::json::Json {
+fn json_of(
+    node: quire_canonical::NodeRef<'_>,
+) -> Result<agent_ix_semantic_ir::json::Json, BuildFault<std::convert::Infallible>> {
     use agent_ix_semantic_ir::json::Json;
-    let Ok(json) = build::<_, std::convert::Infallible>(
+    build(
         node,
         |leaf| {
             Ok(match leaf {
@@ -853,14 +901,13 @@ fn json_of(node: quire_canonical::NodeRef<'_>) -> agent_ix_semantic_ir::json::Js
         Json::Array,
         Json::Object,
         drop,
-    );
-    json
+    )
 }
 
 /// `node` as a `serde_json::Value`, or the first number lexeme `serde_json`
 /// cannot represent. The tree drops through [`quire_canonical::drop_value`]:
 /// `Value`'s own drop recurses once per level.
-fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, &str> {
+fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, BuildFault<&str>> {
     build(
         node,
         |leaf| {
@@ -886,6 +933,17 @@ fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, &str> {
         |members| Value::Object(members.into_iter().collect()),
         quire_canonical::drop_value,
     )
+}
+
+/// The refusal for a view [`build`] could not make.
+fn view_refusal(fault: BuildFault<&str>) -> ModelRefusal {
+    let detail = match fault {
+        BuildFault::Scalar(lexeme) => {
+            format!("package document number {lexeme} has no serde_json representation")
+        }
+        BuildFault::Empty => "package document read to a tree with no root".to_owned(),
+    };
+    malformed_declaration("$".to_owned(), None, None, detail)
 }
 
 /// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
@@ -6400,79 +6458,106 @@ mod tests {
         );
     }
 
-    /// Builds both derived views of `text` on a 512 KiB thread and drops them
-    /// there, so a native frame per level would overflow the stack.
-    fn build_and_drop_on_a_small_stack(text: String) {
-        std::thread::Builder::new()
-            .stack_size(512 * 1024)
-            .spawn(move || {
-                let document = quire_canonical::read(text.as_bytes(), u64::MAX)
-                    .expect("the deep document reads");
-                let tree = value_of(document.root()).expect("the deep document has a tree");
-                quire_canonical::drop_value(tree);
-                let mut bundle = vec![json_of(document.root())];
-                // `Json` has no iterative drop of its own: take it apart
-                // over a heap stack.
-                use agent_ix_semantic_ir::json::Json;
-                while let Some(json) = bundle.pop() {
-                    match json {
-                        Json::Array(items) => bundle.extend(items),
-                        Json::Object(members) => {
-                            bundle.extend(members.into_iter().map(|(_, member)| member));
-                        }
-                        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Str(_) => {}
-                    }
+    /// `text` as a reader document, on a 512 KiB thread's behalf: the reader
+    /// itself is iterative.
+    fn read_text(text: &str) -> quire_canonical::Document {
+        quire_canonical::read(text.as_bytes(), u64::MAX).expect("the document reads")
+    }
+
+    /// Takes `json` apart over a heap stack: `Json` has no iterative drop.
+    fn drop_json(json: agent_ix_semantic_ir::json::Json) {
+        use agent_ix_semantic_ir::json::Json;
+        let mut pending = vec![json];
+        while let Some(json) = pending.pop() {
+            match json {
+                Json::Array(items) => pending.extend(items),
+                Json::Object(members) => {
+                    pending.extend(members.into_iter().map(|(_, member)| member));
                 }
-            })
-            .expect("the test thread spawns")
-            .join()
-            .expect("building and dropping the deep views does not overflow");
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Str(_) => {}
+            }
+        }
     }
 
-    /// TC-730 step 1: a document nested 100,000 deep, far past `serde_json`'s
-    /// 128 limit, builds both views and drops its `serde_json` tree on a
-    /// 512 KiB thread.
-    #[trace("TC-730", "FR-260-AC-1")]
-    #[test]
-    fn tc_730_a_document_nested_100000_deep_builds_and_drops_on_a_small_stack() {
-        let depth = 100_000;
-        build_and_drop_on_a_small_stack(format!("{}0{}", "[".repeat(depth), "]".repeat(depth)));
-        build_and_drop_on_a_small_stack(format!(
-            "{}null{}",
-            r#"{"k":"#.repeat(depth),
-            "}".repeat(depth)
-        ));
-    }
-
-    /// TC-730 step 1: the dropped `PackageDocument` tree is dropped without
-    /// recursion too: a document at the intake depth bound parses and drops
-    /// on a small stack.
-    #[trace("TC-730", "FR-260-AC-1")]
-    #[test]
-    fn tc_730_a_parsed_package_document_drops_on_a_small_stack() {
-        use agent_ix_semantic_ir::json::MAX_DEPTH;
-        let depth = MAX_DEPTH - 1;
-        let text = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
+    /// Runs `body` on a 512 KiB thread and fails the test if it overflows.
+    fn on_a_small_stack(body: impl FnOnce() + Send + 'static) {
         std::thread::Builder::new()
             .stack_size(512 * 1024)
-            .spawn(move || {
-                let document = PackageDocument::parse(text.as_bytes())
-                    .expect("a document under the depth bound parses");
-                drop(document);
-            })
+            .spawn(body)
             .expect("the test thread spawns")
             .join()
-            .expect("the parse and drop do not overflow");
+            .expect("the body does not overflow the stack");
     }
 
-    /// TC-730: a shallow document builds the same trees the recursive
-    /// builders built: member order kept in `Json`, number lexemes kept.
-    #[trace("TC-730", "FR-260-AC-1")]
+    /// TC-730 step 4: a reader tree nested 100,000 deep, far past
+    /// `serde_json`'s 128 limit, builds both views on a 512 KiB thread, and
+    /// the `serde_json` view drops without recursion.
+    #[trace("TC-730", "FR-260-AC-5")]
+    #[test]
+    fn tc_730_a_tree_nested_100000_deep_builds_both_views_on_a_small_stack() {
+        let depth = 100_000;
+        let objects = format!("{}null{}", r#"{"k":"#.repeat(depth), "}".repeat(depth));
+        for text in [nested_arrays(depth, "0"), objects] {
+            on_a_small_stack(move || {
+                let document = read_text(&text);
+                let tree = value_of(document.root()).expect("the deep tree builds");
+                quire_canonical::drop_value(tree);
+                drop_json(json_of(document.root()).expect("the deep tree builds"));
+            });
+        }
+    }
+
+    /// TC-730 step 4: a `PackageDocument` holding a `serde_json` view
+    /// nested 100,000 deep drops on a 512 KiB thread.
+    #[trace("TC-730", "FR-260-AC-5")]
+    #[test]
+    fn tc_730_a_package_document_nested_100000_deep_drops_on_a_small_stack() {
+        on_a_small_stack(|| {
+            let document = read_text(&nested_arrays(100_000, "0"));
+            let package = PackageDocument {
+                bundle: agent_ix_semantic_ir::json::Json::Null,
+                tree: value_of(document.root()).expect("the deep tree builds"),
+                jcs_digest: [0; 32],
+            };
+            drop(package);
+        });
+    }
+
+    /// TC-730 step 4: a leaf conversion that fails after a 100,000-deep
+    /// sibling has finished returns the failure, and the finished sibling
+    /// drops without recursion.
+    #[trace("TC-730", "FR-260-AC-5")]
+    #[test]
+    fn tc_730_a_failing_leaf_after_a_deep_sibling_returns_the_failure() {
+        on_a_small_stack(|| {
+            let text = format!("[{},\"stop\"]", nested_arrays(100_000, "0"));
+            let document = read_text(&text);
+            let failed = build(
+                document.root(),
+                |leaf| match leaf {
+                    Scalar::String("stop") => Err("stop"),
+                    Scalar::Null | Scalar::Bool(_) | Scalar::Number(_) | Scalar::String(_) => {
+                        Ok(Value::Null)
+                    }
+                },
+                Value::Array,
+                |members| Value::Object(members.into_iter().collect()),
+                quire_canonical::drop_value,
+            );
+            assert_eq!(failed, Err(BuildFault::Scalar("stop")));
+        });
+    }
+
+    /// TC-730 step 4: a shallow document builds the same trees the
+    /// recursive builders built: the `serde_json` tree `serde_json` reads
+    /// from the text, and a `Json` with members in document order and each
+    /// number by its lexeme.
+    #[trace("TC-730", "FR-260-AC-5")]
     #[test]
     fn tc_730_a_shallow_document_builds_the_same_trees() {
         use agent_ix_semantic_ir::json::Json;
-        let text = r#"{"a":[1,2.50,"x\n",null,true,[],{}],"b":{"c":[[false]]},"z":0}"#;
-        let document = quire_canonical::read(text.as_bytes(), u64::MAX).expect("reads");
+        let text = r#"{"a":[1,2.50,"x\\n",null,true,[],{}],"b":{"c":[[false]]},"z":0}"#;
+        let document = read_text(text);
         assert_eq!(
             value_of(document.root()).expect("builds"),
             serde_json::from_str::<Value>(text).expect("serde_json reads it")
@@ -6480,13 +6565,13 @@ mod tests {
         let number = |lexeme: &str| Json::Number(lexeme.to_owned());
         assert_eq!(
             json_of(document.root()),
-            Json::Object(vec![
+            Ok(Json::Object(vec![
                 (
                     "a".to_owned(),
                     Json::Array(vec![
                         number("1"),
                         number("2.50"),
-                        Json::Str("x\n".to_owned()),
+                        Json::Str("x\\n".to_owned()),
                         Json::Null,
                         Json::Bool(true),
                         Json::Array(vec![]),
@@ -6501,7 +6586,7 @@ mod tests {
                     )])
                 ),
                 ("z".to_owned(), number("0")),
-            ])
+            ]))
         );
     }
 }
