@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-460
     type: depends_on
+  - target: ix://agent-ix/quire-walk/FR-356
+    type: depends_on
 ---
 # FR-356: Walk nested structures through one iterative walker toolkit
 
