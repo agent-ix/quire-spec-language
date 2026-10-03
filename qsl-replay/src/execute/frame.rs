@@ -193,7 +193,7 @@ pub fn replay_frame(
     let request = ReplayRequest::decode(wire)?;
     check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
     let compiled = recompile(&request)?;
-    let package_id = compiled.emitted.package_id();
+    let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
         return Err(ReplayRefusal::PackageIdMismatch {
             requested: envelope.package_id(),
@@ -206,7 +206,7 @@ pub fn replay_frame(
         package: package_id,
     };
     let operation = operation_name(&payload.operation).ok_or_else(unknown)?;
-    let graph = compiled.package.graph();
+    let graph = compiled.checked.package().graph();
     let (context, operation_frame) = resolve_frame(graph, &operation).ok_or_else(unknown)?;
     check_identities(payload, operation_frame).map_err(ReplayRefusal::FrameIdentity)?;
 
@@ -235,9 +235,9 @@ pub fn replay_frame(
         .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
         .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
         .collect();
-    let mut sources = Vec::with_capacity(1 + compiled.libraries.len());
-    sources.push(compiled.source.clone());
-    sources.extend(compiled.libraries.iter().cloned());
+    let mut sources = Vec::with_capacity(1 + compiled.checked.libraries().len());
+    sources.push(compiled.checked.source().clone());
+    sources.extend(compiled.checked.libraries().iter().cloned());
     let run = CompiledRun {
         packages: &packages,
         model_limits: ModelNormalizationLimits::default(),
@@ -247,7 +247,7 @@ pub fn replay_frame(
         },
         observation_limits: ObservationLimits::default(),
         accounting: request.accounting_limits(),
-        package: &compiled.package,
+        package: compiled.checked.package(),
         package_id,
         unit: &unit,
         sources: &sources,

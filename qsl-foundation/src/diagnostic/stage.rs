@@ -11,6 +11,8 @@
 //! claims. It carries the T-5 [`Locus`] where the limit was reached, absent
 //! only where FR-096 says no producer can know one.
 
+use quire_exact::CancelCause;
+
 use super::{CatalogCode, CatalogCoded, Category, Code, Locus};
 
 /// ADR-013 T-4's closed limit kind: one variant per
@@ -163,6 +165,8 @@ impl CatalogCoded for LimitExceeded {
 mod tests {
     use ix_trace_rs::trace;
 
+    use quire_exact::CancelCause;
+
     use super::{CatalogCoded, LimitExceeded, LimitKind, StageFailure};
     use crate::diagnostic::{category_of, CatalogCode, Category};
 
@@ -199,6 +203,18 @@ mod tests {
             ))),
             22
         );
+    }
+
+    /// FR-276-AC-5 (TC-757 step 5): a cancelled stage is incomplete and exits
+    /// 22, whichever cause cancelled it.
+    #[trace("TC-757", "FR-276-AC-5", "TC-769", "FR-285-AC-3")]
+    #[test]
+    fn a_cancelled_stage_failure_is_incomplete_and_exits_22() {
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            let failure: StageFailure<Cause> = StageFailure::Cancelled(cause);
+            assert_eq!(failure.category(), Category::Incomplete);
+            assert_eq!(failure.category().exit_code(), 22);
+        }
     }
 
     /// FR-096-AC-2 at catalog revision `1-draft.8`: each of the eight kinds
@@ -272,25 +288,40 @@ pub enum StageFailure<C> {
     Limit(LimitExceeded),
     /// The stage refused its input with its own typed cause.
     Refused(C),
+    /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
+    /// stage stopped at its next charge (ADR-029 LC-3, FR-276).
+    Cancelled(CancelCause),
 }
 
 impl<C> StageFailure<C> {
-    /// The stage's refusal cause, or the limit it reached instead.
-    pub fn into_refused(self) -> Result<C, LimitExceeded> {
+    /// The stage's refusal cause, or what stopped it instead.
+    pub fn into_refused(self) -> Result<C, Stopped> {
         match self {
             Self::Refused(cause) => Ok(cause),
-            Self::Limit(limit) => Err(limit),
+            Self::Limit(limit) => Err(Stopped::Limit(limit)),
+            Self::Cancelled(cause) => Err(Stopped::Cancelled(cause)),
         }
     }
+}
+
+/// A [`StageFailure`] that is not a refusal of the input: what stopped the
+/// stage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Stopped {
+    /// A configured stage limit was reached.
+    Limit(LimitExceeded),
+    /// The caller cancelled the stage.
+    Cancelled(CancelCause),
 }
 
 impl<C: CatalogCoded> StageFailure<C> {
     /// FR-285: this failure's ADR-013 O-16 category. `Refused` takes its
     /// cause's: a profile-gated construct (`unsupported_construct`) is
-    /// unsupported, any other refusal is a refusal. `Limit` is incomplete.
+    /// unsupported, any other refusal is a refusal. `Limit` and `Cancelled`
+    /// are incomplete.
     pub fn category(&self) -> Category {
         match self {
-            Self::Limit(_) => Category::Incomplete,
+            Self::Limit(_) | Self::Cancelled(_) => Category::Incomplete,
             Self::Refused(cause) => match Code::from_code(cause.catalog_code().code()) {
                 Some(code) if code.is_unsupported() => Category::Unsupported,
                 Some(_) | None => Category::Refusal,

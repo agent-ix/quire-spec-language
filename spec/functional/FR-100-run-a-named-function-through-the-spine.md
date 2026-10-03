@@ -45,7 +45,7 @@ function the request names through S6a (`CheckedPackage::call`), with the
 arguments the request supplies. This is ADR-011 §5's spine `run`.
 
 The spine run entry is `qsl_replay::spine::run`. It compiles the source with
-`qsl_replay::spine::compile`, selects the function by name lookup in the
+the FR-278 composition, selects the function by name lookup in the
 compiled package, binds the arguments, calls the function and returns the
 call's outcome. The root crate reaches it through `qsl_replay` and names
 `qsl-eval` in none of its dependency tables (TC-390).
@@ -97,7 +97,7 @@ document, newline-terminated, and nothing else. Its members are:
 
 - `format`: `"spine-run-result/1"`.
 - `package_id`: the compiled package's `package_id`, lowercase hex, equal
-  to the one `qsl_replay::spine::compile` computes for the same source and
+  to the one the FR-278 composition computes for the same source and
   inputs.
 - `source`: the program source as native-run-result/1 renders one: its two
   FR-001 labels, its `sha256:` source digest and its authored path.
@@ -299,7 +299,7 @@ exit 30.
   accounting limits to `qsl_replay::spine::run`, and render its result by
   the outcome mapping above.
 - `qsl_replay::spine::run` shall compile the source with
-  `qsl_replay::spine::compile` and carry a compile refusal unchanged, with
+  the FR-278 composition and carry a compile refusal unchanged, with
   its stage and cause code.
 - If `function` is empty, holds an empty segment or a non-identifier
   segment, or has more than one segment, then the spine run entry shall
@@ -351,7 +351,7 @@ exit 30.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one `qsl_replay::spine::compile` computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test (TC-450) |
+| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test (TC-450) |
 | FR-100-AC-2 | A `0-draft` native-run/1 request writes the stdout bytes and exit status TC-103 and TC-104 fix for it. A program declaring `edition "7-draft"` refuses `unknown_edition` at stage `profile`, exit 20, empty stdout, with a `message` naming the file and the edition. | Test (TC-450) |
 | FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A `work_units` of `18446744073709551616`, `-1` or `1.5` refuses the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test (TC-450) |
 | FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, empty stdout, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test (TC-451) |

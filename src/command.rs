@@ -590,16 +590,35 @@ fn complete(
         .map_err(|refusal| {
             spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
         })?;
-    qsl_replay::spine::compile(
-        source.identity().clone(),
-        source.path(),
-        source.text().as_bytes(),
-        &packages,
-        &dependencies,
-        qsl_replay::spine::SpineLimits::default(),
+    // The CLI owns this handle and shares it with nobody: it has no timer or
+    // signal to cancel with, so no stage is cancelled (FR-276).
+    let cancel = quire_exact::Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let failure = |failure| match qsl_replay::spine::refusal_or_fault(failure) {
+        Ok(refusal) => spine_failure(*refusal),
+        Err(fault) => RunCause::SpineRun(Box::new(qsl_replay::spine::RunRefusal::Fault(fault))),
+    };
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: source.identity(),
+            path: source.path(),
+            bytes: source.text().as_bytes(),
+        },
+        limits.source,
+        &cancel,
     )
-    .map(|compiled| compiled.emitted.bytes().to_vec())
-    .map_err(|refusal| spine_failure(*refusal))
+    .map_err(failure)?
+    .into_value();
+    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(failure)?
+        .into_value();
+    let checked = qsl_replay::spine::check(&parsed, &models, &dependencies, limits, &cancel)
+        .map_err(failure)?
+        .into_value();
+    let emitted = qsl_replay::spine::package(&checked, &cancel)
+        .map_err(failure)?
+        .into_value();
+    Ok(emitted.package().bytes().to_vec())
 }
 
 /// The request's `libraries`, each with its source read under its source

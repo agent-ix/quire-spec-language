@@ -26,11 +26,12 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, DocumentRef, FrameFacts, FrameWitness, ObservationLimits, OperationFacts,
     Provisions,
 };
-use quire_exact::{Identifier, Meter, NodeKey, ScalarLimits, Value, ValueType};
+use quire_exact::{Cancel, Identifier, Meter, NodeKey, ScalarLimits, Value, ValueType};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
-use super::{compile, CompileRefusal, DependencyInput, SpineLimits};
+use super::lifecycle as front_end;
+use super::{CompileRefusal, DependencyInput, SpineLimits};
 use crate::proof_result::SettlementBasis;
 use crate::result::SeparatingWitnessRecord;
 use crate::witness::derive_separating_witness;
@@ -621,26 +622,44 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         }
     }
 
-    let compiled = match compile(
-        unit.identity.clone(),
-        unit.path,
-        unit.bytes,
-        &request.packages,
-        &request.dependencies,
-        request.limits,
-    ) {
+    let cancel = Cancel::new();
+    let front_end = || -> Result<_, front_end::FrontEndFailure> {
+        let parsed = front_end::parse(
+            &front_end::ParseRequest {
+                source: unit.identity,
+                path: unit.path,
+                bytes: unit.bytes,
+            },
+            request.limits.source,
+            &cancel,
+        )?
+        .into_value();
+        let models = front_end::select(&parsed, &request.packages, request.limits.model, &cancel)?
+            .into_value();
+        let checked = front_end::check(
+            &parsed,
+            &models,
+            &request.dependencies,
+            request.limits,
+            &cancel,
+        )?
+        .into_value();
+        let emitted = front_end::package(&checked, &cancel)?.into_value();
+        Ok((checked, emitted))
+    };
+    let (checked, emitted) = match front_end() {
         Ok(compiled) => compiled,
-        Err(refusal) => {
-            return Ok(report(
-                None,
-                ClauseDisposition::Compile(refusal),
-                Vec::new(),
-                Vec::new(),
-            ))
+        Err(failure) => {
+            let disposition = match front_end::refusal_or_fault(failure) {
+                Ok(refusal) => ClauseDisposition::Compile(refusal),
+                Err(fault) => ClauseDisposition::EvaluateFault(fault),
+            };
+            return Ok(report(None, disposition, Vec::new(), Vec::new()));
         }
     };
-    let package_id = compiled.emitted.package_id();
-    let model_selections = compiled.package.graph().model_selections().to_vec();
+    let package_id = emitted.package().package_id();
+    let package = checked.package();
+    let model_selections = package.graph().model_selections().to_vec();
     if let Some(expected) = request.expected_package_id {
         if package_id != expected {
             return Ok(report(
@@ -654,14 +673,13 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ));
         }
     }
-    let package = &compiled.package;
     // FND-016: the unit's and every resolved library's source, reused
-    // exactly as `compile` already read them (mirroring `call::run`'s own
+    // exactly as the check already read them (mirroring `call::run`'s own
     // `sources` build), so a locus resolves without a second read of
     // already-admitted bytes.
-    let mut sources = Vec::with_capacity(1 + compiled.libraries.len());
-    sources.push(compiled.source.clone());
-    sources.extend(compiled.libraries.iter().cloned());
+    let mut sources = Vec::with_capacity(1 + checked.libraries().len());
+    sources.push(checked.source().clone());
+    sources.extend(checked.libraries().iter().cloned());
 
     match request.selection {
         ClauseRunSelection::Clause(ref selection) => {
@@ -902,6 +920,11 @@ pub(crate) fn check_clause_admitted(
             ),
         },
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        // This meter holds no `Cancel` handle, so no charge is cancelled.
+        Err(CallFailure::Cancelled(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "call",
+            "cancelled-without-a-handle",
+        )),
     };
     let mut report = run.report(disposition, documents, None);
     report.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
@@ -1051,6 +1074,11 @@ pub(crate) fn check_frame(
             "frame-invocation-mismatch",
         )),
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        // This meter holds no `Cancel` handle, so no charge is cancelled.
+        Err(CallFailure::Cancelled(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "call",
+            "cancelled-without-a-handle",
+        )),
     };
     let mut report = run.report(disposition, documents, Some(frame));
     report.usage = ClauseRunUsage::from_meter(&meter, admitted.usage);

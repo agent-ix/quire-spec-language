@@ -38,7 +38,7 @@ occurrence key and the node and occurrence key of every state clause
 naming the operation; or a named state clause's node and occurrence key.
 
 `call_site` compiles one unit through S1 to S4 -- the same
-`qsl_replay::spine::compile` FR-027's `compile` command uses -- against the
+the FR-278 composition FR-027's `compile` command uses -- against the
 supplied domain package documents and dependency input, under the default
 spine stage limits. It resolves a function by the same one-segment name
 lookup in the compiled package's declarations FR-098's selection uses
@@ -105,7 +105,7 @@ declaration by declared identity, never by position.
 
 ## Behavior
 
-- `call_site` SHALL compile `bytes` with `qsl_replay::spine::compile`
+- `call_site` SHALL compile `bytes` with the FR-278 composition
   against `packages` and `dependencies` under the default spine stage
   limits, and SHALL carry a compile refusal as the `CallSiteRefusal`
   variant for the input it concerns, each holding facade types and

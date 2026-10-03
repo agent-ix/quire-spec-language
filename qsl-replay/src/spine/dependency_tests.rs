@@ -15,7 +15,7 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use serde_json::Value;
 
 use super::{
-    compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, ImportRefusal,
+    compose, CompileRefusal, ComposedUnit, DependencyInput, DependencyInputRefusal, ImportRefusal,
     SourceHolder, SpineLimits, SpineStage, SuppliedLibrary,
 };
 
@@ -77,8 +77,8 @@ fn compile_as(
     identity: &str,
     source: &str,
     dependencies: &DependencyInput,
-) -> Result<Compiled, Box<CompileRefusal>> {
-    compile(
+) -> Result<ComposedUnit, Box<CompileRefusal>> {
+    compose(
         SourceIdentity::new("a", identity, "git", "1"),
         &format!("{identity}.native"),
         source.as_bytes(),
@@ -95,7 +95,7 @@ fn unit(body: &str) -> String {
 
 /// `library`'s own `package_id`, compiled alone against `dependencies`.
 fn package_id(library: &SuppliedLibrary, dependencies: &DependencyInput) -> PackageId {
-    compile(
+    compose(
         library.source.clone(),
         &library.path,
         &library.bytes,
@@ -116,7 +116,7 @@ fn covered<'a>(source: &'a str, refusal: &CompileRefusal) -> &'a str {
     &source[start..end]
 }
 
-fn wire(compiled: &Compiled) -> Value {
+fn wire(compiled: &ComposedUnit) -> Value {
     serde_json::from_slice(compiled.emitted.bytes()).expect("the wire is JSON")
 }
 
@@ -610,7 +610,7 @@ fn a_dependency_chain_deeper_than_the_limit_refuses() {
         ));
     }
     let source = unit(&format!("{}{H}", import("test/c3", "1", &arbitrary(), "l")));
-    let refusal = compile(
+    let refusal = compose(
         SourceIdentity::new("a", "u", "git", "1"),
         "u.native",
         source.as_bytes(),
@@ -645,7 +645,7 @@ fn a_dependency_chain_deeper_than_the_limit_refuses() {
 fn the_assembler_refuses_only_the_unadmitted_import() {
     use qsl_semantics::check::{AdmittedImport, AssemblyCause, PackageDeclarations};
     let geometry = library("test/geometry", "1", "geometry", F);
-    let alone = compile(
+    let alone = compose(
         geometry.source.clone(),
         &geometry.path,
         &geometry.bytes,
@@ -691,7 +691,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
 }
 
 /// The `node_id` digest of the function `name` in `compiled`'s wire.
-fn function_node(compiled: &Compiled, name: &str) -> String {
+fn function_node(compiled: &ComposedUnit, name: &str) -> String {
     let identity = compiled
         .package
         .graph()
@@ -770,7 +770,7 @@ fn holds_int_0_9(written: &Value) -> bool {
 #[test]
 fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference() {
     let geometry = library("test/geometry", "1", "geometry", F);
-    let alone = compile(
+    let alone = compose(
         geometry.source.clone(),
         &geometry.path,
         &geometry.bytes,
@@ -862,7 +862,7 @@ fn an_imported_name_whose_signature_is_package_dependent_refuses() {
     );
     let geometry = library("test/geometry", "1", "geometry", &body);
     let compile_with = |source: &SourceIdentity, bytes: &[u8], dependencies: &DependencyInput| {
-        compile(
+        compose(
             source.clone(),
             "unit.native",
             bytes,

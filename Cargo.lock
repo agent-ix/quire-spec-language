@@ -1400,6 +1400,7 @@ dependencies = [
  "logos",
  "qsl-attrs",
  "qsl-foundation",
+ "quire-exact",
  "serde_json",
 ]
 

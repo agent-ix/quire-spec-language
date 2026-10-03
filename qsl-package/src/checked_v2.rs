@@ -165,6 +165,9 @@ pub(crate) fn read_v2(
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
         Err(StageFailure::Limit(limit)) => Read::Limit(limit),
+        Err(StageFailure::Cancelled(cause)) => {
+            panic!("the reader takes no cancellation handle: {cause:?}")
+        }
     }
 }
 
@@ -776,6 +779,7 @@ fn read_message(refusal: &StageFailure<V2ReadRefusal>) -> String {
             limit.configured_bound(),
             limit.actual()
         ),
+        StageFailure::Cancelled(cause) => format!("cancelled ({cause:?})"),
     }
 }
 
@@ -797,6 +801,10 @@ impl ImportViewRefusal {
                 refusal: StageFailure::Limit(_),
                 ..
             } => Code::StageLimitExceeded,
+            Self::Read {
+                refusal: StageFailure::Cancelled(_),
+                ..
+            } => Code::Cancelled,
         }
     }
 }

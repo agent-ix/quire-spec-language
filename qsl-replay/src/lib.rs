@@ -5,7 +5,8 @@
 //!
 //! Its public API is the replay executor entry [`replay`] (ADR-013 TK-01,
 //! C-13; FR-098), which recompiles a request's digest-addressed source
-//! through the spine ([`spine::compile`], S1 to S4) and calls the selected
+//! through the spine ([`spine::parse`], [`spine::select`], [`spine::check`]
+//! and [`spine::package`], S1 to E4) and calls the selected
 //! function through S6a (`CheckedPackageEvaluation::call`), and the four
 //! typed envelopes it reads and settles -- the proof-result envelope
 //! (`proof_result`), the counterexample/witness envelope (`witness`), the
@@ -13,7 +14,7 @@
 //! their round trips and their redacted rendering (FR-069 through FR-073).
 //! It builds no backend invocation and no Kani harness. CG reaches this
 //! crate's public API and nothing else in QSL (ADR-011 FB-05); `command`
-//! uses [`spine::compile`] for the CLI's `compile`.
+//! composes those four operations for the CLI's `compile`.
 //!
 //! # Identity and provenance types
 //!

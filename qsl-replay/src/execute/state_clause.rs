@@ -155,7 +155,7 @@ pub fn replay_state_clause(
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
     let compiled = recompile(&request)?;
-    let package_id = compiled.emitted.package_id();
+    let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
         return Err(ReplayRefusal::PackageIdMismatch {
             requested: envelope.package_id(),
@@ -163,7 +163,7 @@ pub fn replay_state_clause(
         });
     }
     let payload = envelope.family_payload();
-    let graph = compiled.package.graph();
+    let graph = compiled.checked.package().graph();
     let clause = graph.state_clause(payload.clause.as_str()).ok_or_else(|| {
         ReplayRefusal::UnknownClause {
             clause: payload.clause.clone(),
@@ -204,9 +204,9 @@ pub fn replay_state_clause(
         .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
         .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
         .collect();
-    let mut sources = Vec::with_capacity(1 + compiled.libraries.len());
-    sources.push(compiled.source.clone());
-    sources.extend(compiled.libraries.iter().cloned());
+    let mut sources = Vec::with_capacity(1 + compiled.checked.libraries().len());
+    sources.push(compiled.checked.source().clone());
+    sources.extend(compiled.checked.libraries().iter().cloned());
     let selection = ClauseSelection {
         name: payload.clause.as_str().to_owned(),
         input: payload.observation.clone(),
@@ -220,7 +220,7 @@ pub fn replay_state_clause(
         },
         observation_limits: ObservationLimits::default(),
         accounting: request.accounting_limits(),
-        package: &compiled.package,
+        package: compiled.checked.package(),
         package_id,
         unit: &unit,
         sources: &sources,
@@ -285,7 +285,7 @@ pub fn replay_state_clause(
             ))
         })?;
         match compare_witness(
-            &compiled.package,
+            compiled.checked.package(),
             &selection.name,
             observations,
             payload.witness.as_ref(),
@@ -476,6 +476,8 @@ pub(crate) fn separate(
         Err(CallFailure::Input(_)) => {
             return Err(fault("separation-check-over-the-admitted-clause"))
         }
+        // This meter holds no `Cancel` handle, so no charge is cancelled.
+        Err(CallFailure::Cancelled(_)) => return Err(fault("cancelled-without-a-handle")),
     };
     match separation {
         Separation::Holds => Ok(SeparationOutcome::Holds),

@@ -70,7 +70,7 @@ their FR-285 exit codes.
 - When the caller runs `check` over the source, QSL shall return a success
   outcome holding the `CheckedPackage`.
 - When the caller runs `package` over that `CheckedPackage`, QSL shall return
-  the v2 bytes `qsl_replay::spine::compile` writes for the same source.
+  the v2 bytes the FR-278 composition writes for the same source.
 - When the caller runs `execute` naming a function of the source, QSL shall
   run it on the interpreter through the execution seam and return its
   outcome.
@@ -83,7 +83,7 @@ their FR-285 exit codes.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-299-AC-1 | Over a `1-draft` source declaring `p(x: Int[0, 9]): Boolean { x < 10 }` and `q(x: Int[0, 9]): Boolean { x < 5 }` with a claim on each, `check` returns success (FR-285 exit 0), `package` returns the bytes `qsl_replay::spine::compile` writes for that source, and `execute` of `p` with `x = 3` on the interpreter completes `true`, exit 0. | Test (TC-784) |
+| FR-299-AC-1 | Over a `1-draft` source declaring `p(x: Int[0, 9]): Boolean { x < 10 }` and `q(x: Int[0, 9]): Boolean { x < 5 }` with a claim on each, `check` returns success (FR-285 exit 0), `package` returns the bytes the FR-278 composition writes for that source, and `execute` of `p` with `x = 3` on the interpreter completes `true`, exit 0. | Test (TC-784) |
 | FR-299-AC-2 | Each AC-1 outcome serializes to an FR-286 document whose `operation`, `category` and `artifacts` match the outcome, and serializing it twice gives equal bytes. | Test (TC-784) |
 | FR-299-AC-3 | The AC-1 calls over a source importing `test/geometry`, with that library supplied, give the same dispositions and exit codes as AC-1. | Test (TC-784) |
 | FR-299-AC-4 | A `check` over the AC-1 source with its `Cancel` handle cancelled before the call returns `StageFailure::Cancelled`, FR-285 exit 22. | Test (TC-784) |

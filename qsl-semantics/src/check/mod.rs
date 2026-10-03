@@ -118,7 +118,7 @@ use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_foundation::diagnostic::{Locus, StageFailure};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::ValueType;
+use quire_exact::{Cancel, ValueType};
 
 pub use check::Scope;
 pub use claims::{ClaimSite, PathGuard, RequirementRecord, ResultBound, SiteGuard, ValueClaim};
@@ -612,6 +612,19 @@ impl PackageDeclarations {
     /// before any charge; a reached checking limit is `stage_limit_exceeded`
     /// and yields no admission verdict.
     pub fn check(self, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_with_cancel(limits, &Cancel::new())
+    }
+
+    /// [`Self::check`] under a caller-owned [`Cancel`] handle (FR-276): the
+    /// checking work meter polls it at every charge, so a cancelled handle
+    /// stops the check at its next declaration charge. The stop is a
+    /// refusal list like a reached work budget; a caller that holds the
+    /// handle reads [`Cancel::tripped`] to tell the two apart.
+    pub fn check_with_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-096: a family limit's locus resolves through the unit's spans.
         let regions = self.regions();
         let body_location = |index: usize, name: &str| {
@@ -930,7 +943,8 @@ impl PackageDeclarations {
             work_units: limits.work_budget(),
             ..family::SCALAR_LIMITS_UNLIMITED
         };
-        let mut contract_meter = quire_exact::Meter::new(contract_meter_limits);
+        let mut contract_meter =
+            quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         // PR #303 review round 3, finding F1: the running total of
@@ -997,6 +1011,7 @@ impl PackageDeclarations {
                     });
                     return Err(refusals);
                 }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
@@ -1039,10 +1054,16 @@ impl PackageDeclarations {
                     nodes_used = checked.nodes_used;
                     typed_clauses.push(checked);
                 }
-                Err(StageFailure::Limit(limit)) => refusals.push(CheckRefusal {
-                    location,
-                    cause: limit_cause(&limit),
-                }),
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);

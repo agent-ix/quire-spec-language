@@ -26,7 +26,7 @@ QSL SHALL provide the replay executor entry, `qsl_replay::replay`, as the
 layer-6 `replay` facade's public API (ADR-013 O-26, C-13, TK-01; ADR-011
 §2.1 E9, §6.1). It takes an FR-071 replay request. It recompiles the proved
 package's one source unit through the spine (S1 to S4, the same
-`qsl_replay::spine::compile` the CLI `compile` uses, FR-027) from the
+the FR-278 composition the CLI `compile` uses, FR-027) from the
 request's digest-addressed byte provision, against the dependency input the
 package reference's `dependencies` entries name (ADR-015 D-4). It requires
 the recompiled `package_id` to equal the request's, selects the function

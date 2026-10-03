@@ -39,6 +39,7 @@ pub const EDITION: &str = "1-draft";
 
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Source, SourceIdentity, Span};
+use quire_exact::Cancel;
 
 /// A version-bound source artifact and its lossless parse evidence.
 ///
@@ -236,8 +237,23 @@ pub fn parse(
     bytes: &[u8],
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
+    parse_with_cancel(identity, path, bytes, limits, &Cancel::new())
+}
+
+/// [`parse`] under a caller-owned [`Cancel`] handle (FR-276). The lexer's
+/// token charge and the parser's step charge poll it, and a cancelled
+/// handle stops the parse there with a resource diagnostic: a caller that
+/// holds the handle reads [`Cancel::tripped`] to tell that stop from a
+/// reached ceiling.
+pub fn parse_with_cancel(
+    identity: SourceIdentity,
+    path: impl Into<String>,
+    bytes: &[u8],
+    limits: Limits,
+    cancel: &Cancel,
+) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
-    parse_source(source, limits)
+    parser::parse(source, limits, cancel)
 }
 
 /// Parse an already loaded (and optionally digest-verified) exact source.
@@ -245,5 +261,5 @@ pub fn parse_source(
     source: Source,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    parser::parse(source, limits)
+    parser::parse(source, limits, &Cancel::new())
 }

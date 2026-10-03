@@ -17,6 +17,7 @@ test-support = []
 [dependencies]
 qsl-attrs = { path = "../qsl-attrs" }
 qsl-foundation = { path = "../qsl-foundation" }
+quire-exact = { path = "../quire-exact" }
 logos = "0.16.1"
 serde_json = "1.0.151"
 

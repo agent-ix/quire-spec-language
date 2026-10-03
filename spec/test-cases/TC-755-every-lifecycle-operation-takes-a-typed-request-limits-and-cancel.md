@@ -17,7 +17,7 @@ Scope: FR-275-AC-1 to FR-275-AC-3, FR-275-AC-5.
 ## Test Procedure
 
 1. Call `parse` on `tests/fixtures/spine-compile.native` with default limits and `Cancel::new()`, then `format` over the `ParsedSource`, `select` with no domain packages, `check` and `package`.
-2. Compare `package`'s bytes with `qsl_replay::spine::compile`'s for the same source.
+2. Compare `package`'s bytes with the bytes FR-027's `compile` command writes for the same source.
 3. Call `execute` on the `CheckedPackage` selecting `seven` with no arguments and the interpreter backend.
 4. Call `inspect` with the package view selector, then `render` the view as text.
 5. Compile the `compile_fail` doctests that pass raw bytes to `check`, a `ParsedSource` to `package`, package bytes to `execute` and to `analyze`, and a `ParsedSource` to `monitor`, each beside a compiling control with the correct type.

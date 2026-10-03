@@ -15,6 +15,7 @@
 //! dependency (ADR-011 layer K is a leaf), and its fields are `pub`, so the
 //! FR-323 wire-to-`ScalarLimits` conversion stays entirely QSL's job.
 
+use crate::cancel::Cancel;
 use crate::integer::Integer;
 use alloc::vec::Vec;
 
@@ -544,15 +545,17 @@ pub struct Meter {
     /// Admissions so far at `denial`'s point; zero when no denial is set.
     denied_point_admissions: u64,
     admissions: u64,
+    /// The handle every charge polls (FR-276), when the caller gave one.
+    cancel: Option<Cancel>,
     #[cfg(feature = "test-support")]
     admitted: Vec<ChargePoint>,
 }
 
-// A production `Meter` owns no heap memory. A type with no drop
-// glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
-// fails the build rather than a test.
+// A production `Meter` has a fixed size: the counters and one shared handle,
+// never a field that grows with the charges. A `Vec` or `String` field is
+// larger than this and fails the build rather than a test.
 #[cfg(not(feature = "test-support"))]
-const _: () = assert!(!core::mem::needs_drop::<Meter>());
+const _: () = assert!(core::mem::size_of::<Meter>() <= 256);
 
 impl Meter {
     /// A fresh meter with nothing consumed.
@@ -563,9 +566,18 @@ impl Meter {
             denial: None,
             denied_point_admissions: 0,
             admissions: 0,
+            cancel: None,
             #[cfg(feature = "test-support")]
             admitted: Vec::new(),
         }
+    }
+
+    /// This meter, polling `cancel` at every charge (FR-276). A cancelled
+    /// handle denies the charge as an exhausted `work_units` budget does.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: Cancel) -> Self {
+        self.cancel = Some(cancel);
+        self
     }
 
     /// Add the qualification seam that denies one exact named charge. The
@@ -608,9 +620,22 @@ impl Meter {
         }
     }
 
-    /// The qualification-seam record: as if the `work_units` limit were the
-    /// work already consumed, so `limit = consumed = w`.
+    /// The denials that do not come from a limit, checked first at every
+    /// charge, each recorded as if the `work_units` limit were the work
+    /// already consumed, so `limit = consumed = w`: a cancelled handle
+    /// (FR-276), which the operation holding it reports as its
+    /// cancellation, and the qualification seam's one exact named charge.
     fn check_injected(&self, point: ChargePoint, work_units: Integer) -> Result<(), Incomplete> {
+        if self.cancel.as_ref().is_some_and(Cancel::poll) {
+            let consumed = self.consumed(LimitKind::WorkUnits);
+            return Err(Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: consumed,
+                consumed,
+                next_charge: work_units,
+                charge_point: point,
+            });
+        }
         match self.denial {
             Some(denial)
                 if denial.point == point
@@ -780,18 +805,17 @@ mod tests {
         }
     }
 
-    /// A production meter owns no heap memory, however many
-    /// charges it admits. A type with no drop glue owns no `Vec`, `Box` or
-    /// `String`, so its heap size is zero at every charge count; the
-    /// admission count still grows with every charge. Built only without
-    /// `test-support` (`cargo test -p quire-exact`, which `make ci` runs):
-    /// with it, the meter keeps its ordered charge log, which allocates.
+    /// A production meter keeps counters and one shared handle, however
+    /// many charges it admits; the admission count still grows with every
+    /// charge. Built only without `test-support` (`cargo test -p
+    /// quire-exact`, which `make ci` runs): with it, the meter keeps its
+    /// ordered charge log, which allocates.
     #[cfg(not(feature = "test-support"))]
     #[test]
-    fn production_meter_heap_is_constant_as_charges_grow() {
+    fn production_meter_size_is_constant_as_charges_grow() {
         assert!(
-            !core::mem::needs_drop::<Meter>(),
-            "a production Meter must hold no heap-owning field"
+            core::mem::size_of::<Meter>() <= 256,
+            "a production Meter must hold no field that grows with its charges"
         );
         let mut meter = Meter::new(unlimited());
         let mut admitted = 0_u64;
@@ -805,6 +829,26 @@ mod tests {
             assert_eq!(meter.admission_count(), target);
             assert_eq!(meter.consumed(LimitKind::WorkUnits), target);
         }
+    }
+
+    /// FR-276: a meter polls its handle at every charge. A cancelled handle
+    /// denies the next charge without changing any counter, and the handle
+    /// records the trip.
+    #[test]
+    fn a_cancelled_handle_denies_the_next_charge_and_records_the_trip() {
+        let cancel = Cancel::new();
+        let mut meter = Meter::new(unlimited()).with_cancel(cancel.clone());
+        meter
+            .charge(Charge::new(ChargePoint::FunctionCall))
+            .expect("a live handle admits the charge");
+        cancel.cancel(crate::CancelCause::Deadline);
+        assert_eq!(cancel.tripped(), None);
+        let denial = meter
+            .charge(Charge::new(ChargePoint::FunctionCall))
+            .expect_err("a cancelled handle denies the charge");
+        assert_eq!(denial.limit_kind, LimitKind::WorkUnits);
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+        assert_eq!(cancel.tripped(), Some(crate::CancelCause::Deadline));
     }
 
     /// The injected denial counts only the denied point's

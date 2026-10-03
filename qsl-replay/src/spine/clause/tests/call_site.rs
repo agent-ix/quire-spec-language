@@ -275,7 +275,7 @@ fn call_site_refuses_an_operation_no_clause_names() {
 fn call_site_locates_a_state_clause_by_name() {
     let (unit, document) = two_operation_unit(true);
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let compiled = compile(
+    let compiled = compose(
         source(),
         "call-site.native",
         unit.as_bytes(),

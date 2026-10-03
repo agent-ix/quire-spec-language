@@ -78,16 +78,22 @@ pub enum CallFailure {
     /// `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(qsl_foundation::diagnostic::InternalFault),
+    /// The caller's [`quire_exact::Cancel`] handle was cancelled and the
+    /// call stopped at its next charge (ADR-029 LC-3, FR-276). It returns no
+    /// value.
+    #[error("the call was cancelled: {0:?}")]
+    Cancelled(quire_exact::CancelCause),
 }
 
 impl CallFailure {
     /// FR-285: an admission refusal is a refusal, a broken S6a invariant an
-    /// internal failure (ADR-013 O-16).
+    /// internal failure, and a cancellation incomplete (ADR-013 O-16).
     pub fn category(&self) -> qsl_foundation::diagnostic::Category {
         use qsl_foundation::diagnostic::Category;
         match self {
             Self::Input(_) => Category::Refusal,
             Self::Fault(fault) => fault.category(),
+            Self::Cancelled(_) => Category::Incomplete,
         }
     }
 }

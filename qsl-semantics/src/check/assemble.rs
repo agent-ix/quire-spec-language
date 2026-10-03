@@ -34,7 +34,7 @@ use qsl_forms::{
     Expression, FunctionDeclaration, ParsedUnit, RecordFieldForm, StateClauseForm, TypeForm,
     TypeFormHead, UnitForm,
 };
-use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
+use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, Span};
 use quire_exact::{
@@ -68,11 +68,11 @@ use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTa
 use crate::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
-use crate::value::environment_stage::stage_failure;
+use crate::value::environment_stage::stage_limit;
 use crate::value::semantic_node::OwnerSelection;
 use quire_semantic_value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::semantic_node::InvalidSemanticGraph;
 
@@ -1080,23 +1080,21 @@ fn admit_types(
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
     loop {
-        match TypeEnvironment::new(declarations.clone(), object_types.iter().cloned())
-            .map_err(stage_failure)
-        {
+        match TypeEnvironment::new(declarations.clone(), object_types.iter().cloned()) {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
-            Err(StageFailure::Limit(limit)) => {
+            Err(EnvironmentFailure::Limit(limit)) => {
                 // Records and tuples charge no type-environment work, so
                 // this is unreachable today. A ceiling names no declaration
                 // and has no locus (FR-082, FR-096): the span is empty and
                 // names no region, and the compile reports none.
                 errors.push(AssemblyError {
-                    cause: AssemblyCause::TypeLimit(limit),
+                    cause: AssemblyCause::TypeLimit(stage_limit(limit)),
                     span: Span { start: 0, end: 0 },
                 });
                 return refuse(errors);
             }
-            Err(StageFailure::Refused(invalid)) => {
+            Err(EnvironmentFailure::Refused(invalid)) => {
                 let before = declarations.len();
                 declarations.retain(|declaration| declaration.name() != invalid.declaration);
                 let set_aside = declarations.len() < before;

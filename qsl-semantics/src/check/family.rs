@@ -2876,6 +2876,7 @@ pub(crate) mod checking_tests {
                 Ok(_) => None,
                 Err(StageFailure::Limit(exceeded)) => Some(exceeded),
                 Err(StageFailure::Refused(refusal)) => panic!("unexpected refusal {refusal:?}"),
+                Err(StageFailure::Cancelled(cause)) => panic!("unexpected cancellation {cause:?}"),
             }
         };
         let budget = |work_units| {
@@ -2937,6 +2938,7 @@ pub(crate) mod checking_tests {
                 }
                 Err(StageFailure::Refused(_)) => Seen::Refused,
                 Err(StageFailure::Limit(exceeded)) => Seen::Limit(exceeded.kind()),
+                Err(StageFailure::Cancelled(cause)) => panic!("unexpected cancellation {cause:?}"),
             }
         }
         let scope = empty_scope();
