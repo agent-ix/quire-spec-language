@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-059/FR-060: stable diagnostics for the architecture-lint CLI.
+//! FR-059/FR-060: diagnostics for the architecture-lint CLI.
 use std::{fmt, io, path::Path};
 
-/// Stable error classification. Spellings never change once released.
+/// The error classification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Code {
     Usage,
