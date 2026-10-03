@@ -364,7 +364,7 @@ fn spine_origin(origin: &quire_semantic_value::location::Origin) -> types::Spine
 fn spine_location(location: &quire_semantic_value::location::Location) -> types::SpineLocation {
     types::SpineLocation {
         origin: spine_origin(&location.origin),
-        path: location.path.clone(),
+        path: location.path(),
     }
 }
 
@@ -827,10 +827,7 @@ mod tests {
         for (origin, expected) in cases {
             let result = render(CallOutcome::Refused(CallRefusal::Family {
                 code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
-                location: Some(Location {
-                    origin,
-                    path: vec![2, 0],
-                }),
+                location: Some(Location::at(origin, &[2, 0])),
             }));
             assert_eq!(
                 result.value.as_value()["outcome"]["location"],
@@ -866,13 +863,13 @@ mod tests {
                 "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26".to_owned(),
             span,
         };
-        let location = Location {
-            origin: Origin::Body {
+        let location = Location::at(
+            Origin::Body {
                 function: "f".to_owned(),
                 index: 0,
             },
-            path: vec![1],
-        };
+            &[1],
+        );
         let fields = std::collections::BTreeMap::from([("binding", "people".to_owned())]);
         let expected_location = serde_json::json!({"origin": {"kind": "body", "function": "f", "index": 0}, "path": [1]});
 
