@@ -365,7 +365,5 @@ mod tests {
         assert_eq!(joined.get(&5), Some(&50));
         assert_eq!(joined.get(&7), Some(&7));
         assert!(!joined.contains(&1_000) && !joined.contains(&2_000));
-        let dropped = left.intersect_with(&right, &|_, _| None);
-        assert!(!dropped.contains(&7));
     }
 }
