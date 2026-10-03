@@ -358,7 +358,7 @@ pub enum OrderedKind {
 /// keys are: [`Value`] has no structural equality of its own. A value with
 /// no canonical key (one that holds a float, which ADR-013 O-13 excludes
 /// from `=`) is equal to another exactly when the two encode identically
-/// (see [`same_encoding`]), so a literal always equals its own clone.
+/// (see `same_encoding`), so a literal always equals its own clone.
 #[derive(Clone, Debug)]
 pub struct CheckedLiteral(pub Value);
 
