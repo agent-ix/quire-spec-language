@@ -219,7 +219,7 @@ names different artifacts in each.
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally |
 | TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally |
 | TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally |
-| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed: every comparable fixture agrees (a recursive type's first unbounded node in the recursion group QSL names) and step 4 passes; the quantity fixture is ignored because the emitter omits a record naming a declared unit |
+| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | ✅ Passed locally: every fixture agrees, the quantity fixture `Measure` included (a recursive type's first unbounded node in the recursion group QSL names), and step 4 passes |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally; step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Passed locally |
 | TC-454 | The sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Passed locally |

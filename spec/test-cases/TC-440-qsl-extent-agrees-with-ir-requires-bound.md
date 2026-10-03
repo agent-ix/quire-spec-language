@@ -45,16 +45,16 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
 
 ## Status
 
-Partly passed. `Bag` to `Mixed` pass
+Passed. `Bag` to `Mixed` pass
 (`qsl-package/src/emit/extent_agreement.rs`,
 `tc_440_qsl_extent_agrees_with_ir_requires_bound`); for `RangedTree` the test
 asserts IR's first unbounded node is in the recursion group of the root QSL
 names `Recursive`. The quantity fixture `Measure` is emitted with its
 `metre` unit and `Length` dimension nodes and IR reads and lowers it
-(`tc_440_a_quantity_record_is_emitted_and_reaches_ir`). Its agreement,
-`tc_440_quantity_extent_agrees_with_ir_requires_bound`, is ignored: QSL
-classifies `Measure` `Unbounded`, and IR's `requires-bound` treats a unit
-type as needing no bound, so IR lowers it (IR-450). Step 4 passes: the inner `+` and RR-7's `*` and
+(`tc_440_a_quantity_record_is_emitted_and_reaches_ir`). Its agreement passes
+(`tc_440_quantity_extent_agrees_with_ir_requires_bound`): QSL classifies
+`Measure` `Unbounded`, and IR requires a bound for a unit type (IR-450).
+Step 4 passes: the inner `+` and RR-7's `*` and
 `k`'s `+` (`tc_440_operation_application_records_agree_with_ir_per_node`),
 and IR's bound requirement for the outer `+` of `(x + 1) + n`
 (`tc_440_an_unbounded_application_record_requires_a_bound_in_ir`).
