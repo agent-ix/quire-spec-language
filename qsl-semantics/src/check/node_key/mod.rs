@@ -1420,7 +1420,7 @@ fn typed_preimage<'a>(
     let semantic_type = node
         .semantic_type
         .map(|semantic_type| match walk.ordinal(semantic_type) {
-            Some(ordinal) => SemanticTypePreimage::Group(PreimageLeaf::GroupReference { ordinal }),
+            Some(ordinal) => SemanticTypePreimage::Group(GroupReference { ordinal }),
             None => SemanticTypePreimage::Node(NodeRef(semantic_type)),
         });
     let preimage = Preimage {
@@ -1446,7 +1446,7 @@ struct Preimage<'a> {
     owner: Option<&'a Owner>,
     node_tag: NodeTag,
     semantic_form: &'a str,
-    semantic_type: Option<SemanticTypePreimage<'a>>,
+    semantic_type: Option<SemanticTypePreimage>,
     declaration: Option<DeclarationPreimage<'a>>,
     recursion: Option<RecursionPreimage>,
     body: PreimageTerm<'a>,
@@ -1484,12 +1484,20 @@ impl Encode for Preimage<'_> {
 /// `group_reference` when it names a member of the node's own group (G9).
 #[derive(Serialize, FixedShape)]
 #[serde(untagged)]
-enum SemanticTypePreimage<'a> {
+enum SemanticTypePreimage {
     /// A type outside the node's group, by its `NodeRef`.
     Node(NodeRef),
-    /// A member of the node's own group: always a
-    /// [`PreimageLeaf::GroupReference`].
-    Group(PreimageLeaf<'a>),
+    /// A member of the node's own group, by its group ordinal.
+    Group(GroupReference),
+}
+
+/// `{"term": "group_reference", "ordinal": n}`: the same text as
+/// [`PreimageLeaf::GroupReference`], the one shape a `semantic_type` naming
+/// a member of the node's own group has.
+#[derive(Serialize, FixedShape)]
+#[serde(tag = "term", rename = "group_reference")]
+struct GroupReference {
+    ordinal: usize,
 }
 
 #[derive(Serialize, FixedShape)]
