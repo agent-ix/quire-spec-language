@@ -15,7 +15,9 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::Location;
 use std::collections::BTreeSet;
+use std::convert::Infallible;
 use std::fmt;
+use std::ops::ControlFlow;
 
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
@@ -232,13 +234,33 @@ impl<'a> CheckedNode<'a> {
     /// Every node of the tree under this one in pre-order, without host
     /// recursion.
     pub(crate) fn descendants(self) -> Vec<CheckedNode<'a>> {
-        let mut visited = Vec::new();
-        let mut pending = vec![self];
-        while let Some(node) = pending.pop() {
-            visited.push(node);
-            pending.extend(node.children().into_iter().rev());
+        struct Collect<'n> {
+            visited: Vec<CheckedNode<'n>>,
         }
-        visited
+        impl<'n> quire_walk::Walk for Collect<'n> {
+            type Node = CheckedNode<'n>;
+            type Frame = ();
+            type Stop = Infallible;
+
+            fn enter(
+                &mut self,
+                node: CheckedNode<'n>,
+                children: &mut quire_walk::Children<'_, CheckedNode<'n>>,
+            ) -> ControlFlow<Infallible, ()> {
+                self.visited.push(node);
+                children.extend(node.children());
+                ControlFlow::Continue(())
+            }
+
+            fn exit(&mut self, (): ()) -> ControlFlow<Infallible> {
+                ControlFlow::Continue(())
+            }
+        }
+        let mut collect = Collect {
+            visited: Vec::new(),
+        };
+        let ControlFlow::Continue(()) = quire_walk::walk(&mut collect, self);
+        collect.visited
     }
 
     /// Every `convert` loss in pre-order.

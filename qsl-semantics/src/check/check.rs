@@ -45,6 +45,7 @@
 //! flagged.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ops::ControlFlow;
 
 mod typing;
 
@@ -2408,14 +2409,42 @@ fn catalogued_step(
     if body.get(other).map(|node| &node.value_type) != Some(value_type) {
         return false;
     }
-    let mut pending = vec![other];
-    while let Some(id) = pending.pop() {
-        match body.get(id) {
-            Some(node) if !is_accumulator(node) => pending.extend(node.kind.children()),
-            _ => return false,
+    // Every node of the operand is in the body and none is the accumulator.
+    struct FreeOfAccumulator<'b, F: Fn(&Node) -> bool> {
+        body: &'b BodyBuilder,
+        is_accumulator: F,
+    }
+    impl<F: Fn(&Node) -> bool> quire_walk::Walk for FreeOfAccumulator<'_, F> {
+        type Node = NodeId;
+        type Frame = ();
+        type Stop = ();
+
+        fn enter(
+            &mut self,
+            id: NodeId,
+            children: &mut quire_walk::Children<'_, NodeId>,
+        ) -> ControlFlow<(), ()> {
+            match self.body.get(id) {
+                Some(node) if !(self.is_accumulator)(node) => {
+                    children.extend(node.kind.children());
+                    ControlFlow::Continue(())
+                }
+                _ => ControlFlow::Break(()),
+            }
+        }
+
+        fn exit(&mut self, (): ()) -> ControlFlow<()> {
+            ControlFlow::Continue(())
         }
     }
-    true
+    quire_walk::walk(
+        &mut FreeOfAccumulator {
+            body,
+            is_accumulator,
+        },
+        other,
+    )
+    .is_continue()
 }
 
 /// Check a function signature's declared types and bind its parameters.

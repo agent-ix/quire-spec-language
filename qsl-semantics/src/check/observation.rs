@@ -17,6 +17,9 @@
 //! qualification before evaluation").
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::marker::PhantomData;
+use std::ops::ControlFlow;
 
 use super::ir::{CheckedNode, NodeKind, Observation, Slot};
 use quire_semantic_value::location::Location;
@@ -40,6 +43,8 @@ impl Observations {
             roots,
             binders: BTreeMap::new(),
             reads: BTreeMap::new(),
+            results: Vec::new(),
+            nodes: PhantomData,
         };
         walk.run(body, clause);
         Self { reads: walk.reads }
@@ -58,24 +63,25 @@ impl Observations {
     }
 }
 
-/// One pass over a clause body.
-struct Walk {
+/// One pass over a clause body, on the walker toolkit: each node's exit
+/// leaves exactly one result on `results`, the observation the reference
+/// value its node yields was read at, when it yields one. The toolkit
+/// enters a node's later operands only after its earlier ones are exited, so
+/// a binding step sits between operands as a node of its own.
+struct Walk<'n> {
     roots: usize,
     /// The observation each `let` or binder slot's reference was read at,
     /// when it holds a reference read at one.
     binders: BTreeMap<Slot, Option<Observation>>,
     reads: BTreeMap<Location, Observation>,
+    results: Vec<Option<Observation>>,
+    nodes: PhantomData<&'n ()>,
 }
 
-/// One pending step of [`Walk::run`]. Each [`Task::Visit`] leaves exactly
-/// one result: the observation the reference value its node yields was
-/// read at, when it yields one.
-enum Task<'n> {
+/// One node of the walk.
+enum Step<'n> {
     /// Record the reads of a node under an ambient observation.
     Visit(CheckedNode<'n>, Observation),
-    /// An attribute read's reference is visited: record the read, at the
-    /// reference's own observation or else the ambient one.
-    Attribute(&'n Location, Observation),
     /// Bind a `let` slot to the visited value's observation, then visit the
     /// body, whose result is the `let`'s.
     Let(Slot, CheckedNode<'n>, Observation),
@@ -91,6 +97,15 @@ enum Task<'n> {
         step: CheckedNode<'n>,
         ambient: Observation,
     },
+}
+
+/// What the walk keeps for an entered node until its operands are exited.
+enum Exit<'n> {
+    /// The operand's result is the node's.
+    Pass,
+    /// An attribute read's reference is visited: record the read, at the
+    /// reference's own observation or else the ambient one.
+    Attribute(&'n Location, Observation),
     /// A conditional's operands are visited: it keeps an observation only
     /// when both branches read it at the same one.
     If,
@@ -103,134 +118,80 @@ enum Task<'n> {
     },
 }
 
-impl Walk {
+impl<'n> Walk<'n> {
     /// Record the reads of `root` under the ambient observation `ambient`.
-    fn run(&mut self, root: CheckedNode<'_>, ambient: Observation) {
-        let mut pending = vec![Task::Visit(root, ambient)];
-        let mut results: Vec<Option<Observation>> = Vec::new();
-        while let Some(task) = pending.pop() {
-            match task {
-                Task::Visit(node, ambient) => self.visit(node, ambient, &mut pending, &mut results),
-                Task::Attribute(location, ambient) => {
-                    let read = results.pop().flatten().unwrap_or(ambient);
-                    self.reads.insert(location.clone(), read);
-                    results.push(Some(read));
-                }
-                Task::Let(slot, body, ambient) => {
-                    let bound = results.pop().flatten();
-                    self.binders.insert(slot, bound);
-                    pending.push(Task::Visit(body, ambient));
-                }
-                Task::Query(slot, body, ambient) => {
-                    let bound = results.pop().flatten();
-                    self.binders.insert(slot, bound);
-                    pending.push(Task::Collapse {
-                        count: 1,
-                        read: None,
-                        value: None,
-                    });
-                    pending.push(Task::Visit(body, ambient));
-                }
-                Task::Fold {
-                    binder,
-                    accumulator,
-                    identity,
-                    step,
-                    ambient,
-                } => {
-                    let bound = results.pop().flatten();
-                    self.binders.insert(binder, bound);
-                    self.binders.insert(accumulator, None);
-                    pending.push(Task::Collapse {
-                        count: 1 + usize::from(identity.is_some()),
-                        read: None,
-                        value: None,
-                    });
-                    pending.push(Task::Visit(step, ambient));
-                    if let Some(identity) = identity {
-                        pending.push(Task::Visit(identity, ambient));
-                    }
-                }
-                Task::If => {
-                    let otherwise = results.pop().flatten();
-                    let then = results.pop().flatten();
-                    results.pop();
-                    results.push(then.filter(|_| then == otherwise));
-                }
-                Task::Collapse { count, read, value } => {
-                    results.truncate(results.len().saturating_sub(count));
-                    if let Some((location, observation)) = read {
-                        self.reads.insert(location.clone(), observation);
-                    }
-                    results.push(value);
-                }
-            }
-        }
+    fn run(&mut self, root: CheckedNode<'n>, ambient: Observation) {
+        let ControlFlow::Continue(()) = quire_walk::walk(self, Step::Visit(root, ambient));
     }
 
-    /// Start visiting `node` under `ambient`: a node with no operand to
-    /// visit leaves its result now; any other pushes the steps that visit
-    /// its operands, in evaluation order, and finish it.
-    fn visit<'n>(
-        &self,
+    /// Enter `node` under `ambient`: a node with no operand to visit leaves
+    /// its result now; any other names its operands in evaluation order.
+    fn visit(
+        &mut self,
         node: CheckedNode<'n>,
         ambient: Observation,
-        pending: &mut Vec<Task<'n>>,
-        results: &mut Vec<Option<Observation>>,
-    ) {
-        let visit = |id| Task::Visit(node.at(id), ambient);
+        children: &mut quire_walk::Children<'_, Step<'n>>,
+    ) -> Exit<'n> {
+        let visit = |id| Step::Visit(node.at(id), ambient);
         match node.kind() {
-            NodeKind::Local(slot) if *slot < self.roots => results.push(Some(ambient)),
-            NodeKind::Local(slot) => results.push(self.binders.get(slot).copied().flatten()),
+            NodeKind::Local(slot) if *slot < self.roots => {
+                self.results.push(Some(ambient));
+                Exit::Pass
+            }
+            NodeKind::Local(slot) => {
+                self.results
+                    .push(self.binders.get(slot).copied().flatten());
+                Exit::Pass
+            }
             NodeKind::Attribute { reference, .. } => {
-                pending.push(Task::Attribute(node.location(), ambient));
-                pending.push(visit(*reference));
+                children.push(visit(*reference));
+                Exit::Attribute(node.location(), ambient)
             }
             NodeKind::Reaches { source, target, .. } => {
-                pending.push(Task::Collapse {
+                children.extend([visit(*source), visit(*target)]);
+                Exit::Collapse {
                     count: 2,
                     read: Some((node.location(), ambient)),
                     value: None,
-                });
-                pending.push(visit(*target));
-                pending.push(visit(*source));
+                }
             }
             NodeKind::AllInstances { population } => {
-                pending.push(Task::Collapse {
+                children.push(visit(*population));
+                Exit::Collapse {
                     count: 1,
                     read: Some((node.location(), ambient)),
                     value: Some(ambient),
-                });
-                pending.push(visit(*population));
+                }
             }
             NodeKind::Lookup {
                 population,
                 reference,
                 ..
             } => {
-                pending.push(Task::Collapse {
+                children.extend([visit(*population), visit(*reference)]);
+                Exit::Collapse {
                     count: 2,
                     read: Some((node.location(), ambient)),
                     value: Some(ambient),
-                });
-                pending.push(visit(*reference));
-                pending.push(visit(*population));
+                }
             }
             NodeKind::Pre(operand) => {
-                pending.push(Task::Visit(node.at(*operand), Observation::Pre))
+                children.push(Step::Visit(node.at(*operand), Observation::Pre));
+                Exit::Pass
             }
             NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => {
-                pending.push(visit(*operand))
+                children.push(visit(*operand));
+                Exit::Pass
             }
             NodeKind::Let { slot, value, body } => {
-                pending.push(Task::Let(*slot, node.at(*body), ambient));
-                pending.push(visit(*value));
+                children.extend([visit(*value), Step::Let(*slot, node.at(*body), ambient)]);
+                Exit::Pass
             }
             NodeKind::Query {
                 slot, source, body, ..
             } => {
-                pending.push(Task::Query(*slot, node.at(*body), ambient));
-                pending.push(visit(*source));
+                children.extend([visit(*source), Step::Query(*slot, node.at(*body), ambient)]);
+                Exit::Pass
             }
             NodeKind::Fold {
                 accumulator,
@@ -239,34 +200,114 @@ impl Walk {
                 step,
                 identity,
             } => {
-                pending.push(Task::Fold {
-                    binder: *binder,
-                    accumulator: *accumulator,
-                    identity: identity.map(|identity| node.at(identity)),
-                    step: node.at(*step),
-                    ambient,
-                });
-                pending.push(visit(*source));
+                children.extend([
+                    visit(*source),
+                    Step::Fold {
+                        binder: *binder,
+                        accumulator: *accumulator,
+                        identity: identity.map(|identity| node.at(identity)),
+                        step: node.at(*step),
+                        ambient,
+                    },
+                ]);
+                Exit::Pass
             }
             NodeKind::If {
                 condition,
                 then,
                 otherwise,
             } => {
-                pending.push(Task::If);
-                pending.push(visit(*otherwise));
-                pending.push(visit(*then));
-                pending.push(visit(*condition));
+                children.extend([visit(*condition), visit(*then), visit(*otherwise)]);
+                Exit::If
             }
             _ => {
-                let children = node.kind().children();
-                pending.push(Task::Collapse {
-                    count: children.len(),
+                let operands = node.kind().children();
+                let count = operands.len();
+                children.extend(operands.into_iter().map(visit));
+                Exit::Collapse {
+                    count,
                     read: None,
                     value: None,
-                });
-                pending.extend(children.into_iter().rev().map(visit));
+                }
             }
         }
+    }
+}
+
+impl<'n> quire_walk::Walk for Walk<'n> {
+    type Node = Step<'n>;
+    type Frame = Exit<'n>;
+    type Stop = Infallible;
+
+    fn enter(
+        &mut self,
+        step: Step<'n>,
+        children: &mut quire_walk::Children<'_, Step<'n>>,
+    ) -> ControlFlow<Infallible, Exit<'n>> {
+        ControlFlow::Continue(match step {
+            Step::Visit(node, ambient) => self.visit(node, ambient, children),
+            Step::Let(slot, body, ambient) => {
+                let bound = self.results.pop().flatten();
+                self.binders.insert(slot, bound);
+                children.push(Step::Visit(body, ambient));
+                Exit::Pass
+            }
+            Step::Query(slot, body, ambient) => {
+                let bound = self.results.pop().flatten();
+                self.binders.insert(slot, bound);
+                children.push(Step::Visit(body, ambient));
+                Exit::Collapse {
+                    count: 1,
+                    read: None,
+                    value: None,
+                }
+            }
+            Step::Fold {
+                binder,
+                accumulator,
+                identity,
+                step,
+                ambient,
+            } => {
+                let bound = self.results.pop().flatten();
+                self.binders.insert(binder, bound);
+                self.binders.insert(accumulator, None);
+                if let Some(identity) = identity {
+                    children.push(Step::Visit(identity, ambient));
+                }
+                children.push(Step::Visit(step, ambient));
+                Exit::Collapse {
+                    count: 1 + usize::from(identity.is_some()),
+                    read: None,
+                    value: None,
+                }
+            }
+        })
+    }
+
+    fn exit(&mut self, exit: Exit<'n>) -> ControlFlow<Infallible> {
+        match exit {
+            Exit::Pass => {}
+            Exit::Attribute(location, ambient) => {
+                let read = self.results.pop().flatten().unwrap_or(ambient);
+                self.reads.insert(location.clone(), read);
+                self.results.push(Some(read));
+            }
+            Exit::If => {
+                let otherwise = self.results.pop().flatten();
+                let then = self.results.pop().flatten();
+                self.results.pop();
+                self.results.push(then.filter(|_| then == otherwise));
+            }
+            Exit::Collapse { count, read, value } => {
+                self.results
+                    .truncate(self.results.len().saturating_sub(count));
+                if let Some((location, observation)) = read {
+                    self.reads.insert(location.clone(), observation);
+                }
+                self.results.push(value);
+            }
+        }
+        ControlFlow::Continue(())
     }
 }
