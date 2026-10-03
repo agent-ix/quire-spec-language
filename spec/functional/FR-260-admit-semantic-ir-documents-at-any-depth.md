@@ -37,7 +37,7 @@ limit (ADR-030 D-4.6).
    carrying the reader's byte offset. A lone surrogate escape is one such
    refusal. FR-154 admission does not surface that refusal: it digests the
    bytes the reader refuses raw (FR-056), so they refuse
-   `stale_dependency`/`content-mismatch` or
+   `stale_dependency`/`byte-digest-mismatch` or
    `invalid_model_binding`/`wrong-model-selection` there.
 5. **Byte limit.** When the document is longer than `intake.input_bytes`,
    intake SHALL refuse it as `resource_exhausted`/`intake-limit-exceeded`
