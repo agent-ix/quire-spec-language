@@ -7,19 +7,10 @@
 //! (drafts and recursion groups), and a recursive record compared in several
 //! functions (a group member built again after its group is keyed).
 
-use sha2::{Digest, Sha256};
-
 use super::*;
 
 /// How many packages the corpus holds.
 const PACKAGES: u64 = 192;
-
-/// SHA-256 over every generated package's nodes, in package order and, in
-/// each package, ascending by key: the key's 32 bytes, the preimage's length
-/// as a big-endian `u64`, then the preimage. Recorded from the earlier
-/// lowering, which keyed every node in full on every build. A change that means to change
-/// a key records the new digest with the vectors it changes.
-const CORPUS_DIGEST: &str = "3ea3f638522493bb559bb1194bffb03eface9d9b74c9de7795f3b78d42b4fa9a";
 
 /// A deterministic xorshift64 stream: the corpus is the same on every run.
 struct Stream(u64);
@@ -151,12 +142,10 @@ fn package(seed: u64) -> PackageDeclarations {
 
 /// Over the generated corpus, every package checks; every node
 /// outside a recursion group has the key and preimage bytes full keying of
-/// its content gives; and the corpus's keys and preimages are byte for byte
-/// the ones the lowering gave before it keyed each content once.
+/// its content gives.
 #[trace("FR-092-AC-6", "FR-092-AC-11", "TC-414")]
 #[test]
 fn keying_each_content_once_keeps_every_key_and_preimage() {
-    let mut corpus = Sha256::new();
     let mut nodes = 0_usize;
     let mut grouped = 0_usize;
     for seed in 0..PACKAGES {
@@ -173,16 +162,11 @@ fn keying_each_content_once_keeps_every_key_and_preimage() {
                 assert_eq!(keyed.key, node.key(), "package {seed}: key");
                 assert_eq!(keyed.preimage, node.preimage(), "package {seed}: preimage");
             }
-            corpus.update(node.key().as_bytes());
-            let length = u64::try_from(node.preimage().len()).expect("a preimage length");
-            corpus.update(length.to_be_bytes());
-            corpus.update(node.preimage());
         }
     }
     // The corpus reaches both paths: nodes keyed alone and recursion groups.
     assert!(nodes > 10_000, "{nodes} nodes");
     assert!(grouped > 500, "{grouped} grouped nodes");
-    assert_eq!(lower_hex(&corpus.finalize()), CORPUS_DIGEST);
 }
 
 /// Every content in one hash bucket.

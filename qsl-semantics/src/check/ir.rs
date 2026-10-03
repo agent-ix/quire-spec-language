@@ -357,8 +357,8 @@ pub enum OrderedKind {
 /// A checked literal's value. Two literals are equal when their canonical
 /// keys are: [`Value`] has no structural equality of its own. A value with
 /// no canonical key (one that holds a float, which ADR-013 O-13 excludes
-/// from `=`) is equal to another exactly when the two print identically, bit
-/// pattern for bit pattern, so a literal always equals its own clone.
+/// from `=`) is equal to another exactly when the two encode identically
+/// (see [`same_encoding`]), so a literal always equals its own clone.
 #[derive(Clone, Debug)]
 pub struct CheckedLiteral(pub Value);
 
@@ -366,9 +366,69 @@ impl PartialEq for CheckedLiteral {
     fn eq(&self, other: &Self) -> bool {
         match quire_exact::compare_keys(&self.0, &other.0) {
             Some(order) => order == std::cmp::Ordering::Equal,
-            None => format!("{:?}", self.0) == format!("{:?}", other.0),
+            None => same_encoding(&self.0, &other.0),
         }
     }
+}
+
+/// Whether `left` and `right` hold the same typed encoding: the same
+/// kinds, types and members, a float by width and bit pattern. Walked from
+/// an explicit stack, comparing exactly the members a replay deciding
+/// element writes. The writer itself lives in `qsl-replay`, downstream of
+/// this crate.
+fn same_encoding(left: &Value, right: &Value) -> bool {
+    use quire_exact::FieldValue;
+    let mut pending = vec![(left, right)];
+    while let Some((left, right)) = pending.pop() {
+        match (left, right) {
+            (Value::Float(left), Value::Float(right)) => {
+                if left.width() != right.width() || left.bits() != right.bits() {
+                    return false;
+                }
+            }
+            (Value::Option(left), Value::Option(right)) => {
+                if left.payload_type() != right.payload_type() {
+                    return false;
+                }
+                match (left.payload(), right.payload()) {
+                    (None, None) => {}
+                    (Some(left), Some(right)) => pending.push((left, right)),
+                    _ => return false,
+                }
+            }
+            (Value::Composite(left), Value::Composite(right)) => {
+                if left.declaration() != right.declaration()
+                    || left.slots().len() != right.slots().len()
+                {
+                    return false;
+                }
+                for (left, right) in left.slots().iter().zip(right.slots()) {
+                    match (left, right) {
+                        (FieldValue::Present(left), FieldValue::Present(right)) => {
+                            pending.push((left, right));
+                        }
+                        (FieldValue::Absent, FieldValue::Absent)
+                        | (FieldValue::Null, FieldValue::Null) => {}
+                        _ => return false,
+                    }
+                }
+            }
+            (Value::Collection(left), Value::Collection(right)) => {
+                if left.collection_type() != right.collection_type()
+                    || left.elements().len() != right.elements().len()
+                {
+                    return false;
+                }
+                pending.extend(left.elements().iter().zip(right.elements()));
+            }
+            (left, right) => {
+                if quire_exact::compare_keys(left, right) != Some(std::cmp::Ordering::Equal) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// One record slot in declaration order.
@@ -935,16 +995,31 @@ mod tests {
         builder.finish(node(NodeKind::Negate(operand)))
     }
 
-    /// A literal holding a float has no canonical key, and still equals its
-    /// own clone and differs from another bit pattern.
+    /// A literal holding a float, alone or inside an option, has no
+    /// canonical key, and still equals its own clone and differs from
+    /// another bit pattern.
     #[trace("TC-725", "FR-258-AC-1")]
     #[test]
     fn a_float_literal_equals_its_clone_and_differs_by_bit_pattern() {
-        let float = |bits| CheckedLiteral(Value::Float(quire_exact::IeeeValue::binary64(bits)));
-        let nan = float(0x7ff8_0000_0000_0001);
+        let float = |bits| Value::Float(quire_exact::IeeeValue::binary64(bits));
+        let option = |bits| {
+            quire_exact::OptionValue::present(
+                quire_exact::ValueType::Float(quire_exact::FloatType::new(
+                    quire_exact::IeeeWidth::Binary64,
+                    quire_exact::RoundingMode::Exact,
+                )),
+                float(bits),
+            )
+            .expect("the payload fits its type")
+        };
+        let nan = CheckedLiteral(float(0x7ff8_0000_0000_0001));
         assert!(quire_exact::compare_keys(&nan.0, &nan.0).is_none());
         assert_eq!(nan, nan.clone());
-        assert_ne!(nan, float(0x7ff8_0000_0000_0002));
+        assert_ne!(nan, CheckedLiteral(float(0x7ff8_0000_0000_0002)));
+        assert_ne!(nan, CheckedLiteral(float(0x3ff0_0000_0000_0000)));
+        let nested = CheckedLiteral(option(0x7ff8_0000_0000_0001));
+        assert_eq!(nested, nested.clone());
+        assert_ne!(nested, CheckedLiteral(option(0x7ff8_0000_0000_0002)));
     }
 
     /// FR-258 behaviour 2: a 100,000-deep checked body clones, compares

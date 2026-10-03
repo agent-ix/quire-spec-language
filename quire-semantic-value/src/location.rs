@@ -271,7 +271,8 @@ impl fmt::Debug for Location {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Location")
             .field("origin", &self.origin)
-            .field("path", &self.path())
+            .field("depth", &self.depth())
+            .field("last_index", &self.last_index())
             .finish()
     }
 }

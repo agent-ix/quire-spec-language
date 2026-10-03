@@ -1247,7 +1247,7 @@ fn tc_744_a_failed_separation_check_disagrees_naming_its_step() {
 fn codec_unit() -> Unit {
     let text = format!(
         "{}record Point {{ x: Int[0, 9]; y: Int[0, 9]; }}\n\
-         record Gaps {{ a?: Int[0, 9]; b?: Int[0, 9]; c: Int[0, 9]; }}\n\
+         record Gaps {{ first?: Int[0, 9]; second?: Int[0, 9]; third: Int[0, 9]; }}\n\
          record Chain {{ next?: Chain; }}\n",
         witness_unit_text()
     );
