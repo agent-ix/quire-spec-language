@@ -512,7 +512,7 @@ Key: `90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7`
 
 Key: `41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef`
 
-**G16**: `record Node`, ordinal 0
+**G16**: `record Node`, ordinal 1
 
 ```json
 {"body":{"members":[{"name":"label","term":"binding","value":{"target":{"digest":"90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Node"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -520,7 +520,7 @@ Key: `41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef`
 
 Key: `254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92`
 
-**G17**: `Option<Node>`, ordinal 1
+**G17**: `Option<Node>`, ordinal 0
 
 ```json
 {"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -531,12 +531,12 @@ Key: `bed40a03a87c4e458b5f7676994e0af4f70618ca8b3a1871705030513487d61a`
 **G18**: `Option<A>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":1,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":3,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":0,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `bbe19be83cc74f05b9c2e6f10c21382bb9541cd23dbd8f58595f871664f9289a`
+Key: `f9c7262322e073156d9dc0ef5d3c445f91b761d3703aac962dba56d04fc41724`
 
-**G19**: `record B`, ordinal 1
+**G19**: `record B`, ordinal 2
 
 ```json
 {"body":{"members":[{"name":"tag","term":"binding","value":{"target":{"digest":"41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"a","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["B"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":2,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -544,7 +544,7 @@ Key: `bbe19be83cc74f05b9c2e6f10c21382bb9541cd23dbd8f58595f871664f9289a`
 
 Key: `212816792d8849f2bb0a34d5120c0c629592c4ae41f7979183f9e88caa6fdfa9`
 
-**G20**: `record A`, ordinal 2
+**G20**: `record A`, ordinal 3
 
 ```json
 {"body":{"members":[{"name":"name","term":"binding","value":{"target":{"digest":"90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["A"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":3,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -552,7 +552,7 @@ Key: `212816792d8849f2bb0a34d5120c0c629592c4ae41f7979183f9e88caa6fdfa9`
 
 Key: `e304bb361f848ec82a005b094230c80b849cb6a324e2b8bf70c7a48b9409d549`
 
-**G21**: `Option<B>`, ordinal 3
+**G21**: `Option<B>`, ordinal 1
 
 ```json
 {"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":1,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -666,19 +666,19 @@ Key: `676d25d447e1bfc754a7a442e57f1d73cf40a5173d32e5aa1d3f7f2e9f7d0ae0`
 
 G16-G17, group digest `4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G16 `Node` | `48941cd392fb2016446dcf8d97800d86c49aa8245cf24059b1898720f7f48c22` | `7a49f3f01641ff7adf2eea5f8c494c0a82d536535da4123194f9c56c4f23166e` |
-| 1 | G17 `Option<Node>` | `581d248695dafdd3eaa1e684a6ff9085b68d9f192adfa77cf9d5162ca8048266` | `c2ed1d827853bc7815578d453189cff97a1cf9751934e6d0a591a3d8312f5c69` |
+| Ordinal | Member |
+|---|---|
+| 0 | G17 `Option<Node>` |
+| 1 | G16 `Node` |
 
 G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G18 `Option<A>` | `12b7c54627ccf76f4aea35baad2db8f0fb96198bcf4b2a7c2175344d2b24b87d` | `9fda411f5813f0a323845e7683ac88c9cda6046391b4d56b262426937ce03326` |
-| 1 | G19 `B` | `184d0868899c7e726ab53ad66f8e4c3d052cbd74719a4217885a169ea42d0ecb` | `6e0ba537121f0427ff289ba7cefd2f922a80662047290af8a557f4a1e3ccb731` |
-| 2 | G20 `A` | `36833168fd92bea4e7c82f9f6f5159d8a8f2eec3b2d6522ba6be5d1be5c7ff36` | `ca73f785d623459b510ed8e012d359387abaa9fdbb48e1020a3724e8a12eab04` |
-| 3 | G21 `Option<B>` | `5049b247603f321a7904b9548e7e679a988fea550900a0afadb405afec1ab97c` | `225dd48ffda2cef36053d63e818df1b3d1725776b1ebb96580b3cf218f43bfd2` |
+| Ordinal | Member |
+|---|---|
+| 0 | G18 `Option<A>` |
+| 1 | G21 `Option<B>` |
+| 2 | G19 `B` |
+| 3 | G20 `A` |
 
 ## Constraints
 

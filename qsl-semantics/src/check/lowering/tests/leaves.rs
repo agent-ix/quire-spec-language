@@ -19,13 +19,6 @@ fn fr093_vectors() -> BTreeMap<String, (String, String)> {
 
 /// Assert `graph` holds FR-093 vector `name`, bytes and key.
 fn assert_fr093(graph: &SemanticGraph, name: &str) {
-    {
-        use std::io::Write;
-        let mut log = std::fs::OpenOptions::new().create(true).append(true).open("/home/peter/dev/worktrees/logs/qsl-483-nodes.tsv").unwrap();
-        for node in graph.nodes() {
-            writeln!(log, "{}\t{}", node.key(), std::str::from_utf8(node.preimage()).unwrap()).unwrap();
-        }
-    }
     let (key, preimage) = &fr093_vectors()[name];
     let node = node_by_key(graph, key);
     assert_eq!(
@@ -152,6 +145,50 @@ fn vector_lock() -> LockEvidence {
     LockEvidence::default().with_text_profile(vector_text_definition())
 }
 
+/// FR-093's key table, headings, ordinals, group tables and vectors agree.
+#[trace("FR-093-AC-10", "TC-415")]
+#[test]
+fn fr_093_published_tables_agree_with_its_vectors() {
+    assert_published_tables_agree(FR_093);
+}
+
+/// The node of `graph` a recursion-group vector's label names: `record X`
+/// or `Option<X>`, found by what it declares and holds, not by its key.
+fn named_group_node<'g>(graph: &'g SemanticGraph, label: &str) -> Option<&'g SemanticNode> {
+    let record = |name: &str| {
+        graph.nodes().find(|node| {
+            node.semantic_form() == "record"
+                && node.recursion().is_some()
+                && preimage(node)["declaration"]["qualified_name"] == json!([name])
+        })
+    };
+    match label
+        .strip_prefix("Option<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        Some(inner) => {
+            let member = preimage(record(inner)?);
+            graph.nodes().find(|node| {
+                let held = preimage(node);
+                node.semantic_form() == "option"
+                    && held["recursion"]["group"] == member["recursion"]["group"]
+                    && held["body"]["members"][0]
+                        == json!({"ordinal": member["recursion"]["ordinal"], "term": "group_reference"})
+            })
+        }
+        None => record(label.strip_prefix("record ")?),
+    }
+}
+
+/// The label a vector heading puts in backticks: `Option<A>` of
+/// "`Option<A>`, ordinal 0".
+fn heading_label(description: &str) -> &str {
+    description
+        .split('`')
+        .nth(1)
+        .expect("a heading names its node in backticks")
+}
+
 /// TC-415 step 8 (FR-093-AC-10): `eq`, `has`, `eqa` and `eqo` check, and
 /// their nodes key to the Recursive text-leaf vectors, with `A` declared
 /// before `B` and after it.
@@ -173,6 +210,21 @@ fn recursive_text_leaf_vectors_check_and_key() {
         let graph = checked.semantic_graph();
         for vector in all {
             assert_fr093(graph, vector);
+        }
+        // Each recursion-group vector is the node its heading names, found
+        // in the graph by what it declares and holds, never by its own key.
+        let descriptions = spec_descriptions(FR_093);
+        for vector in ["G16", "G17", "G18", "G19", "G20", "G21"] {
+            let label = heading_label(&descriptions[vector]);
+            let node = named_group_node(graph, label)
+                .unwrap_or_else(|| panic!("{vector}: the graph holds no {label}"));
+            let (key, text) = &fr093_vectors()[vector];
+            assert_eq!(&node.key().to_string(), key, "{vector} ({label}): key");
+            assert_eq!(
+                std::str::from_utf8(node.preimage()).expect("UTF-8"),
+                text,
+                "{vector} ({label}): preimage bytes"
+            );
         }
         keys.push(graph.nodes().map(SemanticNode::key).collect::<Vec<_>>());
     }

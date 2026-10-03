@@ -73,19 +73,155 @@ fn spec_vectors(spec: &str) -> BTreeMap<String, (String, String)> {
     vectors
 }
 
+/// The heading text after `**name**: ` of each golden vector `spec`
+/// publishes.
+fn spec_descriptions(spec: &str) -> BTreeMap<String, String> {
+    spec.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("**")?;
+            let (name, description) = rest.split_once("**: ")?;
+            Some((name.to_owned(), description.to_owned()))
+        })
+        .collect()
+}
+
+/// `spec`'s vector-key table rows, `| name | description | `key` |`.
+fn key_table_rows(spec: &str) -> Vec<(String, String, String)> {
+    spec.lines()
+        .filter_map(|line| {
+            let cells: Vec<&str> = line
+                .strip_prefix("| ")?
+                .strip_suffix(" |")?
+                .split(" | ")
+                .collect();
+            let [name, description, key] = cells[..] else {
+                return None;
+            };
+            let key = key.strip_prefix('`')?.strip_suffix('`')?;
+            Some((name.to_owned(), description.to_owned(), key.to_owned()))
+        })
+        .filter(|(_, _, key)| key.len() == 64)
+        .collect()
+}
+
+/// `spec`'s recursion-group tables: each group's digest and its rows, an
+/// ordinal and the member's vector name.
+fn group_tables(spec: &str) -> Vec<(String, Vec<(u64, String)>)> {
+    let mut tables = Vec::new();
+    let mut lines = spec.lines().peekable();
+    while let Some(line) = lines.next() {
+        let Some((_, rest)) = line.split_once(", group digest `") else {
+            continue;
+        };
+        let Some(digest) = rest.strip_suffix("`:") else {
+            continue;
+        };
+        let mut rows = Vec::new();
+        for row in lines.by_ref().skip(3) {
+            let Some(row) = row.strip_prefix("| ") else {
+                break;
+            };
+            let mut cells = row.split(" | ");
+            let ordinal = cells
+                .next()
+                .and_then(|cell| cell.parse().ok())
+                .expect("an ordinal");
+            let member = cells.next().expect("a member");
+            let name = member.split(' ').next().expect("a vector name");
+            rows.push((ordinal, name.to_owned()));
+        }
+        tables.push((digest.to_owned(), rows));
+    }
+    tables
+}
+
+/// Every table `spec` publishes about its golden vectors agrees with the
+/// vectors: the key table with each heading and key, each heading's ordinal
+/// and each group table's ordinals and digest with the vector's preimage,
+/// and no two vectors share a key.
+fn assert_published_tables_agree(spec: &str) {
+    let vectors = spec_vectors(spec);
+    let descriptions = spec_descriptions(spec);
+    let keys: std::collections::BTreeSet<&String> = vectors.values().map(|(key, _)| key).collect();
+    assert_eq!(keys.len(), vectors.len(), "two vectors share a key");
+    for (name, description, key) in key_table_rows(spec) {
+        let Some((vector_key, _)) = vectors.get(&name) else {
+            continue;
+        };
+        assert_eq!(&key, vector_key, "{name}: the key table's key");
+        assert_eq!(
+            Some(&description),
+            descriptions.get(&name),
+            "{name}: the key table's description"
+        );
+    }
+    let recursion = |name: &str| -> Json {
+        serde_json::from_str::<Json>(&vectors[name].1).expect("a preimage is JSON")["recursion"]
+            .clone()
+    };
+    for (name, description) in &descriptions {
+        let Some(ordinal) = description
+            .split("ordinal ")
+            .nth(1)
+            .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|digits| digits.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        if vectors.contains_key(name) {
+            assert_eq!(
+                recursion(name)["ordinal"],
+                json!(ordinal),
+                "{name}: the heading's ordinal"
+            );
+        }
+    }
+    let mut in_tables = std::collections::BTreeSet::new();
+    for (digest, rows) in group_tables(spec) {
+        for (ordinal, name) in rows {
+            let recursion = recursion(&name);
+            assert_eq!(
+                recursion["ordinal"],
+                json!(ordinal),
+                "{name}: its table's ordinal"
+            );
+            if !recursion["group"].is_null() {
+                assert_eq!(
+                    recursion["group"],
+                    json!(digest),
+                    "{name}: its table's digest"
+                );
+            }
+            assert!(
+                in_tables.insert(name.clone()),
+                "{name} is in two group tables"
+            );
+        }
+    }
+    let grouped: std::collections::BTreeSet<String> = vectors
+        .keys()
+        .filter(|name| !recursion(name).is_null())
+        .cloned()
+        .collect();
+    assert_eq!(
+        in_tables, grouped,
+        "every grouped vector is in a group table"
+    );
+}
+
+/// FR-092's key table, headings, ordinals, group tables and vectors agree.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn fr_092_published_tables_agree_with_its_vectors() {
+    assert_published_tables_agree(FR_092);
+}
+
 fn vector_key(name: &str) -> String {
     vectors()[name].0.clone()
 }
 
 /// Assert `node` is vector `name`, bytes and key.
 fn assert_vector(graph: &SemanticGraph, key: NodeKey, name: &str) {
-    {
-        use std::io::Write;
-        let mut log = std::fs::OpenOptions::new().create(true).append(true).open("/home/peter/dev/worktrees/logs/qsl-483-nodes.tsv").unwrap();
-        for node in graph.nodes() {
-            writeln!(log, "{}\t{}", node.key(), std::str::from_utf8(node.preimage()).unwrap()).unwrap();
-        }
-    }
     let (expected_key, expected_preimage) = &vectors()[name];
     let node = graph
         .node(key)
