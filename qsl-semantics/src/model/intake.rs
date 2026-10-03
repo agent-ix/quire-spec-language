@@ -5540,9 +5540,10 @@ mod tests {
         );
     }
 
-    /// PR #379 review F4: the tree and JCS bytes the one parse derives equal
-    /// what `serde_json::from_slice` reads from the same bytes, for numbers
-    /// at every edge and every string escape.
+    /// PR #379 review F4: the tree the one parse derives, and the digest it
+    /// takes, equal what `serde_json::from_slice` reads from the same bytes
+    /// and the RFC 8785 digest of that value, for numbers at every edge and
+    /// every string escape.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn the_one_parse_reads_what_serde_json_reads() {
@@ -5581,7 +5582,11 @@ mod tests {
             match (PackageDocument::parse(text.as_bytes()), expected) {
                 (Ok(document), Ok(expected)) => {
                     assert_eq!(document.tree(), &expected, "{text}");
-                    assert_eq!(canonical(document.tree()), canonical(&expected), "{text}");
+                    assert_eq!(
+                        document.jcs_digest(),
+                        digest_of(&canonical(&expected)),
+                        "{text}"
+                    );
                 }
                 (Err(_), Err(_)) => assert!(text.ends_with("1e400"), "{text}: both refused"),
                 (parsed, expected) => {
