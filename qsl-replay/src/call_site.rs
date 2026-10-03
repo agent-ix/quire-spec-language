@@ -26,7 +26,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
-use quire_exact::{Identifier, NodeKey};
+use quire_exact::{Identifier, NodeKey, Origin, Role};
 
 use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
@@ -101,6 +101,14 @@ pub struct CallSite<S> {
 /// A function's parameters in the compiled package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSite {
+    /// The compiled graph's `function` node whose `declaration` is the
+    /// selected function: the function node id member of the function
+    /// contract obligation's ADR-013 O-09 preimage (FR-121-AC-15).
+    pub function: WireNodeId,
+    /// The function node's `declaration` occurrence at ordinal 0, the
+    /// declaration occurrence member of that preimage. Its source span is
+    /// not part of it.
+    pub declaration: OccurrenceKey,
     /// The parameters, in declared order. Each pair is the parameter's
     /// declared name and the `WireNodeId` a `CanonicalAssignment::parameter`
     /// or a witness transcript names to bind that parameter's argument --
@@ -411,7 +419,12 @@ impl sealed::Locate for QualifiedName {
                 ))
             })
             .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
-        Ok(FunctionSite { parameters })
+        let function = wire_id(callable.identity);
+        Ok(FunctionSite {
+            function,
+            declaration: OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0)),
+            parameters,
+        })
     }
 }
 

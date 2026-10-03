@@ -338,6 +338,117 @@ fn call_site_locates_a_state_clause_by_name() {
     }
 }
 
+/// The node keys of `graph`'s `function` nodes whose `declaration` is
+/// `name`, read by scanning the graph rather than through `callable`, the
+/// lookup `call_site` itself uses.
+fn function_nodes_declaring(
+    graph: &qsl_semantics::check::CheckedGraph,
+    name: &str,
+) -> Vec<WireNodeId> {
+    graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::Function
+                && node.declaration().is_some_and(|declaration| {
+                    declaration.len() == 1 && declaration[0].as_str() == name
+                })
+        })
+        .map(|node| wire(node.key()))
+        .collect()
+}
+
+/// FR-121-AC-15 (TC-516 step 15): `p` and `q` share one parameter node and
+/// differ in `function`; each `function` is the graph's `function` node
+/// declaring it and `declaration` is the occurrence a client builds through
+/// the facade; a comment and blank lines before `p` change neither; and
+/// `sameIdentity`'s `function` is no clause node of the AC-6 unit.
+#[trace("TC-516", "FR-121-AC-15")]
+#[test]
+fn function_site_names_its_function_node_and_declaration_occurrence() {
+    const PQ: &str = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
+        function p using v(x: Int[0, 9]): Boolean pure { x < 5 }\n\
+        function q using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
+    let site = |unit: &str, name: &str| {
+        call_site(
+            source(),
+            "pq.native",
+            unit.as_bytes(),
+            [],
+            &DependencyInput::default(),
+            &crate::QualifiedName::new(vec![identifier(name)]).unwrap(),
+        )
+        .unwrap_or_else(|refusal| panic!("{name} is declared: {refusal:?}"))
+        .site
+    };
+    let compiled = compile(
+        source(),
+        "pq.native",
+        PQ.as_bytes(),
+        &qsl_semantics::model::intake::package_input([]),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the unit compiles");
+    let graph = compiled.package.graph();
+
+    let p = site(PQ, "p");
+    let q = site(PQ, "q");
+    assert_eq!(vec![p.function], function_nodes_declaring(graph, "p"));
+    assert_eq!(vec![q.function], function_nodes_declaring(graph, "q"));
+    assert_eq!(
+        p.declaration,
+        OccurrenceKey::new(p.function, Origin::new(Role::new("declaration"), 0))
+    );
+    assert_eq!(
+        q.declaration,
+        OccurrenceKey::new(q.function, Origin::new(Role::new("declaration"), 0))
+    );
+    assert_eq!(p.parameters, q.parameters, "one shared parameter node");
+    assert_ne!(p.function, q.function);
+    assert_ne!(p.declaration, q.declaration);
+
+    let shifted = PQ.replacen("function p", "// a comment\n\n\nfunction p", 1);
+    let moved = site(&shifted, "p");
+    assert_eq!(moved.function, p.function);
+    assert_eq!(moved.declaration, p.declaration);
+
+    let (unit, document) = two_operation_unit(true);
+    let same_identity = locate(
+        &unit,
+        &document,
+        &crate::QualifiedName::new(vec![identifier("sameIdentity")]).unwrap(),
+    )
+    .expect("sameIdentity is declared")
+    .site;
+    let mut clause_nodes = Vec::new();
+    for name in [
+        "ParentOrder",
+        "NoCycle",
+        "AttemptPre",
+        "VersionUnchanged",
+        "ProbeUnchanged",
+    ] {
+        clause_nodes.push(
+            locate(&unit, &document, &ClauseName(identifier(name)))
+                .expect("the clause is declared")
+                .site
+                .node,
+        );
+    }
+    for operation_name in ["attemptUpdate", "probe"] {
+        let operation_site = locate(
+            &unit,
+            &document,
+            &operation("Config", "ConfigVersion", operation_name),
+        )
+        .expect("the operation is named");
+        clause_nodes.extend(operation_site.site.clauses.iter().map(|clause| clause.node));
+    }
+    assert!(!clause_nodes.contains(&same_identity.function));
+}
+
 /// FR-121-AC-9: a unit whose `model` declaration selects a domain package
 /// the supplied documents do not hold refuses `ModelIntake`, naming the
 /// declaration's alias.
