@@ -12,7 +12,7 @@ relationships:
 
 Verify that the checker types, lowers and emits 100,000-deep expressions
 over arenas and explicit stacks, and that every emitted body is in FR-322's
-stratified grammar.
+five-stratum grammar.
 
 Scope: FR-258-AC-1, FR-258-AC-5.
 
@@ -24,9 +24,10 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
    whose body is a 100,000-long `else if` chain and one whose body is
    100,000 nested `let`s, each with S1 and S3 limits raised to fit it.
    Recompute each emitted node's key from its preimage. Clone each checked
-   package, compare it with its clone, format it for debug and drop both.
+   function body and the lowered graph, compare each with its clone, format
+   the checked package for debug and drop all of them.
 2. Walk every node body of the checked packages of step 1 and of TC-415,
-   classifying each position as Leaf, Group, Member or Body.
+   classifying each position as Leaf, Group, Tuple, Member or Body.
 
 Tag the tests `#[trace("TC-725", "FR-258-AC-1")]`, `#[trace("TC-725", "FR-258-AC-5")]`.
 
@@ -40,4 +41,12 @@ Tag the tests `#[trace("TC-725", "FR-258-AC-1")]`, `#[trace("TC-725", "FR-258-AC
 
 ## Status
 
-Planned.
+Backed. Step 1: `a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack`
+(`qsl-package/src/emit/tests/deep_bodies.rs`, from source through S1) and
+`a_100000_deep_checked_body_clones_compares_formats_and_drops_on_a_small_stack`
+(`qsl-semantics/src/check/ir.rs`). Step 2:
+`every_lowered_body_is_in_the_stratified_grammar`
+(`qsl-semantics/src/check/lowering/tests/deep_bodies.rs`) for TC-415, the
+same walk inside the step 1 test for AC-1, and
+`the_stratum_walk_refuses_a_nested_composite`
+(`qsl-semantics/src/check/stratum.rs`) for the oracle itself.

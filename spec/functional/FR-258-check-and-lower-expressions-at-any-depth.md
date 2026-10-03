@@ -78,9 +78,9 @@ for checking; this requirement carries that rule through QSL's checker.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-258-AC-1 | On a thread with a 512 KiB stack, a function whose body is a 100,000-term sum, one whose body is a 100,000-long `else if` chain and one whose body is 100,000 nested `let`s each check, lower and emit under S1 and S3 limits raised to fit them. Each emitted node's key recomputed from its preimage equals its `node_id`. The checked package clones, compares equal to its clone, formats for debug and drops on the same thread. | Test (TC-725) |
-| FR-258-AC-2 | On a thread with a 512 KiB stack, structural equality over a parameter typed with 100,000 nested `Option`s around `Text[0, 8; nfc]`, and over a chain of 100,000 records each holding the next in a field and the last holding a `Text[0, 8; nfc]` field, each lowers with one text leaf whose path has one segment per level, under S1 and S3 limits raised to fit it. A parameter typed with 100,000 nested `Option`s around `Boolean` is keyed by FR-092's type-keying walk on the same thread. | Test (TC-726) |
+| FR-258-AC-2 | On a thread with a 512 KiB stack, structural equality over a parameter typed with 100,000 nested `Option`s around `Text[0, 8; nfc]`, and over a chain of 100,000 records each holding the next in an optional field `next` and the last holding a `Text[0, 8; nfc]` field `label`, each lowers with one text leaf, under S1 and S3 limits raised to fit it: the `Option` chain's path has one `inner` segment per level, and the record chain's has two per level (`field:next`, `inner`) and ends `field:label`. A parameter typed with 100,000 nested `Option`s around `Boolean` is keyed by FR-092's type-keying walk on the same thread. | Test (TC-726) |
 | FR-258-AC-3 | At the default limits, a function whose body is the longest `a and (…)` chain S1's defaults admit checks, lowers and emits with no outcome naming a depth. `CheckingLimits::default()` holds 100000 nodes, 16777216 preimage bytes and 16777216 work units, and constructing `CheckingLimits` with any node count succeeds. | Test (TC-727) |
-| FR-258-AC-4 | A function whose body is a 1,000-term sum (1,999 expression nodes), checked with `s3.nodes` at 1,500, stops with `stage_limit_exceeded`/`node-count-exceeded` naming bound 1,500, count 1,501 and setting `s3.nodes`, at the node whose entry failed. Checked again with `s3.nodes` at 5,000 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation given `s3.nodes=5000`, it checks each time. The same holds for `s3.work_units` with a work budget one below the body's measured work. | Test (TC-727) |
+| FR-258-AC-4 | A function whose body is a 1,000-term sum (1,999 expression nodes), checked with `s3.nodes` at 1,500, stops with `stage_limit_exceeded`/`node-count-exceeded` naming bound 1,500, count 1,501 and setting `s3.nodes`, at the node whose entry failed. Checked again with `s3.nodes` at 5,000 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation given `s3.nodes=5000`, it checks each time. With `s3.work_units` one below the declaration's measured work `w`, it stops with `stage_limit_exceeded`/`work-budget-exceeded` naming bound `w - 1`, count `w` and setting `s3.work_units`, at the declaration's span: the work charge is made once per declaration, not per node. At `w` the declaration's own charge is admitted, and the stop is a later lowering charge. | Test (TC-727) |
 | FR-258-AC-5 | Every node body lowering writes is in QSpec FR-322's five-stratum v2 body grammar (Leaf, Group, Tuple, Member, Body): across the checked packages of TC-415 and of AC-1, no `application` argument, `aggregate` member or `binding` value holds a term of its own stratum or a higher one, no `binding` holds a `binding`, and every composite subterm is a `reference` to its own node. | Test (TC-725) |
 
 ## Dependencies
@@ -99,6 +99,14 @@ for checking; this requirement carries that rule through QSL's checker.
 - [FR-356](FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)
   defines arena order, the walker toolkit and the deep tests on every
   public core entry point.
+
+## Status
+
+- FR-258-AC-1, AC-2, AC-3 and AC-5: backed (TC-725, TC-726, TC-727).
+- FR-258-AC-4: the node stop and the work stop through package checking and
+  the library builder are backed (TC-727). Remainder: B5 (the setting names
+  `s3.nodes` and `s3.work_units` in an outcome, the replay request's
+  `stage_limits` entry and FR-255's settings operation).
 
 ## References
 

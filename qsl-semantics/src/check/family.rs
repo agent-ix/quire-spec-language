@@ -3385,99 +3385,54 @@ mod locus_tests {
         (unit, text)
     }
 
-    /// The outcome of checking [`sum_unit`]'s function under `checking` and
-    /// `meter`, located through its regions.
-    fn check_sum(
-        unit: &PackageDeclarations,
-        checking: CheckingLimits,
-        meter: &mut Meter,
-    ) -> crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal> {
-        let scope = empty_scope();
-        let signatures = Signatures::default();
-        let own_signature = Signature {
-            name: "f".to_owned(),
-            parameters: Vec::new(),
-            result: ValueType::Integer,
-            callable_by_name: true,
-        };
-        let location = body_location();
-        let regions = unit.regions();
-        let declarations = ValueDeclarations {
-            regions: Some(&regions),
-            ..declarations_for(
-                &scope,
-                &signatures,
-                &own_signature,
-                &[],
-                checking,
-                &location,
-            )
-        };
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits(),
-            meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        ValueFunctionFamily::check(&unit.functions[0], &mut cx)
-    }
-
-    /// TC-727 step 2: the 1,000-term sum under a node limit of 1,500 stops
-    /// on the node limit, bound 1,500, count 1,501, at the `1` whose entry
-    /// failed; raised to 5,000 through the library builder, it checks.
+    /// TC-727 step 2: the 1,000-term sum under a node limit of 1,500, through
+    /// package checking, stops on the node limit, bound 1,500, count 1,501,
+    /// at the `1` whose entry failed; raised to 5,000 through the library
+    /// builder, it checks.
     #[trace("TC-727", "FR-258-AC-4")]
     #[test]
     fn a_1000_term_sum_stops_on_the_node_limit_at_the_failing_node() {
         let (unit, text) = sum_unit();
-        let exceeded = limit(check_sum(
-            &unit,
-            CheckingLimits::new(1_500),
-            &mut unlimited(),
-        ));
-        assert_eq!(
-            exceeded.catalog_code(),
-            CatalogCode::new("stage_limit_exceeded", "node-count-exceeded")
-        );
-        assert_eq!(exceeded.kind(), LimitKind::NodeCount);
-        assert_eq!(exceeded.configured_bound(), 1_500);
-        assert_eq!(exceeded.actual(), 1_501);
-        let Some(Locus::Region(region)) = exceeded.locus() else {
-            panic!("expected a region locus, got {:?}", exceeded.locus());
-        };
+        let (exceeded, region) = package_limit(unit, CheckingLimits::new(1_500));
+        assert_eq!(exceeded.kind, CheckingLimitKind::Nodes);
+        assert_eq!((exceeded.limit, exceeded.actual), (1_500, 1_501));
+        let region = region.expect("the stop is located");
         let start = usize::try_from(region.start()).unwrap();
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(&text[start..end], "1", "the node whose entry failed");
-        assert!(check_sum(&unit, CheckingLimits::new(5_000), &mut unlimited()).is_ok());
+        let (unit, _) = sum_unit();
+        assert!(unit.check(CheckingLimits::new(5_000)).is_ok());
     }
 
-    /// TC-727 step 3: the same sum under a work budget one below its
-    /// measured work `w` stops on the work budget, bound `w - 1`; at `w` it
-    /// checks.
+    /// TC-727 step 3: the same sum, through package checking, under a work
+    /// budget one below the declaration's measured work `w` stops on the work
+    /// budget, bound `w - 1`, count `w`, at the declaration's span (the
+    /// charge is made once per declaration, not per node). At `w` the
+    /// declaration's own charge is admitted: the stop is a later lowering
+    /// charge, located at a node.
     #[trace("TC-727", "FR-258-AC-4")]
     #[test]
     fn a_1000_term_sum_stops_on_a_work_budget_one_below_its_work() {
-        let (unit, _) = sum_unit();
+        let (unit, text) = sum_unit();
         let work = measure_resolved(&empty_scope(), &unit.functions[0]).work_budget;
-        let budget = |work_units| {
-            Meter::new(ScalarLimits {
-                work_units,
-                ..SCALAR_LIMITS_UNLIMITED
-            })
-        };
-        let exceeded = limit(check_sum(
-            &unit,
-            CheckingLimits::new(5_000),
-            &mut budget(work - 1),
-        ));
-        assert_eq!(
-            exceeded.catalog_code(),
-            CatalogCode::new("stage_limit_exceeded", "work-budget-exceeded")
+        let checking = |work_units| CheckingLimits::new(5_000).with_work_budget(work_units);
+        let (exceeded, region) = package_limit(unit, checking(work - 1));
+        assert_eq!(exceeded.kind, CheckingLimitKind::WorkBudget);
+        assert_eq!((exceeded.limit, exceeded.actual), (work - 1, u128::from(work)));
+        let region = region.expect("the stop is located at the declaration");
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert!(
+            text[start..end].starts_with("function f using v()"),
+            "the declaration's span, not a node's"
         );
-        assert_eq!(exceeded.configured_bound(), work - 1);
-        assert!(check_sum(&unit, CheckingLimits::new(5_000), &mut budget(work)).is_ok());
+
+        let (unit, _) = sum_unit();
+        let (admitted, _) = package_limit(unit, checking(work));
+        assert_eq!(admitted.kind, CheckingLimitKind::WorkBudget);
+        assert_eq!(admitted.limit, work);
+        assert!(admitted.actual > u128::from(work), "a lowering charge");
+        assert_eq!(admitted.region, None, "a lowering stop names no region");
     }
 
     /// TC-727 step 1: `CheckingLimits::default()` holds 100,000 nodes,

@@ -22,18 +22,24 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
 1. With S1 and S3 limits raised to fit, check structural equality over a
    parameter typed with 100,000 nested `Option`s around `Text[0, 8; nfc]`.
 2. With S1 and S3 limits raised to fit, check structural equality over a
-   chain of 100,000 records, each holding the next in a field, the last
-   holding a `Text[0, 8; nfc]` field.
+   chain of 100,000 records, each holding the next in an optional field
+   `next`, the last holding a `Text[0, 8; nfc]` field `label`.
 3. Key a parameter typed with 100,000 nested `Option`s around `Boolean`.
 
 Tag the tests `#[trace("TC-726", "FR-258-AC-2")]`.
 
 ## Expected Results
 
-- Steps 1 and 2: each equality lowers with one text leaf whose path has one
+- Step 1: the equality lowers with one text leaf whose path has one `inner`
   segment per level, and the thread completes.
+- Step 2: the equality lowers with one text leaf whose path has two
+  segments per level (`field:next`, then `inner`) and ends `field:label`, and
+  the thread completes.
 - Step 3: the parameter is keyed, and the thread completes.
 
 ## Status
 
-Planned.
+Backed: `a_100000_deep_option_lowers_its_text_leaf_on_a_small_stack`,
+`a_100000_record_chain_lowers_its_text_leaf_on_a_small_stack` and
+`a_100000_deep_option_type_keys_on_a_small_stack`
+(`qsl-semantics/src/check/lowering/tests/depth.rs`).

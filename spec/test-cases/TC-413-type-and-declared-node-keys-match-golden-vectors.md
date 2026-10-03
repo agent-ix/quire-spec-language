@@ -118,6 +118,7 @@ groups and the declared record's own key included.
 stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
 cause's code is always `stage_limit_exceeded` and its cause the limit kind's
 (`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-Step 5's present tests (`check/lowering/tests.rs`,
-`check/lowering/tests/depth.rs`) drive the depth limit ADR-030 deletes;
-step 5 as written above is planned.
+Step 5 is backed by `check/lowering/tests/depth.rs` and
+`check/lowering/tests/identity_depth.rs`: a 100,000-deep `Option` type keys
+on a 512 KiB stack to the keys it has on 8 MiB, and the 30-record and
+1,000-record chains check.
