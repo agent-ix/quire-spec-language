@@ -131,11 +131,11 @@ fn equality_package(
         vec![("a".to_owned(), operand()), ("b".to_owned(), operand())],
         TypeForm::builtin(BuiltinType::Boolean, SPAN),
         None,
-        Expression::Binary {
-            operator: BinaryOperator::Equal,
-            left: Box::new(Expression::Name("a".to_owned())),
-            right: Box::new(Expression::Name("b".to_owned())),
-        },
+        Expression::binary(
+            BinaryOperator::Equal,
+            Expression::name("a".to_owned()),
+            Expression::name("b".to_owned()),
+        ),
     );
     PackageDeclarations {
         types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),

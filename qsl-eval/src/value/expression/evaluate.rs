@@ -2482,10 +2482,10 @@ mod tests {
                 )],
                 TypeForm::builtin(qsl_forms::BuiltinType::Integer, SPAN),
                 None,
-                Expression::Size(Box::new(Expression::AllInstances {
-                    target: TypeForm::name("M::A", SPAN),
-                    population: Box::new(Expression::Name("p".to_owned())),
-                })),
+                Expression::size(Expression::all_instances(
+                    TypeForm::name("M::A", SPAN),
+                    Expression::name("p".to_owned()),
+                )),
             )],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
@@ -2586,10 +2586,10 @@ mod tests {
         let expression = graph
             .check_expression(
                 vec![("p".to_owned(), ValueType::Population(Some(3)))],
-                &Expression::AllInstances {
-                    target: TypeForm::name("M::A", SPAN),
-                    population: Box::new(Expression::Name("p".to_owned())),
-                },
+                &Expression::all_instances(
+                    TypeForm::name("M::A", SPAN),
+                    Expression::name("p".to_owned()),
+                ),
                 None,
                 CheckMode::Linked,
                 CheckingLimits::default(),
@@ -2663,12 +2663,12 @@ mod tests {
                     ("p".to_owned(), ValueType::Population(Some(3))),
                     ("r".to_owned(), ValueType::Reference(a)),
                 ],
-                &Expression::Lookup {
-                    target: TypeForm::name("M::A", SPAN),
-                    population: Box::new(Expression::Name("p".to_owned())),
-                    reference: Box::new(Expression::Name("r".to_owned())),
-                    absence: AbsenceMode::Refused,
-                },
+                &Expression::lookup(
+                    TypeForm::name("M::A", SPAN),
+                    Expression::name("p".to_owned()),
+                    Expression::name("r".to_owned()),
+                    AbsenceMode::Refused,
+                ),
                 None,
                 CheckMode::Linked,
                 CheckingLimits::default(),
@@ -2775,12 +2775,10 @@ mod tests {
         let expression = graph
             .check_expression(
                 vec![("r".to_owned(), ValueType::Reference(a))],
-                &Expression::Field {
-                    operand: Box::new(Expression::Deref(Box::new(Expression::Name(
-                        "r".to_owned(),
-                    )))),
-                    field: "x".to_owned(),
-                },
+                &Expression::field(
+                    Expression::deref(Expression::name("r".to_owned())),
+                    "x".to_owned(),
+                ),
                 None,
                 CheckMode::Linked,
                 CheckingLimits::default(),
@@ -2883,12 +2881,10 @@ mod tests {
         let expression = graph
             .check_expression(
                 vec![("r".to_owned(), ValueType::Reference(a))],
-                &Expression::Field {
-                    operand: Box::new(Expression::Deref(Box::new(Expression::Name(
-                        "r".to_owned(),
-                    )))),
-                    field: "x".to_owned(),
-                },
+                &Expression::field(
+                    Expression::deref(Expression::name("r".to_owned())),
+                    "x".to_owned(),
+                ),
                 None,
                 CheckMode::Linked,
                 CheckingLimits::default(),

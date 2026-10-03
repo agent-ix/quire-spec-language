@@ -431,11 +431,6 @@ mod tests {
         let span = Span { start: 0, end: 1 };
         let cases = [
             (
-                SyntaxLimit::NestingDepth { bound: 4 },
-                CompleteCode::StageLimitExceeded,
-                "nesting-depth-exceeded",
-            ),
-            (
                 SyntaxLimit::Nodes { bound: 4 },
                 CompleteCode::StageLimitExceeded,
                 "node-count-exceeded",

@@ -26,14 +26,17 @@ pub struct Limits {
     pub tokens: usize,
     /// Maximum CST nodes. Defaults to 50,000: complete-V1 parsing counts one
     /// node per matched grammar production.
+    ///
+    /// Bracket nesting and operator, prefix, `let … in` and `if … else`
+    /// chains have no ceiling of their own: the lexer and parser keep
+    /// explicit heap stacks that grow by at most a constant per token or
+    /// node already charged, so these three ceilings and the parser's work
+    /// budget bound them (NFR-001, FR-256).
     pub nodes: usize,
-    /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
-    /// level is one `(…)`, `[…]`, `{…}` or type-argument `<…>` pair;
-    /// operator, prefix, `let … in` and `if … else` chains add none. The
-    /// default is NFR-001's 64, and a caller's value is used as given: the
-    /// lexer and parser keep explicit stacks, so a raised ceiling cannot
-    /// overflow the host stack.
-    pub nesting: usize,
+    /// Parser work units per significant token: the complete-V1 parser
+    /// stops once it has taken this many steps per token, plus this many
+    /// for the end of input. Defaults to 256.
+    pub work_units: usize,
 }
 
 impl Default for Limits {
@@ -42,8 +45,39 @@ impl Default for Limits {
             source_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
             tokens: 100_000,
             nodes: 50_000,
-            nesting: 64,
+            work_units: crate::parser::DEFAULT_WORK_UNITS,
         }
+    }
+}
+
+impl Limits {
+    /// These limits with the input-content ceiling set to `source_bytes`.
+    #[must_use]
+    pub fn with_source_bytes(mut self, source_bytes: usize) -> Self {
+        self.source_bytes = source_bytes;
+        self
+    }
+
+    /// These limits with the token ceiling set to `tokens`.
+    #[must_use]
+    pub fn with_tokens(mut self, tokens: usize) -> Self {
+        self.tokens = tokens;
+        self
+    }
+
+    /// These limits with the CST node ceiling set to `nodes`.
+    #[must_use]
+    pub fn with_nodes(mut self, nodes: usize) -> Self {
+        self.nodes = nodes;
+        self
+    }
+
+    /// These limits with the parser's work units per token set to
+    /// `work_units`.
+    #[must_use]
+    pub fn with_work_units(mut self, work_units: usize) -> Self {
+        self.work_units = work_units;
+        self
     }
 }
 
@@ -175,21 +209,12 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
         // This profile distinguishes malformed delimiters from balanced reserved
         // forms, so check structure before the parser reports unsupported syntax.
         match kind {
+            // One entry per open bracket token, already charged against
+            // `limits.tokens`.
             Kind::OpenParen | Kind::OpenBrace | Kind::OpenBracket => {
-                if delimiters.len() >= limits.nesting {
-                    // The opening bracket of pair `nesting + 1`, at its own
-                    // span. This check covers `(`/`[`/`{`; the native parser
-                    // charges a composed type-argument `<` itself.
-                    return Err(resource_exhausted(
-                        source,
-                        Phase::Lex,
-                        span,
-                        SyntaxLimit::NestingDepth {
-                            bound: limits.nesting,
-                        },
-                    ));
-                }
                 delimiters.push((kind.clone(), span));
+                #[cfg(test)]
+                DELIMITER_PEAK.with(|peak| peak.set(peak.get().max(delimiters.len())));
             }
             Kind::CloseParen | Kind::CloseBrace | Kind::CloseBracket => {
                 let expected = match kind {
@@ -231,8 +256,43 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
 }
 
 #[cfg(test)]
+thread_local! {
+    /// The longest the delimiter stack grew in this thread's last
+    /// [`recognize`] runs, for the stack-charge test.
+    static DELIMITER_PEAK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 mod tests {
-    use super::{declared_edition, DeclaredEdition};
+    use super::{declared_edition, DeclaredEdition, Limits, DELIMITER_PEAK};
+    use qsl_foundation::{Source, SourceIdentity};
+
+    /// The delimiter stack holds at most one entry per token already
+    /// charged against `limits.tokens`: brackets nested 100,000 deep peak
+    /// at one entry per open bracket.
+    #[trace("TC-722", "FR-256-AC-1")]
+    #[test]
+    fn the_delimiter_stack_grows_by_at_most_one_entry_per_charged_token() {
+        const DEPTH: usize = 100_000;
+        let text = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
+        let source = Source::read(
+            SourceIdentity::new("agent-ix", "test:lexer", "git", "1"),
+            "deep.native",
+            text.as_bytes(),
+            usize::MAX,
+        )
+        .expect("the source reads");
+        DELIMITER_PEAK.with(|peak| peak.set(0));
+        let tokens = super::recognize(&source, Limits::default().with_tokens(usize::MAX))
+            .expect("balanced brackets recognize");
+        let peak = DELIMITER_PEAK.with(std::cell::Cell::get);
+        assert_eq!(peak, DEPTH);
+        assert!(
+            peak <= tokens.len(),
+            "{peak} entries for {} tokens",
+            tokens.len()
+        );
+    }
     use ix_trace_rs::trace;
     use qsl_foundation::Span;
 

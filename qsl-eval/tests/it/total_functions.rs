@@ -105,49 +105,35 @@ fn sequence(minimum: u64, maximum: u64) -> ValueType {
 }
 
 fn name(spelling: &str) -> Expression {
-    Expression::Name(spelling.to_owned())
+    Expression::name(spelling.to_owned())
 }
 
 fn literal(value: i64) -> Expression {
-    Expression::Integer(integer(value))
+    Expression::integer(integer(value))
 }
 
 fn binary(operator: BinaryOperator, left: Expression, right: Expression) -> Expression {
-    Expression::Binary {
-        operator,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
+    Expression::binary(operator, left, right)
 }
 
 fn call(target: &str, arguments: Vec<Expression>) -> Expression {
-    Expression::Call {
-        name: target.to_owned(),
-        arguments,
-    }
+    Expression::call(target.to_owned(), arguments)
 }
 
 fn if_then(condition: Expression, then: Expression, otherwise: Expression) -> Expression {
-    Expression::If {
-        condition: Box::new(condition),
-        then: Box::new(then),
-        otherwise: Box::new(otherwise),
-    }
+    Expression::if_then_else(condition, then, otherwise)
 }
 
 fn field(operand: Expression, spelling: &str) -> Expression {
-    Expression::Field {
-        operand: Box::new(operand),
-        field: spelling.to_owned(),
-    }
+    Expression::field(operand, spelling.to_owned())
 }
 
 fn present(operand: Expression) -> Expression {
-    Expression::Present(Box::new(operand))
+    Expression::present(operand)
 }
 
 fn value(operand: Expression) -> Expression {
-    Expression::Value(Box::new(operand))
+    Expression::value(operand)
 }
 
 /// `crate::support::type_form::type_form` can't recover a
@@ -346,7 +332,7 @@ fn parity(own: &str, other: &str, measure: Expression) -> FunctionDeclaration {
         Some(measure),
         if_then(
             binary(BinaryOperator::Equal, name("n"), literal(0)),
-            Expression::Boolean(true),
+            Expression::boolean(true),
             call(
                 other,
                 vec![binary(BinaryOperator::Subtract, name("n"), literal(1))],
@@ -406,7 +392,7 @@ fn divide() -> Expression {
 }
 
 fn zero_quotient() -> Expression {
-    Expression::Rational(integer(0), integer(1))
+    Expression::rational(integer(0), integer(1))
 }
 
 fn unproved(result: Result<CheckedGraph, Vec<CheckRefusal>>) -> (Obligation, &'static str) {
@@ -420,16 +406,18 @@ fn unproved(result: Result<CheckedGraph, Vec<CheckRefusal>>) -> (Obligation, &'s
 }
 
 fn reduce_total(source: &str) -> Expression {
-    Expression::Accumulate {
-        accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
-        form: Accumulation::Reduce,
-        accumulator_type: "Total".to_owned(),
-        accumulator: "acc".to_owned(),
-        binder: "x".to_owned(),
-        source: Box::new(name(source)),
-        step: Box::new(binary(BinaryOperator::Add, name("acc"), name("x"))),
-        identity: None,
-    }
+    Expression::accumulate(
+        Accumulation::Reduce,
+        qsl_forms::DeclaredName {
+            name: "Total".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+        "acc".to_owned(),
+        "x".to_owned(),
+        name(source),
+        binary(BinaryOperator::Add, name("acc"), name("x")),
+        None,
+    )
 }
 
 #[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
@@ -486,7 +474,7 @@ fn p04_division_presence_and_reduction_need_static_proofs() {
         if_then(
             binary(
                 BinaryOperator::GreaterOrEqual,
-                Expression::Size(Box::new(name("s"))),
+                Expression::size(name("s")),
                 literal(1),
             ),
             reduce_total("s"),
@@ -507,7 +495,7 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
             ValueType::Integer,
             None,
             if_then(
-                Expression::Boolean(true),
+                Expression::boolean(true),
                 literal(1),
                 call(target, vec![name("x")]),
             ),
@@ -723,7 +711,7 @@ fn p08_measures_decrease_lexicographically_by_accepted_forms() {
         MeasureObligation::Decrease
     );
 
-    let size = || Expression::Size(Box::new(name("s")));
+    let size = || Expression::size(name("s"));
     let cardinality = function(
         "g",
         &[("s", sequence(0, 3))],
@@ -828,7 +816,7 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
     );
     check(vec![body(binary(
         BinaryOperator::Add,
-        Expression::Negate(Box::new(name("a"))),
+        Expression::negate(name("a")),
         literal(3),
     ))])
     .unwrap();
@@ -956,11 +944,11 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         unproved(package(guarded(&|| call("pick", vec![name("x")])))),
         (Obligation::Presence, "unproved-presence")
     );
-    package(Expression::Let {
-        name: "y".to_owned(),
-        value: Box::new(call("pick", vec![name("x")])),
-        body: Box::new(guarded(&|| name("y"))),
-    })
+    package(Expression::let_in(
+        "y".to_owned(),
+        call("pick", vec![name("x")]),
+        guarded(&|| name("y")),
+    ))
     .unwrap();
 
     let admitted = package(literal(0)).unwrap();
@@ -970,10 +958,10 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                 "f".to_owned(),
                 ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
             )],
-            &Expression::Convert {
-                target: crate::support::type_form::type_form(&quotient_type()),
-                operand: Box::new(name("f")),
-            },
+            &Expression::convert(
+                crate::support::type_form::type_form(&quotient_type()),
+                name("f"),
+            ),
             None,
             CheckMode::Linked,
             CheckingLimits::default(),
@@ -1023,17 +1011,14 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
 
     let dereference = package(if_then(
         present(name("ro")),
-        field(Expression::Deref(Box::new(value(name("ro")))), "n"),
+        field(Expression::deref(value(name("ro"))), "n"),
         literal(0),
     ))
     .unwrap();
     assert_eq!(dereference.dereferences("f").unwrap().len(), 1);
     assert_eq!(
-        refusal(
-            package(field(Expression::Deref(Box::new(name("ro"))), "n"))
-                .map(|_| { unreachable!() })
-        )
-        .cause,
+        refusal(package(field(Expression::deref(name("ro")), "n")).map(|_| { unreachable!() }))
+            .cause,
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
 
@@ -1405,10 +1390,10 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
                 &[("x", ValueType::Float(FloatType::exact(IeeeWidth::Binary64)))],
                 quotient_type(),
                 None,
-                Expression::Convert {
-                    target: crate::support::type_form::type_form(&quotient_type()),
-                    operand: Box::new(name("x")),
-                },
+                Expression::convert(
+                    crate::support::type_form::type_form(&quotient_type()),
+                    name("x"),
+                ),
             ),
             function(
                 "divide",

@@ -668,9 +668,9 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
         clauses.result.insert(key.clone(), ValueType::Boolean);
         clauses
             .own_precondition
-            .insert(key.clone(), Expression::Boolean(true));
+            .insert(key.clone(), Expression::boolean(true));
         if i == EDGES {
-            clauses.own_body.insert(key, Expression::Boolean(true));
+            clauses.own_body.insert(key, Expression::boolean(true));
         }
     }
     let declarations = checked_dispatch_operation(

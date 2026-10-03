@@ -359,7 +359,7 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
             } ),+]
         };
     }
-    let requests = lowered!(syntax; source_bytes, tokens, nodes, nesting)
+    let requests = lowered!(syntax; source_bytes, tokens, nodes)
         .into_iter()
         .chain(
             lowered!(link; models, imports, clauses, nodes, depth, model_bytes, total_model_bytes),

@@ -66,12 +66,7 @@ impl ModelForm {
         let parameters = [("p", population("M::Order", 3)), ("r", named("M::Order"))];
         let mut chain = name("r");
         for _ in 0..levels {
-            chain = Expression::Lookup {
-                target: named("M::Order"),
-                population: Box::new(name("p")),
-                reference: Box::new(chain),
-                absence: AbsenceMode::Undefined,
-            };
+            chain = Expression::lookup(named("M::Order"), name("p"), chain, AbsenceMode::Undefined);
         }
         let f = match self {
             Self::Lookup => function("f", &parameters, named("M::Order"), chain),
@@ -79,10 +74,7 @@ impl ModelForm {
                 "f",
                 &parameters,
                 builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
-                Expression::Field {
-                    operand: Box::new(Expression::Deref(Box::new(chain))),
-                    field: "total".to_owned(),
-                },
+                Expression::field(Expression::deref(chain), "total".to_owned()),
             ),
             Self::Dispatch => FunctionDeclaration::clause(
                 "f",
@@ -92,28 +84,21 @@ impl ModelForm {
                     .collect(),
                 builtin(BuiltinType::Boolean),
                 None,
-                Expression::Binary {
-                    operator: BinaryOperator::GreaterOrEqual,
-                    left: Box::new(Expression::Dispatch {
-                        receiver: Box::new(chain),
-                        member: "size".to_owned(),
-                        arguments: Vec::new(),
-                    }),
-                    right: Box::new(Expression::Integer(Integer::from(0_i64))),
-                },
+                Expression::binary(
+                    BinaryOperator::GreaterOrEqual,
+                    Expression::dispatch(chain, "size".to_owned(), Vec::new()),
+                    Expression::integer(0_i64),
+                ),
                 DeclaredClauseKind::Precondition,
             ),
             Self::AllInstances => {
-                let mut body = Expression::Integer(Integer::from(0_i64));
+                let mut body = Expression::integer(0_i64);
                 for _ in 0..levels {
-                    body = Expression::Binary {
-                        operator: BinaryOperator::Add,
-                        left: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                            target: named("M::Order"),
-                            population: Box::new(name("p")),
-                        }))),
-                        right: Box::new(body),
-                    };
+                    body = Expression::binary(
+                        BinaryOperator::Add,
+                        Expression::size(Expression::all_instances(named("M::Order"), name("p"))),
+                        body,
+                    );
                 }
                 function("f", &parameters, builtin(BuiltinType::Integer), body)
             }
@@ -151,13 +136,9 @@ const DEEPEST_INHERITED: usize = 125;
 /// over `r: Reference<M::Order>`: `r.scaled(r.scaled(… 0)) >= 0`, nested
 /// `levels` times.
 fn dispatch_arguments(acme: &Acme, levels: usize) -> PackageDeclarations {
-    let mut argument = Expression::Integer(Integer::from(0_i64));
+    let mut argument = Expression::integer(0_i64);
     for _ in 0..levels {
-        argument = Expression::Dispatch {
-            receiver: Box::new(name("r")),
-            member: "scaled".to_owned(),
-            arguments: vec![argument],
-        };
+        argument = Expression::dispatch(name("r"), "scaled".to_owned(), vec![argument]);
     }
     let mut declarations = dispatch(acme, "Order/scaled");
     declarations.functions.push(FunctionDeclaration::clause(
@@ -165,11 +146,11 @@ fn dispatch_arguments(acme: &Acme, levels: usize) -> PackageDeclarations {
         vec![("r".to_owned(), named("M::Order"))],
         builtin(BuiltinType::Boolean),
         None,
-        Expression::Binary {
-            operator: BinaryOperator::GreaterOrEqual,
-            left: Box::new(argument),
-            right: Box::new(Expression::Integer(Integer::from(0_i64))),
-        },
+        Expression::binary(
+            BinaryOperator::GreaterOrEqual,
+            argument,
+            Expression::integer(0_i64),
+        ),
         DeclaredClauseKind::Precondition,
     ));
     declarations
@@ -182,20 +163,16 @@ fn dispatch_arguments(acme: &Acme, levels: usize) -> PackageDeclarations {
 fn inherited_precondition(acme: &Acme, levels: usize) -> PackageDeclarations {
     let mut sum = name("n");
     for _ in 0..levels {
-        sum = Expression::Binary {
-            operator: BinaryOperator::Add,
-            left: Box::new(name("n")),
-            right: Box::new(sum),
-        };
+        sum = Expression::binary(BinaryOperator::Add, name("n"), sum);
     }
     let mut clauses = clauses(acme);
     clauses.own_precondition.insert(
         key("Order/scaled"),
-        Expression::Binary {
-            operator: BinaryOperator::GreaterOrEqual,
-            left: Box::new(sum),
-            right: Box::new(Expression::Integer(Integer::from(0_i64))),
-        },
+        Expression::binary(
+            BinaryOperator::GreaterOrEqual,
+            sum,
+            Expression::integer(0_i64),
+        ),
     );
     dispatch_with(acme, "Order/scaled", &clauses)
 }

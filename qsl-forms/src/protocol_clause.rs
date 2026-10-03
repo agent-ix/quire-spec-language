@@ -14,25 +14,29 @@
 
 use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 
-use super::dispatch::{Construct, FormsFailure, FormsLimits};
+use std::ops::ControlFlow;
+
+use super::dispatch::{Construct, FormsRefusal};
 use super::spans::DeclarationSpans;
 use super::syntax::{
     AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, DeclarationForm,
     DeclaredName, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RoleForm, ScopeName,
-    ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RoleForm, ScopeEntry,
+    ScopeId, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
 };
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
     tokens_of, type_form, unexpected, Item,
 };
 
-/// The protocol form's output collections and its nesting-depth limit,
-/// threaded together through every S2 control-tree walk function (FR-113
-/// Inputs/Outputs): one struct rather than one `&mut Vec` parameter per
-/// collection plus `FormsLimits`, so a new output needs one field added
-/// here, not a new parameter at every call site (SR-765 FND-008).
+/// The protocol form's output collections, threaded together through every
+/// S2 control-tree walk function (FR-113 Inputs/Outputs): one struct rather
+/// than one `&mut Vec` parameter per collection, so a new output needs one
+/// field added here, not a new parameter at every call site (SR-765
+/// FND-008).
 struct Collector<'a> {
+    /// Every named control's scope, entered once each.
+    scopes: &'a mut Vec<ScopeEntry>,
     /// FR-112's scoped anchors, in source order of their references.
     anchors: &'a mut Vec<ScopedAnchorForm>,
     /// FR-113's declaration collection: every static node a scope declares
@@ -47,17 +51,13 @@ struct Collector<'a> {
     /// Every `related by` clause of an event node, alongside the
     /// protocol's top-level constructs.
     constructs: &'a mut Vec<ProtocolConstructForm>,
-    /// The S2 nesting-depth bound `control_anchors` charges `depth`
-    /// against.
-    limits: FormsLimits,
 }
 
 /// `invariant N using p on M::T at current { e }`, `pre N using p on
 /// M::T::op { e }` or `post N using p on M::T::op { e }` (FR-102 "Behavior"):
-/// the kind is read from the leading token alone, and the body's nesting
-/// depth is bound exactly as a function body's is (`value::expression`
-/// applies the same [`super::dispatch::FormsLimits`]).
-pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+/// the kind is read from the leading token alone, and the body is built
+/// exactly as a function body is (`value::expression`).
+pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let clause_items = items(cst, node);
@@ -95,7 +95,7 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
     let block = only(&clause_items, Production::Block, node)?;
     let block_items = items(cst, block);
     let body_node = only(&block_items, Production::Expression, block)?;
-    let (body, body_spans) = expression(cst, body_node, construct.limits)?;
+    let (body, body_spans) = expression(cst, body_node)?;
     let form = StateClauseForm {
         kind,
         name: DeclaredName {
@@ -129,9 +129,8 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
 /// Boolean literal) and every other construct present, by kind and span.
 pub(crate) fn protocol_declaration(
     construct: Construct<'_>,
-) -> Result<DeclarationForm, FormsFailure> {
+) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
-    let limits = construct.limits;
     let node = production_node(construct)?;
     let clause_items = items(cst, node);
     let name = declared_name(&clause_items, node)?;
@@ -146,6 +145,7 @@ pub(crate) fn protocol_declaration(
         span: alias.span(),
     };
 
+    let mut scopes = Vec::new();
     let mut scoped_anchors = Vec::new();
     let mut declarations = Vec::new();
     let mut binders = Vec::new();
@@ -157,13 +157,7 @@ pub(crate) fn protocol_declaration(
     // binder no-shadowing rule): visible everywhere in the protocol, at the
     // empty top-level scope (composed lane: `BinderKind::Input`).
     let input = only(&clause_items, Production::Parameter, node)?;
-    binders.push(parameter_binder(
-        cst,
-        input,
-        BinderKind::Input,
-        &[],
-        limits,
-    )?);
+    binders.push(parameter_binder(cst, input, BinderKind::Input, None)?);
     // The protocol's own `activation on each (p) [when (...)]` parameter,
     // when written: `on origin` binds nothing, so this is only sometimes
     // present.
@@ -179,8 +173,7 @@ pub(crate) fn protocol_declaration(
             cst,
             activation_parameter,
             BinderKind::ActivationParameter,
-            &[],
-            limits,
+            None,
         )?);
     }
     // The protocol's own top-level captures (FR-113 "Refusals" binder
@@ -191,7 +184,7 @@ pub(crate) fn protocol_declaration(
             kind: ProtocolConstructKind::Capture,
             span: capture.span(),
         });
-        binders.push(capture_binder(cst, capture, &[], limits)?);
+        binders.push(capture_binder(cst, capture, None)?);
     }
     for role in nodes_of(&clause_items, Production::Role) {
         let role_items = items(cst, role);
@@ -227,31 +220,31 @@ pub(crate) fn protocol_declaration(
     }
     {
         let mut collector = Collector {
+            scopes: &mut scopes,
             anchors: &mut scoped_anchors,
             declarations: &mut declarations,
             binders: &mut binders,
             attempts: &mut attempts,
             bodies: &mut bodies,
             constructs: &mut constructs,
-            limits,
         };
         for compensation in nodes_of(&clause_items, Production::Compensation) {
             compensation_anchors(cst, compensation, &mut collector)?;
         }
         let run = only(&clause_items, Production::Control, node)?;
-        control_anchors(cst, run, &mut Vec::new(), &mut collector, 1)?;
+        control_anchors(cst, run, &mut collector)?;
         let finish = only(&clause_items, Production::Finish, node)?;
         let finish_items = items(cst, finish);
         let owner = collector.declarations.len();
         collector.declarations.push(ProtocolNodeDeclaration {
             kind: ProtocolNodeKind::Finish,
             name: declared_name(&finish_items, finish)?,
-            scope: Vec::new(),
+            scope: None,
             channel: None,
         });
         collector
             .binders
-            .push(record_binder(cst, &finish_items, finish, &[], limits)?);
+            .push(record_binder(cst, &finish_items, finish, None)?);
         collector.body(cst, &finish_items, finish, owner)?;
     }
     // Top-level parts are pushed by production above, `related by` clauses
@@ -266,6 +259,7 @@ pub(crate) fn protocol_declaration(
         roles,
         bodies,
         constructs,
+        scopes,
         scoped_anchors,
         declarations,
         binders,
@@ -274,6 +268,19 @@ pub(crate) fn protocol_declaration(
 }
 
 impl Collector<'_> {
+    /// Enter the scope `name` opens inside `parent`.
+    fn open_scope(&mut self, name: DeclaredName, parent: Option<ScopeId>) -> ScopeId {
+        let id = ScopeId(self.scopes.len());
+        self.scopes.push(ScopeEntry {
+            name: ScopeName {
+                name: name.name,
+                span: name.span,
+            },
+            parent,
+        });
+        id
+    }
+
     /// Records the one `{ e }` body block directly among `items`, owned by
     /// declaration `owner`: whether it is a bare Boolean literal,
     /// and its span. No expression tree is built.
@@ -283,7 +290,7 @@ impl Collector<'_> {
         items: &[Item<'_>],
         node: &CstNode,
         owner: usize,
-    ) -> Result<(), FormsFailure> {
+    ) -> Result<(), FormsRefusal> {
         let block = only(items, Production::Block, node)?;
         let block_items = super::value::items(cst, block);
         let expression = only(&block_items, Production::Expression, block)?;
@@ -311,11 +318,10 @@ fn record_binder(
     cst: &LosslessCst,
     items: &[Item<'_>],
     node: &CstNode,
-    scope: &[ScopeName],
-    limits: FormsLimits,
-) -> Result<BinderForm, FormsFailure> {
+    scope: Option<ScopeId>,
+) -> Result<BinderForm, FormsRefusal> {
     let parameter = only(items, Production::Parameter, node)?;
-    parameter_binder(cst, parameter, BinderKind::RecordBinder, scope, limits)
+    parameter_binder(cst, parameter, BinderKind::RecordBinder, scope)
 }
 
 /// One `capture p = e;`'s own parameter, scoped at `scope` (FR-113
@@ -323,12 +329,11 @@ fn record_binder(
 fn capture_binder(
     cst: &LosslessCst,
     node: &CstNode,
-    scope: &[ScopeName],
-    limits: FormsLimits,
-) -> Result<BinderForm, FormsFailure> {
+    scope: Option<ScopeId>,
+) -> Result<BinderForm, FormsRefusal> {
     let capture_items = items(cst, node);
     let parameter = only(&capture_items, Production::Parameter, node)?;
-    parameter_binder(cst, parameter, BinderKind::Capture, scope, limits)
+    parameter_binder(cst, parameter, BinderKind::Capture, scope)
 }
 
 /// One `Parameter` node's own declared name as a binder of `kind`, scoped
@@ -340,9 +345,8 @@ fn parameter_binder(
     cst: &LosslessCst,
     parameter: &CstNode,
     kind: BinderKind,
-    scope: &[ScopeName],
-    limits: FormsLimits,
-) -> Result<BinderForm, FormsFailure> {
+    scope: Option<ScopeId>,
+) -> Result<BinderForm, FormsRefusal> {
     let parameter_items = items(cst, parameter);
     let declared = only(&parameter_items, Production::ParameterType, parameter)?;
     let declared_items = items(cst, declared);
@@ -350,8 +354,8 @@ fn parameter_binder(
     Ok(BinderForm {
         kind,
         name: declared_name(&parameter_items, parameter)?,
-        scope: scope.to_vec(),
-        value_type: type_form(cst, reference, limits)?,
+        scope,
+        value_type: type_form(cst, reference)?,
     })
 }
 
@@ -366,13 +370,13 @@ fn compensation_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     collector: &mut Collector<'_>,
-) -> Result<(), FormsFailure> {
+) -> Result<(), FormsRefusal> {
     let compensation_items = items(cst, node);
     let name = declared_name(&compensation_items, node)?;
     collector.declarations.push(ProtocolNodeDeclaration {
         kind: ProtocolNodeKind::CompensateTemplate,
         name: name.clone(),
-        scope: Vec::new(),
+        scope: None,
         channel: None,
     });
     let references = nodes_of(&compensation_items, Production::NodeReference);
@@ -381,7 +385,7 @@ fn compensation_anchors(
         cst,
         for_reference,
         AnchorSite::CompensateFor,
-        &[],
+        None,
         None,
     )?);
     // `commit never;` names no reference: `references` then holds only the
@@ -391,7 +395,7 @@ fn compensation_anchors(
             cst,
             commit_reference,
             AnchorSite::CompensateCommit,
-            &[],
+            None,
             None,
         )?);
     }
@@ -415,205 +419,294 @@ fn compensation_anchors(
     let [own, trigger, retry_first, retry_second, recover] = parameters.as_slice() else {
         return Err(unexpected(node));
     };
-    let limits = collector.limits;
-    collector.binders.push(parameter_binder(
-        cst,
-        own,
-        BinderKind::RecordBinder,
-        &[],
-        limits,
-    )?);
-    let inner_scope = vec![ScopeName {
-        name: name.name,
-        span: name.span,
-    }];
+    collector
+        .binders
+        .push(parameter_binder(cst, own, BinderKind::RecordBinder, None)?);
+    let inner_scope = Some(collector.open_scope(name, None));
     let mut inner_binders = vec![parameter_binder(
         cst,
         trigger,
         BinderKind::Trigger,
-        &inner_scope,
-        limits,
+        inner_scope,
     )?];
     for capture in nodes_of(&compensation_items, Production::Capture) {
-        inner_binders.push(capture_binder(cst, capture, &inner_scope, limits)?);
+        inner_binders.push(capture_binder(cst, capture, inner_scope)?);
     }
     inner_binders.push(parameter_binder(
         cst,
         retry_first,
         BinderKind::RetryParameter,
-        &inner_scope,
-        limits,
+        inner_scope,
     )?);
     inner_binders.push(parameter_binder(
         cst,
         retry_second,
         BinderKind::RetryParameter,
-        &inner_scope,
-        limits,
+        inner_scope,
     )?);
     inner_binders.push(parameter_binder(
         cst,
         recover,
         BinderKind::RecoveryParameter,
-        &inner_scope,
-        limits,
+        inner_scope,
     )?);
     inner_binders.sort_by_key(|binder| binder.name.span.start);
     collector.binders.extend(inner_binders);
     Ok(())
 }
 
-/// Runs `body` with `name` pushed onto `scope` as one more enclosing named
-/// control, popping it again afterward -- even when `body` refuses -- so
-/// every one of this walk's named-control shapes (`sequence`, `choice`,
-/// `parallel`, `repeat`, `case`, `branch`, `await`) pushes and pops through
-/// this single place instead of its own copy of the pattern (a missed push
-/// in one copy is exactly how FND-001/SR-753 left `await`'s own name out
-/// of its children's scope).
-fn with_scope<F>(
-    scope: &mut Vec<ScopeName>,
-    name: DeclaredName,
-    body: F,
-) -> Result<(), FormsFailure>
-where
-    F: FnOnce(&mut Vec<ScopeName>) -> Result<(), FormsFailure>,
-{
-    scope.push(ScopeName {
-        name: name.name,
-        span: name.span,
-    });
-    let result = body(scope);
-    scope.pop();
-    result
+/// One node of the control-tree walk: a `Control`, or a `case` or `branch`
+/// that names its one inner `Control`.
+#[derive(Clone, Copy)]
+enum ControlNode<'c> {
+    /// A `Control` node, unwrapped to the alternative it matched.
+    Control(&'c CstNode),
+    /// `case N when { c } Control`: the case's own name encloses its one
+    /// control, the same shape a `branch` gives a `parallel` (FR-112
+    /// "Outputs": "the named controls that enclose the reference").
+    Case(&'c CstNode),
+    /// `branch N Control`: the branch's own name encloses its one control
+    /// (FR-112-AC-2: `branch left await Wait after Sent` records scope
+    /// `[..., left]`).
+    Branch(&'c CstNode),
 }
 
-/// Walks one `Control` node: unwraps it to the alternative it actually
-/// matched (`Sequence`, `Parallel`, ..., `EventNode`) and dispatches on
-/// that alternative's own production.
+/// The `run` control tree's walk (FR-112, FR-113), on the walker toolkit's
+/// explicit stack (ADR-030 D-4.2): each entered node's frame is the scope
+/// on entry, and leaving the node restores `scope` to it, so a named
+/// control's name encloses exactly its own children.
 ///
-/// `depth` is charged against `limits.nesting_depth`, the same S2 bound
-/// `value::expression` applies to an expression tree (a root is at depth
-/// 1, each nested `Control` one deeper): `await ... then <Control>` and
-/// `repeat ... exhausted <Control>` nest with no bracket, so the CST's own
-/// nesting ceiling does not bound them, and unbounded native recursion on
-/// untrusted source would abort the process rather than refuse.
+/// `await ... then <Control>` and `repeat ... exhausted <Control>` nest with
+/// no bracket, so such a chain is as deep as it is long; the walk's heap
+/// stack grows by one frame per CST node S1 already charged.
+struct ControlWalk<'c, 'k, 'a> {
+    cst: &'c LosslessCst,
+    /// The innermost named control enclosing the node being entered.
+    scope: Option<ScopeId>,
+    collector: &'k mut Collector<'a>,
+    #[cfg(test)]
+    gauge: crate::syntax::stack_peak::Gauge,
+}
+
+impl<'c> quire_walk::Walk for ControlWalk<'c, '_, '_> {
+    type Node = ControlNode<'c>;
+    /// The scope on entry.
+    type Frame = Option<ScopeId>;
+    type Stop = FormsRefusal;
+
+    fn enter(
+        &mut self,
+        node: ControlNode<'c>,
+        children: &mut quire_walk::Children<'_, ControlNode<'c>>,
+    ) -> ControlFlow<FormsRefusal, Option<ScopeId>> {
+        let entry = self.scope;
+        let mut named = Vec::new();
+        if let Err(failure) = self.visit(node, &mut named) {
+            return ControlFlow::Break(failure);
+        }
+        #[cfg(test)]
+        self.gauge.enter(named.len());
+        children.extend(named);
+        ControlFlow::Continue(entry)
+    }
+
+    fn exit(&mut self, entry: Option<ScopeId>) -> ControlFlow<FormsRefusal> {
+        #[cfg(test)]
+        self.gauge.exit();
+        self.scope = entry;
+        ControlFlow::Continue(())
+    }
+}
+
+impl<'c> ControlWalk<'c, '_, '_> {
+    /// Open `name` as one more enclosing named control, for the node's
+    /// children; [`quire_walk::Walk::exit`] closes it.
+    fn open(&mut self, name: DeclaredName) {
+        self.scope = Some(self.collector.open_scope(name, self.scope));
+    }
+
+    /// Record what `node` declares and anchors, open its own name when it
+    /// has one, and name its child controls.
+    ///
+    /// Every arm declares the node itself directly in the scope enclosing
+    /// it, before its own name (if any) is pushed: this is the single place
+    /// a control becomes a name other scopes and anchors can resolve
+    /// (FR-113 Inputs).
+    fn visit(
+        &mut self,
+        node: ControlNode<'c>,
+        children: &mut Vec<ControlNode<'c>>,
+    ) -> Result<(), FormsRefusal> {
+        let cst = self.cst;
+        let (enclosing, kind) = match node {
+            ControlNode::Case(case) => (case, ProtocolNodeKind::Case),
+            ControlNode::Branch(branch) => (branch, ProtocolNodeKind::Branch),
+            ControlNode::Control(control) => return self.control(control, children),
+        };
+        let enclosing_items = items(cst, enclosing);
+        let name = declared_name(&enclosing_items, enclosing)?;
+        declare(self.collector.declarations, kind, name.clone(), self.scope);
+        self.open(name);
+        children.push(ControlNode::Control(only(
+            &enclosing_items,
+            Production::Control,
+            enclosing,
+        )?));
+        Ok(())
+    }
+
+    /// One `Control` node: unwraps it to the alternative it actually
+    /// matched (`Sequence`, `Parallel`, ..., `EventNode`) and dispatches on
+    /// that alternative's own production.
+    fn control(
+        &mut self,
+        control: &'c CstNode,
+        children: &mut Vec<ControlNode<'c>>,
+    ) -> Result<(), FormsRefusal> {
+        let cst = self.cst;
+        let matched = items(cst, control)
+            .into_iter()
+            .find_map(|item| match item {
+                Item::Node(node) => Some(node),
+                Item::Token(_) => None,
+            })
+            .ok_or_else(|| unexpected(control))?;
+        let matched_items = items(cst, matched);
+        let named = |kind| -> Result<(ProtocolNodeKind, DeclaredName), FormsRefusal> {
+            Ok((kind, declared_name(&matched_items, matched)?))
+        };
+        match matched.production() {
+            Production::Sequence | Production::Repetition => {
+                let kind = if matched.production() == Production::Sequence {
+                    ProtocolNodeKind::Sequence
+                } else {
+                    ProtocolNodeKind::Repeat
+                };
+                let (kind, name) = named(kind)?;
+                declare(self.collector.declarations, kind, name.clone(), self.scope);
+                self.open(name);
+                children.extend(
+                    nodes_of(&matched_items, Production::Control)
+                        .into_iter()
+                        .map(ControlNode::Control),
+                );
+                Ok(())
+            }
+            Production::Choice => {
+                let (kind, name) = named(ProtocolNodeKind::Choice)?;
+                declare(self.collector.declarations, kind, name.clone(), self.scope);
+                self.open(name);
+                children.extend(
+                    nodes_of(&matched_items, Production::Case)
+                        .into_iter()
+                        .map(ControlNode::Case),
+                );
+                Ok(())
+            }
+            Production::Parallel => {
+                let (kind, name) = named(ProtocolNodeKind::Parallel)?;
+                declare(self.collector.declarations, kind, name.clone(), self.scope);
+                self.open(name);
+                children.extend(
+                    nodes_of(&matched_items, Production::Branch)
+                        .into_iter()
+                        .map(ControlNode::Branch),
+                );
+                Ok(())
+            }
+            Production::AwaitControl => self.await_control(matched, &matched_items, children),
+            Production::EventNode => event_node_anchors(cst, matched, self.scope, self.collector),
+            Production::Check => {
+                let (kind, name) = named(ProtocolNodeKind::Check)?;
+                let owner = self.collector.declarations.len();
+                declare(self.collector.declarations, kind, name, self.scope);
+                // `check` holds no `NodeReference` and encloses no further
+                // control (FR-112 "Behavior": "No other position yields one").
+                self.collector.body(cst, &matched_items, matched, owner)
+            }
+            Production::Commit => {
+                let (kind, name) = named(ProtocolNodeKind::Commit)?;
+                let owner = self.collector.declarations.len();
+                declare(self.collector.declarations, kind, name, self.scope);
+                self.collector.binders.push(record_binder(
+                    cst,
+                    &matched_items,
+                    matched,
+                    self.scope,
+                )?);
+                self.collector.body(cst, &matched_items, matched, owner)
+            }
+            _ => Err(unexpected(matched)),
+        }
+    }
+
+    /// `await N after R using alias clock "c" within i match Event then
+    /// Control timeout Control`.
+    ///
+    /// The `after` reference (`await-after`, FR-112-AC-2) is built under the
+    /// scope enclosing the await, before the await's own name is pushed: an
+    /// await is a leaf reference target for its own `after` anchor, the same
+    /// way an `effect`'s own name never encloses its own `of` reference.
+    ///
+    /// The matched event template and the `then`/`timeout` branches are
+    /// different: FR-113 Inputs says a control declares the names of its
+    /// direct child controls and event nodes, and lists `await` among the
+    /// structural controls, so these three are the await's own children --
+    /// the legacy checker FR-113 replaces puts them under the await's own
+    /// symbol (`src/linking/composed/scopes/protocol.rs` `ControlKind::Await`).
+    /// A reference inside any of them therefore resolves as if nested one
+    /// level inside this await.
+    fn await_control(
+        &mut self,
+        node: &'c CstNode,
+        await_items: &[Item<'c>],
+        children: &mut Vec<ControlNode<'c>>,
+    ) -> Result<(), FormsRefusal> {
+        let cst = self.cst;
+        let after_reference = only(await_items, Production::NodeReference, node)?;
+        self.collector.anchors.push(scoped_anchor(
+            cst,
+            after_reference,
+            AnchorSite::AwaitAfter,
+            self.scope,
+            None,
+        )?);
+        let name = declared_name(await_items, node)?;
+        declare(
+            self.collector.declarations,
+            ProtocolNodeKind::Await,
+            name.clone(),
+            self.scope,
+        );
+        self.open(name);
+        let matched_event = only(await_items, Production::EventNode, node)?;
+        event_node_anchors(cst, matched_event, self.scope, self.collector)?;
+        children.extend(
+            nodes_of(await_items, Production::Control)
+                .into_iter()
+                .map(ControlNode::Control),
+        );
+        Ok(())
+    }
+}
+
+/// Walk the `run` control tree under `control`, collecting its anchors,
+/// declarations, binders and bodies into `collector`.
 fn control_anchors(
     cst: &LosslessCst,
     control: &CstNode,
-    scope: &mut Vec<ScopeName>,
     collector: &mut Collector<'_>,
-    depth: u64,
-) -> Result<(), FormsFailure> {
-    let matched = items(cst, control)
-        .into_iter()
-        .find_map(|item| match item {
-            Item::Node(node) => Some(node),
-            Item::Token(_) => None,
-        })
-        .ok_or_else(|| unexpected(control))?;
-    if depth > collector.limits.nesting_depth {
-        return Err(FormsFailure::depth(collector.limits, matched.span()));
-    }
-    // Every arm below declares `matched` itself, directly in `scope` (the
-    // scope enclosing it, before its own name -- if any -- is pushed): this
-    // is the single place a control becomes a name other scopes and
-    // anchors can resolve (FR-113 Inputs).
-    match matched.production() {
-        Production::Sequence => {
-            let sequence_items = items(cst, matched);
-            let name = declared_name(&sequence_items, matched)?;
-            declare(
-                collector.declarations,
-                ProtocolNodeKind::Sequence,
-                name.clone(),
-                scope,
-            );
-            with_scope(scope, name, |scope| {
-                for child in nodes_of(&sequence_items, Production::Control) {
-                    control_anchors(cst, child, scope, collector, depth + 1)?;
-                }
-                Ok(())
-            })
-        }
-        Production::Choice => {
-            let choice_items = items(cst, matched);
-            let name = declared_name(&choice_items, matched)?;
-            declare(
-                collector.declarations,
-                ProtocolNodeKind::Choice,
-                name.clone(),
-                scope,
-            );
-            with_scope(scope, name, |scope| {
-                for case in nodes_of(&choice_items, Production::Case) {
-                    case_anchors(cst, case, scope, collector, depth)?;
-                }
-                Ok(())
-            })
-        }
-        Production::Parallel => {
-            let parallel_items = items(cst, matched);
-            let name = declared_name(&parallel_items, matched)?;
-            declare(
-                collector.declarations,
-                ProtocolNodeKind::Parallel,
-                name.clone(),
-                scope,
-            );
-            with_scope(scope, name, |scope| {
-                for branch in nodes_of(&parallel_items, Production::Branch) {
-                    branch_anchors(cst, branch, scope, collector, depth)?;
-                }
-                Ok(())
-            })
-        }
-        Production::Repetition => {
-            let repetition_items = items(cst, matched);
-            let name = declared_name(&repetition_items, matched)?;
-            declare(
-                collector.declarations,
-                ProtocolNodeKind::Repeat,
-                name.clone(),
-                scope,
-            );
-            with_scope(scope, name, |scope| {
-                for child in nodes_of(&repetition_items, Production::Control) {
-                    control_anchors(cst, child, scope, collector, depth + 1)?;
-                }
-                Ok(())
-            })
-        }
-        Production::AwaitControl => await_control_anchors(cst, matched, scope, collector, depth),
-        Production::EventNode => event_node_anchors(cst, matched, scope, collector),
-        Production::Check => {
-            let check_items = items(cst, matched);
-            let name = declared_name(&check_items, matched)?;
-            let owner = collector.declarations.len();
-            declare(collector.declarations, ProtocolNodeKind::Check, name, scope);
-            // `check` holds no `NodeReference` and encloses no further
-            // control (FR-112 "Behavior": "No other position yields one").
-            collector.body(cst, &check_items, matched, owner)
-        }
-        Production::Commit => {
-            let commit_items = items(cst, matched);
-            let name = declared_name(&commit_items, matched)?;
-            let owner = collector.declarations.len();
-            declare(
-                collector.declarations,
-                ProtocolNodeKind::Commit,
-                name,
-                scope,
-            );
-            collector.binders.push(record_binder(
-                cst,
-                &commit_items,
-                matched,
-                scope,
-                collector.limits,
-            )?);
-            collector.body(cst, &commit_items, matched, owner)
-        }
-        _ => Err(unexpected(matched)),
+) -> Result<(), FormsRefusal> {
+    let mut walk = ControlWalk {
+        cst,
+        scope: None,
+        collector,
+        #[cfg(test)]
+        gauge: crate::syntax::stack_peak::Gauge::new("control_anchors"),
+    };
+    match quire_walk::walk(&mut walk, ControlNode::Control(control)) {
+        ControlFlow::Continue(()) => Ok(()),
+        ControlFlow::Break(failure) => Err(failure),
     }
 }
 
@@ -624,115 +717,14 @@ fn declare(
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
     kind: ProtocolNodeKind,
     name: DeclaredName,
-    scope: &[ScopeName],
+    scope: Option<ScopeId>,
 ) {
     out_decls.push(ProtocolNodeDeclaration {
         kind,
         name,
-        scope: scope.to_vec(),
+        scope,
         channel: None,
     });
-}
-
-/// `case N when { c } Control`: the case's own name encloses its one
-/// control, the same shape a `branch` gives a `parallel` (FR-112
-/// "Outputs": "the named controls that enclose the reference"). `depth` is
-/// the enclosing `choice`'s own depth: the case's inner `Control` is one
-/// level deeper, charged where [`control_anchors`] recurses into it.
-#[allow(clippy::too_many_arguments)]
-fn case_anchors(
-    cst: &LosslessCst,
-    node: &CstNode,
-    scope: &mut Vec<ScopeName>,
-    collector: &mut Collector<'_>,
-    depth: u64,
-) -> Result<(), FormsFailure> {
-    let case_items = items(cst, node);
-    let name = declared_name(&case_items, node)?;
-    declare(
-        collector.declarations,
-        ProtocolNodeKind::Case,
-        name.clone(),
-        scope,
-    );
-    with_scope(scope, name, |scope| {
-        let control = only(&case_items, Production::Control, node)?;
-        control_anchors(cst, control, scope, collector, depth + 1)
-    })
-}
-
-/// `branch N Control`: the branch's own name encloses its one control
-/// (FR-112-AC-2: `branch left await Wait after Sent` records scope
-/// `[..., left]`). `depth` is the enclosing `parallel`'s own depth, the
-/// same convention [`case_anchors`] follows.
-fn branch_anchors(
-    cst: &LosslessCst,
-    node: &CstNode,
-    scope: &mut Vec<ScopeName>,
-    collector: &mut Collector<'_>,
-    depth: u64,
-) -> Result<(), FormsFailure> {
-    let branch_items = items(cst, node);
-    let name = declared_name(&branch_items, node)?;
-    declare(
-        collector.declarations,
-        ProtocolNodeKind::Branch,
-        name.clone(),
-        scope,
-    );
-    with_scope(scope, name, |scope| {
-        let control = only(&branch_items, Production::Control, node)?;
-        control_anchors(cst, control, scope, collector, depth + 1)
-    })
-}
-
-/// `await N after R using alias clock "c" within i match Event then Control
-/// timeout Control`.
-///
-/// The `after` reference (`await-after`, FR-112-AC-2) is built under the
-/// scope enclosing the await, before the await's own name is pushed: an
-/// await is a leaf reference target for its own `after` anchor, the same
-/// way an `effect`'s own name never encloses its own `of` reference.
-///
-/// The matched event template and the `then`/`timeout` branches are
-/// different: FR-113 Inputs says a control declares the names of its
-/// direct child controls and event nodes, and lists `await` among the
-/// structural controls, so these three are the await's own children --
-/// the legacy checker FR-113 replaces puts them under the await's own
-/// symbol (`src/linking/composed/scopes/protocol.rs` `ControlKind::Await`).
-/// A reference inside any of them therefore resolves as if nested one
-/// level inside this await.
-fn await_control_anchors(
-    cst: &LosslessCst,
-    node: &CstNode,
-    scope: &mut Vec<ScopeName>,
-    collector: &mut Collector<'_>,
-    depth: u64,
-) -> Result<(), FormsFailure> {
-    let await_items = items(cst, node);
-    let after_reference = only(&await_items, Production::NodeReference, node)?;
-    collector.anchors.push(scoped_anchor(
-        cst,
-        after_reference,
-        AnchorSite::AwaitAfter,
-        scope,
-        None,
-    )?);
-    let name = declared_name(&await_items, node)?;
-    declare(
-        collector.declarations,
-        ProtocolNodeKind::Await,
-        name.clone(),
-        scope,
-    );
-    with_scope(scope, name, |scope| {
-        let matched_event = only(&await_items, Production::EventNode, node)?;
-        event_node_anchors(cst, matched_event, scope, collector)?;
-        for branch in nodes_of(&await_items, Production::Control) {
-            control_anchors(cst, branch, scope, collector, depth + 1)?;
-        }
-        Ok(())
-    })
 }
 
 /// `send`, `receive ... of R`, `attempt`, `effect ... of R` or `event ...
@@ -743,9 +735,9 @@ fn await_control_anchors(
 fn event_node_anchors(
     cst: &LosslessCst,
     node: &CstNode,
-    scope: &[ScopeName],
+    scope: Option<ScopeId>,
     collector: &mut Collector<'_>,
-) -> Result<(), FormsFailure> {
+) -> Result<(), FormsRefusal> {
     let event_items = items(cst, node);
     let (kind, site) = match event_items.first() {
         Some(Item::Token(token)) if token.spelling() == b"send" => (ProtocolNodeKind::Send, None),
@@ -783,19 +775,15 @@ fn event_node_anchors(
     collector.declarations.push(ProtocolNodeDeclaration {
         kind,
         name,
-        scope: scope.to_vec(),
+        scope,
         channel: channel.clone(),
     });
     // Every event node kind (`send` and `attempt` included) carries its own
     // `as (x: T)` record binder (FR-113 "Refusals"), its own body block and
     // zero or more `related by` clauses.
-    collector.binders.push(record_binder(
-        cst,
-        &event_items,
-        node,
-        scope,
-        collector.limits,
-    )?);
+    collector
+        .binders
+        .push(record_binder(cst, &event_items, node, scope)?);
     collector.body(cst, &event_items, node, declaration_index)?;
     for related in nodes_of(&event_items, Production::Related) {
         collector.constructs.push(ProtocolConstructForm {
@@ -850,8 +838,8 @@ fn attempt_form(
     event_items: &[Item<'_>],
     node: &CstNode,
     declaration_index: usize,
-) -> Result<AttemptForm, FormsFailure> {
-    let declared = |token: &qsl_cst::CstToken| -> Result<DeclaredName, FormsFailure> {
+) -> Result<AttemptForm, FormsRefusal> {
+    let declared = |token: &qsl_cst::CstToken| -> Result<DeclaredName, FormsRefusal> {
         Ok(DeclaredName {
             name: text(token, node)?,
             span: token.span(),
@@ -884,7 +872,7 @@ fn attempt_form(
         .take_while(|token| token.spelling() != b"]")
         .filter(|token| token.kind() == TokenKind::Identifier)
         .map(|token| declared(token))
-        .collect::<Result<Vec<_>, FormsFailure>>()?;
+        .collect::<Result<Vec<_>, FormsRefusal>>()?;
     let operation_name = only(event_items, Production::OperationName, node)?;
     let operation_items = items(cst, operation_name);
     let type_name = only(&operation_items, Production::TypeName, operation_name)?;
@@ -914,9 +902,9 @@ fn scoped_anchor(
     cst: &LosslessCst,
     reference: &CstNode,
     site: AnchorSite,
-    scope: &[ScopeName],
+    scope: Option<ScopeId>,
     channel: Option<String>,
-) -> Result<ScopedAnchorForm, FormsFailure> {
+) -> Result<ScopedAnchorForm, FormsRefusal> {
     let reference_items = items(cst, reference);
     let mut segments = Vec::new();
     for token in tokens_of(&reference_items, TokenKind::Identifier) {
@@ -934,7 +922,7 @@ fn scoped_anchor(
             segments,
             span: reference.span(),
         },
-        scope: scope.to_vec(),
+        scope,
         channel,
     })
 }

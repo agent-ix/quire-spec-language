@@ -835,7 +835,7 @@ pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
     )
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), [], "the unit is admissible");
-    qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).expect("S2 builds the unit")
+    qsl_forms::build_unit(&parsed).expect("S2 builds the unit")
 }
 
 /// Admits `document`'s one model selection through I1

@@ -24,10 +24,10 @@
 //! S2 (the parser's leading-token-kind entry table and the parsed-form-enum
 //! check seam) and S3 (the checked-node-enum's evaluator, v2 emitter and
 //! requirement-derivation matches) are seams over `LeadingTokenKind`,
-//! `Expression` and `NodeKind` -- pre-existing, crate-wide enums every
+//! `ExprNode` and `NodeKind` -- pre-existing, crate-wide enums every
 //! `Value` form uses (literals, operators, `let`, `if`, records,
 //! collections), not just the two forms #214 migrated (function
-//! declaration and application). `Expression` and `NodeKind` carry
+//! declaration and application). `ExprNode` and `NodeKind` carry
 //! `#[cfg(seam_probe)]` probe variants and a protective arm at every other
 //! production `match` site the variant would otherwise break
 //! (`qsl-forms::syntax`, `qsl-semantics::check::assemble`,
@@ -133,13 +133,13 @@ pub struct SeamLocation {
 /// `EvalOutcome`). Each enum carries a `#[cfg(seam_probe)]` variant.
 ///
 /// **S2 and S3: the check seam over the parsed form enum, and the
-/// checked node enum's evaluator and identity-lowering pass.** `Expression`
-/// (`qsl-forms::syntax::Expression`) and `NodeKind`
+/// checked node enum's evaluator and identity-lowering pass.** `ExprNode`
+/// (`qsl-forms::syntax::ExprNode`) and `NodeKind`
 /// (`qsl-semantics::check::ir::NodeKind`) each carry a `#[cfg(seam_probe)]`
 /// probe variant now too:
 ///
 /// - S2: `Typer::infer_form` (`qsl-semantics/src/check/check/typing.rs`),
-///   the check-time dispatch over `Expression` that already carried
+///   the check-time dispatch over `ExprNode` that already carried
 ///   `#[deny(clippy::wildcard_enum_match_arm)]` before this ticket (the
 ///   FR-063-AC-7 lint, satisfied in advance of the probe variant that makes
 ///   it a real seam).
@@ -1107,7 +1107,7 @@ mod tests {
     }
 
     /// FR-063-AC-7 (second test): none of `FamilyKind`, the parsed form
-    /// enum (`Expression`), the checked node enum (`NodeKind`), `Value`'s
+    /// enum (`ExprNode`), the checked node enum (`NodeKind`), `Value`'s
     /// function family's own `Cause` (`CheckCause`) or
     /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
     /// family-`Cause`, cause) carries `#[non_exhaustive]`.
@@ -1119,7 +1119,7 @@ mod tests {
             .expect("xtask lives one level below the workspace root");
         for (file, name) in [
             ("qsl-semantics/src/family/mod.rs", "FamilyKind"),
-            ("qsl-forms/src/syntax.rs", "Expression"),
+            ("qsl-forms/src/syntax.rs", "ExprNode"),
             ("qsl-semantics/src/check/ir.rs", "NodeKind"),
             ("qsl-semantics/src/check/refusal.rs", "WrongSnapshotCause"),
             ("qsl-semantics/src/check/refusal.rs", "CheckCause"),

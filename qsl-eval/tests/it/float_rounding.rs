@@ -49,8 +49,7 @@ fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -144,8 +143,7 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
         qsl_cst::Limits::default(),
     )
     .expect("S1 reads the unit");
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,

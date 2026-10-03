@@ -382,7 +382,7 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
             )],
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
-            Expression::Size(Box::new(all_instances(target))),
+            Expression::size(all_instances(target)),
         )],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
@@ -415,7 +415,7 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
             )],
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
-            Expression::Size(Box::new(Expression::Name("elements".to_owned()))),
+            Expression::size(Expression::name("elements".to_owned())),
         )],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
@@ -686,7 +686,7 @@ fn run_postcondition_family(
 }
 
 fn population_name() -> Expression {
-    Expression::Name("p".to_owned())
+    Expression::name("p".to_owned())
 }
 
 /// `all_instances`/`lookup`'s own `target` is always a
@@ -718,24 +718,21 @@ fn reference_type_form(target: &ValueType) -> TypeForm {
 }
 
 fn all_instances(target: ValueType) -> Expression {
-    Expression::AllInstances {
-        target: reference_type_form(&target),
-        population: Box::new(population_name()),
-    }
+    Expression::all_instances(reference_type_form(&target), population_name())
 }
 
 fn lookup(target: ValueType, absence: AbsenceMode) -> Expression {
-    Expression::Lookup {
-        target: reference_type_form(&target),
-        population: Box::new(population_name()),
-        reference: Box::new(Expression::Name("r".to_owned())),
+    Expression::lookup(
+        reference_type_form(&target),
+        population_name(),
+        Expression::name("r".to_owned()),
         absence,
-    }
+    )
 }
 
 /// `pre(inner)` (FR-153).
 fn pre(inner: Expression) -> Expression {
-    Expression::Pre(Box::new(inner))
+    Expression::pre(inner)
 }
 
 /// `Value` deliberately has no structural `PartialEq` (equality is the
@@ -1109,11 +1106,7 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
 }
 
 fn equal(left: Expression, right: Expression) -> Expression {
-    Expression::Binary {
-        operator: BinaryOperator::Equal,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
+    Expression::binary(BinaryOperator::Equal, left, right)
 }
 
 /// TC-198 L08: `(lookup<M::A>(p, r) absent refused) = r`
@@ -1132,7 +1125,7 @@ fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     ];
     let expression = equal(
         lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
-        Expression::Name("r".to_owned()),
+        Expression::name("r".to_owned()),
     );
     assert_eq!(
         *check(&package, &parameters, &expression).value_type(),
@@ -1160,7 +1153,7 @@ fn l08_upcast_lookup_result_equals_the_subtype_reference() {
         ("q", ValueType::Reference(scenario.a)),
     ];
     let expression = equal(
-        Expression::Name("q".to_owned()),
+        Expression::name("q".to_owned()),
         lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
     );
     let (outcome, _) = run(
@@ -1237,13 +1230,13 @@ fn read_through_a(package: &CheckedPackage, objects: &ObjectEnvironment, field: 
         ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
-    let expression = Expression::Field {
-        operand: Box::new(Expression::Deref(Box::new(lookup(
+    let expression = Expression::field(
+        Expression::deref(lookup(
             ValueType::Reference(scenario.a),
             AbsenceMode::Refused,
-        )))),
-        field: field.to_owned(),
-    };
+        )),
+        field.to_owned(),
+    );
     let (outcome, _) = run(
         package,
         &parameters,
@@ -1317,13 +1310,13 @@ fn deref_field_read_charges_no_model_family_charge_outside_a_protocol_clause() {
             ("p", ValueType::Population(Some(3))),
             ("r", ValueType::Reference(scenario.b)),
         ];
-        let expression = Expression::Field {
-            operand: Box::new(Expression::Deref(Box::new(lookup(
+        let expression = Expression::field(
+            Expression::deref(lookup(
                 ValueType::Reference(scenario.a),
                 AbsenceMode::Refused,
-            )))),
-            field: "x".to_owned(),
-        };
+            )),
+            "x".to_owned(),
+        );
         run(
             &package,
             &parameters,
@@ -1444,8 +1437,8 @@ fn l08_references_to_unrelated_object_types_refuse_equality_at_check_time() {
         ("q", ValueType::Reference(fixed_type(0xCC))),
     ];
     let expression = equal(
-        Expression::Name("r".to_owned()),
-        Expression::Name("q".to_owned()),
+        Expression::name("r".to_owned()),
+        Expression::name("q".to_owned()),
     );
     let refusal = check_refusal(&package, &parameters, &expression);
     assert_eq!(
@@ -1532,11 +1525,8 @@ fn population_refused_as_equality_operand() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
-    let expression = Expression::Binary {
-        operator: BinaryOperator::Equal,
-        left: Box::new(population_name()),
-        right: Box::new(population_name()),
-    };
+    let expression =
+        Expression::binary(BinaryOperator::Equal, population_name(), population_name());
     let refusal = check_refusal(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -1549,12 +1539,12 @@ fn population_refused_as_option_payload() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
-    let expression = Expression::Convert {
-        target: crate::support::type_form::type_form(&ValueType::Option(Box::new(
-            ValueType::Population(Some(3)),
-        ))),
-        operand: Box::new(Expression::Boolean(true)),
-    };
+    let expression = Expression::convert(
+        crate::support::type_form::type_form(&ValueType::Option(Box::new(ValueType::Population(
+            Some(3),
+        )))),
+        Expression::boolean(true),
+    );
     let refusal = check_refusal(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -1567,14 +1557,14 @@ fn population_refused_as_collection_element() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
-    let expression = Expression::Convert {
-        target: crate::support::type_form::type_form(&ValueType::collection(CollectionType::new(
+    let expression = Expression::convert(
+        crate::support::type_form::type_form(&ValueType::collection(CollectionType::new(
             CollectionKind::Set,
             ValueType::Population(Some(3)),
             Some(CardinalityBound::new(0, 3).unwrap()),
         ))),
-        operand: Box::new(Expression::Boolean(true)),
-    };
+        Expression::boolean(true),
+    );
     let refusal = check_refusal(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -1902,10 +1892,10 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
         ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
-    let expression = Expression::Collection {
-        kind: CollectionKind::Set,
-        elements: vec![lookup(target.clone(), AbsenceMode::Refused)],
-    };
+    let expression = Expression::collection(
+        CollectionKind::Set,
+        vec![lookup(target.clone(), AbsenceMode::Refused)],
+    );
     let expected = ValueType::collection(CollectionType::new(
         CollectionKind::Set,
         target,
@@ -2087,17 +2077,15 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
 
     // let pre_count = size(pre(allInstances(p))) in
     //   size(allInstances(p)) != pre_count
-    let expression = Expression::Let {
-        name: "pre_count".to_owned(),
-        value: Box::new(Expression::Size(Box::new(pre(all_instances(
-            target.clone(),
-        ))))),
-        body: Box::new(Expression::Binary {
-            operator: BinaryOperator::NotEqual,
-            left: Box::new(Expression::Size(Box::new(all_instances(target)))),
-            right: Box::new(Expression::Name("pre_count".to_owned())),
-        }),
-    };
+    let expression = Expression::let_in(
+        "pre_count".to_owned(),
+        Expression::size(pre(all_instances(target.clone()))),
+        Expression::binary(
+            BinaryOperator::NotEqual,
+            Expression::size(all_instances(target)),
+            Expression::name("pre_count".to_owned()),
+        ),
+    );
 
     let (outcome, _) = run_postcondition(
         &package,
@@ -2144,11 +2132,11 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let v = allInstances(p) in pre(v)
-    let expression = Expression::Let {
-        name: "v".to_owned(),
-        value: Box::new(all_instances(target)),
-        body: Box::new(pre(Expression::Name("v".to_owned()))),
-    };
+    let expression = Expression::let_in(
+        "v".to_owned(),
+        all_instances(target),
+        pre(Expression::name("v".to_owned())),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2185,14 +2173,14 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(size(allInstances(q)))
-    let expression = Expression::Let {
-        name: "q".to_owned(),
-        value: Box::new(population_name()),
-        body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
-            target: reference_type_form(&target),
-            population: Box::new(Expression::Name("q".to_owned())),
-        })))),
-    };
+    let expression = Expression::let_in(
+        "q".to_owned(),
+        population_name(),
+        pre(Expression::size(Expression::all_instances(
+            reference_type_form(&target),
+            Expression::name("q".to_owned()),
+        ))),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2226,18 +2214,18 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(let r = q in size(allInstances(r)))
-    let expression = Expression::Let {
-        name: "q".to_owned(),
-        value: Box::new(population_name()),
-        body: Box::new(pre(Expression::Let {
-            name: "r".to_owned(),
-            value: Box::new(Expression::Name("q".to_owned())),
-            body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                target: reference_type_form(&target),
-                population: Box::new(Expression::Name("r".to_owned())),
-            }))),
-        })),
-    };
+    let expression = Expression::let_in(
+        "q".to_owned(),
+        population_name(),
+        pre(Expression::let_in(
+            "r".to_owned(),
+            Expression::name("q".to_owned()),
+            Expression::size(Expression::all_instances(
+                reference_type_form(&target),
+                Expression::name("r".to_owned()),
+            )),
+        )),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2274,18 +2262,18 @@ fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(size(allInstances(let s = q in s)))
-    let expression = Expression::Let {
-        name: "q".to_owned(),
-        value: Box::new(population_name()),
-        body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
-            target: reference_type_form(&target),
-            population: Box::new(Expression::Let {
-                name: "s".to_owned(),
-                value: Box::new(Expression::Name("q".to_owned())),
-                body: Box::new(Expression::Name("s".to_owned())),
-            }),
-        })))),
-    };
+    let expression = Expression::let_in(
+        "q".to_owned(),
+        population_name(),
+        pre(Expression::size(Expression::all_instances(
+            reference_type_form(&target),
+            Expression::let_in(
+                "s".to_owned(),
+                Expression::name("q".to_owned()),
+                Expression::name("s".to_owned()),
+            ),
+        ))),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2316,18 +2304,18 @@ fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(size(allInstances(if true then q else q)))
-    let expression = Expression::Let {
-        name: "q".to_owned(),
-        value: Box::new(population_name()),
-        body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
-            target: reference_type_form(&target),
-            population: Box::new(Expression::If {
-                condition: Box::new(Expression::Boolean(true)),
-                then: Box::new(Expression::Name("q".to_owned())),
-                otherwise: Box::new(Expression::Name("q".to_owned())),
-            }),
-        })))),
-    };
+    let expression = Expression::let_in(
+        "q".to_owned(),
+        population_name(),
+        pre(Expression::size(Expression::all_instances(
+            reference_type_form(&target),
+            Expression::if_then_else(
+                Expression::boolean(true),
+                Expression::name("q".to_owned()),
+                Expression::name("q".to_owned()),
+            ),
+        ))),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2362,22 +2350,22 @@ fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(let r = if true then q else q in size(allInstances(r)))
-    let expression = Expression::Let {
-        name: "q".to_owned(),
-        value: Box::new(population_name()),
-        body: Box::new(pre(Expression::Let {
-            name: "r".to_owned(),
-            value: Box::new(Expression::If {
-                condition: Box::new(Expression::Boolean(true)),
-                then: Box::new(Expression::Name("q".to_owned())),
-                otherwise: Box::new(Expression::Name("q".to_owned())),
-            }),
-            body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                target: reference_type_form(&target),
-                population: Box::new(Expression::Name("r".to_owned())),
-            }))),
-        })),
-    };
+    let expression = Expression::let_in(
+        "q".to_owned(),
+        population_name(),
+        pre(Expression::let_in(
+            "r".to_owned(),
+            Expression::if_then_else(
+                Expression::boolean(true),
+                Expression::name("q".to_owned()),
+                Expression::name("q".to_owned()),
+            ),
+            Expression::size(Expression::all_instances(
+                reference_type_form(&target),
+                Expression::name("r".to_owned()),
+            )),
+        )),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2413,22 +2401,22 @@ fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(let r = (let s = q in s) in size(allInstances(r)))
-    let expression = Expression::Let {
-        name: "q".to_owned(),
-        value: Box::new(population_name()),
-        body: Box::new(pre(Expression::Let {
-            name: "r".to_owned(),
-            value: Box::new(Expression::Let {
-                name: "s".to_owned(),
-                value: Box::new(Expression::Name("q".to_owned())),
-                body: Box::new(Expression::Name("s".to_owned())),
-            }),
-            body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                target: reference_type_form(&target),
-                population: Box::new(Expression::Name("r".to_owned())),
-            }))),
-        })),
-    };
+    let expression = Expression::let_in(
+        "q".to_owned(),
+        population_name(),
+        pre(Expression::let_in(
+            "r".to_owned(),
+            Expression::let_in(
+                "s".to_owned(),
+                Expression::name("q".to_owned()),
+                Expression::name("s".to_owned()),
+            ),
+            Expression::size(Expression::all_instances(
+                reference_type_form(&target),
+                Expression::name("r".to_owned()),
+            )),
+        )),
+    );
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2464,15 +2452,15 @@ fn pre_of_a_captured_post_reference_retains_its_post_observation() {
     let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let v = size(allInstances(p)) in pre(size(allInstances(p)) != v)
-    let expression = Expression::Let {
-        name: "v".to_owned(),
-        value: Box::new(Expression::Size(Box::new(all_instances(target.clone())))),
-        body: Box::new(pre(Expression::Binary {
-            operator: BinaryOperator::NotEqual,
-            left: Box::new(Expression::Size(Box::new(all_instances(target)))),
-            right: Box::new(Expression::Name("v".to_owned())),
-        })),
-    };
+    let expression = Expression::let_in(
+        "v".to_owned(),
+        Expression::size(all_instances(target.clone())),
+        pre(Expression::binary(
+            BinaryOperator::NotEqual,
+            Expression::size(all_instances(target)),
+            Expression::name("v".to_owned()),
+        )),
+    );
     let (outcome, _) = run_postcondition(
         &package,
         &parameters,
@@ -2511,7 +2499,7 @@ fn pre_refuses_a_bare_population_parameter() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
 
-    let expression = pre(Expression::Name("p".to_owned()));
+    let expression = pre(Expression::name("p".to_owned()));
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2534,7 +2522,7 @@ fn pre_of_an_integer_literal_is_refused() {
     let package = package(&scenario);
     let parameters: [(&str, ValueType); 0] = [];
 
-    let expression = pre(Expression::Integer(Integer::from(1_u64)));
+    let expression = pre(Expression::integer(Integer::from(1_u64)));
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2631,10 +2619,7 @@ fn pre_of_a_function_call_over_a_bare_parameter_argument_refuses_forbidden_pre_r
     let package = package_with_function(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
 
-    let expression = pre(Expression::Call {
-        name: "F".to_owned(),
-        arguments: vec![population_name()],
-    });
+    let expression = pre(Expression::call("F".to_owned(), vec![population_name()]));
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -2665,10 +2650,10 @@ fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
     let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(Some(3)))];
 
-    let expression = pre(Expression::Call {
-        name: "F2".to_owned(),
-        arguments: vec![all_instances(target)],
-    });
+    let expression = pre(Expression::call(
+        "F2".to_owned(),
+        vec![all_instances(target)],
+    ));
     let (outcome, _) = run_postcondition(
         &package,
         &parameters,
@@ -2975,7 +2960,7 @@ fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
-    let expression = Expression::Boolean(true);
+    let expression = Expression::boolean(true);
     let unresolved_id = scenario.binding.population_id();
 
     let checked = check(&package, &parameters, &expression);
@@ -3112,7 +3097,7 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
         .with_population(binding)
         .unwrap();
     let package = package(&scenario);
-    let expression = Expression::Boolean(true);
+    let expression = Expression::boolean(true);
 
     let parameters_6 = [("p", ValueType::Population(Some(6)))];
     let checked = check(&package, &parameters_6, &expression);
@@ -3481,7 +3466,7 @@ fn tc_441_population_maximum_absence_must_match_at_admission() {
         (ValueType::Population(Some(3)), unbounded),
     ] {
         let parameters = [("p", parameter_type)];
-        let checked = check(&package, &parameters, &Expression::Boolean(true));
+        let checked = check(&package, &parameters, &Expression::boolean(true));
         let objects = ObjectEnvironment::default()
             .with_population(binding.clone())
             .unwrap();

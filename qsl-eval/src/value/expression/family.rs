@@ -328,7 +328,7 @@ mod family_contract_tests {
             &mut diagnostics,
             &mut scopes,
         );
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(diagnostics.entries().len(), 1);
         // The admitted declaration's identity is its FR-092 function node
@@ -378,7 +378,7 @@ mod family_contract_tests {
             &mut diagnostics,
             &mut scopes,
         );
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         let checked = ValueFunctionFamily::check(&form, &mut cx)
             .expect("f checks")
             .into_value();
@@ -407,7 +407,7 @@ mod family_contract_tests {
     #[test]
     fn evaluate_faults_on_a_second_call_on_the_same_env() {
         let graph = PackageDeclarations {
-            functions: vec![declaration("f", Expression::Boolean(true))],
+            functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
@@ -462,7 +462,7 @@ mod family_contract_tests {
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
         let graph = PackageDeclarations {
-            functions: vec![declaration("f", Expression::Boolean(true))],
+            functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
@@ -518,11 +518,11 @@ mod family_contract_tests {
             ],
             decimal(["0", "10000", "2", "2", mode]),
             None,
-            Expression::Binary {
-                operator: qsl_forms::BinaryOperator::Divide,
-                left: Box::new(Expression::Name("p".to_owned())),
-                right: Box::new(Expression::Name("q".to_owned())),
-            },
+            Expression::binary(
+                qsl_forms::BinaryOperator::Divide,
+                Expression::name("p".to_owned()),
+                Expression::name("q".to_owned()),
+            ),
         )
     }
 
@@ -623,14 +623,8 @@ mod family_contract_tests {
     fn evaluate_returns_incomplete_when_a_nested_call_exhausts_the_meter() {
         let graph = PackageDeclarations {
             functions: vec![
-                declaration("callee", Expression::Boolean(true)),
-                declaration(
-                    "caller",
-                    Expression::Call {
-                        name: "callee".to_owned(),
-                        arguments: Vec::new(),
-                    },
-                ),
+                declaration("callee", Expression::boolean(true)),
+                declaration("caller", Expression::call("callee".to_owned(), Vec::new())),
             ],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
@@ -678,7 +672,7 @@ mod tests {
     /// `owner`'s unit.
     fn checked_identity(source: RawSourceRef) -> NodeKey {
         PackageDeclarations {
-            functions: vec![declaration("f", Expression::Boolean(true))],
+            functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(source)
         }
         .check(CheckingLimits::default())

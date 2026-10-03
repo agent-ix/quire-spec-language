@@ -754,7 +754,7 @@ mod checked {
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
     use qsl_eval::value::{input_refusal_code, CallFailure, CheckedPackageEvaluation};
-    use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
+    use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
     use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
         CheckCause, CheckRefusal, CheckedExpression, Obligation, PackageDeclarations,
@@ -764,33 +764,23 @@ mod checked {
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
     fn name(spelling: &str) -> Expression {
-        Expression::Name(spelling.to_owned())
+        Expression::name(spelling.to_owned())
     }
 
     fn literal(value: i64) -> Expression {
-        Expression::Integer(Integer::from(value))
+        Expression::integer(Integer::from(value))
     }
 
     fn binary(operator: BinaryOperator, left: Expression, right: Expression) -> Expression {
-        Expression::Binary {
-            operator,
-            left: Box::new(left),
-            right: Box::new(right),
-        }
+        Expression::binary(operator, left, right)
     }
 
     fn project(operand: Expression, spelling: &str) -> Expression {
-        Expression::Field {
-            operand: Box::new(operand),
-            field: spelling.to_owned(),
-        }
+        Expression::field(operand, spelling.to_owned())
     }
 
     fn call(target: &str) -> Expression {
-        Expression::Call {
-            name: target.to_owned(),
-            arguments: Vec::new(),
-        }
+        Expression::call(target.to_owned(), Vec::new())
     }
 
     /// `crate::support::type_form::type_form` can't recover a
@@ -929,10 +919,7 @@ mod checked {
             mismatch()
         );
 
-        let aliased = Expression::Record {
-            name: "C".to_owned(),
-            fields: vec![("x".to_owned(), FieldInitializer::Value(literal(1)))],
-        };
+        let aliased = Expression::record("C".to_owned(), vec![("x".to_owned(), Some(literal(1)))]);
         let checked = check(
             &package,
             &parameters,
@@ -1035,19 +1022,19 @@ mod checked {
         )
         .unwrap();
         let q_type = sequence_of(ValueType::Integer, 0, 2);
-        let construction = Expression::Record {
-            name: "Two".to_owned(),
-            fields: vec![
-                ("b".to_owned(), FieldInitializer::Value(call("g"))),
+        let construction = Expression::record(
+            "Two".to_owned(),
+            vec![
+                ("b".to_owned(), Some(call("g"))),
                 (
                     "a".to_owned(),
-                    FieldInitializer::Value(Expression::Convert {
-                        target: crate::support::type_form::type_form(&set),
-                        operand: Box::new(name("q")),
-                    }),
+                    Some(Expression::convert(
+                        crate::support::type_form::type_form(&set),
+                        name("q"),
+                    )),
                 ),
             ],
-        };
+        );
         let checked = check(
             &package,
             &[("q", q_type.clone())],
@@ -1113,10 +1100,10 @@ mod checked {
         // function's own `ObjectTypeDeclaration::new` call) -- the `TypeForm`
         // below names it as source syntax would, by that declared name, not
         // by the digest.
-        let conversion = Expression::Convert {
-            target: crate::support::type_form::named_type_form("Node"),
-            operand: Box::new(literal(1)),
-        };
+        let conversion = Expression::convert(
+            crate::support::type_form::named_type_form("Node"),
+            literal(1),
+        );
         assert_eq!(
             cause(check(&package, &[], &conversion, CheckMode::Kernel)),
             mismatch()
@@ -1129,11 +1116,11 @@ mod checked {
         let x = [("x", composite("P"))];
         let b = || project(name("x"), "b");
         let body = |body| package(p_environment(), Vec::new(), vec![function("f", &x, body)]);
-        body(Expression::If {
-            condition: Box::new(Expression::Present(Box::new(b()))),
-            then: Box::new(Expression::Value(Box::new(b()))),
-            otherwise: Box::new(literal(0)),
-        })
+        body(Expression::if_then_else(
+            Expression::present(b()),
+            Expression::value(b()),
+            literal(0),
+        ))
         .unwrap();
         let only = |result: Result<CheckedPackage, Vec<CheckRefusal>>| match result {
             Err(refusals) => match refusals.as_slice() {
@@ -1142,7 +1129,7 @@ mod checked {
             },
             Ok(_) => panic!("a refusal, not an admitted package"),
         };
-        let unguarded = only(body(Expression::Value(Box::new(b()))));
+        let unguarded = only(body(Expression::value(b())));
         assert_eq!(unguarded, CheckCause::Unproved(Obligation::Presence));
         assert_eq!(unguarded.code().as_str(), "undefined_expression");
         assert_eq!(unguarded.cause(), Some("unproved-presence"));
@@ -1158,13 +1145,7 @@ mod checked {
         .unwrap();
 
         let package = package(p_environment(), Vec::new(), Vec::new()).unwrap();
-        let checked = check(
-            &package,
-            &x,
-            &Expression::Present(Box::new(b())),
-            CheckMode::Linked,
-        )
-        .unwrap();
+        let checked = check(&package, &x, &Expression::present(b()), CheckMode::Linked).unwrap();
         let env = p_environment();
         for (slot, expected) in [
             (None, false),

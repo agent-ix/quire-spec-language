@@ -35,7 +35,6 @@ for a diagnostic.
 ## Inputs
 
 - A recovery-free `LosslessCst` of a `1-draft` unit (ADR-011 E2).
-- `FormsLimits`.
 
 ## Outputs
 
@@ -68,8 +67,6 @@ pub struct WorkloadForm {               // workload-decl
   `weighted-value` and `workload-weight` in declared order with its span.
 - S2 SHALL leave the values' types, the weights' positivity, a workload's
   completeness and a reward's reads unchecked for S3 (FR-185).
-- S2 SHALL charge each weighted value, weight and expression node against
-  `FormsLimits` as it charges any other form node.
 
 ## Acceptance Criteria
 

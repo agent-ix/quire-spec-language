@@ -37,21 +37,9 @@ fn identity_preimage_depth(function: FunctionDeclaration) -> usize {
 #[trace("TC-728", "FR-259-AC-4")]
 #[test]
 fn a_deep_bodys_package_identity_preimage_has_a_fixed_depth() {
-    let and = |_, body| Expression::Binary {
-        operator: BinaryOperator::And,
-        left: Box::new(name("a")),
-        right: Box::new(body),
-    };
-    let else_if = |_, body| Expression::If {
-        condition: Box::new(name("a")),
-        then: Box::new(name("a")),
-        otherwise: Box::new(body),
-    };
-    let nested_let = |level, body| Expression::Let {
-        name: format!("b{level}"),
-        value: Box::new(name("a")),
-        body: Box::new(body),
-    };
+    let and = |_, body| Expression::binary(BinaryOperator::And, name("a"), body);
+    let else_if = |_, body| Expression::if_then_else(name("a"), name("a"), body);
+    let nested_let = |level, body| Expression::let_in(format!("b{level}"), name("a"), body);
     let steps: [(&str, Step); 3] = [("and", and), ("else if", else_if), ("let", nested_let)];
     for (label, step) in steps {
         assert_eq!(

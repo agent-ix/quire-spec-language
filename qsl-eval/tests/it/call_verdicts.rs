@@ -8,7 +8,7 @@ use ix_trace_rs::trace;
 
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_semantics::check::{CheckCause, NodeKind, PackageDeclarations};
-use quire_exact::{IllTypedCause, Integer, ValueType};
+use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
 use crate::support::type_form::type_form;
@@ -24,15 +24,12 @@ fn f() -> FunctionDeclaration {
         vec![("x".to_owned(), boolean())],
         boolean(),
         None,
-        Expression::Name("x".to_owned()),
+        Expression::name("x".to_owned()),
     )
 }
 
 fn call(name: &str, arguments: Vec<Expression>) -> Expression {
-    Expression::Call {
-        name: name.to_owned(),
-        arguments,
-    }
+    Expression::call(name.to_owned(), arguments)
 }
 
 fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
@@ -45,13 +42,13 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
 /// The four calls of TC-164 and the cause each must be refused with
 /// (`None` = admitted).
 fn calls() -> Vec<(&'static str, Expression, Option<CheckCause>)> {
-    let t = || Expression::Boolean(true);
+    let t = || Expression::boolean(true);
     let mismatch = || Some(CheckCause::IllTyped(IllTypedCause::TypeMismatch));
     vec![
         ("f(true)", call("f", vec![t()]), None),
         (
             "f(true, false)",
-            call("f", vec![t(), Expression::Boolean(false)]),
+            call("f", vec![t(), Expression::boolean(false)]),
             mismatch(),
         ),
         (
@@ -61,7 +58,7 @@ fn calls() -> Vec<(&'static str, Expression, Option<CheckCause>)> {
         ),
         (
             "f(1)",
-            call("f", vec![Expression::Integer(Integer::from(1_i64))]),
+            call("f", vec![Expression::integer(1_i64)]),
             mismatch(),
         ),
     ]
@@ -125,7 +122,7 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
                         vec![],
                         boolean(),
                         Some(expression.clone()),
-                        Expression::Boolean(true),
+                        Expression::boolean(true),
                     ),
                 ])
                 .check(CheckingLimits::default())

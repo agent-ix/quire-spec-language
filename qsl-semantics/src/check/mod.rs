@@ -2272,12 +2272,9 @@ mod tests {
                 body,
             )
         }
-        let call_helper = || Expression::Call {
-            name: "helper".to_owned(),
-            arguments: Vec::new(),
-        };
+        let call_helper = || Expression::call("helper".to_owned(), Vec::new());
         let graph = declarations(vec![
-            literal_function("helper", Expression::Boolean(true)),
+            literal_function("helper", Expression::boolean(true)),
             literal_function("caller_one", call_helper()),
             literal_function("caller_two", call_helper()),
         ])
@@ -2330,7 +2327,7 @@ mod tests {
         // load-bearing for identity or the occurrence key that
         // disambiguates it, only for where a human-readable message points.
         let renamed = declarations(vec![
-            literal_function("helper", Expression::Boolean(true)),
+            literal_function("helper", Expression::boolean(true)),
             literal_function("renamed_caller_one", call_helper()),
             literal_function("renamed_caller_two", call_helper()),
         ])
@@ -2370,21 +2367,18 @@ mod tests {
                 vec![("flag".to_owned(), boolean())],
                 boolean(),
                 None,
-                Expression::Name("flag".to_owned()),
+                Expression::name("flag".to_owned()),
             ),
             FunctionDeclaration::new(
                 "caller",
                 Vec::new(),
                 boolean(),
                 None,
-                Expression::If {
-                    condition: Box::new(Expression::Boolean(true)),
-                    then: Box::new(Expression::Call {
-                        name: "helper".to_owned(),
-                        arguments: vec![Expression::Boolean(false)],
-                    }),
-                    otherwise: Box::new(Expression::Boolean(false)),
-                },
+                Expression::if_then_else(
+                    Expression::boolean(true),
+                    Expression::call("helper".to_owned(), vec![Expression::boolean(false)]),
+                    Expression::boolean(false),
+                ),
             ),
         ])
         .check(CheckingLimits::default())

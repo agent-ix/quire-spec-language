@@ -811,13 +811,15 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
         pos,
         Some(CardinalityBound::new(0, 2).unwrap()),
     ));
-    let expression = Expression::Sum {
-        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-        result_type: "Pos".to_owned(),
-        binder: "x".to_owned(),
-        source: Box::new(Expression::Name("q".to_owned())),
-        summand: Box::new(Expression::Name("x".to_owned())),
-    };
+    let expression = Expression::sum(
+        qsl_forms::DeclaredName {
+            name: "Pos".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+        "x".to_owned(),
+        Expression::name("q".to_owned()),
+        Expression::name("x".to_owned()),
+    );
     let checked = package
         .graph()
         .check_expression(

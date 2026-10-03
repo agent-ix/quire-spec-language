@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Nesting levels, chain lengths, work budget and stack safety for the
+//! Bracket nesting, chain lengths, work budget and stack safety for the
 //! complete-V1 parser. Every parse runs on a 512 KiB thread at the default
 //! ceilings; see `tests/it/nesting_levels.rs` in the root crate for the
 //! native parser.
@@ -157,57 +157,105 @@ fn parenthesized_sum_five_deep_parses() {
     });
 }
 
-#[trace("TC-012", "NFR-001-M-4")]
-#[test]
-fn paren_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused() {
-    on_bounded_stack(|| {
-        let bound = Limits::default().nesting;
-        // The body's `{` is the first pair.
-        let inner = bound - 1;
-        admitted(&function(&format!(
-            "{}x{}",
-            "(".repeat(inner),
-            ")".repeat(inner)
-        )));
+fn nested_options(depth: usize) -> String {
+    format!(
+        "{HEADER}type T = {}Integer{};\n",
+        "Option<".repeat(depth),
+        ">".repeat(depth)
+    )
+}
 
-        let opens = "(".repeat(inner + 1);
-        let error = parse(&function(&format!("{opens}x{}", ")".repeat(inner + 1))))
-            .expect_err("one pair deeper is refused");
-        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
-        assert_eq!(error.phase, Phase::Parse);
-        let offending = function_prefix().len() + opens.len() - 1;
-        assert_eq!(
-            (
-                error.byte_span().unwrap().start,
-                error.byte_span().unwrap().end
-            ),
-            (offending, offending + 1)
-        );
+/// The deepest `Option<…>` nest whose unit `limits` admit, by bisection.
+fn deepest_options(limits: Limits) -> usize {
+    let (mut low, mut high) = (0_usize, 200_000_usize);
+    while low + 1 < high {
+        let middle = (low + high) / 2;
+        let text = nested_options(middle);
+        if qsl_cst::parse(
+            identity("options"),
+            "options.native",
+            text.as_bytes(),
+            limits,
+        )
+        .is_ok()
+        {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    low
+}
+
+/// `qsl_cst::Limits` holds source bytes, tokens, nodes and parser work
+/// units, each set through its builder method; the work units bound the
+/// parse; and brackets nested 10,000 deep parse at the default limits.
+#[trace("TC-723", "FR-256-AC-3")]
+#[test]
+fn ten_thousand_nested_brackets_parse_at_the_default_limits() {
+    let limits = Limits::default()
+        .with_source_bytes(7)
+        .with_tokens(8)
+        .with_nodes(9)
+        .with_work_units(10);
+    assert_eq!(
+        limits,
+        Limits {
+            source_bytes: 7,
+            tokens: 8,
+            nodes: 9,
+            work_units: 10,
+        }
+    );
+    let text = nested_options(3);
+    let starved = qsl_cst::parse(
+        identity("options"),
+        "options.native",
+        text.as_bytes(),
+        Limits::default().with_work_units(1),
+    )
+    .expect_err("one work unit per token is too few to parse");
+    assert!(
+        matches!(refused_limit(&starved), SyntaxLimit::Work { .. }),
+        "{starved:?}"
+    );
+    on_bounded_stack(|| {
+        admitted(&nested_options(10_000));
     });
 }
 
-#[trace("TC-012", "NFR-001-M-4")]
+/// With the node ceiling at 200,000 and every other limit at its default,
+/// brackets nested to the depth the default token ceiling admits parse, and
+/// one pair deeper is refused naming the token ceiling and its bound.
+///
+/// Partial for FR-256-AC-2: the setting name (`s1.tokens`), the count
+/// reached and raising the setting through FR-255's settings operation are
+/// slice B5's, with FR-255.
+#[trace("TC-723", "FR-256-AC-2")]
 #[test]
-fn option_type_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused() {
+fn brackets_nest_to_the_default_token_ceiling() {
     on_bounded_stack(|| {
-        let bound = Limits::default().nesting;
-        let alias = |depth: usize| {
-            let prefix = format!("{HEADER}type T = {}", "Option<".repeat(depth));
-            let text = format!("{prefix}Integer{};\n", ">".repeat(depth));
-            (prefix, text)
-        };
-        admitted(&alias(bound).1);
-
-        let (prefix, text) = alias(bound + 1);
-        let error = parse(&text).expect_err("one pair deeper is refused");
-        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
-        let angle = prefix.len() - 1;
+        let limits = Limits::default().with_nodes(200_000);
+        let deepest = deepest_options(limits);
+        let text = nested_options(deepest);
+        let parsed = qsl_cst::parse(
+            identity("options"),
+            "options.native",
+            text.as_bytes(),
+            limits,
+        )
+        .expect("the deepest nest within the token ceiling parses");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let error = qsl_cst::parse(
+            identity("options"),
+            "options.native",
+            nested_options(deepest + 1).as_bytes(),
+            limits,
+        )
+        .expect_err("one pair deeper exceeds the token ceiling");
         assert_eq!(
-            (
-                error.byte_span().unwrap().start,
-                error.byte_span().unwrap().end
-            ),
-            (angle, angle + 1)
+            refused_limit(&error),
+            SyntaxLimit::Tokens { bound: 100_000 }
         );
     });
 }
@@ -272,8 +320,7 @@ fn nested_trailing_comma_typo_recovery_points_at_the_offending_comma() {
     });
 }
 
-// NFR-001: a work-budget refusal names the work limit rather than nesting
-// depth. 40 unclosed `set[` stay under the nesting ceiling. No production
+// NFR-001: a work-budget refusal names the work limit. No production
 // matches inside them, so nothing is memoized: every level re-reads the
 // failing levels inside it under each alternative that starts with `set`,
 // and the work grows quadratically with depth. At depth 40 it is about
@@ -327,9 +374,13 @@ fn exhausting_the_token_ceiling_names_the_token_ceiling() {
     assert_eq!(error.phase, Phase::Lex);
 }
 
-// The longest chain of each shape the default ceilings admit parses, and
-// one element more names the ceiling it hits.
-#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
+/// The longest chain of each shape the default ceilings admit parses, and
+/// one element more names the ceiling it hits.
+///
+/// Partial for FR-256-AC-2: the setting name, the count reached and
+/// raising the setting through FR-255's settings operation are slice B5's,
+/// with FR-255.
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3", "TC-723", "FR-256-AC-2")]
 #[test]
 fn longest_chains_parse_and_one_longer_names_a_ceiling() {
     on_bounded_stack(|| {

@@ -121,10 +121,7 @@ fn vector_functions() -> Vec<FunctionDeclaration> {
             &[("s", nodes), ("b", named("Node"))],
             boolean(),
             None,
-            Expression::Contains {
-                collection: Box::new(name_expr("s")),
-                item: Box::new(name_expr("b")),
-            },
+            Expression::contains(name_expr("s"), name_expr("b")),
         ),
         equality("eqa", ("x", "y"), named("A")),
         equality("eqo", ("a", "b"), option_node),
@@ -279,10 +276,7 @@ fn leaf_paths_follow_fr093_text_leaves() {
         &[("s", lists), ("b", named("List"))],
         boolean(),
         None,
-        Expression::Contains {
-            collection: Box::new(name_expr("s")),
-            item: Box::new(name_expr("b")),
-        },
+        Expression::contains(name_expr("s"), name_expr("b")),
     );
     let checked = package(vec![list()], vec![has], vector_lock())
         .check(CheckingLimits::default())
@@ -358,7 +352,7 @@ fn a_collection_over_a_recursive_record_reuses_the_group_base() {
         &[("s", trees)],
         boolean(),
         None,
-        Expression::Boolean(true),
+        Expression::boolean(true),
     );
     let checked = package(vec![tree], vec![wide], vector_lock())
         .check(CheckingLimits::default())

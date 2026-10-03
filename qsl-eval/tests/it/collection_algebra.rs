@@ -609,35 +609,23 @@ mod checked {
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {
-        Expression::Name(spelling.to_owned())
+        Expression::name(spelling.to_owned())
     }
 
     fn literal(value: i64) -> Expression {
-        Expression::Integer(Integer::from(value))
+        Expression::integer(Integer::from(value))
     }
 
     fn equal(left: Expression, right: Expression) -> Expression {
-        Expression::Binary {
-            operator: BinaryOperator::Equal,
-            left: Box::new(left),
-            right: Box::new(right),
-        }
+        Expression::binary(BinaryOperator::Equal, left, right)
     }
 
     fn literal_collection(kind: CollectionKind, values: &[i64]) -> Expression {
-        Expression::Collection {
-            kind,
-            elements: values.iter().copied().map(literal).collect(),
-        }
+        Expression::collection(kind, values.iter().copied().map(literal).collect())
     }
 
     fn exists(source: &str, body: Expression) -> Expression {
-        Expression::Query {
-            query: BinderQuery::Exists,
-            binder: "x".to_owned(),
-            source: Box::new(name(source)),
-            body: Box::new(body),
-        }
+        Expression::query(BinderQuery::Exists, "x".to_owned(), name(source), body)
     }
 
     fn package(declarations: PackageDeclarations) -> CheckedPackage {
@@ -868,11 +856,11 @@ mod checked {
             ill_typed(
                 &package,
                 &[],
-                &Expression::Binary {
-                    operator: BinaryOperator::Less,
-                    left: Box::new(name("Color::red")),
-                    right: Box::new(name("Color::blue")),
-                },
+                &Expression::binary(
+                    BinaryOperator::Less,
+                    name("Color::red"),
+                    name("Color::blue")
+                ),
             ),
             IllTypedCause::OperatorIneligible
         );
@@ -924,33 +912,30 @@ mod checked {
             .0
         };
         let ordered = format!("{:?}", [h1.clone(), h2.clone()]);
-        let mapped = run(Expression::Query {
-            query: BinderQuery::Map,
-            binder: "x".to_owned(),
-            source: Box::new(name("hs")),
-            body: Box::new(name("x")),
-        });
+        let mapped = run(Expression::query(
+            BinderQuery::Map,
+            "x".to_owned(),
+            name("hs"),
+            name("x"),
+        ));
         assert_eq!(format!("{:?}", elements(&mapped)), ordered);
-        let converted = run(Expression::Convert {
-            target: TypeForm::collection(CollectionKind::Sequence, crate::support::type_form::SPAN)
+        let converted = run(Expression::convert(
+            TypeForm::collection(CollectionKind::Sequence, crate::support::type_form::SPAN)
                 .with_arguments(vec![crate::support::type_form::named_type_form("Holder")])
                 .with_bounds(vec!["0".to_owned(), "2".to_owned()]),
-            operand: Box::new(name("hs")),
-        });
+            name("hs"),
+        ));
         let Value::Collection(sequence) = &converted else {
             panic!("a collection");
         };
         assert_eq!(sequence.collection_type().kind(), CollectionKind::Sequence);
         assert_eq!(format!("{:?}", sequence.elements()), ordered);
         assert_eq!(
-            format!("{:?}", run(Expression::Size(Box::new(name("hs"))))),
+            format!("{:?}", run(Expression::size(name("hs")))),
             format!("{:?}", int(2))
         );
         for expression in [
-            Expression::Contains {
-                collection: Box::new(name("hs")),
-                item: Box::new(name("h1")),
-            },
+            Expression::contains(name("hs"), name("h1")),
             equal(name("hs"), name("hs")),
         ] {
             assert_eq!(
@@ -1010,10 +995,7 @@ mod checked {
         let checked = check(
             &package,
             &parameters,
-            &Expression::Contains {
-                collection: Box::new(name("hs")),
-                item: Box::new(name("item")),
-            },
+            &Expression::contains(name("hs"), name("item")),
         )
         .unwrap();
         let mut meter = Meter::new(UNLIMITED);
@@ -1048,16 +1030,14 @@ mod checked {
             ill_typed(&package, &parameters, &equal(name("x"), name("s"))),
             IllTypedCause::TypeMismatch
         );
-        let widened = Expression::Let {
-            name: "y".to_owned(),
-            value: Box::new(Expression::Convert {
-                target: crate::support::type_form::type_form(&ValueType::collection(
-                    s_type.clone(),
-                )),
-                operand: Box::new(name("x")),
-            }),
-            body: Box::new(equal(name("y"), name("s"))),
-        };
+        let widened = Expression::let_in(
+            "y".to_owned(),
+            Expression::convert(
+                crate::support::type_form::type_form(&ValueType::collection(s_type.clone())),
+                name("x"),
+            ),
+            equal(name("y"), name("s")),
+        );
         let checked = check(&package, &parameters, &widened).unwrap();
         let losses = checked.losses();
         assert_eq!(losses.len(), 1);
@@ -1094,11 +1074,11 @@ mod checked {
             ill_typed(
                 &package,
                 &[],
-                &Expression::Let {
-                    name: "z".to_owned(),
-                    value: Box::new(literal_collection(CollectionKind::Set, &[1])),
-                    body: Box::new(Expression::Size(Box::new(name("z")))),
-                },
+                &Expression::let_in(
+                    "z".to_owned(),
+                    literal_collection(CollectionKind::Set, &[1]),
+                    Expression::size(name("z"))
+                ),
             ),
             IllTypedCause::AmbiguousLiteral
         );

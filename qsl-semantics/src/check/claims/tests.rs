@@ -4,7 +4,7 @@
 //! faults of [`key_claims`] over hand-built occurrences.
 
 use ix_trace_rs::trace;
-use qsl_forms::{build_unit, FormsLimits};
+use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use quire_exact::{Integer, RationalDomain, Role};
 
@@ -32,7 +32,7 @@ fn check(declarations: &str) -> Checked {
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -668,7 +668,7 @@ fn family_check(
         qsl_cst::Limits::default(),
     )
     .expect("S1 reads the unit");
-    let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,

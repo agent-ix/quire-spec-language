@@ -178,18 +178,18 @@ impl DeepInput {
     /// Stage limits raised to fit this input: every size and work limit
     /// covers the source, so what refuses it is the stage's own outcome.
     ///
-    /// The forms and checker depth caps keep their defaults: they are the
-    /// stated limit outcomes S2 and S3 give a deep input today, and ADR-030
-    /// slice 1 deletes both, which then sends every deep input through
-    /// every walk. Raising the forms cap today sends a 10,000-deep
-    /// `Option` type into S3 walks that still recurse natively.
+    /// The checker's depth cap keeps its default: it bounds S3's expression
+    /// walk until ADR-030 slice 1 deletes it with the S3 walks' conversion,
+    /// so it is the limit outcome a deep expression gets. It does not bound
+    /// a type: S3 resolves a type form of any depth on an explicit stack, so
+    /// an `Option` nest checks or refuses on its own merits. S1 and S2 take
+    /// no depth limit.
     pub fn limits(&self) -> SpineLimits {
         let bytes = self.source.len();
         let mut limits = SpineLimits::default();
         limits.source.source_bytes = limits.source.source_bytes.max(bytes);
         limits.source.tokens = limits.source.tokens.max(bytes);
         limits.source.nodes = limits.source.nodes.max(bytes.saturating_mul(16));
-        limits.source.nesting = limits.source.nesting.max(self.depth() + 8);
         let wide = u64::try_from(bytes).unwrap_or(u64::MAX).saturating_mul(64);
         if let Ok(checking) = CheckingLimits::new(wide, MAX_CHECKING_DEPTH) {
             limits.checking = checking.with_input_bytes(wide).with_work_budget(wide);
@@ -228,6 +228,55 @@ mod tests {
         if let Err(refusal) = input.compile() {
             panic!("Option: {refusal}\n{}", input.source);
         }
+    }
+
+    /// The deepest `Option` nest S1 admits at its default limits, found by
+    /// bisection.
+    fn deepest_admitted_options() -> usize {
+        let limits = SpineLimits::default().source;
+        let (mut low, mut high) = (0_usize, 200_000_usize);
+        while low + 1 < high {
+            let middle = (low + high) / 2;
+            let input = DeepInput::new(Shape::OptionType(middle));
+            let parsed = qsl_cst::parse(
+                SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1"),
+                "deep-input.native",
+                input.source.as_bytes(),
+                limits,
+            );
+            if parsed.is_ok_and(|parsed| parsed.is_admissible()) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        low
+    }
+
+    /// The deepest `Option` type S1 admits at default limits compiles
+    /// through every stage at `SpineLimits::default()` on a 2 MiB thread,
+    /// ending in a unit or a refusal, never a stack overflow.
+    #[test]
+    fn the_deepest_admitted_option_type_compiles_or_refuses_on_a_2_mib_stack() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let depth = deepest_admitted_options();
+                assert!(depth > 64, "S1 has no nesting ceiling: {depth}");
+                let input = DeepInput::new(Shape::OptionType(depth));
+                // Either outcome is a result; the test is that one arrives.
+                let _outcome: Result<Compiled, Box<CompileRefusal>> = compile(
+                    SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1"),
+                    "deep-input.native",
+                    input.source.as_bytes(),
+                    &BTreeMap::new(),
+                    &DependencyInput::default(),
+                    SpineLimits::default(),
+                );
+            })
+            .expect("spawn a 2 MiB thread")
+            .join()
+            .expect("the compile does not overflow a 2 MiB stack");
     }
 
     /// The selector and depth bytes decode to the documented shape and

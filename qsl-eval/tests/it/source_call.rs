@@ -41,8 +41,7 @@ fn a_function_compiled_from_source_is_called_by_name() {
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -100,8 +99,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,

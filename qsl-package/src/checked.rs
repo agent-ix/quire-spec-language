@@ -575,7 +575,7 @@ mod tests {
                 vec![("r".to_owned(), qsl_forms::TypeForm::name("M::A", span))],
                 qsl_forms::TypeForm::builtin(qsl_forms::BuiltinType::Boolean, span),
                 None,
-                qsl_forms::Expression::Boolean(true),
+                qsl_forms::Expression::boolean(true),
             )],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }

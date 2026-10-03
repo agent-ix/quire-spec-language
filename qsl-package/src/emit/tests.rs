@@ -74,7 +74,7 @@ fn function(name: &str, parameters: &[&str], body: Expression) -> FunctionDeclar
 }
 
 fn name(name: &str) -> Expression {
-    Expression::Name(name.to_owned())
+    Expression::name(name.to_owned())
 }
 
 /// FR-093-AC-1's `t`: `if true then true else true`.
@@ -82,17 +82,17 @@ fn t() -> FunctionDeclaration {
     function(
         "t",
         &[],
-        Expression::If {
-            condition: Box::new(Expression::Boolean(true)),
-            then: Box::new(Expression::Boolean(true)),
-            otherwise: Box::new(Expression::Boolean(true)),
-        },
+        Expression::if_then_else(
+            Expression::boolean(true),
+            Expression::boolean(true),
+            Expression::boolean(true),
+        ),
     )
 }
 
 /// FR-092's `f`: `true`.
 fn f() -> FunctionDeclaration {
-    function("f", &[], Expression::Boolean(true))
+    function("f", &[], Expression::boolean(true))
 }
 
 /// FR-092's `both(a, b)`: `a and b`.
@@ -100,11 +100,7 @@ fn both() -> FunctionDeclaration {
     function(
         "both",
         &["a", "b"],
-        Expression::Binary {
-            operator: BinaryOperator::And,
-            left: Box::new(name("a")),
-            right: Box::new(name("b")),
-        },
+        Expression::binary(BinaryOperator::And, name("a"), name("b")),
     )
 }
 
@@ -113,10 +109,10 @@ fn nb() -> FunctionDeclaration {
     function(
         "nb",
         &["a"],
-        Expression::Call {
-            name: "both".to_owned(),
-            arguments: vec![name("a"), Expression::Boolean(true)],
-        },
+        Expression::call(
+            "both".to_owned(),
+            vec![name("a"), Expression::boolean(true)],
+        ),
     )
 }
 
@@ -125,11 +121,7 @@ fn h() -> FunctionDeclaration {
     function(
         "h",
         &["a"],
-        Expression::Let {
-            name: "y".to_owned(),
-            value: Box::new(name("a")),
-            body: Box::new(name("y")),
-        },
+        Expression::let_in("y".to_owned(), name("a"), name("y")),
     )
 }
 
@@ -433,22 +425,22 @@ fn recursive_f() -> CheckedPackage {
         )],
         boolean(),
         Some(name("x")),
-        Expression::If {
-            condition: Box::new(Expression::Binary {
-                operator: BinaryOperator::Greater,
-                left: Box::new(name("x")),
-                right: Box::new(Expression::Integer(0_i64.into())),
-            }),
-            then: Box::new(Expression::Call {
-                name: "f".to_owned(),
-                arguments: vec![Expression::Binary {
-                    operator: BinaryOperator::Subtract,
-                    left: Box::new(name("x")),
-                    right: Box::new(Expression::Integer(1_i64.into())),
-                }],
-            }),
-            otherwise: Box::new(Expression::Boolean(true)),
-        },
+        Expression::if_then_else(
+            Expression::binary(
+                BinaryOperator::Greater,
+                name("x"),
+                Expression::integer(0_i64),
+            ),
+            Expression::call(
+                "f".to_owned(),
+                vec![Expression::binary(
+                    BinaryOperator::Subtract,
+                    name("x"),
+                    Expression::integer(1_i64),
+                )],
+            ),
+            Expression::boolean(true),
+        ),
     );
     package(vec![recursive])
 }
@@ -1103,14 +1095,11 @@ fn a_recursion_group_holding_an_application_is_written() {
     let g = function(
         "g",
         &[],
-        Expression::If {
-            condition: Box::new(Expression::Boolean(true)),
-            then: Box::new(Expression::Boolean(true)),
-            otherwise: Box::new(Expression::Call {
-                name: "g".to_owned(),
-                arguments: Vec::new(),
-            }),
-        },
+        Expression::if_then_else(
+            Expression::boolean(true),
+            Expression::boolean(true),
+            Expression::call("g".to_owned(), Vec::new()),
+        ),
     );
     for (package, function) in [(package(vec![g, t()]), "g"), (recursive_f(), "f")] {
         let members: Vec<&SemanticNode> = package
@@ -1376,7 +1365,7 @@ fn g_with_spans() -> FunctionDeclaration {
         start: body_start,
         end: body_start + "true".len(),
     };
-    function("g", &[], Expression::Boolean(true))
+    function("g", &[], Expression::boolean(true))
         .with_spans(DeclarationSpans {
             declaration: qsl_foundation::Span {
                 start: 0,
@@ -1403,10 +1392,7 @@ fn f_calls_g(call: qsl_foundation::Span) -> (FunctionDeclaration, FunctionDeclar
         Vec::new(),
         boolean(),
         None,
-        Expression::Call {
-            name: "g".to_owned(),
-            arguments: Vec::new(),
-        },
+        Expression::call("g".to_owned(), Vec::new()),
     )
     .with_spans(spans)
     .expect("the call is the body's own root, with no children");
@@ -1558,11 +1544,7 @@ fn inc_read_from_text() -> FunctionDeclaration {
         vec![("x".to_owned(), int("0", "9"))],
         int("0", "10"),
         None,
-        Expression::Binary {
-            operator: BinaryOperator::Add,
-            left: Box::new(name("x")),
-            right: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
-        },
+        Expression::binary(BinaryOperator::Add, name("x"), Expression::integer(1_i64)),
     )
     .with_spans(DeclarationSpans {
         declaration: qsl_foundation::Span {
@@ -1644,8 +1626,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -1801,21 +1782,13 @@ pub(super) fn q_and_t_package_over(
     units: quire_semantic_value::quantity::UnitTable,
     metre: quire_exact::UnitId,
 ) -> CheckedPackage {
-    let square = || Expression::Binary {
-        operator: BinaryOperator::Multiply,
-        left: Box::new(name("a")),
-        right: Box::new(name("a")),
-    };
+    let square = || Expression::binary(BinaryOperator::Multiply, name("a"), name("a"));
     let q = FunctionDeclaration::new(
         "q",
         vec![("a".to_owned(), TypeForm::name("Length", SPAN))],
         boolean(),
         None,
-        Expression::Binary {
-            operator: BinaryOperator::Equal,
-            left: Box::new(square()),
-            right: Box::new(square()),
-        },
+        Expression::binary(BinaryOperator::Equal, square(), square()),
     );
     CheckedPackage::link(
         PackageDeclarations {
@@ -2142,8 +2115,7 @@ fn spine_compile_package() -> CheckedPackage {
     .expect("S1 admits the fixture");
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -2170,8 +2142,7 @@ fn assemble_with_models(
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let models = qsl_semantics::model::intake::admit_unit(
         &unit.selections().models,
         packages,
@@ -2384,7 +2355,7 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
         qsl_cst::Limits::default(),
     )
     .unwrap();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let unit = qsl_forms::build_unit(&parsed).unwrap();
     let models = qsl_semantics::model::intake::admit_unit(
         &unit.selections().models,
         &packages,
@@ -2429,7 +2400,7 @@ fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection>
         qsl_cst::Limits::default(),
     )
     .unwrap();
-    qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+    qsl_forms::build_unit(&parsed)
         .unwrap()
         .selections()
         .models
@@ -2450,7 +2421,7 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
         qsl_cst::Limits::default(),
     )
     .unwrap();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let unit = qsl_forms::build_unit(&parsed).unwrap();
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -2972,8 +2943,7 @@ fn check_attempt_unit(
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(raw, unit, vec![config_version_model(with_sub)], Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -3330,8 +3300,7 @@ fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())

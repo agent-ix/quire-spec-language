@@ -107,11 +107,7 @@ fn typed(
 }
 
 fn binary(operator: BinaryOperator, left: &str, right: &str) -> Expression {
-    Expression::Binary {
-        operator,
-        left: Box::new(name(left)),
-        right: Box::new(name(right)),
-    }
+    Expression::binary(operator, name(left), name(right))
 }
 
 /// `record R { name: Text[0, 8; nfc]; }` (FR-093-AC-11's shape).
@@ -299,10 +295,7 @@ pub(super) fn cases() -> Vec<Case> {
                 "proj",
                 &[("a", record())],
                 text("nfc"),
-                Expression::Field {
-                    operand: Box::new(name("a")),
-                    field: "name".to_owned(),
-                },
+                Expression::field(name("a"), "name".to_owned()),
             )]),
         ),
         case(
@@ -312,25 +305,19 @@ pub(super) fn cases() -> Vec<Case> {
                 "has",
                 &[("s", texts()), ("t", text("nfc"))],
                 boolean(),
-                Expression::Contains {
-                    collection: Box::new(name("s")),
-                    item: Box::new(name("t")),
-                },
+                Expression::contains(name("s"), name("t")),
             )]),
         ),
         case(
             "quire.op.function.call",
             None,
             package(vec![
-                typed("g", &[], boolean(), Expression::Boolean(true)),
+                typed("g", &[], boolean(), Expression::boolean(true)),
                 typed(
                     "c",
                     &[],
                     boolean(),
-                    Expression::Call {
-                        name: "g".to_owned(),
-                        arguments: vec![],
-                    },
+                    Expression::call("g".to_owned(), vec![]),
                 ),
             ]),
         ),

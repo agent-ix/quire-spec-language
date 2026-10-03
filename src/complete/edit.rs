@@ -189,7 +189,6 @@ fn apply_edits_selected(
         && limits.source_bytes == Limits::default().source_bytes
         && limits.tokens == Limits::default().tokens
         && limits.nodes == Limits::default().nodes
-        && limits.nesting == Limits::default().nesting
     {
         if let Some(result) = parsed.with_whitespace_insertion(
             new_identity.clone(),

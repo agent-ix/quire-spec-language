@@ -64,7 +64,7 @@ fn function_one() -> FunctionDeclaration {
         )],
         crate::support::type_form::type_form(&ValueType::Integer),
         None,
-        Expression::Name("a".to_owned()),
+        Expression::name("a".to_owned()),
     )
 }
 
@@ -86,15 +86,15 @@ fn function_two() -> FunctionDeclaration {
         ],
         crate::support::type_form::type_form(&ValueType::Integer),
         None,
-        Expression::Let {
-            name: "x".to_owned(),
-            value: Box::new(Expression::Binary {
-                operator: BinaryOperator::Add,
-                left: Box::new(Expression::Name("a".to_owned())),
-                right: Box::new(Expression::Name("b".to_owned())),
-            }),
-            body: Box::new(Expression::Name("x".to_owned())),
-        },
+        Expression::let_in(
+            "x".to_owned(),
+            Expression::binary(
+                BinaryOperator::Add,
+                Expression::name("a".to_owned()),
+                Expression::name("b".to_owned()),
+            ),
+            Expression::name("x".to_owned()),
+        ),
     )
 }
 
@@ -189,10 +189,7 @@ fn evaluated_call_slots_are_stable_across_declaration_order() {
         let call_one = graph
             .check_expression(
                 Vec::new(),
-                &Expression::Call {
-                    name: "one".to_owned(),
-                    arguments: vec![Expression::Integer(Integer::from(5_i64))],
-                },
+                &Expression::call("one".to_owned(), vec![Expression::integer(5_i64)]),
                 Some(&ValueType::Integer),
                 CheckMode::Linked,
                 CheckingLimits::default(),
@@ -201,13 +198,10 @@ fn evaluated_call_slots_are_stable_across_declaration_order() {
         let call_two = graph
             .check_expression(
                 Vec::new(),
-                &Expression::Call {
-                    name: "two".to_owned(),
-                    arguments: vec![
-                        Expression::Integer(Integer::from(3_i64)),
-                        Expression::Integer(Integer::from(4_i64)),
-                    ],
-                },
+                &Expression::call(
+                    "two".to_owned(),
+                    vec![Expression::integer(3_i64), Expression::integer(4_i64)],
+                ),
                 Some(&ValueType::Integer),
                 CheckMode::Linked,
                 CheckingLimits::default(),

@@ -1273,21 +1273,25 @@ pub(super) fn parameter_populations(
 /// Whether a value of `value_type` can hold an object reference: a
 /// reference, or an option or collection of one.
 fn holds_references(value_type: &quire_exact::ValueType) -> bool {
-    match value_type {
-        quire_exact::ValueType::Reference(_) => true,
-        quire_exact::ValueType::Option(inner) => holds_references(inner),
-        quire_exact::ValueType::Collection(collection) => holds_references(collection.element()),
-        quire_exact::ValueType::Boolean
-        | quire_exact::ValueType::Integer
-        | quire_exact::ValueType::Int(_)
-        | quire_exact::ValueType::Rational(_)
-        | quire_exact::ValueType::Decimal(_)
-        | quire_exact::ValueType::Float(_)
-        | quire_exact::ValueType::Quantity(_)
-        | quire_exact::ValueType::Text(_)
-        | quire_exact::ValueType::Enum(_)
-        | quire_exact::ValueType::Composite(_)
-        | quire_exact::ValueType::Population(_) => false,
+    // A loop down the option/collection chain: any depth, constant stack.
+    let mut current = value_type;
+    loop {
+        match current {
+            quire_exact::ValueType::Reference(_) => return true,
+            quire_exact::ValueType::Option(inner) => current = inner,
+            quire_exact::ValueType::Collection(collection) => current = collection.element(),
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Rational(_)
+            | quire_exact::ValueType::Decimal(_)
+            | quire_exact::ValueType::Float(_)
+            | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Population(_) => return false,
+        }
     }
 }
 

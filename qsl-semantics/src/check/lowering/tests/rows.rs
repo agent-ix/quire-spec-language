@@ -207,20 +207,18 @@ fn rows() -> Vec<Row> {
             &[("s", totals())],
             TypeForm::name("Total", SPAN),
             None,
-            Expression::Accumulate {
-                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
+            Expression::accumulate(
                 form,
-                accumulator_type: "Total".to_owned(),
-                accumulator: "acc".to_owned(),
-                binder: "x".to_owned(),
-                source: Box::new(name_expr("s")),
-                step: Box::new(binary(
-                    BinaryOperator::Add,
-                    name_expr("acc"),
-                    name_expr("x"),
-                )),
-                identity: identity.map(Box::new),
-            },
+                qsl_forms::DeclaredName {
+                    name: "Total".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                "acc".to_owned(),
+                "x".to_owned(),
+                name_expr("s"),
+                binary(BinaryOperator::Add, name_expr("acc"), name_expr("x")),
+                identity,
+            ),
         )
     };
     vec![
@@ -256,7 +254,7 @@ fn rows() -> Vec<Row> {
                 &[("x", r19())],
                 rational_form(["-9", "9", "1", "9"]),
                 None,
-                Expression::Negate(Box::new(name_expr("x"))),
+                Expression::negate(name_expr("x")),
             ),
             "quire.op.rational.negate",
             unary_op,
@@ -282,7 +280,7 @@ fn rows() -> Vec<Row> {
                 &[("p", d())],
                 decimal_form(["-100", "0", "2", "2", "nearest-even"]),
                 None,
-                Expression::Negate(Box::new(name_expr("p"))),
+                Expression::negate(name_expr("p")),
             ),
             "quire.op.decimal.negate",
             unary_op,
@@ -295,10 +293,10 @@ fn rows() -> Vec<Row> {
                 &[("p", d())],
                 decimal_form(["0", "1000", "1", "1", "toward-zero"]),
                 None,
-                Expression::Convert {
-                    target: decimal_form(["0", "1000", "1", "1", "toward-zero"]),
-                    operand: Box::new(name_expr("p")),
-                },
+                Expression::convert(
+                    decimal_form(["0", "1000", "1", "1", "toward-zero"]),
+                    name_expr("p"),
+                ),
             ),
             "quire.op.numeric.convert_rounding",
             convert_op,
@@ -334,10 +332,7 @@ fn rows() -> Vec<Row> {
                 &[("f", float64())],
                 rational_form(["-9", "9", "1", "9"]),
                 None,
-                Expression::Convert {
-                    target: rational_form(["-9", "9", "1", "9"]),
-                    operand: Box::new(name_expr("f")),
-                },
+                Expression::convert(rational_form(["-9", "9", "1", "9"]), name_expr("f")),
             ),
             "quire.op.ieee.to_rational",
             convert_op,
@@ -355,10 +350,10 @@ fn rows() -> Vec<Row> {
                 &[("s", texts())],
                 collection_form(CollectionKind::Set, text_form(), "5"),
                 None,
-                Expression::Convert {
-                    target: collection_form(CollectionKind::Set, text_form(), "5"),
-                    operand: Box::new(name_expr("s")),
-                },
+                Expression::convert(
+                    collection_form(CollectionKind::Set, text_form(), "5"),
+                    name_expr("s"),
+                ),
             ),
             "quire.op.collection.convert",
             convert_op,
@@ -380,13 +375,15 @@ fn rows() -> Vec<Row> {
                 &[("s", ints())],
                 TypeForm::name("Small", SPAN),
                 None,
-                Expression::Count {
-                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                    result_type: "Small".to_owned(),
-                    binder: "x".to_owned(),
-                    source: Box::new(name_expr("s")),
-                    predicate: Box::new(Expression::Boolean(true)),
-                },
+                Expression::count(
+                    qsl_forms::DeclaredName {
+                        name: "Small".to_owned(),
+                        span: qsl_foundation::Span { start: 0, end: 0 },
+                    },
+                    "x".to_owned(),
+                    name_expr("s"),
+                    Expression::boolean(true),
+                ),
             ),
             "quire.op.collection.count",
             collection_op,
@@ -399,13 +396,15 @@ fn rows() -> Vec<Row> {
                 &[("s", ints())],
                 TypeForm::name("Total", SPAN),
                 None,
-                Expression::Sum {
-                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                    result_type: "Total".to_owned(),
-                    binder: "x".to_owned(),
-                    source: Box::new(name_expr("s")),
-                    summand: Box::new(name_expr("x")),
-                },
+                Expression::sum(
+                    qsl_forms::DeclaredName {
+                        name: "Total".to_owned(),
+                        span: qsl_foundation::Span { start: 0, end: 0 },
+                    },
+                    "x".to_owned(),
+                    name_expr("s"),
+                    name_expr("x"),
+                ),
             ),
             "quire.op.collection.sum.integer",
             collection_op,
@@ -430,7 +429,7 @@ fn rows() -> Vec<Row> {
                 )],
                 collection_form(CollectionKind::Set, text_form(), "6"),
                 None,
-                Expression::Flatten(Box::new(name_expr("ss"))),
+                Expression::flatten(name_expr("ss")),
             ),
             "quire.op.collection.flatten",
             collection_op,
@@ -509,10 +508,7 @@ fn rows() -> Vec<Row> {
                 &[("t", text_form())],
                 collection_form(CollectionKind::Set, text_form(), "5"),
                 None,
-                Expression::Collection {
-                    kind: CollectionKind::Set,
-                    elements: vec![name_expr("t")],
-                },
+                Expression::collection(CollectionKind::Set, vec![name_expr("t")]),
             ),
             "quire.op.collection.set",
             collection_op,
@@ -525,10 +521,7 @@ fn rows() -> Vec<Row> {
                 &[("s", texts()), ("t", text_form())],
                 boolean(),
                 None,
-                Expression::Contains {
-                    collection: Box::new(name_expr("s")),
-                    item: Box::new(name_expr("t")),
-                },
+                Expression::contains(name_expr("s"), name_expr("t")),
             ),
             "quire.op.collection.contains",
             collection_op,
@@ -621,7 +614,7 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
                     &[("x", TypeForm::name("Country", SPAN))],
                     boolean(),
                     None,
-                    Expression::Boolean(true),
+                    Expression::boolean(true),
                 )
             })
             .collect(),
@@ -714,10 +707,7 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
         &[("x", int_form(0, 9)), ("b", boolean())],
         TypeForm::name("Pair", SPAN),
         None,
-        Expression::Call {
-            name: "Pair".to_owned(),
-            arguments: vec![name_expr("x"), name_expr("b")],
-        },
+        Expression::call("Pair".to_owned(), vec![name_expr("x"), name_expr("b")]),
     );
     let checked = PackageDeclarations {
         types,
@@ -761,7 +751,7 @@ fn rational_literals_key_to_l3_through_check() {
             &[],
             rational_form(["-9", "9", "1", "9"]),
             None,
-            Expression::Rational(Integer::from(numerator), Integer::from(denominator)),
+            Expression::rational(Integer::from(numerator), Integer::from(denominator)),
         );
         let checked = check(vec![literal]).expect("the literal checks");
         let graph = checked.semantic_graph();

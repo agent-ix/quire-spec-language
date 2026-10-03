@@ -15,10 +15,6 @@ fn integer() -> TypeForm {
     TypeForm::builtin(BuiltinType::Integer, SPAN)
 }
 
-fn boxed(expression: Expression) -> Box<Expression> {
-    Box::new(expression)
-}
-
 fn sequence() -> TypeForm {
     TypeForm::collection(CollectionKind::Sequence, SPAN)
         .with_arguments(vec![int_form(0, 9)])
@@ -30,11 +26,7 @@ fn option() -> TypeForm {
 }
 
 fn let_in(name: &str, value: Expression, body: Expression) -> Expression {
-    Expression::Let {
-        name: name.to_owned(),
-        value: boxed(value),
-        body: boxed(body),
-    }
+    Expression::let_in(name.to_owned(), value, body)
 }
 
 /// A binder form over `s` that binds `v` (and `acc` for `fold`) around
@@ -62,36 +54,42 @@ impl Binder {
         let v = || name_expr("v");
         match self {
             Self::Let => let_in("v", name_expr("x"), v()),
-            Self::Count => Expression::Count {
-                result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                result_type: "Total".to_owned(),
-                binder: "v".to_owned(),
-                source: boxed(name_expr("s")),
-                predicate: boxed(binary(BinaryOperator::Less, v(), integer_expr(5))),
-            },
-            Self::Sum => Expression::Sum {
-                result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                result_type: "Total".to_owned(),
-                binder: "v".to_owned(),
-                source: boxed(name_expr("s")),
-                summand: boxed(v()),
-            },
-            Self::Forall => Expression::Query {
-                query: BinderQuery::Forall,
-                binder: "v".to_owned(),
-                source: boxed(name_expr("s")),
-                body: boxed(binary(BinaryOperator::Less, v(), integer_expr(5))),
-            },
-            Self::Fold => Expression::Accumulate {
-                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                form: Accumulation::Fold,
-                accumulator_type: "Total".to_owned(),
-                accumulator: "acc".to_owned(),
-                binder: "v".to_owned(),
-                source: boxed(name_expr("s")),
-                step: boxed(binary(BinaryOperator::Add, name_expr("acc"), v())),
-                identity: Some(boxed(integer_expr(0))),
-            },
+            Self::Count => Expression::count(
+                qsl_forms::DeclaredName {
+                    name: "Total".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                "v".to_owned(),
+                name_expr("s"),
+                binary(BinaryOperator::Less, v(), integer_expr(5)),
+            ),
+            Self::Sum => Expression::sum(
+                qsl_forms::DeclaredName {
+                    name: "Total".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                "v".to_owned(),
+                name_expr("s"),
+                v(),
+            ),
+            Self::Forall => Expression::query(
+                BinderQuery::Forall,
+                "v".to_owned(),
+                name_expr("s"),
+                binary(BinaryOperator::Less, v(), integer_expr(5)),
+            ),
+            Self::Fold => Expression::accumulate(
+                Accumulation::Fold,
+                qsl_forms::DeclaredName {
+                    name: "Total".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                "acc".to_owned(),
+                "v".to_owned(),
+                name_expr("s"),
+                binary(BinaryOperator::Add, name_expr("acc"), v()),
+                Some(integer_expr(0)),
+            ),
         }
     }
 
@@ -216,11 +214,9 @@ fn a_let_after_a_sibling_let_takes_the_enclosing_level() {
 #[trace("FR-093-AC-15", "TC-415")]
 #[test]
 fn an_obligation_in_one_branch_is_walked() {
-    let value = || Expression::Value(boxed(name_expr("o")));
-    let branch = |condition: Expression, then: Expression, otherwise: Expression| Expression::If {
-        condition: boxed(condition),
-        then: boxed(then),
-        otherwise: boxed(otherwise),
+    let value = || Expression::value(name_expr("o"));
+    let branch = |condition: Expression, then: Expression, otherwise: Expression| {
+        Expression::if_then_else(condition, then, otherwise)
     };
     for body in [
         branch(name_expr("a"), value(), integer_expr(0)),
@@ -236,7 +232,7 @@ fn an_obligation_in_one_branch_is_walked() {
         );
     }
     let guarded = branch(
-        Expression::Present(boxed(name_expr("o"))),
+        Expression::present(name_expr("o")),
         value(),
         integer_expr(0),
     );

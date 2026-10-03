@@ -80,7 +80,7 @@ fn a_nested_option_types_identity_preimages_have_a_fixed_depth() {
                 &[("x", nested)],
                 boolean(),
                 None,
-                Expression::Boolean(true),
+                Expression::boolean(true),
             )],
             ..PackageDeclarations::new(fixture_source())
         }

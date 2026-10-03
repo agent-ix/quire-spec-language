@@ -124,8 +124,12 @@ pub struct CheckedProtocol {
 /// enclosing named controls' spelled names, outermost first.
 type ScopeKey = Vec<String>;
 
-fn scope_key(scope: &[qsl_forms::ScopeName]) -> ScopeKey {
-    scope.iter().map(|name| name.name.clone()).collect()
+fn scope_key(protocol: &ProtocolDeclarationForm, scope: Option<qsl_forms::ScopeId>) -> ScopeKey {
+    protocol
+        .scope_names(scope)
+        .into_iter()
+        .map(|name| name.name.clone())
+        .collect()
 }
 
 fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
@@ -201,7 +205,10 @@ pub fn check(
     let mut by_scope_name: BTreeMap<(ScopeKey, String), Vec<usize>> = BTreeMap::new();
     for (index, declaration) in protocol.declarations.iter().enumerate() {
         by_scope_name
-            .entry((scope_key(&declaration.scope), declaration.name.name.clone()))
+            .entry((
+                scope_key(protocol, declaration.scope),
+                declaration.name.name.clone(),
+            ))
             .or_default()
             .push(index);
     }
@@ -535,7 +542,7 @@ fn resolve(
     by_scope_name: &BTreeMap<(ScopeKey, String), Vec<usize>>,
     anchor: &qsl_forms::ScopedAnchorForm,
 ) -> Result<ProtocolNodeId, ProtocolAnchorCause> {
-    let lexical_scope = scope_key(&anchor.scope);
+    let lexical_scope = scope_key(protocol, anchor.scope);
     // `ScopedAnchorForm`'s fields are public, so a hand-built form (not one
     // S2 built, which the grammar guarantees at least one segment for) can
     // hold no segments; refuse rather than index into an empty slice.
@@ -582,7 +589,7 @@ fn resolve(
 
     for segment in rest {
         let target = &protocol.declarations[target_index];
-        let mut child_scope = scope_key(&target.scope);
+        let mut child_scope = scope_key(protocol, target.scope);
         child_scope.push(target.name.name.clone());
         let key = (child_scope, segment.text.clone());
         match by_scope_name.get(&key) {
@@ -599,7 +606,7 @@ fn resolve(
                 return Err(ProtocolAnchorCause::Missing {
                     segments: segments.clone(),
                     segment: segment.text.clone(),
-                    scope: scope_key(&anchor.scope),
+                    scope: scope_key(protocol, anchor.scope),
                     span: anchor.anchor.span,
                 });
             }
@@ -743,9 +750,7 @@ fn package_shadow(
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_forms::{
-        build_unit, AnchorSite, FormsLimits, ProtocolDeclarationForm, ProtocolNodeKind,
-    };
+    use qsl_forms::{build_unit, AnchorSite, ProtocolDeclarationForm, ProtocolNodeKind};
     use qsl_foundation::SourceIdentity;
 
     use super::super::{
@@ -845,7 +850,7 @@ mod tests {
         )
         .expect("S1 reads the unit");
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-        let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
         let assembled = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
             unit,
@@ -948,7 +953,7 @@ mod tests {
             qsl_cst::Limits::default(),
         )
         .expect("S1 reads the unit");
-        let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
             unit,
@@ -994,9 +999,9 @@ mod tests {
             .position(|declaration| {
                 declaration.name.name == name
                     && declaration.kind == kind
-                    && declaration
-                        .scope
-                        .iter()
+                    && protocol
+                        .scope_names(declaration.scope)
+                        .into_iter()
                         .map(|name| name.name.as_str())
                         .eq(scope.iter().copied())
             })

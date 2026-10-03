@@ -239,8 +239,8 @@ impl CheckedGraph {
 mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{
-        BinaryOperator, BuiltinType, DeclarationSpans, DeclaredClauseKind, Expression,
-        ExpressionSpans, FunctionDeclaration, TypeForm,
+        BinaryOperator, BuiltinType, DeclarationSpans, DeclaredClauseKind, ExprNode, ExprRef,
+        Expression, ExpressionSpans, FunctionDeclaration, TypeForm,
     };
     use qsl_foundation::diagnostic::Code;
     use qsl_foundation::source::provenance::SourceRegion;
@@ -277,22 +277,18 @@ mod tests {
             .with_bounds(vec!["0".into(), "10".into()])
     }
 
-    fn name(text: &str) -> Box<Expression> {
-        Box::new(Expression::Name(text.into()))
+    fn name(text: &str) -> Expression {
+        Expression::name(text)
     }
 
     /// `f`, with the spans of its form read from [`UNIT`]: the body
     /// `if a then b else c + d` and the measure `n`.
     fn function_f() -> FunctionDeclaration {
-        let body = Expression::If {
-            condition: name("a"),
-            then: name("b"),
-            otherwise: Box::new(Expression::Binary {
-                operator: BinaryOperator::Add,
-                left: name("c"),
-                right: name("d"),
-            }),
-        };
+        let body = Expression::if_then_else(
+            name("a"),
+            name("b"),
+            Expression::binary(BinaryOperator::Add, name("c"), name("d")),
+        );
         let parameters = ["b", "c", "d", "n"]
             .into_iter()
             .map(|parameter| (parameter.to_owned(), int_form()))
@@ -329,15 +325,9 @@ mod tests {
                 .unwrap(),
             ),
         };
-        FunctionDeclaration::new(
-            "f",
-            parameters,
-            result,
-            Some(Expression::Name("n".into())),
-            body,
-        )
-        .with_spans(spans)
-        .expect("the spans have the body's and the measure's shape")
+        FunctionDeclaration::new("f", parameters, result, Some(Expression::name("n")), body)
+            .with_spans(spans)
+            .expect("the spans have the body's and the measure's shape")
     }
 
     fn unit() -> PackageDeclarations {
@@ -370,8 +360,8 @@ mod tests {
 
     /// The node `path` reaches from `root`, one `Expression::children`
     /// step at a time: the node the resolver is meant to have located.
-    fn node<'e>(root: &'e Expression, path: &[usize]) -> &'e Expression {
-        path.iter().fold(root, |node, &index| {
+    fn node<'e>(root: &'e Expression, path: &[usize]) -> ExprRef<'e> {
+        path.iter().fold(root.root(), |node, &index| {
             node.children()
                 .get(index)
                 .copied()
@@ -416,13 +406,14 @@ mod tests {
         // children are out of the form's order fails here.
         let function = &declarations.functions[0];
         for path in [&[0][..], &[1], &[2, 0], &[2, 1]] {
-            let Expression::Name(spelling) = node(&function.body, path) else {
+            let ExprNode::Name(spelling) = node(&function.body, path).node() else {
                 panic!("{path:?} reaches a name");
             };
             let region = declarations.region(&body(path)).unwrap();
             assert_eq!(text(&region), spelling, "{path:?}");
         }
-        let Some(Expression::Name(measured)) = &function.measure else {
+        let Some(ExprNode::Name(measured)) = function.measure.as_ref().map(Expression::root_node)
+        else {
             panic!("the measure is a name");
         };
         assert_eq!(text(&declarations.region(&measure(&[])).unwrap()), measured);
@@ -457,7 +448,7 @@ mod tests {
             Vec::new(),
             TypeForm::builtin(BuiltinType::Boolean, Span { start: 0, end: 0 }),
             None,
-            Expression::Boolean(true),
+            Expression::boolean(true),
             DeclaredClauseKind::Precondition,
         ));
         let synthesized = Location {
@@ -921,9 +912,7 @@ mod tests {
                 vec![("a".to_owned(), boolean())],
                 boolean(),
                 None,
-                Expression::Not(Box::new(Expression::Not(Box::new(Expression::Name(
-                    "a".to_owned(),
-                ))))),
+                Expression::logical_not(Expression::logical_not(Expression::name("a".to_owned()))),
             )
             .with_spans(spans)
             .expect("the spans match not not a's shape")
