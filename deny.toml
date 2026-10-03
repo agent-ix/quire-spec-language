@@ -20,4 +20,6 @@ deny = [
     { name = "inventory" },
     { name = "linkme" },
     { name = "ctor" },
+    # Two copies of the RFC 8785 encoder could produce different package_ids.
+    { crate = "quire-canonical", deny-multiple-versions = true },
 ]
