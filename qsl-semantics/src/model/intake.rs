@@ -274,7 +274,8 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH` refuse as
 /// [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit, never as a
 /// malformed document. The depth limit stays while the semantic-IR crate's
-/// checks and the two derived views recurse once per nesting level. A read
+/// checks and its `Json` drop recurse once per nesting level; the `serde_json`
+/// view builds and drops without recursion. A read
 /// or digest that cannot reserve memory refuses as
 /// [`ModelRefusalCause::AllocationFailed`] (FR-259 B6).
 ///
@@ -291,6 +292,14 @@ pub struct PackageDocument {
     /// SHA-256 over the document's RFC 8785 bytes: the package's
     /// `sha256-jcs` digest.
     jcs_digest: [u8; 32],
+}
+
+impl Drop for PackageDocument {
+    /// Drops the `serde_json` tree without recursing: `Value`'s own drop uses
+    /// one native frame per level.
+    fn drop(&mut self) {
+        quire_canonical::drop_value(std::mem::take(&mut self.tree));
+    }
 }
 
 impl PackageDocument {
@@ -738,54 +747,145 @@ fn too_deep(bytes: &[u8]) -> bool {
     false
 }
 
-/// `node` as `agent-ix-semantic-ir`'s `Json`, each number by its lexeme.
-/// Recursion is bounded by `json::MAX_DEPTH`, which [`too_deep`] already
-/// held.
-fn json_of(node: quire_canonical::NodeRef<'_>) -> agent_ix_semantic_ir::json::Json {
-    use agent_ix_semantic_ir::json::Json;
-    match node.node() {
-        Node::Null => Json::Null,
-        Node::Bool(value) => Json::Bool(value),
-        Node::Number(number) => Json::Number(number.text().to_owned()),
-        Node::String(text) => Json::Str(text.to_owned()),
-        Node::Array(items) => Json::Array(items.map(json_of).collect()),
-        Node::Object(members) => Json::Object(
-            members
-                .map(|(name, value)| (name.to_owned(), json_of(value)))
-                .collect(),
-        ),
+/// A value that holds no other value.
+enum Scalar<'d> {
+    Null,
+    Bool(bool),
+    Number(quire_canonical::Number<'d>),
+    String(&'d str),
+}
+
+/// `root` as a tree of `T`, built over an explicit heap stack: a document of
+/// any depth builds on any thread stack. `scalar` makes a `T` from a null,
+/// boolean, number or string; `array` and `object` close a container from its
+/// finished children, in document order. The first `scalar` error ends the
+/// build, after `discard` has taken every finished subtree the build holds.
+fn build<'d, T, E>(
+    root: quire_canonical::NodeRef<'d>,
+    mut scalar: impl FnMut(Scalar<'d>) -> Result<T, E>,
+    array: impl Fn(Vec<T>) -> T,
+    object: impl Fn(Vec<(String, T)>) -> T,
+    discard: impl Fn(T),
+) -> Result<T, E> {
+    /// One open container: its finished children and the children to come.
+    enum Frame<'d, T> {
+        Array(Vec<T>, quire_canonical::Items<'d>),
+        Object(Vec<(String, T)>, String, quire_canonical::Members<'d>),
+    }
+    let mut open: Vec<Frame<'d, T>> = Vec::new();
+    let mut next = Some(root);
+    let mut finished: Option<T> = None;
+    loop {
+        if let Some(node) = next.take() {
+            let leaf = match node.node() {
+                Node::Array(items) => {
+                    open.push(Frame::Array(Vec::new(), items));
+                    None
+                }
+                Node::Object(members) => {
+                    open.push(Frame::Object(Vec::new(), String::new(), members));
+                    None
+                }
+                Node::Null => Some(scalar(Scalar::Null)),
+                Node::Bool(value) => Some(scalar(Scalar::Bool(value))),
+                Node::Number(number) => Some(scalar(Scalar::Number(number))),
+                Node::String(text) => Some(scalar(Scalar::String(text))),
+            };
+            match leaf {
+                None => {}
+                Some(Ok(value)) => finished = Some(value),
+                Some(Err(error)) => {
+                    for frame in open {
+                        match frame {
+                            Frame::Array(children, _) => children.into_iter().for_each(&discard),
+                            Frame::Object(children, _, _) => {
+                                children.into_iter().for_each(|(_, child)| discard(child));
+                            }
+                        }
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        if let Some(value) = finished.take() {
+            match open.last_mut() {
+                None => return Ok(value),
+                Some(Frame::Array(children, _)) => children.push(value),
+                Some(Frame::Object(children, name, _)) => {
+                    children.push((std::mem::take(name), value));
+                }
+            }
+        }
+        match open.last_mut() {
+            // Only a finished root leaves no open container, and it returned
+            // above, so this arm is never reached.
+            None => continue,
+            Some(Frame::Array(_, items)) => next = items.next(),
+            Some(Frame::Object(_, name, members)) => {
+                next = members.next().map(|(member, value)| {
+                    *name = member.to_owned();
+                    value
+                });
+            }
+        }
+        if next.is_none() {
+            finished = open.pop().map(|frame| match frame {
+                Frame::Array(children, _) => array(children),
+                Frame::Object(children, _, _) => object(children),
+            });
+        }
     }
 }
 
-/// `node` as a `serde_json::Value`, or the first number lexeme `serde_json`
-/// cannot represent. Recursion is bounded by `json::MAX_DEPTH`, which
-/// [`too_deep`] already held.
-fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, &str> {
-    Ok(match node.node() {
-        Node::Null => Value::Null,
-        Node::Bool(value) => Value::Bool(value),
-        Node::Number(number) => {
-            let lexeme = number.text();
-            let parsed: serde_json::Number = lexeme.parse().map_err(|_| lexeme)?;
-            // serde_json's float parser can land one unit in the last place
-            // off; the digest encodes the correctly rounded double, so the
-            // tree takes that same double.
-            Value::Number(if parsed.is_f64() {
-                serde_json::Number::from_f64(number.value()).ok_or(lexeme)?
-            } else {
-                parsed
+/// `node` as `agent-ix-semantic-ir`'s `Json`, each number by its lexeme.
+fn json_of(node: quire_canonical::NodeRef<'_>) -> agent_ix_semantic_ir::json::Json {
+    use agent_ix_semantic_ir::json::Json;
+    let Ok(json) = build::<_, std::convert::Infallible>(
+        node,
+        |leaf| {
+            Ok(match leaf {
+                Scalar::Null => Json::Null,
+                Scalar::Bool(value) => Json::Bool(value),
+                Scalar::Number(number) => Json::Number(number.text().to_owned()),
+                Scalar::String(text) => Json::Str(text.to_owned()),
             })
-        }
-        Node::String(text) => Value::String(text.to_owned()),
-        Node::Array(items) => Value::Array(items.map(value_of).collect::<Result<_, _>>()?),
-        Node::Object(members) => {
-            let mut object = serde_json::Map::with_capacity(members.len());
-            for (name, value) in members {
-                object.insert(name.to_owned(), value_of(value)?);
-            }
-            Value::Object(object)
-        }
-    })
+        },
+        Json::Array,
+        Json::Object,
+        drop,
+    );
+    json
+}
+
+/// `node` as a `serde_json::Value`, or the first number lexeme `serde_json`
+/// cannot represent. The tree drops through [`quire_canonical::drop_value`]:
+/// `Value`'s own drop recurses once per level.
+fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, &str> {
+    build(
+        node,
+        |leaf| {
+            Ok(match leaf {
+                Scalar::Null => Value::Null,
+                Scalar::Bool(value) => Value::Bool(value),
+                Scalar::Number(number) => {
+                    let lexeme = number.text();
+                    let parsed: serde_json::Number = lexeme.parse().map_err(|_| lexeme)?;
+                    // serde_json's float parser can land one unit in the last
+                    // place off; the digest encodes the correctly rounded
+                    // double, so the tree takes that same double.
+                    Value::Number(if parsed.is_f64() {
+                        serde_json::Number::from_f64(number.value()).ok_or(lexeme)?
+                    } else {
+                        parsed
+                    })
+                }
+                Scalar::String(text) => Value::String(text.to_owned()),
+            })
+        },
+        Value::Array,
+        |members| Value::Object(members.into_iter().collect()),
+        quire_canonical::drop_value,
+    )
 }
 
 /// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
@@ -6297,6 +6397,111 @@ mod tests {
         assert_eq!(
             digest_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
             expected
+        );
+    }
+
+    /// Builds both derived views of `text` on a 512 KiB thread and drops them
+    /// there, so a native frame per level would overflow the stack.
+    fn build_and_drop_on_a_small_stack(text: String) {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                let document = quire_canonical::read(text.as_bytes(), u64::MAX)
+                    .expect("the deep document reads");
+                let tree = value_of(document.root()).expect("the deep document has a tree");
+                quire_canonical::drop_value(tree);
+                let mut bundle = vec![json_of(document.root())];
+                // `Json` has no iterative drop of its own: take it apart
+                // over a heap stack.
+                use agent_ix_semantic_ir::json::Json;
+                while let Some(json) = bundle.pop() {
+                    match json {
+                        Json::Array(items) => bundle.extend(items),
+                        Json::Object(members) => {
+                            bundle.extend(members.into_iter().map(|(_, member)| member));
+                        }
+                        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Str(_) => {}
+                    }
+                }
+            })
+            .expect("the test thread spawns")
+            .join()
+            .expect("building and dropping the deep views does not overflow");
+    }
+
+    /// TC-730 step 1: a document nested 100,000 deep, far past `serde_json`'s
+    /// 128 limit, builds both views and drops its `serde_json` tree on a
+    /// 512 KiB thread.
+    #[trace("TC-730", "FR-260-AC-1")]
+    #[test]
+    fn tc_730_a_document_nested_100000_deep_builds_and_drops_on_a_small_stack() {
+        let depth = 100_000;
+        build_and_drop_on_a_small_stack(format!("{}0{}", "[".repeat(depth), "]".repeat(depth)));
+        build_and_drop_on_a_small_stack(format!(
+            "{}null{}",
+            r#"{"k":"#.repeat(depth),
+            "}".repeat(depth)
+        ));
+    }
+
+    /// TC-730 step 1: the dropped `PackageDocument` tree is dropped without
+    /// recursion too: a document at the intake depth bound parses and drops
+    /// on a small stack.
+    #[trace("TC-730", "FR-260-AC-1")]
+    #[test]
+    fn tc_730_a_parsed_package_document_drops_on_a_small_stack() {
+        use agent_ix_semantic_ir::json::MAX_DEPTH;
+        let depth = MAX_DEPTH - 1;
+        let text = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                let document = PackageDocument::parse(text.as_bytes())
+                    .expect("a document under the depth bound parses");
+                drop(document);
+            })
+            .expect("the test thread spawns")
+            .join()
+            .expect("the parse and drop do not overflow");
+    }
+
+    /// TC-730: a shallow document builds the same trees the recursive
+    /// builders built: member order kept in `Json`, number lexemes kept.
+    #[trace("TC-730", "FR-260-AC-1")]
+    #[test]
+    fn tc_730_a_shallow_document_builds_the_same_trees() {
+        use agent_ix_semantic_ir::json::Json;
+        let text = r#"{"a":[1,2.50,"x\n",null,true,[],{}],"b":{"c":[[false]]},"z":0}"#;
+        let document = quire_canonical::read(text.as_bytes(), u64::MAX).expect("reads");
+        assert_eq!(
+            value_of(document.root()).expect("builds"),
+            serde_json::from_str::<Value>(text).expect("serde_json reads it")
+        );
+        let number = |lexeme: &str| Json::Number(lexeme.to_owned());
+        assert_eq!(
+            json_of(document.root()),
+            Json::Object(vec![
+                (
+                    "a".to_owned(),
+                    Json::Array(vec![
+                        number("1"),
+                        number("2.50"),
+                        Json::Str("x\n".to_owned()),
+                        Json::Null,
+                        Json::Bool(true),
+                        Json::Array(vec![]),
+                        Json::Object(vec![]),
+                    ])
+                ),
+                (
+                    "b".to_owned(),
+                    Json::Object(vec![(
+                        "c".to_owned(),
+                        Json::Array(vec![Json::Array(vec![Json::Bool(false)])])
+                    )])
+                ),
+                ("z".to_owned(), number("0")),
+            ])
         );
     }
 }
