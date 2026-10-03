@@ -5307,6 +5307,36 @@ mod tests {
         assert_lone_surrogate_refused(r#"["ok", "\uDFFF"]"#, r"\uDFFF");
     }
 
+    /// TC-730 step 3: on a thread with a 512 KiB stack, a package document
+    /// holding `"\udc00"` in a string is refused
+    /// `invalid_model_binding`/`malformed-declaration` at `$`, carrying the
+    /// escape's byte offset from the shared reader.
+    #[trace("TC-730", "FR-260-AC-2")]
+    #[test]
+    fn tc_730_a_lone_low_surrogate_refuses_at_its_byte_offset() {
+        let text = r#"{"package":{"identity":"acme/orders","version":"1"},"s":"a\udc00"}"#;
+        let offset = text.find(r"\udc00").expect("the escape is in the text");
+        let refusal = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || PackageDocument::parse(text.as_bytes()))
+            .expect("the test thread spawns")
+            .join()
+            .expect("the parse does not panic")
+            .unwrap_err();
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert_eq!(
+            refusal,
+            malformed_declaration(
+                "$".to_owned(),
+                None,
+                None,
+                format!(
+                    "package document is malformed JSON at byte {offset}: lone surrogate escape"
+                ),
+            )
+        );
+    }
+
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_reversed_surrogate_pair() {
