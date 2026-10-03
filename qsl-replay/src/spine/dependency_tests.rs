@@ -123,10 +123,7 @@ fn wire(compiled: &ComposedUnit) -> Value {
 fn an_import_binds_the_library_compiled_from_source() {
     let geometry = library("test/geometry", "1", "geometry", F);
     let d = package_id(&geometry, &DependencyInput::default());
-    let source = unit(&format!(
-        "{}{H}",
-        import("test/geometry", "g")
-    ));
+    let source = unit(&format!("{}{H}", import("test/geometry", "g")));
     let compiled = compile_as("u", &source, &input(vec![geometry.clone()]))
         .expect("the unit compiles against test/geometry");
     let written = wire(&compiled);
@@ -441,9 +438,7 @@ fn library_identities_are_strings_listed_in_byte_order() {
         .iter()
         .enumerate()
         .rev()
-        .map(|(index, library)| {
-            import(&library.identity, &format!("l{index}"))
-        })
+        .map(|(index, library)| import(&library.identity, &format!("l{index}")))
         .collect();
     let compiled = compile_as("u", &unit(&format!("{imports}{H}")), &input(supplied))
         .expect("four libraries compile");
@@ -470,10 +465,7 @@ fn an_equal_import_reuses_the_completed_library() {
     let a = library("test/a", "1", "a", &format!("{geometry_import}{H}"));
     let a_id = package_id(&a, &input(vec![geometry.clone()]));
     let dependencies = input(vec![geometry, a]);
-    let source = unit(&format!(
-        "{geometry_import}{}{H}",
-        import("test/a", "la")
-    ));
+    let source = unit(&format!("{geometry_import}{}{H}", import("test/a", "la")));
     let compiled = compile_as("u", &source, &dependencies).expect("the equal diamond compiles");
     assert_eq!(
         compiled
@@ -501,10 +493,7 @@ fn a_dependency_chain_deeper_than_the_limit_refuses() {
         let body = if index == 0 {
             H.to_owned()
         } else {
-            format!(
-                "{}{H}",
-                import(&format!("test/c{}", index - 1), "l")
-            )
+            format!("{}{H}", import(&format!("test/c{}", index - 1), "l"))
         };
         chain.push(library(
             &format!("test/c{index}"),

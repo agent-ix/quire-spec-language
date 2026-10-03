@@ -251,10 +251,7 @@ fn diamond_root() -> LibraryPackage {
         "P",
         "1",
         "P@1",
-        vec![
-            import("A", Some("a")),
-            import("B", Some("b")),
-        ],
+        vec![import("A", Some("a")), import("B", Some("b"))],
     )
 }
 
@@ -263,11 +260,7 @@ fn diamond_root() -> LibraryPackage {
 #[test]
 fn l04_a_diamond_selects_its_shared_library_once() {
     let root = diamond_root();
-    let supplied = [
-        over_l("A"),
-        over_l("B"),
-        library_l(),
-    ];
+    let supplied = [over_l("A"), over_l("B"), library_l()];
     let lock = resolve_libraries(&root, &supplied).unwrap();
     let l_selections: Vec<_> = lock
         .selections()
@@ -281,18 +274,8 @@ fn l04_a_diamond_selects_its_shared_library_once() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l05_an_import_cycle_lists_its_dependency_edges() {
-    let a = package(
-        "A",
-        "1",
-        "A@1",
-        vec![import("B", Some("b"))],
-    );
-    let b = package(
-        "B",
-        "1",
-        "B@1",
-        vec![import("A", Some("a"))],
-    );
+    let a = package("A", "1", "A@1", vec![import("B", Some("b"))]);
+    let b = package("B", "1", "B@1", vec![import("A", Some("a"))]);
     // TC-282 (FR-087-AC-12): `ImportCycle` classifies to ADR-011 I2's third
     // rule.
     assert_library_refusal_classified(
@@ -313,10 +296,7 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
         "P",
         "1",
         "P@1",
-        vec![
-            import("Z", Some("z")),
-            import("A", Some("a")),
-        ],
+        vec![import("Z", Some("z")), import("A", Some("a"))],
     );
     let supplied = vec![
         package("Z", "1", "Z@1", Vec::new()),
@@ -342,12 +322,7 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     let old_library = library_l();
     let new_library = package("L", "2", "L'@2", Vec::new());
     let old_package = over_l("P");
-    let new_package = package(
-        "P",
-        "2",
-        "P'@2",
-        vec![import("L", Some("l"))],
-    );
+    let new_package = package("P", "2", "P'@2", vec![import("L", Some("l"))]);
 
     assert_eq!(
         check_migration(&old_library, &new_library),
@@ -949,12 +924,7 @@ fn l01_every_declared_export_must_derive_from_a_checked_package_v2_identity_proj
         imports: Vec::new(),
         exports: exports.iter().map(|export| (*export).to_owned()).collect(),
     };
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("Example", Some("e"))],
-    );
+    let root = package("P", "1", "P@1", vec![import("Example", Some("e"))]);
     resolve_libraries(&root, &[valid_library]).unwrap();
 
     let unexported_library = LibraryPackage {
@@ -1023,12 +993,7 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
             imports: Vec::new(),
             exports: vec![export.to_owned()],
         };
-        let root = package(
-            "P",
-            "1",
-            "P@1",
-            vec![import("K", Some("k"))],
-        );
+        let root = package("P", "1", "P@1", vec![import("K", Some("k"))]);
         (root, library)
     };
 
@@ -1119,10 +1084,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
     wrong_version["version"] = json!("quire.checked-package-id/v1");
     let malformed = with_preimage(jcs(&wrong_version), &["R"]);
     assert_library_refusal_classified(
-        resolve_libraries(
-            &over_l("P"),
-            std::slice::from_ref(&malformed),
-        ),
+        resolve_libraries(&over_l("P"), std::slice::from_ref(&malformed)),
         &LibraryRefusal::InvalidPreimage {
             library: name("L"),
             defect: PreimageDefect::Version,
@@ -1138,10 +1100,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
 fn undeclared_export_classifies_alongside_4_condition_2() {
     let malformed = with_preimage(preimage("L@1"), &["Missing"]);
     assert_library_refusal_classified(
-        resolve_libraries(
-            &over_l("P"),
-            std::slice::from_ref(&malformed),
-        ),
+        resolve_libraries(&over_l("P"), std::slice::from_ref(&malformed)),
         &LibraryRefusal::UndeclaredExport {
             library: name("L"),
             export: "Missing".to_owned(),
@@ -1155,12 +1114,7 @@ fn undeclared_export_classifies_alongside_4_condition_2() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn invalid_qualifier_classifies_to_e3_name_resolution() {
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("L", Some("1l"))],
-    );
+    let root = package("P", "1", "P@1", vec![import("L", Some("1l"))]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[library_l()]),
         &LibraryRefusal::InvalidQualifier {
@@ -1175,12 +1129,7 @@ fn invalid_qualifier_classifies_to_e3_name_resolution() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn missing_import_classifies_to_i2_rule_1() {
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("Z", Some("z"))],
-    );
+    let root = package("P", "1", "P@1", vec![import("Z", Some("z"))]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[]),
         &LibraryRefusal::MissingImport {
