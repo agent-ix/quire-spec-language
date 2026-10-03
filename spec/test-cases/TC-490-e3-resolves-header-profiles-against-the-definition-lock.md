@@ -47,10 +47,13 @@ identity from the catalog, never from a literal.
    declaration calls a named predicate, then one that declares a named
    predicate; then both units with `v` naming `quire.state.queries/v1`.
 
-Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-8", "TC-490")]` over the
+8. Under `make conformance`, read QSpec's `complete-value-lock.json` and
+   `complete-value-selection-vectors.json` from `QSPEC_DIR`. Compare the
+   lock with `DefinitionLock::pinned()`, and admit each selection vector
+   through it.
+
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-9", "TC-490")]` over the
 criteria each step backs.
-8. Under `make conformance`, read QSpec's `complete-value-lock.json` from
-   `QSPEC_DIR` and compare it with `DefinitionLock::pinned()`.
 
 ## Expected Results
 

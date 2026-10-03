@@ -1594,6 +1594,106 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
         "conformance: {} adverse mutations refused with their expected causes",
         mutations.len()
     );
+    unknown_temporal_profile_is_unknown_profile(&base);
+}
+
+/// FR-250's five temporal profiles are the only identities a temporal
+/// application's `temporal_profile` law may name. `base`'s clause, its law
+/// renamed to `quire.fixture.temporal-profile/v1` and every node key and the
+/// package identity recomputed, is refused by IR as `unknown_profile`
+/// (cause `unsupported-selection`), which QSL's I2 read reports as
+/// [`Code::UnknownProfile`], located at the law's definition.
+fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
+    let application_key = |node: &Value| {
+        package_id_digest(&json!({
+            "version": "quire.application-node/v1",
+            "node_tag": node["node_tag"],
+            "semantic_form": node["semantic_form"],
+            "semantic_type": node["semantic_type"],
+            "declaration": node.get("declaration").cloned().unwrap_or(Value::Null),
+            "recursion": Value::Null,
+            "body": node["body"],
+        }))
+    };
+    let nodes_of = |package: &Value| {
+        package["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    let is_application = |node: &Value| node["body"]["term"] == "application";
+    // The recomputation is measured against the published fixture first: every
+    // application node's key is its own preimage's digest.
+    for node in nodes_of(base).iter().filter(|node| is_application(node)) {
+        assert_eq!(
+            node["node_id"]["digest"].as_str().unwrap(),
+            application_key(node),
+            "the fixture's application keys recompute"
+        );
+    }
+    let clause = nodes_of(base)
+        .iter()
+        .position(|node| {
+            node["node_tag"] == "temporal" && node["semantic_form"] == "temporal_clause"
+        })
+        .expect("the all-families fixture holds a temporal clause");
+    let mut package = base.clone();
+    package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]
+        ["identity"] = json!("quire.fixture.temporal-profile/v1");
+    // Rekey innermost first: each changed key is renamed wherever it is named.
+    for _ in 0..=nodes_of(&package).len() {
+        let mut changed = false;
+        for node in nodes_of(&package)
+            .iter()
+            .filter(|node| is_application(node))
+        {
+            let fresh = application_key(node);
+            let stale = node["node_id"]["digest"].as_str().unwrap().to_owned();
+            if stale != fresh {
+                package = serde_json::from_str(
+                    &serde_json::to_string(&package)
+                        .unwrap()
+                        .replace(&stale, &fresh),
+                )
+                .unwrap();
+                changed = true;
+                break;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut nodes = nodes_of(&package);
+    for node in &mut nodes {
+        if let Some(dependencies) = node["dependencies"].as_array_mut() {
+            dependencies.sort_by(|a, b| a["digest"].as_str().cmp(&b["digest"].as_str()));
+        }
+    }
+    package["semantic_graph"]["nodes"] = Value::Array(nodes.clone());
+    package["identity_preimage"]["identity_projection"] = Value::Array(
+        nodes
+            .into_iter()
+            .map(|mut node| {
+                node.as_object_mut().unwrap().remove("occurrences");
+                node
+            })
+            .collect(),
+    );
+    package["package_id"]["digest"] = json!(package_id_digest(&package["identity_preimage"]));
+    let (_, outcome) = read_fixture_wire(&package);
+    let Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
+        panic!("expected an unknown_profile refusal, got {outcome:?}");
+    };
+    assert_eq!(ir.code, CheckedPackageRefusalCode::UnknownProfile, "{ir:?}");
+    assert_eq!(refusal.code(), Code::UnknownProfile);
+    assert!(
+        matches!(refusal.locus(), Some(Locus::Artifact { pointer, .. })
+            if pointer.as_str()
+                == format!("/semantic_graph/nodes/{clause}/body/operation/laws/0/definition")),
+        "{refusal:?}"
+    );
+    println!("conformance: an unknown temporal profile reads as unknown_profile");
 }
 
 /// Over QSpec's `dependency-selection-vectors.json` (FR-322-AC-35,
@@ -1638,7 +1738,11 @@ fn conformance_dependency_selection_vectors() {
     // vectors with supplied dependency packages.
     let unsupplied = |id: &str, outcome: &Read| match outcome {
         Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) => {
-            assert_eq!(ir.code, CheckedPackageRefusalCode::MissingImport, "{id}: {ir:?}");
+            assert_eq!(
+                ir.code,
+                CheckedPackageRefusalCode::MissingImport,
+                "{id}: {ir:?}"
+            );
             assert!(
                 matches!(refusal.locus(), Some(Locus::Artifact { pointer, .. })
                     if pointer.as_str() == "/lock/dependency_selections/0"),

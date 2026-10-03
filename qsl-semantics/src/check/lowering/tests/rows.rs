@@ -19,8 +19,7 @@ fn text_definition() -> DefinitionReference {
 
 /// The pinned lock's IEEE profile definition.
 fn ieee_definition() -> DefinitionReference {
-    let entry = *DefinitionLock::pinned()
-        .entry(CatalogRole::IeeeProfile);
+    let entry = *DefinitionLock::pinned().entry(CatalogRole::IeeeProfile);
     DefinitionReference {
         authority: entry.authority.to_owned(),
         identity: entry.identity.to_owned(),

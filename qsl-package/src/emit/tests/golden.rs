@@ -132,8 +132,7 @@ fn record_types() -> TypeEnvironment {
 /// The lock evidence of these packages: the catalog's text-profile
 /// definition, which the emitted lock selects.
 fn lock_evidence() -> qsl_semantics::check::LockEvidence {
-    let entry = *DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile);
+    let entry = *DefinitionLock::pinned().entry(CatalogRole::TextProfile);
     qsl_semantics::check::LockEvidence::default().with_text_profile(
         qsl_semantics::value::DefinitionReference {
             authority: entry.authority.to_owned(),
@@ -145,8 +144,7 @@ fn lock_evidence() -> qsl_semantics::check::LockEvidence {
 /// The package's one admitted IEEE profile: the catalog's own definition.
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
     let lock = DefinitionLock::pinned();
-    let entry = lock
-        .entry(CatalogRole::IeeeProfile);
+    let entry = lock.entry(CatalogRole::IeeeProfile);
     lock.admit_ieee_profile(
         &[qsl_semantics::value::DefinitionReference {
             authority: entry.authority.to_owned(),
