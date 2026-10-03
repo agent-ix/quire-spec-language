@@ -59,7 +59,7 @@ checked-input:
 # what actually enforces the check locally.
 cargo-deny-bans:
 	@if command -v cargo-deny >/dev/null 2>&1; then \
-		cargo deny check bans --config deny.toml; \
+		cargo deny --workspace check bans --config deny.toml; \
 	else \
 		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked\` to install it" >&2; \
 		exit 1; \
