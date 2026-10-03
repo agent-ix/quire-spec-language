@@ -102,3 +102,15 @@ findings are in SR-1255.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The doc comment on `two_admitted_versions_of_one_model_identity_refuse` gives a reason this PR makes false: "refuse as a broken invariant instead of keying owners from whichever comes first". The `ModelOwner` is now `{identity, node}`, so it is the same whichever admitted version comes first. The refusal still matters, because `model_owner` also returns the first matching `AdmittedModel`, and the declaration's record is read from it (model.rs:281-284, state.rs:403-404). Fix: reword it, for example "instead of resolving declarations against whichever admitted view comes first". | qsl-semantics/src/check/lowering/model/tests.rs:945-947 |
+
+## Dispositions
+
+Round 1, reviewed at 1512416d77383b82026b63e86ff8581ec957b665 (fix commit
+1512416d7 on d21fb5586; `git diff d21fb5586 1512416d7`). The round adds no new
+finding. The fix commit touches only the four text units SR-1254 and SR-1255
+name, plus the two SR files under `reviews/`, which are byte-identical to the
+review-pass files.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1512416d7 |

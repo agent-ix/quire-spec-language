@@ -75,3 +75,18 @@ edits inside this PR. No AC is untested.
 | FND-001 | medium | ADR-012 §2's Identity row still says the O-04 preimage's owner subject is, "for a model-owned node the domain package's identity and declared version plus the IR node identity". After this PR, ADR-013 O-04 (Equality row), QC-18, ADR-011 E3, FR-094 and `node_key::ModelOwner` all say identity plus IR node, with no version (QSpec FR-322-AC-28). So two ADRs now contradict each other on the preimage owner, and ADR-012 contradicts the code. Fix: change that clause to "for a model-owned node the domain package's identity plus the IR node identity, with no version (QSpec FR-322-AC-28)". | spec/decisions/ADR-012-semantic-family-extension-contracts.md:235 |
 | FND-002 | low | ADR-013 QC-3 still reads "FR-094's vectors M1 to M4 and C1 to C4 are QSL's proposal for them". The ranges include M2 and C3, which this PR deletes. Also, QSpec now publishes M1, M3, M4 and M5 byte-identically (`model-member-type-vectors.json` `model_declaration_nodes`), so QC-3 is answered for model declaration nodes. That equality, which the PR claims, is recorded nowhere in the spec. Fix: say that M1, M3, M4 and M5 equal QSpec's published `model_declaration_nodes` vectors, and that the clause-function vectors C1, C2 and C4 to C6 remain QSL's proposal (QC-25). | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:1124 |
 | FND-003 | low | The FR-094 paragraph in spec/tests.md lists "vectors M1 to M5, R1 to R5, ... C1 to C6". Each range now includes a vector this PR deletes (M2, R2, C3). Fix: list "M1, M3 to M5, R1, R3 to R5, S1 to S3, PO1 to PO3, P5 to P8, L4, E4 to E10, C1, C2, C4 to C6 and U1 to U4". | spec/tests.md:888-889 |
+
+## Dispositions
+
+Round 1, reviewed at 1512416d77383b82026b63e86ff8581ec957b665 (fix commit
+1512416d7 on d21fb5586; `git diff d21fb5586 1512416d7`). The round adds no new
+finding. A re-grep at 1512416d7, outside the review records, finds no
+`identity and declared version`, `M1 to M4`, `C1 to C4`, `M1 to M5`,
+`R1 to R5` or `C1 to C6` left. The corrected spec/tests.md list names exactly
+the 35 vectors FR-094 publishes.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1512416d7 |
+| FND-002 | fixed | 1512416d7 |
+| FND-003 | fixed | 1512416d7 |
