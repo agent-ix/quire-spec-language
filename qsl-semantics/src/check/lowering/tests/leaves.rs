@@ -19,6 +19,13 @@ fn fr093_vectors() -> BTreeMap<String, (String, String)> {
 
 /// Assert `graph` holds FR-093 vector `name`, bytes and key.
 fn assert_fr093(graph: &SemanticGraph, name: &str) {
+    {
+        use std::io::Write;
+        let mut log = std::fs::OpenOptions::new().create(true).append(true).open("/home/peter/dev/worktrees/logs/qsl-483-nodes.tsv").unwrap();
+        for node in graph.nodes() {
+            writeln!(log, "{}\t{}", node.key(), std::str::from_utf8(node.preimage()).unwrap()).unwrap();
+        }
+    }
     let (key, preimage) = &fr093_vectors()[name];
     let node = node_by_key(graph, key);
     assert_eq!(
