@@ -865,7 +865,7 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// (`CheckedGraph::region`, FR-096).
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package(package, |location| graph.region(location))
+    emit_package(package, graph.memoized_regions())
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -909,7 +909,7 @@ pub fn emit_checked_with_fault(
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_with_fault(package, |location| graph.region(location), fault)
+    emit_package_with_fault(package, graph.memoized_regions(), fault)
 }
 
 /// The [`CheckedNodeId`] [`emit_checked_with_fault`]'s `fault` closure

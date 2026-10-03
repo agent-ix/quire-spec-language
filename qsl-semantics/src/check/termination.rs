@@ -660,10 +660,7 @@ mod tests {
     fn call(callee: usize, kind: EdgeKind, position: usize) -> CallSite {
         CallSite {
             callee,
-            location: Location {
-                origin: Origin::Expression,
-                path: vec![position],
-            },
+            location: Location::at(Origin::Expression, &[position]),
             arguments: Vec::new(),
             kind,
         }
@@ -783,10 +780,7 @@ mod tests {
         Node {
             kind: NodeKind::Local(slot),
             value_type: ValueType::Integer,
-            location: Location {
-                origin: Origin::Expression,
-                path: Vec::new(),
-            },
+            location: Location::root(Origin::Expression),
         }
     }
 
@@ -974,10 +968,7 @@ mod scaling {
                 .map(|index| {
                     vec![CallSite {
                         callee: index,
-                        location: Location {
-                            origin: Origin::Expression,
-                            path: Vec::new(),
-                        },
+                        location: Location::root(Origin::Expression),
                         arguments: Vec::new(),
                         kind: EdgeKind::Ordinary,
                     }]

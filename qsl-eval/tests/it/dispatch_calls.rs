@@ -764,13 +764,10 @@ fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
         .expect("an Arity refusal must be present");
     assert_eq!(
         location,
-        &Location {
-            path: vec![],
-            origin: Origin::Body {
+        &Location::root(Origin::Body {
                 function: "candidate.body".to_owned(),
                 index: 0,
-            },
-        },
+            }),
         "an Arity refusal must point at the candidate function's own declaration, not the expression root"
     );
 }
@@ -823,13 +820,10 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
         });
     assert_eq!(
         location,
-        &Location {
-            path: vec![],
-            origin: Origin::Body {
+        &Location::root(Origin::Body {
                 function: "candidate.body".to_owned(),
                 index: 0,
-            },
-        },
+            }),
         "a ParameterType refusal must point at the candidate function's own declaration, not the expression root"
     );
 }
@@ -868,13 +862,10 @@ fn dispatch_candidate_with_a_mismatched_result_type_is_refused_invalid_dispatch(
         });
     assert_eq!(
         location,
-        &Location {
-            path: vec![],
-            origin: Origin::Body {
+        &Location::root(Origin::Body {
                 function: "candidate.body".to_owned(),
                 index: 0,
-            },
-        },
+            }),
         "a ResultType refusal must point at the candidate function's own declaration, not the expression root"
     );
 }
@@ -1081,10 +1072,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
     // which nests the dispatch call one level deep so the two differ.
     assert_eq!(
         evaluation.location,
-        Some(Location {
-            origin: Origin::Expression,
-            path: Vec::new(),
-        })
+        Some(Location::root(Origin::Expression))
     );
     assert_eq!(
         undefined_record(evaluation),
@@ -1147,10 +1135,7 @@ fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_
         .unwrap();
     assert_eq!(
         evaluation.location,
-        Some(Location {
-            origin: Origin::Expression,
-            path: vec![1],
-        }),
+        Some(Location::at(Origin::Expression, &[1])),
         "expected the dispatch call's own locus (path [1], the Binary's \
          right child), not the whole expression's root"
     );
@@ -1306,13 +1291,10 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
     );
     assert_eq!(
         refusal.location,
-        Location {
-            origin: Origin::Body {
+        Location::root(Origin::Body {
                 function: "candidate.precondition".to_owned(),
                 index: 1,
-            },
-            path: Vec::new(),
-        }
+            })
     );
 }
 

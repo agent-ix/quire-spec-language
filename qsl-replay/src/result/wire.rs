@@ -624,13 +624,13 @@ impl LocationWire {
                     }
                 }
             },
-            path: location.path.clone(),
+            path: location.path(),
         }
     }
 
     fn read(self) -> Location {
-        Location {
-            origin: match self.declaration {
+        Location::at(
+            match self.declaration {
                 DeclarationWire::Body { function, index } => Declaration::Body { function, index },
                 DeclarationWire::Measure { function, index } => {
                     Declaration::Measure { function, index }
@@ -644,8 +644,8 @@ impl LocationWire {
                     Declaration::ProtocolAttempt { protocol, attempt }
                 }
             },
-            path: self.path,
-        }
+            &self.path,
+        )
     }
 }
 

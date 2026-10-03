@@ -1834,10 +1834,7 @@ pub mod fixtures {
     /// `family_contract_tests` module, which used to keep a second,
     /// byte-for-byte copy of this same fixture instead of importing it.
     pub fn root_location() -> CheckLocation {
-        CheckLocation {
-            origin: CheckOrigin::Expression,
-            path: Vec::new(),
-        }
+        CheckLocation::root(CheckOrigin::Expression)
     }
     pub fn boolean_signature(name: &str, parameter_count: usize) -> Signature {
         Signature {
@@ -3250,13 +3247,10 @@ pub(crate) mod checking_tests {
         }
         .check(CheckingLimits::default())
         .expect_err("repeated names are refused");
-        let at = |index: usize| BodyLocation {
-            origin: BodyOrigin::Body {
+        let at = |index: usize| BodyLocation::root(BodyOrigin::Body {
                 function: names[index].to_owned(),
                 index,
-            },
-            path: Vec::new(),
-        };
+            });
         let expected: Vec<CheckRefusal> = [0, 1, 2, 4, 5]
             .into_iter()
             .map(|index| {
@@ -3323,13 +3317,10 @@ mod locus_tests {
     }
 
     fn body_location() -> CheckLocation {
-        CheckLocation {
-            origin: CheckOrigin::Body {
-                function: "f".into(),
-                index: 0,
-            },
-            path: Vec::new(),
-        }
+        CheckLocation::root(CheckOrigin::Body {
+            function: "f".into(),
+            index: 0,
+        })
     }
 
     /// The unit bytes `locus` names, asserting it is a region of the unit.

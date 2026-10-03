@@ -954,10 +954,7 @@ fn l14_lookup_expression_undefined_mode() {
     // root's: `Origin::Expression`, an empty path.
     assert_eq!(
         absent.location,
-        Some(Location {
-            origin: Origin::Expression,
-            path: Vec::new(),
-        })
+        Some(Location::root(Origin::Expression))
     );
     match absent.outcome {
         FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => {
@@ -1494,10 +1491,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
     );
     assert_eq!(
         refusal.location,
-        Location {
-            origin: Origin::Expression,
-            path: vec![1],
-        }
+        Location::at(Origin::Expression, &[1])
     );
 
     let parameters = [

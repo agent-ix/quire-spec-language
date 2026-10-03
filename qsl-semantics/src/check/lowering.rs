@@ -358,6 +358,49 @@ struct Binders<'s> {
     slot_names: &'s [String],
     /// Each binder in scope, outermost first.
     scope: Vec<Binder>,
+    /// Each binder in scope by its slot. A slot is bound once at a time, so
+    /// a local read finds its binder in constant time at any nesting.
+    by_slot: HashMap<Slot, Binder>,
+}
+
+impl<'s> Binders<'s> {
+    /// The scope that holds `parameters`.
+    fn new(slot_names: &'s [String], parameters: &[Binder]) -> Self {
+        let mut binders = Self {
+            slot_names,
+            scope: Vec::new(),
+            by_slot: HashMap::new(),
+        };
+        for parameter in parameters {
+            binders.push(*parameter);
+        }
+        binders
+    }
+
+    /// Bring `binder` into scope.
+    fn push(&mut self, binder: Binder) {
+        self.by_slot.insert(binder.slot, binder);
+        self.scope.push(binder);
+    }
+
+    /// Take the innermost binder out of scope.
+    fn pop(&mut self) {
+        if let Some(binder) = self.scope.pop() {
+            self.by_slot.remove(&binder.slot);
+        }
+    }
+
+    /// Take every binder past the first `len` out of scope.
+    fn truncate(&mut self, len: usize) {
+        while self.scope.len() > len {
+            self.pop();
+        }
+    }
+
+    /// The binder in scope for `slot`.
+    fn find(&self, slot: Slot) -> Option<&Binder> {
+        self.by_slot.get(&slot)
+    }
 }
 
 /// Every member of a node's preimage outside every recursion group: what
@@ -2547,17 +2590,11 @@ impl<'a> Lowering<'a> {
                 parameters.iter().map(|binder| binder.parameter),
             )),
         )];
-        let mut binders = Binders {
-            slot_names: function.body_slots,
-            scope: parameters.clone(),
-        };
+        let mut binders = Binders::new(function.body_slots, &parameters);
         let body = self.expression(function.body, &mut binders)?;
         members.push(MemberTerm::bound("body", body));
         if let Some(measure) = function.measure {
-            let mut binders = Binders {
-                slot_names: function.measure_slots,
-                scope: parameters.clone(),
-            };
+            let mut binders = Binders::new(function.measure_slots, &parameters);
             let measure = self.expression(measure, &mut binders)?;
             members.push(MemberTerm::bound("decreases", measure));
         }
@@ -2631,7 +2668,7 @@ impl<'a> Lowering<'a> {
             },
             parameter,
         );
-        binders.scope.push(Binder {
+        binders.push(Binder {
             slot,
             parameter,
             semantic_type,
@@ -2647,12 +2684,7 @@ impl<'a> Lowering<'a> {
         binders: &Binders<'_>,
     ) -> Result<NodeKey, CheckRefusal> {
         if let NodeKind::Local(slot) = node.kind() {
-            if let Some(binder) = binders
-                .scope
-                .iter()
-                .rev()
-                .find(|binder| binder.slot == *slot)
-            {
+            if let Some(binder) = binders.find(*slot) {
                 return Ok(binder.semantic_type);
             }
         }
@@ -2745,7 +2777,7 @@ impl<'a> Lowering<'a> {
         let scope = binders.scope.len();
         let lowered = self.lower(root, binders);
         if lowered.is_err() {
-            binders.scope.truncate(scope);
+            binders.truncate(scope);
         }
         lowered
     }
@@ -2788,10 +2820,7 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::Local(slot) => {
                 let key = binders
-                    .scope
-                    .iter()
-                    .rev()
-                    .find(|binder| binder.slot == *slot)
+                    .find(*slot)
                     .map(|binder| binder.parameter)
                     .ok_or_else(|| {
                         refuse(
@@ -3586,7 +3615,7 @@ impl<'a> Lowering<'a> {
                     Ok(LowerStep::Descend(body))
                 }
                 Some((value, name)) => {
-                    binders.scope.pop();
+                    binders.pop();
                     self.application(
                         frame.node,
                         Operator::Let,
@@ -3608,7 +3637,7 @@ impl<'a> Lowering<'a> {
                     Ok(LowerStep::Descend(body))
                 }
                 Some((source, name)) => {
-                    binders.scope.pop();
+                    binders.pop();
                     let BinderFrame {
                         node,
                         operator,
@@ -3687,8 +3716,8 @@ impl<'a> Lowering<'a> {
                 accumulator,
                 binder,
             } => {
-                binders.scope.pop();
-                binders.scope.pop();
+                binders.pop();
+                binders.pop();
                 let node = frame.node;
                 let member = self.type_argument(node.value_type(), node.location())?;
                 let mut arguments = vec![
@@ -3971,12 +4000,9 @@ pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
 /// The location of the `declaration` occurrence of the type declared as
 /// `name`.
 pub(crate) fn type_declaration(name: &str) -> Location {
-    Location {
-        origin: Origin::TypeDeclaration {
-            name: name.to_owned(),
-        },
-        path: Vec::new(),
-    }
+    Location::root(Origin::TypeDeclaration {
+        name: name.to_owned(),
+    })
 }
 
 /// The nodes `node` names: its semantic type and every node its body
@@ -4064,7 +4090,7 @@ fn enclosing_declarations(
     // A declared type's `declaration` occurrence names its declared name
     // (FR-322), which the assembler located.
     let declared = roots(occurrences, |location| {
-        matches!(location.origin, Origin::TypeDeclaration { .. }) && location.path.is_empty()
+        matches!(location.origin, Origin::TypeDeclaration { .. }) && location.depth() == 0
     })
     .into_iter()
     .filter(|(key, _)| !anchors.contains_key(key))
@@ -4085,10 +4111,7 @@ fn roots(
         if !admits(location) {
             continue;
         }
-        let root = Location {
-            origin: location.origin.clone(),
-            path: Vec::new(),
-        };
+        let root = Location::root(location.origin.clone());
         match roots.entry(key) {
             btree_map::Entry::Vacant(entry) => {
                 entry.insert(root);
@@ -4134,10 +4157,7 @@ fn relax(
 /// The package root location a `generated` occurrence names when no
 /// declaration reaches its node.
 pub(crate) fn generated_location() -> Location {
-    Location {
-        origin: Origin::Expression,
-        path: Vec::new(),
-    }
+    Location::root(Origin::Expression)
 }
 
 #[cfg(test)]

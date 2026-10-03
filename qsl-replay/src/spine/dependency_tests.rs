@@ -1121,7 +1121,7 @@ fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
         assert!(
             matches!(
                 &location,
-                Location { origin: Origin::Body { function, .. }, path } if function == "p" && path.is_empty()
+                Location { origin: Origin::Body { function, .. }, .. } if function == "p" && location.depth() == 0
             ),
             "work_units {work_units}: {location:?}"
         );

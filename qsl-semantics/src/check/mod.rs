@@ -95,6 +95,8 @@ mod protocol_clause;
 mod refusal;
 mod region;
 mod state_clause;
+#[cfg(any(test, feature = "test-support"))]
+pub mod stratum;
 mod termination;
 mod type_form;
 
@@ -476,10 +478,7 @@ fn limit_cause(limit: &qsl_foundation::diagnostic::LimitExceeded) -> CheckCause 
 }
 
 fn root(origin: Origin) -> Location {
-    Location {
-        origin,
-        path: Vec::new(),
-    }
+    Location::root(origin)
 }
 
 /// FR-115: one [`CheckedOperationFrame`] per distinct (declaring type,

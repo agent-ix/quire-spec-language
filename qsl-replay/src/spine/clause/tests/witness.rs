@@ -278,7 +278,7 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
             matches!(&location.origin, quire_semantic_value::location::Origin::StateClause {
                 clause: name, ..
             } if name == clause)
-                && location.path == path
+                && location.path() == path
                 && matches!(
                     semantic.node(*key).map(|node| node.body()),
                     Some(BodyTerm::Application(ApplicationTerm { operator: applied, .. }))
@@ -1063,13 +1063,10 @@ fn tc_743_the_separation_check_names_its_failing_step() {
 #[test]
 fn tc_744_an_undefined_step_maps_to_undefined_evaluation() {
     let unit = witness_unit();
-    let at = quire_semantic_value::location::Location {
-        origin: quire_semantic_value::location::Origin::StateClause {
+    let at = quire_semantic_value::location::Location::at(quire_semantic_value::location::Origin::StateClause {
             clause: "AllBelow".to_owned(),
             index: 0,
-        },
-        path: vec![0],
-    };
+        }, &[0]);
     let evaluation = qsl_eval::value::Evaluation {
         outcome: FamilyOutcome::Evaluated(Outcome::Undefined(
             quire_exact::Undefined::DivisionByZero,

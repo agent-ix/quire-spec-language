@@ -78,7 +78,16 @@ One set of package declarations holds the declarations of one source unit.
 They SHALL be checked under that unit's `RawSourceRef` (FR-001), and their
 source owner is that reference's `SourceOwner{authority, identity}`.
 
-A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. For a
+A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. The
+path SHALL be a parent chain shared with the location it was taken from, so
+taking a child costs the same at any depth and a location at depth `d` holds
+no copy of the `d` steps above it (ADR-030 D-1, FR-258). The index sequence is
+built only on output: the FR-269 cause wire writes a location as its
+declaration and the child-index array, built from the chain, and reads that
+array back into a chain. Resolving every location of one checked unit to a
+region SHALL remember the node each chain link reaches, so the work is the
+size of the unit, not its size times its depth. Clone, equality, ordering,
+hash, debug and drop of a location SHALL NOT recurse with its depth. For a
 declaration the assembler built from the unit, it SHALL resolve to a
 `SourceRegion` under the unit's `RawSourceRef`, as follows:
 

@@ -313,7 +313,7 @@ fn p02_self_call_without_a_decrease_or_a_measure_is_refused() {
             index: 0
         }
     );
-    assert!(refused.location.path.is_empty());
+    assert!(refused.location.depth() == 0);
     assert_eq!(
         unproved_decrease(check(vec![looping(Some(name("n")))])),
         (names(&["loop", "loop"]), MeasureObligation::Decrease)
@@ -504,7 +504,7 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
     let missing = refusal(check(vec![calling("undeclaredHost")]));
     assert_eq!(missing.cause.code().as_str(), "missing_declaration");
     assert_eq!(missing.cause.cause(), Some("missing-name"));
-    assert_eq!(missing.location.path, vec![2]);
+    assert_eq!(missing.location.path(), vec![2]);
 
     let model = PackageDeclarations {
         model_operations: vec!["M::pay".to_owned()],
@@ -517,7 +517,7 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
         ineligible.cause,
         CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
     );
-    assert_eq!(ineligible.location.path, vec![2]);
+    assert_eq!(ineligible.location.path(), vec![2]);
 }
 
 fn chain(types: &TypeEnvironment, heads: &[i64]) -> Value {

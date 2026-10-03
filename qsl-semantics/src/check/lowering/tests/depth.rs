@@ -218,10 +218,7 @@ impl<W: quire_walk::Walk> quire_walk::Walk for Counting<'_, W> {
 fn the_text_leaf_walk_enters_two_visits_per_charged_record() {
     const RECORDS: usize = 1_000;
     let types = TypeEnvironment::new(chain(RECORDS), []).expect("FR-143 admits the chain");
-    let location = Location {
-        origin: quire_semantic_value::location::Origin::Expression,
-        path: Vec::new(),
-    };
+    let location = Location::root(quire_semantic_value::location::Origin::Expression);
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut reach = BTreeMap::new();
     let mut walk = LeafWalk {

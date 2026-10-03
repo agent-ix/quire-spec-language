@@ -819,12 +819,9 @@ fn a_declared_type_resolves_to_its_names_region() {
          function px using v(p: Point): Int[0, 9] pure { p.x }",
     );
     let package = assemble_as("a", "u", &text).expect("the unit assembles");
-    let location = Location {
-        origin: Origin::TypeDeclaration {
+    let location = Location::root(Origin::TypeDeclaration {
             name: "Point".into(),
-        },
-        path: Vec::new(),
-    };
+        });
     let region = package.region(&location).expect("Point has a region");
     let span = last(&text, "Point {");
     assert_eq!(

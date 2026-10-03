@@ -317,7 +317,7 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
             }
         );
         assert_eq!(
-            refusals[0].location.path,
+            refusals[0].location.path(),
             Vec::<usize>::new(),
             "{:?}",
             refusals[0].location
@@ -479,24 +479,18 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
     assert_eq!(located.len(), 2);
     assert_eq!(
         located[0].location,
-        Location {
-            origin: Origin::StateClause {
+        Location::root(Origin::StateClause {
                 clause: "ParentOrder".to_owned(),
                 index: 0,
-            },
-            path: Vec::new(),
-        },
+            }),
         "the first ParentOrder is its own locus"
     );
     assert_eq!(
         located[1].location,
-        Location {
-            origin: Origin::StateClause {
+        Location::root(Origin::StateClause {
                 clause: "ParentOrder".to_owned(),
                 index: 1,
-            },
-            path: Vec::new(),
-        },
+            }),
         "the second ParentOrder is its own locus"
     );
 
@@ -513,24 +507,18 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
     assert_eq!(located.len(), 2);
     assert_eq!(
         located[0].location,
-        Location {
-            origin: Origin::Body {
+        Location::root(Origin::Body {
                 function: "ParentOrder".to_owned(),
                 index: 0,
-            },
-            path: Vec::new(),
-        },
+            }),
         "the function's own declaration is its locus"
     );
     assert_eq!(
         located[1].location,
-        Location {
-            origin: Origin::StateClause {
+        Location::root(Origin::StateClause {
                 clause: "ParentOrder".to_owned(),
                 index: 0,
-            },
-            path: Vec::new(),
-        },
+            }),
         "the clause's own declaration is its locus"
     );
 }
@@ -579,7 +567,7 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     let located = check_refusals(&document, row3).expect_err("row 3 refuses");
     assert_eq!(located.len(), 1);
     assert_eq!(
-        located[0].location.path,
+        located[0].location.path(),
         Vec::<usize>::new(),
         "at the body: {:?}",
         located[0].location
@@ -604,7 +592,7 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     assert_eq!(located.len(), 1);
     // `= 1`'s left child (index 0) is the `pre`.
     assert_eq!(
-        located[0].location.path,
+        located[0].location.path(),
         vec![0],
         "{:?}",
         located[0].location
@@ -625,7 +613,7 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     let located = check_refusals(&document, row6).expect_err("row 6 refuses");
     assert_eq!(located.len(), 1);
     assert_eq!(
-        located[0].location.path,
+        located[0].location.path(),
         Vec::<usize>::new(),
         "the pre is the body root here: {:?}",
         located[0].location
@@ -642,7 +630,7 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     let located = check_refusals(&document, row7).expect_err("row 7 refuses");
     assert_eq!(located.len(), 1);
     assert_eq!(
-        located[0].location.path,
+        located[0].location.path(),
         Vec::<usize>::new(),
         "at the reaches, which is the body root here: {:?}",
         located[0].location
@@ -665,7 +653,7 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     // is `deref(value(self.parent))`, whose own operand (0) is
     // `value(self.parent)`.
     assert_eq!(
-        located[0].location.path,
+        located[0].location.path(),
         vec![0, 0, 0],
         "{:?}",
         located[0].location
@@ -683,13 +671,10 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     assert_eq!(located.len(), 1);
     assert_eq!(
         located[0].location,
-        Location {
-            origin: Origin::Body {
+        Location::root(Origin::Body {
                 function: "r".to_owned(),
                 index: 0,
-            },
-            path: Vec::new(),
-        },
+            }),
         "the reaches call is the whole function body"
     );
 }

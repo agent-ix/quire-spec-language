@@ -18,10 +18,11 @@
 //! (`lowering::enclosing_declarations`), so it resolves here like any other
 //! body, clause, attempt or declared-name location.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use qsl_forms::DeclarationSpans;
+use qsl_forms::{DeclarationSpans, ExpressionSpans, SpanId};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::Span;
@@ -29,9 +30,49 @@ use qsl_foundation::Span;
 use super::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::location::{Location, Origin};
 
+/// The span node each location of a checked unit reaches, remembered by the
+/// address of the location's last link. A node's span is its parent's child,
+/// so a located arena resolves each node in constant time, never by walking
+/// its whole path again. The memo is only valid while the locations it was
+/// asked about are alive: [`CheckedGraph::memoized_regions`] holds the graph
+/// for the memo's life.
+#[derive(Default)]
+struct SpanMemo {
+    reached: RefCell<HashMap<usize, Option<SpanId>>>,
+}
+
+impl SpanMemo {
+    /// The node of `spans` that `location`'s path reaches.
+    fn reach(&self, spans: &ExpressionSpans, location: &Location) -> Option<SpanId> {
+        let mut reached = self.reached.borrow_mut();
+        // The unresolved links from the tip up to a link already reached.
+        let mut pending: Vec<(usize, usize)> = Vec::new();
+        let mut node = spans.root();
+        for (address, index) in location.ancestry() {
+            if let Some(known) = reached.get(&address) {
+                node = (*known)?;
+                break;
+            }
+            pending.push((address, index));
+        }
+        for (address, index) in pending.into_iter().rev() {
+            let next = spans.child(node, index);
+            reached.insert(address, next);
+            node = next?;
+        }
+        Some(node)
+    }
+
+    /// The span `location`'s path reaches in `spans`.
+    fn at(&self, spans: &ExpressionSpans, location: &Location) -> Option<Span> {
+        spans.span(self.reach(spans, location)?)
+    }
+}
+
 /// The region `location` names, given each function's and each state
 /// clause's form spans by declaration index.
 fn resolve<'s>(
+    memo: &SpanMemo,
     source: &RawSourceRef,
     embedding: Option<&SourceMap>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
@@ -41,11 +82,11 @@ fn resolve<'s>(
     location: &Location,
 ) -> Option<SourceRegion> {
     let span = match &location.origin {
-        Origin::Body { index, .. } => spans(*index)?.body.at(&location.path)?,
-        Origin::StateClause { index, .. } => clause_spans(*index)?.body.at(&location.path)?,
-        Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
-        Origin::TypeDeclaration { name } if location.path.is_empty() => *type_spans.get(name)?,
-        Origin::ProtocolAttempt { protocol, attempt } if location.path.is_empty() => {
+        Origin::Body { index, .. } => memo.at(&spans(*index)?.body, location)?,
+        Origin::StateClause { index, .. } => memo.at(&clause_spans(*index)?.body, location)?,
+        Origin::Measure { index, .. } => memo.at(spans(*index)?.measure.as_ref()?, location)?,
+        Origin::TypeDeclaration { name } if location.depth() == 0 => *type_spans.get(name)?,
+        Origin::ProtocolAttempt { protocol, attempt } if location.depth() == 0 => {
             attempt_span(*protocol, *attempt)?
         }
         Origin::TypeDeclaration { .. } | Origin::ProtocolAttempt { .. } | Origin::Expression => {
@@ -84,6 +125,7 @@ impl PackageDeclarations {
     /// for a position in a tree not read from it.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
+            &SpanMemo::default(),
             &self.source,
             self.embedding.as_deref(),
             |index| self.functions.get(index)?.spans(),
@@ -144,6 +186,7 @@ impl DeclarationRegions {
     /// [`PackageDeclarations::region`] over the declarations taken.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
+            &SpanMemo::default(),
             &self.source,
             self.embedding.as_deref(),
             |index| self.spans.get(index)?.as_ref(),
@@ -217,6 +260,7 @@ impl CheckedGraph {
     /// only the checked package resolves an `Evaluation.location`.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
+            &SpanMemo::default(),
             &self.source,
             self.embedding.as_deref(),
             |index| self.form_spans.get(index)?.as_ref(),
@@ -225,6 +269,26 @@ impl CheckedGraph {
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
+    }
+
+    /// [`Self::region`] as a function that remembers the span node each
+    /// location reaches, so resolving every location of a deep body costs
+    /// the body's size, not its size times its depth. The function borrows
+    /// the graph, which keeps the locations it was asked about alive.
+    pub fn memoized_regions(&self) -> impl Fn(&Location) -> Option<SourceRegion> + '_ {
+        let memo = SpanMemo::default();
+        move |location| {
+            resolve(
+                &memo,
+                &self.source,
+                self.embedding.as_deref(),
+                |index| self.form_spans.get(index)?.as_ref(),
+                |index| Some(&self.state_clauses.get(index)?.spans),
+                &self.type_spans,
+                |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
+                location,
+            )
+        }
     }
 
     /// FR-096: the region of function `index`'s whole declaration form, or
@@ -339,23 +403,23 @@ mod tests {
     }
 
     fn body(path: &[usize]) -> Location {
-        Location {
-            origin: Origin::Body {
+        Location::at(
+            Origin::Body {
                 function: "f".into(),
                 index: 0,
             },
-            path: path.to_vec(),
-        }
+            path,
+        )
     }
 
     fn measure(path: &[usize]) -> Location {
-        Location {
-            origin: Origin::Measure {
+        Location::at(
+            Origin::Measure {
                 function: "f".into(),
                 index: 0,
             },
-            path: path.to_vec(),
-        }
+            path,
+        )
     }
 
     /// The node `path` reaches from `root`, one `Expression::children`
@@ -451,30 +515,21 @@ mod tests {
             Expression::boolean(true),
             DeclaredClauseKind::Precondition,
         ));
-        let synthesized = Location {
-            origin: Origin::Body {
+        let synthesized = Location::root(Origin::Body {
                 function: "synthesized".into(),
                 index: 1,
-            },
-            path: Vec::new(),
-        };
-        let standalone = Location {
-            origin: Origin::Expression,
-            path: Vec::new(),
-        };
+            });
+        let standalone = Location::root(Origin::Expression);
         let unresolved = [
             synthesized,
             standalone,
             body(&[3]),
             body(&[2, 1, 0]),
             measure(&[0]),
-            Location {
-                origin: Origin::Body {
+            Location::root(Origin::Body {
                     function: "f".into(),
                     index: 9,
-                },
-                path: Vec::new(),
-            },
+                }),
         ];
         let regions = declarations.regions();
         for location in &unresolved {
@@ -945,13 +1000,10 @@ mod tests {
         assert_eq!(limit.actual, u128::from(g1_count + 2));
         assert_eq!(
             refusal.location,
-            Location {
-                origin: Origin::Body {
+            Location::root(Origin::Body {
                     function: "g2".into(),
                     index: 1,
-                },
-                path: Vec::new(),
-            },
+                }),
             "the stage limit is g2's: its locus names the node"
         );
         let region = limit

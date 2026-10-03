@@ -177,10 +177,7 @@ impl Lowering<'_> {
             });
         }
         let parameters: Vec<NodeKey> = scope.iter().map(|binder| binder.parameter).collect();
-        let mut binders = Binders {
-            slot_names: clause.body_slots,
-            scope,
-        };
+        let mut binders = Binders::new(clause.body_slots, &scope);
         let condition = self.expression(clause.body, &mut binders)?;
         let boolean = self.type_node(&ValueType::Boolean, location)?;
         let (anchor, binding) = match &clause.anchor {

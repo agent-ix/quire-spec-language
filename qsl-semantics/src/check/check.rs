@@ -44,7 +44,7 @@
 //! this ticket. The denial is pointed at the one seam the review actually
 //! flagged.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 mod typing;
 
@@ -649,6 +649,10 @@ pub(crate) struct Typer<'a> {
     limits: CheckingLimits,
     nodes: &'a mut u64,
     locals: Vec<Local>,
+    /// The index in `locals` of the local each name is bound to. A name is
+    /// bound at most once at a time ([`Self::bind`] refuses a second
+    /// binding), so a name resolves in constant time at any nesting.
+    local_names: HashMap<String, usize>,
     slots: usize,
     /// The name each slot was bound under, indexed by slot (FR-092: a
     /// parameter node binds its binder's name).
@@ -866,6 +870,7 @@ impl<'a> Typer<'a> {
             limits,
             nodes,
             locals: Vec::new(),
+            local_names: HashMap::new(),
             slots: 0,
             slot_names: Vec::new(),
             clause_kind,
@@ -933,7 +938,7 @@ impl<'a> Typer<'a> {
         location: &Location,
         kind: LocalKind,
     ) -> Result<Slot, CheckRefusal> {
-        if let Some(existing) = self.locals.iter().find(|local| local.name == name) {
+        if let Some(existing) = self.local(name) {
             return Err(refuse(
                 location,
                 CheckCause::AmbiguousName {
@@ -945,6 +950,7 @@ impl<'a> Typer<'a> {
         let slot = self.slots;
         self.slots = self.slots.saturating_add(1);
         self.slot_names.push(name.to_owned());
+        self.local_names.insert(name.to_owned(), self.locals.len());
         self.locals.push(Local {
             name: name.to_owned(),
             value_type,
@@ -957,7 +963,14 @@ impl<'a> Typer<'a> {
 
     fn unbind(&mut self, count: usize) {
         let keep = self.locals.len().saturating_sub(count);
-        self.locals.truncate(keep);
+        for local in self.locals.drain(keep..) {
+            self.local_names.remove(&local.name);
+        }
+    }
+
+    /// The local bound to `name`, if any.
+    fn local(&self, name: &str) -> Option<&Local> {
+        self.locals.get(*self.local_names.get(name)?)
     }
 
     /// Whether `name` resolves (innermost binding first, matching ordinary
@@ -973,10 +986,7 @@ impl<'a> Typer<'a> {
     /// re-binding a state root, never about the root parameter itself
     /// (`pre(self.version)`/`pre(allInstances(p))` stay legal).
     fn captured_before(&self, name: &str, boundary: usize) -> bool {
-        self.locals
-            .iter()
-            .rev()
-            .find(|local| local.name == name)
+        self.local(name)
             .is_some_and(|local| local.kind == LocalKind::Bound && local.slot < boundary)
     }
 
@@ -1263,7 +1273,7 @@ impl<'a> Typer<'a> {
     }
 
     fn name(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
-        if let Some(local) = self.locals.iter().rev().find(|local| local.name == name) {
+        if let Some(local) = self.local(name) {
             return Ok(node(
                 NodeKind::Local(local.slot),
                 local.value_type.clone(),
@@ -1629,10 +1639,12 @@ impl<'a> Typer<'a> {
     /// A read of `slot`, a state clause's own `self` or `result` binding,
     /// bound for the whole clause before its body is typed.
     fn bound_slot(&self, slot: Slot, location: &Location) -> Result<Node, CheckRefusal> {
+        // Locals are pushed in slot order, so they are sorted by slot.
         let local = self
             .locals
-            .iter()
-            .find(|local| local.slot == slot)
+            .binary_search_by_key(&slot, |local| local.slot)
+            .ok()
+            .and_then(|index| self.locals.get(index))
             .ok_or_else(|| mismatch(location))?;
         Ok(node(
             NodeKind::Local(slot),
@@ -1729,10 +1741,7 @@ impl<'a> Typer<'a> {
         let parameter = |name: &str| {
             !inner.contains(name)
                 && self
-                    .locals
-                    .iter()
-                    .rev()
-                    .find(|local| local.name == name)
+                    .local(name)
                     .is_some_and(|local| local.kind == LocalKind::Parameter)
         };
         let mut pending = vec![operand];

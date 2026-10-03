@@ -527,7 +527,7 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             }),
         })
     );
-    assert!(refusal.location.path.is_empty());
+    assert!(refusal.location.depth() == 0);
 
     let source = [("e", integers(CollectionKind::Sequence, 0, 2))];
     let without_identity = accumulate(Accumulation::Fold, "Total", "e", step.clone(), None);

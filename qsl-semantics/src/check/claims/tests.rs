@@ -555,13 +555,13 @@ fn tc_160_checking_a_unit_twice_gives_equal_records() {
 }
 
 fn body(index: usize, path: &[usize]) -> Location {
-    Location {
-        origin: CheckOrigin::Body {
+    Location::at(
+        CheckOrigin::Body {
             function: "f".into(),
             index,
         },
-        path: path.to_vec(),
-    }
+        path,
+    )
 }
 
 fn claim_at(location: Location) -> ValueClaim {

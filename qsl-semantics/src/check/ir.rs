@@ -333,13 +333,19 @@ pub enum OrderedKind {
 }
 
 /// A checked literal's value. Two literals are equal when their canonical
-/// keys are: [`Value`] has no structural equality of its own.
+/// keys are: [`Value`] has no structural equality of its own. A value with
+/// no canonical key (one that holds a float, which ADR-013 O-13 excludes
+/// from `=`) is equal to another exactly when the two print identically, bit
+/// pattern for bit pattern, so a literal always equals its own clone.
 #[derive(Clone, Debug)]
 pub struct CheckedLiteral(pub Value);
 
 impl PartialEq for CheckedLiteral {
     fn eq(&self, other: &Self) -> bool {
-        quire_exact::compare_keys(&self.0, &other.0) == Some(std::cmp::Ordering::Equal)
+        match quire_exact::compare_keys(&self.0, &other.0) {
+            Some(order) => order == std::cmp::Ordering::Equal,
+            None => format!("{:?}", self.0) == format!("{:?}", other.0),
+        }
     }
 }
 
@@ -897,10 +903,7 @@ mod tests {
         let node = |kind| Node {
             kind,
             value_type: ValueType::Integer,
-            location: Location {
-                origin: Origin::Expression,
-                path: Vec::new(),
-            },
+            location: Location::root(Origin::Expression),
         };
         let mut builder = BodyBuilder::default();
         let mut operand = builder.push(node(NodeKind::Local(slot)));
@@ -908,6 +911,18 @@ mod tests {
             operand = builder.push(node(NodeKind::Negate(operand)));
         }
         builder.finish(node(NodeKind::Negate(operand)))
+    }
+
+    /// A literal holding a float has no canonical key, and still equals its
+    /// own clone and differs from another bit pattern.
+    #[trace("TC-725", "FR-258-AC-1")]
+    #[test]
+    fn a_float_literal_equals_its_clone_and_differs_by_bit_pattern() {
+        let float = |bits| CheckedLiteral(Value::Float(quire_exact::IeeeValue::binary64(bits)));
+        let nan = float(0x7ff8_0000_0000_0001);
+        assert!(quire_exact::compare_keys(&nan.0, &nan.0).is_none());
+        assert_eq!(nan, nan.clone());
+        assert_ne!(nan, float(0x7ff8_0000_0000_0002));
     }
 
     /// FR-258 behaviour 2: a 100,000-deep checked body clones, compares

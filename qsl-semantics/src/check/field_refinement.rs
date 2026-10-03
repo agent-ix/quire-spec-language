@@ -57,10 +57,7 @@ use quire_semantic_value::location::{Location, Origin};
 const CLAUSE_SELF_SLOT: usize = 0;
 
 fn clause_location() -> Location {
-    Location {
-        origin: Origin::Expression,
-        path: Vec::new(),
-    }
+    Location::root(Origin::Expression)
 }
 
 /// The synthetic `self.<field>` projection node every [`PostconditionClause`]

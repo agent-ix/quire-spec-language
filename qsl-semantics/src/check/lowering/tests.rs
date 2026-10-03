@@ -1202,7 +1202,7 @@ fn equal_literals_are_one_node_with_one_occurrence_each() {
         .collect();
     let paths: Vec<Vec<usize>> = occurrences
         .into_iter()
-        .map(|location| location.path)
+        .map(|location| location.path())
         .collect();
     assert_eq!(paths, vec![vec![0], vec![1], vec![2]], "source order");
     assert!(graph
@@ -1449,13 +1449,10 @@ fn a_law_comes_only_from_the_lock_evidence() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(
         refusals[0].location,
-        Location {
-            origin: Origin::Body {
+        Location::at(Origin::Body {
                 function: "te".to_owned(),
                 index: 0,
-            },
-            path: vec![0],
-        },
+            }, &[0]),
         "the refusal names the equality node's region"
     );
     assert_eq!(
