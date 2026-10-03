@@ -85,6 +85,15 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   SHA-256 of its bytes, and `sha256-jcs` (a domain package document)
   against the SHA-256 of the document's RFC 8785 bytes, the digest I1 keys
   its package input by. Any other FR-201 domain refuses as ineligible.
+  A `sha256-jcs` entry is read through intake's one read
+  (`PackageDocument::parse`, FR-260), and a refusal of that read keeps its
+  cause: bytes it cannot read refuse
+  `invalid_model_binding`/`malformed-declaration`; bytes over an intake
+  limit refuse with intake's limit outcome,
+  `resource_exhausted`/`intake-limit-exceeded`, naming the limit and its
+  bound (FR-056); and a read or digest that cannot reserve memory refuses
+  `resource_exhausted`/`allocation-failed`, carrying the bytes requested
+  (FR-259 B6).
   **Amended**: `sha256-jcs` used to refuse as ineligible, which
   left no way for a domain package to reach the executor.
 - The byte provision SHALL be complete at construction: every
@@ -127,6 +136,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity or an empty version, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
+| FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; one nested 1,000 deep refuses `resource_exhausted`/`intake-limit-exceeded` naming intake's nesting-depth limit and its bound; and an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096. | Test (TC-186) |
 
 ## Dependencies
 

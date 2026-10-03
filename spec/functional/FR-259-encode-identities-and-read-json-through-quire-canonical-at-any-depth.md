@@ -71,8 +71,9 @@ QSL relies on these capabilities, which are a `quire-canonical` follow-up
    in bytes of the reservation that failed. It is not a limit: it names no
    bound and no setting. QSL SHALL NOT report it as a limit outcome, a
    malformed value or malformed input. Domain package intake (FR-056),
-   observation digest admission (FR-106 check 1) and package identity
-   (FR-261) report this one outcome.
+   observation digest admission (FR-106 check 1), package identity
+   (FR-261) and the replay request reader's `sha256-jcs` entries (FR-071)
+   report this one outcome.
 
 ## Acceptance Criteria
 

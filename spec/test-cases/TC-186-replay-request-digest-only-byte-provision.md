@@ -29,7 +29,7 @@ constructor that admits a request whose package reference names a digest
 with no matching byte-provision entry, silently deferring the gap to
 whatever consumes the request later (#243's executor) instead of refusing
 at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7,
-FR-071-AC-9, FR-071-AC-10.
+FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
 
 ## Test Procedure
 
@@ -62,6 +62,10 @@ FR-071-AC-9, FR-071-AC-10.
 8. Decode a request whose semantic profile selection names
    `quire.profile.unknown/v1`, with a byte-provision entry whose bytes do
    not match its digest.
+9. Decode a request with a `sha256-jcs` byte-provision entry holding a
+   repeated member name, then one holding arrays nested 1,000 deep. Map an
+   allocation failure of 4096 requested bytes from intake's read of such an
+   entry.
 
 ## Expected Results
 
@@ -84,3 +88,8 @@ FR-071-AC-9, FR-071-AC-10.
   `ByteDigestMismatch`, keeping the selection
   (`quire.profile.unknown/v1`) and its role
   (`replay.semantic_profile_selections`).
+- Step 9: the repeated-name entry refuses
+  `invalid_model_binding`/`malformed-declaration`; the deep entry refuses
+  `resource_exhausted`/`intake-limit-exceeded` naming intake's
+  nesting-depth limit and its bound; the allocation failure refuses
+  `resource_exhausted`/`allocation-failed` carrying 4096.
