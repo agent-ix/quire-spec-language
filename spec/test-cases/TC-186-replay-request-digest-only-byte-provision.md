@@ -89,7 +89,8 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
   (`quire.profile.unknown/v1`) and its role
   (`replay.semantic_profile_selections`).
 - Step 9: the repeated-name entry refuses
-  `invalid_model_binding`/`malformed-declaration`; the deep entry refuses
-  `resource_exhausted`/`intake-limit-exceeded` naming intake's
-  nesting-depth limit and its bound; the allocation failure refuses
+  `invalid_model_binding`/`malformed-declaration`; the deep entry, which
+  intake refuses at one of its limits, refuses
+  `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its
+  bound; the allocation failure refuses
   `resource_exhausted`/`allocation-failed` carrying 4096.
