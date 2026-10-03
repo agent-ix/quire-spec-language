@@ -1121,7 +1121,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | --- | --- | --- |
 | QC-1 | FR-323: a digest-addressed byte provision for the source, definition and domain-package inputs a replay recompiles, and the `RawSourceRef` digests in the `package` reference. | #231 request type, TK-01 executor, agent-ix/quire-contract-codegen#50 |
 | QC-2 | FR-201: list `quire.model.effective-declaration/v1` and the other digest domains the model schemas use. | #213 S-2 (O-05, O-18) |
-| QC-3 | Node-identity vectors with `ModelOwner` owners for general model declarations. FR-094's vectors M1 to M4 and C1 to C4 are QSL's proposal for them (QC-25). | #213 S-2 (C-02) |
+| QC-3 | Node-identity vectors with `ModelOwner` owners for general model declarations. FR-094's model declaration node vectors M1, M3, M4 and M5 equal QSpec's published `model_declaration_nodes` vectors (`model-member-type-vectors.json`); its clause-function vectors C1, C2 and C4 to C6 remain QSL's proposal (QC-25). | #213 S-2 (C-02) |
 | QC-4 | FR-201: a digest domain for the CG obligation identity, with `source_span` outside its preimage. | CG obligation conformance |
 | QC-5 | FR-321: a refusal code for a second selection of the same domain-package identity, if the catalog has none. | #213 S-2 |
 | QC-6 | FR-331 `counterexamples`: an entry names either the transcript's `artifacts` entry, whose assignments are its decode and are not stored, or the canonical assignments of a counterexample with no transcript, never both (O-25). | #231 counterexample envelope |

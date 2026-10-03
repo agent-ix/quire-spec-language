@@ -944,7 +944,8 @@ fn a_version_only_change_keys_the_same_clause_functions() {
 
 /// FR-094: a check selects one version of each domain package identity;
 /// two admitted versions of `acme/orders` refuse as a broken invariant
-/// instead of keying owners from whichever comes first.
+/// instead of resolving declarations against whichever admitted view comes
+/// first.
 #[trace("FR-094-AC-5", "TC-418")]
 #[test]
 fn two_admitted_versions_of_one_model_identity_refuse() {
