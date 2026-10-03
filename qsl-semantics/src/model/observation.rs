@@ -718,7 +718,8 @@ pub fn admit_observations(
             admit_pre_call(
                 &context,
                 PreCallInput {
-                    invocation: None,
+                    call: None,
+                    invocation_usage: AdmissionUsage::default(),
                     pre: read,
                     self_object,
                     parameters: &parameters,
@@ -1114,7 +1115,8 @@ fn admit_invocation_documents(
     })
 }
 
-/// What a `PreCall` admission reads about the selected precondition.
+/// What a pre-call admission reads about the selected precondition,
+/// whether the precondition is selected by `PreCall` or by `Invocation`.
 struct PreCallContext<'a> {
     views: &'a [ModelView],
     types: &'a TypeEnvironment,
@@ -1141,10 +1143,12 @@ fn check_operation(
 }
 
 /// One pre-call observation's documents, already read by check 1: the
-/// invocation that carried it (`None` for a `PreCall` selection), its pre
-/// snapshot, the self object and the parameters.
+/// call half of the invocation that carried it (`None` for a `PreCall`
+/// selection) and that invocation's read usage, its pre snapshot, the self
+/// object and the parameters.
 struct PreCallInput<'a> {
-    invocation: Option<&'a document::ReadDocument>,
+    call: Option<&'a document::InvocationCall>,
+    invocation_usage: AdmissionUsage,
     pre: document::ReadDocument,
     self_object: &'a SelectedObject,
     parameters: &'a [(String, SnapshotValue)],
@@ -1180,7 +1184,8 @@ fn admit_pre_call_invocation(
     admit_pre_call(
         context,
         PreCallInput {
-            invocation: Some(&invocation_read),
+            call: Some(call),
+            invocation_usage: invocation_read.usage,
             pre: pre_read,
             self_object: &call.self_object,
             parameters: &call.parameters,
@@ -1199,13 +1204,7 @@ fn admit_pre_call(
     input: PreCallInput<'_>,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
-    let call = input
-        .invocation
-        .map(|read| {
-            read.as_invocation_call()
-                .ok_or_else(|| fault("expected-invocation-document"))
-        })
-        .transpose()?;
+    let call = input.call;
     let snapshot = input
         .pre
         .as_snapshot()
@@ -1276,8 +1275,7 @@ fn admit_pre_call(
     )?;
 
     let usage = input
-        .invocation
-        .map_or_else(AdmissionUsage::default, |read| read.usage)
+        .invocation_usage
         .merged_with(input.pre.usage)
         .merged_with(admitted.usage);
     Ok(AdmittedObservations {

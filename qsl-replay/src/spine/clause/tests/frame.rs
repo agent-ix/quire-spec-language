@@ -334,6 +334,34 @@ fn a_deletion_outside_the_frame_is_a_violation_naming_it() {
     assert_eq!(report.disposition.category().exit_code(), 10);
 }
 
+/// TC-514 step 2 (FR-115 Behavior, checks 1 and 3 to 10 with `self`
+/// required in the pre snapshot only): a post that deletes `child`, the
+/// invocation's `self`, admits and is a violation naming the deletion of
+/// `child` against the frame's empty `deletes`, never a `wrong-role-mapping`
+/// refusal over `self`'s absence from post.
+#[trace("TC-514", "FR-115-AC-2")]
+#[test]
+fn a_deletion_of_self_outside_the_frame_is_a_violation_naming_it() {
+    let report = run(frame_input(
+        config_version_request,
+        "attemptUpdate",
+        &[object("root", 1, None), object("child", 2, Some("root"))],
+        &[object("root", 1, None)],
+        |_| {},
+    ));
+    let ClauseDisposition::FrameViolation(witness) = &report.disposition else {
+        panic!("expected FrameViolation, got {:?}", report.disposition);
+    };
+    let FrameChange::Deleted {
+        object, deletes, ..
+    } = &witness.change
+    else {
+        panic!("expected a deletion, got {:?}", witness.change);
+    };
+    assert_eq!(object, "child");
+    assert!(deletes.is_empty(), "{deletes:?}");
+}
+
 /// TC-514 step 2 (FR-115-AC-2): changed-version declaring `created:
 /// [child]` disagrees with the computed empty delta: `evaluate`, `refusal`,
 /// `population_delta_mismatch`/`delta-disagreement`, exit 20.

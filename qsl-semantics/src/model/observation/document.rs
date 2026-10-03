@@ -163,13 +163,12 @@ impl ReadDocument {
         }
     }
 
-    /// The invocation's call half, whether it was read whole or for a
-    /// precondition.
+    /// The call half of an invocation read for a precondition
+    /// ([`DocumentKind::InvocationCall`]).
     pub(super) fn as_invocation_call(&self) -> Option<&InvocationCall> {
         match &self.body {
-            Body::Invocation(invocation) => Some(&invocation.call),
             Body::InvocationCall(call) => Some(call),
-            Body::Snapshot(_) => None,
+            Body::Snapshot(_) | Body::Invocation(_) => None,
         }
     }
 }

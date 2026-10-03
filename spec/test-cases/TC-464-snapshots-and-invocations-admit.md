@@ -54,7 +54,12 @@ their `sha256-jcs` digest.
    `PreCall` over that invocation's pre snapshot, `self` and parameters for
    the same precondition. Repeat the invocation selection with its `post`
    snapshot removed from the provision, and with its `post` snapshot bytes
-   replaced by malformed (non-JSON) bytes.
+   replaced by malformed (non-JSON) bytes. Repeat it with the invocation's
+   `post`, `result`, `created` and `deleted` members removed, and with each
+   of them ill-formed. Over TC-466 step 3's `probe` unit, admit and evaluate
+   a `probe` invocation (`self` `a`, `target` `c`, over the chain `a -> b ->
+   c`) whose `result` is `{"boolean": true}`, selected for `ReachesTarget`,
+   and `PreCall` over its pre snapshot, `self` and parameters.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 
@@ -82,7 +87,10 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
   observation, result or delta and no frame check run (no
   `frame_violation`); its verdict equals the `PreCall` verdict. The
   missing-post and malformed-post repeats each admit with the same verdict
-  and no refusal.
+  and no refusal, and so do the repeats with the four post-side members
+  removed or ill-formed: a precondition neither requires nor reads them.
+  The `probe` invocation with a result value admits, and `ReachesTarget`
+  is `true` under it and under `PreCall`.
 
 ## Status
 

@@ -9,8 +9,9 @@
 //! side would report `false`, and one that ran the frame check would
 //! refuse `frame_violation`.
 
-use super::frame::{object, snapshot};
+use super::frame::{identifier, object, snapshot};
 use super::*;
+use qsl_semantics::model::observation::SnapshotValue;
 
 const PARENT_PRESENT: &str = "ParentPresent";
 
@@ -55,11 +56,23 @@ fn self_child() -> SelectedObject {
     }
 }
 
+/// `bytes` (a JSON document) with `edit` applied.
+fn edited(bytes: &[u8], edit: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(bytes).expect("the fixture is JSON");
+    edit(&mut document);
+    document.to_string().into_bytes()
+}
+
 /// Runs `ParentPresent` over the forbidden-parent-change invocation (self
 /// `child`; post sets `child.parent` absent, outside `attemptUpdate`'s
 /// frame), with the post snapshot's digest finding `post` in the
-/// provision.
-fn run_invocation(post: PostProvision) -> super::super::ClauseRunReport {
+/// provision and `edit` applied to the invocation before its digest is
+/// taken.
+fn run_invocation(
+    post: PostProvision,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> super::super::ClauseRunReport {
     let model_digest_hex = config_version_model_digest_hex();
     let (pre, pre_bytes) = pre_snapshot();
     let (post_label, post_bytes) =
@@ -72,7 +85,16 @@ fn run_invocation(post: PostProvision) -> super::super::ClauseRunReport {
         });
     let (invocation, invocation_bytes) =
         document_ref_and_bytes("forbidden-parent-change", |label| {
-            config_version_invocation_bytes(label, &model_digest_hex, &pre, &post_label, "child")
+            edited(
+                &config_version_invocation_bytes(
+                    label,
+                    &model_digest_hex,
+                    &pre,
+                    &post_label,
+                    "child",
+                ),
+                edit,
+            )
         });
 
     let mut request = request(ClauseRunSelection::Clause(
@@ -130,7 +152,7 @@ fn a_precondition_over_an_invocation_reads_only_the_pre_side() {
     let pre_call = boolean_disposition(&run_pre_call());
     assert!(pre_call, "`child.parent` names `root` in the pre snapshot");
 
-    let invocation = run_invocation(PostProvision::Snapshot);
+    let invocation = run_invocation(PostProvision::Snapshot, |_| {});
     assert_eq!(boolean_disposition(&invocation.disposition), pre_call);
 }
 
@@ -142,7 +164,93 @@ fn a_precondition_over_an_invocation_reads_only_the_pre_side() {
 fn a_precondition_over_an_invocation_ignores_a_missing_or_malformed_post() {
     let pre_call = boolean_disposition(&run_pre_call());
     for post in [PostProvision::Absent, PostProvision::Malformed] {
-        let report = run_invocation(post);
+        let report = run_invocation(post, |_| {});
         assert_eq!(boolean_disposition(&report.disposition), pre_call);
     }
+}
+
+/// TC-464 step 6: the invocation with its `post`, `result`, `created` and
+/// `deleted` members removed, and again with each of them ill-formed,
+/// admits and gives the `PreCall` verdict: a precondition neither requires
+/// nor reads them.
+#[trace("TC-464", "FR-106-AC-9")]
+#[test]
+fn a_precondition_over_an_invocation_neither_requires_nor_reads_its_post_side_members() {
+    const POST_SIDE: [&str; 4] = ["post", "result", "created", "deleted"];
+    let pre_call = boolean_disposition(&run_pre_call());
+    let removed = run_invocation(PostProvision::Absent, |document| {
+        let members = document.as_object_mut().expect("an invocation object");
+        for member in POST_SIDE {
+            members.remove(member);
+        }
+    });
+    assert_eq!(boolean_disposition(&removed.disposition), pre_call);
+    let ill_formed = run_invocation(PostProvision::Absent, |document| {
+        for member in POST_SIDE {
+            document[member] = json!("ill-formed");
+        }
+    });
+    assert_eq!(boolean_disposition(&ill_formed.disposition), pre_call);
+}
+
+/// TC-464 step 6: a `probe` invocation (no declared result) carrying
+/// `result` `{"boolean": true}`, selected for the precondition
+/// `ReachesTarget`, admits and gives the `PreCall` verdict: the result
+/// check is a postcondition's.
+#[trace("TC-464", "FR-106-AC-9")]
+#[test]
+fn a_precondition_over_an_invocation_reads_no_result_value() {
+    let model_digest_hex = config_version_step3_model_digest_hex();
+    let objects = config_version_step3_chain_objects();
+    let (pre, pre_bytes) = document_ref_and_bytes("probe-result-pre", |label| {
+        config_version_step3_snapshot(label, &model_digest_hex, "pre", &objects)
+    });
+    let (post, post_bytes) = document_ref_and_bytes("probe-result-post", |label| {
+        config_version_step3_snapshot(label, &model_digest_hex, "post", &objects)
+    });
+    let (invocation, invocation_bytes) = document_ref_and_bytes("probe-result", |label| {
+        edited(
+            &config_version_probe_invocation_bytes(label, &model_digest_hex, &pre, &post, "a", "c"),
+            |document| document["result"] = json!({"boolean": true}),
+        )
+    });
+
+    let mut over_invocation = config_version_step3_request(ClauseRunSelection::Clause(
+        config_version_invocation_selection("ReachesTarget", invocation.clone()),
+    ));
+    over_invocation
+        .snapshots
+        .insert(pre.digest, pre_bytes.clone());
+    over_invocation.snapshots.insert(post.digest, post_bytes);
+    over_invocation
+        .invocations
+        .insert(invocation.digest, invocation_bytes);
+
+    let mut pre_call = config_version_step3_request(ClauseRunSelection::Clause(ClauseSelection {
+        name: "ReachesTarget".to_owned(),
+        input: ClauseSelectionInput::PreCall {
+            snapshot: pre.clone(),
+            self_object: SelectedObject {
+                population: config_version_population_identity(),
+                key: "a".to_owned(),
+            },
+            parameters: BTreeMap::from([(
+                identifier("target"),
+                SnapshotValue::Reference(SelectedObject {
+                    population: config_version_population_identity(),
+                    key: "c".to_owned(),
+                }),
+            )]),
+        },
+    }));
+    pre_call.snapshots.insert(pre.digest, pre_bytes);
+
+    let run = |request| {
+        run_clause(request)
+            .expect("a well-formed request always reports")
+            .disposition
+    };
+    let pre_call = boolean_disposition(&run(pre_call));
+    assert!(pre_call, "a -> b -> c: a reaches c through parent");
+    assert_eq!(boolean_disposition(&run(over_invocation)), pre_call);
 }
