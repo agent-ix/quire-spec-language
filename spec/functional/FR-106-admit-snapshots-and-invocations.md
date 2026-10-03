@@ -190,12 +190,17 @@ required; check 10 settles it.
       incomplete input, QSpec state contract).
    2. If the bytes exceed the document byte limit, then admission SHALL
       refuse `stage_limit_exceeded`/`input-bytes-exceeded` naming setting
-      `observation.input_bytes`.
+      `observation.input_bytes`. A byte error from check 3's read or
+      encoding is this refusal too (FR-259 B4).
    3. If the document's `sha256-jcs` digest differs from the selected digest,
       then admission SHALL refuse `stale_dependency`/`content-mismatch`
       (QSpec FR-272-AC-14).
-      Bytes that do not parse as JSON are digested raw, as FR-056 does, and
-      so refuse here. This check comes before any member is read.
+      Bytes the shared reader refuses (FR-261) are digested raw, as FR-056
+      does, and so refuse here; admission never refuses them as malformed.
+      If reading or encoding the document for its digest cannot reserve
+      memory, then admission SHALL refuse
+      `resource_exhausted`/`allocation-failed`, carrying the bytes requested
+      (FR-259 B6). This check comes before any member is read.
    4. If `format` is not the expected format, then admission SHALL refuse
       `unknown_wire`/`unsupported-wire`.
    5. If a required member is missing (for a precondition selected by

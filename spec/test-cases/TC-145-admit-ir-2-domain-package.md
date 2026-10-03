@@ -12,7 +12,7 @@ relationships:
 Verify FR-154 admission, reader refusal, artifact-id identity, relationship
 exports and all-or-nothing declaration refusal through the intake seam. Scope:
 FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 (digest-slot
-refusal), FR-056-CON-4.
+refusal), FR-056-AC-12, FR-056-CON-4.
 
 ## Test Procedure
 
@@ -35,6 +35,9 @@ refusal), FR-056-CON-4.
    Offer documents carrying `18446744073709551615`, `18446744073709551616`,
    `123456789012345678901234567890` and `-9007199254740993`, each first under
    the digest of its double form and then under the digest of its exact digits.
+   Parse documents repeating a member name within one object, and one that
+   begins with a byte order mark. Offer a repeated-name document under the
+   `sha256-jcs` digest of its last-wins value.
 4. Change only one artifact's `title` or `displayName` and re-run. Then give two
    artifacts equal titles. Then change the step 1 object-type artifact's id to
    `sys_pump` and name it from a clause as `M::sys_pump`, and separately to
@@ -70,7 +73,11 @@ refusal), FR-056-CON-4.
   limit case refuses `resource_exhausted`/`intake-limit-exceeded` naming its
   limit. Each large integer admits under the digest of its nearest double
   (`18446744073709552000` for both 2^64 neighbours) and does not admit under
-  the digest of its exact digits.
+  the digest of its exact digits. The parse refuses each repeated-name
+  document at the repeated name's byte offset and the byte-order-mark
+  document at byte 0, and the repeated-name document offered under its
+  last-wins digest refuses `stale_dependency`/`byte-digest-mismatch` with its
+  raw digest.
 - Step 4: the title and displayName runs leave every key, export, ordering and
   linker binding byte-identical; equal titles stay two distinct declarations.
   The id runs change the type's key and its members' keys (FR-154-AC-6): the
