@@ -18,6 +18,7 @@
 
 use std::collections::BTreeSet;
 
+use quire_canonical::{Encode, FixedShape};
 use serde::{Deserialize, Serialize};
 
 use qsl_foundation::digest::WireNodeId;
@@ -156,7 +157,7 @@ impl RationalDocument {
 
 // RFC 8785 JCS: `preimage_digest` encodes these through `quire-canonical`,
 // which orders members itself, so field declaration order carries no meaning.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 pub(crate) struct CanonicalOwner<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     authority: Option<&'a str>,
@@ -166,7 +167,7 @@ pub(crate) struct CanonicalOwner<'a> {
     node: Option<&'a str>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 pub(crate) struct CanonicalRational {
     denominator: String,
     numerator: String,
@@ -201,7 +202,7 @@ pub trait NodeIdentityPreimage {
 /// implementation). A value with no RFC 8785 encoding refuses as
 /// non-canonical. QSL computes the digest here; `check` alone wraps it into a
 /// `NodeKey`.
-pub(crate) fn preimage_digest(value: &impl Serialize) -> Result<[u8; 32], InvalidSemanticGraph> {
+pub(crate) fn preimage_digest(value: &impl Encode) -> Result<[u8; 32], InvalidSemanticGraph> {
     quire_canonical::sha256(value, IDENTITY_LIMITS)
         .map(|digest| *digest.as_bytes())
         .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
@@ -209,7 +210,7 @@ pub(crate) fn preimage_digest(value: &impl Serialize) -> Result<[u8; 32], Invali
 
 /// `value`'s RFC 8785 bytes, the preimage [`preimage_digest`] hashes. A
 /// value with no RFC 8785 encoding refuses as non-canonical.
-pub(crate) fn preimage_bytes(value: &impl Serialize) -> Result<Vec<u8>, InvalidSemanticGraph> {
+pub(crate) fn preimage_bytes(value: &impl Encode) -> Result<Vec<u8>, InvalidSemanticGraph> {
     quire_canonical::to_vec(value, IDENTITY_LIMITS)
         .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
 }

@@ -10,6 +10,7 @@
 //! document's IR nodes into these records.
 
 use crate::model::key::DeclarationKey;
+use quire_canonical::FixedShape;
 use quire_exact::{OrderingOperator, Presence};
 
 /// A field or association-end multiplicity (FCD FR-113).
@@ -553,7 +554,7 @@ impl std::fmt::Debug for DomainPackageRef {
 
 /// A [`DomainPackageRef`]'s preimage form inside the model identities
 /// (`quire.model.*`, `quire.population-id/v1`).
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, FixedShape)]
 pub(super) struct DomainPackageRefWire<'a> {
     identity: &'a str,
     version: &'a str,

@@ -29,7 +29,7 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::{Code, InternalFault, ALLOCATION_FAILED};
 use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
@@ -518,39 +518,141 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 // sha256-jcs digest (FR-056)
 // ---------------------------------------------------------------------------
 
-/// FR-106's digest-first rule, checked against `expected`: bytes that parse
-/// as JSON are digested over their RFC 8785 canonical encoding, through
-/// `quire-canonical` directly -- the one sanctioned encoder (ADR-013 §2);
-/// bytes that do not parse are digested raw. The raw fallback itself is
-/// `model::intake::check_package_digest` (widened, to serve this
-/// second caller) -- never an ad hoc `ByteDigest::of` here, and never a
-/// second call site of `model::key::raw_bytes_digest` outside that already-
-/// exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one raw-fallback
-/// call site). A value that parses as JSON but has no RFC 8785 encoding
-/// (e.g. a non-finite float) refuses `stale_dependency`/`byte-digest-
-/// mismatch` directly: admission cannot verify it against `expected` either
-/// way, so this is that same outcome, not a silently substituted raw-bytes
-/// fallback (the previous behavior).
+/// FR-106's digest-first rule, checked against `expected`: bytes that
+/// `quire-canonical`'s shared reader reads are digested over their RFC 8785
+/// canonical encoding, the reader's tree encoded by `quire-canonical`
+/// directly -- the one sanctioned encoder (ADR-013 §2); bytes the reader
+/// refuses are digested raw (FR-106 check 1.3). Observation never refuses
+/// evidence as malformed. The raw fallback itself is
+/// `model::intake::check_package_digest` (widened, to serve this second
+/// caller) -- never an ad hoc `ByteDigest::of` here, and never a second call
+/// site of `model::key::raw_bytes_digest` outside that already-exempt
+/// function (ADR-013 §2 O-05: one RFC 8785 encoder, one raw-fallback call
+/// site).
+///
+/// The caller has already held the bytes to `ObservationLimits::
+/// document_bytes`, so neither the read nor the encoding sets a byte limit
+/// of its own; a byte error from either is still check 1.2's
+/// `stage_limit_exceeded`/`input-bytes-exceeded` (FR-259 B4). A read or
+/// encoding that cannot reserve memory refuses
+/// `resource_exhausted`/`allocation-failed` carrying `requested` (FR-259 B6).
 fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
-    let mismatch = || {
+    let parsed_digest = match quire_canonical::read(bytes, u64::MAX) {
+        Ok(document) => Some(
+            *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+                .map_err(digest_encode_refusal)?
+                .as_bytes(),
+        ),
+        Err(error) => match digest_read_refusal(error) {
+            Some(refusal) => return Err(refusal),
+            None => None,
+        },
+    };
+    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|_| {
         refuse(AdmissionRecord::new(
             Code::StaleDependency,
             "byte-digest-mismatch",
         ))
-    };
-    let parsed_digest = match serde_json::from_slice::<serde_json::Value>(bytes) {
-        Ok(value) => {
-            let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-                .map_err(|_| fault("canonical-limits-invalid"))?;
-            let digest = quire_canonical::sha256(&value, limits)
-                .map(|digest| *digest.as_bytes())
-                .map_err(|_| mismatch())?;
-            Some(digest)
+    })
+}
+
+/// [`check_document_digest`]'s refusal for a refusal of the shared reader,
+/// or `None` when the bytes are digested raw: malformed bytes, and any
+/// other refusal of the bytes themselves.
+fn digest_read_refusal(error: quire_canonical::ReadError) -> Option<AdmissionFailure> {
+    match error {
+        quire_canonical::ReadError::Limit(_) => Some(input_bytes_exceeded()),
+        quire_canonical::ReadError::Allocation { requested } => Some(allocation_failed(requested)),
+        _ => None,
+    }
+}
+
+/// [`check_document_digest`]'s refusal for an error of the digest's
+/// encoding.
+fn digest_encode_refusal(error: quire_canonical::Error) -> AdmissionFailure {
+    match error {
+        quire_canonical::Error::Limit(_) => input_bytes_exceeded(),
+        quire_canonical::Error::Allocation { requested } => allocation_failed(requested),
+        // A read tree always has an RFC 8785 encoding: every number is a
+        // finite double and every member name a string.
+        _ => fault("read-document-has-no-canonical-encoding"),
+    }
+}
+
+/// FR-106 check 1.2's refusal.
+fn input_bytes_exceeded() -> AdmissionFailure {
+    refuse(AdmissionRecord::new(
+        Code::StageLimitExceeded,
+        "input-bytes-exceeded",
+    ))
+}
+
+/// FR-259 B6: reading or encoding the document could not reserve
+/// `requested` bytes of memory.
+fn allocation_failed(requested: usize) -> AdmissionFailure {
+    refuse(
+        AdmissionRecord::new(Code::ResourceExhausted, ALLOCATION_FAILED.cause())
+            .with("requested", requested.to_string()),
+    )
+}
+
+#[cfg(test)]
+mod digest_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use sha2::{Digest, Sha256};
+
+    /// FR-106 check 1.3: bytes the shared reader refuses -- a repeated
+    /// member name, a lone surrogate escape, `1e400` -- are digested raw and
+    /// never refused as malformed. A repeated-name document therefore
+    /// admits under its raw digest and refuses `byte-digest-mismatch` under
+    /// the RFC 8785 digest of its last-wins value.
+    #[trace("TC-465", "FR-106-AC-3")]
+    #[test]
+    fn bytes_the_shared_reader_refuses_are_digested_raw() {
+        for text in [r#"{"a":1,"a":2}"#, r#"{"s":"\ud800"}"#, r#"{"n":1e400}"#] {
+            let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
+            assert_eq!(
+                check_document_digest(text.as_bytes(), raw),
+                Ok(()),
+                "{text}"
+            );
         }
-        Err(_) => None,
-    };
-    crate::model::intake::check_package_digest(expected, bytes, parsed_digest)
-        .map_err(|_| mismatch())
+        let last_wins = quire_canonical::read(br#"{"a":2}"#, u64::MAX).unwrap();
+        let canonical =
+            *quire_canonical::sha256(&last_wins, quire_canonical::Limits::new(u64::MAX))
+                .unwrap()
+                .as_bytes();
+        assert_eq!(
+            check_document_digest(br#"{"a":1,"a":2}"#, canonical),
+            Err(refuse(AdmissionRecord::new(
+                Code::StaleDependency,
+                "byte-digest-mismatch"
+            )))
+        );
+    }
+
+    /// The reader's and the encoder's allocation failures refuse
+    /// `resource_exhausted`/`allocation-failed` carrying `requested`, and a
+    /// byte error is check 1.2's `input-bytes-exceeded`.
+    #[trace("TC-729", "FR-259-AC-5")]
+    #[test]
+    fn an_allocation_failure_refuses_allocation_failed() {
+        let expected = refuse(
+            AdmissionRecord::new(Code::ResourceExhausted, "allocation-failed")
+                .with("requested", "4096"),
+        );
+        assert_eq!(
+            digest_read_refusal(quire_canonical::ReadError::Allocation { requested: 4096 }),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            digest_encode_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
+            expected
+        );
+        let over = quire_canonical::to_vec("over", quire_canonical::Limits::new(1)).unwrap_err();
+        assert_eq!(digest_encode_refusal(over), input_bytes_exceeded());
+    }
 }
 
 // ---------------------------------------------------------------------------

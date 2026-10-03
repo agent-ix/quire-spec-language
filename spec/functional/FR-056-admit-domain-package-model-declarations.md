@@ -83,16 +83,18 @@ The compiler SHALL parse the selected bytes once, and SHALL take the package's
 `sha256-jcs` digest as SHA-256 over the RFC 8785 encoding of that one parsed
 document, computed by `quire-canonical`.
 
-A document does not parse when its bytes are not UTF-8 or not JSON, carry a
-lone UTF-16 surrogate escape (a `\uD800`-`\uDFFF` escape that is not a high
-surrogate followed by a low surrogate), or carry a number with no finite IEEE
-754 double value (such as `1e400`). RFC 8785 encodes none of these inputs, so
-such a document has no `sha256-jcs` digest.
+A document does not parse when its bytes are not UTF-8 or not JSON, begin
+with a byte order mark, carry a lone UTF-16 surrogate escape (a
+`\uD800`-`\uDFFF` escape that is not a high surrogate followed by a low
+surrogate), carry a number with no finite IEEE 754 double value (such as
+`1e400`), or repeat a member name within one object (RFC 8785 requires
+I-JSON, RFC 7493). RFC 8785 encodes none of these inputs, so such a document
+has no `sha256-jcs` digest.
 
 If the selected bytes do not parse, then the compiler SHALL take check 3's
 digest over the raw bytes, and SHALL read no package identity for
 check 4. Such bytes therefore refuse
-`stale_dependency`/`content-mismatch` under any `sha256-jcs` digest, and
+`stale_dependency`/`byte-digest-mismatch` under any `sha256-jcs` digest, and
 `invalid_model_binding`/`wrong-model-selection` when the selected digest
 happens to equal their raw digest. No declaration is admitted.
 
@@ -111,15 +113,25 @@ its setting. A document of any nesting depth is read through
 ([FR-260](FR-260-admit-semantic-ir-documents-at-any-depth.md)).
 This refusal comes after FR-154's check 2 and before its check 3.
 
+If reading the selected bytes or encoding their digest cannot reserve
+memory, then the compiler SHALL refuse the package with
+`resource_exhausted`/`allocation-failed`, carrying the size in bytes of the
+reservation that failed
+([FR-259](FR-259-encode-identities-and-read-json-through-quire-canonical-at-any-depth.md)
+B6). It names no limit and no setting, and comes where the byte-limit
+refusal does.
+
 ### Admission
 
 The compiler SHALL apply FR-154's admission checks in FR-154's order before
 reading any declaration: `stale_dependency`/`digest-domain-mismatch`,
-`missing_import`/`missing-selection`, `stale_dependency`/`content-mismatch`
-and `invalid_model_binding`/`wrong-model-selection`. Check 3 recomputes the
+`missing_import`/`missing-selection`,
+`stale_dependency`/`byte-digest-mismatch` and
+`invalid_model_binding`/`wrong-model-selection`. Check 3 recomputes the
 supplied document's canonical `sha256-jcs` digest and compares it with the
-selection's identity; a difference refuses `stale_dependency`/`content-mismatch`
-with the selected and the recomputed digest (QSpec FR-154 check 3 and the
+selection's identity; a difference refuses
+`stale_dependency`/`byte-digest-mismatch` with the selected and the
+recomputed digest (QSpec FR-154 check 3 and the
 FR-272 cause table, quire-specification#174 and #176).
 
 If `agent-ix-semantic-ir` refuses the selected bytes, then the compiler SHALL end
@@ -308,7 +320,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-056-AC-1 | Lifted bytes of a valid domain package passed to the intake seam are read by `agent-ix-semantic-ir` and yield exactly one original declaration per IR node, ascending by (domain package identity, IR node identity), each with its bound meaning, export records and artifact id and span. | Test (TC-145) |
-| FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name, and `1e400`; a lone-surrogate document offered under the `sha256-jcs` digest of the same document with U+FFFD in its place refuses `stale_dependency`/`content-mismatch`; unparseable bytes offered under their own raw digest with an empty identity refuse `invalid_model_binding`/`wrong-model-selection`; bytes over the reader's size or depth limit refuse `resource_exhausted`/`intake-limit-exceeded` naming the limit; a document carrying `18446744073709551615` or `18446744073709551616` admits under the digest of the same document carrying `18446744073709552000`, and not under the digest of its own exact digits. | Test (TC-145) |
+| FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name, and `1e400`; a lone-surrogate document offered under the `sha256-jcs` digest of the same document with U+FFFD in its place refuses `stale_dependency`/`byte-digest-mismatch`; unparseable bytes offered under their own raw digest with an empty identity refuse `invalid_model_binding`/`wrong-model-selection`; bytes intake refuses at one of its limits refuse `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; a document carrying `18446744073709551615` or `18446744073709551616` admits under the digest of the same document carrying `18446744073709552000`, and not under the digest of its own exact digits. | Test (TC-145) |
 | FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration`, reported in FR-154's declaration refusal order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
 | FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations; an artifact id matching FR-154's id rule, such as `sys_pump`, is admitted and named `M::sys_pump`, while one that does not, such as `sys-pump`, refuses `invalid_model_binding`/`malformed-declaration` with node, artifact and span, a reference to that node reports no `missing_declaration`/`missing-name`, and a second failing check on that node reports after the id refusal (FR-154-AC-8). | Test (TC-145) |
 | FR-056-AC-5 | Each relationship member yields one `relationship` export with its name and span; a relationship member missing either refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |
@@ -317,6 +329,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-9 | A `1-draft` unit selecting a domain package by its `sha256-jcs` digest assembles with each of the package's object types declared as `M::<artifact id>` with its declared supertypes and fields, a subtype conforming to its declared supertype, and checks with functions over `M::T` and `Reference<M::T>`; inherited field access checks (`deref(g).code` over a `Gadget` whose supertype `Widget` declares `code`), and `deref(g).nope` and `g = r` over an unrelated `Rock` refuse `ill_typed` at check. A `model` declaration with no admitted package refuses at the assembler as `missing_import`. `Reference<M::Nope>` refuses at the assembler as `missing_declaration` at `M::Nope`; with no package supplied the declaration refuses at intake as `missing_import`, and a `sha256:` digest refuses at intake as `invalid_model_binding`, each at the `model` declaration. Past the I2 read, a package holding the field access resolves the model member through the lock-selected domain package (IR-285, QSpec STD-100) and returns Verified exporting `code`; one holding `g = w` over conforming references returns Verified exporting `same`, admitted by IR-285's QVC checked-operation catalog (STD-101/102) for `quire.op.reference.eq`; TC-442 verifies both. | Test (TC-442) |
 | FR-056-AC-10 | A field's multiplicity `[1, 1]` gives its declared value type outright; any other multiplicity gives the `ordered`/`unique`-selected collection (`Set`, `Bag`, `Sequence` or `OrderedSet`) bounded by it, unbounded only at a lower bound of `0`, and an unbounded upper bound with a lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned members" step 4). The field's own declared `presence` -- never a multiplicity lower bound of `0` -- decides whether it is optional (QSpec's `model-complete.md` Presence row): `required`/`optional` map to the assembled declaration's own presence one to one, and any other value refuses `invalid_model_binding`/`malformed-declaration` at intake, naming the offending value. | Test (TC-443) |
 | FR-056-AC-11 | A domain package whose field `label` is typed by a scalar type `Label` bound to `Text` with bounds `0` and `64` and profile `nfc` is admitted, and `label`'s value type is `Text[0, 64; nfc]`; each of the other five QSpec FR-141 profiles is admitted the same way. Bounds satisfy `0 <= min <= max`: with `Label`'s bounds `-1` and `64`, or `65` and `64`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming the bounds. With `Label`'s profile `nfx`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming `nfx`. With `label`'s `typeRef` `ix://quire/native/Text`, it refuses `unsupported_construct`/`declaration-form` at `label`, naming `profile`; with `ix://quire/native/String`, it refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/String`. The same outcomes hold for an operation parameter and an operation result. | Test (TC-897) |
+| FR-056-AC-12 | The one parse refuses a document that repeats a member name within one object, at the repeated name's byte offset, and a document that begins with a byte order mark, at byte 0. A document repeating a member name, offered under the `sha256-jcs` digest of its last-wins value, refuses `stale_dependency`/`byte-digest-mismatch` with its raw digest as the recomputed digest. | Test (TC-145) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148, IT-012) |
 
 ## Open Questions

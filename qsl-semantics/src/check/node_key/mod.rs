@@ -38,11 +38,14 @@
 //!
 //! Canonical bytes: the typed preimage, each signature round and the group
 //! digest's array are encoded by `quire-canonical`, the one RFC 8785
-//! implementation (ADR-013 §2, ADR-013:113), which orders members itself. The
-//! group order's shapes are the one place a preimage is rewritten rather than
-//! built: its canonical bytes are read back into a `serde_json::Value`, whose
-//! placeholders are removed (and, for the anonymous shape, whose `owner` and
-//! `declaration` are cleared) before the shape is encoded again. The only
+//! implementation (ADR-013 §2, ADR-013:113), which orders members itself.
+//! The preimage's body nests as deep as its term, so it is written through
+//! the encoder's event API from an explicit stack; every other part has a
+//! fixed shape and takes the encoder's `FixedShape` serde path. The group
+//! order's shapes are the one place a preimage is rewritten rather than
+//! built: its canonical bytes are read back through `quire-canonical`'s
+//! reader and written again with the placeholders' ordinals left out (and,
+//! for the anonymous shape, `owner` left out and `declaration` cleared). The only
 //! JSON numbers in a preimage are
 //! `recursion`'s size and ordinal, a `group_reference` ordinal and an
 //! `operation.member` position; each is refused when RFC 8785 cannot render
@@ -64,6 +67,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::ByteDigest;
+use quire_canonical::{Encode, FixedShape, Sink, Writer};
 use serde::Serialize;
 
 use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, OwnerSubject};
@@ -90,14 +94,14 @@ const JCS_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// The owner of a declared node (ADR-013 O-04): the declaring source unit's
 /// `SourceOwner{kind: "source", authority, identity}`, a required E3 input
 /// (FR-091). A builtin or anonymous node carries none.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct SourceOwner {
     authority: String,
     identity: String,
     kind: SourceOwnerKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 #[serde(rename_all = "snake_case")]
 enum SourceOwnerKind {
     Source,
@@ -173,7 +177,7 @@ impl SourceOwner {
 /// `ModelOwner{kind: "model", identity, version, node}`. `identity` and
 /// `version` are the declaring domain package's `DomainPackageRef`'s;
 /// `node` is the declaration's IR node identity.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct ModelOwner {
     identity: String,
     kind: ModelOwnerKind,
@@ -181,7 +185,7 @@ pub struct ModelOwner {
     version: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 #[serde(rename_all = "snake_case")]
 enum ModelOwnerKind {
     Model,
@@ -248,7 +252,7 @@ impl ModelOwner {
 /// A structural node's `owner` (FR-092, FR-094): a source-declared node's
 /// [`SourceOwner`] or a model-owned node's [`ModelOwner`]. Serialized as the
 /// owner itself; its `kind` member tells the two apart.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 #[serde(untagged)]
 pub enum Owner {
     /// A node declared by a QSL source unit.
@@ -263,16 +267,11 @@ pub struct NodeRef(pub NodeKey);
 
 impl Serialize for NodeRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            domain: &'static str,
-            digest: &'a str,
-        }
         // `NodeKey`'s lowercase-hex spelling, written on the stack: a
         // preimage names many keys, and each is spelled without
         // allocating or formatting.
         let digits = HexDigest::of(self.0.as_bytes());
-        Wire {
+        NodeIdWire {
             domain: NODE_KEY_DOMAIN,
             digest: digits.as_str(),
         }
@@ -280,8 +279,21 @@ impl Serialize for NodeRef {
     }
 }
 
+/// A [`NodeRef`] serializes as a `NodeIdWire`, so it nests as deep.
+impl FixedShape for NodeRef {
+    const DEPTH: usize = <NodeIdWire<'static> as FixedShape>::DEPTH;
+}
+
+/// A node id as a preimage or term writes it: `{domain, digest}`, the
+/// digest in lowercase hex.
+#[derive(Serialize, FixedShape)]
+struct NodeIdWire<'a> {
+    domain: &'static str,
+    digest: &'a str,
+}
+
 /// The preimage schema's closed `node_tag` vocabulary.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(rename_all = "snake_case")]
 pub enum NodeTag {
@@ -426,13 +438,26 @@ impl FrameField {
 
 impl Serialize for FrameField {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(3))?;
-        map.serialize_entry("kind", "field")?;
-        map.serialize_entry("declaration", &self.declaration)?;
-        map.serialize_entry("name", &self.name)?;
-        map.end()
+        FrameFieldWire {
+            kind: "field",
+            declaration: self.declaration,
+            name: &self.name,
+        }
+        .serialize(serializer)
     }
+}
+
+/// A [`FrameField`] serializes as a `FrameFieldWire`, so it nests as deep.
+impl FixedShape for FrameField {
+    const DEPTH: usize = <FrameFieldWire<'static> as FixedShape>::DEPTH;
+}
+
+/// `{kind: "field", declaration, name}`.
+#[derive(Serialize, FixedShape)]
+struct FrameFieldWire<'a> {
+    kind: &'static str,
+    declaration: NodeRef,
+    name: &'a str,
 }
 
 // Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
@@ -455,20 +480,27 @@ pub struct PackageRef(pub crate::library::PackageId);
 
 impl Serialize for PackageRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            domain: &'static str,
-            algorithm: &'static str,
-            digest: &'a str,
-        }
         let digits = HexDigest::of(self.0.as_bytes());
-        Wire {
+        PackageIdWire {
             domain: PACKAGE_DOMAIN_V2,
             algorithm: "sha256",
             digest: digits.as_str(),
         }
         .serialize(serializer)
     }
+}
+
+/// A [`PackageRef`] serializes as a `PackageIdWire`, so it nests as deep.
+impl FixedShape for PackageRef {
+    const DEPTH: usize = <PackageIdWire<'static> as FixedShape>::DEPTH;
+}
+
+/// `{domain, algorithm: "sha256", digest}`.
+#[derive(Serialize, FixedShape)]
+struct PackageIdWire<'a> {
+    domain: &'static str,
+    algorithm: &'static str,
+    digest: &'a str,
 }
 
 /// A dependency node's id as a term writes it: a node id in the node
@@ -478,18 +510,18 @@ pub struct WireNodeRef(pub qsl_foundation::digest::WireNodeId);
 
 impl Serialize for WireNodeRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            domain: &'static str,
-            digest: &'a str,
-        }
         let digits = HexDigest::of(self.0.as_bytes());
-        Wire {
+        NodeIdWire {
             domain: NODE_KEY_DOMAIN,
             digest: digits.as_str(),
         }
         .serialize(serializer)
     }
+}
+
+/// A [`WireNodeRef`] serializes as a `NodeIdWire`, so it nests as deep.
+impl FixedShape for WireNodeRef {
+    const DEPTH: usize = <NodeIdWire<'static> as FixedShape>::DEPTH;
 }
 
 /// The `package_id` domain a `dependency_reference` names (QSpec FR-322).
@@ -574,41 +606,50 @@ pub enum LiteralValue {
     Enum(String),
 }
 
+impl LiteralValue {
+    /// This literal's `{value_kind, value}` as written.
+    fn wire(&self) -> LiteralWire<'_> {
+        let (value_kind, value) = match self {
+            Self::Boolean(value) => ("boolean", LiteralJson::Boolean(*value)),
+            Self::Integer(value) => ("integer", LiteralJson::Spelled(value.to_string())),
+            Self::Rational(value) => (
+                "rational",
+                LiteralJson::Spelled(format!("{}/{}", value.numerator(), value.denominator())),
+            ),
+            Self::Text(value) => ("text", LiteralJson::Text(value)),
+            Self::None => ("none", LiteralJson::Null(())),
+            Self::Enum(case) => ("enum", LiteralJson::Text(case)),
+        };
+        LiteralWire { value_kind, value }
+    }
+}
+
 impl Serialize for LiteralValue {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(2))?;
-        match self {
-            Self::Boolean(value) => {
-                map.serialize_entry("value_kind", "boolean")?;
-                map.serialize_entry("value", value)?;
-            }
-            Self::Integer(value) => {
-                map.serialize_entry("value_kind", "integer")?;
-                map.serialize_entry("value", &value.to_string())?;
-            }
-            Self::Rational(value) => {
-                map.serialize_entry("value_kind", "rational")?;
-                map.serialize_entry(
-                    "value",
-                    &format!("{}/{}", value.numerator(), value.denominator()),
-                )?;
-            }
-            Self::Text(value) => {
-                map.serialize_entry("value_kind", "text")?;
-                map.serialize_entry("value", value)?;
-            }
-            Self::None => {
-                map.serialize_entry("value_kind", "none")?;
-                map.serialize_entry("value", &())?;
-            }
-            Self::Enum(case) => {
-                map.serialize_entry("value_kind", "enum")?;
-                map.serialize_entry("value", case)?;
-            }
-        }
-        map.end()
+        self.wire().serialize(serializer)
     }
+}
+
+/// A [`LiteralValue`] serializes as a `LiteralWire`, so it nests as deep.
+impl FixedShape for LiteralValue {
+    const DEPTH: usize = <LiteralWire<'static> as FixedShape>::DEPTH;
+}
+
+/// A literal's `value_kind` and its JSON `value`.
+#[derive(Serialize, FixedShape)]
+struct LiteralWire<'a> {
+    value_kind: &'static str,
+    value: LiteralJson<'a>,
+}
+
+/// A literal's JSON `value`: a boolean, a string, or `null`.
+#[derive(Serialize, FixedShape)]
+#[serde(untagged)]
+enum LiteralJson<'a> {
+    Boolean(bool),
+    Text(&'a str),
+    Spelled(String),
+    Null(()),
 }
 
 // Test-only: QSpec's operation vectors carry no literal term, so the
@@ -624,7 +665,7 @@ impl<'de> serde::Deserialize<'de> for LiteralValue {
 }
 
 /// The schema's closed application `operator` vocabulary.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(rename_all = "snake_case")]
 pub enum Operator {
@@ -707,7 +748,7 @@ impl Operator {
 
 /// The schema's `Operation`: a catalogued operation with its laws, mode,
 /// member and leaves.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(deny_unknown_fields)]
 pub struct Operation {
@@ -759,7 +800,7 @@ impl Operation {
 }
 
 /// The schema's `OperationLaw`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(deny_unknown_fields)]
 pub struct OperationLaw {
@@ -770,7 +811,7 @@ pub struct OperationLaw {
 }
 
 /// The schema's closed `OperationLaw.role` vocabulary.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(rename_all = "snake_case")]
 pub enum LawRole {
@@ -801,40 +842,44 @@ impl LawRole {
 
 /// The schema's non-null `OperationMode` (`{kind, value}`), carrying the
 /// crate's own mode enums.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OperationMode {
     /// `rounding`.
-    Rounding(#[serde(serialize_with = "rounding_spelling")] RoundingMode),
+    Rounding(RoundingMode),
     /// `text_profile`.
-    TextProfile(#[serde(serialize_with = "text_profile_spelling")] TextProfile),
+    TextProfile(TextProfile),
     /// `absence`.
-    Absence(#[serde(serialize_with = "absence_spelling")] AbsenceMode),
+    Absence(AbsenceMode),
 }
 
-fn rounding_spelling<S: serde::Serializer>(
-    mode: &RoundingMode,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(mode.as_str())
+impl Serialize for OperationMode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let wire = match self {
+            Self::Rounding(mode) => OperationModeWire::Rounding(mode.as_str()),
+            Self::TextProfile(profile) => OperationModeWire::TextProfile(profile.as_str()),
+            Self::Absence(mode) => OperationModeWire::Absence(mode.as_str()),
+        };
+        wire.serialize(serializer)
+    }
 }
 
-fn text_profile_spelling<S: serde::Serializer>(
-    profile: &TextProfile,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(profile.as_str())
+/// An [`OperationMode`] serializes as an `OperationModeWire`, so it nests
+/// as deep.
+impl FixedShape for OperationMode {
+    const DEPTH: usize = <OperationModeWire as FixedShape>::DEPTH;
 }
 
-fn absence_spelling<S: serde::Serializer>(
-    mode: &AbsenceMode,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(mode.as_str())
+/// `{kind, value}`, the mode spelled through its `as_str`.
+#[derive(Serialize, FixedShape)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+enum OperationModeWire {
+    Rounding(&'static str),
+    TextProfile(&'static str),
+    Absence(&'static str),
 }
 
 /// The schema's `OperationLeaf`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(deny_unknown_fields)]
 pub struct OperationLeaf {
@@ -873,6 +918,11 @@ impl Serialize for LeafSegment {
             Self::Recursion(depth) => serializer.collect_str(&format_args!("recursion:{depth}")),
         }
     }
+}
+
+/// A [`LeafSegment`] serializes as one string.
+impl FixedShape for LeafSegment {
+    const DEPTH: usize = <str as FixedShape>::DEPTH;
 }
 
 /// The inputs of one node's key: every member of either preimage.
@@ -1230,7 +1280,7 @@ fn refine(
 
 /// One refinement round's input: `{shape, targets}`, the member's initial
 /// signature and its targets' previous-round signatures.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct SignatureRound<'a> {
     shape: &'a str,
     targets: Vec<&'a String>,
@@ -1275,7 +1325,7 @@ pub(crate) fn declared_type_handle(
     owner: &SourceOwner,
     name: &str,
 ) -> Result<NodeKey, NodeKeyRefusal> {
-    #[derive(Serialize)]
+    #[derive(Serialize, FixedShape)]
     struct Handle<'a> {
         version: &'static str,
         owner: &'a SourceOwner,
@@ -1311,7 +1361,7 @@ fn keyed(preimage: &Preimage<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
 
 /// `value`'s RFC 8785 bytes, from `quire-canonical` (ADR-013 §2,
 /// ADR-013:113: the one RFC 8785 implementation).
-pub(super) fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, NodeKeyRefusal> {
+pub(super) fn canonical_bytes(value: &(impl Encode + ?Sized)) -> Result<Vec<u8>, NodeKeyRefusal> {
     quire_canonical::to_vec(value, LIMITS).map_err(|error| NodeKeyRefusal::Encode {
         reason: error.to_string(),
     })
@@ -1319,7 +1369,7 @@ pub(super) fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, NodeKey
 
 /// The SHA-256 of `value`'s RFC 8785 bytes, hashed by `quire-canonical` as
 /// it encodes (ADR-013:113).
-fn canonical_sha256(value: &impl Serialize) -> Result<[u8; 32], NodeKeyRefusal> {
+fn canonical_sha256(value: &(impl Encode + ?Sized)) -> Result<[u8; 32], NodeKeyRefusal> {
     quire_canonical::sha256(value, LIMITS)
         .map(|digest| *digest.as_bytes())
         .map_err(|error| NodeKeyRefusal::Encode {
@@ -1370,17 +1420,15 @@ fn typed_preimage<'a>(
     let semantic_type = node
         .semantic_type
         .map(|semantic_type| match walk.ordinal(semantic_type) {
-            Some(ordinal) => PreimageTerm::GroupReference { ordinal },
-            None => PreimageTerm::Reference {
-                target: NodeRef(semantic_type),
-            },
+            Some(ordinal) => SemanticTypePreimage::Group(GroupReference { ordinal }),
+            None => SemanticTypePreimage::Node(NodeRef(semantic_type)),
         });
     let preimage = Preimage {
         version,
         owner: node.owner,
         node_tag: node.node_tag,
         semantic_form: node.semantic_form,
-        semantic_type: semantic_type.map(SemanticTypePreimage),
+        semantic_type,
         declaration: node.declaration.map(|segments| DeclarationPreimage {
             qualified_name: segments.iter().map(Identifier::as_str).collect(),
         }),
@@ -1390,38 +1438,74 @@ fn typed_preimage<'a>(
     Ok((preimage, has_application))
 }
 
-#[derive(Serialize)]
+/// A node's preimage. Its `body` nests as deep as the term it keys, so it
+/// is written through `quire-canonical`'s event API from an explicit stack
+/// ([`PreimageTerm`]'s [`Encode`]); every other member has a fixed shape.
 struct Preimage<'a> {
     version: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
     owner: Option<&'a Owner>,
     node_tag: NodeTag,
     semantic_form: &'a str,
-    semantic_type: Option<SemanticTypePreimage<'a>>,
+    semantic_type: Option<SemanticTypePreimage>,
     declaration: Option<DeclarationPreimage<'a>>,
     recursion: Option<RecursionPreimage>,
     body: PreimageTerm<'a>,
 }
 
-/// A `semantic_type` as it enters the preimage: a `NodeRef`, or a
-/// `group_reference` when it names a member of the node's own group (G9).
-struct SemanticTypePreimage<'a>(PreimageTerm<'a>);
-
-impl Serialize for SemanticTypePreimage<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match &self.0 {
-            PreimageTerm::Reference { target } => target.serialize(serializer),
-            term => term.serialize(serializer),
+impl Encode for Preimage<'_> {
+    fn encode_into<S: Sink + ?Sized>(
+        &self,
+        writer: &mut Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        writer.begin_object()?;
+        writer.name("version")?;
+        writer.string(self.version)?;
+        if let Some(owner) = self.owner {
+            writer.name("owner")?;
+            writer.serialize(owner)?;
         }
+        writer.name("node_tag")?;
+        writer.serialize(&self.node_tag)?;
+        writer.name("semantic_form")?;
+        writer.string(self.semantic_form)?;
+        writer.name("semantic_type")?;
+        writer.serialize(&self.semantic_type)?;
+        writer.name("declaration")?;
+        writer.serialize(&self.declaration)?;
+        writer.name("recursion")?;
+        writer.serialize(&self.recursion)?;
+        writer.name("body")?;
+        self.body.encode_into(writer)?;
+        writer.end_object()
     }
 }
 
-#[derive(Serialize)]
+/// A `semantic_type` as it enters the preimage: a `NodeRef`, or a
+/// `group_reference` when it names a member of the node's own group (G9).
+#[derive(Serialize, FixedShape)]
+#[serde(untagged)]
+enum SemanticTypePreimage {
+    /// A type outside the node's group, by its `NodeRef`.
+    Node(NodeRef),
+    /// A member of the node's own group, by its group ordinal.
+    Group(GroupReference),
+}
+
+/// `{"term": "group_reference", "ordinal": n}`: the same text as
+/// [`PreimageLeaf::GroupReference`], the one shape a `semantic_type` naming
+/// a member of the node's own group has.
+#[derive(Serialize, FixedShape)]
+#[serde(tag = "term", rename = "group_reference")]
+struct GroupReference {
+    ordinal: usize,
+}
+
+#[derive(Serialize, FixedShape)]
 struct DeclarationPreimage<'a> {
     qualified_name: Vec<&'a str>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct RecursionPreimage {
     #[serde(skip_serializing_if = "Option::is_none")]
     group: Option<String>,
@@ -1430,22 +1514,10 @@ struct RecursionPreimage {
 }
 
 /// A body term as it enters the preimage: [`SemanticTerm`] with references
-/// to recursion-group members replaced by their group ordinal.
-#[derive(Serialize)]
-#[serde(tag = "term", rename_all = "snake_case")]
+/// to recursion-group members replaced by their group ordinal. A leaf has a
+/// fixed shape; the three composite terms nest their subterms.
 enum PreimageTerm<'a> {
-    Literal {
-        #[serde(rename = "type")]
-        ty: NodeRef,
-        #[serde(flatten)]
-        value: &'a LiteralValue,
-    },
-    Reference {
-        target: NodeRef,
-    },
-    GroupReference {
-        ordinal: usize,
-    },
+    Leaf(PreimageLeaf<'a>),
     Application {
         operator: Operator,
         operation: &'a Operation,
@@ -1459,6 +1531,24 @@ enum PreimageTerm<'a> {
         name: &'a str,
         value: Box<PreimageTerm<'a>>,
     },
+}
+
+/// A preimage term with no subterm.
+#[derive(Serialize, FixedShape)]
+#[serde(tag = "term", rename_all = "snake_case")]
+enum PreimageLeaf<'a> {
+    Literal {
+        #[serde(rename = "type")]
+        ty: NodeRef,
+        #[serde(flatten)]
+        value: &'a LiteralValue,
+    },
+    Reference {
+        target: NodeRef,
+    },
+    GroupReference {
+        ordinal: usize,
+    },
     DependencyReference {
         package: PackageRef,
         node: WireNodeRef,
@@ -1468,6 +1558,72 @@ enum PreimageTerm<'a> {
         creates: &'a [NodeRef],
         deletes: &'a [NodeRef],
     },
+}
+
+/// The term's RFC 8785 text, written from an explicit heap stack of
+/// pending subterms and closings, so encoding never recurses with the
+/// term's depth.
+impl Encode for PreimageTerm<'_> {
+    fn encode_into<S: Sink + ?Sized>(
+        &self,
+        writer: &mut Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        enum Task<'t, 'a> {
+            Term(&'t PreimageTerm<'a>),
+            EndArray,
+            EndObject,
+        }
+        let mut tasks = vec![Task::Term(self)];
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Term(PreimageTerm::Leaf(leaf)) => writer.serialize(leaf)?,
+                Task::Term(PreimageTerm::Application {
+                    operator,
+                    operation,
+                    result_type,
+                    arguments,
+                }) => {
+                    writer.begin_object()?;
+                    writer.name("term")?;
+                    writer.string("application")?;
+                    writer.name("operator")?;
+                    writer.serialize(operator)?;
+                    writer.name("operation")?;
+                    writer.serialize(*operation)?;
+                    writer.name("result_type")?;
+                    writer.serialize(result_type)?;
+                    writer.name("arguments")?;
+                    writer.begin_array()?;
+                    tasks.push(Task::EndObject);
+                    tasks.push(Task::EndArray);
+                    tasks.extend(arguments.iter().rev().map(Task::Term));
+                }
+                Task::Term(PreimageTerm::Aggregate { members }) => {
+                    writer.begin_object()?;
+                    writer.name("term")?;
+                    writer.string("aggregate")?;
+                    writer.name("members")?;
+                    writer.begin_array()?;
+                    tasks.push(Task::EndObject);
+                    tasks.push(Task::EndArray);
+                    tasks.extend(members.iter().rev().map(Task::Term));
+                }
+                Task::Term(PreimageTerm::Binding { name, value }) => {
+                    writer.begin_object()?;
+                    writer.name("term")?;
+                    writer.string("binding")?;
+                    writer.name("name")?;
+                    writer.string(name)?;
+                    writer.name("value")?;
+                    tasks.push(Task::EndObject);
+                    tasks.push(Task::Term(value));
+                }
+                Task::EndArray => writer.end_array()?,
+                Task::EndObject => writer.end_object()?,
+            }
+        }
+        Ok(())
+    }
 }
 
 impl SemanticTerm {
@@ -1662,14 +1818,17 @@ impl Walk<'_> {
         Ok(match term {
             SemanticTerm::Literal { ty, value } => {
                 self.type_position(ty.0)?;
-                (PreimageTerm::Literal { ty: *ty, value }, false)
+                (
+                    PreimageTerm::Leaf(PreimageLeaf::Literal { ty: *ty, value }),
+                    false,
+                )
             }
             SemanticTerm::Reference { target } => {
-                let preimage = match self.ordinal(target.0) {
-                    Some(ordinal) => PreimageTerm::GroupReference { ordinal },
-                    None => PreimageTerm::Reference { target: *target },
+                let leaf = match self.ordinal(target.0) {
+                    Some(ordinal) => PreimageLeaf::GroupReference { ordinal },
+                    None => PreimageLeaf::Reference { target: *target },
                 };
-                (preimage, false)
+                (PreimageTerm::Leaf(leaf), false)
             }
             SemanticTerm::Application {
                 operator,
@@ -1711,10 +1870,10 @@ impl Walk<'_> {
             // ADR-015 D-5: the dependency's `package_id` and node id enter
             // the preimage as written; neither names a node of this graph.
             SemanticTerm::DependencyReference { package, node } => (
-                PreimageTerm::DependencyReference {
+                PreimageTerm::Leaf(PreimageLeaf::DependencyReference {
                     package: *package,
                     node: *node,
-                },
+                }),
                 false,
             ),
             // QSpec FR-340: a frame body holds no application, and its
@@ -1729,11 +1888,11 @@ impl Walk<'_> {
                 creates,
                 deletes,
             } => (
-                PreimageTerm::Frame {
+                PreimageTerm::Leaf(PreimageLeaf::Frame {
                     modifies,
                     creates,
                     deletes,
-                },
+                }),
                 false,
             ),
         })

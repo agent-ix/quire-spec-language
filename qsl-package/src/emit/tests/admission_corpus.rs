@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-093-AC-19 (TC-416 step 11): the emission-to-admission corpus. Every
 //! node family of IR's closed checked-package/v2 vocabulary
-//! (`CheckedNodeKind::all()`) is classified exactly once: as a row the
-//! emitter writes and IR admits, as a row with a named known gap
-//! ([`KnownGap`]), or as a kind QSL's lowering never writes
-//! ([`NOT_EMITTED_BY_QSL`], each with its reason).
+//! (`CheckedNodeKind::all()`) is classified exactly once: as a family the
+//! emitter writes and IR admits (one or more rows), or as a kind QSL's
+//! lowering never writes ([`NOT_EMITTED_BY_QSL`], each with its reason).
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
@@ -14,14 +13,13 @@
 //! that starts emitting an unclassified or not-emitted kind fails. A new IR
 //! kind fails until it is classified.
 //!
-//! Any refusal other than the known gap, and any omission, fails the test:
-//! it is a bug, not a row.
+//! Any refusal, and any omission, fails the test: it is a bug, not a row.
 
 use qsl_forms::TypeFormHead;
 use quire_contract_model::{
-    BoundedDomainForm, CheckedNodeKind, CheckedPackageRefusalCause, ClaimForm, CompositeTypeForm,
-    CorrespondenceForm, ExpressionForm, FunctionForm, ModelForm, ProtocolForm, RelationForm,
-    ScalarTypeForm, StateForm, TemporalForm,
+    BoundedDomainForm, CheckedNodeKind, ClaimForm, CompositeTypeForm, CorrespondenceForm,
+    ExpressionForm, FunctionForm, ModelForm, ProtocolForm, RelationForm, ScalarTypeForm, StateForm,
+    TemporalForm,
 };
 
 use super::super::extent_agreement::{package_declaring, records};
@@ -255,121 +253,90 @@ fn modelled(
     )
 }
 
-/// Why a row's family is not admitted today. This is the only case the
-/// corpus holds as a row of its own.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum KnownGap {
-    /// STD-129: QSpec FR-322 says nothing about an equality over a cyclic
-    /// compared type. The emitter writes the equality node, and the locked
-    /// IR reader refuses the package at it as `operation-law-missing`.
-    CyclicComparedType,
-}
-
-/// What a row asserts about its family.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Expect {
-    /// IR's reader admits the fixture, at its emitted `package_id`, with a
-    /// node of the family.
-    Admitted,
-    /// The family hits a known gap.
-    Known(KnownGap),
-}
-
-/// One family, the fixture that emits it, and what the read must show.
+/// One family and the fixture that emits it: IR's reader admits the
+/// fixture, at its emitted `package_id`, with a node of the family, and
+/// when `operation` is named, a node of the family that applies it.
 #[derive(Clone, Copy, Debug)]
 struct Row {
     family: CheckedNodeKind,
     fixture: Fixture,
-    expect: Expect,
+    operation: Option<&'static str>,
 }
 
 /// Every node family the emitter writes, one row each. The cyclic compared
-/// type is a second row for `expression`/`binary`: it is a case of an
-/// admitted family, not a family of its own.
+/// type is a second row for `expression`/`binary`: an admitted case of that
+/// family, not a family of its own.
 fn rows() -> Vec<Row> {
     use BoundedDomainForm as B;
     use CheckedNodeKind as K;
     use CompositeTypeForm as C;
-    use Expect::Admitted as A;
     use ExpressionForm as E;
     use Fixture as F;
     use ScalarTypeForm as S;
-    let row = |family, fixture, expect| Row {
+    let row = |family, fixture| Row {
         family,
         fixture,
-        expect,
+        operation: None,
     };
     vec![
-        row(K::ScalarType(S::Boolean), F::Tc416Functions, A),
-        row(K::ScalarType(S::Integer), F::Tc416Functions, A),
-        row(K::ScalarType(S::Rational), F::GoldenCases, A),
-        row(K::ScalarType(S::Decimal), F::FormsUnit, A),
-        row(K::ScalarType(S::Float32), F::Float32Add, A),
-        row(K::ScalarType(S::Float64), F::GoldenCases, A),
-        row(K::ScalarType(S::Text), F::Tc416Functions, A),
-        row(K::ScalarType(S::Enum), F::OrderedEnum, A),
-        row(K::ScalarType(S::Dimension), F::QuantityAndT, A),
-        row(K::ScalarType(S::Unit), F::QuantityAndT, A),
-        row(K::ScalarType(S::CompoundUnit), F::QuantityAndT, A),
-        row(K::CompositeType(C::Option), F::ConfigVersion, A),
-        row(K::CompositeType(C::Sequence), F::Tree, A),
-        row(K::CompositeType(C::Set), F::FormsUnit, A),
-        row(K::CompositeType(C::Bag), F::FormsUnit, A),
-        row(K::CompositeType(C::OrderedSet), F::FormsUnit, A),
-        row(K::CompositeType(C::Record), F::Tree, A),
-        row(K::CompositeType(C::Tuple), F::DeclaredTypes, A),
-        row(K::CompositeType(C::Reference), F::SpineModel, A),
-        row(K::BoundedDomain(B::IntegerRange), F::RecursiveF, A),
-        row(K::BoundedDomain(B::RationalRange), F::GoldenCases, A),
-        row(K::BoundedDomain(B::DecimalRange), F::FormsUnit, A),
-        row(K::BoundedDomain(B::FloatRounding), F::GoldenCases, A),
-        row(K::BoundedDomain(B::TextBounds), F::GoldenCases, A),
-        row(K::BoundedDomain(B::CollectionBounds), F::ExtentRecords, A),
-        row(K::BoundedDomain(B::ModelPopulation), F::ModelPopulation, A),
-        row(K::Value(ValueForm::Literal), F::Tc416Functions, A),
-        row(K::Value(ValueForm::EnumValue), F::OrderedEnum, A),
-        row(K::Value(ValueForm::RecordValue), F::FormsUnit, A),
-        row(K::Value(ValueForm::TupleValue), F::FormsUnit, A),
-        row(K::Value(ValueForm::Parameter), F::Tc416Functions, A),
-        row(K::Expression(E::Call), F::Tc416Functions, A),
-        row(K::Expression(E::Unary), F::ConfigVersion, A),
-        row(K::Expression(E::Binary), F::Tc416Functions, A),
-        row(
-            K::Expression(E::Binary),
-            F::CyclicEquality,
-            Expect::Known(KnownGap::CyclicComparedType),
-        ),
-        row(K::Expression(E::Conditional), F::Tc416Functions, A),
-        row(K::Expression(E::Let), F::Tc416Functions, A),
-        row(K::Expression(E::Quantify), F::FormsUnit, A),
-        row(K::Expression(E::Collection), F::GoldenCases, A),
-        row(K::Expression(E::Conversion), F::RecursiveF, A),
-        row(K::Expression(E::Query), F::SpineCompile, A),
-        row(K::Expression(E::PreRead), F::ConfigVersion, A),
-        row(K::Expression(E::PresenceRead), F::ConfigVersion, A),
-        row(K::Expression(E::ValueRead), F::ConfigVersion, A),
-        row(K::Expression(E::Deref), F::SpineModel, A),
-        row(K::Expression(E::Reachability), F::ConfigVersion, A),
-        row(
-            K::Function(FunctionForm::PureFunction),
-            F::Tc416Functions,
-            A,
-        ),
-        row(K::Function(FunctionForm::Predicate), F::FormsUnit, A),
-        row(
-            K::Function(FunctionForm::RecursiveFunction),
-            F::RecursiveF,
-            A,
-        ),
-        row(K::Model(ModelForm::ObjectType), F::SpineModel, A),
-        row(
-            K::Model(ModelForm::SystemsInterface),
-            F::SystemsInterface,
-            A,
-        ),
-        row(K::State(StateForm::StateClause), F::ConfigVersion, A),
-        row(K::State(StateForm::Frame), F::ConfigVersion, A),
-        row(K::State(StateForm::OperationAnchor), F::ConfigVersion, A),
+        row(K::ScalarType(S::Boolean), F::Tc416Functions),
+        row(K::ScalarType(S::Integer), F::Tc416Functions),
+        row(K::ScalarType(S::Rational), F::GoldenCases),
+        row(K::ScalarType(S::Decimal), F::FormsUnit),
+        row(K::ScalarType(S::Float32), F::Float32Add),
+        row(K::ScalarType(S::Float64), F::GoldenCases),
+        row(K::ScalarType(S::Text), F::Tc416Functions),
+        row(K::ScalarType(S::Enum), F::OrderedEnum),
+        row(K::ScalarType(S::Dimension), F::QuantityAndT),
+        row(K::ScalarType(S::Unit), F::QuantityAndT),
+        row(K::ScalarType(S::CompoundUnit), F::QuantityAndT),
+        row(K::CompositeType(C::Option), F::ConfigVersion),
+        row(K::CompositeType(C::Sequence), F::Tree),
+        row(K::CompositeType(C::Set), F::FormsUnit),
+        row(K::CompositeType(C::Bag), F::FormsUnit),
+        row(K::CompositeType(C::OrderedSet), F::FormsUnit),
+        row(K::CompositeType(C::Record), F::Tree),
+        row(K::CompositeType(C::Tuple), F::DeclaredTypes),
+        row(K::CompositeType(C::Reference), F::SpineModel),
+        row(K::BoundedDomain(B::IntegerRange), F::RecursiveF),
+        row(K::BoundedDomain(B::RationalRange), F::GoldenCases),
+        row(K::BoundedDomain(B::DecimalRange), F::FormsUnit),
+        row(K::BoundedDomain(B::FloatRounding), F::GoldenCases),
+        row(K::BoundedDomain(B::TextBounds), F::GoldenCases),
+        row(K::BoundedDomain(B::CollectionBounds), F::ExtentRecords),
+        row(K::BoundedDomain(B::ModelPopulation), F::ModelPopulation),
+        row(K::Value(ValueForm::Literal), F::Tc416Functions),
+        row(K::Value(ValueForm::EnumValue), F::OrderedEnum),
+        row(K::Value(ValueForm::RecordValue), F::FormsUnit),
+        row(K::Value(ValueForm::TupleValue), F::FormsUnit),
+        row(K::Value(ValueForm::Parameter), F::Tc416Functions),
+        row(K::Expression(E::Call), F::Tc416Functions),
+        row(K::Expression(E::Unary), F::ConfigVersion),
+        row(K::Expression(E::Binary), F::Tc416Functions),
+        Row {
+            family: K::Expression(E::Binary),
+            fixture: F::CyclicEquality,
+            operation: Some("quire.op.structural.eq"),
+        },
+        row(K::Expression(E::Conditional), F::Tc416Functions),
+        row(K::Expression(E::Let), F::Tc416Functions),
+        row(K::Expression(E::Quantify), F::FormsUnit),
+        row(K::Expression(E::Collection), F::GoldenCases),
+        row(K::Expression(E::Conversion), F::RecursiveF),
+        row(K::Expression(E::Query), F::SpineCompile),
+        row(K::Expression(E::PreRead), F::ConfigVersion),
+        row(K::Expression(E::PresenceRead), F::ConfigVersion),
+        row(K::Expression(E::ValueRead), F::ConfigVersion),
+        row(K::Expression(E::Deref), F::SpineModel),
+        row(K::Expression(E::Reachability), F::ConfigVersion),
+        row(K::Function(FunctionForm::PureFunction), F::Tc416Functions),
+        row(K::Function(FunctionForm::Predicate), F::FormsUnit),
+        row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
+        row(K::Model(ModelForm::ObjectType), F::SpineModel),
+        row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
+        row(K::State(StateForm::StateClause), F::ConfigVersion),
+        row(K::State(StateForm::Frame), F::ConfigVersion),
+        row(K::State(StateForm::OperationAnchor), F::ConfigVersion),
     ]
 }
 
@@ -503,14 +470,6 @@ struct Outcome {
 }
 
 impl Outcome {
-    /// The family of `node` in the checked graph.
-    fn family_of(&self, node: &CheckedNodeId) -> Option<CheckedNodeKind> {
-        self.families
-            .iter()
-            .find(|(_, nodes)| nodes.contains(node))
-            .map(|(family, _)| *family)
-    }
-
     /// The checked node `node`.
     fn node(&self, node: &CheckedNodeId) -> Option<&SemanticNode> {
         self.emitted
@@ -521,13 +480,13 @@ impl Outcome {
             .find(|candidate| node_id(candidate.key()) == *node)
     }
 
-    /// Whether `node` is an application of `quire.op.structural.eq`.
-    fn is_structural_equality(&self, node: &CheckedNodeId) -> bool {
+    /// Whether `node` is an application of the operation `identity`.
+    fn applies(&self, node: &CheckedNodeId, identity: &str) -> bool {
         self.node(node).is_some_and(|candidate| {
             matches!(
                 candidate.body(),
                 SemanticTerm::Application { operation, .. }
-                    if operation.identity() == "quire.op.structural.eq"
+                    if operation.identity() == identity
             )
         })
     }
@@ -539,62 +498,44 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
     let Row {
         family,
         fixture,
-        expect,
+        operation,
     } = *row;
-    let mut fail = |message: String| failures.push(format!("{family:?} ({fixture:?}): {message}"));
-    match expect {
-        Expect::Admitted => {
-            let admitted = outcomes.iter().any(|outcome| {
-                outcome
-                    .read
-                    .as_ref()
-                    .is_ok_and(|read| read.admitted.node_kinds().contains(&family))
-            });
-            if !admitted {
-                fail("IR admits no node of the family".to_owned());
-            }
-        }
-        Expect::Known(KnownGap::CyclicComparedType) => {
-            for outcome in outcomes {
-                match &outcome.read {
-                    Err(StageFailure::Refused(V2ReadRefusal::Envelope { refusal, .. }))
-                        if refusal.cause
-                            == Some(CheckedPackageRefusalCause::OperationLawMissing)
-                            && refusal.locus.as_ref().is_some_and(|node| {
-                                outcome.family_of(node) == Some(family)
-                                    && outcome.is_structural_equality(node)
-                            }) => {}
-                    Err(other) => fail(format!("refused for another reason: {other:?}")),
-                    Ok(_) => fail("IR admits it: retire the known gap".to_owned()),
-                }
-            }
-        }
+    let admitted = outcomes.iter().any(|outcome| {
+        outcome.read.as_ref().is_ok_and(|read| {
+            read.admitted
+                .graph()
+                .nodes
+                .iter()
+                .zip(read.admitted.node_kinds())
+                .any(|(node, kind)| {
+                    *kind == family
+                        && operation.is_none_or(|identity| outcome.applies(&node.node_id, identity))
+                })
+        })
+    });
+    if !admitted {
+        let applying = operation.map_or(String::new(), |identity| format!(" applying {identity}"));
+        failures.push(format!(
+            "{family:?} ({fixture:?}): IR admits no node of the family{applying}"
+        ));
     }
 }
 
 /// The checks of one fixture's packages: each is admitted at its own
-/// `package_id` unless a row says the fixture hits the cyclic compared type
-/// gap, and none omits a node.
+/// `package_id`, and none omits a node.
 fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures: &mut Vec<String>) {
-    let backs = |expect: Expect| {
-        rows.iter()
-            .any(|row| row.fixture == fixture && row.expect == expect)
-    };
     if !rows.iter().any(|row| row.fixture == fixture) {
         failures.push(format!("{fixture:?}: backs no row"));
     }
-    let refused = backs(Expect::Known(KnownGap::CyclicComparedType));
     for outcome in outcomes {
-        if !refused {
-            let emitted_at = outcome.emitted.emission.package.package_id();
-            match &outcome.read {
-                Ok(read) if read.package.package_id() == emitted_at => {}
-                Ok(read) => failures.push(format!(
-                    "{fixture:?}: admitted at {:?}, emitted at {emitted_at:?}",
-                    read.package.package_id(),
-                )),
-                Err(failure) => failures.push(format!("{fixture:?}: not admitted: {failure:?}")),
-            }
+        let emitted_at = outcome.emitted.emission.package.package_id();
+        match &outcome.read {
+            Ok(read) if read.package.package_id() == emitted_at => {}
+            Ok(read) => failures.push(format!(
+                "{fixture:?}: admitted at {:?}, emitted at {emitted_at:?}",
+                read.package.package_id(),
+            )),
+            Err(failure) => failures.push(format!("{fixture:?}: not admitted: {failure:?}")),
         }
         for omission in &outcome.emitted.emission.omitted {
             failures.push(format!("{fixture:?}: unexpected omission {omission:?}"));
@@ -603,26 +544,26 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
 }
 
 /// FR-093-AC-19 (TC-416 step 11): every kind of IR's closed node-kind list
-/// is classified exactly once, as admitted, a named gap, or not written by
-/// QSL. Each admitted row's fixture is admitted by IR's checked-package/v2
-/// reader, through QSL's I2 read, at its emitted `package_id`, with a node
-/// of the row's family; each gap row shows its gap; and no fixture emits a
-/// family without a row.
+/// is classified exactly once, as admitted or not written by QSL. Each
+/// row's fixture is admitted by IR's checked-package/v2 reader, through
+/// QSL's I2 read, at its emitted `package_id`, with a node of the row's
+/// family (the cyclic compared type's structural equality included), and
+/// no fixture emits a family without a row.
 #[trace("FR-093-AC-19", "TC-416")]
 #[test]
 fn every_emitted_node_family_is_admitted_at_its_package_id() {
     let rows = rows();
 
-    // Every IR kind is classified exactly once. The cyclic compared type
-    // is an extra case of an admitted family, not a classification.
+    // Every IR kind is classified exactly once. A family with several rows,
+    // such as `expression`/`binary` with the cyclic compared type, is one
+    // admitted classification.
     let mut classified: BTreeMap<CheckedNodeKind, Vec<String>> = BTreeMap::new();
-    for row in &rows {
-        if row.expect != Expect::Known(KnownGap::CyclicComparedType) {
-            classified
-                .entry(row.family)
-                .or_default()
-                .push(format!("{:?}", row.expect));
-        }
+    let admitted: BTreeSet<CheckedNodeKind> = rows.iter().map(|row| row.family).collect();
+    for family in admitted {
+        classified
+            .entry(family)
+            .or_default()
+            .push("admitted".to_owned());
     }
     for (kind, reason) in NOT_EMITTED_BY_QSL {
         classified

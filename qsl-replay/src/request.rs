@@ -25,6 +25,8 @@ use qsl_foundation::digest::{
 use qsl_foundation::Code;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
+use qsl_semantics::model::normalize::ModelRefusal;
+use qsl_semantics::model::refusal::{IntakeLimit, ModelRefusalCause};
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -300,6 +302,31 @@ pub enum ReplayRequestRefusal {
     /// package document at all, so it has no `sha256-jcs` digest to match.
     #[error("invalid_model_binding/malformed-declaration: entry under {0} is not a domain package document")]
     NotAPackageDocument(String),
+    /// A byte-provision entry under a `sha256-jcs` digest reached one of
+    /// intake's limits while it was read for its digest: intake's own limit
+    /// outcome, `resource_exhausted`/`intake-limit-exceeded` (FR-056).
+    #[error(
+        "resource_exhausted/intake-limit-exceeded: entry under {entry} exceeds intake's {} limit of {bound}",
+        limit.as_str()
+    )]
+    IntakeLimitExceeded {
+        /// The entry's declared digest.
+        entry: String,
+        /// The limit reached.
+        limit: IntakeLimit,
+        /// That limit's bound.
+        bound: usize,
+    },
+    /// Reading or digesting a byte-provision entry under a `sha256-jcs`
+    /// digest could not reserve memory: `resource_exhausted`/
+    /// `allocation-failed` (FR-259 B6).
+    #[error("resource_exhausted/allocation-failed: entry under {entry} could not reserve {requested} bytes of memory")]
+    AllocationFailed {
+        /// The entry's declared digest.
+        entry: String,
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
     /// A byte-provision entry does not hash to its own declared digest.
     #[error("stale_dependency/byte-digest-mismatch: entry under {0} does not hash to its own declared digest")]
     ByteDigestMismatch(String),
@@ -323,20 +350,41 @@ pub enum ReplayRequestRefusal {
 /// raw-byte-addressed domain (source and definition documents), and for
 /// `sha256-jcs` the domain package document's own digest, SHA-256 of its
 /// RFC 8785 bytes, exactly as I1 keys its package input
-/// (`model::intake::package_input`, ADR-013 QC-1). Bytes that are not a
-/// domain package document refuse as such, and every other domain refuses
-/// as ineligible.
+/// (`model::intake::package_input`, ADR-013 QC-1). A refusal of intake's
+/// read keeps its cause ([`package_document_refusal`]), and every other
+/// domain refuses as ineligible.
 fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayRequestRefusal> {
     let domain = digest.domain();
     if domain == DigestDomain::Sha256Jcs {
         return PackageDocument::parse(bytes)
             .map(|document| document.jcs_digest())
-            .map_err(|_| ReplayRequestRefusal::NotAPackageDocument(format!("{digest:?}")));
+            .map_err(|refusal| package_document_refusal(digest, refusal));
     }
     if domain.is_raw_byte_addressed() {
         return Ok(ByteDigest::of(bytes).as_bytes());
     }
     Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(domain))
+}
+
+/// The refusal for a `sha256-jcs` entry under `digest` that intake's read
+/// refused, by its cause: an intake limit stays intake's limit outcome, an
+/// allocation failure stays `allocation-failed` (FR-259 B6), and only a
+/// document intake cannot read is not a domain package document.
+fn package_document_refusal(digest: DigestRecord, refusal: ModelRefusal) -> ReplayRequestRefusal {
+    let entry = format!("{digest:?}");
+    match refusal.cause {
+        ModelRefusalCause::IntakeLimitExceeded { limit, bound } => {
+            ReplayRequestRefusal::IntakeLimitExceeded {
+                entry,
+                limit,
+                bound,
+            }
+        }
+        ModelRefusalCause::AllocationFailed { requested } => {
+            ReplayRequestRefusal::AllocationFailed { entry, requested }
+        }
+        _ => ReplayRequestRefusal::NotAPackageDocument(entry),
+    }
 }
 
 impl ReplayRequestRefusal {
@@ -349,6 +397,9 @@ impl ReplayRequestRefusal {
                 Code::InvalidDigest
             }
             Self::NotAPackageDocument(_) => Code::InvalidModelBinding,
+            Self::IntakeLimitExceeded { .. } | Self::AllocationFailed { .. } => {
+                Code::ResourceExhausted
+            }
             Self::IncompleteByteProvision(_) => Code::MissingDeclaration,
             Self::EmptyDependencySelection { .. } => Code::InvalidIdentifier,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
@@ -991,6 +1042,75 @@ mod tests {
             round_tripped.selected_function().segments(),
             request.selected_function().segments()
         );
+    }
+
+    /// A `sha256-jcs` byte-provision entry that intake's read refuses keeps
+    /// the refusal's cause (FR-071-AC-11, TC-186 step 9): bytes intake
+    /// cannot read are not a domain package document, a document over an
+    /// intake limit refuses with intake's limit outcome, and an allocation
+    /// failure refuses `resource_exhausted`/`allocation-failed` carrying the
+    /// bytes requested (FR-259 B6).
+    #[trace("TC-186", "FR-071-AC-11")]
+    #[test]
+    fn a_package_document_refusal_keeps_its_cause() {
+        let digest = DigestRecord::mint(DigestDomain::Sha256Jcs, [0xAB; 32]);
+        let entry = format!("{digest:?}");
+        let decode = |bytes: Vec<u8>| {
+            let mut request = wire(1);
+            request.byte_provision.push((
+                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+                digest.hex(),
+                bytes,
+            ));
+            ReplayRequest::decode(request).unwrap_err()
+        };
+
+        let malformed = decode(br#"{"a":1,"a":2}"#.to_vec());
+        assert_eq!(
+            malformed,
+            ReplayRequestRefusal::NotAPackageDocument(entry.clone())
+        );
+        assert_eq!(malformed.code(), Code::InvalidModelBinding);
+
+        // Nested far past the semantic-IR reader's depth limit, and far
+        // below the request's encoded-size bound.
+        let deep = format!("{}{}", "[".repeat(1000), "]".repeat(1000)).into_bytes();
+        let ModelRefusalCause::IntakeLimitExceeded { limit, bound } =
+            PackageDocument::parse(&deep).unwrap_err().cause
+        else {
+            panic!("a 1000-deep document is over intake's depth limit");
+        };
+        assert_eq!(limit, IntakeLimit::NestingDepth);
+        let over_limit = decode(deep);
+        assert_eq!(
+            over_limit,
+            ReplayRequestRefusal::IntakeLimitExceeded {
+                entry: entry.clone(),
+                limit,
+                bound,
+            }
+        );
+        assert_eq!(over_limit.code(), Code::ResourceExhausted);
+
+        let allocation = package_document_refusal(
+            digest,
+            ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::AllocationFailed { requested: 4096 },
+                detail: String::new(),
+            },
+        );
+        assert_eq!(
+            allocation,
+            ReplayRequestRefusal::AllocationFailed {
+                entry,
+                requested: 4096,
+            }
+        );
+        assert_eq!(allocation.code(), Code::ResourceExhausted);
+        assert!(allocation
+            .to_string()
+            .starts_with("resource_exhausted/allocation-failed:"));
     }
 
     /// A semantic-profile identifier outside the closed set refuses at

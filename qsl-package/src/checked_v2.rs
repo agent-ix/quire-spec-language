@@ -115,7 +115,6 @@ use qsl_semantics::model::key::hex;
 use crate::checked::{CheckedPackage, ResolvedDependency};
 use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 #[cfg(test)]
 mod tests;
@@ -595,11 +594,7 @@ fn canonical_preimage(
     preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
     artifact_bytes: usize,
 ) -> Result<Vec<u8>, String> {
-    let limits = quire_canonical::Limits::new(
-        u64::try_from(artifact_bytes).unwrap_or(u64::MAX),
-        IDENTITY_LIMITS.max_depth(),
-    )
-    .map_err(|error| error.to_string())?;
+    let limits = quire_canonical::Limits::new(u64::try_from(artifact_bytes).unwrap_or(u64::MAX));
     quire_canonical::to_vec(preimage, limits).map_err(|error| error.to_string())
 }
 

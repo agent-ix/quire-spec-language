@@ -59,7 +59,7 @@
 use std::collections::BTreeMap;
 
 use crate::value::semantic_node::is_qualified_name;
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, ALLOCATION_FAILED};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 
 #[cfg(test)]
@@ -282,6 +282,9 @@ pub enum LibraryCause {
     /// with its nominal `qualified_declaration`, or is absent while a
     /// nominal `qualified_declaration` is present.
     DeclarationNominalMismatch,
+    /// Reading or encoding the identity preimage could not reserve memory
+    /// (FR-259 B6).
+    AllocationFailed,
 }
 
 impl LibraryCause {
@@ -297,6 +300,7 @@ impl LibraryCause {
             Self::InvalidValue => "invalid-value",
             Self::UndeclaredExport => "undeclared-export",
             Self::DeclarationNominalMismatch => "declaration-nominal-mismatch",
+            Self::AllocationFailed => ALLOCATION_FAILED.cause(),
         }
     }
 }
@@ -443,6 +447,10 @@ impl LibraryRefusal {
                 ..
             } => Code::AmbiguousDeclaration,
             Self::InvalidPreimage {
+                defect: PreimageDefect::AllocationFailed { .. },
+                ..
+            } => Code::ResourceExhausted,
+            Self::InvalidPreimage {
                 defect: PreimageDefect::DeclarationNominalMismatch { .. },
                 ..
             }
@@ -468,6 +476,10 @@ impl LibraryRefusal {
                 defect: PreimageDefect::DeclarationNominalMismatch { .. },
                 ..
             } => LibraryCause::DeclarationNominalMismatch,
+            Self::InvalidPreimage {
+                defect: PreimageDefect::AllocationFailed { .. },
+                ..
+            } => LibraryCause::AllocationFailed,
             Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)

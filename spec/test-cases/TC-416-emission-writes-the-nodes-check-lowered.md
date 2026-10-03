@@ -129,8 +129,7 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 - Step 11: every IR node kind is classified exactly once, and every family
   a fixture emits is classified as written by QSL. IR admits every fixture
   at its emitted `package_id` with a node of each of its rows' families,
-  except the `Tree` equality, which IR refuses at the
-  `quire.op.structural.eq` node with `operation-law-missing` (STD-129).
+  the `Tree` equality's `quire.op.structural.eq` node included.
   TC-160's `q` and `t`, over a `metre` unit the fixture unit's own source
   declares, give the `dimension`, `unit` and `compound_unit` rows. No node is
   omitted (FR-093-AC-19).

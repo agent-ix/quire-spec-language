@@ -29,7 +29,7 @@ mutated document except where the row says otherwise.
 | 1 | 1.1 | selected snapshot missing from the provision | `Incomplete`, `unavailable_observation`/`missing-required-artifact` |
 | 2 | 1.2 | snapshot of 1 MiB + 1 byte | `stage_limit_exceeded`, `input-bytes-exceeded` |
 | 3 | 1.2 | a field value nested 10,000 `present` levels deep, within the byte limit | the same code and cause as that field value nested 2 levels deep (FR-261); no outcome names a depth |
-| 4 | 1.3 | the snapshot's bytes edited (`child.versionNumber` `"3"`), kept under the original digest | `stale_dependency`/`content-mismatch` |
+| 4 | 1.3 | the snapshot's bytes edited (`child.versionNumber` `"3"`), kept under the original digest | `stale_dependency`/`byte-digest-mismatch` |
 | 5 | 1.4 | `format` `native-state-input/1` | `unknown_wire`/`unsupported-wire` |
 | 6 | 1.5 | `populations` removed | `invalid_runtime_input`/`missing-member` |
 | 7 | 1.6 | an extra top-level member `note` | `invalid_runtime_input`/`unknown-member` |
@@ -53,7 +53,7 @@ mutated document except where the row says otherwise.
 | 26 | 11.3 | post `child.parent` absent | `frame_violation`/`unauthorized-change`, naming `child` and `parent` |
 | 27 | 11.3 | a package whose `attemptUpdate` frame modifies only `parent`, with the changed-version invocation (post `child.versionNumber` 3) | `frame_violation`/`unauthorized-change`, naming `child` and `versionNumber` |
 | 28 | 11.4 | invocation `created: [{config_history, child}]` | `population_delta_mismatch`/`delta-disagreement` |
-| 29 | 1.3 over 1.6 | row 4's edit plus row 7's extra member, under the original digest | `stale_dependency`/`content-mismatch` |
+| 29 | 1.3 over 1.6 | row 4's edit plus row 7's extra member, under the original digest | `stale_dependency`/`byte-digest-mismatch` |
 | 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` |
 | 31 | 11.2 over 11.3 | post deletes `root` and sets `child.parent` absent | `frame_violation`/`unauthorized-change` naming the deletion of `root` |
 | 32 | 6.1 | a package variant that adds object type `Note`, a member type of no population, and an object `n1` of type `Note` in `config_history` | `invalid_runtime_input`/`wrong-role-mapping` at `n1` |

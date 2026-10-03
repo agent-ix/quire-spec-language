@@ -792,6 +792,14 @@ impl std::fmt::Display for CatalogCode {
     }
 }
 
+/// FR-259 B6: `quire-canonical` could not reserve memory for a read or an
+/// encoding. Intake, observation digest admission and the library package
+/// identity read each report this one outcome, carrying the size in bytes of
+/// the reservation that failed (`requested`). Memory is not a configured
+/// limit, so the outcome names no bound and no setting.
+pub const ALLOCATION_FAILED: CatalogCode =
+    CatalogCode::new("resource_exhausted", "allocation-failed");
+
 /// ADR-013 T-4: a broken runtime, evaluator or mapping invariant, raised
 /// from a compiler stage, the I2 reader, `replay` or `route` (and, for
 /// evaluation, `CheckedPackage::call`). Names the stage and the violated

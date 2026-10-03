@@ -23,7 +23,9 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
    declarations are valid and which holds an array nested 100,000 deep at a
    member the semantic-IR schema does not admit.
 2. Admit every corpus package FR-056's tests admit, and read each digest.
-3. Admit a package document holding `"\udc00"` in a string.
+3. Read a package document holding `"\udc00"` in a string through
+   `PackageDocument::parse`, intake's one read. FR-154 admission digests
+   such bytes raw (FR-056) and does not reach this refusal.
 
 Tag the tests `#[trace("TC-730", "FR-260-AC-1")]`, `#[trace("TC-730", "FR-260-AC-2")]`.
 

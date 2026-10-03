@@ -12,7 +12,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use core::fmt;
 
-use quire_canonical::Limits;
+use quire_canonical::{FixedShape, Limits};
 use serde::Serialize;
 
 use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
@@ -103,30 +103,24 @@ pub fn check_terms<K: Ord>(terms: &[(K, Integer)]) -> Result<(), SemanticGraphCa
 /// module, so every QSL layer from SV up may name it (FR-068-AC-6), and this
 /// crate's compound-unit id encodes under it.
 ///
-/// Depth is [`Limits::MAX_DEPTH`], the encoder's own ceiling. It is above the
-/// deepest preimage QSL builds: a typed preimage nests a fixed schema depth,
-/// a checked node body is already bounded by
-/// [`crate::checking::MAX_CHECKING_DEPTH`], and an intake document by the
-/// intake reader's `MAX_DEPTH` (200).
-///
-/// The byte ceiling is `u64::MAX`, i.e. none of its own: every preimage is
-/// built from values an earlier stage already bounded (intake's
-/// `MAX_INPUT_BYTES`, the check stage's limits, a package reader's
-/// `artifact_bytes`), and a caller with a tighter byte budget of its own
-/// passes its own [`Limits`] instead (the v2 reader does).
-pub const IDENTITY_LIMITS: Limits = match Limits::new(u64::MAX, Limits::MAX_DEPTH) {
-    Ok(limits) => limits,
-    // `Limits::MAX_DEPTH` is by definition within `Limits::MAX_DEPTH`; this
-    // arm is evaluated at compile time and is unreachable.
-    Err(_) => panic!("Limits::MAX_DEPTH is within Limits::MAX_DEPTH"),
-};
+/// The encoder bounds bytes only; depth is not a limit (ADR-030 D-4.4).
+/// FR-259 B3 makes this the published default of the `identity.input_bytes`
+/// setting, 16777216 bytes. Until that setting lands it stays `u64::MAX`:
+/// `qsl-semantics`'s `preimage_digest` reports every encoder error as a
+/// non-canonical preimage, so a finite bound here would report a byte error
+/// as a malformed value, against FR-259 B4. Every preimage is built from
+/// values an earlier stage already bounded (intake's `MAX_INPUT_BYTES`, the
+/// check stage's limits, a package reader's `artifact_bytes`), and a caller
+/// with a tighter byte budget of its own passes its own [`Limits`] instead
+/// (the v2 reader does).
+pub const IDENTITY_LIMITS: Limits = Limits::new(u64::MAX);
 
 /// The `node-identity-preimage.schema.json` node-id member every node-key
 /// and compound-unit preimage embeds: a node key's digest as 64 lowercase
 /// hexadecimal digits under the `quire.checked-semantic-node/v1` domain. The
 /// one definition of that JCS shape, so node keys and compound-unit ids
 /// encode a node id the same way.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, FixedShape)]
 pub struct CanonicalNodeId {
     // RFC 8785 JCS: `quire-canonical` orders members itself, so field
     // declaration order carries no meaning.

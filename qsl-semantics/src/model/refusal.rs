@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-use qsl_foundation::diagnostic::CatalogCode;
+use qsl_foundation::diagnostic::{CatalogCode, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
 
@@ -570,6 +570,12 @@ pub enum ModelRefusalCause {
         /// That limit's bound.
         bound: usize,
     },
+    /// FR-259 B6: reading or digesting a domain package document could not
+    /// reserve memory. Not a limit: it names no bound and no setting.
+    AllocationFailed {
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
     /// FR-154 Intake check 4 (`model-complete.md:70`): the package's own
     /// identity and version disagree with the selection.
     WrongModelSelection {
@@ -795,6 +801,7 @@ impl ModelRefusalCause {
             | Self::MissingSelection { .. }
             | Self::ByteDigestMismatch { .. }
             | Self::IntakeLimitExceeded { .. }
+            | Self::AllocationFailed { .. }
             | Self::WrongModelSelection { .. }
             | Self::ReservedPackageIdentity { .. }
             | Self::DuplicateSelection { .. }
@@ -877,6 +884,7 @@ impl ModelRefusalCause {
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
+            Self::AllocationFailed { .. } => ALLOCATION_FAILED.cause(),
             Self::DuplicateMember { .. } => "duplicate-member",
             Self::SubsettingViolation { .. } => "subsetting-violation",
             Self::FrameCreateOutsideGrant { .. }
@@ -934,6 +942,7 @@ impl ModelRefusalCause {
             Self::FamilySteps { .. }
             | Self::AncestorSteps { .. }
             | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
+            Self::AllocationFailed { .. } => ALLOCATION_FAILED.code(),
             Self::UnclosedMethodSet
             | Self::IncompleteScope { .. }
             | Self::UnclosedSubtypes { .. } => "incomplete_population",
@@ -1283,6 +1292,7 @@ pub mod fixtures {
             limit: super::IntakeLimit::NestingDepth,
             bound: 0,
         },
+        AllocationFailed => ModelRefusalCause::AllocationFailed { requested: 0 },
         ReservedPackageIdentity => ModelRefusalCause::ReservedPackageIdentity {
             selection: DomainPackageRef::fixture("p"),
         },
@@ -1432,6 +1442,7 @@ pub(crate) mod tests {
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
+            ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
             ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
             ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
             ModelRefusalCause::FrameCreateOutsideGrant { .. }
@@ -1484,6 +1495,7 @@ pub(crate) mod tests {
             ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
+            ModelRefusalCause::AllocationFailed { .. } => "resource_exhausted",
             ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",
             ModelRefusalCause::AncestorSteps { .. } => "resource_exhausted",
             ModelRefusalCause::UnclosedMethodSet => "incomplete_population",

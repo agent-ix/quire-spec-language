@@ -745,10 +745,15 @@ mod tests {
         let wire: serde_json::Value =
             serde_json::from_slice(&site.package).expect("the package bytes are JSON");
         assert_eq!(wire["contract_version"], "quire.checked-package/v2");
-        let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-            .expect("MAX_DEPTH is within MAX_DEPTH");
-        let digest = quire_canonical::sha256(&wire["identity_preimage"], limits)
-            .expect("the identity preimage is canonical JSON");
+        let document =
+            quire_canonical::read(&site.package, u64::MAX).expect("the package bytes read");
+        let identity_preimage = document
+            .root()
+            .get("identity_preimage")
+            .expect("the package carries an identity preimage");
+        let digest =
+            quire_canonical::sha256(&identity_preimage, quire_canonical::Limits::new(u64::MAX))
+                .expect("the identity preimage is canonical JSON");
         assert_eq!(
             DigestRecord::mint(DigestDomain::PackageSemanticV2, *digest.as_bytes()),
             site.package_id

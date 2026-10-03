@@ -90,7 +90,7 @@ names different artifacts in each.
 | TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | ✅ Passed locally |
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
-| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9, FR-071-AC-10 | ✅ Passed locally; step 8 (FR-071-AC-10, an unknown semantic profile) passes locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally |
+| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9, FR-071-AC-10, FR-071-AC-11 | ✅ Passed locally; step 8 (FR-071-AC-10, an unknown semantic profile) passes locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally; step 9 (FR-071-AC-11, a `sha256-jcs` entry's refusal keeps its cause) passes locally |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
 | TC-190 | A replay disagreement settles inconclusive with a typed cause and is never repairable | Unit | P1 | FR-072-AC-2 | ✅ Passed locally |
@@ -219,7 +219,7 @@ names different artifacts in each.
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally |
 | TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally |
 | TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally |
-| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed: every comparable fixture agrees (a recursive type's first unbounded node in the recursion group QSL names) and step 4 passes; the quantity fixture is ignored because the emitter omits a record naming a declared unit |
+| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | ✅ Passed locally: every fixture agrees, the quantity fixture `Measure` included (a recursive type's first unbounded node in the recursion group QSL names), and step 4 passes |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally; step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Passed locally |
 | TC-454 | The sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Passed locally |
@@ -534,7 +534,7 @@ names different artifacts in each.
 | TC-726 | Deep types key and lower their text leaves on a small stack | Unit | P1 | FR-258-AC-2 | 🚧 Planned |
 | TC-727 | Checker defaults admit any depth that fits, and its limit outcomes name the setting | Unit | P1 | FR-258-AC-3, FR-258-AC-4 | 🚧 Planned |
 | TC-728 | A deep package's identities do not depend on the stack, and byte limits report as limits | Unit | P1 | FR-259-AC-1, FR-259-AC-2, FR-259-AC-4 | 🚧 Planned (step 5 implemented) |
-| TC-729 | QSL identities, digests and malformed-input mapping over quire-canonical at any depth | Unit | P1 | FR-259-AC-3 | 🚧 Planned |
+| TC-729 | QSL identities, digests and allocation failures over quire-canonical at any depth | Unit | P1 | FR-259-AC-3, FR-259-AC-5 | 🚧 Planned (step 3 implemented) |
 | TC-730 | Intake judges a deep package document on its content | Integration | P1 | FR-260-AC-1, FR-260-AC-2 | 🚧 Planned |
 | TC-731 | Intake reports composite cycles of any length | Integration | P1 | FR-260-AC-3 | 🚧 Planned |
 | TC-732 | The intake byte limit names its setting and clears when raised | Integration | P1 | FR-260-AC-4 | 🚧 Planned |
@@ -658,6 +658,7 @@ as a row that was.
 - TC-185 (FR-071-AC-1): `qsl-replay/src/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
 - TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `qsl-replay/src/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
 - TC-186 step 8 (FR-071-AC-10): `qsl-replay/src/request.rs::tests::refuses_an_unknown_semantic_profile_before_the_byte_provision`
+- TC-186 step 9 (FR-071-AC-11): `qsl-replay/src/request.rs::tests::a_package_document_refusal_keeps_its_cause`
 - TC-189 (FR-072-AC-1): `qsl-replay/src/result.rs::tests::tc_189_witness_and_input_arms_stay_distinct`
 - TC-190 (FR-072-AC-2): `qsl-replay/src/result.rs::tests::tc_190_disagreement_settles_inconclusive_and_is_never_repaired`
 - TC-191 (FR-072-AC-3, FR-072-AC-5): `qsl-replay/src/result.rs::tests::tc_191_round_trips_the_fr351_record_and_compares_structurally`

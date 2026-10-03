@@ -1012,11 +1012,14 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     // below is provably about the *second* selection's repeated identity,
     // not a byte-level failure of the first: the document bytes are its
     // RFC 8785 encoding, from the one encoder (ADR-013:113).
-    let document = quire_canonical::to_vec(
-        &serde_json::json!({"package": {"identity": "acme/orders", "version": "1"}}),
-        quire_semantic_value::semantic_node::IDENTITY_LIMITS,
+    let tree = quire_canonical::read(
+        br#"{"package": {"identity": "acme/orders", "version": "1"}}"#,
+        u64::MAX,
     )
-    .expect("a document of strings encodes");
+    .expect("the document reads");
+    let document =
+        quire_canonical::to_vec(&tree, quire_semantic_value::semantic_node::IDENTITY_LIMITS)
+            .expect("a document of strings encodes");
     let digest: [u8; 32] = Sha256::digest(&document).into();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document);

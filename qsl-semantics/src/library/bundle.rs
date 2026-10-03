@@ -10,6 +10,7 @@
 //! (FR-111-CON-1). A source's header profile selections resolve at E3
 //! (FR-110), its `import` selections in the spine (FR-099) and its `model`
 //! selections at I1 (FR-056); none of them reaches this module.
+use quire_canonical::FixedShape;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
@@ -861,14 +862,14 @@ const RESOLVED_GRAPH_DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
 /// order, `models`,
 /// which is always empty because model selections resolve only through I1
 /// (FR-111, FR-056), then the bundle's capabilities.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct ResolvedGraphPreimage<'a> {
     definitions: Vec<ResolvedDefinitionPreimage<'a>>,
     models: [&'a str; 0],
     capabilities: Vec<&'a str>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct ResolvedDefinitionPreimage<'a> {
     exact: ExactRefPreimage<'a>,
     digest: String,
@@ -878,7 +879,7 @@ struct ResolvedDefinitionPreimage<'a> {
 }
 
 /// A `{authority, identity}` definition reference.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct ExactRefPreimage<'a> {
     authority: &'a str,
     identity: &'a str,
@@ -899,7 +900,7 @@ impl<'a> From<&'a DefinitionRef> for ExactRefPreimage<'a> {
 /// digest (ADR-013 §2, ADR-013:113: the one RFC 8785 implementation).
 ///
 /// A refusal of the encoder (only a failed heap reservation is reachable
-/// for a preimage of strings, which [`LIMITS`] bounds in depth alone) is
+/// for a preimage of strings, which [`LIMITS`] does not bound) is
 /// [`PackageError::CanonicalSize`]: the graph's canonical form cannot be
 /// produced at its size.
 fn resolved_graph_identity(

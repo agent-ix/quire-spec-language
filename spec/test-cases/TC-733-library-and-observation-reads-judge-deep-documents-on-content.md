@@ -40,7 +40,7 @@ Tag the tests `#[trace("TC-733", "FR-261-AC-1")]`, `#[trace("TC-733", "FR-261-AC
 - Step 1: `PreimageDefect::MemberType("edition")`; the malformed-input defect
   with the first malformed byte's offset; and the not-an-object defect.
 - Step 2: the digest is read and admission proceeds to FR-106's later
-  checks; under the other digest, `stale_dependency`/`content-mismatch`.
+  checks; under the other digest, `stale_dependency`/`byte-digest-mismatch`.
 - Step 3: admitted; then refused naming `observation.values`, its bound and
   the count reached; then admitted.
 

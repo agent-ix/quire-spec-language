@@ -12,13 +12,14 @@
 //!
 //! No production caller constructs a [`Member`] yet: the layer-3 check stage
 //! that resolves members (O-06's own "Owner" row) is `CheckedGraph`, ADR-013
-//! T-1, which is S-3's row. This type and its total wire mapping ([`Member::to_wire`],
-//! C-18) are S-2's to land regardless -- ADR-013 §7 gates S-2 on S-1 and the
+//! T-1, which is S-3's row. This type and its total wire mapping (its
+//! `Serialize`, C-18) are S-2's to land regardless -- ADR-013 §7 gates S-2 on S-1 and the
 //! QSpec tickets only, not on S-3 -- exactly as the kernel identity newtypes in
 //! `quire-exact::identity` landed in S-1 ahead of the checker that will use
 //! them, with tests as their only caller until then.
 
-use serde_json::{json, Value};
+use quire_canonical::FixedShape;
+use serde::Serialize;
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
@@ -121,64 +122,97 @@ impl Member {
     /// `node-identity-preimage.schema.json` `OperationMember` shape, over
     /// every variant with no `_` arm, so a new variant fails to compile here
     /// until this match grows an arm for it.
-    pub fn to_wire(&self) -> Value {
+    fn wire(&self) -> MemberWire<'_> {
         // O-18 fold (#260 review item 5): a `NodeKey` is exactly a
         // `DigestDomain::CheckedSemanticNodeV1` digest (`NODE_KEY_DOMAIN` is
         // that domain's own label), so this member's declaration digest
         // mints through `DigestRecord` -- a real caller for the type, not
         // the bare domain-string-plus-raw-hex construction this helper used
-        // before. Byte-identical wire output: `DigestRecord::hex()` and
-        // `NodeKey`'s own `Display` are both lowercase 2-digit-per-byte hex.
-        fn declaration_json(declaration: &NodeKey) -> Value {
+        // before. `DigestRecord::hex()` and `NodeKey`'s own `Display` are
+        // both lowercase 2-digit-per-byte hex.
+        fn declaration_wire(declaration: &NodeKey) -> DeclarationWire {
             let record =
                 DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, *declaration.as_bytes());
-            json!({
-                "domain": record.domain().to_string(),
-                "digest": record.hex(),
-            })
+            DeclarationWire {
+                domain: record.domain().to_string(),
+                digest: record.hex(),
+            }
         }
         match self {
-            Self::Field { declaration, name } => json!({
-                "kind": "field",
-                "declaration": declaration_json(declaration),
-                "name": name.as_str(),
-            }),
+            Self::Field { declaration, name } => MemberWire::Field {
+                declaration: declaration_wire(declaration),
+                name: name.as_str(),
+            },
             Self::Position {
                 declaration,
                 position,
-            } => json!({
-                "kind": "position",
-                "declaration": declaration_json(declaration),
-                "position": position,
-            }),
-            Self::Element { declaration } => json!({
-                "kind": "element",
-                "declaration": declaration_json(declaration),
-            }),
-            Self::RelationshipEnd { declaration, name } => json!({
-                "kind": "relationship_end",
-                "declaration": declaration_json(declaration),
-                "name": name.as_str(),
-            }),
-            Self::Operation { declaration, name } => json!({
-                "kind": "operation",
-                "declaration": declaration_json(declaration),
-                "name": name.as_str(),
-            }),
-            Self::TypeArgument { declaration } => json!({
-                "kind": "type_argument",
-                "declaration": declaration_json(declaration),
-            }),
-            Self::ProfileOperator { operator } => json!({
-                "kind": "profile_operator",
-                "operator": operator.as_str(),
-            }),
-            Self::StateClause { clause } => json!({
-                "kind": "state_clause",
-                "clause": state_clause_spelling(*clause),
-            }),
+            } => MemberWire::Position {
+                declaration: declaration_wire(declaration),
+                position: *position,
+            },
+            Self::Element { declaration } => MemberWire::Element {
+                declaration: declaration_wire(declaration),
+            },
+            Self::RelationshipEnd { declaration, name } => MemberWire::RelationshipEnd {
+                declaration: declaration_wire(declaration),
+                name: name.as_str(),
+            },
+            Self::Operation { declaration, name } => MemberWire::Operation {
+                declaration: declaration_wire(declaration),
+                name: name.as_str(),
+            },
+            Self::TypeArgument { declaration } => MemberWire::TypeArgument {
+                declaration: declaration_wire(declaration),
+            },
+            Self::ProfileOperator { operator } => MemberWire::ProfileOperator {
+                operator: operator.as_str(),
+            },
+            Self::StateClause { clause } => MemberWire::StateClause {
+                clause: state_clause_spelling(*clause),
+            },
         }
     }
+}
+
+/// The `OperationMember` wire union, tagged by `kind`.
+#[derive(Serialize, FixedShape)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum MemberWire<'a> {
+    Field {
+        declaration: DeclarationWire,
+        name: &'a str,
+    },
+    Position {
+        declaration: DeclarationWire,
+        position: u64,
+    },
+    Element {
+        declaration: DeclarationWire,
+    },
+    RelationshipEnd {
+        declaration: DeclarationWire,
+        name: &'a str,
+    },
+    Operation {
+        declaration: DeclarationWire,
+        name: &'a str,
+    },
+    TypeArgument {
+        declaration: DeclarationWire,
+    },
+    ProfileOperator {
+        operator: &'a str,
+    },
+    StateClause {
+        clause: &'static str,
+    },
+}
+
+/// A member's declaring node: `{domain, digest}`.
+#[derive(Serialize, FixedShape)]
+struct DeclarationWire {
+    domain: String,
+    digest: String,
 }
 
 /// FR-341's own three spellings of a [`StateClauseKind`].
@@ -190,18 +224,29 @@ fn state_clause_spelling(clause: StateClauseKind) -> &'static str {
     }
 }
 
-/// Serializes exactly [`Member::to_wire`], so a member embedded in a larger
-/// preimage (the FR-322 application-node key's `operation.member`) has one
-/// wire encoding, not a second hand-written one.
-impl serde::Serialize for Member {
+/// Serializes as its `OperationMember` wire form, the one encoding of a
+/// member, also when it is embedded in a larger preimage (the FR-322
+/// application-node key's `operation.member`).
+impl Serialize for Member {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_wire().serialize(serializer)
+        self.wire().serialize(serializer)
     }
+}
+
+/// A [`Member`] serializes as a `MemberWire`, so it nests as deep.
+impl FixedShape for Member {
+    const DEPTH: usize = <MemberWire<'static> as FixedShape>::DEPTH;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
+
+    /// `member`'s serialized wire form.
+    fn to_wire(member: &Member) -> Value {
+        serde_json::to_value(member).expect("a member serializes")
+    }
 
     fn node(fill: u8) -> NodeKey {
         NodeKey::from_digest([fill; 32])
@@ -215,7 +260,7 @@ mod tests {
             declaration: node(1),
             name: Identifier::new("quantity").unwrap(),
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -232,7 +277,7 @@ mod tests {
             declaration: node(2),
             position: 3,
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -248,7 +293,7 @@ mod tests {
         let member = Member::Element {
             declaration: node(3),
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -264,7 +309,7 @@ mod tests {
             declaration: node(4),
             name: Identifier::new("source").unwrap(),
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -281,7 +326,7 @@ mod tests {
             declaration: node(5),
             name: Identifier::new("totalPrice").unwrap(),
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -297,7 +342,7 @@ mod tests {
         let member = Member::TypeArgument {
             declaration: node(6),
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -313,7 +358,7 @@ mod tests {
         let member = Member::StateClause {
             clause: StateClauseKind::Invariant,
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({
@@ -329,7 +374,7 @@ mod tests {
         let member = Member::ProfileOperator {
             operator: Identifier::new("add").unwrap(),
         };
-        let wire = member.to_wire();
+        let wire = to_wire(&member);
         assert_eq!(
             wire,
             json!({

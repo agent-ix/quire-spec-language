@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-101: the simulator state key, its typed canonical form and its digest.
 //!
-//! A `TransitionSystem` hands the engine a `Serialize` view of a state (or a
-//! transition identity); this module is the one place that turns that view
+//! A `TransitionSystem` hands the engine a `quire_canonical::Encode` view of
+//! a state (or a transition identity); this module is the one place that turns that view
 //! into RFC 8785 JCS bytes and, for a state, its `quire.simulation.state-key/
 //! v1` digest. It never interprets the value beyond that: what the view
 //! contains is the `TransitionSystem` implementer's concern (QSpec FR-181's
@@ -10,7 +10,7 @@
 
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::ByteDigest;
-use serde::Serialize;
+use quire_canonical::Encode;
 
 // Every simulation preimage encodes under the one identity-preimage limit
 // (ADR-013 §2, ADR-013:113).
@@ -33,7 +33,7 @@ impl StateKey {
 /// A `TransitionSystem::Key` or `TransitionId` has no RFC 8785 encoding
 /// under `quire-canonical` (FR-101-AC-11): for example an integer outside
 /// the exact-double range, a non-finite float, a non-string map key, or
-/// nesting past `quire_canonical::Limits::MAX_DEPTH`. `TransitionSystem` is
+/// events written out of order. `TransitionSystem` is
 /// a public trait any downstream crate implements, so this is a caller
 /// defect the engine refuses, not an internal invariant break: unlike the
 /// sampler's own draw preimage (bounded decimal strings this crate builds
@@ -52,9 +52,7 @@ pub struct EncodingRefusal(String);
 /// # Errors
 ///
 /// [`EncodingRefusal`] when `value` has no RFC 8785 encoding.
-pub(crate) fn state_key(
-    value: &impl Serialize,
-) -> Result<(StateKey, DigestRecord), EncodingRefusal> {
+pub(crate) fn state_key(value: &impl Encode) -> Result<(StateKey, DigestRecord), EncodingRefusal> {
     let bytes = quire_canonical::to_vec(value, LIMITS)
         .map_err(|error| EncodingRefusal(error.to_string()))?;
     let digest = ByteDigest::of(&bytes);
@@ -70,7 +68,7 @@ pub(crate) fn state_key(
 /// # Errors
 ///
 /// [`EncodingRefusal`] when `value` has no RFC 8785 encoding.
-pub(crate) fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, EncodingRefusal> {
+pub(crate) fn canonical_bytes(value: &impl Encode) -> Result<Vec<u8>, EncodingRefusal> {
     quire_canonical::to_vec(value, LIMITS).map_err(|error| EncodingRefusal(error.to_string()))
 }
 
@@ -81,7 +79,7 @@ pub(crate) fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, Encodin
 /// here is an internal invariant break, not an implementer defect: exactly
 /// the reasoning `qsl_semantics::model::key::sha256_and_len` applies to
 /// every other engine-built identity preimage in this codebase.
-pub(crate) fn plain_digest(value: &impl Serialize) -> [u8; 32] {
+pub(crate) fn plain_digest(value: &impl Encode) -> [u8; 32] {
     *quire_canonical::sha256(value, LIMITS)
         .unwrap_or_else(|error| panic!("a sampler draw preimage encodes: {error}"))
         .as_bytes()

@@ -21,6 +21,7 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::{CatalogCode, CatalogCoded, InternalFault};
 use qsl_semantics::family::{ClassifyFailure, DomainKind};
+use quire_canonical::{Document, FixedShape};
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
@@ -28,7 +29,7 @@ use serde::Serialize;
 /// A `{"type":"transition","operation":"<qualified-name>",
 /// "arguments":[<encoded>, ...]}` transition identity (QSpec FR-181's typed
 /// canonical form).
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, FixedShape)]
 struct Transition {
     #[serde(rename = "type")]
     kind: &'static str,
@@ -38,7 +39,7 @@ struct Transition {
 
 /// One typed argument value; only the `integer` form this file's fixtures
 /// need.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, FixedShape)]
 #[serde(tag = "type")]
 enum Argument {
     #[serde(rename = "integer")]
@@ -71,9 +72,8 @@ fn op_int(name: &str, value: i64) -> Transition {
 /// against, exactly as the previous toy `Graph::key` duplicated its own
 /// encoding.
 fn key(label: &str) -> DigestRecord {
-    let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-        .expect("MAX_DEPTH is within MAX_DEPTH");
-    let digest = quire_canonical::sha256(&label.to_owned(), limits).expect("a string encodes");
+    let digest = quire_canonical::sha256(&label.to_owned(), quire_canonical::Limits::new(u64::MAX))
+        .expect("a string encodes");
     DigestRecord::mint(DigestDomain::SimulationStateKeyV1, *digest.as_bytes())
 }
 
@@ -164,8 +164,8 @@ impl TransitionSystem for EdgeGraph {
 
 /// An FR-181 `simulation-state` envelope whose `semantic` member is a bare
 /// `float64` and whose other five members are empty maps (FR-101-AC-2).
-fn float64_envelope(bits: &str) -> serde_json::Value {
-    serde_json::json!({
+fn float64_envelope(bits: &str) -> Document {
+    let envelope = serde_json::json!({
         "type": "simulation-state",
         "semantic": {"type": "float64", "bits": bits},
         "control": {"type": "map", "entries": []},
@@ -173,26 +173,28 @@ fn float64_envelope(bits: &str) -> serde_json::Value {
         "roles": {"type": "map", "entries": []},
         "observations": {"type": "map", "entries": []},
         "bounds": {"type": "map", "entries": []},
-    })
+    });
+    let text = serde_json::to_vec(&envelope).expect("an envelope serializes");
+    quire_canonical::read(&text, u64::MAX).expect("an envelope reads")
 }
 
 /// A `TransitionSystem` over pre-built envelope states, addressed by index.
 struct EnvelopeGraph {
-    states: Vec<serde_json::Value>,
+    states: Vec<Document>,
     edges: Vec<(usize, usize)>,
 }
 
 impl TransitionSystem for EnvelopeGraph {
     type State = usize;
     type TransitionId = Transition;
-    type Key = serde_json::Value;
+    type Key = Document;
     type Finding = ();
 
     fn initial(&self) -> Vec<usize> {
         vec![0]
     }
 
-    fn key(&self, state: &usize) -> serde_json::Value {
+    fn key(&self, state: &usize) -> Document {
         self.states[*state].clone()
     }
 

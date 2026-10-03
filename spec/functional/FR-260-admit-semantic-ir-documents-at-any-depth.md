@@ -31,16 +31,23 @@ limit (ADR-030 D-4.6).
    to the semantic-IR crate's checks, so the document is parsed once.
 3. **Digest.** The document's `sha256-jcs` digest SHALL encode that tree
    through the event API.
-4. **Malformed input.** When the reader refuses the document, intake SHALL
-   refuse it `invalid_model_binding`/`malformed-declaration` at the document
-   root `$`, carrying the reader's byte offset. A lone surrogate escape is
-   one such refusal.
+4. **Malformed input.** When the reader refuses the document, intake's
+   read (`PackageDocument::parse`) SHALL refuse it
+   `invalid_model_binding`/`malformed-declaration` at the document root `$`,
+   carrying the reader's byte offset. A lone surrogate escape is one such
+   refusal. FR-154 admission does not surface that refusal: it digests the
+   bytes the reader refuses raw (FR-056), so they refuse
+   `stale_dependency`/`byte-digest-mismatch` or
+   `invalid_model_binding`/`wrong-model-selection` there.
 5. **Byte limit.** When the document is longer than `intake.input_bytes`,
    intake SHALL refuse it as `resource_exhausted`/`intake-limit-exceeded`
    naming the input-bytes limit, its bound, the document's length and
    setting `intake.input_bytes` (FR-255). `intake.input_bytes` has a
    published default of 67108864 bytes, has no ceiling, and is set through
    the intake limits' builder.
+   When the read or the digest cannot reserve memory, intake SHALL refuse
+   the document `resource_exhausted`/`allocation-failed`, carrying the bytes
+   requested (FR-259 B6).
 6. **Cycles of any length.** When a document's composite types form a cycle,
    intake SHALL report it as a cycle naming its types, whatever the cycle's
    length.
@@ -50,7 +57,7 @@ limit (ADR-030 D-4.6).
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-260-AC-1 | On a thread with a 512 KiB stack, a package document whose declarations are valid and which holds an array nested 100,000 deep at a member the semantic-IR schema does not admit, with `intake.input_bytes` raised to fit, is refused by FR-056's reader-refusal rule: intake ends with no declaration and retains the `agent-ix-semantic-ir` reader's diagnostic for that member, naming its IR node, artifact id and span, with no `resource_exhausted` cause, and no intake outcome names a depth. Every corpus package FR-056's tests admit is admitted, with the same `sha256-jcs` digest it had. | Test (TC-730) |
-| FR-260-AC-2 | A package document holding the escape `"\udc00"` in a string is refused `invalid_model_binding`/`malformed-declaration` at `$`, carrying that escape's byte offset. | Test (TC-730) |
+| FR-260-AC-2 | `PackageDocument::parse` refuses a package document holding the escape `"\udc00"` in a string `invalid_model_binding`/`malformed-declaration` at `$`, carrying that escape's byte offset. | Test (TC-730) |
 | FR-260-AC-3 | A package whose composite types form a cycle of 300 types, and one whose composite types form a cycle of 100,000 types with `intake.input_bytes` raised to fit, are each refused with semantic-IR's composite-cycle refusal naming every type on the cycle, on a thread with a 512 KiB stack. | Test (TC-731) |
 | FR-260-AC-4 | A document one byte longer than `intake.input_bytes` at bound `B` is refused `resource_exhausted`/`intake-limit-exceeded` naming the input-bytes limit, bound `B`, actual `B + 1` and setting `intake.input_bytes`. With the setting raised to `B + 1` through the intake limits' builder and through FR-255's settings operation given `intake.input_bytes=<B + 1>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1), the same document is judged on its content. | Test (TC-732) |
 

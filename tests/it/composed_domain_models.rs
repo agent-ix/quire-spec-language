@@ -213,9 +213,7 @@ pub(crate) fn admitted_with(
     }
     types.sort_by(|left, right| left["identity"].as_str().cmp(&right["identity"].as_str()));
     if populations.is_empty() {
-        let limits = quire_canonical::Limits::new(1 << 24, quire_canonical::Limits::MAX_DEPTH)
-            .expect("limits");
-        return admit_bytes(quire_canonical::to_vec(&document, limits).expect("RFC 8785 bytes"));
+        return admit_bytes(canonical_bytes(&document));
     }
     let constructs = document["constructs"]
         .as_array_mut()
@@ -257,9 +255,15 @@ pub(crate) fn admitted_with(
             })
         })
         .collect();
-    let limits =
-        quire_canonical::Limits::new(1 << 24, quire_canonical::Limits::MAX_DEPTH).expect("limits");
-    admit_bytes(quire_canonical::to_vec(&document, limits).expect("RFC 8785 bytes"))
+    admit_bytes(canonical_bytes(&document))
+}
+
+/// `document`'s RFC 8785 bytes: its JSON text read through
+/// `quire-canonical`'s shared reader and encoded by the one encoder.
+fn canonical_bytes(document: &serde_json::Value) -> Vec<u8> {
+    let text = serde_json::to_vec(document).expect("the document serializes");
+    let tree = quire_canonical::read(&text, u64::MAX).expect("the document reads");
+    quire_canonical::to_vec(&tree, quire_canonical::Limits::new(1 << 24)).expect("RFC 8785 bytes")
 }
 
 /// FR-154 admission, `read_records` and FR-152 classification over `bytes`,

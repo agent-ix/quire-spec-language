@@ -69,6 +69,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use quire_canonical::{Encode, Sink, Writer};
 use quire_contract_model::{
     CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
     CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
@@ -79,7 +80,6 @@ use quire_contract_model::{
     CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2,
     DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
-use serde::Serialize;
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
@@ -796,8 +796,9 @@ fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRo
 }
 
 /// The `quire.checked-package/v2` envelope. See the module doc for why it is
-/// local.
-#[derive(Serialize)]
+/// local. Its members are IR's types, and a node body nests as deep as the
+/// expression it holds, so the envelope writes each member into
+/// `quire-canonical`'s event API ([`Encode`]) rather than through serde.
 struct WireV2<'a> {
     contract_version: &'static str,
     identity_preimage: &'a CheckedPackageIdentityPreimageV2,
@@ -807,6 +808,47 @@ struct WireV2<'a> {
     source_map: &'a [CheckedSourceMapEntry],
     capability_report: &'a [CheckedCapability],
     diagnostics: &'a CheckedDiagnosticsV2,
+}
+
+/// Each member writes itself through IR's own encoding: the identity
+/// preimage, the semantic graph and the diagnostics through their `Encode`,
+/// and the fixed-depth members through their derived `FixedShape`.
+impl Encode for WireV2<'_> {
+    fn encode_into<S: Sink + ?Sized>(
+        &self,
+        writer: &mut Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        writer.begin_object()?;
+        writer.name("contract_version")?;
+        writer.string(self.contract_version)?;
+        writer.name("identity_preimage")?;
+        self.identity_preimage.encode_into(writer)?;
+        writer.name("package_id")?;
+        self.package_id.encode_into(writer)?;
+        writer.name("lock")?;
+        self.lock.encode_into(writer)?;
+        writer.name("semantic_graph")?;
+        self.semantic_graph.encode_into(writer)?;
+        writer.name("source_map")?;
+        encode_array(writer, self.source_map)?;
+        writer.name("capability_report")?;
+        encode_array(writer, self.capability_report)?;
+        writer.name("diagnostics")?;
+        self.diagnostics.encode_into(writer)?;
+        writer.end_object()
+    }
+}
+
+/// `items` as one JSON array, each item writing itself.
+fn encode_array<S: Sink + ?Sized, T: Encode>(
+    writer: &mut Writer<'_, S>,
+    items: &[T],
+) -> Result<(), quire_canonical::Error> {
+    writer.begin_array()?;
+    for item in items {
+        item.encode_into(writer)?;
+    }
+    writer.end_array()
 }
 
 /// `package`'s FR-322 `dependency_selections`, in its closure's ascending

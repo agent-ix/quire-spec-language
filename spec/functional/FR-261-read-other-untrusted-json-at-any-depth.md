@@ -28,7 +28,8 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
 - the library package identity read, which validates an identity preimage
   and projects its declarations, under `library.single_artifact_bytes`;
 - observation digest admission, which reads a snapshot or invocation
-  document's digest, under `observation.input_bytes`;
+  document's digest, under `observation.input_bytes`, and digests the bytes
+  the reader refuses raw (FR-106 check 1.3);
 - the observation document reader (FR-106), under `observation.input_bytes`,
   `observation.objects` and `observation.values`.
 
@@ -38,10 +39,14 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
    `quire-canonical`'s shared reader into its arena tree.
 2. **Malformed versus limit.** When the reader refuses the bytes as
    malformed, the site SHALL return its malformed-input refusal carrying the
-   reader's byte offset. When the bytes exceed the site's input byte limit,
-   the site SHALL return its limit outcome naming the limit, its bound, the
-   length and the setting (FR-255). A site SHALL NOT report either as a
-   document that is not an object, or as a document with no digest.
+   reader's byte offset; observation digest admission is exempt, and
+   digests those bytes raw (FR-106 check 1.3). When the bytes exceed the
+   site's input byte limit, the site SHALL return its limit outcome naming
+   the limit, its bound, the length and the setting (FR-255). When the read
+   or an encoding cannot reserve memory, the site SHALL return
+   `resource_exhausted`/`allocation-failed` carrying the bytes requested
+   (FR-259 B6). A site SHALL NOT report any of these as a document that is
+   not an object, or as a document with no digest.
 3. **Content.** When the reader admits the document, the site SHALL judge it
    by its members and values, through the checks its own requirement
    defines.
@@ -54,7 +59,7 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-261-AC-1 | On a thread with a 512 KiB stack, the library package identity read of a canonical preimage object whose members are valid except that `edition` holds an array nested 100,000 deep refuses with `PreimageDefect::MemberType("edition")`, not `PreimageDefect::NotObject`. Bytes that are not JSON refuse with the malformed-input defect carrying the byte offset of the first malformed byte, distinct from the not-an-object defect, which a top-level array gives. | Test (TC-733) |
-| FR-261-AC-2 | On a thread with a 512 KiB stack, observation digest admission over a snapshot document holding a field value nested 100,000 deep, within `observation.input_bytes`, reads the document's digest and proceeds to FR-106's later checks; the same document with a digest that differs from the selection refuses `stale_dependency`/`content-mismatch`. | Test (TC-733) |
+| FR-261-AC-2 | On a thread with a 512 KiB stack, observation digest admission over a snapshot document holding a field value nested 100,000 deep, within `observation.input_bytes`, reads the document's digest and proceeds to FR-106's later checks; the same document with a digest that differs from the selection refuses `stale_dependency`/`byte-digest-mismatch`. | Test (TC-733) |
 | FR-261-AC-3 | On a thread with a 512 KiB stack, the observation document reader admits a snapshot whose population's field holds a recursive value 100,000 levels deep, with `observation.input_bytes` and `observation.values` raised to fit and the field's declared type admitting that value. With `observation.values` one below the document's value count, it refuses naming `observation.values`, its bound and the count reached, and admits once the setting is raised through `ObservationLimits`' builder. | Test (TC-733) |
 
 ## Dependencies

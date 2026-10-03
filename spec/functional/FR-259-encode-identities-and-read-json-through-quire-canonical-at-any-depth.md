@@ -62,7 +62,18 @@ QSL relies on these capabilities, which are a `quire-canonical` follow-up
 5. **Shared reader.** QSL SHALL read untrusted JSON without a typed reader
    through `quire-canonical`'s shared reader, and SHALL report the reader's
    malformed-input refusal as a malformed-input refusal of the calling site,
-   carrying the byte offset.
+   carrying the byte offset. Observation digest admission is exempt: it
+   digests the bytes the reader refuses raw and never refuses them as
+   malformed (FR-106 check 1.3).
+6. **Allocation failure.** When `quire-canonical` cannot reserve memory for
+   a read or an encoding, QSL SHALL refuse with
+   `resource_exhausted`/`allocation-failed`, carrying `requested`, the size
+   in bytes of the reservation that failed. It is not a limit: it names no
+   bound and no setting. QSL SHALL NOT report it as a limit outcome, a
+   malformed value or malformed input. Domain package intake (FR-056),
+   observation digest admission (FR-106 check 1), package identity
+   (FR-261) and the replay request reader's `sha256-jcs` entries (FR-071)
+   report this one outcome.
 
 ## Acceptance Criteria
 
@@ -70,8 +81,9 @@ QSL relies on these capabilities, which are a `quire-canonical` follow-up
 | --- | --- | --- |
 | FR-259-AC-1 | The checked package identity, every node key and the v2 package identity of a package holding a 100,000-term sum, minted on a thread with a 512 KiB stack under limits raised to fit it, equal those minted from the same source on a thread with an 8 MiB stack. | Test (TC-728) |
 | FR-259-AC-2 | A declaration whose preimage is longer than `s3.input_bytes` stops with `stage_limit_exceeded`/`input-bytes-exceeded` naming that bound, the preimage length and setting `s3.input_bytes`. When `quire-canonical` returns its byte error to a digest site of FR-260 or FR-261, the site reports its own input-bytes limit with its setting, and no malformed-input cause. | Test (TC-728) |
-| FR-259-AC-3 | On a thread with a 512 KiB stack, the simulation state key QSL mints for a 100,000-long recursive list value, and the `sha256-jcs` digest QSL computes for a 100,000-deep JSON package document at intake, each equal the value minted on a thread with an 8 MiB stack, and the digest equals the SHA-256 of the document's RFC 8785 text. Observation digest admission over a document holding a lone surrogate escape `"\ud800"` refuses with its malformed-input refusal carrying the byte offset of that escape, and over the number `1e400` likewise. | Test (TC-729) |
+| FR-259-AC-3 | On a thread with a 512 KiB stack, the simulation state key QSL mints for a 100,000-long recursive list value, and the `sha256-jcs` digest QSL computes for a 100,000-deep JSON package document at intake, each equal the value minted on a thread with an 8 MiB stack, and the digest equals the SHA-256 of the document's RFC 8785 text. | Test (TC-729) |
 | FR-259-AC-4 | The deepest JSON array or object nesting is the same at both depths of each pair below, measured over every node preimage of the checked package (node keys, type nodes and nominal preimages) and over the emitted v2 package's identity preimage: each FR-258 expression form at 4 and at 63 levels; a parameter typed with 4 and with 100 nested `Option`s; a chain of 4 and of 30 records. Compound-unit ids, enum declaration and member preimages and the checked package identity are flat term, member or selection lists whose depth is fixed by their types, so no source depth reaches them. | Test (TC-728) |
+| FR-259-AC-5 | An allocation failure of 4096 requested bytes from `quire-canonical`'s reader or encoder refuses `resource_exhausted`/`allocation-failed` carrying 4096 at domain package intake, at observation digest admission and at package identity, and none of them reports a limit, a malformed value or malformed input. | Test (TC-729) |
 
 ## Dependencies
 

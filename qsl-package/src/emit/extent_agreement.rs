@@ -546,7 +546,6 @@ fn a_non_root_unit_and_a_derived_dimension_are_emitted_and_read_by_ir() {
 /// unboundable (ADR-014 §4), and IR must require a bound for it.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
-#[ignore = "IR's requires_bound treats unit and compound-unit types as needing no bound, so IR lowers Measure while QSL classifies it Unbounded"]
 fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
     let (types, measure, wire, package, _) = emitted_measure();
     let (ir_id, wire_id) = declared(&wire, "Measure");

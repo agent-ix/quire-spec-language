@@ -153,6 +153,7 @@ per-group counts before moving this row to Passed.
 | FR-056 | FR-056-AC-6 | TC-147 | ✅ Passed locally (`tests/model_intake.rs`: `charges_normalize_record_once_per_intake_declaration` -- the `normalize.record` charge itself is `crate::model::normalize`'s existing, shared `charge_all` mechanism; this proves it over this crate's own intake pipeline) |
 | FR-056 | FR-056-AC-7 | TC-145, TC-147 | 🚧 Planned; #131 -- the digest-domain-slot restriction is covered (FR-056-AC-2's tests), but no test yet compares the bundle entry point's and the intake seam's results for byte-identity |
 | FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Ports, the connection and the linker's binding pass locally over the edited fixture bundle (`tests/it/composed_domain_models.rs`); the unedited bundle does not admit whole (PLAT-836 `UUID`, PLAT-1064 relationship identity form), so IT-012 stays open |
+| FR-056 | FR-056-AC-12 | TC-145 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`) |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -219,7 +220,7 @@ invented for that criterion.
 | TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-8 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs, tests/it/handoff_writer.rs) |
 | TC-142 | Evaluate admitted version-2 compensation expressions and initialized captures | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | TC-143 | Publish and read strict control temporal activation mappings | Integration | P1 | FR-054-AC-1..FR-054-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
-| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 | 🚧 Planned; #131 |
+| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7, FR-056-AC-12 | 🚧 Planned; #131 |
 | TC-146 | Refuse an unknown or mismatched construct meaning id | Integration | P0 | FR-056-AC-3 | 🚧 Planned; #131 |
 | TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 Planned; #131 |
 | TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Steps 2-4 and step 1 over the edited bundle passed locally (`tests/it/composed_domain_models.rs`); step 1 over the unedited bundle is blocked upstream (see FR-056-AC-8) |

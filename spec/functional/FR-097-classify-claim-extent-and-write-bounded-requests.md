@@ -95,15 +95,14 @@ Specified and implemented. TC-436 to TC-439 and TC-441 pass
 locally. FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
 an unbounded population its own node, lowering one refuses with
 `UnrepresentableBound` rather than writing the bare set node an unbounded
-`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 is partly passed: every comparable fixture agrees, including
+`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 passes: every fixture agrees, including
 `Flags`, `RangedTree` and `Mixed`, which depend on IR's `requires-bound`
 being position-sensitive and requiring a bound for a recursive type. For
 `RangedTree`, IR's first unbounded node is a member of the recursion group
 of the root QSL names `Recursive`. The
-quantity fixture `Measure` is emitted with its unit and dimension nodes
-and IR reads and lowers it, but they disagree: QSL classifies it
-`Unbounded`, and IR's `requires-bound` treats a unit type as needing no
-bound (IR-450), so its agreement test is ignored. FR-097-AC-6's per-application-node agreement
+quantity fixture `Measure` is emitted with its unit and dimension nodes,
+and it agrees: QSL classifies it `Unbounded`, and IR requires a bound for
+a unit type (IR-450). FR-097-AC-6's per-application-node agreement
 (TC-440 step 4) passes: IR lowers the inner `+` of `(x + 1) + n` and
 requires a bound for the outer `+`, and the records outside the agreement
 have their extents asserted.

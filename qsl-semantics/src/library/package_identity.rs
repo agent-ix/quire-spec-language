@@ -60,7 +60,28 @@ const NODE_OPTIONAL: [&str; 3] = [
 /// Why an identity preimage is structurally malformed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum PreimageDefect {
-    /// The bytes are not one JSON object.
+    /// The bytes are not JSON: `quire-canonical`'s reader refused them at
+    /// byte `offset`.
+    Malformed {
+        /// The byte offset where the fault starts.
+        offset: usize,
+    },
+    /// Reading or encoding the bytes could not reserve memory (FR-259 B6).
+    /// It names no bound: the read sets no byte limit of its own, since the
+    /// bytes are already held whole under the package reader's artifact byte
+    /// limit.
+    AllocationFailed {
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
+    /// The shared reader refused the bytes for a reason that is neither a
+    /// located malformed fault nor an allocation failure. It claims no byte
+    /// offset; `reason` is the reader's own account.
+    ReaderRefused {
+        /// The reader's refusal, as it states it.
+        reason: String,
+    },
+    /// The bytes are JSON but not one JSON object.
     NotObject,
     /// The bytes are not the canonical serialization of their JSON value, so
     /// one logical preimage could carry two `package_id`s. See
@@ -362,26 +383,62 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
     }
 }
 
+/// [`project_declarations`]'s defect for a refusal of the shared reader.
+fn read_defect(error: quire_canonical::ReadError) -> PreimageDefect {
+    match error {
+        quire_canonical::ReadError::Malformed { offset, .. } => {
+            PreimageDefect::Malformed { offset }
+        }
+        quire_canonical::ReadError::Allocation { requested } => {
+            PreimageDefect::AllocationFailed { requested }
+        }
+        // The read sets no byte limit, so a limit cannot be reached; any
+        // other refusal is reported as the reader states it, with no
+        // offset it did not measure.
+        other => PreimageDefect::ReaderRefused {
+            reason: other.to_string(),
+        },
+    }
+}
+
+/// [`project_declarations`]'s defect for an error of the canonicity check's
+/// encoding: an allocation failure is its own defect, and any other error
+/// means the bytes have no canonical encoding.
+fn encode_defect(error: quire_canonical::Error) -> PreimageDefect {
+    match error {
+        quire_canonical::Error::Allocation { requested } => {
+            PreimageDefect::AllocationFailed { requested }
+        }
+        _ => PreimageDefect::NonCanonical,
+    }
+}
+
 /// Validate `bytes` as an identity preimage and derive the wire node id of
 /// each nominal declaration in its `identity_projection`.
 ///
+/// The bytes are read first through `quire-canonical`'s shared reader: bytes
+/// it refuses are [`PreimageDefect::Malformed`] at its byte offset.
 /// Canonicity is enforced by requiring `bytes` to be byte-identical to the
-/// RFC 8785 encoding of the JSON value they parse to, produced by
+/// RFC 8785 encoding of the tree the reader read, produced by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
 /// implementation): object members in UTF-16 code-unit order, no
 /// insignificant whitespace and one string and number spelling per value. A
 /// member name outside ASCII is admitted exactly when it is in that order.
-/// A value with no RFC 8785 encoding (an integer no IEEE 754 double equals)
-/// has no canonical bytes and is refused as [`PreimageDefect::NonCanonical`].
+/// A number is the double its text denotes, so an integer spelling no IEEE
+/// 754 double equals is not its canonical spelling and is refused as
+/// [`PreimageDefect::NonCanonical`].
 pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
+    let document = quire_canonical::read(bytes, u64::MAX).map_err(read_defect)?;
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
     let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
         MemberDefect::NotObject => PreimageDefect::NotObject,
         MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
         MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
     })?;
-    if quire_canonical::to_vec(&value, LIMITS).ok().as_deref() != Some(bytes) {
-        return Err(PreimageDefect::NonCanonical);
+    match quire_canonical::to_vec(&document, LIMITS) {
+        Ok(canonical) if canonical == bytes => {}
+        Ok(_) => return Err(PreimageDefect::NonCanonical),
+        Err(error) => return Err(encode_defect(error)),
     }
     if preimage.get("version").and_then(Value::as_str) != Some(PACKAGE_ID_VERSION) {
         return Err(PreimageDefect::Version);
@@ -533,15 +590,17 @@ mod tests {
     /// (UTF-16 `D83D DE00`) sorts before U+E000 (`E000`) in RFC 8785, but
     /// after it in UTF-8 byte order (`F0` > `EE`): the RFC 8785 order is
     /// admitted, and the UTF-8 order the old re-serialize-and-compare check
-    /// required is refused as non-canonical. A trailing space, a repeated
-    /// member and a non-canonical number spelling stay refused.
+    /// required is refused as non-canonical. A trailing space and a
+    /// non-canonical number spelling stay refused.
     #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
     #[test]
     fn canonicity_admits_a_non_ascii_member_name_in_rfc_8785_order() {
         let mut preimage: Value =
             serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
         preimage["edition"]["names"] = serde_json::json!({"\u{E000}": 1, "😀": 2});
-        let rfc_8785 = quire_canonical::to_vec(&preimage, LIMITS).unwrap();
+        let document =
+            quire_canonical::read(&serde_json::to_vec(&preimage).unwrap(), u64::MAX).unwrap();
+        let rfc_8785 = quire_canonical::to_vec(&document, LIMITS).unwrap();
         let text = std::str::from_utf8(&rfc_8785).unwrap();
         assert!(text.contains("{\"😀\":2,\"\u{E000}\":1}"), "{text}");
         assert!(project_declarations(&rfc_8785).is_ok());
@@ -621,5 +680,51 @@ mod tests {
             declarations.undeclared(&exports(&["L::R", "L::T", "L::S"])),
             Some("L::T")
         );
+    }
+
+    /// A reader refusal that is neither a located malformed fault nor an
+    /// allocation failure is reported as the reader states it, claiming no
+    /// byte offset.
+    #[trace("TC-733", "FR-261-AC-1")]
+    #[test]
+    fn a_reader_refusal_with_no_offset_claims_none() {
+        let limit = quire_canonical::read(b"[]", 1).unwrap_err();
+        assert!(matches!(limit, quire_canonical::ReadError::Limit(_)));
+        assert_eq!(
+            read_defect(limit),
+            PreimageDefect::ReaderRefused {
+                reason: limit.to_string()
+            }
+        );
+        assert_eq!(
+            read_defect(quire_canonical::read(b"{", u64::MAX).unwrap_err()),
+            PreimageDefect::Malformed { offset: 1 }
+        );
+    }
+
+    /// The reader's and the canonicity encoding's allocation failures are
+    /// one defect, which reports `resource_exhausted`/`allocation-failed`:
+    /// not a malformed or non-canonical package.
+    #[trace("TC-729", "FR-259-AC-5")]
+    #[test]
+    fn an_allocation_failure_is_its_own_defect() {
+        let expected = PreimageDefect::AllocationFailed { requested: 4096 };
+        assert_eq!(
+            read_defect(quire_canonical::ReadError::Allocation { requested: 4096 }),
+            expected
+        );
+        assert_eq!(
+            encode_defect(quire_canonical::Error::Allocation { requested: 4096 }),
+            expected
+        );
+        let refusal = crate::library::LibraryRefusal::InvalidPreimage {
+            library: crate::library::LibraryName::new("acme").unwrap(),
+            defect: expected,
+        };
+        assert_eq!(
+            refusal.code(),
+            qsl_foundation::diagnostic::Code::ResourceExhausted
+        );
+        assert_eq!(refusal.cause().as_str(), "allocation-failed");
     }
 }

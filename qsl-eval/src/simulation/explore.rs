@@ -7,9 +7,9 @@ use std::collections::{HashSet, VecDeque};
 use qsl_foundation::diagnostic::{category_of, Category};
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::CatalogCode;
+use quire_canonical::Encode;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
-use serde::Serialize;
 
 use crate::simulation::expansion::{Expansion, ExpansionStop, StateFindings};
 use crate::simulation::frontier::{Frontier, Limit};
@@ -27,12 +27,14 @@ pub trait TransitionSystem {
     /// One point in the system's state space.
     type State;
     /// The identity of one authored transition, stable across states, and
-    /// serializable to its own typed canonical form so the engine can order
-    /// it.
-    type TransitionId: Clone + Eq + std::fmt::Debug + Serialize;
-    /// The typed canonical view of one state, serializable so the engine can
-    /// key it (FR-101).
-    type Key: Serialize;
+    /// encodable to its own typed canonical form so the engine can order it.
+    /// A fixed-shape identity encodes through `quire_canonical::FixedShape`;
+    /// one whose depth follows its value writes `quire-canonical`'s events
+    /// from an explicit stack (ADR-030 D-4.7).
+    type TransitionId: Clone + Eq + std::fmt::Debug + Encode;
+    /// The typed canonical view of one state, encodable so the engine can
+    /// key it (FR-101), as [`Self::TransitionId`] is.
+    type Key: Encode;
     /// What the system finds at an expanded state; the engine records it
     /// and never interprets it (FR-101-AC-13).
     type Finding: Clone + Eq + std::fmt::Debug;

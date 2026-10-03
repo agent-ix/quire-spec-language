@@ -494,8 +494,8 @@ impl EmittedPackage {
     /// through which a caller could instead supply arbitrary preimage
     /// bytes, let alone an arbitrary `package_id` directly. `encode` writes
     /// the wire around the minted `package_id`. A preimage the encoder
-    /// refuses (a body nested past `IDENTITY_LIMITS`' depth) is returned as
-    /// `E`, never a panic. `pub(super)`: reachable from anywhere in
+    /// refuses (a failed heap reservation) is returned as `E`, never a
+    /// panic. `pub(super)`: reachable from anywhere in
     /// `qsl-package` (in particular, `emit`), never from outside it.
     pub(super) fn new<E: From<quire_canonical::Error>>(
         identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
@@ -503,7 +503,9 @@ impl EmittedPackage {
     ) -> Result<Self, E> {
         // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
         // the one RFC 8785 implementation), encoded straight from the typed
-        // preimage: the encoder orders members itself.
+        // preimage through its `quire_canonical::Encode`: the encoder orders
+        // members itself, and the projected node bodies nest as deep as
+        // their expressions.
         let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)?;
         let package_id = PackageId::of_preimage(&preimage_bytes);
         Ok(Self {
