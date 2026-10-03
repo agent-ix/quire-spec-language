@@ -404,7 +404,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc` |
 | D1 | record Point, owner (a, u) | `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4` |
 | D2 | record Point, owner (a, w) | `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88` |
-| D3 | record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u) | `05067eac40eb72b83e944e9d7a97b285c47a569a0404c2d973862d46aafc91f6` |
+| D3 | record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
 | D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | `11e8d0d336ec22793fc88addb6b493975d8064dcd2de4c2184f15a1302925600` |
 | D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | `e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560` |
 | P1 | parameter a: Boolean, level 0 | `838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1` |
@@ -426,8 +426,8 @@ builds; they are listed here because F2 and E2 depend on them.
 | E12 | `x - 1` | `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a` |
 | E13 | `x - 1` narrowed into `Int[0, 9]` | `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e` |
 | G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
-| G2 | `record List { next?: List; }`, ordinal 0 | `4471223e43af6f4377ab4e8a057b54a92020015e79944b9978ce90253f7e9636` |
-| G3 | `Option<List>`, ordinal 1 | `96901f2222cafaed9d09389407a1c38b35e99111f00abf38e3fb6a8aa84c9cae` |
+| G2 | `record List { next?: List; }`, ordinal 0 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
+| G3 | `Option<List>`, ordinal 1 | `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b` |
 | G4 | function `f`, ordinal 1 | `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d` |
 | G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc` |
 | G6 | `f(x - 1)`, ordinal 2 | `8cd0eadcbc67918d0ba72b19553898a4fa9693bb79db7dc76f266486fe07d840` |
