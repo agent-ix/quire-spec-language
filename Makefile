@@ -1,4 +1,28 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: bump-ir check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+
+# Moves the IR crate to IR main, then sets the crates QSL shares with IR to
+# the revs IR's own Cargo.lock names, then runs the focused cross-repo tests.
+# IR's lock is read from cargo's checkout of IR after the update; set IR_LOCK
+# to read a different file. Fails when that lock is unreadable or lacks a crate.
+IR_SHARED_CRATES := quire-verification-contracts quire-canonical quire-canonical-derive
+IR_LOCK ?=
+bump-ir:
+	@set -e; \
+	cargo update -p quire-contract-model; \
+	if [ -z "$(IR_LOCK)" ]; then \
+		manifest=$$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "quire-contract-model") | .manifest_path'); \
+		ir_lock="$$(dirname "$$manifest")/../../Cargo.lock"; \
+	else ir_lock="$(IR_LOCK)"; fi; \
+	[ -r "$$ir_lock" ] || { echo "bump-ir: cannot read IR's Cargo.lock at $$ir_lock" >&2; exit 1; }; \
+	for crate in $(IR_SHARED_CRATES); do \
+		rev=$$(awk -v n="$$crate" '$$0 == "name = \"" n "\"" { hit = 1; next } hit && /^source = / { sub(/.*#/, ""); sub(/".*/, ""); print; hit = 0 } /^$$/ { hit = 0 }' "$$ir_lock"); \
+		if [ "$$(printf '%s' "$$rev" | grep -c .)" != 1 ]; then \
+			echo "bump-ir: $$crate must appear exactly once with a git source in IR's Cargo.lock ($$ir_lock)" >&2; exit 1; \
+		fi; \
+		cargo update -p "$$crate" --precise "$$rev"; \
+	done; \
+	cargo test --locked -p qsl-package --lib emit::tests::admission_corpus; \
+	$(MAKE) conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
