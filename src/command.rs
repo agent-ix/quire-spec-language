@@ -581,7 +581,6 @@ fn complete(
         qsl_replay::spine::DependencyInput::new(libraries.iter().map(|(library, read)| {
             qsl_replay::spine::SuppliedLibrary {
                 identity: library.identity.clone(),
-                version: library.version.clone(),
                 source: read.source().identity().clone(),
                 path: read.source().path().to_owned(),
                 bytes: read.source().text().as_bytes().to_vec(),
@@ -633,7 +632,7 @@ fn complete(
 }
 
 /// The request's `libraries`, each with its source read under its source
-/// digest (FR-027, ADR-015 D-1). An empty identity or version refuses as
+/// digest (FR-027, ADR-015 D-1). An empty identity refuses as
 /// `invalid-request` before any library file is read.
 fn library_sources<'r>(
     request: &'r wire::CompileRequest,
@@ -642,9 +641,6 @@ fn library_sources<'r>(
     for library in &request.libraries {
         if library.identity.is_empty() {
             return Err(RunCause::Libraries(LibrarySelection::EmptyIdentity));
-        }
-        if library.version.is_empty() {
-            return Err(RunCause::Libraries(LibrarySelection::EmptyVersion));
         }
     }
     request
@@ -681,8 +677,6 @@ pub enum LibrarySelection {
     NativeProgram,
     /// A library has an empty identity.
     EmptyIdentity,
-    /// A library has an empty version.
-    EmptyVersion,
 }
 
 impl std::fmt::Display for LibrarySelection {
@@ -690,7 +684,6 @@ impl std::fmt::Display for LibrarySelection {
         f.write_str(match self {
             Self::NativeProgram => "a 0-draft program takes no library",
             Self::EmptyIdentity => "a library has an empty identity",
-            Self::EmptyVersion => "a library has an empty version",
         })
     }
 }
@@ -961,7 +954,6 @@ fn run_complete(
         qsl_replay::spine::DependencyInput::new(libraries.iter().map(|(library, read)| {
             qsl_replay::spine::SuppliedLibrary {
                 identity: library.identity.clone(),
-                version: library.version.clone(),
                 source: read.source().identity().clone(),
                 path: read.source().path().to_owned(),
                 bytes: read.source().text().as_bytes().to_vec(),

@@ -459,15 +459,11 @@ fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     }
     let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
         library(),
-        Selection {
-            version: "1".to_owned(),
-            package_id: emitted.emission.package.package_id(),
-        },
+        emitted.emission.package.package_id(),
     );
     read_checked_package_v2(
         emitted.emission.package.bytes(),
         library(),
-        "1".to_owned(),
         V2ReadLimits::default(),
         &evidence,
         &pinned,

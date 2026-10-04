@@ -369,7 +369,7 @@ fn tc_450_step_5_zero_draft_carrying_call_or_libraries_refuses() {
             job["request"]["call"] = json!({"function": "f", "arguments": []});
         }) as fn(&mut Value),
         (|job: &mut Value| {
-            job["request"]["libraries"] = json!([{"identity":"x","version":"1","source":{
+            job["request"]["libraries"] = json!([{"identity":"x","source":{
                 "file":"lib.native","authority":"agent-ix","identity":"x","revision_namespace":"fixture",
                 "revision":"fixture:1","digest":format!("sha256:{}", "0".repeat(64)),"document":"L","formal_revision":1}}]);
         }) as fn(&mut Value),
@@ -726,7 +726,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
             "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
             "revision_namespace":"fixture","revision":"fixture:1",
             "digest":ByteDigest::of(&document).to_string(),"document":"Orders","formal_revision":1}}],
-        "libraries":[{"identity":"test/geometry","version":"1","source":{
+        "libraries":[{"identity":"test/geometry","source":{
             "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
             "revision_namespace":"fixture","revision":"fixture:1",
             "digest":ByteDigest::of(&library).to_string(),"document":"Geometry","formal_revision":1}}],

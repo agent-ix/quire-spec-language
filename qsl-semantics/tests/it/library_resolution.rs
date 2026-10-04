@@ -13,7 +13,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,
-    RefusalClass, Selection,
+    RefusalClass,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -131,17 +131,11 @@ fn import(library: &str, qualifier: Option<&str>) -> ImportDeclaration {
     }
 }
 
-/// Package `label` of `library` at `version`, whose `package_id` is the digest
-/// of its own preimage.
-fn package(
-    library: &str,
-    version: &str,
-    label: &str,
-    imports: Vec<ImportDeclaration>,
-) -> LibraryPackage {
+/// Package `label` of `library`, whose `package_id` is the digest of its own
+/// preimage.
+fn package(library: &str, label: &str, imports: Vec<ImportDeclaration>) -> LibraryPackage {
     LibraryPackage {
         library: name(library),
-        version: version.to_owned(),
         package_id: id(label),
         identity_preimage: preimage(label),
         imports,
@@ -154,14 +148,13 @@ fn package(
 
 /// `L@1` exporting `R`.
 fn library_l() -> LibraryPackage {
-    package("L", "1", "L@1", Vec::new())
+    package("L", "L@1", Vec::new())
 }
 
 /// Library `library@1` importing L as `l`.
 fn over_l(library: &str) -> LibraryPackage {
     package(
         library,
-        "1",
         &format!("{library}@1"),
         vec![import("L", Some("l"))],
     )
@@ -200,56 +193,28 @@ fn assert_library_refusal_classified(
 #[test]
 fn l01_an_import_binds_the_library_package_id() {
     let lock = resolve_libraries(&over_l("P"), &[library_l()]).unwrap();
-    assert_eq!(
-        lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                version: "1".to_owned(),
-                package_id: id("L@1"),
-            }
-        )]
-    );
+    assert_eq!(lock.selections(), [(name("L"), id("L@1"))]);
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[test]
 fn an_import_selects_the_supplied_library_of_its_identity() {
-    let supplied = package("L", "2", "L'@2", Vec::new());
+    let supplied = package("L", "L'@2", Vec::new());
     let lock = resolve_libraries(&over_l("P"), &[supplied]).unwrap();
-    assert_eq!(
-        lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                version: "2".to_owned(),
-                package_id: id("L'@2"),
-            }
-        )]
-    );
+    assert_eq!(lock.selections(), [(name("L"), id("L'@2"))]);
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[test]
 fn l02_an_import_without_a_qualifier_selects_its_library() {
-    let root = package("P", "1", "P@1", vec![import("L", None)]);
+    let root = package("P", "P@1", vec![import("L", None)]);
     let lock = resolve_libraries(&root, &[library_l()]).unwrap();
-    assert_eq!(
-        lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                version: "1".to_owned(),
-                package_id: id("L@1"),
-            }
-        )]
-    );
+    assert_eq!(lock.selections(), [(name("L"), id("L@1"))]);
 }
 
 fn diamond_root() -> LibraryPackage {
     package(
         "P",
-        "1",
         "P@1",
         vec![import("A", Some("a")), import("B", Some("b"))],
     )
@@ -274,8 +239,8 @@ fn l04_a_diamond_selects_its_shared_library_once() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l05_an_import_cycle_lists_its_dependency_edges() {
-    let a = package("A", "1", "A@1", vec![import("B", Some("b"))]);
-    let b = package("B", "1", "B@1", vec![import("A", Some("a"))]);
+    let a = package("A", "A@1", vec![import("B", Some("b"))]);
+    let b = package("B", "B@1", vec![import("A", Some("a"))]);
     // TC-282 (FR-087-AC-12): `ImportCycle` classifies to ADR-011 I2's third
     // rule.
     assert_library_refusal_classified(
@@ -294,22 +259,17 @@ fn l05_an_import_cycle_lists_its_dependency_edges() {
 fn l06_the_lock_lists_selections_in_ascending_identity_order() {
     let root = package(
         "P",
-        "1",
         "P@1",
         vec![import("Z", Some("z")), import("A", Some("a"))],
     );
     let supplied = vec![
-        package("Z", "1", "Z@1", Vec::new()),
-        package("A", "1", "A@1", Vec::new()),
+        package("Z", "Z@1", Vec::new()),
+        package("A", "A@1", Vec::new()),
     ];
     let lock = resolve_libraries(&root, &supplied).unwrap();
-    let selection = |label: &str| Selection {
-        version: "1".to_owned(),
-        package_id: id(label),
-    };
     assert_eq!(
         lock.selections(),
-        [(name("A"), selection("A@1")), (name("Z"), selection("Z@1"))]
+        [(name("A"), id("A@1")), (name("Z"), id("Z@1"))]
     );
     let mut reversed = supplied;
     reversed.reverse();
@@ -320,9 +280,9 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
 #[test]
 fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     let old_library = library_l();
-    let new_library = package("L", "2", "L'@2", Vec::new());
+    let new_library = package("L", "L'@2", Vec::new());
     let old_package = over_l("P");
-    let new_package = package("P", "2", "P'@2", vec![import("L", Some("l"))]);
+    let new_package = package("P", "P'@2", vec![import("L", Some("l"))]);
 
     assert_eq!(
         check_migration(&old_library, &new_library),
@@ -348,17 +308,8 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     // `old_library`'s own `package_id`, and the new lock's selection for `L`
     // names `new_library`'s `package_id`, not the old one.
     let old_lock = resolve_libraries(&old_package, std::slice::from_ref(&old_library)).unwrap();
-    assert_eq!(
-        old_lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                version: "1".to_owned(),
-                package_id: id("L@1"),
-            }
-        )]
-    );
-    // Supplying both versions of `L` is a conflicting definition, not a
+    assert_eq!(old_lock.selections(), [(name("L"), id("L@1"))]);
+    // Supplying both packages of `L` is a conflicting definition, not a
     // choice between them.
     assert_library_refusal(
         resolve_libraries(&new_package, &[old_library, new_library.clone()]),
@@ -370,16 +321,7 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
         LibraryCause::ConflictingDefinition,
     );
     let new_lock = resolve_libraries(&new_package, &[new_library]).unwrap();
-    assert_eq!(
-        new_lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                version: "2".to_owned(),
-                package_id: id("L'@2"),
-            }
-        )]
-    );
+    assert_eq!(new_lock.selections(), [(name("L"), id("L'@2"))]);
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]
@@ -388,7 +330,7 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
 fn l08_a_migrated_package_reusing_its_package_id_is_invalid_at_package_id() {
     let old_library = library_l();
     // L' changes an export, so its preimage differs, but claims L's id.
-    let mut reused = package("L", "1", "L'@1", Vec::new());
+    let mut reused = package("L", "L'@1", Vec::new());
     reused.package_id = id("L@1");
     let mismatch = LibraryRefusal::PackageIdMismatch {
         library: name("L"),
@@ -421,7 +363,6 @@ type MalformedCase = (Box<[u8]>, &'static [&'static str], PreimageDefect);
 fn with_preimage(bytes: Box<[u8]>, exports: &[&str]) -> LibraryPackage {
     LibraryPackage {
         library: name("L"),
-        version: "1".to_owned(),
         package_id: PackageId::of_preimage(&bytes),
         identity_preimage: bytes,
         imports: Vec::new(),
@@ -929,18 +870,16 @@ fn l01_every_declared_export_must_derive_from_a_checked_package_v2_identity_proj
     let claimed = PackageId::of_preimage(&preimage_bytes);
     let valid_library = LibraryPackage {
         library: name("Example"),
-        version: "1".to_owned(),
         package_id: claimed,
         identity_preimage: preimage_bytes.clone(),
         imports: Vec::new(),
         exports: exports.iter().map(|export| (*export).to_owned()).collect(),
     };
-    let root = package("P", "1", "P@1", vec![import("Example", Some("e"))]);
+    let root = package("P", "P@1", vec![import("Example", Some("e"))]);
     resolve_libraries(&root, &[valid_library]).unwrap();
 
     let unexported_library = LibraryPackage {
         library: name("Example"),
-        version: "1".to_owned(),
         package_id: claimed,
         identity_preimage: preimage_bytes,
         imports: Vec::new(),
@@ -998,13 +937,12 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
     let supply = |bytes: Box<[u8]>, export: &str| {
         let library = LibraryPackage {
             library: name("K"),
-            version: "1".to_owned(),
             package_id: PackageId::of_preimage(&bytes),
             identity_preimage: bytes,
             imports: Vec::new(),
             exports: vec![export.to_owned()],
         };
-        let root = package("P", "1", "P@1", vec![import("K", Some("k"))]);
+        let root = package("P", "P@1", vec![import("K", Some("k"))]);
         (root, library)
     };
 
@@ -1073,7 +1011,7 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn package_id_mismatch_classifies_to_4_condition_2() {
-    let mut reused = package("L", "1", "L'@1", Vec::new());
+    let mut reused = package("L", "L'@1", Vec::new());
     reused.package_id = id("L@1");
     assert_library_refusal_classified(
         resolve_libraries(&over_l("P"), std::slice::from_ref(&reused)),
@@ -1084,7 +1022,7 @@ fn package_id_mismatch_classifies_to_4_condition_2() {
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
-        RefusalClass::BindingCondition(2),
+        RefusalClass::BindingCondition,
     );
 }
 
@@ -1102,7 +1040,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
-        RefusalClass::BindingCondition(2),
+        RefusalClass::BindingCondition,
     );
 }
 
@@ -1118,14 +1056,14 @@ fn undeclared_export_classifies_alongside_4_condition_2() {
         },
         Code::MissingDeclaration,
         LibraryCause::UndeclaredExport,
-        RefusalClass::BindingCondition(2),
+        RefusalClass::BindingCondition,
     );
 }
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn invalid_qualifier_classifies_to_e3_name_resolution() {
-    let root = package("P", "1", "P@1", vec![import("L", Some("1l"))]);
+    let root = package("P", "P@1", vec![import("L", Some("1l"))]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[library_l()]),
         &LibraryRefusal::InvalidQualifier {
@@ -1143,7 +1081,7 @@ fn conflicting_definition_classifies_to_i2_rule_2() {
     assert_library_refusal_classified(
         resolve_libraries(
             &over_l("P"),
-            &[library_l(), package("L", "2", "L'@2", Vec::new())],
+            &[library_l(), package("L", "L'@2", Vec::new())],
         ),
         &LibraryRefusal::ConflictingDefinition {
             library: name("L"),
@@ -1158,7 +1096,7 @@ fn conflicting_definition_classifies_to_i2_rule_2() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn missing_import_classifies_to_i2_rule_1() {
-    let root = package("P", "1", "P@1", vec![import("Z", Some("z"))]);
+    let root = package("P", "P@1", vec![import("Z", Some("z"))]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[]),
         &LibraryRefusal::MissingImport {
@@ -1172,13 +1110,13 @@ fn missing_import_classifies_to_i2_rule_1() {
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
-fn duplicate_package_id_is_the_named_exception_outside_all_four() {
+fn duplicate_package_id_is_the_named_exception_outside_all_three() {
     // Two packages sharing one byte-identical `identity_preimage` (hence one
     // recomputed `package_id`, each independently passing its own digest
-    // check), differing only in `version` -- a field the preimage excludes.
-    let root = package("P", "1", "P@1", Vec::new());
-    let first = package("L", "1", "L@1", Vec::new());
-    let second = package("L", "2", "L@1", Vec::new());
+    // check), differing only in `imports` -- a field the preimage excludes.
+    let root = package("P", "P@1", Vec::new());
+    let first = package("L", "L@1", Vec::new());
+    let second = package("L", "L@1", vec![import("M", None)]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[first, second]),
         &LibraryRefusal::DuplicatePackageId(id("L@1")),

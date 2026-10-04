@@ -826,15 +826,10 @@ fn geometry_identity() -> qsl_foundation::SourceIdentity {
     qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry", "fixture", "fixture:1")
 }
 
-/// [`spine_request`] for a program importing `test/geometry` version `1`,
-/// with `library` written as `geometry.native` and selected as that
-/// library under `identity` and `version`.
-fn spine_library_request(
-    directory: &Path,
-    library: &[u8],
-    identity: &str,
-    version: &str,
-) -> Vec<u8> {
+/// [`spine_request`] for a program importing `test/geometry`, with
+/// `library` written as `geometry.native` and selected as that library
+/// under `identity`.
+fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Vec<u8> {
     let program = format!(
         "{SPINE_HEADER}import \"test/geometry\" as g;\n\
          function u using v(x: Int[0, 9]): Boolean pure {{ g::f(x) }}\n"
@@ -844,7 +839,7 @@ fn spine_library_request(
     std::fs::write(directory.join("geometry.native"), library).unwrap();
     let path = directory.join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    job["request"]["libraries"] = json!([{"identity":identity,"version":version,"source":{
+    job["request"]["libraries"] = json!([{"identity":identity,"source":{
         "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
         "revision_namespace":"fixture","revision":"fixture:1",
         "digest":ByteDigest::of(library).to_string(),"document":"Geometry","formal_revision":1}}]);
@@ -860,7 +855,7 @@ fn spine_library_request(
 fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
     let directory = tempfile::tempdir().unwrap();
-    let program = spine_library_request(directory.path(), &library, "test/geometry", "1");
+    let program = spine_library_request(directory.path(), &library, "test/geometry");
     let output = compile(directory.path());
     assert_eq!(
         output.status.code(),
@@ -872,7 +867,6 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     let dependencies =
         qsl_replay::spine::DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
             identity: "test/geometry".to_owned(),
-            version: "1".to_owned(),
             source: geometry_identity(),
             path: "geometry.native".to_owned(),
             bytes: library,
@@ -889,27 +883,38 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     assert_eq!(output.stdout, compiled.package().bytes());
 }
 
-/// FR-027-AC-10 (TC-446 step 7): a library with an empty identity or
-/// version, and any library beside a `0-draft` program, refuse
+/// FR-027-AC-10 (TC-446 step 7): a library with an empty identity or a
+/// `version` member, and any library beside a `0-draft` program, refuse
 /// `invalid-request` with nothing written.
 #[test]
 #[trace("TC-446", "FR-027-AC-10")]
 fn malformed_libraries_refuse_as_invalid_request() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
-    for (identity, version) in [("", "1"), ("test/geometry", "")] {
-        let directory = tempfile::tempdir().unwrap();
-        spine_library_request(directory.path(), &library, identity, version);
-        let output = compile(directory.path());
-        assert_eq!(output.status.code(), Some(20), "{identity:?} {version:?}");
-        assert!(output.stdout.is_empty());
-        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(failure["code"], "invalid-request", "{failure}");
-    }
+    let empty_identity = tempfile::tempdir().unwrap();
+    spine_library_request(empty_identity.path(), &library, "");
+    let output = compile(empty_identity.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "invalid-request", "{failure}");
+
+    // A library carries no version: the member is not part of the request.
+    let versioned = tempfile::tempdir().unwrap();
+    spine_library_request(versioned.path(), &library, "test/geometry");
+    let path = versioned.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["libraries"][0]["version"] = json!("1");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(versioned.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "invalid-request", "{failure}");
     let generated = tempfile::tempdir().unwrap();
     fixtures::write(generated.path(), fixtures::Case::Aggregate(2)).unwrap();
     let path = generated.path().join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    job["request"]["libraries"] = json!([{"identity":"test/geometry","version":"1","source":
+    job["request"]["libraries"] = json!([{"identity":"test/geometry","source":
         job["request"]["program"]["source"].clone()}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(generated.path());
@@ -927,7 +932,7 @@ fn a_library_refusal_renders_over_the_library_source() {
     let body = "function f using v(x: Int[0, 9]): Boolean pure { x < true }\n";
     let library = format!("{SPINE_HEADER}{body}").into_bytes();
     let directory = tempfile::tempdir().unwrap();
-    spine_library_request(directory.path(), &library, "test/geometry", "1");
+    spine_library_request(directory.path(), &library, "test/geometry");
     let output = compile(directory.path());
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
@@ -943,10 +948,10 @@ fn a_library_refusal_renders_over_the_library_source() {
     assert!(from >= start as u64 && to <= end, "{failure}");
 }
 
-/// A `libraries` row selecting `file` as `identity` version `1`, under the
+/// A `libraries` row selecting `file` as `identity`, under the
 /// source identity `test:<file>`.
 fn library_row(file: &str, identity: &str, bytes: &[u8]) -> Value {
-    json!({"identity":identity,"version":"1","source":{
+    json!({"identity":identity,"source":{
         "file":file,"authority":"agent-ix","identity":format!("test:{file}"),
         "revision_namespace":"fixture","revision":"fixture:1",
         "digest":ByteDigest::of(bytes).to_string(),"document":"Library","formal_revision":1}})
@@ -1013,7 +1018,7 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
 fn sixty_four_libraries_exceed_the_file_limit() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
     let directory = tempfile::tempdir().unwrap();
-    spine_library_request(directory.path(), &library, "test/geometry", "1");
+    spine_library_request(directory.path(), &library, "test/geometry");
     let path = directory.path().join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let row = job["request"]["libraries"][0].clone();

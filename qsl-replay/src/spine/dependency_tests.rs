@@ -34,7 +34,7 @@ fn import(identity: &str, alias: &str) -> String {
     format!("import \"{identity}\" as {alias};\n")
 }
 
-/// `package`'s import view as `identity` version `1`, read alone.
+/// `package`'s import view as `identity`, read alone.
 fn view_of(
     package: &qsl_package::CheckedPackage,
     identity: &str,
@@ -44,7 +44,6 @@ fn view_of(
         package,
         &emission,
         lib(identity),
-        "1",
         &BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
     )
@@ -52,10 +51,9 @@ fn view_of(
 
 /// A library supplied as `identity`, from source (`a`, `name`, `git`, `1`)
 /// holding `body` after the header.
-fn library(identity: &str, version: &str, name: &str, body: &str) -> SuppliedLibrary {
+fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
     SuppliedLibrary {
         identity: identity.to_owned(),
-        version: version.to_owned(),
         source: SourceIdentity::new("a", name, "git", "1"),
         path: format!("{name}.native"),
         bytes: format!("{HEADER}{body}").into_bytes(),
@@ -121,7 +119,7 @@ fn wire(compiled: &ComposedUnit) -> Value {
 #[trace("FR-099-AC-1", "TC-446")]
 #[test]
 fn an_import_binds_the_library_compiled_from_source() {
-    let geometry = library("test/geometry", "1", "geometry", F);
+    let geometry = library("test/geometry", "geometry", F);
     let d = package_id(&geometry, &DependencyInput::default());
     let source = unit(&format!("{}{H}", import("test/geometry", "g")));
     let compiled = compile_as("u", &source, &input(vec![geometry.clone()]))
@@ -161,7 +159,6 @@ fn an_import_binds_the_library_compiled_from_source() {
             geometry,
             library(
                 "test/other",
-                "1",
                 "other",
                 "function o using v(): Boolean pure { tru }\n",
             ),
@@ -172,7 +169,7 @@ fn an_import_binds_the_library_compiled_from_source() {
 }
 
 /// FR-099-AC-2 (TC-446 step 2): an import selects its library by identity
-/// alone, whatever version the library is supplied at. The lock binds the
+/// alone. The lock binds the
 /// library's content by the `package_id` its source recompiles to, so a
 /// changed library source changes the bound `package_id` and no import
 /// refuses. The spellings S1 refuses are `qsl-cst`'s
@@ -181,8 +178,8 @@ fn an_import_binds_the_library_compiled_from_source() {
 #[test]
 fn an_import_selects_by_identity_and_the_lock_binds_the_recompiled_package_id() {
     let mut bound = Vec::new();
-    for (version, body) in [("1", F), ("2", F_CHANGED)] {
-        let geometry = library("test/geometry", version, "geometry", body);
+    for body in [F, F_CHANGED] {
+        let geometry = library("test/geometry", "geometry", body);
         let d = package_id(&geometry, &DependencyInput::default());
         let source = unit(&format!("{}{H}", import("test/geometry", "g")));
         let compiled = compile_as("u", &source, &input(vec![geometry]))
@@ -201,7 +198,7 @@ fn an_import_selects_by_identity_and_the_lock_binds_the_recompiled_package_id() 
 #[trace("FR-099-AC-3", "TC-446")]
 #[test]
 fn selection_and_dependency_input_refusals() {
-    let geometry = library("test/geometry", "1", "geometry", F);
+    let geometry = library("test/geometry", "geometry", F);
     let declaration = import("test/geometry", "g");
     let source = unit(&format!("{declaration}{H}"));
 
@@ -225,7 +222,7 @@ fn selection_and_dependency_input_refusals() {
     // Two libraries supplied as test/geometry.
     let twice = DependencyInput::new(vec![
         geometry.clone(),
-        library("test/geometry", "1", "geometry-2", F),
+        library("test/geometry", "geometry-2", F),
     ])
     .expect_err("one library per identity");
     assert_eq!(twice.code(), Code::InvalidPackage);
@@ -240,7 +237,7 @@ fn selection_and_dependency_input_refusals() {
     );
 
     // Two libraries whose sources share one owner, at different revisions.
-    let mut same_owner = library("test/other", "1", "geometry", H);
+    let mut same_owner = library("test/other", "geometry", H);
     same_owner.source.revision = "2".to_owned();
     let shared = DependencyInput::new(vec![geometry.clone(), same_owner])
         .expect_err("one owner per compile");
@@ -256,12 +253,8 @@ fn selection_and_dependency_input_refusals() {
     );
 
     // A library whose source has the unit's authority and identity.
-    let unit_owner = compile_as(
-        "u",
-        &source,
-        &input(vec![library("test/geometry", "1", "u", F)]),
-    )
-    .expect_err("the library repeats the unit's owner");
+    let unit_owner = compile_as("u", &source, &input(vec![library("test/geometry", "u", F)]))
+        .expect_err("the library repeats the unit's owner");
     assert_eq!(unit_owner.stage(), SpineStage::Intake);
     assert_eq!(unit_owner.code(), Code::InvalidPackage);
     assert!(unit_owner.region().is_none());
@@ -277,15 +270,11 @@ fn selection_and_dependency_input_refusals() {
         "{unit_owner:?}"
     );
 
-    // An empty identity, and an empty version.
-    let empty = DependencyInput::new(vec![library("", "1", "geometry", F)])
+    // An empty identity.
+    let empty = DependencyInput::new(vec![library("", "geometry", F)])
         .expect_err("an identity is non-empty");
     assert_eq!(empty.code(), Code::InvalidIdentifier);
     assert_eq!(empty.host_cause(), Some(HostCause::SelectionIdentity));
-    let empty = DependencyInput::new(vec![library("test/geometry", "", "geometry", F)])
-        .expect_err("a version is non-empty");
-    assert_eq!(empty.code(), Code::InvalidIdentifier);
-    assert_eq!(empty.host_cause(), Some(HostCause::SelectionVersion));
 }
 
 /// FR-099-AC-3 (TC-446 step 3), closure-level and wrapped refusals: a cycle
@@ -298,13 +287,8 @@ fn a_cycle_and_a_library_refusal() {
     // test/a and test/b import each other.
     let b_imports_a = import("test/a", "la");
     let cycle_input = input(vec![
-        library(
-            "test/a",
-            "1",
-            "a",
-            &format!("{}{H}", import("test/b", "lb")),
-        ),
-        library("test/b", "1", "b", &format!("{b_imports_a}{H}")),
+        library("test/a", "a", &format!("{}{H}", import("test/b", "lb"))),
+        library("test/b", "b", &format!("{b_imports_a}{H}")),
     ]);
     let source = unit(&format!("{}{H}", import("test/a", "la")));
     let cycle = compile_as("u", &source, &cycle_input).expect_err("a imports b imports a");
@@ -332,7 +316,6 @@ fn a_cycle_and_a_library_refusal() {
         &source,
         &input(vec![library(
             "test/a",
-            "1",
             "a",
             &format!("{a_imports_missing}{H}"),
         )]),
@@ -367,7 +350,7 @@ fn a_cycle_and_a_library_refusal() {
 #[test]
 fn a_library_header_that_does_not_resolve_is_refused() {
     let bad = HEADER.replace("quire.value.complete/v1", "test:unknown-profile");
-    let mut lib_a = library("test/a", "1", "a", H);
+    let mut lib_a = library("test/a", "a", H);
     lib_a.bytes = format!("{bad}{H}").into_bytes();
     let source = unit(&format!("{}{H}", import("test/a", "la")));
     let wrapped = compile_as("u", &source, &input(vec![lib_a]))
@@ -398,8 +381,8 @@ fn library_identities_are_strings_listed_in_byte_order() {
     }
     assert!(LibraryName::new("").is_err());
 
-    let a = library("test/a", "1", "a", H);
-    let b = library("test/b", "1", "b", H);
+    let a = library("test/a", "a", H);
+    let b = library("test/b", "b", H);
     let dependencies = input(vec![b, a]);
     let import_a = import("test/a", "la");
     let import_b = import("test/b", "lb");
@@ -432,7 +415,7 @@ fn library_identities_are_strings_listed_in_byte_order() {
     let supplied: Vec<SuppliedLibrary> = names
         .iter()
         .enumerate()
-        .map(|(index, identity)| library(identity, "1", &format!("lib-{index}"), H))
+        .map(|(index, identity)| library(identity, &format!("lib-{index}"), H))
         .collect();
     let imports: String = supplied
         .iter()
@@ -459,10 +442,10 @@ fn library_identities_are_strings_listed_in_byte_order() {
 #[trace("FR-099-AC-3", "TC-446")]
 #[test]
 fn an_equal_import_reuses_the_completed_library() {
-    let geometry = library("test/geometry", "1", "geometry", F);
+    let geometry = library("test/geometry", "geometry", F);
     let d = package_id(&geometry, &DependencyInput::default());
     let geometry_import = import("test/geometry", "g");
-    let a = library("test/a", "1", "a", &format!("{geometry_import}{H}"));
+    let a = library("test/a", "a", &format!("{geometry_import}{H}"));
     let a_id = package_id(&a, &input(vec![geometry.clone()]));
     let dependencies = input(vec![geometry, a]);
     let source = unit(&format!("{geometry_import}{}{H}", import("test/a", "la")));
@@ -497,7 +480,6 @@ fn a_dependency_chain_deeper_than_the_limit_refuses() {
         };
         chain.push(library(
             &format!("test/c{index}"),
-            "1",
             &format!("c{index}"),
             &body,
         ));
@@ -537,7 +519,7 @@ fn a_dependency_chain_deeper_than_the_limit_refuses() {
 #[test]
 fn the_assembler_refuses_only_the_unadmitted_import() {
     use qsl_semantics::check::{AdmittedImport, AssemblyCause, PackageDeclarations};
-    let geometry = library("test/geometry", "1", "geometry", F);
+    let geometry = library("test/geometry", "geometry", F);
     let alone = compose(
         geometry.source.clone(),
         &geometry.path,
@@ -662,7 +644,7 @@ fn holds_int_0_9(written: &Value) -> bool {
 #[trace("FR-099-AC-5", "TC-446")]
 #[test]
 fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference() {
-    let geometry = library("test/geometry", "1", "geometry", F);
+    let geometry = library("test/geometry", "geometry", F);
     let alone = compose(
         geometry.source.clone(),
         &geometry.path,
@@ -753,7 +735,7 @@ fn an_imported_name_whose_signature_is_package_dependent_refuses() {
          function pair using v(t: T): Boolean pure {{ true }}\n\
          function widget using v(w: Reference<M::Widget>): Boolean pure {{ true }}\n"
     );
-    let geometry = library("test/geometry", "1", "geometry", &body);
+    let geometry = library("test/geometry", "geometry", &body);
     let compile_with = |source: &SourceIdentity, bytes: &[u8], dependencies: &DependencyInput| {
         compose(
             source.clone(),
@@ -822,7 +804,7 @@ fn an_imported_name_whose_signature_is_package_dependent_refuses() {
 #[test]
 fn a_changed_library_function_changes_the_calling_node_id() {
     let compile_p = |body: &str| {
-        let geometry = library("test/geometry", "1", "geometry", body);
+        let geometry = library("test/geometry", "geometry", body);
         let source = unit(&format!(
             "{}function p using v(y: Int[0, 9]): Boolean pure {{ g::f(y) }}\n",
             import("test/geometry", "g")
@@ -851,7 +833,6 @@ fn an_imported_call_evaluates_in_the_library_and_returns_to_the_caller() {
 
     let geometry = library(
         "test/geometry",
-        "1",
         "geometry",
         "function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n\
          function f using v(x: Int[0, 9]): Boolean pure { small(x) }\n",
@@ -906,7 +887,7 @@ fn an_imported_call_evaluates_in_the_library_and_returns_to_the_caller() {
 #[trace("FR-087-AC-13", "TC-379")]
 #[test]
 fn e3_resolves_an_imported_name_only_through_its_qualifier() {
-    let geometry = library("test/geometry", "1", "geometry", F);
+    let geometry = library("test/geometry", "geometry", F);
     let dependencies = input(vec![geometry]);
     let unqualified = "import \"test/geometry\";\n".to_owned();
     let qualified = import("test/geometry", "l");
@@ -950,7 +931,6 @@ fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
 
     let geometry = library(
         "test/geometry",
-        "1",
         "geometry",
         "function f using v(x: Int[0, 9]): Boolean pure \
          { x < 5 and x < 6 and x < 7 and x < 8 and x < 9 and x < 10 }\n",
@@ -1028,7 +1008,6 @@ fn an_imported_call_over_each_independent_scalar_kind_checks_and_reads() {
     ] {
         let geometry = library(
             "test/geometry",
-            "1",
             "geometry",
             &format!("function f using v(x: {kind}): Boolean pure {{ true }}\n"),
         );

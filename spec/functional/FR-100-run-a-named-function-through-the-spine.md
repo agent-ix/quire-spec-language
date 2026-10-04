@@ -66,7 +66,7 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
 - `models`: zero or more `semantic-ir/2.0.0` domain package documents, each
   read and handed to spine `compile` as FR-056's
   package input, exactly as FR-027 does for compile.
-- `libraries`: zero or more `{identity, version, source}` objects, read and
+- `libraries`: zero or more `{identity, source}` objects, read and
   handed to spine `compile` as its dependency input, exactly as FR-027 does
   for compile ([FR-099](FR-099-compile-against-supplied-libraries.md),
   ADR-015 D-1).

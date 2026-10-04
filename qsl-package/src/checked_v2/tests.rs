@@ -28,7 +28,7 @@ use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    RefusalClass, Selection, StaleCause,
+    RefusalClass,
 };
 use quire_exact::{Origin, Role};
 
@@ -192,27 +192,21 @@ fn identity(label: &str) -> LibraryName {
     LibraryName::new(label).unwrap()
 }
 
-/// A pinned request selecting `pkg` at `version` and `package_id`.
-fn pin(version: &str, package_id: PackageId) -> PinnedRequest {
-    pin_library("pkg", version, package_id)
+/// A pinned request selecting `pkg` at `package_id`.
+fn pin(package_id: PackageId) -> PinnedRequest {
+    pin_library("pkg", package_id)
 }
 
-fn pin_library(library: &str, version: &str, package_id: PackageId) -> PinnedRequest {
-    qsl_semantics::library::fixtures::single_pin(
-        identity(library),
-        Selection {
-            version: version.to_owned(),
-            package_id,
-        },
-    )
+fn pin_library(library: &str, package_id: PackageId) -> PinnedRequest {
+    qsl_semantics::library::fixtures::single_pin(identity(library), package_id)
 }
 
-/// ADR-011 §4 condition 3's own input: `pkg`/`"1"` pinned at the `package_id`
+/// ADR-011 §4 condition 3's own input: `pkg` pinned at the `package_id`
 /// `preimage`'s own JCS bytes recompute to -- exactly what a consumer's
 /// library lock or pinned request would record for a dependency it expects
 /// these bytes to satisfy.
 fn pinned_for(preimage: &Value) -> PinnedRequest {
-    pin("1", PackageId::of_preimage(&jcs(preimage)))
+    pin(PackageId::of_preimage(&jcs(preimage)))
 }
 
 fn no_pins() -> PinnedRequest {
@@ -233,7 +227,6 @@ fn read(bytes: &[u8], pinned: &PinnedRequest) -> Read {
     read_v2(
         bytes,
         identity("pkg"),
-        "1".to_owned(),
         V2ReadLimits::default(),
         &CheckedPackageEvidence::new(),
         pinned,
@@ -249,7 +242,7 @@ fn structural(outcome: Read) -> LibraryRefusal {
     }
 }
 
-/// TC-253 step 1: valid v2 bytes, pinned at their own identity, version and
+/// TC-253 step 1: valid v2 bytes, pinned at their own identity and
 /// recomputed `package_id`, are admitted as a `VerifiedPackage`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
@@ -259,7 +252,6 @@ fn accepts_valid_bytes() {
     match read(&bytes, &pinned_for(&preimage)) {
         Read::Verified { package, .. } => {
             assert_eq!(package.library(), &identity("pkg"));
-            assert_eq!(package.version(), "1");
             assert_eq!(
                 package.package_id(),
                 PackageId::of_preimage(&jcs(&preimage))
@@ -401,14 +393,14 @@ fn refuses_when_identity_is_absent_from_the_pinned_lock() {
 }
 
 /// TC-253 step 4, adverse: a pin for a *different* library carrying this
-/// package's exact `package_id` and version does not list this identity.
+/// package's exact `package_id` does not list this identity.
 /// Condition 3 matches on identity, never on the digest alone.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn refuses_when_only_a_different_library_pins_the_same_id() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
-    let other = pin_library("other", "1", PackageId::of_preimage(&jcs(&preimage)));
+    let other = pin_library("other", PackageId::of_preimage(&jcs(&preimage)));
     assert_eq!(
         structural(read(&bytes, &other)),
         LibraryRefusal::MissingImport {
@@ -427,55 +419,18 @@ fn refuses_when_the_pinned_package_id_disagrees() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
     let stale = PackageId::of_preimage(b"not-this-preimage");
-    let refusal = structural(read(&bytes, &pin("1", stale)));
+    let refusal = structural(read(&bytes, &pin(stale)));
     assert_eq!(
         refusal,
         LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
             pin: Box::new(PinMismatch {
-                pinned: Selection {
-                    version: "1".to_owned(),
-                    package_id: stale,
-                },
-                presented: Selection {
-                    version: "1".to_owned(),
-                    package_id: PackageId::of_preimage(&jcs(&preimage)),
-                },
+                pinned: stale,
+                presented: PackageId::of_preimage(&jcs(&preimage)),
             }),
-            cause: StaleCause::ByteDigestMismatch,
         }
     );
     assert_eq!(refusal.class(), RefusalClass::I2Rule(1));
-}
-
-/// FR-087-AC-3 and AC-12, condition 3 (FR-087 ruling (e)): the pinned
-/// entry names this identity and this `package_id` at another version --
-/// `StaleDependency{RevisionMismatch}`, classified to condition 3.
-#[trace("TC-253", "FR-087-AC-3")]
-#[test]
-fn refuses_when_the_pinned_version_disagrees() {
-    let preimage = identity_preimage(vec![]);
-    let bytes = jcs(&valid_envelope(&preimage));
-    let id = PackageId::of_preimage(&jcs(&preimage));
-    let refusal = structural(read(&bytes, &pin("2", id)));
-    assert_eq!(
-        refusal,
-        LibraryRefusal::StaleDependency {
-            path: vec![identity("pkg")],
-            pin: Box::new(PinMismatch {
-                pinned: Selection {
-                    version: "2".to_owned(),
-                    package_id: id,
-                },
-                presented: Selection {
-                    version: "1".to_owned(),
-                    package_id: id,
-                },
-            }),
-            cause: StaleCause::RevisionMismatch,
-        }
-    );
-    assert_eq!(refusal.class(), RefusalClass::BindingCondition(3));
 }
 
 /// TC-253 step 8 on the wire path: an unsupported contract version
@@ -851,7 +806,6 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
     let outcome = read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         limits,
         &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
@@ -887,7 +841,6 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
         read_v2(
             &bytes,
             identity("pkg"),
-            "1".to_owned(),
             limits,
             &CheckedPackageEvidence::new(),
             &pinned_for(&preimage),
@@ -934,7 +887,6 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
         read_v2(
             &bytes,
             identity("pkg"),
-            "1".to_owned(),
             limits,
             &CheckedPackageEvidence::new(),
             &pinned_for(&preimage),
@@ -981,7 +933,6 @@ fn a_verified_read_records_depth_as_the_charged_maximum() {
     match read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         requested,
         &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
@@ -1017,7 +968,6 @@ fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_b
     let outcome = read_v2(
         &oversized,
         identity("pkg"),
-        "1".to_owned(),
         raised,
         &CheckedPackageEvidence::new(),
         &no_pins(),
@@ -1040,7 +990,6 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
     match read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         limits,
         &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
@@ -1061,7 +1010,6 @@ fn exact_selected_limits_admit_the_boundary() {
     let outcome = read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         limits,
         &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
@@ -1081,7 +1029,6 @@ fn exact_depth_ceiling_admits_the_boundary() {
     let actual_depth = match read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         V2ReadLimits {
             depth: 0,
             ..V2ReadLimits::default()
@@ -1100,7 +1047,6 @@ fn exact_depth_ceiling_admits_the_boundary() {
     let outcome = read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         admits,
         &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
@@ -1117,7 +1063,6 @@ fn exact_depth_ceiling_admits_the_boundary() {
     match read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         refuses,
         &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
@@ -1150,7 +1095,6 @@ fn depth_incompleteness(bytes: &[u8], limits: V2ReadLimits) -> (u64, u128) {
     match read_v2(
         bytes,
         identity("pkg"),
-        "1".to_owned(),
         limits,
         &CheckedPackageEvidence::new(),
         &no_pins(),
@@ -1187,7 +1131,6 @@ fn depth_raised_past_the_default_admits_a_wire_deeper_than_the_default() {
     let outcome = read_v2(
         &nested_array_bytes(200),
         identity("pkg"),
-        "1".to_owned(),
         V2ReadLimits {
             depth: 300,
             ..V2ReadLimits::default()
@@ -1241,7 +1184,6 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
             read_v2(
                 bytes,
                 identity("pkg"),
-                "1".to_owned(),
                 limits,
                 &CheckedPackageEvidence::new(),
                 &no_pins()
@@ -1456,10 +1398,9 @@ fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
     let outcome = read_v2(
         &jcs(envelope),
         identity("pkg"),
-        "1".to_owned(),
         V2ReadLimits::default(),
         &evidence,
-        &pin("1", package_id),
+        &pin(package_id),
     );
     (package_id, outcome)
 }
@@ -2092,7 +2033,6 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         let outcome = read_v2(
             &bytes,
             identity("pkg"),
-            "1".to_owned(),
             limits,
             &CheckedPackageEvidence::new(),
             &pinned_for(preimage),
@@ -2110,7 +2050,6 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
     let outcome = read_v2(
         &bytes,
         identity("pkg"),
-        "1".to_owned(),
         V2ReadLimits {
             artifact_bytes: bytes.len() - 1,
             ..defaults

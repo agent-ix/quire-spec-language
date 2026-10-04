@@ -22,7 +22,7 @@ Scope: FR-099-AC-1 to FR-099-AC-7, FR-027-AC-10.
 
 ## Test Procedure
 
-Library `test/geometry` version `1` is a complete-V1 unit, admitted as
+Library `test/geometry` is a complete-V1 unit, admitted as
 authority `a`, identity `geometry`, revision (`git`, `1`), declaring
 `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`. Let `d` be the
 `package_id` of its spine compile. The importing unit, admitted as `a`,
@@ -56,9 +56,10 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
 6. Supply `test/geometry` from the `x < 6` source and compile step 5's unit
    again.
 7. Run CLI `compile` over a native-compile/1 request whose `1-draft`
-   program is step 5's unit and whose `libraries` names `test/geometry`,
-   version `1`, by file, source digest and the labels above; then the same
-   request with a `0-draft` program.
+   program is step 5's unit and whose `libraries` names `test/geometry`
+   by file, source digest and the labels above; then the same request with
+   a `0-draft` program, with a library of an empty identity, and with a
+   library object carrying a `version` member.
 
 8. Import `test/a`, with `test/a` importing `test/b` and `test/b`
    importing `test/c`; compile with `dependency.libraries` at 2, then at 3;
@@ -100,9 +101,9 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 - Step 6: `p`'s call node id and the package's `package_id` both differ
   from step 5's.
 - Step 7: stdout is exactly the bytes spine `compile` returns for step 5's
-  unit and library, exit 0; the `0-draft` request, and a `libraries` entry
-  with an empty identity or version, refuse with `invalid-request`, exit
-  20, empty stdout.
+  unit and library, exit 0; the `0-draft` request, a `libraries` entry
+  with an empty identity, and a `libraries` entry with a `version` member,
+  refuse with `invalid-request`, exit 20, empty stdout.
 
 - Step 8: `stage_limit_exceeded` at stage `intake` at `test/b`'s import of
   `test/c`, node count, bound 2, actual 3, setting `dependency.libraries`,

@@ -67,8 +67,8 @@ FR-087-AC-3.
    node id at adjacent positions, and one that repeats it two positions
    apart (`[R, S, R]`).
 10. E4 dependency binding (FR-087-AC-14): link a graph with an import of a
-    package, and link a graph importing `test/units` at version `3` and a
-    package `mid` that selected `test/units` at version `2`.
+    package, and link a graph importing a package as `test/units` and a
+    package `mid` that selected a different package as `test/units`.
 
 ## Expected Results
 

@@ -580,15 +580,13 @@ fn display_path(path: &[LibraryName]) -> String {
 }
 
 /// One supplied library as its supplier names it (ADR-015 D-1; QSpec
-/// FR-307): its identity, its version and its source unit. It carries no
+/// FR-307): its identity and its source unit. It carries no
 /// `package_id`: a library's `package_id` is the one its own compile yields
 /// (ADR-013 O-02).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SuppliedLibrary {
     /// The library identity, a non-empty string (ADR-015 D-3).
     pub identity: String,
-    /// The library's version, a non-empty string.
-    pub version: String,
     /// The source's four FR-001 labels.
     pub source: SourceIdentity,
     /// The source's display path; only displayed, never opened.
@@ -624,13 +622,6 @@ pub enum DependencyInputRefusal {
     EmptyIdentity {
         /// The library's source labels.
         labels: Box<SourceIdentity>,
-    },
-    /// A library is supplied with an empty version (`invalid_identifier`,
-    /// [`HostCause::SelectionVersion`]).
-    #[error("invalid_identifier: the library {identity} has an empty version")]
-    EmptyVersion {
-        /// The library identity.
-        identity: LibraryName,
     },
     /// Two libraries are supplied under one identity
     /// (`invalid_package`/`conflicting-definition`).
@@ -670,7 +661,7 @@ impl DependencyInputRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::EmptyIdentity { .. } | Self::EmptyVersion { .. } => Code::InvalidIdentifier,
+            Self::EmptyIdentity { .. } => Code::InvalidIdentifier,
             Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => Code::InvalidPackage,
         }
     }
@@ -679,7 +670,6 @@ impl DependencyInputRefusal {
     pub fn host_cause(&self) -> Option<HostCause> {
         match self {
             Self::EmptyIdentity { .. } => Some(HostCause::SelectionIdentity),
-            Self::EmptyVersion { .. } => Some(HostCause::SelectionVersion),
             Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => None,
         }
     }
@@ -690,14 +680,14 @@ impl DependencyInputRefusal {
             Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => {
                 Some("conflicting-definition")
             }
-            Self::EmptyIdentity { .. } | Self::EmptyVersion { .. } => None,
+            Self::EmptyIdentity { .. } => None,
         }
     }
 }
 
 impl DependencyInput {
     /// The dependency input holding `libraries`, refusing, in supply order,
-    /// an empty identity or version, a second library under one identity,
+    /// an empty identity, a second library under one identity,
     /// and a library whose source repeats another library's owner.
     pub fn new(
         libraries: impl IntoIterator<Item = SuppliedLibrary>,
@@ -709,9 +699,6 @@ impl DependencyInput {
                     labels: Box::new(library.source),
                 });
             };
-            if library.version.is_empty() {
-                return Err(DependencyInputRefusal::EmptyVersion { identity });
-            }
             if let Some(first) = held.get(&identity) {
                 return Err(DependencyInputRefusal::DuplicateIdentity {
                     identity,

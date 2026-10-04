@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::library::{LibraryName, PackageId, Selection};
+use qsl_semantics::library::{LibraryName, PackageId};
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use crate::emit::{emit_checked, EmitRefusal};
@@ -148,8 +148,8 @@ pub struct CheckedPackage {
 /// first dependency path that reached it (FR-307).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedDependency {
-    /// The selected version and `package_id`.
-    pub selection: Selection,
+    /// The selected `package_id`.
+    pub package_id: PackageId,
     /// The library identities from the linking package's direct import down
     /// to this one, this one last. The linking package itself is the
     /// implicit first step of every path.
@@ -157,15 +157,12 @@ pub struct ResolvedDependency {
 }
 
 /// One import the E4 link step binds (ADR-011 §4 dependency binding): the
-/// library identity `L` an `import "L"` names, the version the library is
-/// supplied at, and the dependency's checked package compiled from its
-/// source.
+/// library identity `L` an `import "L"` names and the dependency's checked
+/// package compiled from its source.
 #[derive(Clone, Debug)]
 pub struct Import {
     /// Library identity `L` (ADR-015 D-3).
     pub identity: LibraryName,
-    /// The version the library is supplied at.
-    pub version: String,
     /// The dependency's checked package, compiled from source through S1 to
     /// S4 (ADR-015 D-1).
     pub package: Arc<CheckedPackage>,
@@ -174,17 +171,8 @@ pub struct Import {
 /// Why the E4 link step built no package (ADR-011 §2.3: no partial output).
 #[derive(Debug, thiserror::Error)]
 pub enum LinkRefusal {
-    /// An import's version is empty; FR-322 admits no empty version (an
-    /// empty identity is not a [`LibraryName`]).
-    #[error("an import names an empty library version")]
-    EmptySelection {
-        /// The library identity.
-        identity: LibraryName,
-        /// The version as written.
-        version: String,
-    },
     /// FR-307 diamond rule: two dependency paths select one library
-    /// identity with a different version or `package_id`
+    /// identity with a different `package_id`
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
     #[error(
         "invalid_package/conflicting-definition: {} and {} select {identity} differently",
@@ -212,9 +200,7 @@ impl LinkRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ConflictingDefinition { .. } | Self::EmptySelection { .. } => {
-                Code::InvalidPackage
-            }
+            Self::ConflictingDefinition { .. } => Code::InvalidPackage,
             Self::DependencyEmission {
                 refusal: Some(refusal),
                 ..
@@ -227,7 +213,6 @@ impl LinkRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::ConflictingDefinition { .. } => Some("conflicting-definition"),
-            Self::EmptySelection { .. } => Some("invalid-value"),
             Self::DependencyEmission { .. } => None,
         }
     }
@@ -304,25 +289,16 @@ impl CheckedPackage {
     /// (ADR-013 O-02: never accepted from a caller) and is the identity the
     /// lock binds the library's content to.
     /// The closure takes the imports and every dependency's own closure; two
-    /// selections of one identity unify only when version and `package_id`
+    /// selections of one identity unify only when their `package_id`s
     /// are equal (FR-307), else [`LinkRefusal::ConflictingDefinition`].
     /// A refusal yields no package.
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
         let mut dependencies = BTreeMap::new();
         let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
         for import in imports {
-            if import.version.is_empty() {
-                return Err(LinkRefusal::EmptySelection {
-                    identity: import.identity,
-                    version: import.version,
-                });
-            }
             let recompiled = recomputed_package_id(&import)?;
             let direct = ResolvedDependency {
-                selection: Selection {
-                    version: import.version,
-                    package_id: recompiled,
-                },
+                package_id: recompiled,
                 path: vec![import.identity.clone()],
             };
             let transitive = import
@@ -336,7 +312,7 @@ impl CheckedPackage {
                     (
                         identity.clone(),
                         ResolvedDependency {
-                            selection: resolved.selection.clone(),
+                            package_id: resolved.package_id,
                             path,
                         },
                     )
@@ -417,7 +393,7 @@ fn unify(
     resolved: ResolvedDependency,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if existing.selection == resolved.selection => Ok(()),
+        Some(existing) if existing.package_id == resolved.package_id => Ok(()),
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
             selections: Box::new([existing.clone(), resolved]),
             identity,

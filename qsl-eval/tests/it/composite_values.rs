@@ -1209,7 +1209,6 @@ mod library_import {
         let bytes = preimage(library, exports);
         LibraryPackage {
             library: name(library),
-            version: "1".to_owned(),
             package_id: PackageId::of_preimage(&bytes),
             identity_preimage: bytes,
             imports: imports

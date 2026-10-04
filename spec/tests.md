@@ -600,9 +600,9 @@ relocated `resolve_libraries`/`LibraryLock` whole-graph resolution
 composes with the new per-dependency `VerifiedPackage`/`ImportView`/§4
 binding: `LibraryLock` is the library lock the §4 binding's third
 condition reads, and `resolve_libraries`' whole-graph refusals classify,
-variant by variant, to an ADR-011 I2 rule, the §4 binding's condition 2 or
-condition 3, or E3 name resolution, with `DuplicatePackageId` named as
-lying outside all four (FR-087-AC-12/TC-282; FR-087 Description, item 3).
+variant by variant, to an ADR-011 I2 rule, the §4 binding's condition 2, or E3
+name resolution, with `DuplicatePackageId` named as
+lying outside all three (FR-087-AC-12/TC-282; FR-087 Description, item 3).
 `check` reads `ImportView` and `LibraryLock` (read-only) from `library`, a
 permitted layer-3 edge under FR-068-AC-6's layer rule (FR-087-AC-9/TC-256).
 

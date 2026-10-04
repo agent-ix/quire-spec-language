@@ -15,10 +15,9 @@ QSL-158 (2026-09-21) states (Description, item 3, owner ruling (e)): every
 `LibraryRefusal` variant `resolve_libraries` (relocated into `library`) can
 return classifies to exactly one of: an ADR-011 I2 "Package import graph
 rule" (`:203-210`), the §4 binding's condition 2 (digest/preimage
-admission, `verify_package`), the §4 binding's condition 3 (identity
-pinned by the library lock, `:513`), or E3 name resolution — except
+admission, `verify_package`), or E3 name resolution — except
 `DuplicatePackageId`, the one stated exception, which lies outside all
-four. Scope: FR-087-AC-12.
+three. Scope: FR-087-AC-12.
 
 ## Test Procedure
 
@@ -40,7 +39,7 @@ four. Scope: FR-087-AC-12.
    | `ConflictingDefinition` | I2 rule 2 | Two supplied packages claim one library identity, so the identity has no one selection — I2's second rule. |
    | `ImportCycle` | I2 rule 3 | An import-graph cycle — I2's third rule exactly. |
    | `MissingImport` | I2 rule 1 | No supplied package matches the import's identity at all — "an import is missing," I2's first rule. |
-   | `DuplicatePackageId` | Named exception (none of the four) | Raised only after both supplied packages have already, independently, passed `verify_package`'s digest check — so each one's `package_id` already equals the digest recomputed over its own `identity_preimage`. Two packages sharing one `package_id` therefore share byte-identical `identity_preimage` bytes; they can only still differ in the `LibraryPackage` fields the preimage excludes (`version`, `imports`, `exports`) — conflicting metadata over identical identity content, not two different contents colliding on one digest. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is a content-addressing precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
+   | `DuplicatePackageId` | Named exception (none of the three) | Raised only after both supplied packages have already, independently, passed `verify_package`'s digest check — so each one's `package_id` already equals the digest recomputed over its own `identity_preimage`. Two packages sharing one `package_id` therefore share byte-identical `identity_preimage` bytes; they can only still differ in the `LibraryPackage` fields the preimage excludes (`imports`, `exports`) — conflicting metadata over identical identity content, not two different contents colliding on one digest. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is a content-addressing precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
 
 3. Confirm every variant in step 1 receives exactly the classification step
    2's table states; a variant classified to a different bucket than the
@@ -60,7 +59,7 @@ four. Scope: FR-087-AC-12.
    imported identity at all for `MissingImport`; and two supplied packages
    sharing one byte-identical `identity_preimage` (and hence one recomputed
    `package_id`, each independently passing its own digest check) but
-   differing in `version`, `imports`, or `exports` for `DuplicatePackageId`)
+   differing in `imports` or `exports` for `DuplicatePackageId`)
    and
    confirm `resolve_libraries` refuses each with exactly the variant its
    row names.
