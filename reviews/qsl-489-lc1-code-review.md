@@ -70,3 +70,47 @@ The `Meter` size bound is vacuous.
 | FND-004 | medium | `package` takes no limits value. FR-275 Behavior: "Each QSL lifecycle operation shall take its typed request, its limits value and `&Cancel`". `package(checked, cancel)` breaks the call shape. Fix: add an E4 limits type, even one with no fields yet, or name its bound. Thread it through. | qsl-replay/src/spine/lifecycle.rs:279-293 |
 | FND-005 | low | `convert_call_failure` maps `CallFailure::Cancelled` to a fault, with the comment "The meter `run` builds holds no `Cancel` handle". That is stale. `run` now passes its own handle to `execute`, which attaches it to the meter. The arm is still unreachable, because nobody cancels that handle, but the reason given is wrong. | qsl-replay/src/spine/call.rs:502-507 |
 | FND-006 | low | The cross-thread cancel tests rely on the scheduler. If the second thread is starved until the operation finishes, they fail spuriously. If the meter poll is removed, the observer never runs and the canceller spins forever, so the test hangs instead of failing. Fix: in the observer, at charge N, hand off to the second thread and block until it has cancelled. The test then still cancels from a second thread, is deterministic, and can assert `after_cancel == 1` and `charges == N + 1` exactly. | qsl-replay/src/spine/lifecycle/tests.rs:330-369,462-504,524-563 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | `Cancel::poll` now runs `fetch_add` on a shared `AtomicU64` at every charge, to feed `StageWork`. That is a locked read-modify-write on x86. `spine::run`'s `execute` always attaches a handle, so every evaluation charge pays for it. The PR's bench predates the change: it measured a poll that did only a load. Fix: re-run `evaluator/call_chain` and `checker/independent` against `ddd162c7`. If the cost shows, count each stage's work from its own meter's admissions instead of the shared handle. | quire-exact/src/cancel.rs:113-114 |
+| FND-008 | low | `Resolution` checks every library of the closure under the importing unit's `LockEvidence`: `declarations.lock_evidence = self.lock.clone()` runs in `check_unit`, which `compile_library` also calls. A library's checked graph, and therefore its recomputed `package_id`, can then depend on who imports it, because a text law selected from the lock changes the graph. Every caller passes `LockEvidence::default()` today, so nothing differs yet. Fix: state in FR-278 or ADR-015 D-1 which lock a library is compiled under, and implement that (most likely the library's own). | qsl-replay/src/spine/lifecycle.rs:842; qsl-replay/src/spine/lifecycle.rs:768-779 |
+| FND-009 | low | Some `LimitExceeded` counters from S1 are not the counter at the failed charge (FR-277 Outputs). `source.source_bytes` reports `actual = bound + 1` although the source's real length is known. `source.work_units` reports the per-token field as `configured_bound` and the total step budget plus one as `actual`, so the two numbers are in different units. FR-277-AC-1 checks only kind, configured value and field, so no test catches this. Fix: report the real byte length, and give both work numbers in the same unit (the total budget, or per token). | qsl-replay/src/spine/lifecycle.rs:175-205 |
+
+## Dispositions
+
+Round 1, reviewed at a47829387eae0445ada116f6594f599654187cf6 (fix commits
+7116333d6, bfd81c9d9, a47829387 on ddd162c7). Focused tests pass:
+`cargo test -p qsl-replay --lib` (290), the `spine` doc tests (both
+`compile_fail` doctests and their controls) and `cargo test -p quire-exact
+--lib`, all run under locked-build. Owner rulings applied, not raised:
+`execute` stays crate-internal with no wrappers, and FR-276-AC-2 stays at
+4,000 declarations.
+
+I checked the poll sites against the code. Every one listed in the AC-2 test
+doc polls:
+
+- the kernel `Meter`, which also covers S3 lowering, because lowering charges
+  `contract_meter`;
+- S1's leaf commit and parser step;
+- the I1 normalization meter, through `admit_unit_with_cancel` and
+  `normalize_with_cancel`;
+- the measure pass, once per node, in `encode_expression`;
+- the `Typer` node charge;
+- the type environment, through `TypeEnvironment::bounded_with_cancel`;
+- E4, at entry and at every node.
+
+The one site that does not poll is `link_dispatch`. Its only callers are
+`checked_dispatch_operation`, qsl-eval's tests and xtask, so no spine
+operation reaches it.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7116333d6 |
+| FND-002 | fixed | 7116333d6 |
+| FND-003 | fixed | 7116333d6 |
+| FND-004 | fixed | 7116333d6 |
+| FND-005 | fixed | 7116333d6 |
+| FND-006 | fixed | 7116333d6 |

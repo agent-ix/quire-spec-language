@@ -71,6 +71,11 @@ the refusing stage's own typed causes.
 - The `check` operation shall check and link the `ParsedSource` against the
   `AdmittedModels` and the dependency input, and return the
   `CheckedPackage` or S3's or S4's refusal.
+- The `check` operation shall check each library of the dependency closure
+  independently of the unit that imports it, under the default lock evidence
+  and never the importer's, so a library's recomputed `package_id` does not
+  depend on who imports it; the lock evidence it takes applies to the unit
+  itself.
 - The `package` operation shall emit the `CheckedPackage` as
   `quire.checked-package/v2` bytes with its source provision.
 - The composition of the four operations over a source shall return the same

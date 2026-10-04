@@ -1005,6 +1005,18 @@ fn assert_field(
     high: u64,
     run: impl Fn(u64) -> Reached,
 ) {
+    assert_field_with(field, kind, high, |value| value, run);
+}
+
+/// [`assert_field`] for a field whose configured bound is `bound(value)`
+/// rather than the value itself.
+fn assert_field_with(
+    field: &'static str,
+    kind: FoundationKind,
+    high: u64,
+    bound: impl Fn(u64) -> u64,
+    run: impl Fn(u64) -> Reached,
+) {
     assert!(
         matches!(run(high), Reached::Output),
         "`{field}` at {high} does not admit the input"
@@ -1026,7 +1038,7 @@ fn assert_field(
         Reached::Limit(limit) => {
             assert_eq!(limit.limits_field(), Some(field));
             assert_eq!(limit.kind(), kind, "`{field}`");
-            assert_eq!(limit.configured_bound(), counter - 1, "`{field}`");
+            assert_eq!(limit.configured_bound(), bound(counter - 1), "`{field}`");
         }
         Reached::Output => panic!("`{field}` at {} admits the input", counter - 1),
     }
@@ -1066,12 +1078,29 @@ fn parse_names_the_source_limit_field_it_reached() {
         10_000,
         run(|limits, value| limits.nodes = usize::try_from(value).expect("small")),
     );
-    assert_field(
+    // The work bound is the unit's total step budget, in the same unit as
+    // the counter; the field sets it per token. The scale is the budget at a
+    // field value of 1.
+    let scale =
+        match run(|limits, value| limits.work_units = usize::try_from(value).expect("small"))(1) {
+            Reached::Limit(limit) => limit.configured_bound(),
+            Reached::Output => panic!("one step per token admits the fixture"),
+        };
+    assert_field_with(
         "source.work_units",
         FoundationKind::WorkBudget,
         256,
+        |value| value * scale,
         run(|limits, value| limits.work_units = usize::try_from(value).expect("small")),
     );
+    // The byte ceiling reports the source's real length as the counter.
+    let length = u128::try_from(bytes.len()).expect("a small length");
+    let mut limits = SpineLimits::default().source;
+    limits.source_bytes = bytes.len() - 1;
+    match reached(parse(&request(bytes), limits, &Cancel::new())) {
+        Reached::Limit(limit) => assert_eq!(limit.actual(), length),
+        Reached::Output => panic!("one byte short admits the fixture"),
+    }
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `select`: each field of the model
@@ -1259,9 +1288,73 @@ fn an_internal_invariant_failure_is_a_fault() {
         }],
         region: None,
     });
-    let failure = failure_of(refusal, &SpineLimits::default());
+    let failure = failure_of(refusal, &|_| None);
     assert!(matches!(failure, StageFailure::Fault(_)), "{failure:?}");
     assert!(refusal_or_fault(failure).is_err());
+}
+
+/// FR-278: a library is compiled independently of whoever imports it. One
+/// library imported by two units that pass different lock evidence is the
+/// same package, whose `package_id` the import digest names; and a library
+/// that needs a lock the default evidence lacks is refused even when its
+/// importer's evidence supplies it.
+#[trace("TC-759", "FR-278-AC-1")]
+#[test]
+fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    let text_profile = || {
+        LockEvidence::default().with_text_profile(
+            DefinitionLock::pinned()
+                .entry(CatalogRole::TextProfile)
+                .reference(),
+        )
+    };
+    let limits = SpineLimits::default();
+    let importer = |library: &SuppliedLibrary, digest: &str, lock: &LockEvidence| {
+        let unit = format!(
+            "{HEADER}import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+             function h using v(): Boolean pure {{ true }}\n"
+        );
+        let dependencies = DependencyInput::new(vec![library.clone()]).expect("admissible");
+        let live = Cancel::new();
+        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
+            .expect("the importing unit parses")
+            .into_value();
+        check(
+            &parsed,
+            &AdmittedModels::default(),
+            &dependencies,
+            lock,
+            limits,
+            &live,
+        )
+        .map(|checked| checked.into_value())
+    };
+
+    // The digest names the library's package under its own evidence; both
+    // importers recompute it, so the digest check passes for both.
+    let geometry = geometry();
+    let digest = library_id(&geometry).hex();
+    for lock in [LockEvidence::default(), text_profile()] {
+        importer(&geometry, &digest, &lock)
+            .unwrap_or_else(|failure| panic!("the import resolves under {lock:?}: {failure:?}"));
+    }
+
+    // A library comparing text needs the text law. Its importer supplies it,
+    // but the library is checked under the default evidence and refuses.
+    let texty = SuppliedLibrary {
+        bytes: format!(
+            "{HEADER}function f using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
+             {{ a = b }}\n"
+        )
+        .into_bytes(),
+        ..geometry
+    };
+    let refusal = refusal(
+        importer(&texty, &digest, &text_profile())
+            .expect_err("the library lacks the text law under its own evidence"),
+    );
+    assert_eq!(refusal.code().as_str(), "missing_declaration");
 }
 
 /// FR-278 (TC-759 step 1): `check` takes the package's lock evidence. A unit

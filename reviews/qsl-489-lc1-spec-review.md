@@ -36,3 +36,19 @@ Changes requested, on the status rows only.
 | --- | --- | --- | --- |
 | FND-001 | medium | The rewritten rows list the remaining work with no owner, so the work has no home. Specifically: FR-275's "remaining" list, FR-276's "the operations that do not exist yet" and its FR-276-AC-4, TC-756 (monitor and replay), and TC-757 step 4. FR-285's and TC-769's `StageFailure::Fault` used to say "owned by slice LC1", and this PR dropped that. Fix: name the owner on each row. `StageFailure::Fault` and FR-275-AC-5 stay with LC1 (SR-1278 FND-002, SR-1279 FND-003). The other operations go to the FR-003, FR-281, FR-283, FR-297, FR-298, FR-355 and FR-098 slices, and FR-277-AC-2 to the ADR-030 depth work (QSL-381 series). | spec/spec.md FR-275, FR-276, FR-285 rows; spec/tests.md TC-756, TC-757, TC-769 rows |
 | FND-002 | low | The FR-275 row says "`parse`, `select`, `check`, `package` and `execute` (`qsl_replay::spine`) take their predecessor's own type and a caller-owned `&Cancel`". That reads as if `execute` were a public spine operation, but it is crate-internal (FR-100-AC-8). Fix: say that `execute` is crate-internal until FR-279. | spec/spec.md FR-275 row |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The FR-278 row now reads "`parse`, `select`, `check`, `package` as library operations composing to the FR-278 composition". That is circular: the row is FR-278. Fix: "composing to the spine compile (S1 to E4)". | spec/spec.md FR-278 row |
+
+## Dispositions
+
+Round 1, reviewed at a47829387eae0445ada116f6594f599654187cf6 (fix commits
+7116333d6, bfd81c9d9, a47829387 on ddd162c7).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7116333d6 |
+| FND-002 | fixed | 7116333d6 |

@@ -77,3 +77,30 @@ oracle cannot see the charge sites that SR-1278 FND-001 says are unpolled.
 | FND-004 | medium | FR-277-AC-1 is not implemented for the operations LC1 builds (`parse`, `select`, `check`, `package`, `execute`). The front end reports a reached limit inside `CompileRefusal`, never as `StageFailure::Limit(LimitExceeded)` naming the limits field. `refusal_or_fault` treats `StageFailure::Limit` as a broken invariant, which contradicts FR-277 Outputs. In scope for those operations. Fix: return `StageFailure::Limit` with the field name (for example `s3.nodes`) and test each field at the counter minus one and at the counter. | qsl-replay/src/spine/lifecycle.rs:110-130 |
 | FND-005 | medium | FR-275-AC-2 requires a `compile_fail` doctest that passes package bytes to `execute`. There is none. `execute` is `pub(crate)`, so a doctest cannot reach it. The TC-755 row still says "steps 1 to 3 and 5's compile_fail doctests pass for `parse`, `select`, `check`, `package` and `execute`", which is false for `execute`. Fix: correct the row now. The doctest lands with the public `execute` (FR-279). | qsl-replay/src/spine/lifecycle.rs:26-72; spec/tests.md TC-755 row |
 | FND-006 | medium | FR-278 `check` takes "the lock evidence (ADR-011 §2.4)". The signature has no lock-evidence input. The FR-278 row lists it as remaining with no owner. FR-278 is in LC1's contract, so either add the input or name the ticket that owns lock evidence. | qsl-replay/src/spine/lifecycle.rs:243-277; spec/spec.md FR-278 row |
+
+## Dispositions
+
+Round 1, reviewed at a47829387eae0445ada116f6594f599654187cf6 (fix commits
+7116333d6, bfd81c9d9, a47829387 on ddd162c7). Owner rulings applied:
+
+- The quadratic S1 parse is a QSL-482 B1 follow-up, and FR-276-AC-2's test
+  stays at 4,000 declarations, with TC-757 carrying the remaining-work note.
+- `dependencies.depth` goes to B4.
+- `execute` stays crate-internal.
+- The AC-2 oracle counts polls, which is acceptable once every charge site
+  polls.
+
+The coder's claim about the dispatch limits is true. `model.family_steps`
+is read only by `build_family`, which only `link_dispatch` calls, and
+`model.dispatch_candidates` is charged only in `link_dispatch`. The one
+caller of `link_dispatch` is `checked_dispatch_operation`, which no spine
+operation calls. The FR-277 and TC-758 rows state this honestly.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7116333d6 |
+| FND-002 | accepted-no-change | Owner ruling: the S1 parse is quadratic (release: 2,000 declarations 195 ms, 50,000 410.6 s), a defect owned by a QSL-482 B1 follow-up after A3c. The test stays at 4,000 declarations, and TC-757 records the measurements and keeps 200,000 as the target. |
+| FND-003 | fixed | 7116333d6 |
+| FND-004 | fixed | a47829387 |
+| FND-005 | fixed | 7116333d6 |
+| FND-006 | fixed | 7116333d6 |

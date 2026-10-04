@@ -132,12 +132,15 @@ fn charged<T>(cancel: &Cancel, counter: &mut u64, run: impl FnOnce() -> T) -> T 
 /// (FR-277), and one that is a broken invariant as the fault (FR-275).
 fn stage<T>(
     cancel: &Cancel,
-    limits: &SpineLimits,
+    source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
     run: impl FnOnce(&mut StageWork) -> Result<T, Box<CompileRefusal>>,
 ) -> Result<Staged<T>, FrontEndFailure> {
     if let Some(cause) = cancel.cause() {
         return Err(StageFailure::Cancelled(cause));
     }
+    // The stages' charges are counted while the operation runs; an
+    // evaluation that counts nothing polls with a load alone.
+    let _counting = cancel.count_charges();
     let mut work = StageWork::default();
     let result = run(&mut work);
     if let Some(cause) = cancel.tripped() {
@@ -145,13 +148,18 @@ fn stage<T>(
     }
     match result {
         Ok(value) => Ok(Staged::new(value).with_work(work)),
-        Err(refusal) => Err(failure_of(refusal, limits)),
+        Err(refusal) => Err(failure_of(refusal, source_len)),
     }
 }
 
 /// `refusal` as the stage failure it is: a limit, a fault or a refusal.
-fn failure_of(refusal: Box<CompileRefusal>, limits: &SpineLimits) -> FrontEndFailure {
-    if let Some(limit) = limit_of(&refusal, limits) {
+/// `source_len` gives the byte length of the source an identity labels, for
+/// the byte ceiling's counter.
+fn failure_of(
+    refusal: Box<CompileRefusal>,
+    source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
+) -> FrontEndFailure {
+    if let Some(limit) = limit_of(&refusal, source_len) {
         return StageFailure::Limit(limit);
     }
     if let Some(fault) = fault_of(&refusal) {
@@ -162,39 +170,41 @@ fn failure_of(refusal: Box<CompileRefusal>, limits: &SpineLimits) -> FrontEndFai
 
 /// The reached limit `refusal` reports, with the caller's limits field that
 /// raises it (FR-277), or `None` for a refusal that is not a limit.
-fn limit_of(refusal: &CompileRefusal, limits: &SpineLimits) -> Option<LimitExceeded> {
+fn limit_of(
+    refusal: &CompileRefusal,
+    source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
+) -> Option<LimitExceeded> {
     let at = |limit: LimitExceeded, region: Option<&SourceRegion>| {
         limit.at(region.cloned().map(Locus::Region))
     };
     match refusal {
         CompileRefusal::Source(diagnostic) => {
+            // The counter at the failed charge: the source's real length for
+            // the byte ceiling, and the first value past the bound for the
+            // charges that stop at it (a token, a node, a parser step).
             let (kind, configured, actual, field) = match diagnostic.limit()? {
                 SyntaxLimit::SourceBytes { bound } => (
                     FoundationKind::InputBytes,
                     bound,
-                    bound,
+                    source_len(&diagnostic.source).map_or(bound + 1, |length| length),
                     "source.source_bytes",
                 ),
                 SyntaxLimit::Tokens { bound } => {
-                    (FoundationKind::TokenCount, bound, bound, "source.tokens")
+                    (FoundationKind::TokenCount, bound, bound + 1, "source.tokens")
                 }
                 SyntaxLimit::Nodes { bound } => {
-                    (FoundationKind::NodeCount, bound, bound, "source.nodes")
+                    (FoundationKind::NodeCount, bound, bound + 1, "source.nodes")
                 }
-                // The bound is the total step budget; the field is per token.
-                SyntaxLimit::Work { bound } => (
-                    FoundationKind::WorkBudget,
-                    limits.source.work_units,
-                    bound,
-                    "source.work_units",
-                ),
+                // Bound and counter are both in parser steps: the unit's total
+                // step budget, which `source.work_units` sets per token.
+                SyntaxLimit::Work { bound } => {
+                    (FoundationKind::WorkBudget, bound, bound + 1, "source.work_units")
+                }
             };
             let limit = LimitExceeded::new(
                 kind,
                 u64::try_from(configured).unwrap_or(u64::MAX),
-                u128::try_from(actual)
-                    .unwrap_or(u128::MAX)
-                    .saturating_add(1),
+                u128::try_from(actual).unwrap_or(u128::MAX),
             )
             .named(field);
             Some(at(limit, diagnostic.region.as_ref()))
@@ -278,7 +288,7 @@ fn limit_of(refusal: &CompileRefusal, limits: &SpineLimits) -> Option<LimitExcee
                 _ => None,
             })
         }
-        CompileRefusal::Dependency { refusal, .. } => limit_of(refusal, limits),
+        CompileRefusal::Dependency { refusal, .. } => limit_of(refusal, source_len),
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
         | CompileRefusal::Profile { .. }
@@ -446,11 +456,9 @@ pub fn parse(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedSource>, FrontEndFailure> {
-    let spine_limits = SpineLimits {
-        source: limits,
-        ..SpineLimits::default()
-    };
-    stage(cancel, &spine_limits, |work| {
+    let source_len =
+        |identity: &SourceIdentity| (identity == request.source).then_some(request.bytes.len());
+    stage(cancel, &source_len, |work| {
         charged(cancel, &mut work.s1, || {
             parse_unit(
                 request.source.clone(),
@@ -473,11 +481,7 @@ pub fn select(
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
-    let spine_limits = SpineLimits {
-        model: limits,
-        ..SpineLimits::default()
-    };
-    stage(cancel, &spine_limits, |work| {
+    stage(cancel, &|_| None, |work| {
         let models = charged(cancel, &mut work.i1, || {
             select_models(parsed, packages, limits, cancel)
         })?;
@@ -501,7 +505,18 @@ pub fn check(
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
-    stage(cancel, &limits, |work| {
+    // The byte length of the unit's own source and of each supplied library.
+    let source_len = |identity: &SourceIdentity| {
+        if identity == parsed.source().identity() {
+            return Some(parsed.source().text().len());
+        }
+        dependencies
+            .libraries
+            .values()
+            .find(|library| &library.source == identity)
+            .map(|library| library.bytes.len())
+    };
+    stage(cancel, &source_len, |work| {
         dependencies
             .check_unit_owner(parsed.source().identity())
             .map_err(|refusal| Box::new(CompileRefusal::DependencyInput(refusal)))?;
@@ -514,10 +529,9 @@ pub fn check(
             visited: BTreeMap::new(),
             compiled: BTreeMap::new(),
             admitted: AdmittedPackages::default(),
-            lock,
             work: StageWork::default(),
         };
-        let package = resolution.check_unit(parsed, models.models.clone())?;
+        let package = resolution.check_unit(parsed, models.models.clone(), lock)?;
         *work = resolution.work;
         Ok(CheckedUnit {
             package,
@@ -545,7 +559,7 @@ pub fn package(
     cancel: &Cancel,
 ) -> Result<Staged<EmittedUnit>, FrontEndFailure> {
     let PackageLimits {} = limits;
-    stage(cancel, &SpineLimits::default(), |work| {
+    stage(cancel, &|_| None, |work| {
         let emission = charged(cancel, &mut work.e4, || emit_unit(&checked.package, cancel))?;
         let sources = std::iter::once(&checked.source)
             .chain(&checked.libraries)
@@ -751,9 +765,6 @@ struct Resolution<'a> {
     /// IR's admitted package of each library read so far, which a later
     /// library's view read takes for its closure instead of reading again.
     admitted: AdmittedPackages,
-    /// The lock evidence every unit of the closure is checked under
-    /// (ADR-011 §2.4).
-    lock: &'a LockEvidence,
     /// The charges each stage made, over the unit and every library it
     /// compiled.
     work: StageWork,
@@ -774,7 +785,10 @@ impl Resolution<'_> {
         let models = charged(cancel, &mut self.work.i1, || {
             select_models(&parsed, packages, limits.model, cancel)
         })?;
-        let package = self.check_unit(&parsed, models)?;
+        // A library is compiled independently of whoever imports it, so its
+        // recomputed `package_id` cannot depend on the importer: it is
+        // checked under the default lock evidence, never the importer's.
+        let package = self.check_unit(&parsed, models, &LockEvidence::default())?;
         let emission = charged(cancel, &mut self.work.e4, || emit_unit(&package, cancel))?;
         Ok((package, emission, parsed.source().clone()))
     }
@@ -784,6 +798,7 @@ impl Resolution<'_> {
         &mut self,
         parsed: &ParsedSource,
         models: Vec<SelectedModel>,
+        lock: &LockEvidence,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let limits = self.limits;
         let raw = parsed.source().reference().clone();
@@ -838,7 +853,7 @@ impl Resolution<'_> {
                 refusal,
             })
         })?;
-        declarations.lock_evidence = self.lock.clone();
+        declarations.lock_evidence = lock.clone();
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
             declarations.check_with_cancel(limits.checking, cancel)
