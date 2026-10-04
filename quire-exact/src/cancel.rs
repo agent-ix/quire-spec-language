@@ -145,10 +145,15 @@ impl Cancel {
     }
 
     /// Count the charges that poll this handle until the returned guard is
-    /// dropped. A handle shared by operations that count at once counts the
-    /// charges of them all.
+    /// dropped, from zero when no other session is counting. A handle shared
+    /// by operations that count at once counts the charges of them all.
     pub fn count_charges(&self) -> ChargeCount<'_> {
-        self.shared.counting.fetch_add(1, Ordering::Relaxed);
+        // A session that starts with none running counts from zero, so a
+        // handle reused across operations never carries one operation's
+        // count into the next, and saturation can only bite within one.
+        if self.shared.counting.fetch_add(1, Ordering::Relaxed) == 0 {
+            self.shared.charges.store(0, Ordering::Relaxed);
+        }
         ChargeCount { cancel: self }
     }
 
@@ -253,6 +258,24 @@ mod tests {
         cancel.poll();
         cancel.poll();
         assert_eq!(cancel.charges(), u32::MAX);
+    }
+
+    #[test]
+    fn a_new_counting_session_starts_from_zero_after_a_saturated_one() {
+        let cancel = Cancel::new();
+        {
+            let _first = cancel.count_charges();
+            cancel
+                .shared
+                .charges
+                .store(u32::MAX, core::sync::atomic::Ordering::Relaxed);
+            cancel.poll();
+            assert_eq!(cancel.charges(), u32::MAX);
+        }
+        let _second = cancel.count_charges();
+        cancel.poll();
+        cancel.poll();
+        assert_eq!(cancel.charges(), 2);
     }
 
     #[test]

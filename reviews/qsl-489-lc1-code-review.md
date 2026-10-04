@@ -156,3 +156,20 @@ wrong result. FND-010 above is the one new item.
 | FND-007 | fixed | 83f03a6f2 |
 | FND-008 | fixed | 83f03a6f2 |
 | FND-009 | fixed | 83f03a6f2 |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | The FND-010 fix saturates a counter that is never reset. `charges` is cumulative over the handle's whole life: every counted stage of every operation that uses the handle adds to it. Once one long-lived handle, reused across operations, passes `u32::MAX` charges in total, every later stage's `saturating_sub` gives 0. So `StageWork` silently reports zero work for every operation after that point. Wrapping was correct for any stage under 2^32 charges, however old the handle; saturation now fails on handle age instead. Fix: in `count_charges`, reset `charges` to 0 when `counting` goes from 0 to 1. The count then spans only the operations counting at that moment, and saturation can only pin a stage that itself makes 2^32 or more charges. | quire-exact/src/cancel.rs:117-128,140-146 |
+
+Round 3, reviewed at dbcb7890eae2867cc72a15f59eb1e4de9f4c0721 (fix commit
+dbcb7890e on 906b32262). The pre-merge `make ci` passed
+(logs/qsl-624-premerge-ci-2.log). `poll` now does a saturating
+`fetch_update`, and `charged` takes `saturating_sub`. A single stage of 2^32
+or more charges now pins at `u32::MAX - before`, which is a lower bound, not
+a small wrapped number. The boundary test pins that. FND-011 above is new.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-010 | fixed | dbcb7890e |
