@@ -51,7 +51,7 @@
       "properties": {
         "package": {"$ref": "#/$defs/package"},
         "requirement": {"$ref": "#/$defs/symbol"},
-        "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615}
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9007199254740992}
       }
     },
     "qualified_name": {

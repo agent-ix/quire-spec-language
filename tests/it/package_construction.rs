@@ -157,14 +157,14 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
         &models[0],
         r#""test:\"\\/\u0000\b\f\n\r\té🦀""#,
         r#""draft:é\u0001""#,
-        9_007_199_254_740_993,
+        9_007_199_254_740_992,
     );
     let package = NativePackage::new(
         minimal(
             &models,
             "test:\"\\/\0\u{8}\u{c}\n\r\té🦀",
             "draft:é\u{1}",
-            9_007_199_254_740_993,
+            9_007_199_254_740_992,
             "unicode.native",
         ),
         PackageLimits::default(),
@@ -178,7 +178,7 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
     let wire: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
     assert_eq!(
         wire["source"]["formal"]["revision"].as_u64(),
-        Some(9_007_199_254_740_993)
+        Some(9_007_199_254_740_992)
     );
     assert_ne!(
         package

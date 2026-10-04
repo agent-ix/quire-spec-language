@@ -79,6 +79,10 @@ mod facts;
 mod family;
 mod field_refinement;
 mod identity;
+// The nested expression forms of TC-415, shared by this crate's tests and the
+// package emitter's tests, so only `test-support` exposes them.
+#[cfg(any(test, feature = "test-support"))]
+pub mod depth_forms;
 // `imports` has no production caller yet (E3 imported-name resolution,
 // FR-087-AC-13). Only the layer-4 reader's tests use it, so it is public
 // only under `test-support` (no test-only `pub`).

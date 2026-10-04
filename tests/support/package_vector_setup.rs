@@ -43,7 +43,7 @@ pub(crate) fn cases() -> [Vector; 3] {
             digest: include_str!("../fixtures/native-package/controls.sha256"),
             identity: "test:\"\\/\0\u{8}\u{c}\n\r\té🦀",
             revision: "draft:é\u{1}",
-            formal_revision: 9_007_199_254_740_993,
+            formal_revision: 9_007_199_254_740_992,
             clauses: &[("Rule", "rule")],
         },
         Vector {

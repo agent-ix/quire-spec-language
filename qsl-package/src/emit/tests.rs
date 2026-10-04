@@ -366,6 +366,42 @@ fn a_law_names_its_definition_by_authority_and_identity() {
         .contains(&ieee));
 }
 
+/// An emitted v2 artifact identical except that one `application` argument is
+/// an inline `application` term is refused as `malformed_wire`, and no limit
+/// is reported.
+#[trace("TC-739", "FR-264-AC-3")]
+#[test]
+fn an_inline_nested_application_argument_is_a_malformed_wire() {
+    let emission = emit(&golden::float_add_of(BuiltinType::Float64, "nearest-even"));
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    let mut tampered = wire(&emission);
+    let nodes = tampered["semantic_graph"]["nodes"].as_array_mut().unwrap();
+    let node = nodes
+        .iter_mut()
+        .find(|node| node["body"]["term"] == "application")
+        .expect("the float addition is an application node");
+    let inline = node["body"].clone();
+    node["body"]["arguments"][0] = inline;
+    let pinned: PinnedRequest =
+        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
+    let outcome = read_v2(
+        &jcs(&tampered),
+        library(),
+        V2ReadLimits::default(),
+        &read_evidence(&emission),
+        &pinned,
+    );
+    match outcome {
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::MalformedWire
+            );
+        }
+        other => panic!("expected Refused(Envelope(MalformedWire)), got {other:?}"),
+    }
+}
+
 /// FR-322's `application_node_preimage` of a wire node, or FR-092's
 /// structural preimage under owner (`a`, `u`), rebuilt by the test from the
 /// wire alone. `group` is the node's recursion group in graph order.

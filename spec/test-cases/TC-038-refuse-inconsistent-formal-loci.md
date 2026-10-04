@@ -16,7 +16,7 @@ Integration, P1; verifies FR-014-AC-4 through actual IR SourceSpan constructors.
 
 Construct valid IR spans that separately alter formal document, formal revision,
 start line, start column, end line or end column. Include points within a
-multibyte scalar, just beyond EOF and at u64::MAX. Include a valid empty point
+multibyte scalar, just beyond EOF and at 2^53, the largest offset IR admits. Include a valid empty point
 and an exact multi-line span as positive controls after each refusal.
 
 ## Expected Results

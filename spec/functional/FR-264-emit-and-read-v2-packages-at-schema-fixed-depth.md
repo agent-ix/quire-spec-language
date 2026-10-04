@@ -39,8 +39,8 @@ limits only (ADR-030 D-4.9).
    `i2.work_units`, passed to IR's checked-package reader, with published
    defaults of 16777216 bytes, 10000 nodes, 100000 edges, 100000
    occurrences, 10000 diagnostics and 1000000 work units, each with no
-   ceiling. When IR's reader
-   reports one of those limits, QSL SHALL return `StageFailure::Limit` with
+   ceiling, and no depth limit
+   or setting. When IR's reader reports one of those limits, QSL SHALL return `StageFailure::Limit` with
    its kind, bound, count reached, setting (FR-255) and the locus FR-096
    defines.
 3. **Malformed wire.** When IR's reader refuses a node body outside FR-322's
@@ -57,7 +57,8 @@ limits only (ADR-030 D-4.9).
 | FR-264-AC-1 | On a thread with a 512 KiB stack, a package holding a 100,000-term sum, compiled under limits raised to fit it, is emitted, read back through QSL's I2 read with `i2.*` raised to fit it, and verified at its emitted `package_id`. The `V2Read` clones, compares equal to its clone, formats for debug and drops on the same thread. | Test (TC-738) |
 | FR-264-AC-2 | Every node body of every package the emitter writes for the TC-415 corpus and for AC-1 is in FR-322's stratified grammar, checked by a walk of the emitted JSON that classifies each body position as Leaf, Group, Tuple, Member or Body. | Test (TC-738) |
 | FR-264-AC-3 | A v2 artifact identical to an emitted one except that one `application` argument is an inline `application` term is refused by QSL's I2 read with code `malformed_wire`, with no limit outcome. | Test (TC-739) |
-| FR-264-AC-4 | A v2 artifact with more nodes than `i2.nodes` at bound `B` returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed count and setting `i2.nodes`, with `Locus::Artifact`; read again with `i2.nodes` raised through the v2 read limits' builder and through FR-255's settings operation given `i2.nodes=<n>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1), it verifies. | Test (TC-739) |
+| FR-264-AC-4 | A v2 artifact with more nodes than `i2.nodes` at bound `B` returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed count and setting `i2.nodes`, with `Locus::Artifact`; read again with `i2.nodes` raised through the v2 read limits' builder and through FR-255's settings operation given `i2.nodes=<n>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1), it verifies. | Test (TC-739); the node-limit kind, bound, count, `Locus::Artifact` and builder raise are verified by TC-739, and the setting name, the settings operation and `--limit` by TC-721 (FR-255, Planned), so this criterion is partial until TC-721 passes |
+| FR-264-AC-5 | On a thread with a 512 KiB stack and the default limits, a v2 artifact whose JSON is 100,000 arrays deep is refused by QSL's I2 read with code `malformed_wire`, with no limit outcome and no outcome naming a depth. | Test (TC-739) |
 
 ## Dependencies
 
@@ -75,8 +76,8 @@ limits only (ADR-030 D-4.9).
 
 Enforcing FR-322's stratified grammar in IR's checked-package reader, and
 removing that reader's depth limit and recursive decode, are IR's work
-(ADR-030 D-8 O-1). FR-264-AC-3 and the removal of QSL's own read depth
-depend on it.
+(ADR-030 D-8 O-1, Linear IR-495), which IR has merged. QSL's read has no
+depth member, no depth limit kind and no clamp.
 
 ## References
 

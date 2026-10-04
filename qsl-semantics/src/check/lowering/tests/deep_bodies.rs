@@ -4,7 +4,8 @@
 //! over the 100,000-deep checked packages of step 1 in `qsl-package`'s
 //! `emit::tests::deep_bodies`, where those packages are checked and emitted.
 
-use super::expression_depth::{check_on_small_stack as check_form_on_small_stack, Form, FORMS};
+use super::expression_depth::check_on_small_stack as check_form_on_small_stack;
+use crate::check::depth_forms::{Form, FORMS};
 
 /// The TC-415 nestings each form is lowered at.
 const LEVELS: [usize; 2] = [2, 1_000];

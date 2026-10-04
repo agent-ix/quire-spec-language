@@ -13,8 +13,9 @@
 //! about one level per source level.
 
 use super::depth::{chain, check_on_small_stack as check_records_on_small_stack};
-use super::expression_depth::{check_on_small_stack, Form, FORMS};
+use super::expression_depth::check_on_small_stack;
 use super::*;
+use crate::check::depth_forms::{Form, FORMS};
 use crate::check::json_depth;
 
 /// The shallow nesting each form is checked at.

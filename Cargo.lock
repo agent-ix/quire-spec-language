@@ -1575,17 +1575,20 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#c5fa773232249788341adcf1747445ec136be312"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#6fb6e974efd6b9a9c74515ee7e07df250fa4aacf"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-canonical",
  "quire-verification-contracts",
+ "quire-walk",
  "serde",
  "serde_json",
  "serde_path_to_error",
  "serde_stacker",
  "sha2",
  "stacker",
+ "unicode-ident",
+ "unicode-normalization",
 ]
 
 [[package]]

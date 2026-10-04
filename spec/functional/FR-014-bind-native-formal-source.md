@@ -68,7 +68,7 @@ intake. Extracted-to-original mapping remains the separate SourceMap API.
 | FR-014-AC-1 | An opaque native revision such as draft:alpha and a separately supplied formal revision 91 remain distinct and inspectable with the exact original Source and digest. | Test (TC-035) |
 | FR-014-AC-2 | Forward mapping reports independently expected byte, line and scalar-column endpoints for ASCII, CRLF, multibyte scalars, empty source, empty spans, EOF and the existing 1 MiB source boundary. | Test (TC-036) |
 | FR-014-AC-3 | Changing only one of a request's four native source labels, its display path or its bytes refuses with invalid_source_map; a subsequent exact-source request still succeeds. | Test (TC-037) |
-| FR-014-AC-4 | Reverse mapping rejects a foreign formal document/revision, inconsistent line/column, split scalar, out-of-range offset or u64::MAX offset without manufacturing a native locus. | Test (TC-038) |
+| FR-014-AC-4 | Reverse mapping rejects a foreign formal document/revision, inconsistent line/column, split scalar, out-of-range offset or 2^53 offset (the largest IR admits) without manufacturing a native locus. | Test (TC-038) |
 | FR-014-AC-5 | For every generated source in TC-039's finite family, valid spans agree with an independent coordinate oracle and round-trip; invalid spans refuse and request order does not change results. | Test (TC-039) |
 
 ## Dependencies
