@@ -55,3 +55,21 @@ low wording ones.
 | FND-004 | low | FR-087-AC-11 still says "`LibraryRefusal`'s own variant set is likewise unchanged". HL1 removed `ConflictingDefinition` from it. | spec/functional/FR-087-typestate-and-cross-package-node-key.md:602 |
 | FND-005 | low | ADR-013's conversions row still says "An `import`'s digest is read as a `quire.package.semantic/v2` `DigestRecord`, a claim compared with the recomputed `package_id` ... (ADR-015 D-2)". D-2 now says an import has no digest. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:164 |
 | FND-006 | low | FR-087-AC-14 still says "Binding an `Import`'s identity and digest to the source's resolved import declarations is FR-099's". `Import` has no digest now. | spec/functional/FR-087-typestate-and-cross-package-node-key.md:605 |
+
+## Dispositions
+
+Round 1, reviewed at ad18594412cb4cdd849104a7643491b231cd79ee (rebased onto
+LC1 ddd162c7; the original commits are unchanged per `git range-diff`). Per the
+coordinator's ruling, FND-001 keeps ADR-015 D-4: `execute.rs` now runs rules 6
+and 7 before rule 5. `tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
+now asserts `DependencyIdentityMismatch` naming `test/units`, with the entry's
+and the recompiled id, and it passes. This round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | ad1859441 |
+| FND-002 | fixed | ad1859441 |
+| FND-003 | fixed | ad1859441 |
+| FND-004 | fixed | ad1859441 |
+| FND-005 | fixed | ad1859441 |
+| FND-006 | fixed | ad1859441 |

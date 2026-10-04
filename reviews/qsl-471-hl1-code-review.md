@@ -60,3 +60,18 @@ contradiction, is in SR-1277 FND-001.
 | --- | --- | --- | --- |
 | FND-001 | medium | `resolve_libraries` selects "the first supplied package" of an import's identity. Given two supplied packages of one identity with different `package_id`s, it silently binds the first and ignores the second. Before HL1 the import's digest picked the right one. The comment's claim that duplicates are refused earlier by `DependencyInput` does not hold here: `resolve_libraries` takes a bare `&[LibraryPackage]` and no `DependencyInput` runs before it. Commit 2be02efa6 shows the defect: `l07_migration_creates_new_identities_and_never_relabels_evidence` used to supply `[old_library, new_library]` and expect the new one, and it now supplies only `new_library` so the test passes. Fix: refuse a second supplied package of an identity already held (the `DependencyInput` rule, `invalid_package`/`conflicting-definition`), and test it with the old two-package `l07` input. | qsl-semantics/src/library/mod.rs:930-936; qsl-semantics/tests/it/library_resolution.rs:361 |
 | FND-002 | low | With `StalePin::Import` removed, `StalePin` has one variant, `Pinned(Box<PinMismatch>)`. Every match on it is now irrefutable. `LibraryRefusal::StaleDependency.pin` can hold `Box<PinMismatch>` directly. | qsl-semantics/src/library/mod.rs:308-315 |
+
+## Dispositions
+
+Round 1, reviewed at ad18594412cb4cdd849104a7643491b231cd79ee. HL1 is now
+rebased onto LC1 #624 head ddd162c7. `git range-diff` shows the three
+original commits unchanged (cae1d1588, be1926420, 62aa2f7d1), and fix commit
+ad1859441 touches only the HL1 files and the three SR files. Focused tests pass,
+including `l07_migration_creates_new_identities_and_never_relabels_evidence` and
+`conflicting_definition_classifies_to_i2_rule_2`, and `cargo fmt --check` is
+clean. This round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | ad1859441 |
+| FND-002 | fixed | ad1859441 |

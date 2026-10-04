@@ -53,3 +53,13 @@ and the test traced to TC-253 dropped that half without the TC changing.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | TC-253 step 10 still says "the first link refuses `DependencyIdentityMismatch` (`stale_dependency`) naming the recorded and the recomputed `package_id`". HL1 deleted `LinkRefusal::DependencyIdentityMismatch` and `Import.digest`, so no link can refuse that way, and `e4_refuses_a_conflicting_diamond` (traced `TC-253`) dropped the stale half. TC-253 now states a result no test checks and the code cannot produce. Fix: rewrite step 10 (and its procedure step) to the diamond refusal alone, as FR-087-AC-14 now reads. | spec/test-cases/TC-253-verified-binding-three-conditions-and-refusals.md:91-95; qsl-package/src/emit/tests.rs:2764 |
+
+## Dispositions
+
+Round 1, reviewed at ad18594412cb4cdd849104a7643491b231cd79ee (rebased onto
+LC1 ddd162c7; the original commits are unchanged per `git range-diff`). This
+round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | ad1859441 |
