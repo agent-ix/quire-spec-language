@@ -524,7 +524,7 @@ names different artifacts in each.
 | TC-727 | Checker defaults admit any depth that fits, and its limit outcomes name the setting | Unit | P1 | FR-258-AC-3, FR-258-AC-4 | 🚧 Planned |
 | TC-728 | A deep package's identities do not depend on the stack, and byte limits report as limits | Unit | P1 | FR-259-AC-1, FR-259-AC-2, FR-259-AC-4 | 🚧 Planned (step 5 implemented) |
 | TC-729 | QSL identities, digests and allocation failures over quire-canonical at any depth | Unit | P1 | FR-259-AC-3, FR-259-AC-5 | 🚧 Planned (step 3 implemented) |
-| TC-730 | Intake judges a deep package document on its content | Integration | P1 | FR-260-AC-1, FR-260-AC-2 | 🚧 Planned |
+| TC-730 | Intake judges a deep package document on its content | Integration | P1 | FR-260-AC-1, FR-260-AC-2, FR-260-AC-5 | 🚧 Planned (step 4 implemented) |
 | TC-731 | Intake reports composite cycles of any length | Integration | P1 | FR-260-AC-3 | 🚧 Planned |
 | TC-732 | The intake byte limit names its setting and clears when raised | Integration | P1 | FR-260-AC-4 | 🚧 Planned |
 | TC-733 | Library preimage and observation reads judge deep documents on their content | Integration | P1 | FR-261-AC-1, FR-261-AC-2, FR-261-AC-3 | 🚧 Planned |
