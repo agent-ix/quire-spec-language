@@ -453,7 +453,7 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
     );
 
     for (input, code, cause) in [
-        (edited, "stale_dependency", "byte-digest-mismatch"),
+        (edited, "stale_dependency", "content-mismatch"),
         (
             other_model,
             "invalid_model_binding",

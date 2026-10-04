@@ -58,7 +58,7 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
   `content-mismatch` naming the envelope's and the payload's frame node,
   then occurrence, with no recompile.
 - Step 4: a `ReplayRefusal` holding `unavailable_observation`; a
-  `ReplayRefusal` holding `stale_dependency`/`byte-digest-mismatch`. Neither
+  `ReplayRefusal` holding `stale_dependency`/`content-mismatch`. Neither
   settles a result.
 - Step 5: equal results. `FrameCounterexample: FamilyPayload` compiles, and
   the envelope has no string-keyed field.

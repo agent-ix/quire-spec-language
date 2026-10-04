@@ -1077,19 +1077,35 @@ pub fn admit(
         bytes,
         document.as_ref().map(|document| document.jcs_digest),
     )
-    .map_err(|actual_digest| ModelRefusal {
-        code: Code::StaleDependency,
-        cause: ModelRefusalCause::ByteDigestMismatch {
-            expected: offered.digest,
-            actual: actual_digest,
+    .map_err(|mismatch| match mismatch {
+        DigestMismatch::Content { recomputed } => ModelRefusal {
+            code: Code::StaleDependency,
+            cause: ModelRefusalCause::ContentMismatch {
+                selected: offered.digest,
+                recomputed,
+            },
+            detail: format!(
+                "domain package {}@{} recomputes to digest {}, not the selected {}",
+                offered.identity,
+                offered.version,
+                hex(&recomputed),
+                hex(&offered.digest)
+            ),
         },
-        detail: format!(
-            "domain package {}@{} bytes hash to {}, not the selected {}",
-            offered.identity,
-            offered.version,
-            hex(&actual_digest),
-            hex(&offered.digest)
-        ),
+        DigestMismatch::RawBytes { digest } => ModelRefusal {
+            code: Code::StaleDependency,
+            cause: ModelRefusalCause::ByteDigestMismatch {
+                expected: offered.digest,
+                actual: digest,
+            },
+            detail: format!(
+                "domain package {}@{} bytes hash to {}, not the selected {}",
+                offered.identity,
+                offered.version,
+                hex(&digest),
+                hex(&offered.digest)
+            ),
+        },
     })?;
     // The package's own declared identity/version, read defensively: bytes
     // that fail to parse or omit `package` simply supply no identity/version,
@@ -1129,8 +1145,10 @@ pub fn admit(
     }
 }
 
-/// FR-154 Intake check 3 (`model-complete.md:69`): SHA-256 over the
-/// package's JCS bytes equals the selected digest, else `stale_dependency`.
+/// FR-154 Intake check 3 (`model-complete.md:69`): the canonical digest of
+/// the supplied document equals the selected digest, else
+/// `stale_dependency`/`content-mismatch`; bytes that did not parse compare
+/// their raw digest and refuse `stale_dependency`/`byte-digest-mismatch`.
 ///
 /// When the bytes parsed, the digest is taken over this crate's own RFC 8785
 /// JCS canonicalisation of the parsed tree, not the raw bytes verbatim, so
@@ -1158,13 +1176,35 @@ pub(super) fn check_package_digest(
     expected: [u8; 32],
     bytes: &[u8],
     parsed_digest: Option<[u8; 32]>,
-) -> Result<(), [u8; 32]> {
-    let actual_digest = parsed_digest.unwrap_or_else(|| raw_bytes_digest(bytes));
+) -> Result<(), DigestMismatch> {
+    let (actual_digest, mismatch): (_, fn([u8; 32]) -> DigestMismatch) = match parsed_digest {
+        Some(digest) => (digest, |recomputed| DigestMismatch::Content { recomputed }),
+        None => (raw_bytes_digest(bytes), |digest| DigestMismatch::RawBytes {
+            digest,
+        }),
+    };
     if actual_digest == expected {
         Ok(())
     } else {
-        Err(actual_digest)
+        Err(mismatch(actual_digest))
     }
+}
+
+/// Why [`check_package_digest`] refused, naming the digest to report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum DigestMismatch {
+    /// The supplied document parsed and its canonical `sha256-jcs` digest
+    /// differs from the selected one (`content-mismatch`).
+    Content {
+        /// The digest recomputed from the supplied document.
+        recomputed: [u8; 32],
+    },
+    /// The supplied bytes did not parse, so their raw digest was compared
+    /// and differs from the selected one (`byte-digest-mismatch`).
+    RawBytes {
+        /// The raw bytes' own digest.
+        digest: [u8; 32],
+    },
 }
 
 /// ADR-013 O-01: admits every selection in `offered`, in order, through
@@ -3241,7 +3281,7 @@ mod tests {
 
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn refuses_byte_digest_mismatch() {
+    fn a_parsed_document_under_another_digest_refuses_content_mismatch() {
         let bytes = package_bytes("acme/orders", "1");
         let wrong_digest = digest_of(b"not the package");
         let actual_digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
@@ -3254,12 +3294,12 @@ mod tests {
             refusal,
             ModelRefusal {
                 code: Code::StaleDependency,
-                cause: ModelRefusalCause::ByteDigestMismatch {
-                    expected: wrong_digest,
-                    actual: actual_digest,
+                cause: ModelRefusalCause::ContentMismatch {
+                    selected: wrong_digest,
+                    recomputed: actual_digest,
                 },
                 detail: format!(
-                    "domain package acme/orders@1 bytes hash to {}, not the selected {}",
+                    "domain package acme/orders@1 recomputes to digest {}, not the selected {}",
                     hex(&actual_digest),
                     hex(&wrong_digest)
                 ),

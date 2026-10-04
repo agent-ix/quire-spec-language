@@ -204,7 +204,7 @@ run before the recompile:
    arrives wrapped in `CompileRefusal::Dependency` with the library's path
    (D-1).
 5. After rules 6 and 7, the recompiled `package_id` equals the request's
-   (ADR-013 O-26), else the existing `PackageIdMismatch`. An edited
+   (ADR-013 O-26), else the existing `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`). An edited
    dependency source changes the proved package's `package_id` too, so rules
    6 and 7 run first and name the stale dependency.
 6. Every entry's identity is held by the recompiled package's
@@ -212,7 +212,7 @@ run before the recompile:
    (`invalid_package`/`invalid-value` at `/package/dependencies`).
 7. Every entry's `package_id` equals the closure's selection of its
    identity, else `ReplayRefusal::DependencyIdentityMismatch { identity,
-   requested, recompiled }` (`stale_dependency`/`byte-digest-mismatch`),
+   requested, recompiled }` (`stale_dependency`/`content-mismatch`),
    where `requested` is the entry's `DigestRecord` and `recompiled` the
    `PackageId`, named as `PackageIdMismatch` names its fields.
 

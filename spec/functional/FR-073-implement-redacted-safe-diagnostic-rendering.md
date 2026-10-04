@@ -75,6 +75,7 @@ on purpose.
   entry's digest or a bounded descriptor only.
 - FR-069 through FR-072 SHALL type every refusal-cause field they define
   (including the fields of the `stale_dependency`/`byte-digest-mismatch`,
+  `stale_dependency`/`content-mismatch`,
   `stale_dependency`/`digest-domain-mismatch`, and bound-exceeded causes)
   to hold only a digest, a locus, a category, or another bounded
   descriptor, so no refusal cause's `Debug`/`Display` rendering can expose

@@ -177,7 +177,7 @@ fn conflicting_pins_for_one_identity_cannot_be_built() {
 /// Condition 3 reads a resolved `LibraryLock` as its pinned request: a lock
 /// selecting `pkg` at the recomputed id admits the candidate, and a lock
 /// selecting a package of another `package_id` under that identity refuses
-/// it as a `byte-digest-mismatch`.
+/// it as a `content-mismatch`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn a_resolved_library_lock_is_a_pinned_request() {
@@ -206,7 +206,7 @@ fn a_resolved_library_lock_is_a_pinned_request() {
         bind(candidate(recomputed()), &PinnedRequest::from(&lock))
             .unwrap_err()
             .cause(),
-        super::LibraryCause::ByteDigestMismatch
+        super::LibraryCause::ContentMismatch
     );
 }
 

@@ -549,12 +549,22 @@ pub enum ModelRefusalCause {
         /// The caller's selection, already admitted past check 1.
         selection: DomainPackageRef,
     },
-    /// FR-154 Intake check 3 (`model-complete.md:69`): SHA-256 over the
-    /// package's JCS bytes does not equal the selected digest.
+    /// FR-154 Intake check 3 (`model-complete.md:69`): the canonical
+    /// `sha256-jcs` digest of the supplied domain-package document differs
+    /// from the selected digest.
+    ContentMismatch {
+        /// The selected digest.
+        selected: [u8; 32],
+        /// The digest recomputed from the supplied document.
+        recomputed: [u8; 32],
+    },
+    /// FR-154 Intake check 3 (`model-complete.md:69`) for bytes the shared
+    /// reader refuses: such bytes have no canonical form, so the raw bytes'
+    /// own digest is compared with the selected digest and differs.
     ByteDigestMismatch {
         /// The selected digest.
         expected: [u8; 32],
-        /// The digest actually computed over the supplied bytes.
+        /// The digest of the supplied raw bytes.
         actual: [u8; 32],
     },
     /// ADR-011 Limits: a domain package document reached one of intake's
@@ -833,6 +843,7 @@ impl ModelRefusalCause {
             | Self::FrameEntryMalformed { .. }
             | Self::DigestDomainMismatch { .. }
             | Self::MissingSelection { .. }
+            | Self::ContentMismatch { .. }
             | Self::ByteDigestMismatch { .. }
             | Self::IntakeLimitExceeded { .. }
             | Self::AllocationFailed { .. }
@@ -916,6 +927,7 @@ impl ModelRefusalCause {
             Self::FrameEntryUnsupported { .. } => "unsupported-feature",
             Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
+            Self::ContentMismatch { .. } => "content-mismatch",
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
@@ -1006,9 +1018,9 @@ impl ModelRefusalCause {
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
             Self::UnsupportedDeclarationForm { .. } => "unsupported_construct",
             Self::FrameEntryUnsupported { .. } => "unknown_required_feature",
-            Self::DigestDomainMismatch { .. } | Self::ByteDigestMismatch { .. } => {
-                "stale_dependency"
-            }
+            Self::DigestDomainMismatch { .. }
+            | Self::ContentMismatch { .. }
+            | Self::ByteDigestMismatch { .. } => "stale_dependency",
             Self::MissingSelection { .. } => "missing_import",
             Self::DuplicateSelection { .. } => "duplicate_selection",
             Self::FrameCreateOutsideGrant { .. }
@@ -1316,6 +1328,10 @@ pub mod fixtures {
         MissingSelection => ModelRefusalCause::MissingSelection {
             selection: DomainPackageRef::fixture("p"),
         },
+        ContentMismatch => ModelRefusalCause::ContentMismatch {
+            selected: [0; 32],
+            recomputed: [0; 32],
+        },
         ByteDigestMismatch => ModelRefusalCause::ByteDigestMismatch {
             expected: [0; 32],
             actual: [0; 32],
@@ -1480,6 +1496,7 @@ pub(crate) mod tests {
             ModelRefusalCause::FrameEntryUnsupported { .. } => "unsupported-feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
+            ModelRefusalCause::ContentMismatch { .. } => "content-mismatch",
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
@@ -1575,6 +1592,7 @@ pub(crate) mod tests {
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "unsupported_construct",
             ModelRefusalCause::FrameEntryUnsupported { .. } => "unknown_required_feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "stale_dependency",
+            ModelRefusalCause::ContentMismatch { .. } => "stale_dependency",
             ModelRefusalCause::ByteDigestMismatch { .. } => "stale_dependency",
             ModelRefusalCause::MissingSelection { .. } => "missing_import",
             ModelRefusalCause::DuplicateSelection { .. } => "duplicate_selection",

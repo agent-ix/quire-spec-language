@@ -245,7 +245,7 @@ pub type ImportPath = Vec<LibraryName>;
 pub enum LibraryCause {
     /// No supplied library of the imported identity has the imported
     /// `package_id`.
-    ByteDigestMismatch,
+    ContentMismatch,
     /// No library of the imported identity is supplied.
     MissingSelection,
     /// Two imports bind one qualifier.
@@ -272,7 +272,7 @@ impl LibraryCause {
     /// The cause tag.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::ByteDigestMismatch => "byte-digest-mismatch",
+            Self::ContentMismatch => "content-mismatch",
             Self::MissingSelection => "missing-selection",
             Self::AmbiguousName => "ambiguous-name",
             Self::ConflictingDefinition => "conflicting-definition",
@@ -448,7 +448,7 @@ impl LibraryRefusal {
             Self::UndeclaredExport { .. } => LibraryCause::UndeclaredExport,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
             Self::ImportCycle { .. } => LibraryCause::DefinitionCycle,
-            Self::StaleDependency { .. } => LibraryCause::ByteDigestMismatch,
+            Self::StaleDependency { .. } => LibraryCause::ContentMismatch,
             Self::MissingImport { .. } => LibraryCause::MissingSelection,
         }
     }
@@ -715,7 +715,7 @@ impl From<&LibraryLock> for PinnedRequest {
 /// `verify_package` (owner ruling item 3(f): reused unchanged, not a second
 /// digest implementation), then condition 3: `pinned` must select
 /// `candidate`'s identity at `candidate`'s recomputed `package_id`. A
-/// different `package_id` refuses as `StaleDependency` (`byte-digest-mismatch`;
+/// different `package_id` refuses as `StaleDependency` (`content-mismatch`;
 /// FR-087-AC-12), and an unlisted identity as `MissingImport`. Every refusal names its cause and yields nothing
 /// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
 /// of the file bytes, a lock file or the source.

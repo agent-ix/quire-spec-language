@@ -483,12 +483,24 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
         edited_digest.hex(),
         edited.as_bytes().to_vec(),
     )];
-    assert!(matches!(
-        replay(absent),
-        Err(ReplayRefusal::Request(
-            ReplayRequestRefusal::IncompleteByteProvision(_)
-        ))
-    ));
+    let refused = replay(absent).unwrap_err();
+    assert_eq!(refused.code(), Code::MissingImport);
+    let original = source_digest(source.as_bytes());
+    let ReplayRefusal::Request(ReplayRequestRefusal::IncompleteByteProvision {
+        requested,
+        named_by,
+    }) = &refused
+    else {
+        panic!("expected an incomplete byte provision, got {refused:?}");
+    };
+    assert_eq!(
+        requested,
+        &format!("{} {}", original.domain().as_str(), original.hex())
+    );
+    assert_eq!(named_by, "source_digests[0]");
+    assert!(refused
+        .to_string()
+        .starts_with("missing_import/missing-selection:"));
 
     let mut mismatched = request(
         source.as_bytes(),
@@ -496,13 +508,15 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
         name(&["small"]),
         input(x, 7),
     );
-    mismatched.byte_provision[0].2 = edited.into_bytes();
-    assert!(matches!(
-        replay(mismatched),
-        Err(ReplayRefusal::Request(
-            ReplayRequestRefusal::ByteDigestMismatch(_)
-        ))
-    ));
+    mismatched.byte_provision[0].2 = edited.clone().into_bytes();
+    let refused = replay(mismatched).unwrap_err();
+    let ReplayRefusal::Request(ReplayRequestRefusal::ByteDigestMismatch { declared, actual }) =
+        &refused
+    else {
+        panic!("expected a byte digest mismatch, got {refused:?}");
+    };
+    assert_eq!(declared, &format!("{:?}", source_digest(source.as_bytes())));
+    assert_eq!(actual, &format!("{:?}", source_digest(edited.as_bytes())));
 }
 
 /// FR-098-AC-1, FR-098-AC-4: a domain package reaches I1 only from the byte

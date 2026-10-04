@@ -88,7 +88,7 @@ through it, or a crate alias or glob import that reaches it.
   `dependency_selections` does not hold as
   `ReplayRefusal::DependencySelections`, and then an entry whose
   `package_id` differs from the closure's selection of its identity as
-  `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`), naming
+  `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`/`content-mismatch`), naming
   the identity, the entry's `package_id` (`requested`) and the recompiled
   one. An edited dependency source also changes the proved package's
   `package_id`, so these checks run first and name the stale dependency.
@@ -127,7 +127,7 @@ through it, or a crate alias or glob import that reaches it.
   `dependencies` list that is not strictly ascending or holds an entry the
   closure does not (`DependencySelections`), a dependency-input refusal
   (`DependencyInput`), a recompile
-  refusal or stage limit (`stage_limit_exceeded`), a stale `package_id`, a
+  refusal or stage limit (`stage_limit_exceeded`), a stale `package_id` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`), a
   selection naming no function node, an argument naming no parameter, a
   parameter bound twice or not at all, a witness that does not decode
   (naming the request's `obligation_identity`), an S6a
@@ -146,7 +146,7 @@ through it, or a crate alias or glob import that reaches it.
 |----|----------|--------------|
 | FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document or two sources refuses before any recompile. | Test (TC-444) |
 | FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` bindings join the function's parameters by parameter node id, in declared parameter order whatever order they arrive in, and a Boolean parameter takes a witness entry `0` or `1` and an `Input` assignment's `WitnessValue::Boolean` (an `Input` `WitnessValue::Integer` for it refuses `WrongValueKind`); the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` (`Witness`) with no QSpec FR-351 record, since a function call's result has no decisive occurrence (ADR-031 SW-7), carrying the call's charges. | Test (TC-444) |
-| FR-098-AC-3 | A meaning-affecting source edit refuses by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
+| FR-098-AC-3 | A meaning-affecting source edit refuses `stale_dependency`/`content-mismatch` by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
 | FR-098-AC-5 | A replay that disagrees with the refuted property settles `inconclusive` with cause `Verdicts`, and one that completes no value with cause `NoValue`, each holding both verdicts; neither is repaired. | Test (TC-444) |
 | FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the replay refuses `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`), naming `test/units`, the entry's `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `ReplayRefusal::DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |

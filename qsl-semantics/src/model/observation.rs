@@ -34,7 +34,7 @@ use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
-use crate::model::intake::{admit_selections, read_records};
+use crate::model::intake::{admit_selections, read_records, DigestMismatch};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
@@ -571,11 +571,19 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
             None => None,
         },
     };
-    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|_| {
-        refuse(AdmissionRecord::new(
-            Code::StaleDependency,
-            "byte-digest-mismatch",
-        ))
+    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|mismatch| {
+        match mismatch {
+            DigestMismatch::Content { recomputed } => refuse(
+                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
+                    .with("selected", hex(&expected))
+                    .with("recomputed", hex(&recomputed)),
+            ),
+            DigestMismatch::RawBytes { digest } => refuse(
+                AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
+                    .with("selected", hex(&expected))
+                    .with("actual", hex(&digest)),
+            ),
+        }
     })
 }
 
@@ -659,12 +667,14 @@ mod digest_tests {
             *quire_canonical::sha256(&last_wins, quire_canonical::Limits::new(u64::MAX))
                 .unwrap()
                 .as_bytes();
+        let raw: [u8; 32] = Sha256::digest(br#"{"a":1,"a":2}"#).into();
         assert_eq!(
             check_document_digest(br#"{"a":1,"a":2}"#, canonical),
-            Err(refuse(AdmissionRecord::new(
-                Code::StaleDependency,
-                "byte-digest-mismatch"
-            )))
+            Err(refuse(
+                AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
+                    .with("selected", hex(&canonical))
+                    .with("actual", hex(&raw))
+            ))
         );
     }
 
@@ -710,6 +720,70 @@ mod digest_tests {
         let text = r#"{"a":1,"a":2,"n":1e-400}"#;
         let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
         assert_eq!(check_document_digest(text.as_bytes(), raw), Ok(()));
+    }
+
+    /// FR-106 check 1.3: a document the reader reads, offered under another
+    /// digest, refuses `stale_dependency`/`content-mismatch` carrying the
+    /// selected digest and the digest recomputed from the document.
+    #[trace("TC-465", "FR-106-AC-3")]
+    #[test]
+    fn a_parsed_document_under_another_digest_refuses_content_mismatch() {
+        let text = br#"{"a":2}"#;
+        let recomputed = *quire_canonical::sha256(
+            &quire_canonical::read(text, u64::MAX).unwrap(),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .unwrap()
+        .as_bytes();
+        let selected: [u8; 32] = Sha256::digest(b"another document").into();
+        assert_eq!(
+            check_document_digest(text, selected),
+            Err(refuse(
+                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
+                    .with("selected", hex(&selected))
+                    .with("recomputed", hex(&recomputed))
+            ))
+        );
+    }
+
+    /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack, digest admission over
+    /// a document holding a value nested 100,000 deep reads the document's
+    /// digest under its own digest, and under another digest refuses
+    /// `content-mismatch` carrying the selected and the recomputed digest.
+    #[trace("TC-733", "FR-261-AC-2")]
+    #[test]
+    fn a_document_nested_100_000_deep_is_digested_on_content() {
+        let outcome = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 100_000;
+                let text = format!("{{\"a\":{}{}}}", "[".repeat(depth), "]".repeat(depth));
+                let document = quire_canonical::read(text.as_bytes(), u64::MAX).unwrap();
+                let own =
+                    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+                        .unwrap()
+                        .as_bytes();
+                let other: [u8; 32] = Sha256::digest(b"another document").into();
+                (
+                    check_document_digest(text.as_bytes(), own),
+                    check_document_digest(text.as_bytes(), other),
+                    own,
+                    other,
+                )
+            })
+            .expect("the test thread spawns")
+            .join()
+            .expect("the read does not overflow the stack");
+        let (admitted, refused, own, other) = outcome;
+        assert_eq!(admitted, Ok(()));
+        assert_eq!(
+            refused,
+            Err(refuse(
+                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
+                    .with("selected", hex(&other))
+                    .with("recomputed", hex(&own))
+            ))
+        );
     }
 
     /// The reader's and the encoder's allocation failures refuse

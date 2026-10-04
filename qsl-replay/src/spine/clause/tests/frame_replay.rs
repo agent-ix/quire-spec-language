@@ -857,12 +857,14 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
 }
 
 /// TC-515 step 4 (FR-116-AC-4): invocation bytes edited under their own
-/// digest refuse `stale_dependency`/`byte-digest-mismatch`.
+/// digest refuse `stale_dependency`/`content-mismatch`.
 #[trace("TC-515", "FR-116-AC-4")]
 #[test]
-fn edited_invocation_bytes_refuse_byte_digest_mismatch() {
+fn edited_invocation_bytes_refuse_content_mismatch() {
     let input = forbidden_parent_change();
-    let invocation_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, input.invocation.digest).hex();
+    let selected_digest = input.invocation.digest;
+    let invocation_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
+    let mut edited_digest = [0_u8; 32];
     let refusal = replay(case_with(input, child_change("parent"), |wire, _| {
         let entry = wire
             .byte_provision
@@ -873,19 +875,34 @@ fn edited_invocation_bytes_refuse_byte_digest_mismatch() {
             .expect("UTF-8")
             .replace("\"boolean\":true", "\"boolean\":false")
             .into_bytes();
+        edited_digest = document_digest(&entry.2);
     }))
     .unwrap_err();
-    assert!(
-        matches!(
-            refusal,
-            ReplayRefusal::Request(ReplayRequestRefusal::ByteDigestMismatch(_))
-        ),
-        "{refusal:?}"
+    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
+        selected,
+        recomputed,
+    }) = &refusal
+    else {
+        panic!("expected a content mismatch, got {refusal:?}");
+    };
+    assert_eq!(
+        selected,
+        &format!(
+            "{:?}",
+            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
+        )
+    );
+    assert_eq!(
+        recomputed,
+        &format!(
+            "{:?}",
+            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
+        )
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     assert!(refusal
         .to_string()
-        .starts_with("stale_dependency/byte-digest-mismatch"));
+        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// TC-515 step 5 (FR-116-AC-5): replaying step 1's envelope twice gives

@@ -85,7 +85,8 @@ refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-CON-4.
   one `scalar` naming the value type and its native value type; one `enum` with
   its `variant` records; and one `population`.
 - Step 2 refuses with `stale_dependency`/`digest-domain-mismatch`,
-  `missing_import`/`missing-selection`, `stale_dependency`/`byte-digest-mismatch`
+  `missing_import`/`missing-selection`, `stale_dependency`/`content-mismatch`
+  (carrying the selected digest and the digest recomputed from the document)
   and `invalid_model_binding`/`wrong-model-selection` respectively, with no
   declaration; the combined case reports `digest-domain-mismatch`, the first
   check in FR-154 order.
