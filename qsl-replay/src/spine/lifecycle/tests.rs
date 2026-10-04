@@ -493,12 +493,8 @@ fn wide(bytes: usize) -> SpineLimits {
     limits
 }
 
-/// Declarations in the cancelled-check test. The AC names 200,000, which
-/// `parse` cannot generate: S1's parse time grows faster than the square of
-/// the unit in a release build (195 ms at 2,000 declarations, 4.1 s at 8,000,
-/// 71 s at 25,000, 411 s at 50,000), while the check over the same units is
-/// linear (53 ms at 2,000, 1.5 s at 50,000). So the test checks 4,000.
-const DECLARATIONS: usize = 4_000;
+/// Declarations in the cancelled-check test, as the AC names them.
+const DECLARATIONS: usize = 200_000;
 
 /// The unit of `count` declarations, parsed and with its models selected,
 /// under limits raised to fit it.

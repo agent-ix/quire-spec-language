@@ -7,6 +7,7 @@
 //!
 //! ```text
 //! qsl-bench-probe parse                     # nesting 0..=64, volume sizes
+//! qsl-bench-probe parse-volume <N>          # one parse of N functions, limits raised
 //! qsl-bench-probe cst                       # hashed bytes per source byte
 //! qsl-bench-probe check <chain|independent|self-recursive|text-cluster|deep-wide|deep-wide-chain> <N>   # one check, one process
 //! qsl-bench-probe eval <N>                  # one f0 call on an N-chain
@@ -220,6 +221,29 @@ fn probe_model(shape: ModelShape, members: usize) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// One parse of `functions` declarations with every S1 limit raised to fit
+/// it: wall time and outcome.
+fn probe_parse_volume(functions: usize) -> ExitCode {
+    let text = parse::volume_source(functions);
+    let limits = qsl_cst::Limits::default()
+        .with_source_bytes(usize::MAX)
+        .with_tokens(usize::MAX)
+        .with_nodes(usize::MAX);
+    let started = Instant::now();
+    let parsed = parse::parse_with(&text, limits);
+    let s1 = started.elapsed().as_millis();
+    let outcome = ParseOutcome::of(&parsed);
+    let started = Instant::now();
+    let built = parsed.is_ok_and(|parsed| qsl_forms::build_unit(&parsed).is_ok());
+    println!(
+        "functions={functions} bytes={} {} s1_ms={s1} s2_built={built} s2_ms={}",
+        text.len(),
+        describe(&outcome),
+        started.elapsed().as_millis()
+    );
+    ExitCode::SUCCESS
+}
+
 /// `#[string_edge]`: dispatches the probe's command-line subcommand words.
 #[string_edge]
 fn main() -> ExitCode {
@@ -229,6 +253,10 @@ fn main() -> ExitCode {
             probe_parse();
             ExitCode::SUCCESS
         }
+        Some("parse-volume") => match size(arguments.get(1)) {
+            Some(functions) => probe_parse_volume(functions),
+            None => usage(),
+        },
         Some("cst") => {
             probe_cst();
             ExitCode::SUCCESS

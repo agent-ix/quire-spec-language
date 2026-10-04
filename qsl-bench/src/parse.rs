@@ -43,6 +43,18 @@ pub fn volume_source(functions: usize) -> String {
 /// The outer `Err` is `qsl_cst::parse`'s own fatal source or resource
 /// refusal, returned as is.
 pub fn parse(text: &str) -> Result<ParsedSource, Box<qsl_cst::CompleteDiagnostic>> {
+    parse_with(text, Limits::default())
+}
+
+/// Parse `text` under [`IDENTITY`] at `limits`.
+///
+/// # Errors
+///
+/// `qsl_cst::parse`'s own fatal source or resource refusal, returned as is.
+pub fn parse_with(
+    text: &str,
+    limits: Limits,
+) -> Result<ParsedSource, Box<qsl_cst::CompleteDiagnostic>> {
     qsl_cst::parse(
         SourceIdentity {
             authority: "agent-ix".into(),
@@ -52,7 +64,7 @@ pub fn parse(text: &str) -> Result<ParsedSource, Box<qsl_cst::CompleteDiagnostic
         },
         "bench.native",
         text.as_bytes(),
-        Limits::default(),
+        limits,
     )
 }
 
