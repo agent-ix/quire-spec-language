@@ -6,8 +6,10 @@
 //! surface never becomes a second path to a moved item.
 //!
 //! The layer crates are read from `cargo metadata`: every workspace crate
-//! the root crate names as a `path` dependency, by its Rust name, in any
-//! dependency table. `[dev-dependencies]` count too: `qsl-route`
+//! the root crate names as a `path` dependency, plus the shared leaves
+//! `quire-exact` and `quire-semantic-value` (git dependencies of their own
+//! repositories), by its Rust name, in any dependency table. `[dev-dependencies]` count too: `qsl-
+//! route`
 //! has no shipped caller in the root crate, so it is a dev dependency only,
 //! and a `#[cfg(test)]` item of `src/` can still name it. A crate extracted
 //! later is covered as soon as the root crate depends on it. The one

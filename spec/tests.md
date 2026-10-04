@@ -141,7 +141,6 @@ names different artifacts in each.
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Partial: steps 1, 4 and 5 by `xtask::typestate_scan`; step 3 by TC-227; step 6 by `arch-lint`'s T12-B allow-list, which names only `check`; step 2's byte-identity against the pre-relocation tree is not backed |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
 | TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1, FR-089-AC-7 | ✅ Passed locally for the three-fact preimage; 🚧 Planned for ADR-016 ID-5's seven-member preimage (AC-1 as amended, AC-7), ADR-016 G-3 |
-| TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally |
 | TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | ✅ Passed locally |
 | TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | ✅ Passed locally |
 | TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | ✅ Passed locally |
@@ -742,10 +741,8 @@ no key for one (FR-089-AC-6). QSL has no equality or key of its own: it
 calls `quire_exact::member_equal` and `quire_exact::compare_keys`. TC-297, with its three tests, is in `agent-ix/quire-exact`. The
 declared-maximum comparison is a QSL-layer check (FR-089-AC-5, TC-295): QSL
 `model`/the evaluator resolves the binding, then compares its declared
-maximum. TC-292 is `✅ Inspected locally`:
-the payload type is `PopulationId`, and the crate-DAG direction (ADR-011
-§6.1) makes a `PopulationBinding` import structurally impossible, not merely
-absent from a scan.
+maximum. TC-292, the inspection that the kernel payload is a `PopulationId`
+with no model dependency, is in `agent-ix/quire-exact`.
 
 The other half (`model` minting and the evaluator's
 resolution step) landed: `model::population::mint_population_id` mints a

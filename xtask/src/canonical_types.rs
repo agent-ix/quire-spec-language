@@ -14,7 +14,8 @@
 //! proc-macro target of every workspace member, and the same for every
 //! resolved package that FR-059's `graph::classify` assigns to an ecosystem
 //! repository, and the shared leaves `quire-exact` and `quire-semantic-value`
-//! wherever they come from. Test, bench, example and build-script targets are test or
+//! wherever they come from, each as its own ecosystem repository. Test, bench, example and
+//! build-script targets are test or
 //! build code, and test code under a root is excluded as `typestate_scan`
 //! excludes it.
 //!
@@ -52,9 +53,11 @@ use crate::typestate_scan::shipped_files;
 /// The doc line that marks a canonical type.
 const TAG: &str = "quire:canonical";
 
-/// The shared `no_std` leaf crates, each in its own repository. They hold
-/// the canonical types of the QSL core, so a QSL workspace scans them as its
-/// own and any other workspace scans them as the QSL repository's.
+/// The shared `no_std` leaf crates, each its own ecosystem repository,
+/// named by the crate. They hold canonical types of the QSL core, so the gate
+/// scans them wherever they are sourced from, as it scans IR's types. The
+/// `copy` rule holds them against the code that runs the gate; their own
+/// one-definition checks belong to their repositories.
 const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
 
 /// Target kinds whose sources are shipped code.
@@ -101,16 +104,6 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
         .iter()
         .filter_map(serde_json::Value::as_str)
         .collect();
-    let in_qsl_workspace = metadata["packages"]
-        .as_array()
-        .ok_or(malformed("packages"))?
-        .iter()
-        .any(|package| {
-            package["name"].as_str() == Some("quire-spec-language")
-                && package["id"]
-                    .as_str()
-                    .is_some_and(|id| members.contains(id))
-        });
     let mut packages = Vec::new();
     for package in metadata["packages"]
         .as_array()
@@ -120,12 +113,8 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
         let id = package["id"].as_str().ok_or(malformed("package id"))?;
         let repository = if members.contains(id) {
             Repository::Workspace
-        } else if SHARED_LEAVES.contains(&name) {
-            if in_qsl_workspace {
-                Repository::Workspace
-            } else {
-                Repository::Ecosystem(graph::Repo::Qsl.as_str())
-            }
+        } else if let Some(leaf) = SHARED_LEAVES.iter().find(|leaf| **leaf == name) {
+            Repository::Ecosystem(*leaf)
         } else {
             match graph::classify(name, package["source"].as_str()) {
                 Some(repo) => Repository::Ecosystem(repo.as_str()),
@@ -831,6 +820,7 @@ mod tests {
     const IR_SOURCE: &str = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#ea63488";
     const QSL_SOURCE: &str =
         "git+https://github.com/agent-ix/quire-spec-language?branch=main#e3fef8d";
+    const EXACT_SOURCE: &str = "git+https://github.com/agent-ix/quire-exact?branch=main#1098e44";
 
     /// A fixture workspace: source files in a temporary directory and the
     /// `cargo metadata` output that describes them.
@@ -1136,6 +1126,61 @@ mod tests {
         assert_eq!(fixture.findings(), vec![]);
     }
 
+    /// TC-747 steps 2 and 3: each shared leaf is its own ecosystem
+    /// repository, wherever it is sourced from. A QSL workspace member with
+    /// the same-named type but other members gives no finding (the
+    /// `identifier` rule applies inside the workspace only), and one with the
+    /// same members gives a `copy` finding naming the leaf's definition.
+    #[test]
+    #[trace("TC-747", "FR-272-AC-2")]
+    fn tc_747_shared_leaves_are_their_own_ecosystem_repositories() {
+        let mut fixture = Fixture::new();
+        fixture
+            .dependency("quire-exact", EXACT_SOURCE, TAGGED_OPERATOR)
+            .dependency(
+                "quire-semantic-value",
+                "path+file:///elsewhere",
+                "pub struct Other;\n",
+            );
+        let repositories: Vec<(String, Repository)> = fixture
+            .packages()
+            .into_iter()
+            .map(|package| (package.name, package.repository))
+            .collect();
+        assert_eq!(
+            repositories,
+            [
+                (
+                    "quire-exact".to_owned(),
+                    Repository::Ecosystem("quire-exact")
+                ),
+                (
+                    "quire-semantic-value".to_owned(),
+                    Repository::Ecosystem("quire-semantic-value")
+                ),
+            ]
+        );
+
+        for (member, expected) in [
+            (
+                "pub enum ComparisonOperator { Less, LessOrEqual, Equal }\n",
+                vec![finding(
+                    Rule::Copy,
+                    "ComparisonOperator",
+                    Some(site("quire-exact/src/lib.rs", 2)),
+                    site("w/src/lib.rs", 1),
+                )],
+            ),
+            ("pub enum ComparisonOperator { Less, Greater }\n", vec![]),
+        ] {
+            let mut fixture = Fixture::new();
+            fixture
+                .dependency("quire-exact", EXACT_SOURCE, TAGGED_OPERATOR)
+                .member("w", member);
+            assert_eq!(fixture.findings(), expected, "{member}");
+        }
+    }
+
     /// TC-747 step 3: a backend run finds the backend's copy of a QSL
     /// canonical type and not its re-export through the QSL facade; over the
     /// QSL workspace, IR's wire `ValueType` is not a copy.
@@ -1146,7 +1191,7 @@ mod tests {
         fixture
             .dependency(
                 "quire-exact",
-                QSL_SOURCE,
+                EXACT_SOURCE,
                 "/// quire:canonical\npub enum Value {\n    A,\n    B,\n}\n",
             )
             // QSL's facade re-exports it; the backend reaches it there.

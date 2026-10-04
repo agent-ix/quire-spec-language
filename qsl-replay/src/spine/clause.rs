@@ -388,7 +388,7 @@ pub struct ClauseRunProvenance {
 ///
 /// **Production-safe by construction.** `quire_exact::Meter`
 /// deliberately keeps no per-charge log outside `test-support`
-/// (`quire-exact/src/accounting.rs:518-529`: "a production meter holds only
+/// (`quire_exact::Meter`'s own doc: "a production meter holds only
 /// fixed-size state... the meter never grows with the charge count"), and
 /// `test-support` may only be a dev-dependency. `evaluation_charges` below is
 /// therefore the meter's own fixed-size, always-available surface --

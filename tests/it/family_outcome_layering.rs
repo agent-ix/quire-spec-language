@@ -240,11 +240,13 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// (a build dependency on a higher layer or on this crate fails as a normal
 /// one does). `qsl-semantics`
 /// (layer 3) names exactly `qsl-attrs`, `qsl-forms` and `qsl-foundation` among
-/// the workspace crates in `[dependencies]`, never `qsl-cst`; its `[dev-dependencies]` may name `qsl-cst` so the FR-091
+/// the workspace crates in `[dependencies]`, never `qsl-cst`; its `[dev-dependencies]` may name
+/// `qsl-cst` so the FR-091
 /// assembler's tests can run S1 (FR-091-AC-20), and only
 /// `model::intake` names its FCD dependencies. `quire-exact` and
 /// `quire-semantic-value` are external git dependencies of their own
-/// repositories, so no workspace check reaches them; `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
+/// repositories, so no workspace check reaches them; `qsl-foundation` may name `quire-exact`,
+/// `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
 /// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4)

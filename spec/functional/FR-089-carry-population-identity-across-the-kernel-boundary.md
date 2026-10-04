@@ -155,7 +155,6 @@ key of its own: it calls `quire_exact::member_equal` and
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key`, domain package identity and declared maximum, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or admission-role (`Direct`, `Pre` or `Post`), the minted `PopulationId` differs from the first; in particular, a standalone `Direct` admission and an `admit_invocation`-attached `Post` binding that share the same domain package and `population_key` mint distinct identities. | Test (TC-291, TC-296) |
-| FR-089-AC-2 | The kernel `Value::Population` variant's payload type is `PopulationId`; no kernel source file imports `PopulationBinding` or any other `model::population` type to define, construct or match this variant. | Inspection (TC-292): crate DAG, `quire-exact/Cargo.toml` has no workspace dependency (ADR-011 §6.1) |
 | FR-089-AC-3 | Given a `Value::Population(population_id)` whose `population_id` was minted for an admitted binding earlier in the same evaluation, evaluating an expression that consumes it (the `evaluate.rs:921`/`:934` sites) resolves the same `PopulationBinding` that admission produced, by lookup in the recorded correspondence, never by a payload the `Value` itself carries. | Test (TC-293) |
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
 | FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)`, the QSL layer resolves `population_id` to its `PopulationBinding` through the recorded correspondence and admits the value when that binding's declared maximum equals `maximum`, and refuses it when the declared maximum differs. | Test (TC-295) |
@@ -179,7 +178,8 @@ key of its own: it calls `quire_exact::member_equal` and
 Specified by ADR-013 O-13's Population row. The kernel half
 implements
 `PopulationId` and `Value::Population(PopulationId)` in `quire-exact`
-(FR-089-AC-2; TC-292), with kernel `admits`, `plan_pairs` and `compare_keys`
+(FR-089-AC-2 and TC-292 of
+`agent-ix/quire-exact`), with kernel `admits`, `plan_pairs` and `compare_keys`
 refusing a population pair (FR-089-AC-6 and TC-297 of
 `agent-ix/quire-exact`). The other
 half (`model` minting and the evaluator's resolution step) implements

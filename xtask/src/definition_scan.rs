@@ -376,7 +376,7 @@ mod tests {
     fn assert_not_defined_in_qsl(name: &str, locations: &[Definition]) {
         assert!(
             locations.is_empty(),
-            "{name} is defined in the QSL trees at {locations:?}; its one definition is in quire-semantic-value"
+            "{name} is defined in the QSL trees at {locations:?}; it lives in quire-semantic-value"
         );
     }
 

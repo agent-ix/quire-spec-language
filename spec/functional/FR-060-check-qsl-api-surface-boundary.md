@@ -166,7 +166,9 @@ usage error, with the full report, rather than reporting a vacuous pass.
 A QSL-role rule's tree is every QSL workspace crate that depends on
 `quire-exact` and does not define the constructors: the root crate and each
 extracted layer crate. The shared `no_std` leaves `quire-exact` and
-`quire-semantic-value` have their own repositories and are not scanned. If a rule's required file path
+`quire-semantic-value` have their own repositories and are not scanned;
+`agent-ix/quire-semantic-value` FR-060-AC-5 and FR-060-AC-6 (clippy
+`disallowed-methods`) replace this scan for that crate. If a rule's required file path
 exists and its tree was supplied, the check
 SHALL scan every `.rs` file under each such crate's `src/` for the rule's call
 pattern(s) and SHALL report **failing**, naming each call site's file, line

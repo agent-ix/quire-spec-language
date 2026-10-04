@@ -252,7 +252,7 @@ fn encode_quantity_unit(out: &mut DeclarationMeter, unit: UnitId) {
 // two are not equivalent here: `Integer`'s `Display` is not incidental
 // formatting `std` warns is unstable, it is `quire_exact::integer::
 // Integer`'s own documented "canonical wire spelling used by complete-V1
-// schemas" (`quire-exact/src/integer.rs`'s `FromStr` doc), paired with a
+// schemas" (`quire_exact::integer::Integer`'s `FromStr` doc), paired with a
 // `FromStr` that refuses any non-canonical spelling (leading zeros, `+`,
 // etc.) -- a real, enforced, round-tripping contract, not a Debug-style
 // dump of whatever fields happen to exist. `src/value/semantic_node.rs`'s own

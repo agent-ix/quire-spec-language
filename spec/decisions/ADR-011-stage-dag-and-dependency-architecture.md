@@ -831,7 +831,11 @@ Rules that close the ADR-010 OBS-016 cycles:
   re-exports them (§7.2). SV mints no `NodeKey`, `EffectiveId` or
   `PopulationId`: it resolves a node id read from a preimage by lookup among
   the admitted keys and never calls a `NodeKey` constructor (T-12 rule
-  (b) scans only the QSL repository, so the rule no longer reaches this crate). It retypes an admitted enum member's key as that member's
+  (b) scans only the QSL repository, so it no longer reaches this crate;
+  `agent-ix/quire-semantic-value` FR-060-AC-5 replaces it with clippy
+  `disallowed-methods` on `NodeKey::from_digest` and `decode_admitted`, and its
+  FR-060-AC-6 does the same for `EffectiveId::from_digest` and
+  `PopulationId::from_digest`). It retypes an admitted enum member's key as that member's
   `VariantId` (`EnumValue::variant`, through `VariantId::from_digest`) and
   computes nothing for it. It computes one kernel identity, a compound unit's
   `quire.value.compound-unit/v1` `UnitId` (`compound_unit_id`), through

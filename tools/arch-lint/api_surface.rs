@@ -1245,7 +1245,8 @@ pub(crate) fn evaluate(
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4), `qsl-forms`
 /// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-eval` (X-8), `qsl-route` (X-9),
-/// `qsl-replay` (X-10) and `qsl-analyze` (X-12, layer A). A module path is relative to its own crate's
+/// `qsl-replay` (X-10) and `qsl-analyze` (X-12, layer A). A module path is relative to its own
+/// crate's
 /// `src/`, so `check` (T12-B), `model` (T12-C, T12-D) and `library` name
 /// `qsl-semantics`' modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
 /// extracted. `quire-exact` and `quire-semantic-value` each have their own
