@@ -47,7 +47,9 @@ fn root() -> PathBuf {
 }
 
 /// Rust names of the workspace crates the root crate depends on, in its
-/// normal, dev and build tables alike.
+/// normal, dev and build tables alike, and of the shared leaves `quire-exact`
+/// and `quire-semantic-value`, which are git dependencies of their own
+/// repositories.
 fn layer_crates() -> BTreeSet<String> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
     let output = std::process::Command::new(cargo)
@@ -78,7 +80,13 @@ fn layer_crates() -> BTreeSet<String> {
         .as_array()
         .expect("a dependency list")
         .iter()
-        .filter(|dependency| dependency["path"].is_string())
+        .filter(|dependency| {
+            dependency["path"].is_string()
+                || matches!(
+                    dependency["name"].as_str(),
+                    Some("quire-exact" | "quire-semantic-value")
+                )
+        })
         .map(|dependency| {
             dependency["rename"]
                 .as_str()
