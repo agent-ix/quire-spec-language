@@ -16,7 +16,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use qsl_replay::spine::{DependencyInput, EmittedUnit, FrontEndFailure, ParseRequest, SpineLimits};
+use qsl_replay::spine::{
+    DependencyInput, EmittedUnit, FrontEndFailure, LockEvidence, PackageLimits, ParseRequest,
+    SpineLimits,
+};
 use qsl_replay::SourceIdentity;
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
@@ -220,11 +223,12 @@ impl DeepInput {
             &parsed,
             &models,
             &DependencyInput::default(),
+            &LockEvidence::default(),
             limits,
             &cancel,
         )?
         .into_value();
-        Ok(package(&checked, &cancel)?.into_value())
+        Ok(package(&checked, PackageLimits::default(), &cancel)?.into_value())
     }
 }
 

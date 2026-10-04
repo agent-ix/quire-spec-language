@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{FormsCause, FormsRefusal};
+use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -41,8 +42,9 @@ use quire_semantic_value::checking::CheckingLimits;
 mod lifecycle;
 pub use lifecycle::{
     check, package, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit, EmittedUnit,
-    FrontEndFailure, ParseRequest, ParsedSource,
+    FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
+pub use qsl_semantics::check::LockEvidence;
 
 #[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
@@ -148,6 +150,11 @@ pub enum CompileRefusal {
     /// E4: the v2 emitter wrote no bytes.
     #[error("{0}")]
     Emit(EmitRefusal),
+    /// A stage limit the front end reached (FR-277): the limit kind, the
+    /// configured value, the counter reached and the caller's limits field
+    /// that raises it.
+    #[error("{}", limit_message(.0))]
+    Limit(LimitExceeded),
     /// E4: the v2 emitter would omit these nodes. A package missing part of
     /// the checked graph is partial output, which E4 never writes
     /// (ADR-011 §2.3).
@@ -177,6 +184,7 @@ impl CompileRefusal {
             Self::Dependency { refusal, .. } => refusal.code(),
             Self::Link(refusal) => refusal.code(),
             Self::Emit(refusal) => refusal.code(),
+            Self::Limit(_) => Code::StageLimitExceeded,
             // An emission path IR's pinned v2 vocabulary does not hold yet.
             Self::Omitted(_) => Code::UnsupportedProjection,
         }
@@ -194,6 +202,12 @@ impl CompileRefusal {
             Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
+            Self::Limit(limit) => match limit.limits_field() {
+                Some(field) if field.starts_with("source.") => SpineStage::Source,
+                Some(field) if field.starts_with("checking.") => SpineStage::Check,
+                Some(_) => SpineStage::Intake,
+                None => SpineStage::Assembly,
+            },
         }
     }
 
@@ -209,6 +223,10 @@ impl CompileRefusal {
             | Self::Import { region, .. }
             | Self::Check { region, .. } => region.as_ref(),
             Self::Dependency { refusal, .. } => refusal.region(),
+            Self::Limit(limit) => match limit.locus() {
+                Some(Locus::Region(region)) => Some(region),
+                Some(_) | None => None,
+            },
             Self::DependencyInput(_) | Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => None,
         }
     }
@@ -304,6 +322,19 @@ pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
             incomplete.limit
         ),
     }
+}
+
+/// A readable account of a reached stage limit and the field that raises it.
+fn limit_message(limit: &LimitExceeded) -> String {
+    let field = limit
+        .limits_field()
+        .map_or_else(String::new, |field| format!(", raised by `{field}`"));
+    format!(
+        "stage_limit_exceeded/{} (bound {}, reached {}{field})",
+        limit.kind().catalog_cause(),
+        limit.configured_bound(),
+        limit.actual()
+    )
 }
 
 /// A readable account of the assembler's first error, and how many more.

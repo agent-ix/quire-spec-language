@@ -15,7 +15,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::fmt;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 /// Why a [`Cancel`] handle was cancelled (FR-276).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -59,6 +59,9 @@ struct Shared {
     state: AtomicU8,
     /// The cause a charge saw, or [`LIVE`] while none has.
     tripped: AtomicU8,
+    /// How many charges have polled this handle, for the per-stage work an
+    /// operation reports (FR-275-AC-5).
+    charges: AtomicU64,
     /// Called at every [`Cancel::poll`], so a caller can watch the charges
     /// an operation makes.
     observer: Option<Box<dyn Fn() + Send + Sync>>,
@@ -81,6 +84,7 @@ impl Cancel {
             shared: Arc::new(Shared {
                 state: AtomicU8::new(LIVE),
                 tripped: AtomicU8::new(LIVE),
+                charges: AtomicU64::new(0),
                 observer,
             }),
         }
@@ -107,6 +111,7 @@ impl Cancel {
     /// One meter charge: `true` when the charge must be denied because this
     /// handle is cancelled. A denial is recorded for [`Self::tripped`].
     pub fn poll(&self) -> bool {
+        self.shared.charges.fetch_add(1, Ordering::Relaxed);
         if let Some(observer) = &self.shared.observer {
             observer();
         }
@@ -123,6 +128,13 @@ impl Cancel {
             }
             None => false,
         }
+    }
+
+    /// How many charges have polled this handle so far, whether or not it
+    /// was cancelled. A handle shared by operations running at once counts
+    /// them all.
+    pub fn charges(&self) -> u64 {
+        self.shared.charges.load(Ordering::Relaxed)
     }
 
     /// The cause of the cancellation a charge saw, if any charge did. A
@@ -176,6 +188,14 @@ mod tests {
         assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
         assert!(cancel.poll());
         assert_eq!(cancel.tripped(), Some(CancelCause::Deadline));
+    }
+
+    #[test]
+    fn every_poll_is_counted() {
+        let cancel = Cancel::new();
+        cancel.poll();
+        cancel.poll();
+        assert_eq!(cancel.charges(), 2);
     }
 
     #[test]

@@ -241,12 +241,13 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
         &parsed,
         &models,
         &crate::spine::DependencyInput::default(),
+        &crate::spine::LockEvidence::default(),
         limits,
         &cancel,
     )
     .expect("the unit checks")
     .into_value();
-    let emitted = crate::spine::package(&checked, &cancel)
+    let emitted = crate::spine::package(&checked, crate::spine::PackageLimits::default(), &cancel)
         .expect("the unit emits")
         .into_value();
 

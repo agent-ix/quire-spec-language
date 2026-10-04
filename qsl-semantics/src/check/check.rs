@@ -64,6 +64,7 @@ use qsl_forms::{
     FieldInitializer, FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
+use quire_exact::Cancel;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
@@ -649,6 +650,9 @@ pub(crate) struct Typer<'a> {
     signatures: &'a Signatures,
     limits: CheckingLimits,
     nodes: &'a mut u64,
+    /// The caller's cancellation handle, polled at every node charge
+    /// (FR-276).
+    cancel: Option<&'a Cancel>,
     locals: Vec<Local>,
     /// The index in `locals` of the local each name is bound to. A name is
     /// bound at most once at a time ([`Self::bind`] refuses a second
@@ -697,6 +701,22 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
         location: location.clone(),
         cause,
     }
+}
+
+/// The refusal a charge returns when it saw a cancelled [`Cancel`]. It is a
+/// stand-in for the denial: the operation that owns the handle reports the
+/// cancellation, not this refusal.
+pub(crate) fn cancelled_refusal(location: &Location) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::WorkBudget,
+            limit: 0,
+            actual: 0,
+            region: None,
+        })),
+    )
 }
 
 fn mismatch(location: &Location) -> CheckRefusal {
@@ -870,6 +890,7 @@ impl<'a> Typer<'a> {
             signatures,
             limits,
             nodes,
+            cancel: None,
             locals: Vec::new(),
             local_names: HashMap::new(),
             slots: 0,
@@ -879,6 +900,15 @@ impl<'a> Typer<'a> {
             units: UnitScope::new(scope.types.units()),
             body: BodyBuilder::default(),
         }
+    }
+
+    /// This pass polling `cancel` at every node charge (FR-276). A cancelled
+    /// handle refuses the next node as a reached work budget; the caller
+    /// that owns the handle reads [`Cancel::tripped`] to tell the two apart.
+    #[must_use]
+    pub(crate) fn with_cancel(mut self, cancel: Option<&'a Cancel>) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// Store `node` as an operand of the node being built, and name it.
@@ -1150,6 +1180,9 @@ impl<'a> Typer<'a> {
                 })),
             )
         };
+        if self.cancel.is_some_and(Cancel::poll) {
+            return Err(cancelled_refusal(location));
+        }
         if *self.nodes >= self.limits.nodes() {
             return Err(exhausted(
                 CheckingLimitKind::Nodes,

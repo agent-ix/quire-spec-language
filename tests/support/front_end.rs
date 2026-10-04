@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
-    check, package, parse, select, CompileRefusal, DependencyInput, EmittedUnit, ParseRequest,
-    SpineLimits,
+    check, package, parse, select, CompileRefusal, DependencyInput, EmittedUnit, LockEvidence,
+    PackageLimits, ParseRequest, SpineLimits,
 };
 use quire_exact::Cancel;
 
@@ -41,8 +41,17 @@ pub fn emitted(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)
+    let checked = check(
+        &parsed,
+        &models,
+        dependencies,
+        &LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    Ok(package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
-        .into_value();
-    Ok(package(&checked, &cancel).map_err(refusal)?.into_value())
+        .into_value())
 }

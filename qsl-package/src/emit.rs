@@ -92,7 +92,7 @@ use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
     Member, NodeOwner,
 };
-use quire_exact::{Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
+use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
@@ -147,6 +147,13 @@ pub enum EmitRefusal {
         /// The encoder's message.
         reason: String,
     },
+    /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
+    /// emitter stopped at its next charge (FR-276).
+    #[error("the emitter was cancelled ({cause:?})")]
+    Cancelled {
+        /// Why the handle was cancelled.
+        cause: quire_exact::CancelCause,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -163,6 +170,7 @@ impl EmitRefusal {
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. } => Code::UnsupportedProjection,
             Self::Encoding { .. } => Code::OutputFailure,
+            Self::Cancelled { .. } => Code::Cancelled,
         }
     }
 }
@@ -863,17 +871,29 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
+/// entry and at every node it writes (FR-276). A cancelled handle stops the
+/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes.
+pub fn emit_checked_with_cancel(
+    package: &CheckedPackage,
+    cancel: &Cancel,
+) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package(package, graph.memoized_regions())
+    emit_package_inner(package, graph.memoized_regions(), |_| None, cancel)
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
-/// places each occurrence `check` recorded (see the module doc).
+/// places each occurrence `check` recorded (see the module doc). The tests'
+/// entry point with a caller-supplied region conversion.
+#[cfg(test)]
 pub(crate) fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, |_| None)
+    emit_package_inner(package, regions, |_| None, &Cancel::new())
 }
 
 /// As [`emit_package`], but lets a caller force a specific node's wire
@@ -892,7 +912,7 @@ fn emit_package_with_fault(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, fault)
+    emit_package_inner(package, regions, fault, &Cancel::new())
 }
 
 /// As [`emit_checked`], but lets a caller force a specific node's wire
@@ -932,7 +952,18 @@ fn emit_package_inner(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
+    cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
+    let denied = || {
+        cancel
+            .poll()
+            .then(|| cancel.cause())
+            .flatten()
+            .map(|cause| EmitRefusal::Cancelled { cause })
+    };
+    if let Some(refusal) = denied() {
+        return Err(refusal);
+    }
     let graph = package.graph();
     let mut recorded = recorded_occurrences(graph)?;
     let candidates: BTreeMap<CheckedNodeId, Candidate<'_>> = graph
@@ -958,10 +989,12 @@ fn emit_package_inner(
     sources.insert(source_artifact(graph.source()));
     let nodes = order
         .iter()
-        .map(|candidate| match fault(&candidate.id) {
-            Some(refusal) => Err(refusal),
-            None => candidate.wire_node(),
-        })
+        .map(
+            |candidate| match denied().or_else(|| fault(&candidate.id)) {
+                Some(refusal) => Err(refusal),
+                None => candidate.wire_node(),
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
     let laws: Vec<DefinitionReference> = order
         .iter()

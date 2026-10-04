@@ -612,12 +612,23 @@ fn complete(
     let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(failure)?
         .into_value();
-    let checked = qsl_replay::spine::check(&parsed, &models, &dependencies, limits, &cancel)
-        .map_err(failure)?
-        .into_value();
-    let emitted = qsl_replay::spine::package(&checked, &cancel)
-        .map_err(failure)?
-        .into_value();
+    let checked = qsl_replay::spine::check(
+        &parsed,
+        &models,
+        &dependencies,
+        &qsl_replay::spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(failure)?
+    .into_value();
+    let emitted = qsl_replay::spine::package(
+        &checked,
+        qsl_replay::spine::PackageLimits::default(),
+        &cancel,
+    )
+    .map_err(failure)?
+    .into_value();
     Ok(emitted.package().bytes().to_vec())
 }
 

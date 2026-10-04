@@ -309,10 +309,17 @@ pub fn run(
     let models = front_end::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = front_end::check(&parsed, &models, dependencies, limits, &cancel)
-        .map_err(refusal)?
-        .into_value();
-    let emitted = front_end::package(&checked, &cancel)
+    let checked = front_end::check(
+        &parsed,
+        &models,
+        dependencies,
+        &super::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let emitted = front_end::package(&checked, front_end::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
     let package_id = emitted.package().package_id();
@@ -499,11 +506,12 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
             "spine-run-supplies-admitted-name-and-arity",
         ))),
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
-        // The meter `run` builds holds no `Cancel` handle, so no charge is
-        // cancelled.
+        // `run` makes its own handle and gives it to `execute`, but shares it
+        // with nobody, so nothing cancels it: a cancellation here is a broken
+        // invariant.
         CallFailure::Cancelled(_) => Box::new(RunRefusal::Fault(InternalFault::new(
             "call",
-            "cancelled-without-a-handle",
+            "cancelled-without-a-shared-handle",
         ))),
     }
 }

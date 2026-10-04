@@ -38,7 +38,7 @@ use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, Span};
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
+    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
     IntegerInterval, Presence, RoundingMode, ValueType,
 };
 
@@ -72,7 +72,7 @@ use crate::value::environment_stage::stage_limit;
 use crate::value::semantic_node::OwnerSelection;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
-    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
 };
 use quire_semantic_value::semantic_node::InvalidSemanticGraph;
 
@@ -1077,16 +1077,22 @@ fn admit_types(
     mut declarations: Vec<CompositeDeclaration>,
     object_types: &[ObjectTypeDeclaration],
     spans: &BTreeMap<String, Span>,
+    cancel: &Cancel,
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
     loop {
-        match TypeEnvironment::new(declarations.clone(), object_types.iter().cloned()) {
+        match TypeEnvironment::bounded_with_cancel(
+            declarations.clone(),
+            object_types.iter().cloned(),
+            TypeEnvironmentLimits::default(),
+            cancel,
+        ) {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
             Err(EnvironmentFailure::Limit(limit)) => {
-                // Records and tuples charge no type-environment work, so
-                // this is unreachable today. A ceiling names no declaration
-                // and has no locus (FR-082, FR-096): the span is empty and
+                // A ceiling, or the caller's cancellation, which the caller
+                // that owns the handle reads from it. A ceiling names no
+                // declaration and has no locus (FR-082, FR-096): the span is empty and
                 // names no region, and the compile reports none.
                 errors.push(AssemblyError {
                     cause: AssemblyCause::TypeLimit(stage_limit(limit)),
@@ -1159,6 +1165,22 @@ impl PackageDeclarations {
         models: Vec<SelectedModel>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
+    ) -> Result<Self, AssemblyRefusal> {
+        Self::assemble_with_cancel(source, unit, models, imports, limits, &Cancel::new())
+    }
+
+    /// [`Self::assemble_with_limits`] under the caller's [`Cancel`] handle,
+    /// polled at every type-environment work charge (FR-276). A cancelled
+    /// handle stops the assembly with a type-environment limit refusal; the
+    /// caller that owns the handle reads [`Cancel::tripped`] to tell the two
+    /// apart.
+    pub fn assemble_with_cancel(
+        source: RawSourceRef,
+        unit: ParsedUnit,
+        models: Vec<SelectedModel>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
@@ -1553,7 +1575,7 @@ impl PackageDeclarations {
         // A refused object type is located at its `model` declaration.
         let mut type_spans = object_spans;
         type_spans.extend(declared_type_spans.clone());
-        let types = admit_types(declarations, &object_types, &type_spans)?;
+        let types = admit_types(declarations, &object_types, &type_spans, cancel)?;
         // SR-770 FND-006: both resolved before either refuses, so a unit
         // with a bad state clause and a bad attempt reports both in one
         // refusal (clause errors first, then attempt errors).

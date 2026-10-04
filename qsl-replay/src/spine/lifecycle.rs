@@ -19,7 +19,10 @@
 //! sources the unit was compiled from, which the package's replay needs and
 //! the stage types do not carry.
 //!
-//! A stage refusal is the refusing stage's [`CompileRefusal`], boxed. The
+//! A stage refusal is the refusing stage's [`CompileRefusal`], boxed. A
+//! reached limit is [`StageFailure::Limit`] naming the caller's limits field
+//! (FR-277), and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
+//! output carries the work each stage did ([`Staged::work`], FR-275-AC-5). The
 //! composition `parse`, `select`, `check`, `package` over a source returns
 //! the same bytes, stage and cause code the CLI's `compile` writes for it.
 //!
@@ -29,25 +32,29 @@
 //! right type compiles:
 //!
 //! ```compile_fail
-//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, SpineLimits};
+//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, LockEvidence, SpineLimits};
 //! # use quire_exact::Cancel;
 //! let _ = check(
 //!     b"language \"ix:native\" edition \"1-draft\";",
 //!     &AdmittedModels::default(),
 //!     &DependencyInput::default(),
+//!     &LockEvidence::default(),
 //!     SpineLimits::default(),
 //!     &Cancel::new(),
 //! );
 //! ```
 //!
 //! ```
-//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, ParsedSource, SpineLimits};
+//! # use qsl_replay::spine::{
+//! #     check, AdmittedModels, DependencyInput, LockEvidence, ParsedSource, SpineLimits,
+//! # };
 //! # use quire_exact::Cancel;
 //! fn control(parsed: &ParsedSource) {
 //!     let _ = check(
 //!         parsed,
 //!         &AdmittedModels::default(),
 //!         &DependencyInput::default(),
+//!         &LockEvidence::default(),
 //!         SpineLimits::default(),
 //!         &Cancel::new(),
 //!     );
@@ -57,18 +64,18 @@
 //! A [`ParsedSource`] is not a [`CheckedUnit`], so it cannot be emitted:
 //!
 //! ```compile_fail
-//! # use qsl_replay::spine::{package, ParsedSource};
+//! # use qsl_replay::spine::{package, PackageLimits, ParsedSource};
 //! # use quire_exact::Cancel;
 //! fn emit(parsed: &ParsedSource) {
-//!     let _ = package(parsed, &Cancel::new());
+//!     let _ = package(parsed, PackageLimits::default(), &Cancel::new());
 //! }
 //! ```
 //!
 //! ```
-//! # use qsl_replay::spine::{package, CheckedUnit};
+//! # use qsl_replay::spine::{package, CheckedUnit, PackageLimits};
 //! # use quire_exact::Cancel;
 //! fn control(checked: &CheckedUnit) {
-//!     let _ = package(checked, &Cancel::new());
+//!     let _ = package(checked, PackageLimits::default(), &Cancel::new());
 //! }
 //! ```
 
@@ -78,17 +85,25 @@ use std::sync::Arc;
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
 use qsl_forms::{build_unit, ParsedUnit};
-use qsl_foundation::diagnostic::{InternalFault, StageFailure, Staged};
+use qsl_foundation::diagnostic::{
+    InternalFault, LimitExceeded, LimitKind as FoundationKind, Locus, StageFailure, StageWork,
+    Staged,
+};
 use qsl_foundation::selection::ImportSelection;
-use qsl_foundation::source::provenance::RawSourceRef;
+use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source::Source;
 use qsl_foundation::SourceIdentity;
+use qsl_foundation::SyntaxLimit;
 use qsl_package as pkg;
-use qsl_package::{emit_checked, read_import_view, AdmittedPackages, Emission, Import};
-use qsl_semantics::check::{resolve_profiles, AdmittedImport, AssemblyCause, PackageDeclarations};
+use qsl_package::{emit_checked_with_cancel, read_import_view, AdmittedPackages, Emission, Import};
+use qsl_semantics::check::{
+    resolve_profiles, AdmittedImport, AssemblyCause, AssemblyLimits, CheckCause, CheckingLimitKind,
+    LockEvidence, PackageDeclarations,
+};
 use qsl_semantics::library::{ImportView, LibraryName};
+use qsl_semantics::model::accounting::LimitKind as ModelKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::intake::{admit_unit, SelectedModel};
+use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 
@@ -98,40 +113,195 @@ use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits,
 /// stage's refusal, a reached limit, a cancellation or a fault.
 pub type FrontEndFailure = StageFailure<Box<CompileRefusal>>;
 
-/// The one place an operation's cancellation is decided. A handle already
+/// The charges `run` made against `cancel`, added to `counter`: the work of
+/// one stage (FR-275-AC-5).
+fn charged<T>(cancel: &Cancel, counter: &mut u64, run: impl FnOnce() -> T) -> T {
+    let before = cancel.charges();
+    let output = run();
+    *counter = counter.saturating_add(cancel.charges().saturating_sub(before));
+    output
+}
+
+/// The one place an operation's outcome is decided. A handle already
 /// cancelled returns before `run` makes any charge. Otherwise a charge that
 /// saw the cancellation makes `run` stop early, and its result, whatever
 /// the denial became on its way up, is replaced by the cancellation: an
-/// operation that was cancelled returns no output.
+/// operation that was cancelled returns no output. A refusal that is a
+/// reached limit is returned as the limit, naming the caller's limits field
+/// (FR-277), and one that is a broken invariant as the fault (FR-275).
 fn stage<T>(
     cancel: &Cancel,
-    run: impl FnOnce() -> Result<T, Box<CompileRefusal>>,
+    limits: &SpineLimits,
+    run: impl FnOnce(&mut StageWork) -> Result<T, Box<CompileRefusal>>,
 ) -> Result<Staged<T>, FrontEndFailure> {
     if let Some(cause) = cancel.cause() {
         return Err(StageFailure::Cancelled(cause));
     }
-    let result = run();
+    let mut work = StageWork::default();
+    let result = run(&mut work);
     if let Some(cause) = cancel.tripped() {
         return Err(StageFailure::Cancelled(cause));
     }
-    result.map(Staged::new).map_err(StageFailure::Refused)
+    match result {
+        Ok(value) => Ok(Staged::new(value).with_work(work)),
+        Err(refusal) => Err(failure_of(refusal, limits)),
+    }
+}
+
+/// `refusal` as the stage failure it is: a limit, a fault or a refusal.
+fn failure_of(refusal: Box<CompileRefusal>, limits: &SpineLimits) -> FrontEndFailure {
+    if let Some(limit) = limit_of(&refusal, limits) {
+        return StageFailure::Limit(limit);
+    }
+    if let Some(fault) = fault_of(&refusal) {
+        return StageFailure::Fault(fault);
+    }
+    StageFailure::Refused(refusal)
+}
+
+/// The reached limit `refusal` reports, with the caller's limits field that
+/// raises it (FR-277), or `None` for a refusal that is not a limit.
+fn limit_of(refusal: &CompileRefusal, limits: &SpineLimits) -> Option<LimitExceeded> {
+    let at = |limit: LimitExceeded, region: Option<&SourceRegion>| {
+        limit.at(region.cloned().map(Locus::Region))
+    };
+    match refusal {
+        CompileRefusal::Source(diagnostic) => {
+            let (kind, configured, actual, field) = match diagnostic.limit()? {
+                SyntaxLimit::SourceBytes { bound } => (
+                    FoundationKind::InputBytes,
+                    bound,
+                    bound,
+                    "source.source_bytes",
+                ),
+                SyntaxLimit::Tokens { bound } => {
+                    (FoundationKind::TokenCount, bound, bound, "source.tokens")
+                }
+                SyntaxLimit::Nodes { bound } => {
+                    (FoundationKind::NodeCount, bound, bound, "source.nodes")
+                }
+                // The bound is the total step budget; the field is per token.
+                SyntaxLimit::Work { bound } => (
+                    FoundationKind::WorkBudget,
+                    limits.source.work_units,
+                    bound,
+                    "source.work_units",
+                ),
+            };
+            let limit = LimitExceeded::new(
+                kind,
+                u64::try_from(configured).unwrap_or(u64::MAX),
+                u128::try_from(actual)
+                    .unwrap_or(u128::MAX)
+                    .saturating_add(1),
+            )
+            .named(field);
+            Some(at(limit, diagnostic.region.as_ref()))
+        }
+        CompileRefusal::Intake { refusal, region } => {
+            let UnitIntakeCause::Limit(incomplete) = &refusal.cause else {
+                return None;
+            };
+            let (kind, field) = match incomplete.limit_kind {
+                ModelKind::DeclarationRecords => {
+                    (FoundationKind::OccurrenceCount, "model.declaration_records")
+                }
+                ModelKind::DerivationFacts => (FoundationKind::EdgeCount, "model.derivation_facts"),
+                ModelKind::EffectiveDeclarations => {
+                    (FoundationKind::NodeCount, "model.effective_declarations")
+                }
+                ModelKind::DispatchCandidates => {
+                    (FoundationKind::EdgeCount, "model.dispatch_candidates")
+                }
+                ModelKind::HashedBytes => (FoundationKind::InputBytes, "model.hashed_bytes"),
+                ModelKind::WorkUnits => (FoundationKind::WorkBudget, "model.work_units"),
+            };
+            let limit = LimitExceeded::new(
+                kind,
+                incomplete.limit,
+                u128::from(incomplete.consumed).saturating_add(u128::from(incomplete.next_charge)),
+            )
+            .named(field);
+            Some(at(limit, region.as_ref()))
+        }
+        CompileRefusal::Check { refusals, region } => {
+            let cause = refusals.iter().find_map(|refusal| match &refusal.cause {
+                CheckCause::ResourceExhausted(cause) => Some(cause),
+                _ => None,
+            })?;
+            let (kind, field) = match cause.kind {
+                CheckingLimitKind::Nodes => (FoundationKind::NodeCount, "checking.nodes"),
+                CheckingLimitKind::InputBytes => {
+                    (FoundationKind::InputBytes, "checking.input_bytes")
+                }
+                CheckingLimitKind::WorkBudget => {
+                    (FoundationKind::WorkBudget, "checking.work_budget")
+                }
+            };
+            let locus = cause.region.as_ref().or(region.as_ref());
+            Some(at(
+                LimitExceeded::new(kind, cause.limit, cause.actual).named(field),
+                locus,
+            ))
+        }
+        CompileRefusal::Assembly { refusal, .. } => {
+            refusal.errors.iter().find_map(|error| match &error.cause {
+                AssemblyCause::TypeLimit(limit) => Some(limit.clone()),
+                _ => None,
+            })
+        }
+        CompileRefusal::Dependency { refusal, .. } => limit_of(refusal, limits),
+        CompileRefusal::Limit(limit) => Some(limit.clone()),
+        CompileRefusal::Forms { .. }
+        | CompileRefusal::Profile { .. }
+        | CompileRefusal::DependencyInput(_)
+        // The dependency depth stays the import refusal of ADR-015 D-1,
+        // which names the chain that nests too deep.
+        | CompileRefusal::Import { .. }
+        | CompileRefusal::Link(_)
+        | CompileRefusal::Emit(_)
+        | CompileRefusal::Omitted(_) => None,
+    }
+}
+
+/// The internal fault `refusal` reports (FR-275), or `None` for a refusal of
+/// the input.
+fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
+    match refusal {
+        CompileRefusal::Check { refusals, .. } => {
+            refusals.iter().find_map(|refusal| match &refusal.cause {
+                CheckCause::InternalFault(fault) => {
+                    Some(InternalFault::new("S3", fault.invariant()))
+                }
+                _ => None,
+            })
+        }
+        CompileRefusal::Intake { refusal, .. }
+            if matches!(refusal.cause, UnitIntakeCause::Invariant) =>
+        {
+            Some(InternalFault::new(
+                "I1",
+                "record-reader-refused-with-no-refusal",
+            ))
+        }
+        CompileRefusal::Dependency { refusal, .. } => fault_of(refusal),
+        _ => None,
+    }
 }
 
 /// The stage refusal of `failure`, for a caller that made its own [`Cancel`]
-/// handle and shares it with nobody, so it is never cancelled. The front end
-/// reports a reached limit inside its stage refusals, so a failure that is
-/// neither a refusal nor a cancellation is a broken invariant, returned as
-/// the fault.
+/// handle and shares it with nobody, so it is never cancelled. A reached
+/// limit is the refusal [`CompileRefusal::Limit`]. A failure that is not a
+/// refusal or a limit, a fault or a cancellation of a handle nobody shares,
+/// is returned as the fault it is.
 pub fn refusal_or_fault(failure: FrontEndFailure) -> Result<Box<CompileRefusal>, InternalFault> {
     match failure {
         StageFailure::Refused(refusal) => Ok(refusal),
+        StageFailure::Limit(limit) => Ok(Box::new(CompileRefusal::Limit(limit))),
+        StageFailure::Fault(fault) => Err(fault),
         StageFailure::Cancelled(_) => Err(InternalFault::new(
             "spine",
             "cancelled-without-a-shared-handle",
-        )),
-        StageFailure::Limit(_) => Err(InternalFault::new(
-            "spine",
-            "front-end-limit-outside-a-stage-refusal",
         )),
     }
 }
@@ -248,14 +418,20 @@ pub fn parse(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedSource>, FrontEndFailure> {
-    stage(cancel, || {
-        parse_unit(
-            request.source.clone(),
-            request.path,
-            request.bytes,
-            limits,
-            cancel,
-        )
+    let spine_limits = SpineLimits {
+        source: limits,
+        ..SpineLimits::default()
+    };
+    stage(cancel, &spine_limits, |work| {
+        charged(cancel, &mut work.s1, || {
+            parse_unit(
+                request.source.clone(),
+                request.path,
+                request.bytes,
+                limits,
+                cancel,
+            )
+        })
     })
 }
 
@@ -269,8 +445,14 @@ pub fn select(
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
-    stage(cancel, || {
-        let models = select_models(parsed, packages, limits)?;
+    let spine_limits = SpineLimits {
+        model: limits,
+        ..SpineLimits::default()
+    };
+    stage(cancel, &spine_limits, |work| {
+        let models = charged(cancel, &mut work.i1, || {
+            select_models(parsed, packages, limits, cancel)
+        })?;
         Ok(AdmittedModels {
             models,
             packages: packages.clone(),
@@ -278,18 +460,20 @@ pub fn select(
     })
 }
 
-/// S3 and S4: check and link `parsed` against `models` and the dependency
-/// input (ADR-015 D-1, FR-099, FR-278). The S4 source resolution compiles
+/// S3 and S4: check and link `parsed` against `models`, the dependency
+/// input (ADR-015 D-1, FR-099) and the package's lock evidence (ADR-011
+/// §2.4, FR-278). The S4 source resolution compiles
 /// each library the unit's `import`s reach, against the same package input,
 /// dependency input and `limits`.
 pub fn check(
     parsed: &ParsedSource,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
+    lock: &LockEvidence,
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
-    stage(cancel, || {
+    stage(cancel, &limits, |work| {
         dependencies
             .check_unit_owner(parsed.source().identity())
             .map_err(|refusal| Box::new(CompileRefusal::DependencyInput(refusal)))?;
@@ -302,8 +486,11 @@ pub fn check(
             visited: BTreeMap::new(),
             compiled: BTreeMap::new(),
             admitted: AdmittedPackages::default(),
+            lock,
+            work: StageWork::default(),
         };
         let package = resolution.check_unit(parsed, models.models.clone())?;
+        *work = resolution.work;
         Ok(CheckedUnit {
             package,
             source: parsed.source().clone(),
@@ -316,14 +503,22 @@ pub fn check(
     })
 }
 
+/// The limits value [`package`] takes (FR-275, FR-277). E4 enforces no bound
+/// of its own yet, so it has no field; a bound E4 gains is a field here.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct PackageLimits {}
+
 /// E4: emit `checked` as `quire.checked-package/v2` bytes with its source
 /// provision (FR-278). It runs no stage up to S4.
 pub fn package(
     checked: &CheckedUnit,
+    limits: PackageLimits,
     cancel: &Cancel,
 ) -> Result<Staged<EmittedUnit>, FrontEndFailure> {
-    stage(cancel, || {
-        let emission = emit_unit(&checked.package)?;
+    let PackageLimits {} = limits;
+    stage(cancel, &SpineLimits::default(), |work| {
+        let emission = charged(cancel, &mut work.e4, || emit_unit(&checked.package, cancel))?;
         let sources = std::iter::once(&checked.source)
             .chain(&checked.libraries)
             .cloned()
@@ -404,22 +599,28 @@ fn select_models(
     parsed: &ParsedSource,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
+    cancel: &Cancel,
 ) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
-    admit_unit(&parsed.unit.selections().models, packages, limits).map_err(|refusal| {
-        Box::new(CompileRefusal::Intake {
-            region: region(raw, refusal.span),
-            refusal,
-        })
-    })
+    admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel).map_err(
+        |refusal| {
+            Box::new(CompileRefusal::Intake {
+                region: region(raw, refusal.span),
+                refusal,
+            })
+        },
+    )
 }
 
 /// E4 over one checked package, refusing a wire that would omit nodes: a
 /// package missing part of the checked graph is partial output, which E4
 /// never writes (ADR-011 §2.3).
-fn emit_unit(package: &pkg::CheckedPackage) -> Result<Emission, Box<CompileRefusal>> {
-    let emission =
-        emit_checked(package).map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+fn emit_unit(
+    package: &pkg::CheckedPackage,
+    cancel: &Cancel,
+) -> Result<Emission, Box<CompileRefusal>> {
+    let emission = emit_checked_with_cancel(package, cancel)
+        .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
     if !emission.omitted().is_empty() {
         return Err(Box::new(CompileRefusal::Omitted(
             emission.omitted().to_vec(),
@@ -471,10 +672,19 @@ pub(crate) fn compose(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)
+    let checked = check(
+        &parsed,
+        &models,
+        dependencies,
+        &LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    let emitted = package(&checked, &cancel).map_err(refusal)?.into_value();
     Ok(ComposedUnit {
         emitted: emitted.package().clone(),
         source: checked.source,
@@ -513,6 +723,12 @@ struct Resolution<'a> {
     /// IR's admitted package of each library read so far, which a later
     /// library's view read takes for its closure instead of reading again.
     admitted: AdmittedPackages,
+    /// The lock evidence every unit of the closure is checked under
+    /// (ADR-011 §2.4).
+    lock: &'a LockEvidence,
+    /// The charges each stage made, over the unit and every library it
+    /// compiled.
+    work: StageWork,
 }
 
 impl Resolution<'_> {
@@ -523,10 +739,15 @@ impl Resolution<'_> {
         path: &str,
         bytes: &[u8],
     ) -> Result<(pkg::CheckedPackage, Emission, Source), Box<CompileRefusal>> {
-        let parsed = parse_unit(source, path, bytes, self.limits.source, self.cancel)?;
-        let models = select_models(&parsed, self.packages, self.limits.model)?;
+        let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
+        let parsed = charged(cancel, &mut self.work.s1, || {
+            parse_unit(source, path, bytes, limits.source, cancel)
+        })?;
+        let models = charged(cancel, &mut self.work.i1, || {
+            select_models(&parsed, packages, limits.model, cancel)
+        })?;
         let package = self.check_unit(&parsed, models)?;
-        let emission = emit_unit(&package)?;
+        let emission = charged(cancel, &mut self.work.e4, || emit_unit(&package, cancel))?;
         Ok((package, emission, parsed.source().clone()))
     }
 
@@ -563,32 +784,46 @@ impl Resolution<'_> {
                 refusals,
             })
         })?;
-        let declarations = PackageDeclarations::assemble(raw.clone(), unit, models, admitted)
-            .map_err(|refusal| {
-                Box::new(CompileRefusal::Assembly {
-                    // A type-environment stage limit names no declaration,
-                    // so it has no region (FR-082, FR-096).
-                    region: refusal
-                        .errors
-                        .first()
-                        .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
-                        .and_then(|error| region(&raw, error.span)),
-                    refusal,
-                })
-            })?;
+        let cancel = self.cancel;
+        let mut declarations = charged(cancel, &mut self.work.s3, || {
+            PackageDeclarations::assemble_with_cancel(
+                raw.clone(),
+                unit,
+                models,
+                admitted,
+                AssemblyLimits::default(),
+                cancel,
+            )
+        })
+        .map_err(|refusal| {
+            Box::new(CompileRefusal::Assembly {
+                // A type-environment stage limit names no declaration,
+                // so it has no region (FR-082, FR-096).
+                region: refusal
+                    .errors
+                    .first()
+                    .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
+                    .and_then(|error| region(&raw, error.span)),
+                refusal,
+            })
+        })?;
+        declarations.lock_evidence = self.lock.clone();
         let regions = declarations.regions();
-        let graph = declarations
-            .check_with_cancel(limits.checking, self.cancel)
-            .map_err(|refusals| {
-                Box::new(CompileRefusal::Check {
-                    region: refusals
-                        .first()
-                        .and_then(|refusal| regions.refusal_region(refusal)),
-                    refusals,
-                })
-            })?;
-        pkg::CheckedPackage::link_with(graph, links)
-            .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))
+        let graph = charged(cancel, &mut self.work.s3, || {
+            declarations.check_with_cancel(limits.checking, cancel)
+        })
+        .map_err(|refusals| {
+            Box::new(CompileRefusal::Check {
+                region: refusals
+                    .first()
+                    .and_then(|refusal| regions.refusal_region(refusal)),
+                refusals,
+            })
+        })?;
+        charged(cancel, &mut self.work.s4, || {
+            pkg::CheckedPackage::link_with(graph, links)
+        })
+        .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))
     }
 
     /// ADR-015 D-1's six steps for one `import` of the unit `raw` names:

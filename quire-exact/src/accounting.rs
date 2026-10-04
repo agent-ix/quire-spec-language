@@ -526,12 +526,13 @@ impl Charge {
 /// A per-request scalar meter.
 ///
 /// **A count, not a log.** A production meter holds only fixed-size
-/// state: the ten counters, the number of admitted charges and, for an
-/// injected denial, the number of admissions at the denied point. It retains
-/// no heap state; the meter never grows with the charge count, so the meter
-/// that bounds an evaluation's work does not itself grow with that work. The
-/// const assertion below this type holds that in every production build. The
-/// ordered charge log
+/// counters: the ten consumed values, the limits, the number of admitted
+/// charges and, for an injected denial, the number of admissions at the
+/// denied point. The counters own no heap memory, so the meter that bounds an
+/// evaluation's work does not itself grow with that work; the const
+/// assertion below this type holds that in every production build. The meter
+/// also shares the caller's [`Cancel`] handle, a reference count that is no
+/// per-charge state. The ordered charge log
 /// ([`Meter::admitted_charges`]) exists only under the `test-support`
 /// feature, which only a dev-dependency may enable (TC-243's
 /// `no_shipped_dependency_enables_test_support`).
@@ -539,33 +540,40 @@ impl Charge {
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Meter {
-    limits: ScalarLimits,
-    consumed: [u64; 10],
-    denial: Option<InjectedDenial>,
-    /// Admissions so far at `denial`'s point; zero when no denial is set.
-    denied_point_admissions: u64,
-    admissions: u64,
+    counters: Counters,
     /// The handle every charge polls (FR-276), when the caller gave one.
     cancel: Option<Cancel>,
     #[cfg(feature = "test-support")]
     admitted: Vec<ChargePoint>,
 }
 
-// A production `Meter` has a fixed size: the counters and one shared handle,
-// never a field that grows with the charges. A `Vec` or `String` field is
-// larger than this and fails the build rather than a test.
-#[cfg(not(feature = "test-support"))]
-const _: () = assert!(core::mem::size_of::<Meter>() <= 256);
+/// The fixed-size state a [`Meter`] charges against.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Counters {
+    limits: ScalarLimits,
+    consumed: [u64; 10],
+    denial: Option<InjectedDenial>,
+    /// Admissions so far at `denial`'s point; zero when no denial is set.
+    denied_point_admissions: u64,
+    admissions: u64,
+}
+
+// The counters own no heap memory: a type with no drop glue holds no `Vec`,
+// `Box` or `String`, so a heap-owning field added to it fails the build
+// rather than a test.
+const _: () = assert!(!core::mem::needs_drop::<Counters>());
 
 impl Meter {
     /// A fresh meter with nothing consumed.
     pub fn new(limits: ScalarLimits) -> Self {
         Self {
-            limits,
-            consumed: [0; 10],
-            denial: None,
-            denied_point_admissions: 0,
-            admissions: 0,
+            counters: Counters {
+                limits,
+                consumed: [0; 10],
+                denial: None,
+                denied_point_admissions: 0,
+                admissions: 0,
+            },
             cancel: None,
             #[cfg(feature = "test-support")]
             admitted: Vec::new(),
@@ -583,24 +591,24 @@ impl Meter {
     /// Add the qualification seam that denies one exact named charge. The
     /// occurrence counts admissions at the denied point from this call on.
     pub fn with_injected_denial(mut self, denial: InjectedDenial) -> Self {
-        self.denial = Some(denial);
-        self.denied_point_admissions = 0;
+        self.counters.denial = Some(denial);
+        self.counters.denied_point_admissions = 0;
         self
     }
 
     /// The configured limits.
     pub fn limits(&self) -> &ScalarLimits {
-        &self.limits
+        &self.counters.limits
     }
 
     /// Consumed value of one counter.
     pub fn consumed(&self, kind: LimitKind) -> u64 {
-        self.consumed[kind.index()]
+        self.counters.consumed[kind.index()]
     }
 
     /// How many charges this meter has admitted.
     pub fn admission_count(&self) -> u64 {
-        self.admissions
+        self.counters.admissions
     }
 
     /// Every admitted charge point in admission order. Test-only: a
@@ -613,7 +621,7 @@ impl Meter {
     fn incomplete(&self, kind: LimitKind, next: Integer, point: ChargePoint) -> Incomplete {
         Incomplete {
             limit_kind: kind,
-            limit: kind.limit(&self.limits),
+            limit: kind.limit(&self.counters.limits),
             consumed: self.consumed(kind),
             next_charge: next,
             charge_point: point,
@@ -636,10 +644,11 @@ impl Meter {
                 charge_point: point,
             });
         }
-        match self.denial {
+        match self.counters.denial {
             Some(denial)
                 if denial.point == point
-                    && self.denied_point_admissions.checked_add(1) == Some(denial.occurrence) =>
+                    && self.counters.denied_point_admissions.checked_add(1)
+                        == Some(denial.occurrence) =>
             {
                 let consumed = self.consumed(LimitKind::WorkUnits);
                 Err(Incomplete {
@@ -673,7 +682,9 @@ impl Meter {
         let mut sizes = Vec::with_capacity(charge.sizes.len());
         for (kind, amount) in charge.sizes {
             match amount.to_u64() {
-                Some(amount) if amount <= kind.limit(&self.limits) => sizes.push((kind, amount)),
+                Some(amount) if amount <= kind.limit(&self.counters.limits) => {
+                    sizes.push((kind, amount))
+                }
                 _ => return Err(self.incomplete(kind, amount, point)),
             }
         }
@@ -681,26 +692,31 @@ impl Meter {
             amount
                 .to_u64()
                 .and_then(|addition| self.consumed(kind).checked_add(addition))
-                .filter(|total| *total <= kind.limit(&self.limits))
+                .filter(|total| *total <= kind.limit(&self.counters.limits))
                 .ok_or_else(|| self.incomplete(kind, amount, point))
         };
         let work = cumulative(LimitKind::WorkUnits, charge.work_units)?;
         let results = cumulative(LimitKind::ResultUnits, charge.result_units)?;
         for (kind, amount) in sizes {
-            let slot = &mut self.consumed[kind.index()];
+            let slot = &mut self.counters.consumed[kind.index()];
             *slot = (*slot).max(amount);
         }
-        self.consumed[LimitKind::WorkUnits.index()] = work;
-        self.consumed[LimitKind::ResultUnits.index()] = results;
+        self.counters.consumed[LimitKind::WorkUnits.index()] = work;
+        self.counters.consumed[LimitKind::ResultUnits.index()] = results;
         self.admit(point);
         Ok(())
     }
 
     fn admit(&mut self, point: ChargePoint) {
-        if self.denial.is_some_and(|denial| denial.point == point) {
-            self.denied_point_admissions = self.denied_point_admissions.saturating_add(1);
+        if self
+            .counters
+            .denial
+            .is_some_and(|denial| denial.point == point)
+        {
+            self.counters.denied_point_admissions =
+                self.counters.denied_point_admissions.saturating_add(1);
         }
-        self.admissions = self.admissions.saturating_add(1);
+        self.counters.admissions = self.counters.admissions.saturating_add(1);
         #[cfg(feature = "test-support")]
         self.admitted.push(point);
     }
@@ -719,10 +735,11 @@ impl Meter {
         let kind = LimitKind::ValueOccurrences;
         let size = pairs
             .to_u64()
-            .filter(|size| *size <= kind.limit(&self.limits))
+            .filter(|size| *size <= kind.limit(&self.counters.limits))
             .ok_or_else(|| self.incomplete(kind, pairs.clone(), point))?;
         let remaining = |kind: LimitKind| {
-            Integer::from(kind.limit(&self.limits)).sub(&Integer::from(self.consumed(kind)))
+            Integer::from(kind.limit(&self.counters.limits))
+                .sub(&Integer::from(self.consumed(kind)))
         };
         if reservation > remaining(LimitKind::WorkUnits) {
             return Err(self.incomplete(LimitKind::WorkUnits, reservation, point));
@@ -730,9 +747,9 @@ impl Meter {
         if remaining(LimitKind::ResultUnits) < Integer::one() {
             return Err(self.incomplete(LimitKind::ResultUnits, Integer::one(), point));
         }
-        let slot = &mut self.consumed[kind.index()];
+        let slot = &mut self.counters.consumed[kind.index()];
         *slot = (*slot).max(size);
-        let work = &mut self.consumed[LimitKind::WorkUnits.index()];
+        let work = &mut self.counters.consumed[LimitKind::WorkUnits.index()];
         *work = work.saturating_add(1);
         self.admit(point);
         Ok(())
@@ -805,17 +822,17 @@ mod tests {
         }
     }
 
-    /// A production meter keeps counters and one shared handle, however
-    /// many charges it admits; the admission count still grows with every
-    /// charge. Built only without `test-support` (`cargo test -p
-    /// quire-exact`, which `make ci` runs): with it, the meter keeps its
-    /// ordered charge log, which allocates.
+    /// A production meter's counters own no heap memory, however many
+    /// charges it admits; the admission count still grows with every charge.
+    /// Built only without `test-support` (`cargo test -p quire-exact`, which
+    /// `make ci` runs): with it, the meter keeps its ordered charge log,
+    /// which allocates.
     #[cfg(not(feature = "test-support"))]
     #[test]
     fn production_meter_size_is_constant_as_charges_grow() {
         assert!(
-            core::mem::size_of::<Meter>() <= 256,
-            "a production Meter must hold no field that grows with its charges"
+            !core::mem::needs_drop::<Counters>(),
+            "a production Meter's counters must hold no field that grows with its charges"
         );
         let mut meter = Meter::new(unlimited());
         let mut admitted = 0_u64;

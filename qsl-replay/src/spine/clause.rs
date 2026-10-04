@@ -640,11 +640,13 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             &parsed,
             &models,
             &request.dependencies,
+            &super::LockEvidence::default(),
             request.limits,
             &cancel,
         )?
         .into_value();
-        let emitted = front_end::package(&checked, &cancel)?.into_value();
+        let emitted = front_end::package(&checked, front_end::PackageLimits::default(), &cancel)?
+            .into_value();
         Ok((checked, emitted))
     };
     let (checked, emitted) = match front_end() {

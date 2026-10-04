@@ -386,6 +386,10 @@ fn encode_expression(
 ) -> Result<(), CheckRefusal> {
     let mut pending = vec![root.root()];
     while let Some(expr) = pending.pop() {
+        // One poll per measured node: the measure pass's own work charge.
+        if targets.cancel.is_some_and(quire_exact::Cancel::poll) {
+            return Err(super::check::cancelled_refusal(targets.location));
+        }
         // The node's sub-expressions in source order; pushed reversed below
         // so the first is visited next.
         let first = pending.len();
@@ -666,12 +670,25 @@ pub struct DeclarationMetrics {
 pub(crate) struct TargetTypes<'a> {
     scope: &'a Scope,
     location: &'a CheckLocation,
+    cancel: Option<&'a quire_exact::Cancel>,
 }
 
 impl<'a> TargetTypes<'a> {
     /// Resolve targets against `scope`, refusing at `location`.
     pub(crate) fn new(scope: &'a Scope, location: &'a CheckLocation) -> Self {
-        Self { scope, location }
+        Self {
+            scope,
+            location,
+            cancel: None,
+        }
+    }
+
+    /// These targets, with the measure pass polling `cancel` at every node
+    /// it measures (FR-276).
+    #[must_use]
+    pub(crate) fn with_cancel(mut self, cancel: Option<&'a quire_exact::Cancel>) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     fn resolve(&self, target: &qsl_forms::TypeForm) -> Result<ValueType, CheckRefusal> {
@@ -1083,7 +1100,8 @@ pub(crate) fn check_declaration_body(
         input.checking_limits,
         &mut nodes,
         form.clause_kind(),
-    );
+    )
+    .with_cancel(input.cancel);
     bind_parameters(&mut typer, parameters, input.location)?;
     typer.check_declared_type(result, input.location)?;
     let body = typer.check_as(&form.body, result, input.location)?;
@@ -1105,7 +1123,8 @@ pub(crate) fn check_declaration_body(
                 input.checking_limits,
                 &mut nodes,
                 ClauseKind::Body,
-            );
+            )
+            .with_cancel(input.cancel);
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             let measure = measure_typer.infer(measure, None, input.measure_location)?;
             measure_slot_names = measure_typer.slot_names().to_vec();
@@ -1337,6 +1356,9 @@ pub struct ValueDeclarations<'a> {
     /// through which a limit's locus resolves. `None` for declarations not
     /// read from a unit, whose positions no region names.
     pub(crate) regions: Option<&'a DeclarationRegions>,
+    /// The caller's cancellation handle, polled at every node and measure
+    /// charge of this declaration's check (FR-276).
+    pub(crate) cancel: Option<&'a quire_exact::Cancel>,
 }
 
 impl ValueDeclarations<'_> {
@@ -1434,12 +1456,16 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         let measured = measure_declaration(
             form,
             declarations.own_signature,
-            &TargetTypes::new(declarations.scope, declarations.location),
+            &TargetTypes::new(declarations.scope, declarations.location)
+                .with_cancel(declarations.cancel),
         );
         let metrics = match measured {
             Ok(metrics) => metrics,
             Err(refusal) => {
                 cx.scopes.leave();
+                if let Some(cause) = declarations.cancel.and_then(quire_exact::Cancel::tripped) {
+                    return Err(StageFailure::Cancelled(cause));
+                }
                 return Err(StageFailure::Refused(refusal));
             }
         };
@@ -1873,6 +1899,7 @@ pub mod fixtures {
             measure_location: location,
             nodes_used: 0,
             regions: None,
+            cancel: None,
         }
     }
     /// The contract-level stage limits these tests check under: nothing
@@ -2877,6 +2904,7 @@ pub(crate) mod checking_tests {
                 Err(StageFailure::Limit(exceeded)) => Some(exceeded),
                 Err(StageFailure::Refused(refusal)) => panic!("unexpected refusal {refusal:?}"),
                 Err(StageFailure::Cancelled(cause)) => panic!("unexpected cancellation {cause:?}"),
+                Err(StageFailure::Fault(fault)) => panic!("unexpected fault {fault:?}"),
             }
         };
         let budget = |work_units| {
@@ -2939,6 +2967,7 @@ pub(crate) mod checking_tests {
                 Err(StageFailure::Refused(_)) => Seen::Refused,
                 Err(StageFailure::Limit(exceeded)) => Seen::Limit(exceeded.kind()),
                 Err(StageFailure::Cancelled(cause)) => panic!("unexpected cancellation {cause:?}"),
+                Err(StageFailure::Fault(fault)) => panic!("unexpected fault {fault:?}"),
             }
         }
         let scope = empty_scope();

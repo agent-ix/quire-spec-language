@@ -616,8 +616,9 @@ impl PackageDeclarations {
     }
 
     /// [`Self::check`] under a caller-owned [`Cancel`] handle (FR-276): the
-    /// checking work meter polls it at every charge, so a cancelled handle
-    /// stops the check at its next declaration charge. The stop is a
+    /// contract meter, the measure pass and the typer's node charge poll it
+    /// at every charge, so a cancelled handle stops the check at its next
+    /// charge, inside a declaration as well as between them. The stop is a
     /// refusal list like a reached work budget; a caller that holds the
     /// handle reads [`Cancel::tripped`] to tell the two apart.
     pub fn check_with_cancel(
@@ -975,6 +976,7 @@ impl PackageDeclarations {
                 measure_location: &measure_location,
                 nodes_used,
                 regions: Some(&regions),
+                cancel: Some(cancel),
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -1012,6 +1014,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
@@ -1040,6 +1049,7 @@ impl PackageDeclarations {
                 checking_limits: limits,
                 location: &location,
                 nodes_used,
+                cancel: Some(cancel),
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -1064,6 +1074,13 @@ impl PackageDeclarations {
                     }
                 }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);

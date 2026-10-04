@@ -217,7 +217,7 @@ use crate::model::key::{
     RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use qsl_foundation::diagnostic::Code;
-use quire_exact::length_amount;
+use quire_exact::{length_amount, Cancel};
 use serde::Serialize;
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
@@ -2784,8 +2784,19 @@ pub fn normalize(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
 ) -> NormalizeOutcome {
-    let (outcome, _meter) = normalize_with_meter(domain_package, limits);
-    outcome
+    normalize_with_cancel(domain_package, limits, &Cancel::new())
+}
+
+/// [`normalize`] under the caller's [`Cancel`] handle, polled at every meter
+/// charge (FR-276). A cancelled handle stops it as `Incomplete`; the caller
+/// that owns the handle reports the cancellation.
+pub fn normalize_with_cancel(
+    domain_package: &DomainPackage,
+    limits: ModelNormalizationLimits,
+    cancel: &Cancel,
+) -> NormalizeOutcome {
+    let (body, _meter) = normalize_body(domain_package, limits, cancel);
+    into_outcome(body, || Arc::new(domain_package.clone()))
 }
 
 /// [`normalize`] over a package the caller already shares: a completed view
@@ -2794,7 +2805,7 @@ pub fn normalize_shared(
     domain_package: Arc<DomainPackage>,
     limits: ModelNormalizationLimits,
 ) -> NormalizeOutcome {
-    let (body, _meter) = normalize_body(&domain_package, limits);
+    let (body, _meter) = normalize_body(&domain_package, limits, &Cancel::new());
     into_outcome(body, || domain_package)
 }
 
@@ -2808,7 +2819,7 @@ pub fn normalize_with_meter(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
-    let (body, meter) = normalize_body(domain_package, limits);
+    let (body, meter) = normalize_body(domain_package, limits, &Cancel::new());
     (
         into_outcome(body, || Arc::new(domain_package.clone())),
         meter,
@@ -2820,8 +2831,9 @@ pub fn normalize_with_meter(
 fn normalize_body(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
+    cancel: &Cancel,
 ) -> (Result<(ViewBody, RecordIndex), Denial>, Meter) {
-    let mut meter = Meter::new(limits);
+    let mut meter = Meter::new(limits).with_cancel(cancel.clone());
     let body = build(domain_package, &mut meter);
     (body, meter)
 }

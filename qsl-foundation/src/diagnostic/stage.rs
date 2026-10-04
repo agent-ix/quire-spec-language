@@ -13,7 +13,7 @@
 
 use quire_exact::CancelCause;
 
-use super::{CatalogCode, CatalogCoded, Category, Code, Locus};
+use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
 
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1` revision
@@ -91,6 +91,9 @@ pub struct LimitExceeded {
     /// Boxed: a `Locus` names a source reference or a digest and pointer,
     /// far larger than the rest, and every stage's `Result` carries this.
     locus: Option<Box<Locus>>,
+    /// The name of the caller's limits field that sets the bound (FR-277),
+    /// such as `source.tokens`. `None` where no caller field sets it.
+    field: Option<&'static str>,
 }
 
 impl LimitExceeded {
@@ -109,7 +112,21 @@ impl LimitExceeded {
             configured_bound,
             actual,
             locus: None,
+            field: None,
         }
+    }
+
+    /// This limit, named by the caller's limits field `field` that raises
+    /// it (FR-277).
+    #[must_use]
+    pub const fn named(mut self, field: &'static str) -> Self {
+        self.field = Some(field);
+        self
+    }
+
+    /// The caller's limits field that sets this bound, when one does.
+    pub const fn limits_field(&self) -> Option<&'static str> {
+        self.field
     }
 
     /// This limit, reached at `locus` (`None` where FR-096 says no
@@ -153,11 +170,15 @@ impl CatalogCoded for LimitExceeded {
     /// the configured bound and the actual counter (FR-096). Its position is
     /// its locus.
     fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
-        Some(std::collections::BTreeMap::from([
+        let mut fields = std::collections::BTreeMap::from([
             ("kind", self.kind.catalog_cause().to_owned()),
             ("bound", self.configured_bound.to_string()),
             ("actual", self.actual.to_string()),
-        ]))
+        ]);
+        if let Some(field) = self.field {
+            fields.insert("field", field.to_owned());
+        }
+        Some(fields)
     }
 }
 
@@ -203,6 +224,15 @@ mod tests {
             ))),
             22
         );
+    }
+
+    /// FR-275: an internal fault is an internal failure, whatever the stage.
+    #[trace("TC-769", "FR-285-AC-3")]
+    #[test]
+    fn a_stage_fault_is_an_internal_failure() {
+        let failure: StageFailure<Cause> =
+            StageFailure::Fault(crate::diagnostic::InternalFault::new("S3", "x"));
+        assert_eq!(failure.category(), Category::InternalFailure);
     }
 
     /// FR-276-AC-5 (TC-757 step 5): a cancelled stage is incomplete and exits
@@ -255,6 +285,25 @@ mod tests {
     }
 }
 
+/// The work each stage did for one operation, as the number of meter
+/// charges it made (FR-275-AC-5). S2 and S4 charge no meter, so their
+/// counters stay zero.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct StageWork {
+    /// S1, reading source bytes into syntax.
+    pub s1: u64,
+    /// S2, building forms.
+    pub s2: u64,
+    /// I1, admitting domain packages.
+    pub i1: u64,
+    /// S3, assembling and checking.
+    pub s3: u64,
+    /// S4, linking.
+    pub s4: u64,
+    /// E4, emitting the package.
+    pub e4: u64,
+}
+
 /// ADR-013 T-4: a stage's successful output.
 ///
 /// T-4 also gives `Staged<T>` the warnings the stage raised. No stage
@@ -262,12 +311,35 @@ mod tests {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Staged<T> {
     value: T,
+    work: StageWork,
 }
 
 impl<T> Staged<T> {
-    /// A stage's output.
+    /// A stage's output, with no work counted.
     pub const fn new(value: T) -> Self {
-        Self { value }
+        Self {
+            value,
+            work: StageWork {
+                s1: 0,
+                s2: 0,
+                i1: 0,
+                s3: 0,
+                s4: 0,
+                e4: 0,
+            },
+        }
+    }
+
+    /// This output, with the work the operation did (FR-275-AC-5).
+    #[must_use]
+    pub fn with_work(mut self, work: StageWork) -> Self {
+        self.work = work;
+        self
+    }
+
+    /// The work the operation did, by stage.
+    pub const fn work(&self) -> StageWork {
+        self.work
     }
 
     /// The stage's output.
@@ -278,10 +350,9 @@ impl<T> Staged<T> {
 
 /// ADR-013 T-4: how a stage fails without producing output.
 ///
-/// T-4's shape also has `Fault(InternalFault)` and gives `Refused` a list of
-/// causes plus diagnostics. Neither is here: no stage returning this type
-/// raises an internal fault, T-4 does not define the diagnostics' type, and
-/// a family `check` refuses one form with one cause.
+/// T-4 gives `Refused` a list of causes plus diagnostics. That is not here:
+/// T-4 does not define the diagnostics' type, and a family `check` refuses
+/// one form with one cause.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StageFailure<C> {
     /// A configured stage limit was reached first.
@@ -291,6 +362,9 @@ pub enum StageFailure<C> {
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// stage stopped at its next charge (ADR-029 LC-3, FR-276).
     Cancelled(CancelCause),
+    /// An internal invariant failed (FR-275): never a refusal of the input,
+    /// and never a panic across the public boundary.
+    Fault(InternalFault),
 }
 
 impl<C> StageFailure<C> {
@@ -300,6 +374,7 @@ impl<C> StageFailure<C> {
             Self::Refused(cause) => Ok(cause),
             Self::Limit(limit) => Err(Stopped::Limit(limit)),
             Self::Cancelled(cause) => Err(Stopped::Cancelled(cause)),
+            Self::Fault(fault) => Err(Stopped::Fault(fault)),
         }
     }
 }
@@ -312,16 +387,19 @@ pub enum Stopped {
     Limit(LimitExceeded),
     /// The caller cancelled the stage.
     Cancelled(CancelCause),
+    /// An internal invariant failed.
+    Fault(InternalFault),
 }
 
 impl<C: CatalogCoded> StageFailure<C> {
     /// FR-285: this failure's ADR-013 O-16 category. `Refused` takes its
     /// cause's: a profile-gated construct (`unsupported_construct`) is
     /// unsupported, any other refusal is a refusal. `Limit` and `Cancelled`
-    /// are incomplete.
+    /// are incomplete, and a `Fault` is the fault's own internal failure.
     pub fn category(&self) -> Category {
         match self {
             Self::Limit(_) | Self::Cancelled(_) => Category::Incomplete,
+            Self::Fault(fault) => fault.category(),
             Self::Refused(cause) => match Code::from_code(cause.catalog_code().code()) {
                 Some(code) if code.is_unsupported() => Category::Unsupported,
                 Some(_) | None => Category::Refusal,

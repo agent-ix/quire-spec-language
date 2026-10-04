@@ -5,22 +5,28 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use ix_trace_rs::trace;
+use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, QualifiedName};
-use qsl_foundation::diagnostic::{Category, StageFailure, Staged};
+use qsl_foundation::diagnostic::{
+    Category, LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
+};
 use qsl_foundation::SourceIdentity;
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Cancel, CancelCause, Integer, Outcome, Value};
+use quire_semantic_value::checking::CheckingLimits;
 
 use super::{
-    check, execute, package, parse, select, AdmittedModels, CheckedUnit, EmittedUnit,
-    ExecuteRequest, FrontEndFailure, ParseRequest, ParsedSource,
+    check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
+    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, LockEvidence, PackageLimits,
+    ParseRequest, ParsedSource,
 };
 use crate::spine::{
     default_accounting, CompileRefusal, DependencyInput, SpineLimits, SpineStage, SuppliedLibrary,
@@ -83,12 +89,13 @@ fn library_id(library: &SuppliedLibrary) -> qsl_semantics::library::PackageId {
         &parsed,
         &models,
         &DependencyInput::default(),
+        &LockEvidence::default(),
         limits,
         &cancel,
     )
     .expect("the library checks")
     .into_value();
-    package(&checked, &cancel)
+    package(&checked, PackageLimits::default(), &cancel)
         .expect("the library emits")
         .into_value()
         .package()
@@ -112,8 +119,16 @@ fn chain_of(
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)?.into_value();
-    let emitted = package(&checked, &cancel)?.into_value();
+    let checked = check(
+        &parsed,
+        &models,
+        dependencies,
+        &LockEvidence::default(),
+        limits,
+        &cancel,
+    )?
+    .into_value();
+    let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
     Ok(Chain {
         parsed,
         models,
@@ -203,12 +218,13 @@ fn each_operation_takes_exactly_its_predecessors_output() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
+        &LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
     .expect("the parsed source checks again")
     .into_value();
-    let reemitted = package(&rechecked, &cancel)
+    let reemitted = package(&rechecked, PackageLimits::default(), &cancel)
         .expect("the checked package emits again")
         .into_value();
     assert_eq!(reemitted.package(), chain.emitted.package());
@@ -321,49 +337,111 @@ fn arbitrary_source_bytes_never_panic_an_operation() {
     assert!(checked_units > 0, "some generated unit must compile");
 }
 
-/// A handle that counts every charge made under it, and the charges made
-/// once it was cancelled, from a clone that watches from another thread.
-struct Watched {
+/// A handle whose observer counts every charge made under it and, at charge
+/// `at`, holds that charge until another thread has cancelled the handle. The
+/// cancellation therefore lands at exactly one charge, whatever the
+/// scheduler does.
+struct Gate {
     cancel: Cancel,
     charges: Arc<AtomicU64>,
     after_cancel: Arc<AtomicU64>,
+    reached: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
+    finished: Arc<AtomicBool>,
 }
 
-fn watched() -> Watched {
+/// A handle that holds charge `at`, or only counts when `at` is `None`.
+fn gated(at: Option<u64>) -> Gate {
     let charges = Arc::new(AtomicU64::new(0));
     let after_cancel = Arc::new(AtomicU64::new(0));
-    let slot: Arc<OnceLock<Cancel>> = Arc::new(OnceLock::new());
+    let reached = Arc::new(AtomicBool::new(false));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let finished = Arc::new(AtomicBool::new(false));
     let cancel = {
-        let (charges, after_cancel, slot) = (
+        let (charges, after_cancel, reached, cancelled) = (
             Arc::clone(&charges),
             Arc::clone(&after_cancel),
-            Arc::clone(&slot),
+            Arc::clone(&reached),
+            Arc::clone(&cancelled),
         );
         Cancel::observing(move || {
-            if slot.get().is_some_and(|handle| handle.cause().is_some()) {
+            let charge = charges.fetch_add(1, Ordering::SeqCst) + 1;
+            if Some(charge) == at {
+                reached.store(true, Ordering::SeqCst);
+                while !cancelled.load(Ordering::SeqCst) {
+                    std::thread::yield_now();
+                }
+            }
+            if cancelled.load(Ordering::SeqCst) {
                 after_cancel.fetch_add(1, Ordering::SeqCst);
             }
-            charges.fetch_add(1, Ordering::SeqCst);
         })
     };
-    assert!(slot.set(cancel.clone()).is_ok());
-    Watched {
+    Gate {
         cancel,
         charges,
         after_cancel,
+        reached,
+        cancelled,
+        finished,
     }
 }
 
-/// Cancel `watch` with `cause` from a second thread once its observer has
-/// seen `after` charges.
-fn cancel_after(watch: &Watched, after: u64, cause: CancelCause) -> std::thread::JoinHandle<()> {
-    let (cancel, charges) = (watch.cancel.clone(), Arc::clone(&watch.charges));
-    std::thread::spawn(move || {
-        while charges.load(Ordering::SeqCst) < after {
-            std::thread::yield_now();
-        }
-        cancel.cancel(cause);
-    })
+impl Gate {
+    /// A second thread that cancels the handle with `cause` once a charge
+    /// holds at the gate. It returns whether it did: a run that ended before
+    /// reaching the gate returns `false`.
+    fn canceller(&self, cause: CancelCause) -> std::thread::JoinHandle<bool> {
+        let cancel = self.cancel.clone();
+        let (reached, cancelled, finished) = (
+            Arc::clone(&self.reached),
+            Arc::clone(&self.cancelled),
+            Arc::clone(&self.finished),
+        );
+        std::thread::spawn(move || {
+            while !reached.load(Ordering::SeqCst) {
+                if finished.load(Ordering::SeqCst) {
+                    return false;
+                }
+                std::thread::yield_now();
+            }
+            cancel.cancel(cause);
+            cancelled.store(true, Ordering::SeqCst);
+            true
+        })
+    }
+
+    /// Run `operation` over this handle with a canceller thread, and return
+    /// its result once the canceller has finished.
+    fn run<T>(&self, cause: CancelCause, operation: impl FnOnce(&Cancel) -> T) -> T {
+        let canceller = self.canceller(cause);
+        let outcome = operation(&self.cancel);
+        self.finished.store(true, Ordering::SeqCst);
+        assert!(
+            canceller.join().expect("the canceller finishes"),
+            "the operation ended before charge {}",
+            self.charges.load(Ordering::SeqCst)
+        );
+        outcome
+    }
+
+    /// The operation stopped at the held charge: that charge was the first
+    /// and only one to see the cancellation.
+    fn assert_stopped_at(&self, at: u64) {
+        assert_eq!(self.charges.load(Ordering::SeqCst), at, "charges made");
+        assert_eq!(
+            self.after_cancel.load(Ordering::SeqCst),
+            1,
+            "charges made after the cancellation"
+        );
+    }
+}
+
+/// How many charges `operation` makes over a handle nobody cancels.
+fn charges_of<T>(operation: impl FnOnce(&Cancel) -> T) -> u64 {
+    let gate = gated(None);
+    let _ = operation(&gate.cancel);
+    gate.charges.load(Ordering::SeqCst)
 }
 
 /// FR-276-AC-1 (TC-757 step 1): each operation, called with a handle already
@@ -391,10 +469,15 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
+        &LockEvidence::default(),
         limits,
         &cancelled,
     ));
-    assert_requested(package(&chain.checked, &cancelled));
+    assert_requested(package(
+        &chain.checked,
+        PackageLimits::default(),
+        &cancelled,
+    ));
     assert_eq!(
         call_seven(
             &chain.checked,
@@ -446,23 +529,16 @@ fn wide(bytes: usize) -> SpineLimits {
     limits
 }
 
-/// Declarations in the generated unit of the cancelled-check test. The AC
-/// names 200,000, but S1's parse time grows with the square of the unit's
-/// size (a debug build measured 0.4 s at 1,000 declarations and 19.8 s at
-/// 8,000), so a unit that size cannot be generated through `parse` in a test
-/// run. Each declaration costs the check five charges, so 4,000 make 20,000,
-/// twenty times the 1,000 the canceller waits for.
+/// Declarations in the cancelled-check test of the default run. The AC names
+/// 200,000; a debug build cannot parse that many in a test run, so the AC
+/// size runs in [`a_check_over_200000_declarations_stops_within_one_charge`],
+/// which is ignored outside a release build.
 const DECLARATIONS: usize = 4_000;
 
-/// FR-276-AC-2 (TC-757 step 2): a `check` over a generated unit of
-/// declarations, cancelled with `Deadline` from a second thread once the
-/// observer has seen 1,000 charges, returns `Cancelled(Deadline)` and no
-/// package, and the observer records at most one charge after the
-/// cancellation.
-#[trace("TC-757", "FR-276-AC-2")]
-#[test]
-fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
-    let source = declarations(DECLARATIONS);
+/// The unit of `count` declarations, parsed and with its models selected,
+/// under limits raised to fit it.
+fn parsed_declarations(count: usize) -> (ParsedSource, AdmittedModels, SpineLimits) {
+    let source = declarations(count);
     let limits = wide(source.len());
     let live = Cancel::new();
     let parsed = parse(&request(source.as_bytes()), limits.source, &live)
@@ -471,34 +547,159 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
     let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
         .expect("a unit with no model selects nothing")
         .into_value();
+    (parsed, models, limits)
+}
 
-    let watch = watched();
-    let canceller = cancel_after(&watch, 1_000, CancelCause::Deadline);
-    let outcome = check(
-        &parsed,
-        &models,
-        &DependencyInput::default(),
-        limits,
-        &watch.cancel,
-    );
-    canceller.join().expect("the canceller finishes");
-
+/// `check` over `parsed`, cancelled with `cause` from a second thread at
+/// charge `at`: the check returns `Cancelled(cause)` and no package, and
+/// exactly one charge saw the cancellation.
+fn assert_check_cancelled_at(
+    (parsed, models, limits): &(ParsedSource, AdmittedModels, SpineLimits),
+    at: u64,
+    cause: CancelCause,
+) {
+    let gate = gated(Some(at));
+    let outcome = gate.run(cause, |cancel| {
+        check(
+            parsed,
+            models,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            *limits,
+            cancel,
+        )
+    });
     match outcome {
-        Err(StageFailure::Cancelled(CancelCause::Deadline)) => {}
-        Err(other) => panic!("expected Cancelled(Deadline), got {other:?}"),
+        Err(StageFailure::Cancelled(seen)) => assert_eq!(seen, cause),
+        Err(other) => panic!("expected Cancelled({cause:?}), got {other:?}"),
         Ok(_) => panic!("a cancelled check returned a package"),
     }
-    let charges = watch.charges.load(Ordering::SeqCst);
-    assert!(charges >= 1_000, "{charges} charges");
+    gate.assert_stopped_at(at);
+}
+
+/// FR-276-AC-2 (TC-757 step 2): a `check` over a generated unit of
+/// declarations, cancelled with `Deadline` from a second thread at its
+/// 1,000th charge, returns `Cancelled(Deadline)` and no package, and
+/// exactly one charge sees the cancellation.
+#[trace("TC-757", "FR-276-AC-2")]
+#[test]
+fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
+    let unit = parsed_declarations(DECLARATIONS);
+    let total = charges_of(|cancel| {
+        check(
+            &unit.0,
+            &unit.1,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            unit.2,
+            cancel,
+        )
+    });
+    assert!(total > 1_000, "the check made only {total} charges");
+    assert_check_cancelled_at(&unit, 1_000, CancelCause::Deadline);
+}
+
+/// FR-276-AC-2 at the size the AC names, 200,000 declarations. A debug build
+/// cannot generate it, so it runs under `cargo test --release -p qsl-replay
+/// -- --ignored`.
+#[trace("TC-757", "FR-276-AC-2")]
+#[test]
+#[ignore = "needs a release build: 200,000 declarations"]
+fn a_check_over_200000_declarations_stops_within_one_charge() {
+    let unit = parsed_declarations(200_000);
+    assert_check_cancelled_at(&unit, 1_000, CancelCause::Deadline);
+}
+
+/// `terms` ones added in one function body.
+fn sum(terms: usize) -> String {
+    let mut source = String::from(HEADER);
+    source.push_str("function big using v(): Integer pure { 1");
+    for _ in 1..terms {
+        source.push_str(" + 1");
+    }
+    source.push_str(" }\n");
+    source
+}
+
+/// FR-276-AC-2 (TC-757 step 2) for a cancel that lands inside one large
+/// function body: the S3 node charge and the measure pass charge every node,
+/// so the cancellation stops the check within one charge of landing in the
+/// middle of the body, not at the next declaration.
+#[trace("TC-757", "FR-276-AC-2")]
+#[test]
+fn a_cancel_inside_one_large_body_stops_within_one_charge() {
+    const TERMS: usize = 3_000;
+    let source = sum(TERMS);
+    let limits = wide(source.len());
+    let live = Cancel::new();
+    let parsed = parse(&request(source.as_bytes()), limits.source, &live)
+        .expect("the sum parses")
+        .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+        .expect("a unit with no model selects nothing")
+        .into_value();
+    let unit = (parsed, models, limits);
+    let total = charges_of(|cancel| {
+        check(
+            &unit.0,
+            &unit.1,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            unit.2,
+            cancel,
+        )
+    });
+    // Every term is a node that the measure pass and the typer each charge:
+    // a site that did not poll would leave `total` below the node count.
     assert!(
-        watch.after_cancel.load(Ordering::SeqCst) <= 1,
-        "{} charges after the cancellation",
-        watch.after_cancel.load(Ordering::SeqCst)
+        total >= u64::try_from(2 * TERMS).expect("a small count"),
+        "the check of one {TERMS}-term body made only {total} charges"
     );
-    assert!(
-        charges < 5 * u64::try_from(DECLARATIONS).expect("a small count"),
-        "the check stopped before its {charges}th charge"
-    );
+    assert_check_cancelled_at(&unit, total / 2, CancelCause::Requested);
+}
+
+/// FR-276-AC-2 for `select`: the I1 normalization meter polls the handle at
+/// every charge, so a cancel landing in the middle of the model's
+/// normalization stops it within one charge.
+#[trace("TC-757", "FR-276-AC-2")]
+#[test]
+fn a_cancel_inside_select_stops_within_one_charge() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let limits = SpineLimits::default();
+    let live = Cancel::new();
+    let parsed = parse(&request(MODEL_FIXTURE.as_bytes()), limits.source, &live)
+        .expect("the model fixture parses")
+        .into_value();
+    let run = |cancel: &Cancel| select(&parsed, &packages, limits.model, cancel);
+    let total = charges_of(run);
+    assert!(total > 2, "select made only {total} charges");
+    let at = total / 2;
+    let gate = gated(Some(at));
+    let outcome = gate.run(CancelCause::Requested, run);
+    assert!(matches!(
+        outcome,
+        Err(StageFailure::Cancelled(CancelCause::Requested))
+    ));
+    gate.assert_stopped_at(at);
+}
+
+/// FR-276-AC-2 for `package`: the emitter polls the handle at entry and at
+/// every node it writes.
+#[trace("TC-757", "FR-276-AC-2")]
+#[test]
+fn a_cancel_inside_package_stops_within_one_charge() {
+    let chain = fixture_chain();
+    let run = |cancel: &Cancel| package(&chain.checked, PackageLimits::default(), cancel);
+    let total = charges_of(run);
+    assert!(total > 2, "package made only {total} charges");
+    let at = total / 2;
+    let gate = gated(Some(at));
+    let outcome = gate.run(CancelCause::Deadline, run);
+    assert!(matches!(
+        outcome,
+        Err(StageFailure::Cancelled(CancelCause::Deadline))
+    ));
+    gate.assert_stopped_at(at);
 }
 
 /// `levels` functions, each calling the one before it twice, so calling the
@@ -533,30 +734,26 @@ fn an_execute_cancelled_from_another_thread_returns_no_value() {
     )
     .unwrap_or_else(|failure| panic!("the doubling unit compiles: {failure:?}"));
 
-    let watch = watched();
-    let canceller = cancel_after(&watch, 1_000, CancelCause::Requested);
+    let gate = gated(Some(1_000));
     let function = QualifiedName::unqualified("d23").expect("an identifier");
-    let outcome = execute(
-        &chain.checked,
-        &ExecuteRequest {
-            function: &function,
-            arguments: &[],
-            objects: &ObjectEnvironment::default(),
-        },
-        default_accounting(u64::MAX),
-        &watch.cancel,
-    );
-    canceller.join().expect("the canceller finishes");
+    let outcome = gate.run(CancelCause::Requested, |cancel| {
+        execute(
+            &chain.checked,
+            &ExecuteRequest {
+                function: &function,
+                arguments: &[],
+                objects: &ObjectEnvironment::default(),
+            },
+            default_accounting(u64::MAX),
+            cancel,
+        )
+    });
 
     assert_eq!(
         outcome.map(|_| ()).unwrap_err(),
         CallFailure::Cancelled(CancelCause::Requested)
     );
-    assert!(
-        watch.after_cancel.load(Ordering::SeqCst) <= 1,
-        "{} charges after the cancellation",
-        watch.after_cancel.load(Ordering::SeqCst)
-    );
+    gate.assert_stopped_at(1_000);
 }
 
 /// FR-276-AC-5 (TC-757 step 5): a cancelled `execute` is category
@@ -688,8 +885,15 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("a unit with no model selects nothing")
         .into_value();
     let refused = refusal(
-        check(&parsed, &models, &DependencyInput::default(), limits, &live)
-            .expect_err("the unit is ill typed"),
+        check(
+            &parsed,
+            &models,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            limits,
+            &live,
+        )
+        .expect_err("the unit is ill typed"),
     );
     assert_eq!(refused.code().as_str(), "ill_typed");
     assert_eq!(refused.stage(), SpineStage::Check);
@@ -726,4 +930,327 @@ fn the_provision_names_every_source_the_package_was_compiled_from() {
         qsl_foundation::digest::ByteDigest::of(&geometry.bytes).as_bytes(),
     );
     assert_eq!(digests, vec![unit_digest, library_digest]);
+}
+
+/// FR-275-AC-5 (TC-755 step 7): each operation reports the work of its own
+/// stages. `parse` reports S1 work and none for S3, `check` over the same
+/// `ParsedSource` reports S3 work and zero for S1 and S2, and `package` over
+/// its `CheckedUnit` reports E4 work and zero for S1 to S4. (`execute`
+/// returns the evaluation of FR-277, whose counters are the S6a meter's.)
+#[trace("TC-755", "FR-275-AC-5")]
+#[test]
+fn each_operation_reports_the_work_of_its_own_stages() {
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed =
+        parse(&request(FIXTURE.as_bytes()), limits.source, &cancel).expect("the fixture parses");
+    let parse_work = parsed.work();
+    assert!(parse_work.s1 > 0, "parse reported no S1 work");
+    assert_eq!(parse_work.s3, 0);
+    let parsed = parsed.into_value();
+
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("a unit with no model selects nothing");
+    assert_eq!(models.work().s1, 0);
+    let models = models.into_value();
+
+    let checked = check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .expect("the fixture checks");
+    let check_work = checked.work();
+    assert_eq!((check_work.s1, check_work.s2), (0, 0));
+    assert!(check_work.s3 > 0, "check reported no S3 work");
+    assert_eq!(check_work.e4, 0);
+    let checked = checked.into_value();
+
+    let emitted = package(&checked, PackageLimits::default(), &cancel).expect("the package emits");
+    let emit_work = emitted.work();
+    assert_eq!(
+        (emit_work.s1, emit_work.s2, emit_work.s3, emit_work.s4),
+        (0, 0, 0, 0)
+    );
+    assert!(emit_work.e4 > 0, "package reported no E4 work");
+}
+
+/// How one run of an operation under a limit ended.
+enum Reached {
+    /// It produced its output.
+    Output,
+    /// It stopped at a limit.
+    Limit(LimitExceeded),
+}
+
+fn reached<T>(outcome: Result<Staged<T>, FrontEndFailure>) -> Reached {
+    match outcome {
+        Ok(_) => Reached::Output,
+        Err(StageFailure::Limit(limit)) => Reached::Limit(limit),
+        Err(other) => panic!("expected an output or a limit, got {other:?}"),
+    }
+}
+
+/// FR-277-AC-1 for one limits field: the smallest value of the field at
+/// which `run` produces its output is the counter the input reaches. One
+/// below it, `run` stops with `LimitExceeded` naming `field` and carrying the
+/// configured value; at it, `run` succeeds.
+fn assert_field(
+    field: &'static str,
+    kind: FoundationKind,
+    high: u64,
+    run: impl Fn(u64) -> Reached,
+) {
+    assert!(
+        matches!(run(high), Reached::Output),
+        "`{field}` at {high} does not admit the input"
+    );
+    let (mut low, mut top) = (0_u64, high);
+    while low < top {
+        let middle = low + (top - low) / 2;
+        match run(middle) {
+            Reached::Output => top = middle,
+            Reached::Limit(limit) => {
+                assert_eq!(limit.limits_field(), Some(field), "limit at {middle}");
+                low = middle + 1;
+            }
+        }
+    }
+    let counter = low;
+    assert!(counter > 0, "`{field}` is not reached by the input");
+    match run(counter - 1) {
+        Reached::Limit(limit) => {
+            assert_eq!(limit.limits_field(), Some(field));
+            assert_eq!(limit.kind(), kind, "`{field}`");
+            assert_eq!(limit.configured_bound(), counter - 1, "`{field}`");
+        }
+        Reached::Output => panic!("`{field}` at {} admits the input", counter - 1),
+    }
+    assert!(
+        matches!(run(counter), Reached::Output),
+        "`{field}` at {counter}"
+    );
+}
+
+/// FR-277-AC-1 (TC-758 step 1) for `parse`: each field of the source limits.
+#[trace("TC-758", "FR-277-AC-1")]
+#[test]
+fn parse_names_the_source_limit_field_it_reached() {
+    let bytes = FIXTURE.as_bytes();
+    let run = |edit: fn(&mut SourceLimits, u64)| {
+        move |value: u64| {
+            let mut limits = SpineLimits::default().source;
+            edit(&mut limits, value);
+            reached(parse(&request(bytes), limits, &Cancel::new()))
+        }
+    };
+    assert_field(
+        "source.source_bytes",
+        FoundationKind::InputBytes,
+        10_000,
+        run(|limits, value| limits.source_bytes = usize::try_from(value).expect("small")),
+    );
+    assert_field(
+        "source.tokens",
+        FoundationKind::TokenCount,
+        10_000,
+        run(|limits, value| limits.tokens = usize::try_from(value).expect("small")),
+    );
+    assert_field(
+        "source.nodes",
+        FoundationKind::NodeCount,
+        10_000,
+        run(|limits, value| limits.nodes = usize::try_from(value).expect("small")),
+    );
+    assert_field(
+        "source.work_units",
+        FoundationKind::WorkBudget,
+        256,
+        run(|limits, value| limits.work_units = usize::try_from(value).expect("small")),
+    );
+}
+
+/// FR-277-AC-1 (TC-758 step 1) for `select`: each field of the model
+/// normalization limits that a charge reaches.
+#[trace("TC-758", "FR-277-AC-1")]
+#[test]
+fn select_names_the_model_limit_field_it_reached() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let live = Cancel::new();
+    let parsed = parse(
+        &request(MODEL_FIXTURE.as_bytes()),
+        SpineLimits::default().source,
+        &live,
+    )
+    .expect("the model fixture parses")
+    .into_value();
+    let run = |edit: fn(&mut ModelNormalizationLimits, u64)| {
+        let (parsed, packages) = (&parsed, &packages);
+        move |value: u64| {
+            let mut limits = ModelNormalizationLimits::default();
+            edit(&mut limits, value);
+            reached(select(parsed, packages, limits, &Cancel::new()))
+        }
+    };
+    assert_field(
+        "model.declaration_records",
+        FoundationKind::OccurrenceCount,
+        100_000,
+        run(|limits, value| limits.declaration_records = value),
+    );
+    assert_field(
+        "model.derivation_facts",
+        FoundationKind::EdgeCount,
+        100_000,
+        run(|limits, value| limits.derivation_facts = value),
+    );
+    assert_field(
+        "model.effective_declarations",
+        FoundationKind::NodeCount,
+        100_000,
+        run(|limits, value| limits.effective_declarations = value),
+    );
+    assert_field(
+        "model.hashed_bytes",
+        FoundationKind::InputBytes,
+        100_000,
+        run(|limits, value| limits.hashed_bytes = value),
+    );
+    assert_field(
+        "model.work_units",
+        FoundationKind::WorkBudget,
+        100_000,
+        run(|limits, value| limits.work_units = value),
+    );
+}
+
+/// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit. (The
+/// dependency depth is the import refusal of ADR-015 D-1, which names the
+/// chain.)
+#[trace("TC-758", "FR-277-AC-1")]
+#[test]
+fn check_names_the_checking_limit_field_it_reached() {
+    let chain = fixture_chain();
+    let run = |edit: fn(SpineLimits, u64) -> SpineLimits| {
+        let chain = &chain;
+        move |value: u64| {
+            let limits = edit(SpineLimits::default(), value);
+            reached(check(
+                &chain.parsed,
+                &chain.models,
+                &DependencyInput::default(),
+                &LockEvidence::default(),
+                limits,
+                &Cancel::new(),
+            ))
+        }
+    };
+    assert_field(
+        "checking.nodes",
+        FoundationKind::NodeCount,
+        100_000,
+        run(|mut limits, value| {
+            limits.checking = CheckingLimits::new(value)
+                .with_input_bytes(limits.checking.input_bytes())
+                .with_work_budget(limits.checking.work_budget());
+            limits
+        }),
+    );
+    assert_field(
+        "checking.input_bytes",
+        FoundationKind::InputBytes,
+        1_000_000,
+        run(|mut limits, value| {
+            limits.checking = limits.checking.with_input_bytes(value);
+            limits
+        }),
+    );
+    assert_field(
+        "checking.work_budget",
+        FoundationKind::WorkBudget,
+        1_000_000,
+        run(|mut limits, value| {
+            limits.checking = limits.checking.with_work_budget(value);
+            limits
+        }),
+    );
+}
+
+/// A reached limit is a limit, never a refusal of the input or a fault, and
+/// it reads back as the stage's limit refusal for a caller that renders it.
+#[trace("TC-758", "FR-277-AC-1")]
+#[test]
+fn a_reached_limit_is_a_limit_not_a_fault() {
+    let mut limits = SpineLimits::default().source;
+    limits.tokens = 1;
+    let failure = parse(&request(FIXTURE.as_bytes()), limits, &Cancel::new())
+        .expect_err("one token does not hold the fixture");
+    assert!(matches!(failure, StageFailure::Limit(_)), "{failure:?}");
+    let refusal = refusal_or_fault(failure).expect("a limit is not a fault");
+    assert_eq!(refusal.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusal.stage(), SpineStage::Source);
+}
+
+/// FR-275 (TC-769 step 3): an internal invariant failure is a
+/// `StageFailure::Fault`, not a panic and not a refusal, and exits as an
+/// internal failure.
+#[trace("TC-769", "FR-285-AC-3")]
+#[test]
+fn an_internal_invariant_failure_is_a_fault() {
+    use qsl_semantics::check::{CheckCause, CheckRefusal, KeyFault};
+    let refusal = Box::new(CompileRefusal::Check {
+        refusals: vec![CheckRefusal {
+            location: quire_semantic_value::location::Location::root(
+                quire_semantic_value::location::Origin::Expression,
+            ),
+            cause: CheckCause::InternalFault(Box::new(KeyFault::UnresolvedDraft)),
+        }],
+        region: None,
+    });
+    let failure = failure_of(refusal, &SpineLimits::default());
+    assert!(matches!(failure, StageFailure::Fault(_)), "{failure:?}");
+    assert!(refusal_or_fault(failure).is_err());
+}
+
+/// FR-278 (TC-759 step 1): `check` takes the package's lock evidence. A unit
+/// that compares two text values has a text law to select, so without lock
+/// evidence naming the text profile the check refuses, and with it the unit
+/// checks.
+#[trace("TC-759", "FR-278-AC-1")]
+#[test]
+fn check_takes_the_lock_evidence_the_text_law_comes_from() {
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    let unit = format!(
+        "{HEADER}function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
+         {{ a = b }}\n"
+    );
+    let limits = SpineLimits::default();
+    let live = Cancel::new();
+    let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
+        .expect("the unit parses")
+        .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+        .expect("a unit with no model selects nothing")
+        .into_value();
+    let run = |lock: &LockEvidence| {
+        check(
+            &parsed,
+            &models,
+            &DependencyInput::default(),
+            lock,
+            limits,
+            &live,
+        )
+    };
+    let without = run(&LockEvidence::default()).expect_err("no text law is selected");
+    let refusal = refusal(without);
+    assert_eq!(refusal.code().as_str(), "missing_declaration");
+    let text_profile = DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference();
+    run(&LockEvidence::default().with_text_profile(text_profile))
+        .expect("the lock evidence selects the text law");
 }

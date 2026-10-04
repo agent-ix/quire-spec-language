@@ -61,7 +61,10 @@ use quire_canonical::Node;
 use quire_exact::Presence;
 
 mod unit;
-pub use unit::{admit_unit, package_input, SelectedModel, UnitIntakeCause, UnitIntakeRefusal};
+pub use unit::{
+    admit_unit, admit_unit_with_cancel, package_input, SelectedModel, UnitIntakeCause,
+    UnitIntakeRefusal,
+};
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
 /// construct or type definition IS. Kind names and modules are never
