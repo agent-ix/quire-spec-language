@@ -56,12 +56,11 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 ## Behavior
 
-- S1 SHALL read an import's `digest` as exactly 64 lowercase hexadecimal
-  characters into a `quire.package.semantic/v2` `DigestRecord`, and SHALL
-  refuse any other spelling, a `sha256:` prefix included, with
-  `invalid-digest` at the digest string. The recorded digest SHALL never
-  become a `PackageId`; each check compares a recomputed `PackageId` with it
-  lexically (ADR-013 O-02, O-18).
+- An import SHALL be `import "L" [as a];`: it names its library by identity
+  alone. S1 SHALL refuse a `version` or `digest` token after the identity
+  string as a syntax error. The library is selected by identity, and its
+  content is bound by the `package_id` the resolution recomputes and the
+  lock records (ADR-013 O-02).
 - A library identity SHALL be any non-empty string, compared and ordered by
   its UTF-8 bytes, with no segment structure (`LibraryName`).
 - The dependency input SHALL refuse a second library supplied under an
@@ -72,15 +71,13 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 - The S4 source resolution, which runs between S2 and E3, SHALL report its
   own refusals at stage `intake`.
 - The resolution SHALL apply ADR-015 D-1's steps to each import, depth
-  first in source order, in D-1's order: cycle, diamond, selection,
-  compile, identity, view.
+  first in source order, in D-1's order: cycle, reuse, selection, compile,
+  view.
 - When an import names a library whose compile is in progress, the
   resolution SHALL refuse `invalid_package`/`definition-cycle` naming the
-  identity path, before comparing any digest.
+  identity path.
 - When an import names an identity that an earlier import in the closure
-  named with a different digest, the resolution SHALL refuse
-  `invalid_package`/`conflicting-definition` naming both dependency paths.
-- When an import equals an earlier one, the resolution SHALL reuse that
+  named, the resolution SHALL reuse that
   import's library once its compile has completed.
 - The resolution SHALL select the library supplied under the import's
   identity, refusing `missing_import`/`missing-selection` at the import's
@@ -102,18 +99,14 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   limit kind, the configured bound, the count the charge would have reached
   and the setting (FR-255). A dependency chain of any length within these
   limits resolves (ADR-030 D-1).
-- The top-level compile SHALL report the dependency-input, cycle and
-  diamond refusals unwrapped wherever in the closure they arise, the cycle
-  at the identity string of the import that closes it and the diamond at
-  the identity string of the later import.
+- The top-level compile SHALL report the dependency-input and cycle
+  refusals unwrapped wherever in the closure they arise, the cycle at the
+  identity string of the import that closes it.
 - The compile SHALL wrap every other refusal raised while resolving or
   compiling a library as `CompileRefusal::Dependency { path, refusal }`,
   carrying the library's own stage and a region in the library's source.
 - The resolution SHALL recompute each library's `package_id` by emitting its
-  checked package and SHALL refuse `DependencyIdentityMismatch`
-  (`stale_dependency`/`byte-digest-mismatch`) at the import when it differs
-  from the import's recorded digest, naming the identity, the recorded
-  digest and the recomputed `package_id`.
+  checked package and bind it as the library's selection in the lock.
 - The resolution SHALL read each library's emitted bytes through the I2
   reader, pinned to that one selection, into its `ImportView` (ADR-011 §4).
 - E3 SHALL resolve `a::Name` through the import's `ImportView` (FR-087-AC-13)
@@ -147,12 +140,12 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-099-AC-1 | A unit declaring `import "test/geometry" version "1" digest "<d>" as g;`, and referencing nothing of it, compiled with `test/geometry` supplied from source that compiles to `package_id` `d`, emits a package whose lock and identity preimage each hold the one `DependencySelection` `{test/geometry, d}`, and QSL's I2 read admits it. The same unit with `test/geometry` and an unimported `test/other` supplied emits identical bytes. | Test (TC-446) |
-| FR-099-AC-2 | The import with `digest "sha256:<d>"`, with `d` in uppercase hex, and with 63 or 65 hex characters, each refuses at S1 with `invalid-digest` at the digest string. The library supplied from a source whose one declaration is changed refuses `DependencyIdentityMismatch` (`stale_dependency`/`byte-digest-mismatch`) at the import, naming `test/geometry`, `d` and the recompiled `package_id`, with no package. | Test (TC-446) |
-| FR-099-AC-3 | With no library supplied as `test/geometry` the import refuses `missing_import`/`missing-selection` at the import's identity string, stage `intake`; with two libraries supplied as `test/geometry`, or a library whose source has the unit's authority and identity, the dependency input refuses `invalid_package`/`conflicting-definition` naming both; with an empty identity it refuses `invalid_identifier`; with `test/a` and `test/b` supplied, each importing the other under arbitrary digests, the compile refuses `invalid_package`/`definition-cycle`, unwrapped, naming both identities, at `test/b`'s import of `test/a`; with the unit declaring its `test/geometry` version `1` import before its `test/a` import, where `test/a` imports `test/geometry` under another digest, the compile refuses `invalid_package`/`conflicting-definition`, unwrapped, naming both dependency paths; with `test/a` importing a `test/missing` no library supplies, the compile refuses `CompileRefusal::Dependency` with path `[test/a]` carrying `missing_import`/`missing-selection` in `test/a`'s source. None yields a package. | Test (TC-446) |
+| FR-099-AC-1 | A unit declaring `import "test/geometry" as g;`, and referencing nothing of it, compiled with `test/geometry` supplied from source that compiles to `package_id` `d`, emits a package whose lock and identity preimage each hold the one `DependencySelection` `{test/geometry, d}`, and QSL's I2 read admits it. The same unit with `test/geometry` and an unimported `test/other` supplied emits identical bytes. | Test (TC-446) |
+| FR-099-AC-2 | `import "test/geometry" as g;` and `import "test/geometry";` each admit and name `test/geometry` by identity alone. An import with `version "1"`, with `digest "<d>"`, or with both after the identity string refuses at S1 as a syntax error and records no selection. The same import compiled against `test/geometry` supplied from a source whose one declaration is changed compiles, and the lock's selection holds the changed source's recompiled `package_id`. | Test (TC-446) |
+| FR-099-AC-3 | With no library supplied as `test/geometry` the import refuses `missing_import`/`missing-selection` at the import's identity string, stage `intake`; with two libraries supplied as `test/geometry`, or a library whose source has the unit's authority and identity, the dependency input refuses `invalid_package`/`conflicting-definition` naming both; with an empty identity it refuses `invalid_identifier`; with `test/a` and `test/b` supplied, each importing the other, the compile refuses `invalid_package`/`definition-cycle`, unwrapped, naming both identities, at `test/b`'s import of `test/a`; with `test/a` importing a `test/missing` no library supplies, the compile refuses `CompileRefusal::Dependency` with path `[test/a]` carrying `missing_import`/`missing-selection` in `test/a`'s source. None yields a package. | Test (TC-446) |
 | FR-099-AC-4 | `LibraryName` admits `test/geometry`, `a.b` and `L` and refuses only the empty string; two supplied libraries `test/b` and `test/a` import in either order into a closure listed `test/a` then `test/b`. | Test (TC-446) |
 | FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package_id>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)` emits the `Int[0, 9]` type node typing the conversion of `3` to `f`'s parameter, as a call of a local function does. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
-| FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, and the import's digest updated to the new `package_id`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
+| FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
 
 | FR-099-AC-7 | A unit importing `test/a`, which imports `test/b`, which imports `test/c`, compiled with `dependency.libraries` at 2, refuses `stage_limit_exceeded` at stage `intake` at `test/b`'s import of `test/c`, with limit kind node count, bound 2, actual 3 and setting `dependency.libraries`, and no package; with `dependency.libraries` at 3 it compiles. The same unit with `dependency.import_edges` at 2 refuses naming edge count, bound 2, actual 3 and setting `dependency.import_edges`; with `dependency.source_bytes` one byte below the three libraries' summed source bytes it refuses naming input bytes and setting `dependency.source_bytes`. A chain of 200 libraries, each importing the next, compiles at the default limits. | Test (TC-446) |
 | FR-099-AC-8 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }` and the importing unit also declaring a local `function f2 using v(x: Int[0, 9]): Boolean pure { x < 5 }`, each call `g::f(e)` receives the same verdict, refusal code, cause and locus as `f2(e)` in the same body, for `e` each of `y` with `y: Int[0, 9]`, `3`, `12`, `y` with `y: Int[0, 20]`, and `y` with `y: Int[0, 20]` under `if y <= 9`. With `f`'s body changed to `(10 div x) < 5`, whose divisor `x` may be zero, the compile refuses `CompileRefusal::Dependency` with path `[test/geometry]` carrying `undefined_expression`/`unproved-nonzero` in the library's source, and raises no refusal at the call site. | Test (TC-894) |
@@ -186,7 +179,7 @@ from the library's checked graph (`check::family` `Application::Imported`),
 lowers it to a `dependency_reference` callee, and the evaluator runs it
 against the library's package. TC-446 passes locally for AC-1 to AC-6
 (`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are `qsl-cst`'s
-`an_import_digest_is_bare_lowercase_hex`). AC-5's `g::f(3)` clause was
+`an_import_names_only_its_library_identity`). AC-5's `g::f(3)` clause was
 amended to expect the `Int[0, 9]` conversion node a local call also writes. D-1's CLI `libraries` supplier (FR-027-AC-10, TC-446 step 7) and
 replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented. The CLI renders a refusal against the source its
 region is in, a library's or the program's

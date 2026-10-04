@@ -161,7 +161,7 @@ it.
 | Implementing ticket | #213 S-2 for the identity type; the v2 emitter itself (AD-016 WP6) is ADR-011 T-8 (M-4). |
 | Public type | QSL package identity over the `quire.checked-package-id/v2` preimage, built from the existing preimage reader in `value::package_identity`. Invariant: it is computed from a `CheckedPackage` and never accepted from a caller. |
 | Serialized authority | QSpec FR-322: `package_id`, a `quire.package.semantic/v2` digest of exactly the JCS bytes of `identity_preimage`; contract `quire.checked-package/v2`. |
-| Conversions | `CheckedPackage` → `package_id` (QSL, one-way). Wire string → IR (read-only). A replay request names the package by `package_id`; the executor recomputes it (O-26). An `import`'s digest is read as a `quire.package.semantic/v2` `DigestRecord`, a claim compared with the recomputed `package_id` and never a `package_id` itself (ADR-015 D-2). |
+| Conversions | `CheckedPackage` → `package_id` (QSL, one-way). Wire string → IR (read-only). A replay request names the package by `package_id`; the executor recomputes it (O-26). An `import` names its library by identity and carries no digest; every `package_id` is recomputed (ADR-015 D-2). |
 | Validation and diagnostics | IR reader refuses a mismatched `package_id` under FR-322 (IR TC-048). The QSL executor refuses a replay whose recomputed id differs (O-26). |
 | Equality | normalized. A lock-file digest or a raw source digest never substitutes (FR-201-AC-4). |
 

@@ -20,7 +20,7 @@ use super::package_identity::fixtures::{hex, one_node_preimage};
 use super::{
     resolve_libraries, verify_binding, ConflictingPin, ImportDeclaration, LibraryName,
     LibraryPackage, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    Selection, StaleCause, StalePin, SupportedV2Wire, VerifiedPackage,
+    Selection, StaleCause, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_foundation::digest::WireNodeId;
 
@@ -178,10 +178,10 @@ fn refuses_when_the_pinned_id_and_version_both_disagree() {
         bind(candidate(recomputed()), &pin("2", other)),
         Err(LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
-            pin: StalePin::Pinned(Box::new(PinMismatch {
+            pin: Box::new(PinMismatch {
                 pinned: selection("2", other),
                 presented: selection("1", recomputed()),
-            })),
+            }),
             cause: StaleCause::ByteDigestMismatch,
         })
     );
@@ -220,25 +220,23 @@ fn conflicting_pins_for_one_identity_cannot_be_built() {
 #[test]
 fn a_resolved_library_lock_is_a_pinned_request() {
     let root_preimage = one_node_preimage(b"root::Q", &["Q"]);
-    let root = |version: &str| LibraryPackage {
+    let root = LibraryPackage {
         library: identity("root"),
         version: "1".to_owned(),
         package_id: PackageId::of_preimage(&root_preimage),
         identity_preimage: root_preimage.clone().into_boxed_slice(),
         imports: vec![ImportDeclaration {
             library: identity("pkg"),
-            version: version.to_owned(),
-            digest: recomputed().record(),
             qualifier: None,
         }],
         exports: vec!["Q".to_owned()],
     };
-    let lock = resolve_libraries(&root("1"), &[candidate(recomputed())]).unwrap();
+    let lock = resolve_libraries(&root, &[candidate(recomputed())]).unwrap();
     assert!(bind(candidate(recomputed()), &PinnedRequest::from(&lock)).is_ok());
 
     let mut other_version = candidate(recomputed());
     other_version.version = "2".to_owned();
-    let lock = resolve_libraries(&root("2"), &[other_version]).unwrap();
+    let lock = resolve_libraries(&root, &[other_version]).unwrap();
     assert_eq!(
         bind(candidate(recomputed()), &PinnedRequest::from(&lock))
             .unwrap_err()

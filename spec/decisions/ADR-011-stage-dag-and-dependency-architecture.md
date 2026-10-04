@@ -413,7 +413,7 @@ edge.
 | E1 | A CST with error or recovery nodes and its diagnostics | **Only to tooling.** The formatter and editor (`complete::editor`, `complete::edit`) may consume a recovering CST. E2 refuses a CST that has any error or recovery node. |
 | E2 | Refusal with diagnostics | No. A form is built from a complete CST or not at all. |
 | E3 | Refusal with every error diagnostic; warnings travel with a success | No. A package with an error diagnostic yields no checked graph (AD-016 arrow 1). |
-| E4 | Refusal, including `DependencyIdentityMismatch` (catalog code `stale_dependency`, §4) | No. No package, and no v2 bytes. |
+| E4 | Refusal, including a conflicting dependency selection (`invalid_package`/`conflicting-definition`) | No. No package, and no v2 bytes. |
 | E5 | IR `CheckedPackageRefusalCode` | No. A refused package yields no IR package (AD-016 arrow 2). |
 | E6 | `Outcome::Refused`, `Undefined` or `Incomplete`; `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` or `FamilyResult::Undefined(_)` for a family-owned evaluation cause (`wrong_snapshot`, the model-query refusal, `precondition-false`, `absent-key`); `InternalFault`. Bad arguments are refused at admission, before S6a: `CheckedPackage::call` returns `CallFailure::Input(InputRefusal)` | `Incomplete` is a typed outcome that says a budget ran out. It is never read as `Completed`. |
 | E7 | Per item: `requires-bound`, `unsupported` (warned) or `invalid-request` | **Per item only.** Each requested item settles exactly one terminal record (AD-016 terminal-disposition rule). An item not settled `supported` produces no oracle, harness or packet. Other items proceed. |
@@ -524,7 +524,7 @@ profile by identity alone (amended 2026-09-26).
 
 A `dependency_selections` entry is a QSpec `DependencySelection`
 `{identity, package_id}`: the library identity an
-`import "L" version "v" digest "d"` names (the version is not carried), and the dependency's own
+`import "L"` names, and the dependency's own
 `quire.package.semantic/v2` `package_id` (FR-322, QSpec STD-105). The lock
 and the identity preimage hold the same entries, one per library identity,
 in strictly ascending UTF-8 byte order of `identity`, so each dependency's
@@ -532,9 +532,9 @@ in strictly ascending UTF-8 byte order of `identity`, so each dependency's
 (`CheckedPackage::link_with`) builds the closure from the direct imports and
 each dependency's own closure, refusing two selections of one identity whose
 `package_id`s differ (FR-307's diamond rule,
-`invalid_package`/`conflicting-definition`) and a dependency whose
-recomputed `package_id` differs from its import's
-(`DependencyIdentityMismatch`, §4). The emitter writes the closure in both
+`invalid_package`/`conflicting-definition`). An import names its library by
+identity alone, so E4 compares no recorded digest; it records each
+dependency's recomputed `package_id`. The emitter writes the closure in both
 members, and the I2 reader admits a non-empty `dependency_selections`.
 
 **Amended (2026-09-25).** The QSpec schema defect this section
@@ -618,10 +618,10 @@ re-walks them against the scenarios.
 - **Dependency binding (E4, E9).** Each dependency in the S4 closure is
   compiled from source through S1 to S4, and its recomputed `package_id`
   equals the `package_id` of the verified view that E3 resolved against.
-  E4 and the layer-6 `replay` facade at E9 check this for every dependency and
-  otherwise refuse with `DependencyIdentityMismatch`, catalog code
-  `stale_dependency` (ADR-013 O-26, C-13), yielding no package and no
-  verdict. The dependency source bytes, and the view each check compares
+  E4 records that recomputed `package_id` as the dependency's selection. The
+  layer-6 `replay` facade at E9 checks it against each request entry and
+  otherwise refuses with `DependencyIdentityMismatch`, catalog code
+  `stale_dependency` (ADR-013 O-26, C-13), yielding no verdict. The dependency source bytes, and the view each check compares
   against, come from:
   1. an ordinary compile: the S4 source resolution (ADR-015 D-1), which
      compiles each supplied library's source and builds the verified view

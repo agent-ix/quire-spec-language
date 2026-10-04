@@ -49,16 +49,7 @@ pub(super) fn selection_schema(production: P) -> Option<&'static [SelectionPart]
     use SelectionPart::{Alias, Digest, Exact, Identity, OptionalAlias, Version};
     match production {
         P::Profile => Some(&[Exact("profile"), Alias, Exact("="), Identity, Exact(";")]),
-        P::ImportDeclaration => Some(&[
-            Exact("import"),
-            Identity,
-            Exact("version"),
-            Version,
-            Exact("digest"),
-            Digest,
-            OptionalAlias,
-            Exact(";"),
-        ]),
+        P::ImportDeclaration => Some(&[Exact("import"), Identity, OptionalAlias, Exact(";")]),
         P::Model => Some(&[
             Exact("model"),
             Alias,

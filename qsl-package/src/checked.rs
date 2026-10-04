@@ -39,7 +39,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::library::{LibraryName, PackageId, Selection};
@@ -158,19 +157,15 @@ pub struct ResolvedDependency {
 }
 
 /// One import the E4 link step binds (ADR-011 §4 dependency binding): the
-/// library identity `L`, version `v` and recorded digest `d` an
-/// `import "L" version "v" digest "d"` names, and the dependency's checked
-/// package compiled from its source.
+/// library identity `L` an `import "L"` names, the version the library is
+/// supplied at, and the dependency's checked package compiled from its
+/// source.
 #[derive(Clone, Debug)]
 pub struct Import {
     /// Library identity `L` (ADR-015 D-3).
     pub identity: LibraryName,
-    /// Version string `v`.
+    /// The version the library is supplied at.
     pub version: String,
-    /// The digest `d` the import records for the dependency: a claim,
-    /// compared with the recomputed `package_id` and never itself one
-    /// (ADR-015 D-2).
-    pub digest: DigestRecord,
     /// The dependency's checked package, compiled from source through S1 to
     /// S4 (ADR-015 D-1).
     pub package: Arc<CheckedPackage>,
@@ -187,21 +182,6 @@ pub enum LinkRefusal {
         identity: LibraryName,
         /// The version as written.
         version: String,
-    },
-    /// ADR-011 §4: a dependency's recomputed `package_id` is not the one
-    /// its import records (`stale_dependency`, ADR-013 O-26, C-13).
-    #[error(
-        "stale_dependency: {identity} is recorded as {} but its source compiles to {}",
-        .expected.hex(),
-        .recompiled.hex()
-    )]
-    DependencyIdentityMismatch {
-        /// The library identity.
-        identity: LibraryName,
-        /// The digest the import records (ADR-015 D-2).
-        expected: DigestRecord,
-        /// The dependency's recomputed `package_id`.
-        recompiled: PackageId,
     },
     /// FR-307 diamond rule: two dependency paths select one library
     /// identity with a different version or `package_id`
@@ -232,7 +212,6 @@ impl LinkRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::DependencyIdentityMismatch { .. } => Code::StaleDependency,
             Self::ConflictingDefinition { .. } | Self::EmptySelection { .. } => {
                 Code::InvalidPackage
             }
@@ -247,7 +226,6 @@ impl LinkRefusal {
     /// The catalog cause, where the catalog names one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
-            Self::DependencyIdentityMismatch { .. } => Some("byte-digest-mismatch"),
             Self::ConflictingDefinition { .. } => Some("conflicting-definition"),
             Self::EmptySelection { .. } => Some("invalid-value"),
             Self::DependencyEmission { .. } => None,
@@ -323,8 +301,8 @@ impl CheckedPackage {
     /// The E4 link step with a dependency closure (ADR-011 §2.1 E4, §4
     /// dependency binding): `graph` linked with each import's checked
     /// package. Each dependency's `package_id` is recomputed by emitting it
-    /// (ADR-013 O-02: never accepted from a caller) and must equal the one
-    /// its import records, else [`LinkRefusal::DependencyIdentityMismatch`].
+    /// (ADR-013 O-02: never accepted from a caller) and is the identity the
+    /// lock binds the library's content to.
     /// The closure takes the imports and every dependency's own closure; two
     /// selections of one identity unify only when version and `package_id`
     /// are equal (FR-307), else [`LinkRefusal::ConflictingDefinition`].
@@ -340,13 +318,6 @@ impl CheckedPackage {
                 });
             }
             let recompiled = recomputed_package_id(&import)?;
-            if !recompiled.matches(&import.digest) {
-                return Err(LinkRefusal::DependencyIdentityMismatch {
-                    identity: import.identity,
-                    expected: import.digest,
-                    recompiled,
-                });
-            }
             let direct = ResolvedDependency {
                 selection: Selection {
                     version: import.version,

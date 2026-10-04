@@ -108,7 +108,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 
-use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, VisitedImport};
+use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits};
 
 /// What a front-end operation returns when it produces no output: the
 /// stage's refusal, a reached limit, a cancellation or a fault.
@@ -526,7 +526,6 @@ pub fn check(
             limits,
             cancel,
             active: Vec::new(),
-            visited: BTreeMap::new(),
             compiled: BTreeMap::new(),
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
@@ -741,6 +740,8 @@ mod tests;
 /// its import view.
 #[derive(Debug)]
 struct ResolvedLibrary {
+    /// The version the library is supplied at.
+    version: String,
     package: Arc<pkg::CheckedPackage>,
     view: ImportView,
     /// This library's own source, exactly as its own `qsl_cst::parse` read
@@ -756,8 +757,6 @@ struct Resolution<'a> {
     cancel: &'a Cancel,
     /// The libraries whose compile is in progress, outermost first.
     active: Vec<LibraryName>,
-    /// Each identity's first import in the closure.
-    visited: BTreeMap<LibraryName, VisitedImport>,
     /// Each library whose compile completed. A library is compiled at most
     /// once per compile, so the number of library compiles is at most the
     /// number of supplied libraries.
@@ -814,8 +813,7 @@ impl Resolution<'_> {
             });
             links.push(Import {
                 identity,
-                version: import.version.clone(),
-                digest: import.digest,
+                version: library.version.clone(),
                 package: Arc::clone(&library.package),
             });
         }
@@ -872,8 +870,8 @@ impl Resolution<'_> {
         .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))
     }
 
-    /// ADR-015 D-1's six steps for one `import` of the unit `raw` names:
-    /// cycle, diamond, selection, compile, identity, view.
+    /// ADR-015 D-1's steps for one `import` of the unit `raw` names:
+    /// cycle, reuse, selection, compile, view.
     fn resolve(
         &mut self,
         raw: &RawSourceRef,
@@ -886,37 +884,18 @@ impl Resolution<'_> {
         let Ok(identity) = LibraryName::new(import.identity.as_str()) else {
             return Err(refuse(ImportRefusal::UnnamedImport, at_identity()));
         };
-        // 1. Cycle, before any digest is compared.
+        // 1. Cycle.
         if let Some(start) = self.active.iter().position(|active| *active == identity) {
             let mut path = self.active[start..].to_vec();
             path.push(identity);
             return Err(refuse(ImportRefusal::Cycle { path }, at_identity()));
         }
-        let mut path = self.active.clone();
-        path.push(identity.clone());
-        let visit = VisitedImport {
-            path,
-            version: import.version.clone(),
-            digest: import.digest,
-        };
-        // 2. Diamond; an equal earlier import reuses its completed library.
-        if let Some(first) = self.visited.get(&identity) {
-            if first.version != visit.version || first.digest != visit.digest {
-                return Err(refuse(
-                    ImportRefusal::Diamond {
-                        identity,
-                        first: Box::new(first.clone()),
-                        second: Box::new(visit),
-                    },
-                    at_identity(),
-                ));
-            }
-            if let Some(library) = self.compiled.get(&identity) {
-                return Ok((identity, Arc::clone(library)));
-            }
+        // 2. A library compiled earlier in this closure is reused: one
+        // supplied library per identity makes every import of it the same.
+        if let Some(library) = self.compiled.get(&identity) {
+            return Ok((identity, Arc::clone(library)));
         }
-        self.visited.insert(identity.clone(), visit);
-        // 3. Selection.
+        // 3. Selection, by identity alone.
         let dependencies = self.dependencies;
         let Some(supplied) = dependencies.libraries.get(&identity) else {
             return Err(refuse(
@@ -924,16 +903,6 @@ impl Resolution<'_> {
                 at_identity(),
             ));
         };
-        if supplied.version != import.version {
-            return Err(refuse(
-                ImportRefusal::RevisionMismatch {
-                    identity,
-                    imported: import.version.clone(),
-                    supplied: supplied.version.clone(),
-                },
-                at_import(),
-            ));
-        }
         // 4. Compile, by this same resolution, within the depth ceiling.
         if self.active.len() >= self.limits.dependencies.depth {
             let mut path = self.active.clone();
@@ -952,24 +921,12 @@ impl Resolution<'_> {
         self.active.pop();
         let (package, emission, library_source) =
             compiled.map_err(|refusal| wrap(&identity, refusal))?;
-        // 5. Identity.
-        let recompiled = emission.package().package_id();
-        if !recompiled.matches(&import.digest) {
-            return Err(refuse(
-                ImportRefusal::DependencyIdentityMismatch {
-                    identity,
-                    recorded: import.digest,
-                    recompiled,
-                },
-                at_import(),
-            ));
-        }
-        // 6. View.
+        // 5. View.
         let view = read_import_view(
             &package,
             &emission,
             identity.clone(),
-            &import.version,
+            &supplied.version,
             self.packages,
             &mut self.admitted,
         )
@@ -983,6 +940,7 @@ impl Resolution<'_> {
             )
         })?;
         let library = Arc::new(ResolvedLibrary {
+            version: supplied.version.clone(),
             package: Arc::new(package),
             view,
             source: library_source,

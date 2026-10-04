@@ -2607,7 +2607,6 @@ fn import(identity: &str, version: &str, package: CheckedPackage) -> crate::Impo
     crate::Import {
         identity: lib(identity),
         version: version.to_owned(),
-        digest: emitted_id(&package).record(),
         package: Arc::new(package),
     }
 }
@@ -2771,36 +2770,15 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
     assert_eq!(identities, ["test/\u{FF61}", "test/\u{1F600}"]);
 }
 
-/// ADR-011 §4 dependency binding at E4: a dependency whose
-/// recomputed `package_id` is not the one its import records refuses
-/// `stale_dependency` naming both. FR-307's diamond rule refuses two
+/// ADR-011 §4 dependency binding at E4: FR-307's diamond rule refuses two
 /// selections of one identity at different versions, or at one version with
 /// different `package_id`s, as `invalid_package`/`conflicting-definition`
 /// listing both dependency paths. An empty identity or version, and a
 /// dependency that does not emit, refuse too. None yields a package.
 #[trace("FR-087-AC-14", "TC-253")]
 #[test]
-fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
+fn e4_refuses_a_conflicting_diamond() {
     let d = emitted_id(&dependency());
-    let other = emit(&CheckedPackage::link(root_graph()))
-        .package
-        .package_id();
-    let stale = CheckedPackage::link_with(
-        root_graph(),
-        vec![crate::Import {
-            identity: lib("test/units"),
-            version: "2".to_owned(),
-            digest: other.record(),
-            package: Arc::new(dependency()),
-        }],
-    )
-    .expect_err("the recorded package_id is not the dependency's");
-    assert_eq!(stale.code(), Code::StaleDependency);
-    assert!(matches!(
-        stale,
-        crate::LinkRefusal::DependencyIdentityMismatch { expected, recompiled, .. }
-            if expected == other.record() && recompiled == d
-    ));
 
     // Versions differ: root -> units@3 against root -> mid -> units@2.
     let mid = linked(vec![import("test/units", "2", dependency())]);
@@ -2870,7 +2848,6 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
         vec![crate::Import {
             identity: lib("test/units"),
             version: "2".to_owned(),
-            digest: d.record(),
             package: Arc::new(package(vec![t()])),
         }],
     )

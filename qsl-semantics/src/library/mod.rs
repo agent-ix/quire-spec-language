@@ -211,17 +211,11 @@ impl PackageNodeKey {
     }
 }
 
-/// `import "L" version "v" digest "d" as a;`.
+/// `import "L" as a;`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImportDeclaration {
     /// Library identity `L`.
     pub library: LibraryName,
-    /// Version string `v`.
-    pub version: String,
-    /// Digest `d`, the `package_id` the import records for the library: a
-    /// `quire.package.semantic/v2` claim, compared with a recomputed
-    /// `PackageId` lexically and never itself one (ADR-015 D-2).
-    pub digest: DigestRecord,
     /// The `as` qualifier, if written.
     pub qualifier: Option<String>,
 }
@@ -260,7 +254,7 @@ pub type ImportPath = Vec<LibraryName>;
 /// The closed FR-272 cause of a library or name refusal.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LibraryCause {
-    /// A supplied library has the imported `package_id` but another version.
+    /// A supplied library has the locked `package_id` but another version.
     RevisionMismatch,
     /// No supplied library of the imported identity has the imported
     /// `package_id`.
@@ -269,7 +263,7 @@ pub enum LibraryCause {
     MissingSelection,
     /// Two imports bind one qualifier.
     AmbiguousName,
-    /// Two dependency paths reach one library with different selections.
+    /// Two supplied packages carry one library identity.
     ConflictingDefinition,
     /// The import graph has a cycle.
     DefinitionCycle,
@@ -305,23 +299,13 @@ impl LibraryCause {
     }
 }
 
-/// How a supplied library differs from its import.
+/// How a supplied library differs from its lock entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StaleCause {
     /// The `package_id` matches and the version differs.
     RevisionMismatch,
     /// The `package_id` differs.
     ByteDigestMismatch,
-}
-
-/// The entry a stale supplied package was checked against.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum StalePin {
-    /// An importing package's own import declaration ([`resolve_libraries`]).
-    Import(Box<ImportDeclaration>),
-    /// A consumer's library-lock or pinned-request entry, checked by the
-    /// ADR-011 §4 verified binding's condition 3.
-    Pinned(Box<PinMismatch>),
 }
 
 /// A pinned selection and the one a verified-binding candidate presented.
@@ -379,14 +363,15 @@ pub enum LibraryRefusal {
         /// Importer path, then the imported library.
         path: ImportPath,
     },
-    /// Two dependency paths reach one library identity with a different
-    /// version or `package_id`.
+    /// Two different supplied packages carry one library identity, so an
+    /// import of it selects neither (`invalid_package`/
+    /// `conflicting-definition`).
     #[error("conflicting library definitions")]
     ConflictingDefinition {
-        /// The library identity.
+        /// The library identity supplied twice.
         library: LibraryName,
-        /// The earlier and the conflicting dependency path.
-        paths: [ImportPath; 2],
+        /// The first and the second supplied package's `package_id`.
+        package_ids: [PackageId; 2],
     },
     /// The import graph has a cycle.
     #[error("import cycle")]
@@ -394,15 +379,15 @@ pub enum LibraryRefusal {
         /// The cycle's dependency edges, first and last equal.
         cycle: ImportPath,
     },
-    /// A supplied library's version or `package_id` differs from the import
-    /// declaration or pinned lock entry it was checked against.
+    /// A supplied library's version or `package_id` differs from the pinned
+    /// lock entry it was checked against (ADR-011 §4 condition 3).
     #[error("stale dependency")]
     StaleDependency {
-        /// Importer path then the imported library, or the bound library
-        /// alone for a pinned lock entry.
+        /// The bound library alone.
         path: ImportPath,
-        /// The import declaration or lock entry the package disagrees with.
-        pin: StalePin,
+        /// The lock entry the package disagrees with, and the selection the
+        /// candidate presented.
+        pin: Box<PinMismatch>,
         /// Which selection differs.
         cause: StaleCause,
     },
@@ -547,8 +532,8 @@ impl LibraryRefusal {
                 cause: StaleCause::ByteDigestMismatch,
                 ..
             } => RefusalClass::I2Rule(1),
-            // I2's second rule: two dependency paths reach one identity with
-            // different selections.
+            // I2's second rule: two supplied packages claim one library
+            // identity, so the identity has no one selection.
             Self::ConflictingDefinition { .. } => RefusalClass::I2Rule(2),
             // I2's third rule: the import graph has a cycle.
             Self::ImportCycle { .. } => RefusalClass::I2Rule(3),
@@ -806,13 +791,13 @@ pub fn verify_binding(
         });
     };
     Err(LibraryRefusal::StaleDependency {
-        pin: StalePin::Pinned(Box::new(PinMismatch {
+        pin: Box::new(PinMismatch {
             pinned: selection.clone(),
             presented: Selection {
                 version: candidate.version,
                 package_id: candidate.package_id,
             },
-        })),
+        }),
         path: vec![candidate.library],
         cause,
     })
@@ -907,8 +892,9 @@ pub fn resolve_libraries(
     supplied: &[LibraryPackage],
 ) -> Result<LibraryLock, LibraryRefusal> {
     verify_package(root)?;
-    // Keyed by each package's recomputed `package_id` as a digest record,
-    // so an import's recorded digest is looked up lexically (ADR-015 D-2).
+    // Two supplied packages must not share one `package_id`, and an identity
+    // is supplied once.
+    let mut by_library: BTreeMap<&LibraryName, &LibraryPackage> = BTreeMap::new();
     let mut by_id: BTreeMap<DigestRecord, &LibraryPackage> = BTreeMap::new();
     for package in supplied {
         verify_package(package)?;
@@ -919,6 +905,18 @@ pub fn resolve_libraries(
             Some(_) => {}
             None => {
                 by_id.insert(package.package_id.record(), package);
+            }
+        }
+        match by_library.get(&package.library) {
+            Some(existing) if *existing != package => {
+                return Err(LibraryRefusal::ConflictingDefinition {
+                    library: package.library.clone(),
+                    package_ids: [existing.package_id, package.package_id],
+                });
+            }
+            Some(_) => {}
+            None => {
+                by_library.insert(&package.library, package);
             }
         }
     }
@@ -951,44 +949,19 @@ pub fn resolve_libraries(
                 cycle: path.split_off(start),
             });
         }
-        if let Some(existing) = selected.get(&import.library) {
-            if existing.package.version == import.version
-                && existing.package.package_id.matches(&import.digest)
-            {
-                continue;
-            }
-            return Err(LibraryRefusal::ConflictingDefinition {
-                library: import.library.clone(),
-                paths: [existing.path.clone(), path],
-            });
+        if selected.contains_key(&import.library) {
+            continue;
         }
-        let found = by_id.get(&import.digest).filter(|package| {
-            package.library == import.library && package.version == import.version
-        });
-        let Some(package) = found else {
-            let same_id = by_id
-                .get(&import.digest)
-                .is_some_and(|package| package.library == import.library);
-            let same_identity = supplied
-                .iter()
-                .any(|package| package.library == import.library);
-            let cause = if same_id {
-                StaleCause::RevisionMismatch
-            } else if same_identity || by_id.contains_key(&import.digest) {
-                StaleCause::ByteDigestMismatch
-            } else {
-                return Err(LibraryRefusal::MissingImport { path });
-            };
-            return Err(LibraryRefusal::StaleDependency {
-                path,
-                pin: StalePin::Import(Box::new(import.clone())),
-                cause,
-            });
+        // An import selects by identity alone, from the one supplied package
+        // of that identity. Its content is bound by its `package_id` in the
+        // lock.
+        let Some(&package) = by_library.get(&import.library) else {
+            return Err(LibraryRefusal::MissingImport { path });
         };
         selected.insert(
             import.library.clone(),
             Selected {
-                package: (*package).clone(),
+                package: package.clone(),
                 path: path.clone(),
             },
         );

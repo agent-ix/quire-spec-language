@@ -828,28 +828,15 @@ fn geometry_identity() -> qsl_foundation::SourceIdentity {
 
 /// [`spine_request`] for a program importing `test/geometry` version `1`,
 /// with `library` written as `geometry.native` and selected as that
-/// library under `identity` and `version`. The import's digest is the
-/// `package_id` `library` compiles to from source when it compiles, and an
-/// arbitrary digest otherwise.
+/// library under `identity` and `version`.
 fn spine_library_request(
     directory: &Path,
     library: &[u8],
     identity: &str,
     version: &str,
 ) -> Vec<u8> {
-    let digest = crate::support::front_end::emitted(
-        geometry_identity(),
-        "geometry.native",
-        library,
-        &std::collections::BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .map_or_else(
-        |_| "e".repeat(64),
-        |emitted| emitted.package().package_id().hex(),
-    );
     let program = format!(
-        "{SPINE_HEADER}import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+        "{SPINE_HEADER}import \"test/geometry\" as g;\n\
          function u using v(x: Int[0, 9]): Boolean pure {{ g::f(x) }}\n"
     )
     .into_bytes();
@@ -971,10 +958,9 @@ fn library_row(file: &str, identity: &str, bytes: &[u8]) -> Value {
 #[test]
 #[trace("TC-446", "FR-027-AC-10")]
 fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
-    let digest = "e".repeat(64);
     let import = |identity: &str| {
         format!(
-            "import \"{identity}\" version \"1\" digest \"{digest}\" as x;\n\
+            "import \"{identity}\" as x;\n\
                  function h using v(): Boolean pure {{ true }}\n"
         )
     };

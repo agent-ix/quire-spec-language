@@ -42,9 +42,9 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 1. How spine `compile`, the CLI and `replay` are given dependency sources,
    and the four FR-001 labels that name them. The labels fix each
    dependency's `SourceOwner` and so its `package_id`.
-2. How an import's digest is spelled. QSL's parser read it as a
-   `sha256:`-prefixed `DefinitionRef` digest; FR-307 makes it the bare
-   64-hex `package_id`; ADR-013 O-02 forbids a `PackageId` built from
+2. How an import names its library. An import names the library by
+   identity alone; the library's content is bound by the `package_id` the
+   compile recomputes, and ADR-013 O-02 forbids a `PackageId` built from
    caller hex.
 3. What a library identity is. `library::LibraryName` accepts identifier
    segments only; FR-322 admits any non-empty string, and QSpec's vectors
@@ -96,14 +96,11 @@ these steps to each import in this order:
 
 1. **Cycle.** When the import's identity names a library whose compile is
    in progress, the compile refuses `invalid_package`/`definition-cycle`,
-   naming the identity path. This check runs before any other step, so the
-   digests of a cycle's imports are never compared.
-2. **Diamond.** When an earlier import in the closure names the same
-   identity with a different digest, the compile refuses
-   `invalid_package`/`conflicting-definition`, naming both dependency paths
-   (QSpec FR-307's diamond rule). An import equal to an earlier one reuses
-   that import's library once its compile has completed, and skips steps 3
-   to 6.
+   naming the identity path. This check runs before any other step.
+2. **Reuse.** An import of an identity an earlier import in the closure
+   named reuses that import's library once its compile has completed, and
+   skips steps 3 to 5. One library is supplied per identity, so every
+   import of an identity selects the same library.
 3. **Selection.** The supplied library of the import's identity is
    selected. None refuses `missing_import`/`missing-selection` at the
    import's identity string.
@@ -112,33 +109,26 @@ these steps to each import in this order:
    under the same stage limits. Each library compile is charged the full S1
    to S4 limits as its own unit, and the number of library compiles is at
    most the number of supplied libraries.
-5. **Identity.** The library's `package_id` is recomputed by emitting its
-   checked package. When it differs from the import's recorded `d` (D-2),
-   the compile refuses `DependencyIdentityMismatch`
-   (`stale_dependency`/`byte-digest-mismatch`) at the import, naming the
-   identity, the recorded digest and the recomputed `package_id`
-   (ADR-011 §4).
-6. **View.** The emitted v2 bytes are read through the I2 reader, with a
-   pinned request holding that one selection (identity, version,
-   recomputed `package_id`), into a `VerifiedPackage` and then its
-   `ImportView` (ADR-011 §4 verified binding).
+5. **View.** The library's `package_id` is recomputed by emitting its
+   checked package and is the library's selection in the lock. The emitted
+   v2 bytes are read through the I2 reader, with a pinned request holding
+   that one selection (identity, version, recomputed `package_id`), into a
+   `VerifiedPackage` and then its `ImportView` (ADR-011 §4 verified
+   binding).
 
-Three kinds of refusal are **closure-level** and are reported unwrapped by
+Two kinds of refusal are **closure-level** and are reported unwrapped by
 the top-level compile, wherever in the closure they are found:
 
 - the dependency-input refusals, with no source region, naming both
   libraries or the empty field;
 - the cycle refusal (step 1), located at the identity string of the import
-  that closes the cycle, in the source that declares it;
-- the diamond refusal (step 2), located at the identity string of the later
-  import, in the source that declares it.
+  that closes the cycle, in the source that declares it.
 
 Every other refusal raised while resolving or compiling a library is
 wrapped as `CompileRefusal::Dependency { path, refusal }`: `path` is the
 `LibraryName` path from the unit to that library, and `refusal` the
 library's own refusal, reporting its own stage and located in the
-library's source. A refusal at one of the unit's own imports (steps 3 and
-5) is the unit's own and is not wrapped.
+library's source. A refusal at one of the unit's own imports (step 3) is the unit's own and is not wrapped.
 
 E3 receives, per import, the `ImportView` and the library's `CheckedGraph`
 (D-5). E4 receives, per import, the library's `CheckedPackage` and links
@@ -149,23 +139,16 @@ compiled and is not recorded.
 With the dependency input in place, E3 refuses an `import` only by the
 causes above; it no longer refuses every import.
 
-### D-2 The import digest is the bare `package_id`, held as a claim
+### D-2 An import names its library by identity alone
 
-The complete-V1 `import "L" version "v" digest "d"` spells `d` as exactly
-64 lowercase hexadecimal characters, the FR-322 `PackageId` `digest`
-(QSpec FR-307). S1 reads `d` into a `DigestRecord` in the
-`quire.package.semantic/v2` domain (`qsl_foundation::digest`), the same
-type the replay request's `package_id` uses. Any other spelling, a
-`sha256:` prefix included, refuses at S1 with `invalid-digest`
-(`HostCause::SelectionDigest`) at the digest string. The identity and
-version keep the parser's existing selection bounds.
-
-The recorded digest is a claim. It is never a `PackageId`: a `PackageId` is
-only ever computed from a checked package (ADR-013 O-02,
-`PackageId::of_preimage`). Each check compares a recomputed `PackageId` with
-the recorded `DigestRecord` lexically (ADR-013 O-18). `ImportDeclaration`
-and E4's `Import` hold the recorded `DigestRecord`; every `PackageId` in a
-selection, a closure or a `PackageNodeKey` is a recomputed one.
+The complete-V1 import is `import "L" [as a];`. A `version` or `digest`
+token after the identity string is a syntax error at S1. The library is
+selected by identity, and its content is bound by the `package_id` the
+compile recomputes from the library's checked package (ADR-013 O-02,
+`PackageId::of_preimage`): that recomputed `PackageId` is the lock's
+selection, and every `PackageId` in a selection, a closure or a
+`PackageNodeKey` is a recomputed one. `ImportDeclaration` and E4's `Import`
+hold the identity and no recorded digest.
 
 ### D-3 A library identity is a non-empty string
 
@@ -192,7 +175,8 @@ and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).
 
 `replay` refuses with the first of these rules, each rule applied over all
-entries, in entry order, before the next rule. It uses QSpec FR-323's codes
+entries, in entry order, before the next rule, except that rules 6 and 7 apply
+before rule 5. It uses QSpec FR-323's codes
 for the rules FR-323 states; the one-source rule and the dependency-input
 rule (rules 2 and 3) are QSL's own preconditions on its request, and both
 run before the recompile:
@@ -214,15 +198,15 @@ run before the recompile:
    (`invalid_package`/`conflicting-definition`).
 4. `replay` recompiles the proved source through spine `compile` against
    that dependency input (D-1), and carries its refusal as
-   `ReplayRefusal::Recompile`. A stale dependency's source refuses there as
-   `DependencyIdentityMismatch` at the import that records it, naming the
-   identity. A removed entry refuses there as
+   `ReplayRefusal::Recompile`. A removed entry refuses there as
    `missing_import`/`missing-selection` at the import it supplied.
    When that import is in a library, not in the proved unit, the refusal
    arrives wrapped in `CompileRefusal::Dependency` with the library's path
    (D-1).
-5. The recompiled `package_id` equals the request's (ADR-013 O-26), else
-   the existing `PackageIdMismatch`.
+5. After rules 6 and 7, the recompiled `package_id` equals the request's
+   (ADR-013 O-26), else the existing `PackageIdMismatch`. An edited
+   dependency source changes the proved package's `package_id` too, so rules
+   6 and 7 run first and name the stale dependency.
 6. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`).
@@ -311,8 +295,8 @@ stays acyclic.
   D-1.
 - ADR-011 §5, spine `compile`: it takes the dependency input (D-1), and E3
   refuses an `import` only by D-1's causes.
-- ADR-013 O-02: an import's recorded digest is a `DigestRecord` claim,
-  never a `PackageId` (D-2).
+- ADR-013 O-02: every `PackageId` is recomputed, never built from an
+  import (D-2).
 - ADR-013 O-04: a `WireNodeId` from an import view also becomes a `NodeKey`
   by lookup at E3, in the dependency's checked graph compiled from source
   (D-5).

@@ -67,41 +67,6 @@ fn geometry() -> SuppliedLibrary {
     }
 }
 
-/// `library`'s own `package_id`, compiled alone under its own identity.
-fn library_id(library: &SuppliedLibrary) -> qsl_semantics::library::PackageId {
-    let cancel = Cancel::new();
-    let limits = SpineLimits::default();
-    let parsed = parse(
-        &ParseRequest {
-            source: &library.source,
-            path: &library.path,
-            bytes: &library.bytes,
-        },
-        limits.source,
-        &cancel,
-    )
-    .expect("the library parses")
-    .into_value();
-    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
-        .expect("a library with no model selects nothing")
-        .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        &DependencyInput::default(),
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .expect("the library checks")
-    .into_value();
-    package(&checked, PackageLimits::default(), &cancel)
-        .expect("the library emits")
-        .into_value()
-        .package()
-        .package_id()
-}
-
 /// Every operation's output over one source, from a live handle.
 struct Chain {
     parsed: ParsedSource,
@@ -805,11 +770,9 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     // A library request: the unit imports a library the request supplies.
     let geometry = geometry();
     let dependencies = DependencyInput::new(vec![geometry.clone()]).expect("admissible");
-    let library_id = library_id(&geometry);
     let unit = format!(
-        "{HEADER}import \"test/geometry\" version \"1\" digest \"{}\" as g;\n\
-         function h using v(): Boolean pure {{ true }}\n",
-        library_id.hex()
+        "{HEADER}import \"test/geometry\" as g;\n\
+         function h using v(): Boolean pure {{ true }}\n"
     );
     let importing = chain_of(
         unit.as_bytes(),
@@ -907,11 +870,9 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
 #[test]
 fn the_provision_names_every_source_the_package_was_compiled_from() {
     let geometry = geometry();
-    let library_id = library_id(&geometry);
     let unit = format!(
-        "{HEADER}import \"test/geometry\" version \"1\" digest \"{}\" as g;\n\
-         function h using v(): Boolean pure {{ true }}\n",
-        library_id.hex()
+        "{HEADER}import \"test/geometry\" as g;\n\
+         function h using v(): Boolean pure {{ true }}\n"
     );
     let chain = chain_of(
         unit.as_bytes(),
@@ -1305,9 +1266,9 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
         )
     };
     let limits = SpineLimits::default();
-    let importer = |library: &SuppliedLibrary, digest: &str, lock: &LockEvidence| {
+    let importer = |library: &SuppliedLibrary, lock: &LockEvidence| {
         let unit = format!(
-            "{HEADER}import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+            "{HEADER}import \"test/geometry\" as g;\n\
              function h using v(): Boolean pure {{ true }}\n"
         );
         let dependencies = DependencyInput::new(vec![library.clone()]).expect("admissible");
@@ -1326,12 +1287,9 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
         .map(|checked| checked.into_value())
     };
 
-    // The digest names the library's package under its own evidence; both
-    // importers recompute it, so the digest check passes for both.
     let geometry = geometry();
-    let digest = library_id(&geometry).hex();
     for lock in [LockEvidence::default(), text_profile()] {
-        importer(&geometry, &digest, &lock)
+        importer(&geometry, &lock)
             .unwrap_or_else(|failure| panic!("the import resolves under {lock:?}: {failure:?}"));
     }
 
@@ -1346,7 +1304,7 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
         ..geometry
     };
     let refusal = refusal(
-        importer(&texty, &digest, &text_profile())
+        importer(&texty, &text_profile())
             .expect_err("the library lacks the text law under its own evidence"),
     );
     assert_eq!(refusal.code().as_str(), "missing_declaration");

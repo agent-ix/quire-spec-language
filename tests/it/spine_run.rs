@@ -708,21 +708,10 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
     const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let library = format!("{HEADER}{LIBRARY}").into_bytes();
-    let library_digest = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry", "fixture", "fixture:1"),
-        "geometry.native",
-        &library,
-        &std::collections::BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .unwrap()
-    .package()
-    .package_id()
-    .hex();
     let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
     let program = format!(
         "{HEADER}\
-         import \"test/geometry\" version \"1\" digest \"{library_digest}\" as g;\n\
+         import \"test/geometry\" as g;\n\
          model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd\";\n\
          function seven using v(): Integer pure {{ 7 }}\n"
     )

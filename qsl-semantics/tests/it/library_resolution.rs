@@ -13,7 +13,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,
-    RefusalClass, Selection, StaleCause, StalePin,
+    RefusalClass, Selection,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -124,16 +124,9 @@ fn path(libraries: &[&str]) -> Vec<LibraryName> {
     libraries.iter().copied().map(name).collect()
 }
 
-fn import(
-    library: &str,
-    version: &str,
-    package_id: PackageId,
-    qualifier: Option<&str>,
-) -> ImportDeclaration {
+fn import(library: &str, qualifier: Option<&str>) -> ImportDeclaration {
     ImportDeclaration {
         library: name(library),
-        version: version.to_owned(),
-        digest: package_id.record(),
         qualifier: qualifier.map(str::to_owned),
     }
 }
@@ -164,13 +157,13 @@ fn library_l() -> LibraryPackage {
     package("L", "1", "L@1", Vec::new())
 }
 
-/// Library `library@1` importing L at `l_version` with `l_package` as `l`.
-fn over_l(library: &str, l_version: &str, l_package: PackageId) -> LibraryPackage {
+/// Library `library@1` importing L as `l`.
+fn over_l(library: &str) -> LibraryPackage {
     package(
         library,
         "1",
         &format!("{library}@1"),
-        vec![import("L", l_version, l_package, Some("l"))],
+        vec![import("L", Some("l"))],
     )
 }
 
@@ -206,7 +199,7 @@ fn assert_library_refusal_classified(
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[test]
 fn l01_an_import_binds_the_library_package_id() {
-    let lock = resolve_libraries(&over_l("P", "1", id("L@1")), &[library_l()]).unwrap();
+    let lock = resolve_libraries(&over_l("P"), &[library_l()]).unwrap();
     assert_eq!(
         lock.selections(),
         [(
@@ -217,36 +210,29 @@ fn l01_an_import_binds_the_library_package_id() {
             }
         )]
     );
+}
 
-    let raw_source = PackageId::of_preimage(b"library L version 1 { R }");
-    let by_bytes = over_l("P", "1", raw_source);
-    assert_library_refusal(
-        resolve_libraries(&by_bytes, &[library_l()]),
-        &LibraryRefusal::StaleDependency {
-            path: path(&["P", "L"]),
-            pin: StalePin::Import(Box::new(import("L", "1", raw_source, Some("l")))),
-            cause: StaleCause::ByteDigestMismatch,
-        },
-        Code::StaleDependency,
-        LibraryCause::ByteDigestMismatch,
-    );
-
-    assert_library_refusal(
-        resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
-        &LibraryRefusal::StaleDependency {
-            path: path(&["P", "L"]),
-            pin: StalePin::Import(Box::new(import("L", "2", id("L@1"), Some("l")))),
-            cause: StaleCause::RevisionMismatch,
-        },
-        Code::StaleDependency,
-        LibraryCause::RevisionMismatch,
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
+#[test]
+fn an_import_selects_the_supplied_library_of_its_identity() {
+    let supplied = package("L", "2", "L'@2", Vec::new());
+    let lock = resolve_libraries(&over_l("P"), &[supplied]).unwrap();
+    assert_eq!(
+        lock.selections(),
+        [(
+            name("L"),
+            Selection {
+                version: "2".to_owned(),
+                package_id: id("L'@2"),
+            }
+        )]
     );
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[test]
 fn l02_an_import_without_a_qualifier_selects_its_library() {
-    let root = package("P", "1", "P@1", vec![import("L", "1", id("L@1"), None)]);
+    let root = package("P", "1", "P@1", vec![import("L", None)]);
     let lock = resolve_libraries(&root, &[library_l()]).unwrap();
     assert_eq!(
         lock.selections(),
@@ -265,24 +251,16 @@ fn diamond_root() -> LibraryPackage {
         "P",
         "1",
         "P@1",
-        vec![
-            import("A", "1", id("A@1"), Some("a")),
-            import("B", "1", id("B@1"), Some("b")),
-        ],
+        vec![import("A", Some("a")), import("B", Some("b"))],
     )
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
-#[trace("TC-282", "FR-087-AC-12")]
 #[test]
-fn l04_a_diamond_unifies_only_one_version_and_package_id() {
+fn l04_a_diamond_selects_its_shared_library_once() {
     let root = diamond_root();
-    let supplied = [
-        over_l("A", "1", id("L@1")),
-        over_l("B", "1", id("L@1")),
-        library_l(),
-    ];
+    let supplied = [over_l("A"), over_l("B"), library_l()];
     let lock = resolve_libraries(&root, &supplied).unwrap();
     let l_selections: Vec<_> = lock
         .selections()
@@ -290,45 +268,14 @@ fn l04_a_diamond_unifies_only_one_version_and_package_id() {
         .filter(|(library, _)| *library == name("L"))
         .collect();
     assert_eq!(l_selections.len(), 1);
-
-    for (version, label) in [("1", "L@1-other"), ("2", "L@2")] {
-        let supplied = [
-            over_l("A", "1", id("L@1")),
-            over_l("B", version, id(label)),
-            library_l(),
-            package("L", version, label, Vec::new()),
-        ];
-        // TC-282 (FR-087-AC-12): `ConflictingDefinition` classifies to
-        // ADR-011 I2's second rule.
-        assert_library_refusal_classified(
-            resolve_libraries(&root, &supplied),
-            &LibraryRefusal::ConflictingDefinition {
-                library: name("L"),
-                paths: [path(&["P", "A", "L"]), path(&["P", "B", "L"])],
-            },
-            Code::InvalidPackage,
-            LibraryCause::ConflictingDefinition,
-            RefusalClass::I2Rule(2),
-        );
-    }
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l05_an_import_cycle_lists_its_dependency_edges() {
-    let a = package(
-        "A",
-        "1",
-        "A@1",
-        vec![import("B", "1", id("B@1"), Some("b"))],
-    );
-    let b = package(
-        "B",
-        "1",
-        "B@1",
-        vec![import("A", "1", id("A@1"), Some("a"))],
-    );
+    let a = package("A", "1", "A@1", vec![import("B", Some("b"))]);
+    let b = package("B", "1", "B@1", vec![import("A", Some("a"))]);
     // TC-282 (FR-087-AC-12): `ImportCycle` classifies to ADR-011 I2's third
     // rule.
     assert_library_refusal_classified(
@@ -349,10 +296,7 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
         "P",
         "1",
         "P@1",
-        vec![
-            import("Z", "1", id("Z@1"), Some("z")),
-            import("A", "1", id("A@1"), Some("a")),
-        ],
+        vec![import("Z", Some("z")), import("A", Some("a"))],
     );
     let supplied = vec![
         package("Z", "1", "Z@1", Vec::new()),
@@ -377,13 +321,8 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
 fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     let old_library = library_l();
     let new_library = package("L", "2", "L'@2", Vec::new());
-    let old_package = over_l("P", "1", id("L@1"));
-    let new_package = package(
-        "P",
-        "2",
-        "P'@2",
-        vec![import("L", "2", id("L'@2"), Some("l"))],
-    );
+    let old_package = over_l("P");
+    let new_package = package("P", "2", "P'@2", vec![import("L", Some("l"))]);
 
     assert_eq!(
         check_migration(&old_library, &new_library),
@@ -419,7 +358,18 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
             }
         )]
     );
-    let new_lock = resolve_libraries(&new_package, &[old_library, new_library]).unwrap();
+    // Supplying both versions of `L` is a conflicting definition, not a
+    // choice between them.
+    assert_library_refusal(
+        resolve_libraries(&new_package, &[old_library, new_library.clone()]),
+        &LibraryRefusal::ConflictingDefinition {
+            library: name("L"),
+            package_ids: [id("L@1"), id("L'@2")],
+        },
+        Code::InvalidPackage,
+        LibraryCause::ConflictingDefinition,
+    );
+    let new_lock = resolve_libraries(&new_package, &[new_library]).unwrap();
     assert_eq!(
         new_lock.selections(),
         [(
@@ -454,7 +404,7 @@ fn l08_a_migrated_package_reusing_its_package_id_is_invalid_at_package_id() {
     );
     assert_eq!(mismatch.member_path(), Some("/package_id"));
 
-    let importer = over_l("P", "1", id("L@1"));
+    let importer = over_l("P");
     assert_library_refusal(
         resolve_libraries(&importer, std::slice::from_ref(&reused)),
         &mismatch,
@@ -667,7 +617,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
             },
         ),
     ];
-    let importer = over_l("P", "1", id("L@1"));
+    let importer = over_l("P");
     for (bytes, exports, defect) in cases {
         let malformed = with_preimage(bytes, exports);
         let expected = LibraryRefusal::InvalidPreimage {
@@ -801,7 +751,7 @@ fn l08_b_schema_refusals_rank_before_a_mismatch_at_an_earlier_node() {
     labeled[3].1["surplus"] = json!(0);
     let nodes: Vec<Value> = labeled.into_iter().map(|(_, node)| node).collect();
     let malformed = with_preimage(jcs(&preimage_value(nodes)), &[]);
-    let importer = over_l("P", "1", id("L@1"));
+    let importer = over_l("P");
     let expected = LibraryRefusal::InvalidPreimage {
         library: name("L"),
         defect: PreimageDefect::Node {
@@ -837,7 +787,7 @@ fn l08_c_a_mismatch_ranks_before_an_ambiguity_at_an_earlier_node() {
     labeled[2].1["declaration"] = json!({"qualified_name": ["T"]});
     let nodes: Vec<Value> = labeled.into_iter().map(|(_, node)| node).collect();
     let malformed = with_preimage(jcs(&preimage_value(nodes)), &[]);
-    let importer = over_l("P", "1", id("L@1"));
+    let importer = over_l("P");
     let expected = LibraryRefusal::InvalidPreimage {
         library: name("L"),
         defect: PreimageDefect::DeclarationNominalMismatch {
@@ -866,7 +816,7 @@ fn l08_d_projection_order_is_graph_order_and_checks_visit_ascending_node_ids() {
     descending.reverse();
     assert_eq!(descending.len(), 2);
     let admitted = with_preimage(jcs(&preimage_value(descending)), &["R", "S"]);
-    let importer = over_l("P", "1", admitted.package_id);
+    let importer = over_l("P");
     assert!(resolve_libraries(&importer, std::slice::from_ref(&admitted)).is_ok());
 
     let mut second_r = projection_node("L@1::S", Some("R"));
@@ -884,7 +834,7 @@ fn l08_d_projection_order_is_graph_order_and_checks_visit_ascending_node_ids() {
         )
     };
     let ambiguous = with_preimage(jcs(&preimage_value(vec![high.0, low.0])), &[]);
-    let importer = over_l("P", "1", id("L@1"));
+    let importer = over_l("P");
     let expected = LibraryRefusal::InvalidPreimage {
         library: name("L"),
         defect: PreimageDefect::AmbiguousDeclaration {
@@ -985,12 +935,7 @@ fn l01_every_declared_export_must_derive_from_a_checked_package_v2_identity_proj
         imports: Vec::new(),
         exports: exports.iter().map(|export| (*export).to_owned()).collect(),
     };
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("Example", "1", claimed, Some("e"))],
-    );
+    let root = package("P", "1", "P@1", vec![import("Example", Some("e"))]);
     resolve_libraries(&root, &[valid_library]).unwrap();
 
     let unexported_library = LibraryPackage {
@@ -1059,12 +1004,7 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
             imports: Vec::new(),
             exports: vec![export.to_owned()],
         };
-        let root = package(
-            "P",
-            "1",
-            "P@1",
-            vec![import("K", "1", library.package_id, Some("k"))],
-        );
+        let root = package("P", "1", "P@1", vec![import("K", Some("k"))]);
         (root, library)
     };
 
@@ -1136,7 +1076,7 @@ fn package_id_mismatch_classifies_to_4_condition_2() {
     let mut reused = package("L", "1", "L'@1", Vec::new());
     reused.package_id = id("L@1");
     assert_library_refusal_classified(
-        resolve_libraries(&over_l("P", "1", id("L@1")), std::slice::from_ref(&reused)),
+        resolve_libraries(&over_l("P"), std::slice::from_ref(&reused)),
         &LibraryRefusal::PackageIdMismatch {
             library: name("L"),
             claimed: id("L@1"),
@@ -1155,10 +1095,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
     wrong_version["version"] = json!("quire.checked-package-id/v1");
     let malformed = with_preimage(jcs(&wrong_version), &["R"]);
     assert_library_refusal_classified(
-        resolve_libraries(
-            &over_l("P", "1", malformed.package_id),
-            std::slice::from_ref(&malformed),
-        ),
+        resolve_libraries(&over_l("P"), std::slice::from_ref(&malformed)),
         &LibraryRefusal::InvalidPreimage {
             library: name("L"),
             defect: PreimageDefect::Version,
@@ -1174,10 +1111,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
 fn undeclared_export_classifies_alongside_4_condition_2() {
     let malformed = with_preimage(preimage("L@1"), &["Missing"]);
     assert_library_refusal_classified(
-        resolve_libraries(
-            &over_l("P", "1", malformed.package_id),
-            std::slice::from_ref(&malformed),
-        ),
+        resolve_libraries(&over_l("P"), std::slice::from_ref(&malformed)),
         &LibraryRefusal::UndeclaredExport {
             library: name("L"),
             export: "Missing".to_owned(),
@@ -1191,12 +1125,7 @@ fn undeclared_export_classifies_alongside_4_condition_2() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn invalid_qualifier_classifies_to_e3_name_resolution() {
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("L", "1", id("L@1"), Some("1l"))],
-    );
+    let root = package("P", "1", "P@1", vec![import("L", Some("1l"))]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[library_l()]),
         &LibraryRefusal::InvalidQualifier {
@@ -1210,46 +1139,26 @@ fn invalid_qualifier_classifies_to_e3_name_resolution() {
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
-fn stale_dependency_revision_mismatch_classifies_to_4_condition_3() {
+fn conflicting_definition_classifies_to_i2_rule_2() {
     assert_library_refusal_classified(
-        resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
-        &LibraryRefusal::StaleDependency {
-            path: path(&["P", "L"]),
-            pin: StalePin::Import(Box::new(import("L", "2", id("L@1"), Some("l")))),
-            cause: StaleCause::RevisionMismatch,
+        resolve_libraries(
+            &over_l("P"),
+            &[library_l(), package("L", "2", "L'@2", Vec::new())],
+        ),
+        &LibraryRefusal::ConflictingDefinition {
+            library: name("L"),
+            package_ids: [id("L@1"), id("L'@2")],
         },
-        Code::StaleDependency,
-        LibraryCause::RevisionMismatch,
-        RefusalClass::BindingCondition(3),
-    );
-}
-
-#[trace("TC-282", "FR-087-AC-12")]
-#[test]
-fn stale_dependency_byte_digest_mismatch_classifies_to_i2_rule_1() {
-    let raw_source = PackageId::of_preimage(b"library L version 1 { R }");
-    assert_library_refusal_classified(
-        resolve_libraries(&over_l("P", "1", raw_source), &[library_l()]),
-        &LibraryRefusal::StaleDependency {
-            path: path(&["P", "L"]),
-            pin: StalePin::Import(Box::new(import("L", "1", raw_source, Some("l")))),
-            cause: StaleCause::ByteDigestMismatch,
-        },
-        Code::StaleDependency,
-        LibraryCause::ByteDigestMismatch,
-        RefusalClass::I2Rule(1),
+        Code::InvalidPackage,
+        LibraryCause::ConflictingDefinition,
+        RefusalClass::I2Rule(2),
     );
 }
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn missing_import_classifies_to_i2_rule_1() {
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("Z", "1", id("Z@1"), Some("z"))],
-    );
+    let root = package("P", "1", "P@1", vec![import("Z", Some("z"))]);
     assert_library_refusal_classified(
         resolve_libraries(&root, &[]),
         &LibraryRefusal::MissingImport {
