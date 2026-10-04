@@ -15,7 +15,7 @@ use qsl_forms::{
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
+use qsl_semantics::library::{LibraryName, PinnedRequest};
 use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
@@ -209,12 +209,8 @@ fn read_evidence(emission: &Emission) -> CheckedPackageEvidence {
 /// QSL's full I2 read of `emission` against `evidence`, pinned at its own
 /// `package_id`.
 fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
-    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
-        library(),
-        Selection {
-            package_id: emission.package.package_id(),
-        },
-    );
+    let pinned: PinnedRequest =
+        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     read_v2(
         emission.package.bytes(),
         library(),
@@ -2106,8 +2102,7 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    let pinned: PinnedRequest =
-        qsl_semantics::library::fixtures::single_pin(library(), Selection { package_id });
+    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(library(), package_id);
     let outcome = read_v2(
         &jcs(&wire),
         library(),
@@ -2254,12 +2249,7 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(
-            library(),
-            Selection {
-                package_id: emission.package.package_id(),
-            },
-        ),
+        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
     (emission, wire, digest, read)
 }
@@ -2622,13 +2612,7 @@ fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<Library
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| {
-            (
-                identity.clone(),
-                resolved.selection.package_id,
-                resolved.path.clone(),
-            )
-        })
+        .map(|(identity, resolved)| (identity.clone(), resolved.package_id, resolved.path.clone()))
         .collect()
 }
 
@@ -2718,7 +2702,7 @@ fn a_diamond_selecting_one_package_unifies() {
     )
     .expect("one selection of test/units by two paths unifies");
     let units = &root.dependency_selections()[&lib("test/units")];
-    assert_eq!(units.selection.package_id, d);
+    assert_eq!(units.package_id, d);
     assert_eq!(units.path, path(&["test/units"]));
     read_linked(&root);
 }
@@ -2779,9 +2763,9 @@ fn e4_refuses_a_conflicting_diamond() {
         panic!("expected ConflictingDefinition, got {split:?}");
     };
     assert_eq!(*identity, lib("test/units"));
-    assert_eq!(selections[0].selection.package_id, d);
+    assert_eq!(selections[0].package_id, d);
     assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
-    assert_eq!(selections[1].selection.package_id, another_id);
+    assert_eq!(selections[1].package_id, another_id);
     assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
 
     // A dependency whose occurrences have no source region does not emit,

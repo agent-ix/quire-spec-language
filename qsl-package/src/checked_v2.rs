@@ -108,7 +108,7 @@ use qsl_foundation::source::provenance::{
 };
 use qsl_semantics::library::{
     declared_exports, verify_binding, ImportView, LibraryName, LibraryPackage, LibraryRefusal,
-    PackageId, PinnedRequest, Selection, SupportedV2Wire, VerifiedPackage,
+    PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_semantics::model::key::hex;
 
@@ -937,12 +937,7 @@ impl ClosureReader<'_> {
             evidence.insert_domain_package_document(hex(digest), document.as_slice());
         }
         self.supply(package, &mut evidence)?;
-        let pinned = PinnedRequest::single(
-            identity.clone(),
-            Selection {
-                package_id: emission.package.package_id(),
-            },
-        );
+        let pinned = PinnedRequest::single(identity.clone(), emission.package.package_id());
         read_checked_package_v2(
             emission.package.bytes(),
             identity.clone(),
@@ -977,7 +972,7 @@ impl ClosureReader<'_> {
         identity: &LibraryName,
         resolved: &ResolvedDependency,
     ) -> Result<Arc<CheckedPackageV2>, ImportViewRefusal> {
-        let id = resolved.selection.package_id;
+        let id = resolved.package_id;
         if let Some(admitted) = self.admitted.get(&id) {
             return Ok(Arc::clone(admitted));
         }

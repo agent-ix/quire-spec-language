@@ -28,7 +28,7 @@ use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    RefusalClass, Selection,
+    RefusalClass,
 };
 use quire_exact::{Origin, Role};
 
@@ -198,7 +198,7 @@ fn pin(package_id: PackageId) -> PinnedRequest {
 }
 
 fn pin_library(library: &str, package_id: PackageId) -> PinnedRequest {
-    qsl_semantics::library::fixtures::single_pin(identity(library), Selection { package_id })
+    qsl_semantics::library::fixtures::single_pin(identity(library), package_id)
 }
 
 /// ADR-011 §4 condition 3's own input: `pkg` pinned at the `package_id`
@@ -425,10 +425,8 @@ fn refuses_when_the_pinned_package_id_disagrees() {
         LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
             pin: Box::new(PinMismatch {
-                pinned: Selection { package_id: stale },
-                presented: Selection {
-                    package_id: PackageId::of_preimage(&jcs(&preimage)),
-                },
+                pinned: stale,
+                presented: PackageId::of_preimage(&jcs(&preimage)),
             }),
         }
     );

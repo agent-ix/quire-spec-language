@@ -22,7 +22,7 @@
 //! This module owns `LibraryLock`/`resolve_libraries` and the rest of the
 //! FR-307 public surface: identities (`PackageId`, `LibraryName`),
 //! declarations (`ImportDeclaration`, `LibraryPackage`), the resolved lock
-//! (`Selection`, `LibraryLock`) and refusal reporting (`LibraryCause`,
+//! (`LibraryLock`) and refusal reporting (`LibraryCause`,
 //! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
 //! `VerifiedPackage` and `ImportView` (FR-087-AC-1/AC-3/AC-4): the
 //! layer-4 `package` reader (`qsl-package`'s `checked_v2`) reads
@@ -80,11 +80,11 @@ pub use witness::SupportedV2Wire;
 /// into a production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
-    use super::{LibraryName, PinnedRequest, Selection};
+    use super::{LibraryName, PackageId, PinnedRequest};
 
     /// A pinned request with one entry ([`PinnedRequest::single`]).
-    pub fn single_pin(library: LibraryName, selection: Selection) -> PinnedRequest {
-        PinnedRequest::single(library, selection)
+    pub fn single_pin(library: LibraryName, package_id: PackageId) -> PinnedRequest {
+        PinnedRequest::single(library, package_id)
     }
 }
 
@@ -237,13 +237,6 @@ pub struct LibraryPackage {
     pub exports: Vec<String>,
 }
 
-/// One exact library selection.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Selection {
-    /// `package_id`.
-    pub package_id: PackageId,
-}
-
 /// A dependency path of library identities, importer first.
 pub type ImportPath = Vec<LibraryName>;
 
@@ -292,13 +285,13 @@ impl LibraryCause {
     }
 }
 
-/// A pinned selection and the one a verified-binding candidate presented.
+/// A pinned `package_id` and the one a verified-binding candidate presented.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PinMismatch {
-    /// The selection the lock or request records.
-    pub pinned: Selection,
+    /// The `package_id` the lock or request records.
+    pub pinned: PackageId,
     /// The recomputed `package_id` the candidate presented.
-    pub presented: Selection,
+    pub presented: PackageId,
 }
 
 /// The member path of a refused `package_id`.
@@ -478,7 +471,7 @@ impl LibraryRefusal {
 
     /// FR-087-AC-12's classification: every variant classifies, honestly,
     /// to exactly one of an ADR-011 I2 graph rule, the §4 binding's
-    /// condition 2 or 3, or E3 name resolution, or to `DuplicatePackageId`'s
+    /// condition 2, or E3 name resolution, or to `DuplicatePackageId`'s
     /// own named exception outside all four.
     pub fn class(&self) -> RefusalClass {
         match self {
@@ -511,14 +504,15 @@ impl LibraryRefusal {
 }
 
 /// FR-087-AC-12's classification of a [`LibraryRefusal`]: exactly one of an
-/// ADR-011 I2 graph rule, the §4 binding's condition 2 or 3, E3 name
+/// ADR-011 I2 graph rule, the §4 binding's condition 2, E3 name
 /// resolution, or the one named exception outside all four
 /// (`DuplicatePackageId`, a precondition on the supplied pool itself).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RefusalClass {
     /// One of ADR-011 `:203-210`'s three I2 graph rules (1, 2 or 3).
     I2Rule(u8),
-    /// The §4 binding's condition 2 or 3.
+    /// The §4 binding's condition 2 (condition 3's stale pin is I2's first
+    /// rule), so the number is always 2.
     BindingCondition(u8),
     /// E3 name resolution (moves conceptually with the removed
     /// `resolve_name`, owner ruling item 3(b)).
@@ -655,10 +649,10 @@ impl VerifiedPackage {
 }
 
 /// A consumer's pinned request or library lock, as the ADR-011 §4 binding's
-/// condition 3 reads it: at most one [`Selection`] per library identity, so
+/// condition 3 reads it: at most one `package_id` per library identity, so
 /// the binding's answer never depends on the order entries were supplied.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
+pub struct PinnedRequest(BTreeMap<LibraryName, PackageId>);
 
 /// Two entries of one pinned request select different `package_id`s for one
 /// library identity (ADR-011 I2's second rule).
@@ -668,39 +662,39 @@ pub(crate) struct ConflictingPin {
     /// The library identity pinned twice.
     pub(crate) library: LibraryName,
     /// The earlier entry, then the later, conflicting one.
-    pub(crate) selections: Box<[Selection; 2]>,
+    pub(crate) selections: Box<[PackageId; 2]>,
 }
 
 impl PinnedRequest {
-    /// A pinned request holding the one selection `selection` of `library`
+    /// A pinned request holding the one `package_id` of `library`
     /// (ADR-015 D-1 step 6: a library's own freshly emitted package, read
     /// back into its import view).
-    pub fn single(library: LibraryName, selection: Selection) -> Self {
-        Self(BTreeMap::from([(library, selection)]))
+    pub fn single(library: LibraryName, package_id: PackageId) -> Self {
+        Self(BTreeMap::from([(library, package_id)]))
     }
 
     /// A pinned request from `entries`. A repeated identity with an equal
-    /// selection is one pin; a repeated identity with a different
-    /// selection is refused.
+    /// `package_id` is one pin; a repeated identity with a different
+    /// `package_id` is refused.
     #[allow(
         dead_code,
         reason = "no production caller yet: unused pending ADR-011 §4's round trip (QSL-347) to build the consumer's pinned request; until then only tests call it"
     )]
     pub(crate) fn new(
-        entries: impl IntoIterator<Item = (LibraryName, Selection)>,
+        entries: impl IntoIterator<Item = (LibraryName, PackageId)>,
     ) -> Result<Self, ConflictingPin> {
-        let mut pins: BTreeMap<LibraryName, Selection> = BTreeMap::new();
-        for (library, selection) in entries {
+        let mut pins: BTreeMap<LibraryName, PackageId> = BTreeMap::new();
+        for (library, package_id) in entries {
             match pins.get(&library) {
-                Some(first) if *first != selection => {
+                Some(first) if *first != package_id => {
                     return Err(ConflictingPin {
-                        selections: Box::new([first.clone(), selection]),
+                        selections: Box::new([*first, package_id]),
                         library,
                     });
                 }
                 Some(_) => {}
                 None => {
-                    pins.insert(library, selection);
+                    pins.insert(library, package_id);
                 }
             }
         }
@@ -732,12 +726,12 @@ pub fn verify_binding(
     pinned: &PinnedRequest,
 ) -> Result<VerifiedPackage, LibraryRefusal> {
     let exports = verify_package(&candidate)?;
-    let Some(selection) = pinned.0.get(&candidate.library) else {
+    let Some(pinned_id) = pinned.0.get(&candidate.library) else {
         return Err(LibraryRefusal::MissingImport {
             path: vec![candidate.library],
         });
     };
-    if selection.package_id == candidate.package_id {
+    if *pinned_id == candidate.package_id {
         return Ok(VerifiedPackage {
             package: candidate,
             exports,
@@ -745,10 +739,8 @@ pub fn verify_binding(
     }
     Err(LibraryRefusal::StaleDependency {
         pin: Box::new(PinMismatch {
-            pinned: selection.clone(),
-            presented: Selection {
-                package_id: candidate.package_id,
-            },
+            pinned: *pinned_id,
+            presented: candidate.package_id,
         }),
         path: vec![candidate.library],
     })
@@ -937,18 +929,11 @@ impl LibraryLock {
         &self.root.package
     }
 
-    /// One selection per library identity, in ascending identity order.
-    pub fn selections(&self) -> Vec<(LibraryName, Selection)> {
+    /// One `package_id` per library identity, in ascending identity order.
+    pub fn selections(&self) -> Vec<(LibraryName, PackageId)> {
         self.selected
             .iter()
-            .map(|(library, selected)| {
-                (
-                    library.clone(),
-                    Selection {
-                        package_id: selected.package.package_id,
-                    },
-                )
-            })
+            .map(|(library, selected)| (library.clone(), selected.package.package_id))
             .collect()
     }
 }

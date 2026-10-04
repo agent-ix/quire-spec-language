@@ -13,7 +13,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,
-    RefusalClass, Selection,
+    RefusalClass,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -193,15 +193,7 @@ fn assert_library_refusal_classified(
 #[test]
 fn l01_an_import_binds_the_library_package_id() {
     let lock = resolve_libraries(&over_l("P"), &[library_l()]).unwrap();
-    assert_eq!(
-        lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                package_id: id("L@1"),
-            }
-        )]
-    );
+    assert_eq!(lock.selections(), [(name("L"), id("L@1"))]);
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
@@ -209,15 +201,7 @@ fn l01_an_import_binds_the_library_package_id() {
 fn an_import_selects_the_supplied_library_of_its_identity() {
     let supplied = package("L", "L'@2", Vec::new());
     let lock = resolve_libraries(&over_l("P"), &[supplied]).unwrap();
-    assert_eq!(
-        lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                package_id: id("L'@2"),
-            }
-        )]
-    );
+    assert_eq!(lock.selections(), [(name("L"), id("L'@2"))]);
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
@@ -225,15 +209,7 @@ fn an_import_selects_the_supplied_library_of_its_identity() {
 fn l02_an_import_without_a_qualifier_selects_its_library() {
     let root = package("P", "P@1", vec![import("L", None)]);
     let lock = resolve_libraries(&root, &[library_l()]).unwrap();
-    assert_eq!(
-        lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                package_id: id("L@1"),
-            }
-        )]
-    );
+    assert_eq!(lock.selections(), [(name("L"), id("L@1"))]);
 }
 
 fn diamond_root() -> LibraryPackage {
@@ -291,12 +267,9 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
         package("A", "A@1", Vec::new()),
     ];
     let lock = resolve_libraries(&root, &supplied).unwrap();
-    let selection = |label: &str| Selection {
-        package_id: id(label),
-    };
     assert_eq!(
         lock.selections(),
-        [(name("A"), selection("A@1")), (name("Z"), selection("Z@1"))]
+        [(name("A"), id("A@1")), (name("Z"), id("Z@1"))]
     );
     let mut reversed = supplied;
     reversed.reverse();
@@ -335,15 +308,7 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     // `old_library`'s own `package_id`, and the new lock's selection for `L`
     // names `new_library`'s `package_id`, not the old one.
     let old_lock = resolve_libraries(&old_package, std::slice::from_ref(&old_library)).unwrap();
-    assert_eq!(
-        old_lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                package_id: id("L@1"),
-            }
-        )]
-    );
+    assert_eq!(old_lock.selections(), [(name("L"), id("L@1"))]);
     // Supplying both packages of `L` is a conflicting definition, not a
     // choice between them.
     assert_library_refusal(
@@ -356,15 +321,7 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
         LibraryCause::ConflictingDefinition,
     );
     let new_lock = resolve_libraries(&new_package, &[new_library]).unwrap();
-    assert_eq!(
-        new_lock.selections(),
-        [(
-            name("L"),
-            Selection {
-                package_id: id("L'@2"),
-            }
-        )]
-    );
+    assert_eq!(new_lock.selections(), [(name("L"), id("L'@2"))]);
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]

@@ -715,7 +715,7 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
                 },
             ));
         };
-        let selected = selected.selection.package_id;
+        let selected = selected.package_id;
         if !selected.matches(&entry.package_id()) {
             return Err(ReplayRefusal::DependencyIdentityMismatch {
                 identity: entry.identity().clone(),

@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::library::{LibraryName, PackageId, Selection};
+use qsl_semantics::library::{LibraryName, PackageId};
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use crate::emit::{emit_checked, EmitRefusal};
@@ -149,7 +149,7 @@ pub struct CheckedPackage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedDependency {
     /// The selected `package_id`.
-    pub selection: Selection,
+    pub package_id: PackageId,
     /// The library identities from the linking package's direct import down
     /// to this one, this one last. The linking package itself is the
     /// implicit first step of every path.
@@ -298,9 +298,7 @@ impl CheckedPackage {
         for import in imports {
             let recompiled = recomputed_package_id(&import)?;
             let direct = ResolvedDependency {
-                selection: Selection {
-                    package_id: recompiled,
-                },
+                package_id: recompiled,
                 path: vec![import.identity.clone()],
             };
             let transitive = import
@@ -314,7 +312,7 @@ impl CheckedPackage {
                     (
                         identity.clone(),
                         ResolvedDependency {
-                            selection: resolved.selection.clone(),
+                            package_id: resolved.package_id,
                             path,
                         },
                     )
@@ -395,7 +393,7 @@ fn unify(
     resolved: ResolvedDependency,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if existing.selection == resolved.selection => Ok(()),
+        Some(existing) if existing.package_id == resolved.package_id => Ok(()),
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
             selections: Box::new([existing.clone(), resolved]),
             identity,

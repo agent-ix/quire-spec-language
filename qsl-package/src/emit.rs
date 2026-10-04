@@ -847,7 +847,7 @@ fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelec
         .iter()
         .map(|(identity, resolved)| CheckedDependencySelection {
             identity: identity.as_str().into(),
-            package_id: semantic_id(resolved.selection.package_id),
+            package_id: semantic_id(resolved.package_id),
         })
         .collect()
 }

@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 use super::package_identity::fixtures::{hex, one_node_preimage};
 use super::{
     resolve_libraries, verify_binding, ConflictingPin, ImportDeclaration, LibraryName,
-    LibraryPackage, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    Selection, SupportedV2Wire, VerifiedPackage,
+    LibraryPackage, LibraryRefusal, PackageId, PackageNodeKey, PinnedRequest, SupportedV2Wire,
+    VerifiedPackage,
 };
 use qsl_foundation::digest::WireNodeId;
 
@@ -47,13 +47,8 @@ fn candidate(package_id: PackageId) -> LibraryPackage {
     }
 }
 
-fn selection(package_id: PackageId) -> Selection {
-    Selection { package_id }
-}
-
 fn pin(package_id: PackageId) -> PinnedRequest {
-    PinnedRequest::new([(identity("pkg"), selection(package_id))])
-        .expect("one entry never conflicts")
+    PinnedRequest::new([(identity("pkg"), package_id)]).expect("one entry never conflicts")
 }
 
 fn bind(
@@ -158,32 +153,14 @@ fn refuses_when_conditions_2_and_3_both_fail() {
     assert_package_id_mismatch(bind(candidate(claimed), &PinnedRequest::default()), claimed);
 }
 
-/// TC-253 step 8: a pin naming another `package_id` refuses as a stale
-/// dependency, carrying both selections.
-#[trace("TC-253", "FR-087-AC-3")]
-#[test]
-fn refuses_when_the_pinned_id_disagrees() {
-    let other = PackageId::of_preimage(b"other");
-    assert_eq!(
-        bind(candidate(recomputed()), &pin(other)),
-        Err(LibraryRefusal::StaleDependency {
-            path: vec![identity("pkg")],
-            pin: Box::new(PinMismatch {
-                pinned: selection(other),
-                presented: selection(recomputed()),
-            }),
-        })
-    );
-}
-
 /// A pinned request holds one selection per identity.
 /// Two different selections for one identity cannot be built, in either
 /// order, so condition 3's verdict can never depend on entry order.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn conflicting_pins_for_one_identity_cannot_be_built() {
-    let good = selection(recomputed());
-    let stale = selection(PackageId::of_preimage(b"stale"));
+    let good = recomputed();
+    let stale = PackageId::of_preimage(b"stale");
     for (first, second) in [(&good, &stale), (&stale, &good)] {
         assert_eq!(
             PinnedRequest::new([
