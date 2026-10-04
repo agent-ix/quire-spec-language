@@ -929,7 +929,9 @@ mod tests {
             for leaf in ["quire-walk", "quire-exact", "quire-semantic-value"] {
                 fixture.add(
                     leaf,
-                    Some(&format!("git+https://github.com/agent-ix/{leaf}?branch=main")),
+                    Some(&format!(
+                        "git+https://github.com/agent-ix/{leaf}?branch=main"
+                    )),
                     false,
                     false,
                 );

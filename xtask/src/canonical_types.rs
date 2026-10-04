@@ -107,7 +107,9 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
         .iter()
         .any(|package| {
             package["name"].as_str() == Some("quire-spec-language")
-                && package["id"].as_str().is_some_and(|id| members.contains(id))
+                && package["id"]
+                    .as_str()
+                    .is_some_and(|id| members.contains(id))
         });
     let mut packages = Vec::new();
     for package in metadata["packages"]
