@@ -8,9 +8,13 @@
 //! settles `refuted`, category violation.
 
 use crate::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
+use crate::execute::ReplayRefusal;
 use crate::identity::Backend;
-use qsl_foundation::diagnostic::Category;
+use crate::result::DisagreementCause;
+use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::digest::ManifestDigest;
+use qsl_foundation::RequestIndex;
+use qsl_semantics::model::observation::AdmissionFailure;
 
 /// QSpec FR-243's settlement basis: the closed vocabulary every truth
 /// result carries exactly one of (ADR-031 SW-3, SW-10). Compared by its
@@ -100,23 +104,51 @@ pub enum UnavailabilityCause {
     BackendAbsent,
 }
 
-/// FR-331's `inconclusive` cause. `KaniVacuousProof` is the O-16 vacuity
-/// row: a `Proved` run with zero SUCCESS checks in the obligation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+/// FR-331's `inconclusive` cause (ADR-013 O-16 inconclusive row): a closed
+/// set.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InconclusiveCause {
-    /// A `Proved` run with zero SUCCESS checks in the obligation.
+    /// `kani_vacuous_proof`: a `Proved` run with zero SUCCESS checks in the
+    /// obligation. Derived from `Proved { success_checks: 0 }` by
+    /// [`TerminalValue::vacuous_proof_cause`]; a terminal map produces no
+    /// `TerminalValue::Inconclusive` with it.
     KaniVacuousProof,
+    /// `replay_parity`: the counterexample's E9 replay settled
+    /// `inconclusive`, so the reason travels with the cause.
+    ReplayParity(DisagreementCause),
+    /// `replay_refused`: the counterexample's E9 replay refused (an
+    /// identity mismatch, a decode refusal, a stale dependency, a limit
+    /// reached), carrying the refusal's catalog code
+    /// ([`ReplayRefusal::code`]). A fault is never this cause: it settles
+    /// [`TerminalValue::Failed`].
+    ReplayRefused(Code),
+}
+
+impl InconclusiveCause {
+    /// Bytes this cause adds to an encoded record beyond its fixed size:
+    /// the nested witness records of a parity disagreement.
+    fn measured_bytes(&self) -> usize {
+        match self {
+            Self::ReplayParity(DisagreementCause::Witness { given, derived, .. }) => given
+                .iter()
+                .chain(derived)
+                .map(|record| record.measured_bytes())
+                .sum(),
+            Self::KaniVacuousProof | Self::ReplayParity(_) | Self::ReplayRefused(_) => 0,
+        }
+    }
 }
 
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
-/// FR-331's `results` vocabulary admits eight wire values; this type names
-/// seven, with `Proved` distinguishing a vacuous run (zero SUCCESS checks,
-/// FR-331-AC-8's `inconclusive`) from an ordinary one by its own field
-/// rather than by a second tag, so the category-mapping reader can tell
+/// FR-331's `results` vocabulary admits eight wire values and `measured`
+/// is a ninth; this type names seven of the proof column's, with `Proved`
+/// distinguishing a vacuous run (zero SUCCESS checks, FR-331-AC-8's
+/// `inconclusive`) from an ordinary one by its own field rather than by a
+/// second variant (ADR-013 C-09), so the category-mapping reader can tell
 /// them apart without inspecting anything but this value.
 ///
 /// quire:canonical
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TerminalValue {
     /// A Kani run whose obligation completed with `success_checks` SUCCESS
     /// checks. Zero is vacuous (maps to `inconclusive`); at least one is an
@@ -138,18 +170,20 @@ pub enum TerminalValue {
     Unsupported(UnavailabilityCause),
     /// A backend result of `incomplete`.
     Incomplete(IncompleteCause),
+    /// A backend result of `inconclusive`, with its typed cause.
+    Inconclusive(InconclusiveCause),
     /// A backend result of `failed`: the tool itself failed.
     Failed,
 }
 
 impl TerminalValue {
     /// Map this value to its ADR-013 O-16 category. Exhaustive with no `_`
-    /// arm; a ninth `TerminalValue` variant fails this match to compile
+    /// arm; a further `TerminalValue` variant fails this match to compile
     /// rather than silently falling into an existing row (FR-069's
     /// Behavior: "one exhaustive function with no `_` fallback arm").
-    pub fn category(self) -> Category {
+    pub fn category(&self) -> Category {
         match self {
-            Self::Proved { success_checks: 0 } => Category::Inconclusive,
+            Self::Proved { success_checks: 0 } | Self::Inconclusive(_) => Category::Inconclusive,
             Self::Proved { .. } | Self::Tested => Category::Success,
             Self::Refuted => Category::Violation,
             Self::Declined(_) => Category::Refusal,
@@ -160,42 +194,89 @@ impl TerminalValue {
     }
 
     /// The typed cause of a vacuous proof, if this value is one.
-    pub fn vacuous_proof_cause(self) -> Option<InconclusiveCause> {
+    pub fn vacuous_proof_cause(&self) -> Option<InconclusiveCause> {
         match self {
             Self::Proved { success_checks: 0 } => Some(InconclusiveCause::KaniVacuousProof),
             _ => None,
         }
     }
+
+    /// The typed cause of this value's `inconclusive` category: a vacuous
+    /// proof's `KaniVacuousProof`, or an `Inconclusive` value's own cause;
+    /// `None` for every other value.
+    pub fn inconclusive_cause(&self) -> Option<InconclusiveCause> {
+        match self {
+            Self::Inconclusive(cause) => Some(cause.clone()),
+            Self::Proved { .. } => self.vacuous_proof_cause(),
+            Self::Tested
+            | Self::Refuted
+            | Self::Declined(_)
+            | Self::Unsupported(_)
+            | Self::Incomplete(_)
+            | Self::Failed => None,
+        }
+    }
+
+    /// ADR-013 C-09's replay-refusal row, for a refusal of a counterexample's
+    /// E9 replay (a refusal after a backend run): `Inconclusive` with
+    /// `ReplayRefused` carrying the refusal's code, or [`Self::Failed`] when
+    /// the refusal is a fault (`ReplayRefusal::Fault`, or
+    /// `ReplayRefusal::Admission` with `AdmissionFailure::Fault`), so a
+    /// defect stays a tool failure. A refusal before any backend run is no
+    /// replay refusal: it settles `declined` (FR-121).
+    pub fn from_replay_refusal(refusal: &ReplayRefusal) -> Self {
+        match refusal {
+            ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => {
+                Self::Failed
+            }
+            _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
+        }
+    }
+
+    /// Bytes this value adds to an encoded record beyond its fixed size.
+    fn measured_bytes(&self) -> usize {
+        match self {
+            Self::Inconclusive(cause) => cause.measured_bytes(),
+            Self::Proved { .. }
+            | Self::Tested
+            | Self::Refuted
+            | Self::Declined(_)
+            | Self::Unsupported(_)
+            | Self::Incomplete(_)
+            | Self::Failed => 0,
+        }
+    }
 }
 
-/// One requested item's FR-331 terminal record: its request-scoped item
-/// identity and its result value.
+/// One requested item's FR-331 terminal record: its `request_index` and its
+/// result value. A backend reports exactly one per `request_index`
+/// (ADR-013 O-24), and a consumer joins on the index, never on text.
 ///
 /// quire:canonical
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminalRecord {
-    item: String,
+    request_index: RequestIndex,
     value: TerminalValue,
 }
 
 impl TerminalRecord {
-    /// Build a terminal record for `item` (the request-scoped item identity)
-    /// carrying `value`.
-    pub fn new(item: impl Into<String>, value: TerminalValue) -> Self {
+    /// Build the terminal record for the item at `request_index` carrying
+    /// `value`.
+    pub fn new(request_index: RequestIndex, value: TerminalValue) -> Self {
         Self {
-            item: item.into(),
+            request_index,
             value,
         }
     }
 
-    /// The request-scoped item identity this record was read for.
-    pub fn item(&self) -> &str {
-        &self.item
+    /// The `request_index` of the item this record was read for.
+    pub fn request_index(&self) -> RequestIndex {
+        self.request_index
     }
 
     /// The FR-331 result value this record carries.
-    pub fn value(&self) -> TerminalValue {
-        self.value
+    pub fn value(&self) -> &TerminalValue {
+        &self.value
     }
 }
 
@@ -228,14 +309,14 @@ impl ProofResultEnvelope {
         &self.backend
     }
 
-    /// FR-069 Behavior's typed vacuous-proof cause: `Some(KaniVacuousProof)`
-    /// when this envelope's category is `Inconclusive` because the run was a
-    /// vacuous `Proved` (zero SUCCESS checks); `None` for every other
-    /// category. Reachable directly here, so a consumer that reads
-    /// `category() == Inconclusive` never has to re-derive the cause by
-    /// re-counting SUCCESS checks against [`Self::record`] itself.
-    pub fn inconclusive_cause(&self) -> Option<InconclusiveCause> {
-        self.inconclusive_cause
+    /// FR-069 Behavior's typed cause: `Some` exactly when this envelope's
+    /// category is `Inconclusive` -- `KaniVacuousProof` for a vacuous
+    /// `Proved` (zero SUCCESS checks), or the `Inconclusive` value's own
+    /// `ReplayParity` or `ReplayRefused`; `None` for every other category.
+    /// A consumer that reads `category() == Inconclusive` never re-derives
+    /// the cause from [`Self::record`] itself.
+    pub fn inconclusive_cause(&self) -> Option<&InconclusiveCause> {
+        self.inconclusive_cause.as_ref()
     }
 }
 
@@ -268,8 +349,9 @@ pub struct BackendProviderSource {
 }
 
 /// The reader's own measurement of `source`'s encoded size (FR-069-AC-4):
-/// every string member's byte length plus a fixed per-item allowance for the
-/// terminal-value tag -- never a caller-declared number a source could
+/// the backend identity's byte length, a fixed per-item allowance for the
+/// index and the terminal value, and the bytes of any nested witness record
+/// a replay-parity cause carries -- never a caller-declared number a source could
 /// understate to launder an oversized item list past the bound (B3).
 fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
     source.backend_identity.len()
@@ -277,7 +359,11 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
         + source
             .items
             .iter()
-            .map(|record| record.item().len() + std::mem::size_of::<TerminalValue>())
+            .map(|record| {
+                std::mem::size_of::<RequestIndex>()
+                    + std::mem::size_of::<TerminalValue>()
+                    + record.value().measured_bytes()
+            })
             .sum::<usize>()
 }
 
@@ -301,8 +387,8 @@ pub fn read_backend_provider_envelope(
         .items
         .iter()
         .map(|record| ProofResultEnvelope {
-            category: record.value.category(),
-            inconclusive_cause: record.value.vacuous_proof_cause(),
+            category: record.value().category(),
+            inconclusive_cause: record.value().inconclusive_cause(),
             record: record.clone(),
             backend: backend.clone(),
         })
@@ -337,7 +423,9 @@ pub struct EmptyEnvelopeSet;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::result::Verdict;
     use ix_trace_rs::trace;
+    use qsl_foundation::digest::WireNodeId;
 
     fn manifest_digest() -> ManifestDigest {
         ManifestDigest::from_digest([0x11; 32])
@@ -351,11 +439,20 @@ mod tests {
         }
     }
 
+    fn parity_cause() -> DisagreementCause {
+        DisagreementCause::Verdicts {
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Success),
+        }
+    }
+
     /// FR-069-AC-1 (TC-177): every FR-331 wire value maps to its exact
     /// O-16 category, `proved`/`tested` stay distinct within `success`, and
     /// a vacuous `Proved` (zero SUCCESS checks) maps to `inconclusive`, not
     /// `success` -- distinguished from an ordinary `Proved` only by the
-    /// SUCCESS-check count, not by a different outer tag.
+    /// SUCCESS-check count, not by a different outer tag. An `Inconclusive`
+    /// value maps to `inconclusive` with its own typed cause, whichever it
+    /// is, and each record is keyed by its `request_index`.
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
@@ -363,70 +460,112 @@ mod tests {
             (
                 TerminalValue::Proved { success_checks: 1 },
                 Category::Success,
+                None,
             ),
             (
                 TerminalValue::Proved { success_checks: 0 },
                 Category::Inconclusive,
+                Some(InconclusiveCause::KaniVacuousProof),
             ),
-            (TerminalValue::Tested, Category::Success),
-            (TerminalValue::Refuted, Category::Violation),
+            (TerminalValue::Tested, Category::Success, None),
+            (TerminalValue::Refuted, Category::Violation, None),
             (
                 TerminalValue::Declined(ProofRefusalCause::Refused),
                 Category::Refusal,
+                None,
             ),
             (
                 TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
                 Category::Unsupported,
+                None,
             ),
             (
                 TerminalValue::Incomplete(IncompleteCause::TimedOut),
                 Category::Incomplete,
+                None,
             ),
             (
                 TerminalValue::Incomplete(IncompleteCause::Cancelled),
                 Category::Incomplete,
+                None,
             ),
-            (TerminalValue::Failed, Category::InternalFailure),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity_cause())),
+                Category::Inconclusive,
+                Some(InconclusiveCause::ReplayParity(parity_cause())),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                    Code::StaleDependency,
+                )),
+                Category::Inconclusive,
+                Some(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
+            ),
+            (TerminalValue::Failed, Category::InternalFailure, None),
         ];
         let items: Vec<TerminalRecord> = cases
             .iter()
             .enumerate()
-            .map(|(i, (value, _))| TerminalRecord::new(format!("item-{i}"), *value))
+            .map(|(i, (value, _, _))| TerminalRecord::new(RequestIndex::new(i), value.clone()))
             .collect();
         let envelopes = read_backend_provider_envelope(&source(items)).unwrap();
-        for (envelope, (value, expected_category)) in envelopes.iter().zip(cases.iter()) {
+        for (i, (envelope, (value, expected_category, expected_cause))) in
+            envelopes.iter().zip(cases.iter()).enumerate()
+        {
             assert_eq!(
                 envelope.category(),
                 *expected_category,
                 "{value:?} should map to {expected_category:?}"
             );
-            assert_eq!(envelope.record().value(), *value);
+            assert_eq!(envelope.record().value(), value);
+            assert_eq!(envelope.record().request_index(), RequestIndex::new(i));
+            assert_eq!(
+                envelope.inconclusive_cause(),
+                expected_cause.as_ref(),
+                "item {i}"
+            );
         }
         // `tested` never gets rewritten to `proved`, despite sharing a
         // category with it.
         assert_eq!(
             envelopes[0].record().value(),
-            TerminalValue::Proved { success_checks: 1 }
+            &TerminalValue::Proved { success_checks: 1 }
         );
-        assert_eq!(envelopes[2].record().value(), TerminalValue::Tested);
+        assert_eq!(envelopes[2].record().value(), &TerminalValue::Tested);
         assert_ne!(envelopes[0].record().value(), envelopes[2].record().value());
-        // Step 4: an ordinary and a vacuous `Proved` record take different
+        // An ordinary and a vacuous `Proved` record take different
         // categories, showing the reader inspects the SUCCESS-check count
         // and not merely the outer `Proved` tag.
         assert_ne!(envelopes[0].category(), envelopes[1].category());
+    }
 
-        // B4: the vacuous `Proved` envelope carries the typed cause, and no
-        // other envelope does.
-        assert_eq!(envelopes[0].inconclusive_cause(), None);
+    /// FR-121-AC-16 (ADR-013 C-09): a replay refusal after a backend run
+    /// settles `Inconclusive(ReplayRefused)` with the refusal's own code; a
+    /// fault settles `Failed`.
+    #[trace("TC-516", "FR-121-AC-16")]
+    #[test]
+    fn a_replay_refusal_settles_inconclusive_with_its_code_and_a_fault_failed() {
+        use qsl_foundation::diagnostic::InternalFault;
+
+        let refusal = ReplayRefusal::UnboundParameter(WireNodeId::from_digest([1; 32]));
         assert_eq!(
-            envelopes[1].inconclusive_cause(),
-            Some(InconclusiveCause::KaniVacuousProof)
+            TerminalValue::from_replay_refusal(&refusal),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code()))
         );
-        for (i, envelope) in envelopes.iter().enumerate() {
-            if i != 1 {
-                assert_eq!(envelope.inconclusive_cause(), None, "item {i}");
-            }
-        }
+        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+
+        let fault = ReplayRefusal::Fault(InternalFault::new("replay", "broken"));
+        assert_eq!(
+            TerminalValue::from_replay_refusal(&fault),
+            TerminalValue::Failed
+        );
+        let admission_fault = ReplayRefusal::Admission(AdmissionFailure::Fault(
+            InternalFault::new("admission", "broken"),
+        ));
+        assert_eq!(
+            TerminalValue::from_replay_refusal(&admission_fault),
+            TerminalValue::Failed
+        );
     }
 
     /// FR-285-AC-1 (TC-769 step 1): a `refuted` terminal record reports
@@ -436,7 +575,7 @@ mod tests {
     #[test]
     fn tc_769_refuted_terminal_record_is_violation_exit_10() {
         let envelopes = read_backend_provider_envelope(&source(vec![TerminalRecord::new(
-            "claim",
+            RequestIndex::new(0),
             TerminalValue::Refuted,
         )]))
         .unwrap();
@@ -450,6 +589,7 @@ mod tests {
             TerminalValue::Declined(ProofRefusalCause::Refused),
             TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
             TerminalValue::Incomplete(IncompleteCause::TimedOut),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
             TerminalValue::Failed,
         ] {
             assert_ne!(value.category(), Category::Undefined, "{value:?}");
@@ -464,10 +604,11 @@ mod tests {
         // B3: the bound check measures the source's own content -- there is
         // no `encoded_bytes` field a caller could understate -- so an
         // oversized source has to actually carry oversized content.
-        let oversized = source(vec![TerminalRecord::new(
-            "x".repeat(MAX_ENCODED_BYTES + 1),
+        let mut oversized = source(vec![TerminalRecord::new(
+            RequestIndex::new(0),
             TerminalValue::Tested,
         )]);
+        oversized.backend_identity = "x".repeat(MAX_ENCODED_BYTES + 1);
         let result = read_backend_provider_envelope(&oversized);
         assert!(matches!(result, Err(ProofResultRefusal::BoundExceeded(_))));
     }
@@ -486,8 +627,17 @@ mod tests {
     #[test]
     fn tc_179_round_trip_preserves_backend_and_dispositions() {
         let items = vec![
-            TerminalRecord::new("a", TerminalValue::Proved { success_checks: 3 }),
-            TerminalRecord::new("b", TerminalValue::Refuted),
+            TerminalRecord::new(
+                RequestIndex::new(0),
+                TerminalValue::Proved { success_checks: 3 },
+            ),
+            TerminalRecord::new(RequestIndex::new(1), TerminalValue::Refuted),
+            TerminalRecord::new(
+                RequestIndex::new(2),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                    Code::StaleDependency,
+                )),
+            ),
         ];
         let original = source(items);
         let first = read_backend_provider_envelope(&original).unwrap();

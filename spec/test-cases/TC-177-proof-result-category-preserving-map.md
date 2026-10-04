@@ -34,10 +34,14 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
    SUCCESS check), `proved` with zero SUCCESS checks (vacuous), `tested`,
    `refuted`, `declined` (with a typed refusal cause), `unsupported` (with a
    typed unavailability cause), `incomplete` (timeout cause), `incomplete`
-   (cancellation cause), and `failed`. (Nine records total: two distinct
-   `incomplete` causes and two distinct `success`-category values, `proved`
-   and `tested`, are each constructed once.)
-2. Read each record into the proof-result envelope.
+   (cancellation cause), `inconclusive` with cause `replay_parity` (carrying
+   a `DisagreementCause`), `inconclusive` with cause `replay_refused`
+   (carrying a catalog code), and `failed`. (Eleven records total: two
+   distinct `incomplete` causes and two distinct `success`-category values,
+   `proved` and `tested`, are each constructed once. Each record is built
+   with its own typed `request_index`.)
+2. Read each record into the proof-result envelope; each envelope's record
+   keeps the `request_index` it was built with.
 3. Compare the resulting category against the ADR-013 O-16 category table
    row for that FR-331 value, and separately record the resulting value
    (`proved`, `tested`, `refuted`, and so on) alongside its category.
@@ -62,3 +66,7 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
 - A timeout and a cancellation both map to `incomplete` but keep their
   distinct causes, never collapsing into one undifferentiated `incomplete`
   value.
+- An `Inconclusive` record maps to `inconclusive` and its envelope carries
+  that record's own cause, `replay_parity` with its `DisagreementCause` or
+  `replay_refused` with its code; a vacuous `proved` is not an
+  `Inconclusive` record and keeps `Proved { success_checks: 0 }`.

@@ -914,7 +914,10 @@ mod tests {
         let proof_source = BackendProviderSource {
             backend_identity: "kani-backend-1".to_owned(),
             manifest_digest: qsl_foundation::digest::ManifestDigest::from_digest([1; 32]),
-            items: vec![TerminalRecord::new("item-0", TerminalValue::Refuted)],
+            items: vec![TerminalRecord::new(
+                qsl_foundation::RequestIndex::new(0),
+                TerminalValue::Refuted,
+            )],
         };
         let proof_envelopes = read_backend_provider_envelope(&proof_source).unwrap();
         assert_eq!(proof_envelopes[0].category(), Category::Violation);

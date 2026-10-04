@@ -42,23 +42,12 @@ use std::collections::BTreeMap;
 use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::RequestIndex;
 use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::check::{Capability, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, DomainKind, Requirements};
 
 use crate::{BackendId, CandidateOutcome, Registry};
-
-/// An item's position in one request (QSpec FR-331 `request_index`). Each
-/// item, bounded or not, has its own.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RequestIndex(usize);
-
-impl RequestIndex {
-    /// The zero-based position.
-    pub fn get(self) -> usize {
-        self.0
-    }
-}
 
 /// An item's QSpec FR-331 extent classification (QSpec FR-290 `bounded`/
 /// `unbounded`, plus ADR-014 §4's available finite bound).
@@ -303,7 +292,7 @@ impl RequestWriter {
         extent: ExtentClassification,
         domains: Vec<ProofBound>,
     ) -> RequestIndex {
-        let index = RequestIndex(self.items.len());
+        let index = RequestIndex::new(self.items.len());
         self.items.push(RequestItem {
             index,
             occurrence,
@@ -391,7 +380,7 @@ pub fn items_from_requirements(
         .enumerate()
         .map(|(position, (occurrence, record))| {
             let requirements = record.requirements();
-            let index = RequestIndex(position);
+            let index = RequestIndex::new(position);
             let extent = ExtentClassification::of(requirements.extent());
             let unbounded = match requirements.extent() {
                 ClaimExtent::Bounded => Vec::new(),
