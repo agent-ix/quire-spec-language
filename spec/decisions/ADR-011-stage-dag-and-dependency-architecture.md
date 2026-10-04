@@ -811,9 +811,7 @@ Rules that close the ADR-010 OBS-016 cycles:
   feature unification can bring `std` or `stacker` into it. SV, F and every QSL layer
   may depend on it, and so may IR, RT and CG (FB-05's shared-leaf class),
   each as a git dependency at `branch = "main"`. K stays a leaf with no dependency and keeps its
-  hand-written iterative traits (ADR-030 D-4.7). arch-lint's
-  `SHARED_LEAVES` lists `quire-walk` beside `quire-exact` and
-  `quire-semantic-value`.
+  hand-written iterative traits (ADR-030 D-4.7).
 - **WG is outside the core and not a shared leaf.** `qsl-walk-grow` holds
   the one `maybe_grow` wrapper and depends only on `stacker`. Only QSL crates
   outside the qualified core may depend on it; no CB-2 crate may (ADR-029

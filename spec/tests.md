@@ -1015,7 +1015,7 @@ S3 (FR-258), identities and QSL's use of `quire-canonical`
 (FR-259), semantic-IR intake (FR-260), the other untrusted JSON reads
 (FR-261), the evaluator (FR-262), replay (FR-263) and the v2 wire (FR-264).
 FR-356 is the walker toolkit those walks run on (the crate
-`quire-walk` in `agent-ix/quire-walk`, which holds its AC-2 to AC-4 and
+`quire-walk` in `agent-ix/quire-walk`, which holds all of its FR-356 ACs and
 TC-898 and TC-899), the qualified core's
 iterative-only rule with its deep entry-point tests, the `maybe_grow`
 wrapper outside the core, and the deep-input fuzz target. TC-720 to TC-739,
