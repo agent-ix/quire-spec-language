@@ -17,7 +17,7 @@ Integration, P1; verifies FR-014-AC-1 through the actual IR source constructors.
 Read verified native bytes with identity ix://example/source and opaque revision
 draft:alpha. Bind them to formal document NativeClause and positive revision 91.
 Drop the caller's Source handle and inspect the retained binding. Repeat using
-two other independently selected positive formal revisions, including u64::MAX.
+two other independently selected positive formal revisions, including 2^53, the largest revision IR admits.
 
 ## Expected Results
 

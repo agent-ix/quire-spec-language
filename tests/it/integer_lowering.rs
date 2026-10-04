@@ -139,6 +139,45 @@ fn strict_readers_reconstruct_integer_operators_bounds_and_guarded_obligations()
     }
 }
 
+/// An integer bound and an integer literal above 2^53 cross the lowering wire
+/// as decimal strings and IR's decoder reads back the exact `i64` values.
+#[test]
+#[trace("TC-111", "FR-033-AC-3")]
+fn integers_above_2_pow_53_round_trip_through_irs_decoder() {
+    let models = [model(false, i64::MAX)];
+    let native = package(
+        &models,
+        "amount <= 9223372036854775807",
+        ClauseKind::Invariant,
+    );
+    let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
+    let consumer = ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
+    let ir::ValueType::Integer { value } =
+        selected(&consumer).environment().values()[0].value_type()
+    else {
+        panic!("actual bounded integer declaration");
+    };
+    assert_eq!((value.minimum(), value.maximum()), (0, i64::MAX));
+    let wire: Value = serde_json::from_slice(projection.bytes()).unwrap();
+    let binding = wire["bindings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|binding| binding["clause"]["clause"] == "population_rule")
+        .unwrap();
+    assert_eq!(
+        binding["expression"]["values"][0]["value_type"]["maximum"],
+        "9223372036854775807"
+    );
+    let mut expressions = Vec::new();
+    nodes(&binding["expression"]["expression"], &mut expressions);
+    let literal = expressions
+        .iter()
+        .find(|node| node["node"] == "integer_literal")
+        .unwrap();
+    assert_eq!(literal["value"], "9223372036854775807");
+}
+
 #[test]
 #[trace("TC-111", "FR-033-AC-1")]
 fn comparisons_negation_and_source_spans_preserve_authored_operand_order() {

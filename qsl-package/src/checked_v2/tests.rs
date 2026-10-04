@@ -16,7 +16,7 @@ use quire_contract_model::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{read_v2, Read, V2ReadLimits, V2ReadRefusal};
+use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::{
@@ -870,6 +870,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
 /// IR's `nodes` meter under the default `nodes`, naming that bound, and
 /// verified once the caller raises `nodes`.
 #[trace("TC-253", "FR-087-AC-3")]
+#[trace("TC-739", "FR-264-AC-4")]
 #[test]
 fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
     let default_nodes = V2ReadLimits::default().nodes;
@@ -903,6 +904,8 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
         Read::Limit(exceeded) => {
             assert_eq!(exceeded.kind(), LimitKind::NodeCount);
             assert_eq!(exceeded.configured_bound(), default_nodes);
+            assert_eq!(exceeded.actual(), u128::from(default_nodes) + 1);
+            assert!(matches!(exceeded.locus(), Some(Locus::Artifact { .. })));
         }
         other => panic!("expected Incomplete(Limit(Nodes)) at IR's default, got {other:?}"),
     }
@@ -917,6 +920,55 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
         } => assert_eq!(effective_limits, raised),
         other => panic!("expected Verified under the raised node ceiling, got {other:?}"),
     }
+}
+
+/// FR-264-AC-1's read-back half: a flat package of 100,000 nodes, read with
+/// the limits raised to fit it, is a `V2Read` that clones, compares equal to
+/// its clone, formats for debug and drops on a 512 KiB stack, since its
+/// decoded nodes have a fixed depth.
+#[trace("TC-738", "FR-264-AC-1")]
+#[test]
+fn a_100000_node_v2_read_clones_compares_formats_and_drops_on_a_small_stack() {
+    const NODES: usize = 100_000;
+    let labels: Vec<(String, String)> = (0..NODES)
+        .map(|index| (format!("pkg::N{index}"), format!("N{index}")))
+        .collect();
+    let exports: Vec<(&str, &str)> = labels
+        .iter()
+        .map(|(label, export)| (label.as_str(), export.as_str()))
+        .collect();
+    let (preimage, envelope) = envelope_declaring(&exports);
+    let bytes = jcs(&envelope);
+    let pinned = pinned_for(&preimage);
+    let limits = V2ReadLimits {
+        artifact_bytes: bytes.len(),
+        nodes: 2 * NODES as u64,
+        edges: 2 * NODES as u64,
+        occurrences: 4 * NODES as u64,
+        work: 1 << 40,
+        ..V2ReadLimits::default()
+    };
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let read = read_checked_package_v2(
+                &bytes,
+                identity("pkg"),
+                limits,
+                &CheckedPackageEvidence::new(),
+                &pinned,
+            )
+            .unwrap_or_else(|failure| panic!("expected a verified read, got {failure:?}"))
+            .into_value();
+            let clone = read.clone();
+            assert!(read == clone, "the read equals its clone");
+            assert!(!format!("{read:?}").is_empty());
+            drop(clone);
+            drop(read);
+        })
+        .expect("the thread spawns")
+        .join()
+        .expect("clone, compare, format and drop complete on a 512 KiB stack");
 }
 
 /// Reaching a *caller-raised* ceiling (not just the default)

@@ -190,7 +190,15 @@ fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses(
         1,
         "unique raw numeric test occurrence"
     );
-    for number in ["1.0", "1e0", "-0", "9007199254740993", "0"] {
+    for number in [
+        "1.0",
+        "1e0",
+        "-0",
+        "9007199254740993",
+        "18446744073709551615",
+        "18446744073709551616",
+        "0",
+    ] {
         let raw = text.replace(marker, &format!("\"revision\":{number}"));
         let error = NativePackage::read_verified(
             raw.as_bytes(),

@@ -28,6 +28,12 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
 
 Tag the tests `#[trace("TC-738", "FR-264-AC-1")]`, `#[trace("TC-738", "FR-264-AC-2")]`.
 
+Verification status: step 1's read-back half (a 100,000-node flat `V2Read`
+cloned, compared, formatted and dropped on a 512 KiB stack) and step 2 over
+the emitted corpus are tested here. The emit half of step 1 (compiling the
+100,000-term sum on a 512 KiB stack) is verified by TC-902 (FR-356, Planned);
+FR-264-AC-1 is partial until then.
+
 ## Expected Results
 
 - Step 1: the read verifies at the emitted `package_id`; the clone compares

@@ -225,6 +225,10 @@ fn schema_checks_kind_pairing_identifiers_and_exact_representable_scalar_bounds(
         ("/body/values/0/value", json!(-1)),
         ("/body/values/0/value", json!(1.5)),
         ("/body/values/0/value", json!(4_294_967_296_u64)),
+        (
+            "/body/models/0/model/revision",
+            json!(9_007_199_254_740_993_u64),
+        ),
     ];
     for name in [
         "",

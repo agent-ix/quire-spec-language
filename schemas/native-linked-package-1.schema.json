@@ -100,7 +100,7 @@
         "revision": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 18446744073709551615
+          "maximum": 9007199254740992
         }
       }
     },
@@ -119,7 +119,7 @@
         "revision": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 18446744073709551615
+          "maximum": 9007199254740992
         }
       }
     },
@@ -261,7 +261,7 @@
         "byte_offset": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 18446744073709551615
+          "maximum": 9007199254740992
         }
       }
     },
