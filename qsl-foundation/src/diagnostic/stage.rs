@@ -75,6 +75,72 @@ impl LimitKind {
     }
 }
 
+/// The caller's limits field that sets a stage limit's bound (FR-277): the
+/// closed set of fields the front end's limits value carries, each spelled
+/// `<limits group>.<field>`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum LimitsField {
+    /// `source.source_bytes`.
+    SourceBytes,
+    /// `source.tokens`.
+    SourceTokens,
+    /// `source.nodes`.
+    SourceNodes,
+    /// `source.work_units`.
+    SourceWorkUnits,
+    /// `model.declaration_records`.
+    ModelDeclarationRecords,
+    /// `model.derivation_facts`.
+    ModelDerivationFacts,
+    /// `model.effective_declarations`.
+    ModelEffectiveDeclarations,
+    /// `model.dispatch_candidates`.
+    ModelDispatchCandidates,
+    /// `model.hashed_bytes`.
+    ModelHashedBytes,
+    /// `model.work_units`.
+    ModelWorkUnits,
+    /// `model.ancestor_steps`.
+    ModelAncestorSteps,
+    /// `model.family_steps`.
+    ModelFamilySteps,
+    /// `environment.ancestor_steps`.
+    EnvironmentAncestorSteps,
+    /// `environment.work_units`.
+    EnvironmentWorkUnits,
+    /// `checking.nodes`.
+    CheckingNodes,
+    /// `checking.input_bytes`.
+    CheckingInputBytes,
+    /// `checking.work_budget`.
+    CheckingWorkBudget,
+}
+
+impl LimitsField {
+    /// The field's `<limits group>.<field>` spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceBytes => "source.source_bytes",
+            Self::SourceTokens => "source.tokens",
+            Self::SourceNodes => "source.nodes",
+            Self::SourceWorkUnits => "source.work_units",
+            Self::ModelDeclarationRecords => "model.declaration_records",
+            Self::ModelDerivationFacts => "model.derivation_facts",
+            Self::ModelEffectiveDeclarations => "model.effective_declarations",
+            Self::ModelDispatchCandidates => "model.dispatch_candidates",
+            Self::ModelHashedBytes => "model.hashed_bytes",
+            Self::ModelWorkUnits => "model.work_units",
+            Self::ModelAncestorSteps => "model.ancestor_steps",
+            Self::ModelFamilySteps => "model.family_steps",
+            Self::EnvironmentAncestorSteps => "environment.ancestor_steps",
+            Self::EnvironmentWorkUnits => "environment.work_units",
+            Self::CheckingNodes => "checking.nodes",
+            Self::CheckingInputBytes => "checking.input_bytes",
+            Self::CheckingWorkBudget => "checking.work_budget",
+        }
+    }
+}
+
 /// ADR-013 T-4: a stage limit was reached. It is a stage outcome of its
 /// own, never a refusal of the input, a checked result or `Incomplete`.
 ///
@@ -93,7 +159,7 @@ pub struct LimitExceeded {
     locus: Option<Box<Locus>>,
     /// The name of the caller's limits field that sets the bound (FR-277),
     /// such as `source.tokens`. `None` where no caller field sets it.
-    field: Option<&'static str>,
+    field: Option<LimitsField>,
 }
 
 impl LimitExceeded {
@@ -119,13 +185,13 @@ impl LimitExceeded {
     /// This limit, named by the caller's limits field `field` that raises
     /// it (FR-277).
     #[must_use]
-    pub const fn named(mut self, field: &'static str) -> Self {
+    pub const fn named(mut self, field: LimitsField) -> Self {
         self.field = Some(field);
         self
     }
 
     /// The caller's limits field that sets this bound, when one does.
-    pub const fn limits_field(&self) -> Option<&'static str> {
+    pub const fn limits_field(&self) -> Option<LimitsField> {
         self.field
     }
 
@@ -176,7 +242,7 @@ impl CatalogCoded for LimitExceeded {
             ("actual", self.actual.to_string()),
         ]);
         if let Some(field) = self.field {
-            fields.insert("field", field.to_owned());
+            fields.insert("field", field.as_str().to_owned());
         }
         Some(fields)
     }

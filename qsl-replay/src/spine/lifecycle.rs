@@ -86,8 +86,8 @@ use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
 use qsl_forms::{build_unit, ParsedUnit};
 use qsl_foundation::diagnostic::{
-    InternalFault, LimitExceeded, LimitKind as FoundationKind, Locus, StageFailure, StageWork,
-    Staged,
+    InternalFault, LimitExceeded, LimitKind as FoundationKind, LimitsField, Locus, StageFailure,
+    StageWork, Staged,
 };
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
@@ -187,18 +187,18 @@ fn limit_of(
                     FoundationKind::InputBytes,
                     bound,
                     source_len(&diagnostic.source).unwrap_or(bound + 1),
-                    "source.source_bytes",
+                    LimitsField::SourceBytes,
                 ),
                 SyntaxLimit::Tokens { bound } => {
-                    (FoundationKind::TokenCount, bound, bound + 1, "source.tokens")
+                    (FoundationKind::TokenCount, bound, bound + 1, LimitsField::SourceTokens)
                 }
                 SyntaxLimit::Nodes { bound } => {
-                    (FoundationKind::NodeCount, bound, bound + 1, "source.nodes")
+                    (FoundationKind::NodeCount, bound, bound + 1, LimitsField::SourceNodes)
                 }
                 // Bound and counter are both in parser steps: the unit's total
                 // step budget, which `source.work_units` sets per token.
                 SyntaxLimit::Work { bound } => {
-                    (FoundationKind::WorkBudget, bound, bound + 1, "source.work_units")
+                    (FoundationKind::WorkBudget, bound, bound + 1, LimitsField::SourceWorkUnits)
                 }
             };
             let limit = LimitExceeded::new(
@@ -223,12 +223,12 @@ fn limit_of(
                                 ModelRefusalCause::AncestorSteps { limit, .. } => Some((
                                     FoundationKind::NodeCount,
                                     limit,
-                                    "model.ancestor_steps",
+                                    LimitsField::ModelAncestorSteps,
                                 )),
                                 ModelRefusalCause::FamilySteps { limit, .. } => Some((
                                     FoundationKind::EdgeCount,
                                     limit,
-                                    "model.family_steps",
+                                    LimitsField::ModelFamilySteps,
                                 )),
                                 _ => None,
                             })?;
@@ -239,17 +239,17 @@ fn limit_of(
             };
             let (kind, field) = match incomplete.limit_kind {
                 ModelKind::DeclarationRecords => {
-                    (FoundationKind::OccurrenceCount, "model.declaration_records")
+                    (FoundationKind::OccurrenceCount, LimitsField::ModelDeclarationRecords)
                 }
-                ModelKind::DerivationFacts => (FoundationKind::EdgeCount, "model.derivation_facts"),
+                ModelKind::DerivationFacts => (FoundationKind::EdgeCount, LimitsField::ModelDerivationFacts),
                 ModelKind::EffectiveDeclarations => {
-                    (FoundationKind::NodeCount, "model.effective_declarations")
+                    (FoundationKind::NodeCount, LimitsField::ModelEffectiveDeclarations)
                 }
                 ModelKind::DispatchCandidates => {
-                    (FoundationKind::EdgeCount, "model.dispatch_candidates")
+                    (FoundationKind::EdgeCount, LimitsField::ModelDispatchCandidates)
                 }
-                ModelKind::HashedBytes => (FoundationKind::InputBytes, "model.hashed_bytes"),
-                ModelKind::WorkUnits => (FoundationKind::WorkBudget, "model.work_units"),
+                ModelKind::HashedBytes => (FoundationKind::InputBytes, LimitsField::ModelHashedBytes),
+                ModelKind::WorkUnits => (FoundationKind::WorkBudget, LimitsField::ModelWorkUnits),
             };
             let limit = LimitExceeded::new(
                 kind,
@@ -265,12 +265,12 @@ fn limit_of(
                 _ => None,
             })?;
             let (kind, field) = match cause.kind {
-                CheckingLimitKind::Nodes => (FoundationKind::NodeCount, "checking.nodes"),
+                CheckingLimitKind::Nodes => (FoundationKind::NodeCount, LimitsField::CheckingNodes),
                 CheckingLimitKind::InputBytes => {
-                    (FoundationKind::InputBytes, "checking.input_bytes")
+                    (FoundationKind::InputBytes, LimitsField::CheckingInputBytes)
                 }
                 CheckingLimitKind::WorkBudget => {
-                    (FoundationKind::WorkBudget, "checking.work_budget")
+                    (FoundationKind::WorkBudget, LimitsField::CheckingWorkBudget)
                 }
             };
             let locus = cause.region.as_ref().or(region.as_ref());
@@ -282,8 +282,8 @@ fn limit_of(
         CompileRefusal::Assembly { refusal, .. } => {
             refusal.errors.iter().find_map(|error| match &error.cause {
                 AssemblyCause::TypeLimit(limit) => Some(match limit.kind() {
-                    FoundationKind::NodeCount => limit.clone().named("environment.ancestor_steps"),
-                    _ => limit.clone().named("environment.work_units"),
+                    FoundationKind::NodeCount => limit.clone().named(LimitsField::EnvironmentAncestorSteps),
+                    _ => limit.clone().named(LimitsField::EnvironmentWorkUnits),
                 }),
                 _ => None,
             })

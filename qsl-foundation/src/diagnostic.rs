@@ -7,7 +7,7 @@ use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
 mod locus;
 mod stage;
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
-pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
+pub use stage::{LimitExceeded, LimitKind, LimitsField, StageFailure, StageWork, Staged, Stopped};
 
 use std::collections::BTreeMap;
 

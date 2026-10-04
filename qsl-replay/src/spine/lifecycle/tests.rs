@@ -12,7 +12,7 @@ use ix_trace_rs::trace;
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, QualifiedName};
 use qsl_foundation::diagnostic::{
-    Category, LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
+    Category, LimitExceeded, LimitKind as FoundationKind, LimitsField, StageFailure, Staged,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
@@ -999,19 +999,14 @@ fn reached<T>(outcome: Result<Staged<T>, FrontEndFailure>) -> Reached {
 /// which `run` produces its output is the counter the input reaches. One
 /// below it, `run` stops with `LimitExceeded` naming `field` and carrying the
 /// configured value; at it, `run` succeeds.
-fn assert_field(
-    field: &'static str,
-    kind: FoundationKind,
-    high: u64,
-    run: impl Fn(u64) -> Reached,
-) {
+fn assert_field(field: LimitsField, kind: FoundationKind, high: u64, run: impl Fn(u64) -> Reached) {
     assert_field_with(field, kind, high, |value| value, run);
 }
 
 /// [`assert_field`] for a field whose configured bound is `bound(value)`
 /// rather than the value itself.
 fn assert_field_with(
-    field: &'static str,
+    field: LimitsField,
     kind: FoundationKind,
     high: u64,
     bound: impl Fn(u64) -> u64,
@@ -1019,7 +1014,7 @@ fn assert_field_with(
 ) {
     assert!(
         matches!(run(high), Reached::Output),
-        "`{field}` at {high} does not admit the input"
+        "`{field:?}` at {high} does not admit the input"
     );
     let (mut low, mut top) = (0_u64, high);
     while low < top {
@@ -1033,18 +1028,18 @@ fn assert_field_with(
         }
     }
     let counter = low;
-    assert!(counter > 0, "`{field}` is not reached by the input");
+    assert!(counter > 0, "`{field:?}` is not reached by the input");
     match run(counter - 1) {
         Reached::Limit(limit) => {
             assert_eq!(limit.limits_field(), Some(field));
-            assert_eq!(limit.kind(), kind, "`{field}`");
-            assert_eq!(limit.configured_bound(), bound(counter - 1), "`{field}`");
+            assert_eq!(limit.kind(), kind, "`{field:?}`");
+            assert_eq!(limit.configured_bound(), bound(counter - 1), "`{field:?}`");
         }
-        Reached::Output => panic!("`{field}` at {} admits the input", counter - 1),
+        Reached::Output => panic!("`{field:?}` at {} admits the input", counter - 1),
     }
     assert!(
         matches!(run(counter), Reached::Output),
-        "`{field}` at {counter}"
+        "`{field:?}` at {counter}"
     );
 }
 
@@ -1061,19 +1056,19 @@ fn parse_names_the_source_limit_field_it_reached() {
         }
     };
     assert_field(
-        "source.source_bytes",
+        LimitsField::SourceBytes,
         FoundationKind::InputBytes,
         10_000,
         run(|limits, value| limits.source_bytes = usize::try_from(value).expect("small")),
     );
     assert_field(
-        "source.tokens",
+        LimitsField::SourceTokens,
         FoundationKind::TokenCount,
         10_000,
         run(|limits, value| limits.tokens = usize::try_from(value).expect("small")),
     );
     assert_field(
-        "source.nodes",
+        LimitsField::SourceNodes,
         FoundationKind::NodeCount,
         10_000,
         run(|limits, value| limits.nodes = usize::try_from(value).expect("small")),
@@ -1087,7 +1082,7 @@ fn parse_names_the_source_limit_field_it_reached() {
             Reached::Output => panic!("one step per token admits the fixture"),
         };
     assert_field_with(
-        "source.work_units",
+        LimitsField::SourceWorkUnits,
         FoundationKind::WorkBudget,
         256,
         |value| value * scale,
@@ -1126,37 +1121,37 @@ fn select_names_the_model_limit_field_it_reached() {
         }
     };
     assert_field(
-        "model.declaration_records",
+        LimitsField::ModelDeclarationRecords,
         FoundationKind::OccurrenceCount,
         100_000,
         run(|limits, value| limits.declaration_records = value),
     );
     assert_field(
-        "model.derivation_facts",
+        LimitsField::ModelDerivationFacts,
         FoundationKind::EdgeCount,
         100_000,
         run(|limits, value| limits.derivation_facts = value),
     );
     assert_field(
-        "model.effective_declarations",
+        LimitsField::ModelEffectiveDeclarations,
         FoundationKind::NodeCount,
         100_000,
         run(|limits, value| limits.effective_declarations = value),
     );
     assert_field(
-        "model.ancestor_steps",
+        LimitsField::ModelAncestorSteps,
         FoundationKind::NodeCount,
         10_000,
         run(|limits, value| limits.ancestor_steps = value),
     );
     assert_field(
-        "model.hashed_bytes",
+        LimitsField::ModelHashedBytes,
         FoundationKind::InputBytes,
         100_000,
         run(|limits, value| limits.hashed_bytes = value),
     );
     assert_field(
-        "model.work_units",
+        LimitsField::ModelWorkUnits,
         FoundationKind::WorkBudget,
         100_000,
         run(|limits, value| limits.work_units = value),
@@ -1185,7 +1180,7 @@ fn check_names_the_checking_limit_field_it_reached() {
         }
     };
     assert_field(
-        "checking.nodes",
+        LimitsField::CheckingNodes,
         FoundationKind::NodeCount,
         100_000,
         run(|mut limits, value| {
@@ -1196,7 +1191,7 @@ fn check_names_the_checking_limit_field_it_reached() {
         }),
     );
     assert_field(
-        "checking.input_bytes",
+        LimitsField::CheckingInputBytes,
         FoundationKind::InputBytes,
         1_000_000,
         run(|mut limits, value| {
@@ -1205,7 +1200,7 @@ fn check_names_the_checking_limit_field_it_reached() {
         }),
     );
     assert_field(
-        "checking.work_budget",
+        LimitsField::CheckingWorkBudget,
         FoundationKind::WorkBudget,
         1_000_000,
         run(|mut limits, value| {
@@ -1244,13 +1239,13 @@ fn check_names_the_type_environment_limit_field_it_reached() {
         }
     };
     assert_field(
-        "environment.ancestor_steps",
+        LimitsField::EnvironmentAncestorSteps,
         FoundationKind::NodeCount,
         10_000,
         run(|limits, value| limits.environment.ancestor_steps = value),
     );
     assert_field(
-        "environment.work_units",
+        LimitsField::EnvironmentWorkUnits,
         FoundationKind::WorkBudget,
         10_000_000,
         run(|limits, value| limits.environment.work_units = value),

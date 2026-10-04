@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{FormsCause, FormsRefusal};
-use qsl_foundation::diagnostic::{LimitExceeded, Locus};
+use qsl_foundation::diagnostic::{LimitExceeded, LimitsField, Locus};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -204,11 +204,29 @@ impl CompileRefusal {
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.limits_field() {
-                Some(field) if field.starts_with("source.") => SpineStage::Source,
-                Some(field) if field.starts_with("checking.") => SpineStage::Check,
-                Some(field) if field.starts_with("environment.") => SpineStage::Assembly,
-                Some(_) => SpineStage::Intake,
-                None => SpineStage::Assembly,
+                Some(
+                    LimitsField::SourceBytes
+                    | LimitsField::SourceTokens
+                    | LimitsField::SourceNodes
+                    | LimitsField::SourceWorkUnits,
+                ) => SpineStage::Source,
+                Some(
+                    LimitsField::CheckingNodes
+                    | LimitsField::CheckingInputBytes
+                    | LimitsField::CheckingWorkBudget,
+                ) => SpineStage::Check,
+                Some(LimitsField::EnvironmentAncestorSteps | LimitsField::EnvironmentWorkUnits)
+                | None => SpineStage::Assembly,
+                Some(
+                    LimitsField::ModelDeclarationRecords
+                    | LimitsField::ModelDerivationFacts
+                    | LimitsField::ModelEffectiveDeclarations
+                    | LimitsField::ModelDispatchCandidates
+                    | LimitsField::ModelHashedBytes
+                    | LimitsField::ModelWorkUnits
+                    | LimitsField::ModelAncestorSteps
+                    | LimitsField::ModelFamilySteps,
+                ) => SpineStage::Intake,
             },
         }
     }
@@ -328,9 +346,9 @@ pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
 
 /// A readable account of a reached stage limit and the field that raises it.
 fn limit_message(limit: &LimitExceeded) -> String {
-    let field = limit
-        .limits_field()
-        .map_or_else(String::new, |field| format!(", raised by `{field}`"));
+    let field = limit.limits_field().map_or_else(String::new, |field| {
+        format!(", raised by `{}`", field.as_str())
+    });
     format!(
         "stage_limit_exceeded/{} (bound {}, reached {}{field})",
         limit.kind().catalog_cause(),
