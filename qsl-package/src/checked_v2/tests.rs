@@ -410,7 +410,7 @@ fn refuses_when_only_a_different_library_pins_the_same_id() {
 }
 
 /// FR-087-AC-3, condition 3: the pinned entry for this identity names a
-/// different `package_id` -- `StaleDependency{ByteDigestMismatch}` (ruling
+/// different `package_id` -- `StaleDependency` (`content-mismatch`) (ruling
 /// (e): I2's first rule), carrying both the pinned selection and the one
 /// the candidate presented.
 #[trace("TC-253", "FR-087-AC-3")]

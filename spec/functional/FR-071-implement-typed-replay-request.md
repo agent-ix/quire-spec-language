@@ -106,7 +106,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - A byte-provision entry's stored bytes SHALL hash, under its declared
   digest domain's algorithm, to exactly its declared digest; an entry whose
   bytes do not match their own declared digest SHALL refuse at construction
-  with cause `stale_dependency`/`byte-digest-mismatch`. This is this
+  with cause `stale_dependency`/`byte-digest-mismatch`, and a `sha256-jcs` entry whose document recomputes to another digest SHALL refuse with `stale_dependency`/`content-mismatch` carrying both digests. This is this
   ticket's own half of "stale package identity": it is a decode-time byte
   vs. declared-digest integrity check that needs no recompilation. The
   complementary half — recomputing `package_id` from recompiled source and
@@ -134,7 +134,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry whose digest domain is outside the closed FR-201 set refuses at decode. | Test (TC-186) |
 | FR-071-AC-3 | No public constructor or decoder of the request accepts a bare `&str` or `String` for function selection, and no implicit conversion from a string to `QualifiedName` exists; an attempted call site passing a string literal in that position fails to compile. | Test (TC-187) |
 | FR-071-AC-5 | A request whose package reference names a `RawSourceRef` digest with no matching byte-provision entry refuses at construction; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
-| FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
+| FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch` (an entry under a raw-byte domain) or `stale_dependency`/`content-mismatch` (a `sha256-jcs` entry, by its recomputed digest); this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |

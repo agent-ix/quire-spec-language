@@ -824,10 +824,10 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
 
 /// TC-517 step 5 (FR-122-AC-5): changed-version with its invocation bytes
 /// edited under the same digest refuses `stale_dependency`/
-/// `byte-digest-mismatch`.
+/// `content-mismatch`.
 #[trace("TC-517", "FR-122-AC-5")]
 #[test]
-fn edited_invocation_bytes_refuse_byte_digest_mismatch() {
+fn edited_invocation_bytes_refuse_content_mismatch() {
     let documents = changed_version();
     let invocation = DigestRecord::mint(DigestDomain::Sha256Jcs, documents.read[0].digest).hex();
     let refusal = replay(case_with(
@@ -851,13 +851,13 @@ fn edited_invocation_bytes_refuse_byte_digest_mismatch() {
     assert!(
         matches!(
             refusal,
-            ReplayRefusal::Request(ReplayRequestRefusal::ByteDigestMismatch(_))
+            ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch { .. })
         ),
         "{refusal:?}"
     );
     assert!(refusal
         .to_string()
-        .starts_with("stale_dependency/byte-digest-mismatch"));
+        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// TC-517 step 5 (FR-122-AC-5): `ParentOrder` over incomplete-population's

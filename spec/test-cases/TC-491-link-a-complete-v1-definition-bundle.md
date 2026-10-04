@@ -47,7 +47,7 @@ dependency edges between them.
   identity is the same under both known sets, and only
   `validate_known_capabilities` refuses the narrower one.
 - Step 2 refuses `unknown_profile`/`unsupported-selection`,
-  `stale_dependency`/`byte-digest-mismatch` and
+  `stale_dependency`/`content-mismatch` and
   `missing_import`/`missing-selection`, each naming the root's index.
 - Step 3 refuses `ambiguous_declaration`/`conflicting-authority` twice,
   naming both selections, and `invalid_package`/`definition-cycle` with

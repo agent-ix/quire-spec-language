@@ -857,10 +857,10 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
 }
 
 /// TC-515 step 4 (FR-116-AC-4): invocation bytes edited under their own
-/// digest refuse `stale_dependency`/`byte-digest-mismatch`.
+/// digest refuse `stale_dependency`/`content-mismatch`.
 #[trace("TC-515", "FR-116-AC-4")]
 #[test]
-fn edited_invocation_bytes_refuse_byte_digest_mismatch() {
+fn edited_invocation_bytes_refuse_content_mismatch() {
     let input = forbidden_parent_change();
     let invocation_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, input.invocation.digest).hex();
     let refusal = replay(case_with(input, child_change("parent"), |wire, _| {
@@ -878,14 +878,14 @@ fn edited_invocation_bytes_refuse_byte_digest_mismatch() {
     assert!(
         matches!(
             refusal,
-            ReplayRefusal::Request(ReplayRequestRefusal::ByteDigestMismatch(_))
+            ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch { .. })
         ),
         "{refusal:?}"
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     assert!(refusal
         .to_string()
-        .starts_with("stale_dependency/byte-digest-mismatch"));
+        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// TC-515 step 5 (FR-116-AC-5): replaying step 1's envelope twice gives

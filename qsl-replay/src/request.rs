@@ -338,9 +338,22 @@ pub enum ReplayRequestRefusal {
         /// document.
         document_pointer: JsonPointer,
     },
-    /// A byte-provision entry does not hash to its own declared digest.
+    /// A byte-provision entry under a raw-byte domain does not hash to its
+    /// own declared digest: the raw bytes' own digest differs.
     #[error("stale_dependency/byte-digest-mismatch: entry under {0} does not hash to its own declared digest")]
     ByteDigestMismatch(String),
+    /// A `sha256-jcs` byte-provision entry's document recomputes to a digest
+    /// other than the one it is provided under
+    /// (`stale_dependency`/`content-mismatch`).
+    #[error(
+        "stale_dependency/content-mismatch: entry under {selected} recomputes to {recomputed}"
+    )]
+    ContentMismatch {
+        /// The digest the entry is provided under.
+        selected: String,
+        /// The digest recomputed from the supplied document.
+        recomputed: String,
+    },
     /// The package reference names a source digest with no matching
     /// byte-provision entry.
     #[error("missing_declaration: package reference names digest {0} with no matching byte-provision entry")]
@@ -413,7 +426,9 @@ impl ReplayRequestRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
-            Self::DigestDomainMismatch(_) | Self::ByteDigestMismatch(_) => Code::StaleDependency,
+            Self::DigestDomainMismatch(_)
+            | Self::ByteDigestMismatch(_)
+            | Self::ContentMismatch { .. } => Code::StaleDependency,
             Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
                 Code::InvalidDigest
             }
@@ -559,10 +574,19 @@ impl ReplayRequest {
             // builds, so admitting one here would always refuse with a
             // misleading staleness cause instead of the real "wrong domain
             // for this position" one.
-            if digest_of(digest, &bytes)? != *digest.as_bytes() {
-                return Err(ReplayRequestRefusal::ByteDigestMismatch(format!(
-                    "{digest:?}"
-                )));
+            let recomputed = digest_of(digest, &bytes)?;
+            if recomputed != *digest.as_bytes() {
+                return Err(if digest.domain() == DigestDomain::Sha256Jcs {
+                    ReplayRequestRefusal::ContentMismatch {
+                        selected: format!("{digest:?}"),
+                        recomputed: format!(
+                            "{:?}",
+                            DigestRecord::mint(digest.domain(), recomputed)
+                        ),
+                    }
+                } else {
+                    ReplayRequestRefusal::ByteDigestMismatch(format!("{digest:?}"))
+                });
             }
             provision.insert(digest, bytes);
         }
@@ -915,7 +939,7 @@ mod tests {
 
         // QC-1: a domain package document enters under its `sha256-jcs`
         // digest, verified over its RFC 8785 bytes; other bytes under that
-        // digest refuse as a byte/digest mismatch.
+        // digest refuse as a content mismatch.
         let document = br#"{"b": 1, "a": [true]}"#.to_vec();
         let jcs = qsl_semantics::model::intake::PackageDocument::parse(&document)
             .expect("the document parses")
@@ -939,7 +963,7 @@ mod tests {
         ));
         assert!(matches!(
             ReplayRequest::decode(stale_package),
-            Err(ReplayRequestRefusal::ByteDigestMismatch(_))
+            Err(ReplayRequestRefusal::ContentMismatch { .. })
         ));
         let mut not_a_document = wire(1);
         not_a_document.byte_provision.push((

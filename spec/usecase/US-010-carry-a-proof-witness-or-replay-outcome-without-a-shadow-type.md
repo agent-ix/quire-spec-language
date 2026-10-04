@@ -70,7 +70,8 @@ ticket, and this ticket owns only the first:
   not hash to that entry's own declared digest.
 - **When** this ticket's own decoder constructs the request.
 - **Then** construction refuses with a structured
-  `stale_dependency`/`byte-digest-mismatch` cause, before any recompilation
+  `stale_dependency` cause (`byte-digest-mismatch` for raw bytes,
+  `content-mismatch` for a `sha256-jcs` document), before any recompilation
   is attempted, and never returns a partial or best-effort request
   (FR-071-AC-6).
 

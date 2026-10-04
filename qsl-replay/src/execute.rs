@@ -115,7 +115,7 @@ pub enum ReplayRefusal {
     DependencyInput(DependencyInputRefusal),
     /// ADR-015 D-4 rule 7: an entry's `package_id` is not the recompiled
     /// closure's selection of its identity
-    /// (`stale_dependency`/`byte-digest-mismatch`).
+    /// (`stale_dependency`/`content-mismatch`).
     #[error("stale_dependency: the request names {identity} as {} but it recompiles to {}", .requested.hex(), .recompiled.hex())]
     DependencyIdentityMismatch {
         /// The entry's identity.

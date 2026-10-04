@@ -47,7 +47,7 @@ no case at the domain boundaries QSpec FR-180-AC-4 names (0, 1000, -1,
   `root` profile FR-110 resolves, `quire.value.complete/v1`, by identity,
   and the domain package by its identifier and the canonical content digest
   the supplied document is checked against (refusing
-  `stale_dependency`/`byte-digest-mismatch`, QSpec FR-272 as amended by
+  `stale_dependency`/`content-mismatch`, QSpec FR-272 as amended by
   quire-specification#174). The `model` line is QSpec's shared-grammar
   `model` production, with no `version`:
 

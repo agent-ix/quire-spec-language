@@ -81,7 +81,7 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   documents.
 - Step 5: `ReplayRefusal`s holding `frame_violation`/`unauthorized-change`
   (naming `child` and `parent`), `unavailable_observation`,
-  `stale_dependency`/`byte-digest-mismatch` and `Incomplete` `incomplete_population`/
+  `stale_dependency`/`content-mismatch` and `Incomplete` `incomplete_population`/
   `incomplete-scope`. None settles a result.
 - Step 6: equal results. `StateClauseCounterexample: FamilyPayload`
   compiles, the envelope has no string-keyed field, and a payload's

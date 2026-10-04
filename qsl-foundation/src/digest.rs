@@ -239,6 +239,8 @@ impl DigestDomain {
     /// make every entry under it fail the raw-bytes check with a spurious
     /// `byte-digest-mismatch`, naming a staleness that does not exist for a
     /// domain the entry was never eligible to declare in the first place.
+    /// (A `sha256-jcs` entry is admitted by its own rule and compared on
+    /// its recomputed digest, `content-mismatch`.)
     pub fn is_raw_byte_addressed(&self) -> bool {
         matches!(
             self,

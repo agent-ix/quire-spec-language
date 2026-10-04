@@ -212,7 +212,7 @@ run before the recompile:
    (`invalid_package`/`invalid-value` at `/package/dependencies`).
 7. Every entry's `package_id` equals the closure's selection of its
    identity, else `ReplayRefusal::DependencyIdentityMismatch { identity,
-   requested, recompiled }` (`stale_dependency`/`byte-digest-mismatch`),
+   requested, recompiled }` (`stale_dependency`/`content-mismatch`),
    where `requested` is the entry's `DigestRecord` and `recompiled` the
    `PackageId`, named as `PackageIdMismatch` names its fields.
 
