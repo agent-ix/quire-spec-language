@@ -103,9 +103,14 @@ text, and the compiler classifies it from that text under the two cases
 below. It is never a parse failure, never digested raw, and never refuses
 `stale_dependency`/`byte-digest-mismatch`. `1e400`, `-1e400` and every other
 whole value beyond ±2^53 refuse `inexact-integer`; `1e-400`, which has a
-finite double (zero) and is not whole, refuses `inexact-number`. The reader
-refuses before any tree exists, so a number with no finite double is the one
-named when the document also holds an earlier inexact number.
+finite double (zero) and is not whole, refuses `inexact-number`. When the bytes carry
+several reader faults (a number with no finite double, a repeated member name
+the reader detects when the object closes, truncation), the refusal is the
+first one `quire-canonical`'s read returns. `{"a":1,"a":2,"n":1e400}` refuses
+`noncanonical_wire`/`inexact-integer` at `/n`, and `[1e400` refuses it at
+`/0`, while `{"a":1,"a":2,"n":1e-400}` has a repeated name the reader refuses
+first, so it is digested raw. A number with no finite double is also named
+ahead of an earlier inexact number.
 
 A document that parses can still carry a number with no exact RFC 8785
 spelling. RFC 8785 writes every number as the shortest round-trip text of
@@ -141,8 +146,11 @@ computed, with cause `inexact-integer` for the first case and
 9007199254740993 does, refuses `inexact-integer`; `inexact-number` covers
 every other inexact number, and a whole number within ±2^53 is refused
 under neither. The refusal carries `document_pointer`: the RFC 6901 pointer
-of the first such number in document order, each member name escaped (`~`
-as `~0`, `/` as `~1`) and each array element named by its decimal index.
+of the first such number in document order, except that a number with no
+finite double is named when the reader reaches it, before any tree exists, so
+it can be named ahead of an earlier inexact number. Each member name is
+escaped (`~` as `~0`, `/` as `~1`) and each array element named by its decimal
+index.
 The rule covers every number of the document, at any depth. The code is
 QSpec FR-271's `noncanonical_wire` (its `## Values` row), and the causes and
 `document_pointer` are QSpec FR-272's (the `noncanonical_wire` row of

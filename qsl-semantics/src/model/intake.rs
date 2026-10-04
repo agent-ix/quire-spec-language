@@ -259,7 +259,12 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 ///
 /// A number with no exact RFC 8785 spelling (`inexactness`) refuses
 /// `noncanonical_wire`, carrying the RFC 6901 `document_pointer` of the
-/// first such number in document order, before any digest is taken:
+/// first such number in document order, before any digest is taken. The
+/// exception is a number with no finite double: the reader refuses it when it
+/// reaches it, before any tree exists, so it is named ahead of an earlier
+/// inexact number, and ahead of a repeated member name the reader would
+/// detect only when that object closes. When the bytes carry several reader
+/// faults, the first one `quire_canonical::read` returns decides:
 /// `inexact-integer` for a whole value beyond ±2^53, `inexact-number` for a
 /// value that is not its nearest double's shortest round-trip text. RFC 8785
 /// writes that text in its place, so the digest of such a document would be
@@ -5760,9 +5765,82 @@ mod tests {
             "/a~1b/1/c~0d",
             "-1e400",
         );
+        // Overflow with a fraction is not whole; with a negative exponent that
+        // brings it back to a whole 1e399 it is.
+        let wide = format!("1{}.5", "0".repeat(400));
+        assert_noncanonical(
+            &document_with_count(&wide),
+            Inexact::Number,
+            "/package/count",
+            &wide,
+        );
+        let wide_whole = format!("1{}e-1", "0".repeat(400));
+        assert_noncanonical(
+            &document_with_count(&wide_whole),
+            Inexact::Integer,
+            "/package/count",
+            &wide_whole,
+        );
+        // The first reader fault decides: the number is reached before the
+        // repeated name is detected at object close, and before the
+        // truncation; a repeated name followed by an underflow is the
+        // reader's malformed refusal.
+        assert_noncanonical(
+            r#"{"a":1,"a":2,"n":1e400}"#,
+            Inexact::Integer,
+            "/n",
+            "1e400",
+        );
+        assert_noncanonical("[1e400", Inexact::Integer, "/0", "1e400");
+        let repeated = PackageDocument::parse(br#"{"a":1,"a":2,"n":1e-400}"#).unwrap_err();
+        assert!(
+            matches!(
+                repeated.cause,
+                ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            ),
+            "{repeated:?}"
+        );
         // The reader refuses the out-of-range number before any tree exists
         // to walk, so it is named ahead of an earlier inexact number.
         assert_noncanonical(r#"{"x":[1e-400,1e400]}"#, Inexact::Integer, "/x/1", "1e400");
+    }
+
+    /// FR-154 admission refuses a number with no finite double
+    /// `noncanonical_wire` at its pointer under a digest that matches
+    /// nothing, never `stale_dependency`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn admission_refuses_a_number_with_no_finite_double_under_an_unrelated_digest() {
+        let digest = [7_u8; 32];
+        let offered = DomainPackageRef {
+            identity: "acme/orders".to_owned(),
+            version: "1".to_owned(),
+            digest,
+        };
+        for (text, inexact, pointer) in [
+            (
+                document_with_count("1e400"),
+                Inexact::Integer,
+                "/package/count",
+            ),
+            (
+                document_with_count("-1e-400"),
+                Inexact::Number,
+                "/package/count",
+            ),
+        ] {
+            let bytes = BTreeMap::from([(digest, text.clone().into_bytes())]);
+            let refusal = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes).unwrap_err();
+            assert_eq!(refusal.code, Code::NoncanonicalWire, "{text}");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::NoncanonicalNumber {
+                    inexact,
+                    document_pointer: pointer.parse().unwrap(),
+                },
+                "{text}"
+            );
+        }
     }
 
     /// The JCS digest check still runs over the one parse.

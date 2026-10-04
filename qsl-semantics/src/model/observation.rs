@@ -540,7 +540,12 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 /// A document the reader reads that holds a number with no exact RFC 8785
 /// spelling refuses `noncanonical_wire` (`inexact-integer` or
 /// `inexact-number`) with the `document_pointer` of the first such number,
-/// before the digest is compared (FR-056's rule, FR-106 check 1.3). The rule
+/// before the digest is compared (FR-056's rule, FR-106 check 1.3). A number
+/// with no finite double is the reader's own refusal, classified from its
+/// lexeme: it is named when the reader reaches it, so ahead of an earlier
+/// inexact number, and the first reader fault decides when the bytes carry
+/// several (`{"a":1,"a":2,"n":1e400}` and `[1e400` refuse it, while
+/// `{"a":1,"a":2,"n":1e-400}` is a repeated name and digests raw). The rule
 /// reads every number of the document, including members admission reads no
 /// further, such as an invocation's `post`, `result`, `created` and
 /// `deleted` under a precondition.
@@ -670,11 +675,18 @@ mod digest_tests {
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn a_number_with_no_finite_double_refuses_noncanonical_wire_under_any_digest() {
+        let wide = format!("1{}.5", "0".repeat(400));
+        let wide_whole = format!("1{}e-1", "0".repeat(400));
         for (text, cause, pointer) in [
             (r#"{"n":1e400}"#, "inexact-integer", "/n"),
             (r#"{"a":[0,-1e400]}"#, "inexact-integer", "/a/1"),
             ("1e400", "inexact-integer", ""),
             (r#"{"a":{"n":1e-400}}"#, "inexact-number", "/a/n"),
+            (r#"{"a":1,"a":2,"n":1e400}"#, "inexact-integer", "/n"),
+            ("[1e400", "inexact-integer", "/0"),
+            (r#"{"x":[1e-400,1e400]}"#, "inexact-integer", "/x/1"),
+            (wide.as_str(), "inexact-number", ""),
+            (wide_whole.as_str(), "inexact-integer", ""),
         ] {
             let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
             for digest in [raw, [0_u8; 32]] {
@@ -688,6 +700,16 @@ mod digest_tests {
                 );
             }
         }
+    }
+
+    /// A repeated member name the reader detects before it reaches an
+    /// underflowing number is the reader's refusal: digested raw.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_repeated_name_before_an_underflow_is_digested_raw() {
+        let text = r#"{"a":1,"a":2,"n":1e-400}"#;
+        let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
+        assert_eq!(check_document_digest(text.as_bytes(), raw), Ok(()));
     }
 
     /// The reader's and the encoder's allocation failures refuse
