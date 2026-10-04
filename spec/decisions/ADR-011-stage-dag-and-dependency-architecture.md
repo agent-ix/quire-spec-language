@@ -816,8 +816,10 @@ Rules that close the ADR-010 OBS-016 cycles:
   the one `maybe_grow` wrapper and depends only on `stacker`. Only QSL crates
   outside the qualified core may depend on it; no CB-2 crate may (ADR-029
   CB-3), and arch-lint's direction check refuses such an edge. No backend
-  depends on it (FB-05), and `SHARED_LEAVES` does not list it.
-- **SV is a shared leaf.** `quire-semantic-value` depends on K and on no
+  depends on it (FB-05).
+- **SV is a shared leaf.** `quire-semantic-value`, in its own repository
+  `agent-ix/quire-semantic-value` (K is `agent-ix/quire-exact`, also its own
+  repository), depends on K and on no
   QSL layer. It is `#![no_std]` and uses only `core` and `alloc`; its
   external dependencies are ADR-013 §2's one RFC 8785 encoder
   (`quire-canonical`, built without its `std` feature), `serde` and
@@ -829,7 +831,7 @@ Rules that close the ADR-010 OBS-016 cycles:
   re-exports them (§7.2). SV mints no `NodeKey`, `EffectiveId` or
   `PopulationId`: it resolves a node id read from a preimage by lookup among
   the admitted keys and never calls a `NodeKey` constructor (T-12 rule
-  (b)). It retypes an admitted enum member's key as that member's
+  (b) scans only the QSL repository, so the rule no longer reaches this crate). It retypes an admitted enum member's key as that member's
   `VariantId` (`EnumValue::variant`, through `VariantId::from_digest`) and
   computes nothing for it. It computes one kernel identity, a compound unit's
   `quire.value.compound-unit/v1` `UnitId` (`compound_unit_id`), through
@@ -1038,8 +1040,8 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | CG → QSL (dev) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
 | QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted; X-3 (`qsl-cst`) is extracted; X-4 (`qsl-source`) is extracted; X-5 (`qsl-forms`) is extracted; X-6 (`qsl-semantics`) is extracted; X-7 (`qsl-package`) is extracted; X-8 (`qsl-eval`) is extracted; X-9 (`qsl-route`) is extracted; X-10 (`qsl-replay`) is extracted; `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
-| QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
-| QSL → `quire-semantic-value`, RT → `quire-semantic-value`, CG → `quire-semantic-value` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, RT and CG. | X-11 |
+| QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New**; a git dependency on the repository `agent-ix/quire-exact` at `branch = "main"` | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
+| QSL → `quire-semantic-value`, RT → `quire-semantic-value`, CG → `quire-semantic-value` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, RT and CG to the repository `agent-ix/quire-semantic-value`, at `branch = "main"`. | X-11 |
 | QSL → `quire-walk`, IR → `quire-walk`, RT → `quire-walk`, CG → `quire-walk` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, IR, RT and CG to the repository `agent-ix/quire-walk`, each at `branch = "main"`. | ADR-030 FR-356 |
 
 Rules:

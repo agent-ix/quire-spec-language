@@ -10,31 +10,6 @@ use serde_json::Value;
 use crate::error::{Code, Error, Result};
 use crate::graph::{classify, Edge, EdgeKind, Repo};
 
-/// The package names of ADR-011 FB-05's shared `no_std` leaf crates,
-/// depended on by the backends (ADR-011 §7.1): the kernel K (`quire-exact`)
-/// and the semantic-value leaf SV (`quire-semantic-value`, which depends on K
-/// and ADR-013's one RFC 8785 encoder `quire-canonical`, and on no QSL layer),
-/// both published from the QSL repository. The walker toolkit W
-/// (`quire-walk`) has its own repository, so it is not listed: it classifies
-/// as no ecosystem repository and contributes no edge on its own.
-/// `qsl-walk-grow` (layer WG) is not one.
-const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
-
-/// The ecosystem repository a resolved package contributes to the FR-059
-/// edge graph: `classify`'s answer, except that a shared leaf in
-/// [`SHARED_LEAVES`] contributes none. A shared leaf depends on no QSL module
-/// above it and on no IR, RT or CG crate (ADR-011 §6.1 "K is a leaf" and the
-/// SV row), so an edge into it closes no FB-11 cycle, and ADR-011 FB-05 places
-/// it outside the bypass. The exemption is local to edge extraction:
-/// `classify` itself still classifies a QSL-sourced shared leaf as QSL.
-fn edge_repo(name: &str, source: Option<&str>) -> Option<Repo> {
-    if SHARED_LEAVES.contains(&name) {
-        None
-    } else {
-        classify(name, source)
-    }
-}
-
 /// Run `cargo metadata` for the crate at `manifest_path` and return every
 /// resolved normal/dev edge whose source and target both classify as one of
 /// the four ADR-011 repositories (`classify`, by package name and source
@@ -85,7 +60,7 @@ fn parse_edges(document: &Value) -> Result<Vec<Edge>> {
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
         let source = package.get("source").and_then(Value::as_str);
-        id_repo.push((id, edge_repo(name, source), name));
+        id_repo.push((id, classify(name, source), name));
     }
 
     let nodes = document
@@ -253,18 +228,19 @@ mod tests {
     }
 
     /// tc_arch_lint_metadata_007: the kernel leaf `quire-exact`, git-sourced
-    /// from the QSL repository, contributes no repository to the edge graph
-    /// (`edge_repo`), so an RT dependency on it yields no edge and no finding; RT's dependency on
+    /// from its own repository, contributes no repository to the edge graph
+    /// (`classify`), so an RT dependency on it yields no edge and no finding; RT's dependency on
     /// `qsl-eval`, from the same QSL git source, is still an RT -> QSL edge
     /// and an FB-05 violation.
     #[trace("TC-156", "FR-059-AC-8")]
     #[test]
     fn tc_arch_lint_metadata_007_quire_exact_leaf_is_exempt_but_qsl_eval_is_not() {
         let qsl_git = "git+https://github.com/agent-ix/quire-spec-language?branch=main";
+        let exact_git = "git+https://github.com/agent-ix/quire-exact?branch=main";
         let document = json!({
             "packages": [
                 {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
-                {"id": "exact 0.1.0", "name": "quire-exact", "source": qsl_git},
+                {"id": "exact 0.1.0", "name": "quire-exact", "source": exact_git},
                 {"id": "eval 0.1.0", "name": "qsl-eval", "source": qsl_git},
             ],
             "resolve": {
@@ -298,7 +274,7 @@ mod tests {
     }
 
     /// tc_arch_lint_metadata_008: the shared leaf `quire-semantic-value`,
-    /// git-sourced from the QSL repository, contributes no repository to the
+    /// git-sourced from its own repository, contributes no repository to the
     /// edge graph, so an RT dependency on it yields no edge and no finding.
     /// RT's dependencies on `qsl-eval` and `qsl-semantics`, from the same QSL
     /// git source, are still RT -> QSL edges and FB-05 violations.
@@ -306,12 +282,14 @@ mod tests {
     #[test]
     fn tc_arch_lint_metadata_008_semantic_value_leaf_is_exempt_but_layers_are_not() {
         let qsl_git = "git+https://github.com/agent-ix/quire-spec-language?branch=main";
+        let exact_git = "git+https://github.com/agent-ix/quire-exact?branch=main";
+        let sv_git = "git+https://github.com/agent-ix/quire-semantic-value?branch=main";
         let normal = json!([{"kind": null, "target": null}]);
         let document = json!({
             "packages": [
                 {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
-                {"id": "exact 0.1.0", "name": "quire-exact", "source": qsl_git},
-                {"id": "sv 0.1.0", "name": "quire-semantic-value", "source": qsl_git},
+                {"id": "exact 0.1.0", "name": "quire-exact", "source": exact_git},
+                {"id": "sv 0.1.0", "name": "quire-semantic-value", "source": sv_git},
                 {"id": "sem 0.1.0", "name": "qsl-semantics", "source": qsl_git},
                 {"id": "eval 0.1.0", "name": "qsl-eval", "source": qsl_git},
             ],

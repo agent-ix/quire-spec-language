@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-084
     type: depends_on
+  - target: ix://agent-ix/quire-exact/FR-089
+    type: depends_on
 ---
 # FR-089: Carry population identity across the kernel boundary as an opaque PopulationId
 
@@ -134,7 +136,8 @@ resolves `population_id` to its `PopulationBinding` through the recorded
 correspondence, then compares that binding's declared maximum with `maximum`.
 QSL performs this pairing in argument admission (`value::expression::validate`,
 `qsl-eval/src/value/expression/mod.rs`), before the kernel `ValueType::admits` runs. The
-kernel `admits` refuses every `(Population, Population)` pair (FR-089-AC-6).
+kernel `admits` refuses every `(Population, Population)` pair (FR-089-AC-6 of
+`agent-ix/quire-exact`).
 
 The kernel is a leaf under ADR-011 §6.1's K-leaf rule: the
 `PopulationId` → `PopulationBinding` correspondence and every binding's
@@ -157,7 +160,6 @@ key of its own: it calls `quire_exact::member_equal` and
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
 | FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)`, the QSL layer resolves `population_id` to its `PopulationBinding` through the recorded correspondence and admits the value when that binding's declared maximum equals `maximum`, and refuses it when the declared maximum differs. | Test (TC-295) |
 | FR-089-AC-7 | Given two `Direct` admissions that agree on domain package, `population_key` and declared maximum and differ only in one member, the two `PopulationId`s differ; given two that agree on everything except the declared maximum (3 and 7), they differ; given two `Post` bindings with equal post members whose pre bindings differ, they differ; one fixed preimage in the test, encoded independently of `population_id_preimage`, yields the expected digest. | Test (TC-291) |
-| FR-089-AC-6 | Given any `ValueType::Population(maximum)` and any `Value::Population(population_id)`, kernel `ValueType::admits` returns false; given two `Value::Population` operands, kernel `equality::plan_pairs` returns `Err(Refusal::CheckedInvariant)` and kernel `key::compare_keys` returns `None`. | Test (TC-297) |
 
 ## Dependencies
 
@@ -178,7 +180,8 @@ Specified by ADR-013 O-13's Population row. The kernel half
 implements
 `PopulationId` and `Value::Population(PopulationId)` in `quire-exact`
 (FR-089-AC-2; TC-292), with kernel `admits`, `plan_pairs` and `compare_keys`
-refusing a population pair (FR-089-AC-6; TC-297). The other
+refusing a population pair (FR-089-AC-6 and TC-297 of
+`agent-ix/quire-exact`). The other
 half (`model` minting and the evaluator's resolution step) implements
 FR-089-AC-1, FR-089-AC-3, FR-089-AC-4 and FR-089-AC-5 (TC-291, TC-293,
 TC-294, TC-295, TC-296; all `✅ Passed locally`): `model::population::

@@ -19,7 +19,7 @@ thiserror = "2.0.20"
 
 [dev-dependencies]
 # Layer K: the request writer's tests name an occurrence key's origin.
-quire-exact = { path = "../quire-exact" }
+quire-exact = { workspace = true }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `tests/it/route_registry.rs` (TC-205) writes a throwaway manifest for
 # `cargo deny check bans` into a scratch directory.

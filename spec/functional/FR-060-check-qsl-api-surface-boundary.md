@@ -165,8 +165,8 @@ usage error, with the full report, rather than reporting a vacuous pass.
 
 A QSL-role rule's tree is every QSL workspace crate that depends on
 `quire-exact` and does not define the constructors: the root crate and each
-extracted layer crate, including the shared `no_std` leaf
-`quire-semantic-value` (ADR-011 §6.1 layer SV). If a rule's required file path
+extracted layer crate. The shared `no_std` leaves `quire-exact` and
+`quire-semantic-value` have their own repositories and are not scanned. If a rule's required file path
 exists and its tree was supplied, the check
 SHALL scan every `.rs` file under each such crate's `src/` for the rule's call
 pattern(s) and SHALL report **failing**, naming each call site's file, line
@@ -217,7 +217,6 @@ each list can only shrink.
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
 | FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and rules T12-B, T12-C and T12-D are still evaluated and reported; rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
-| FR-060-AC-5 | A `NodeKey` constructor call in the shared leaf `quire-semantic-value`'s `src/` is a T12-B call site outside the allowed callers: the rule reports failing and names that crate's file and module. | Test (TC-157) |
 
 ## Dependencies
 

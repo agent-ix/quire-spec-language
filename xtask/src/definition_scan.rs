@@ -228,14 +228,13 @@ pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
             "qsl-semantics/src",
             "qsl-package/src",
             "qsl-eval/src",
-            "quire-semantic-value/src",
         ],
     )
 }
 
 /// Scan every `.rs` tree in `dirs` (relative to `workspace_root`) once, as
 /// one set of definitions -- FR-090-AC-9/TC-390 counts one type's
-/// definitions across the root crate, `quire-exact` and `qsl-foundation`.
+/// definitions across the root crate and `qsl-foundation`.
 pub fn scan_dirs(workspace_root: &Path, dirs: &[&str]) -> Result<CrateDefinitions> {
     let mut items: BTreeMap<String, Vec<Definition>> = BTreeMap::new();
     let mut methods: BTreeMap<(String, String), Vec<Definition>> = BTreeMap::new();
@@ -369,22 +368,15 @@ mod tests {
         );
     }
 
-    /// Asserts `name` is defined exactly once across every tree
-    /// [`scan_crate`] reads, and that the one definition is under
-    /// `quire-semantic-value/src/`. A canonical type (`/// quire:canonical`)
-    /// is not asserted here: `cargo xtask canonical-types` holds it to one
-    /// definition.
-    fn assert_defined_exactly_once_in_semantic_value(name: &str, locations: &[Definition]) {
-        assert_eq!(
-            locations.len(),
-            1,
-            "{name} has {} defining location(s) across the scanned trees: {locations:?}",
-            locations.len()
-        );
+    /// Asserts `name` has no definition in any tree [`scan_crate`] reads:
+    /// the one definition lives in the `quire-semantic-value` repository, so
+    /// a definition here is a second copy. A canonical type
+    /// (`/// quire:canonical`) is held to one definition by
+    /// `cargo xtask canonical-types`.
+    fn assert_not_defined_in_qsl(name: &str, locations: &[Definition]) {
         assert!(
-            locations[0].file.starts_with("quire-semantic-value/src/"),
-            "{name} is defined at {:?}, not under quire-semantic-value/src/",
-            locations[0]
+            locations.is_empty(),
+            "{name} is defined in the QSL trees at {locations:?}; its one definition is in quire-semantic-value"
         );
     }
 
@@ -393,8 +385,8 @@ mod tests {
     /// symbols are counted under `check`/`value::expression` (see
     /// [`assert_defined_exactly_once_under_check`] for why that is scoped
     /// rather than crate-wide). The checking limits and `CheckMode` live in
-    /// the layer-SV leaf `quire-semantic-value` and are counted across every
-    /// scanned tree ([`assert_defined_exactly_once_in_semantic_value`]).
+    /// the layer-SV leaf `quire-semantic-value` and are defined in no scanned
+    /// tree ([`assert_not_defined_in_qsl`]).
     /// `CheckRefusal` and `CheckedGraph` are canonical types, which
     /// `cargo xtask canonical-types` holds to one definition.
     ///
@@ -454,7 +446,7 @@ mod tests {
             "CheckMode",
         ] {
             let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
-            assert_defined_exactly_once_in_semantic_value(symbol, &locations);
+            assert_not_defined_in_qsl(symbol, &locations);
         }
     }
 
@@ -515,18 +507,18 @@ mod tests {
     }
 
     /// TC-173 step 2: the loss records `ValueLoss` and `LocatedLoss` are
-    /// each defined once across every scanned tree, in
+    /// each defined in no scanned tree, since they live in
     /// `quire-semantic-value`; neither `check` nor `value::expression`
     /// defines them. The call-admission refusal `InputRefusal` is a
     /// canonical type, which `cargo xtask canonical-types` holds to one
     /// definition.
     #[trace("TC-173", "FR-068-AC-4")]
     #[test]
-    fn input_refusal_and_losses_are_defined_exactly_once_in_semantic_value() {
+    fn input_refusal_and_losses_are_not_defined_in_qsl() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
         for name in ["ValueLoss", "LocatedLoss"] {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
-            assert_defined_exactly_once_in_semantic_value(name, &locations);
+            assert_not_defined_in_qsl(name, &locations);
         }
     }
 }

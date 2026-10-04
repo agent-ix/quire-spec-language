@@ -74,9 +74,7 @@ use crate::graph::{classify, Repo};
 
 /// The QSL crates of the qualified core (ADR-029 CB-2), by package name.
 /// Each crate's source root is `<name>/src` under the QSL root.
-pub(crate) const CORE_CRATES: [&str; 11] = [
-    "quire-exact",
-    "quire-semantic-value",
+pub(crate) const CORE_CRATES: [&str; 9] = [
     "qsl-foundation",
     "qsl-cst",
     "qsl-source",
@@ -925,14 +923,17 @@ mod tests {
             for core in CORE_CRATES {
                 fixture.add(core, None, true, false);
             }
-            // The walker toolkit is its own repository: a git dependency
-            // of the core, not a workspace member.
-            fixture.add(
-                "quire-walk",
-                Some("git+https://github.com/agent-ix/quire-walk?branch=main"),
-                false,
-                false,
-            );
+            // The walker toolkit, the exact-value kernel and the semantic-value
+            // leaf are each their own repository: git dependencies of the
+            // core, not workspace members.
+            for leaf in ["quire-walk", "quire-exact", "quire-semantic-value"] {
+                fixture.add(
+                    leaf,
+                    Some(&format!("git+https://github.com/agent-ix/{leaf}?branch=main")),
+                    false,
+                    false,
+                );
+            }
             fixture.add("quire-spec-language", None, true, false);
             fixture.add("qsl-analyze", None, true, false);
             fixture.add("qsl-attrs", None, true, true);

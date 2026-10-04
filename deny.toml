@@ -26,4 +26,8 @@ deny = [
     # ADR-013 §2: one RFC 8785 implementation. Two copies of the encoder
     # could produce different package_ids.
     { crate = "quire-canonical", deny-multiple-versions = true },
+    # One copy of each shared leaf in the lock: `quire-semantic-value` and
+    # every QSL crate must resolve `quire-exact` to the same source.
+    { crate = "quire-exact", deny-multiple-versions = true },
+    { crate = "quire-semantic-value", deny-multiple-versions = true },
 ]

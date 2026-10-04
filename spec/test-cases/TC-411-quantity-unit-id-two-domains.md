@@ -49,5 +49,5 @@ Passed locally: `qsl-semantics/tests/it/quantities.rs`
 4) and `tc_411_compound_unit_ids_match_qspec_vectors` (step 3, which reads the
 vectors from `$QSPEC_DIR` at run time; `make conformance` runs it and fails
 unless it reports a nonzero vector count), with the
-kernel equality rule in `quire-exact/src/identity.rs`
+kernel equality rule in `agent-ix/quire-exact`'s `src/identity.rs`
 `tc_411_unit_id_is_a_two_domain_record_compared_on_label_then_bytes`.

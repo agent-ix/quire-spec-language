@@ -13,7 +13,8 @@
 //! directory of the target's `src_path`) of every library, binary and
 //! proc-macro target of every workspace member, and the same for every
 //! resolved package that FR-059's `graph::classify` assigns to an ecosystem
-//! repository. Test, bench, example and build-script targets are test or
+//! repository, and the shared leaves `quire-exact` and `quire-semantic-value`
+//! wherever they come from. Test, bench, example and build-script targets are test or
 //! build code, and test code under a root is excluded as `typestate_scan`
 //! excludes it.
 //!
@@ -50,6 +51,11 @@ use crate::typestate_scan::shipped_files;
 
 /// The doc line that marks a canonical type.
 const TAG: &str = "quire:canonical";
+
+/// The shared `no_std` leaf crates, each in its own repository. They hold
+/// the canonical types of the QSL core, so a QSL workspace scans them as its
+/// own and any other workspace scans them as the QSL repository's.
+const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
 
 /// Target kinds whose sources are shipped code.
 const SHIPPED_KINDS: [&str; 7] = [
@@ -95,6 +101,14 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
         .iter()
         .filter_map(serde_json::Value::as_str)
         .collect();
+    let in_qsl_workspace = metadata["packages"]
+        .as_array()
+        .ok_or(malformed("packages"))?
+        .iter()
+        .any(|package| {
+            package["name"].as_str() == Some("quire-spec-language")
+                && package["id"].as_str().is_some_and(|id| members.contains(id))
+        });
     let mut packages = Vec::new();
     for package in metadata["packages"]
         .as_array()
@@ -104,6 +118,12 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
         let id = package["id"].as_str().ok_or(malformed("package id"))?;
         let repository = if members.contains(id) {
             Repository::Workspace
+        } else if SHARED_LEAVES.contains(&name) {
+            if in_qsl_workspace {
+                Repository::Workspace
+            } else {
+                Repository::Ecosystem(graph::Repo::Qsl.as_str())
+            }
         } else {
             match graph::classify(name, package["source"].as_str()) {
                 Some(repo) => Repository::Ecosystem(repo.as_str()),

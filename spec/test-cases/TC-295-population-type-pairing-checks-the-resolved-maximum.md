@@ -17,7 +17,7 @@ declared maximum equal to `maximum` -- the pairing
 `CheckedPackage::call`/`evaluate`'s own argument-admission `validate`
 (`qsl-eval/src/value/expression/mod.rs`) performs between
 `ValueType::Population(maximum)` and `Value::Population(binding)`. The kernel
-`ValueType::admits` refuses every population pair (FR-089-AC-6, TC-297); this
+`ValueType::admits` refuses every population pair (FR-089-AC-6, TC-297 of `agent-ix/quire-exact`); this
 comparison is the QSL layer's. Scope: FR-089-AC-5.
 
 Implemented: `ValueType::admits` is `quire_exact`'s own kernel

@@ -148,8 +148,9 @@ const REPLAY_FACADE_CRATE: &str = "qsl-replay";
 /// [`REPLAY_FACADE_CRATE`]. A CG edge to any other QSL crate, such as
 /// `qsl-semantics`, is a finding. This check is crate-level only -- FR-060's
 /// API-surface check is what verifies the dependency is used through
-/// `replay` alone. Edges into FB-05's shared leaves never reach this check
-/// (`metadata::edge_repo`).
+/// `replay` alone. A shared leaf lives in its own repository, which
+/// `classify` places in no ecosystem repository, so its edges never reach
+/// this check.
 fn fb05_violations(edges: &[Edge]) -> Vec<Fb05Violation> {
     edges
         .iter()

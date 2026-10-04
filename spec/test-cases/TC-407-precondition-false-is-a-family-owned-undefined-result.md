@@ -42,7 +42,7 @@ expression as the call locus instead of the dispatched call node.
    `record = cause.undefined_record()`.
 4. Read the payload from `record.fields`. No downcast to the `StateModel`
    cause type is needed.
-5. Inspect `quire-exact/src/outcome.rs`'s `Undefined` enum.
+5. Inspect `agent-ix/quire-exact`'s `src/outcome.rs` `Undefined` enum.
 
 Tag the test `#[trace("FR-090-AC-11", "TC-407")]`.
 

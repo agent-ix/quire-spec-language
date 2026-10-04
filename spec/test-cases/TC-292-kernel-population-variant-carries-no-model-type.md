@@ -27,9 +27,9 @@ a population value" cannot distinguish from the correct shape.
 
 ## Test Procedure
 
-1. Locate the `Value` enum definition in `quire-exact/src/value.rs` and
+1. Locate the `Value` enum definition in `agent-ix/quire-exact`'s `src/value.rs` and
    inspect its `Population` variant's payload type.
-2. Locate `quire-exact/Cargo.toml`'s `[dependencies]` table and confirm it
+2. Locate `agent-ix/quire-exact`'s `Cargo.toml` `[dependencies]` table and confirm it
    names no path or crate dependency on `quire_spec_language` or any crate
    exposing `model::population`.
 
@@ -40,7 +40,7 @@ Step 1 shows `Value::Population(PopulationId)`, never
 `PopulationBinding`'s fields defined locally inside `quire-exact` -- the
 check that catches a `PopulationBinding` shape recreated by hand rather than
 imported from `model`, which Step 2's dependency check alone cannot catch.
-Step 2 confirms that no entry in `quire-exact/Cargo.toml`'s `[dependencies]`
+Step 2 confirms that no entry in `agent-ix/quire-exact`'s `Cargo.toml` `[dependencies]`
 table is a workspace member or a path dependency, so the crate-DAG direction
 alone makes *importing* `PopulationBinding` (or any other `model::population`
 type) from `model` a compile error -- this is a property of the dependency

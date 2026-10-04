@@ -35,25 +35,23 @@ which turns `FamilyResult` back into a shared cause list.
 
 ## Test Procedure
 
-1. Scan every `.rs` file under `src/`, `quire-exact/src/`,
-   `quire-semantic-value/src/`, `qsl-foundation/src/`, `qsl-cst/src/`, `qsl-forms/src/`,
+1. Scan every `.rs` file under `src/`,
+   `qsl-foundation/src/`, `qsl-cst/src/`, `qsl-forms/src/`,
    `qsl-semantics/src/`, `qsl-package/src/` and `qsl-eval/src/` for an item definition named `FamilyOutcome`,
    `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
 2. Resolve every `use` edge and every inline path under the test's
    `BELOW_CORE` roots, and check whether any of them names one of the three
-   types: `qsl-cst/src/`, `qsl-forms/src/`, `quire-semantic-value/src/`
-   (layer SV), `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the
+   types: `qsl-cst/src/`, `qsl-forms/src/`,
+   `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the
    `semantic_value` modules `qsl-semantics/src/value/{definition.rs,
    enumeration.rs, unit.rs, environment_stage.rs}` (ADR-011 §6.2) and
    `qsl-semantics/src/value/model_query.rs` (layer 3 `model`).
 3. Resolve every `use` edge and every inline path under the `check` core, and
    check whether any of them names the `ProtocolClause` snapshot cause type,
    `ModelRefusal` or the `StateModel` undefined cause type.
-4. Read the `[dependencies]` tables of `quire-exact/Cargo.toml`,
-   `quire-semantic-value/Cargo.toml` (exactly `quire-exact`,
-   `quire-canonical`, `serde` and `thiserror`),
+4. Read the `[dependencies]` tables of
    `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`, and both dependency
    tables of `qsl-package/Cargo.toml` (layer 4) and
    `qsl-eval/Cargo.toml` (layer 5).

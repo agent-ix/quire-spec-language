@@ -36,7 +36,7 @@ on QSL's kernel copy, which is the shape T-6 removes.
 4. Match the result as `Ok(e)` and `e.outcome` as
    `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, and take
    `cause.catalog_code()`.
-5. Inspect `quire-exact/src/outcome.rs`'s `Refusal` enum.
+5. Inspect `agent-ix/quire-exact`'s `src/outcome.rs` `Refusal` enum.
 
 Tag the test `#[trace("FR-090-AC-7", "TC-388")]`.
 

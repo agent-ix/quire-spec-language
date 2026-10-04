@@ -14,7 +14,7 @@ description = "ADR-011 §6.1 layer 2: S2 parsed semantic forms -- the forms core
 [dependencies]
 qsl-cst = { path = "../qsl-cst" }
 qsl-foundation = { path = "../qsl-foundation" }
-quire-exact = { path = "../quire-exact" }
+quire-exact = { workspace = true }
 quire-walk = { workspace = true }
 
 [dev-dependencies]

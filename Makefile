@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -148,14 +148,14 @@ use-remote:
 # dependencies included. `quire-spec-language`'s dev-dependency turns on
 # `qsl-semantics/test-support`, `qsl-forms`'s turns on
 # `qsl-cst/test-support`, and several crates' turn on
-# `quire-exact/test-support` (the charge log), so `--workspace` builds
-# those three crates with `test-support` on even here. The `-p` runs below
-# build each crate alone, with the feature off: they lint the
-# `not(feature = "test-support")` code paths under `-D warnings`, and check
-# that the modules of each crate's own `tests/it` not gated on the feature
-# compile and pass without it. `-p quire-exact` is where the production
-# meter's no-allocation test runs. These are the only three workspace crates
-# with a `test-support` feature.
+# `quire-exact/test-support` (the charge log, from the `quire-exact`
+# repository), so `--workspace` builds those crates with `test-support` on
+# even here. The `-p` runs below build each crate alone, with the feature
+# off: they lint the `not(feature = "test-support")` code paths under
+# `-D warnings`, and check that the modules of each crate's own `tests/it`
+# not gated on the feature compile and pass without it. These are the only
+# two workspace crates with a `test-support` feature; `quire-exact`'s own
+# default-feature gate runs in its repository.
 ci-default-features:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -164,8 +164,6 @@ ci-default-features:
 	cargo test --locked -p qsl-semantics
 	cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
 	cargo test --locked -p qsl-cst
-	cargo clippy --locked -p quire-exact --all-targets -- -D warnings
-	cargo test --locked -p quire-exact
 
 ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
@@ -191,18 +189,6 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-# `quire-exact` is `#![no_std]` + `alloc` so no_std consumers can depend on
-# it directly. Building it for a bare-metal target, which ships no `std`,
-# fails the moment any `std` use or std-requiring dependency feature returns.
-quire-exact-no-std:
-	cargo build --locked -p quire-exact --target thumbv7em-none-eabi
-
-# `quire-semantic-value` (ADR-011 layer SV) is the shared `#![no_std]` +
-# `alloc` leaf a no_std backend depends on beside `quire-exact`; this builds
-# it for the same bare-metal target, so a `std` dependency fails the gate.
-quire-semantic-value-no-std:
-	cargo build --locked -p quire-semantic-value --target thumbv7em-none-eabi
-
 # The deep-input fuzz target (FR-356-AC-7, TC-903) over the S1 parser and
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
@@ -215,7 +201,7 @@ fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
 	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
-ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
