@@ -819,7 +819,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
 /// `normalize.record`, and step 2's "admission refusals are decided
 /// before the first charge" holds structurally: `admit`/`read_records`
 /// are separate, earlier calls than `normalize`, so a stale-digest
-/// refusal (already covered by `refuses_byte_digest_mismatch`) never
+/// refusal (already covered by `a_parsed_document_under_another_digest_refuses_content_mismatch`) never
 /// reaches a charge at all.
 #[trace("TC-147", "FR-056-AC-6")]
 #[test]

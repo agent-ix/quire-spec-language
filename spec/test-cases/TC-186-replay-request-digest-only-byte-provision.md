@@ -39,11 +39,12 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
    name.
 2. Attempt to construct a request whose byte provision entry declares a
    digest domain outside the closed FR-201 domain set.
-3. Attempt to construct a request whose byte provision entry's digest does
-   not match the RFC 8785/JCS bytes it is claimed to address (a
-   digest/bytes mismatch) — this is this requirement's own decode-time
-   integrity check (FR-071-AC-6), distinct from #243's execution-time
-   recompiled-`package_id` check.
+3. Attempt to construct a request whose byte provision entry under a
+   raw-byte domain (source bytes) holds bytes that do not hash to its
+   declared digest — this is this requirement's own decode-time integrity
+   check (FR-071-AC-6), distinct from #243's execution-time
+   recompiled-`package_id` check. Then attempt one whose `sha256-jcs` entry
+   holds a document whose RFC 8785 digest differs from the declared one.
 4. Construct a well-formed request and confirm every recompilation input
    named by the `package` reference's `RawSourceRef` digests has a
    corresponding byte-provision entry keyed by that exact digest.
@@ -72,12 +73,13 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
 
 - Step 1 finds no path-, environment-variable-, or search-location-typed
   member anywhere on the request type.
-- Steps 2 and 3 each refuse construction with a structured, typed cause
-  (`stale_dependency`/`digest-domain-mismatch` and
-  `stale_dependency`/`byte-digest-mismatch` respectively).
+- Step 2 refuses construction with `stale_dependency`/`digest-domain-mismatch`.
+  Step 3 refuses the raw-domain entry with `stale_dependency`/`byte-digest-mismatch`
+  and the `sha256-jcs` entry with `stale_dependency`/`content-mismatch`
+  carrying the declared digest and the digest recomputed from the document.
 - Step 4's lookup succeeds by digest alone, with no path involved at any
   point.
-- Step 5 refuses construction; no request is returned that carries an
+- Step 5 refuses construction with `missing_import`/`missing-selection`, naming the requested digest record (domain and digest) and where the package reference names it; no request is returned that carries an
   incomplete byte provision for a later consumer to discover.
 - Step 6 refuses with a bound-exceeded cause; the constructor returns no
   request value at all, in particular no request holding a truncated

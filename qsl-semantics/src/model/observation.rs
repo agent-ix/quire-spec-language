@@ -743,6 +743,46 @@ mod digest_tests {
         );
     }
 
+    /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack, digest admission over
+    /// a document holding a value nested 100,000 deep reads the document's
+    /// digest under its own digest, and under another digest refuses
+    /// `content-mismatch` carrying the selected and the recomputed digest.
+    #[trace("TC-733", "FR-261-AC-2")]
+    #[test]
+    fn a_document_nested_100_000_deep_is_digested_on_content() {
+        let outcome = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 100_000;
+                let text = format!("{{\"a\":{}{}}}", "[".repeat(depth), "]".repeat(depth));
+                let document = quire_canonical::read(text.as_bytes(), u64::MAX).unwrap();
+                let own =
+                    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+                        .unwrap()
+                        .as_bytes();
+                let other: [u8; 32] = Sha256::digest(b"another document").into();
+                (
+                    check_document_digest(text.as_bytes(), own),
+                    check_document_digest(text.as_bytes(), other),
+                    own,
+                    other,
+                )
+            })
+            .expect("the test thread spawns")
+            .join()
+            .expect("the read does not overflow the stack");
+        let (admitted, refused, own, other) = outcome;
+        assert_eq!(admitted, Ok(()));
+        assert_eq!(
+            refused,
+            Err(refuse(
+                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
+                    .with("selected", hex(&other))
+                    .with("recomputed", hex(&own))
+            ))
+        );
+    }
+
     /// The reader's and the encoder's allocation failures refuse
     /// `resource_exhausted`/`allocation-failed` carrying `requested`, and a
     /// byte error is check 1.2's `input-bytes-exceeded`.

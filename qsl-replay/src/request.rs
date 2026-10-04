@@ -355,9 +355,14 @@ pub enum ReplayRequestRefusal {
         recomputed: String,
     },
     /// The package reference names a source digest with no matching
-    /// byte-provision entry.
-    #[error("missing_declaration: package reference names digest {0} with no matching byte-provision entry")]
-    IncompleteByteProvision(String),
+    /// byte-provision entry (`missing_import`/`missing-selection`).
+    #[error("missing_import/missing-selection: {named_by} names {requested} with no matching byte-provision entry")]
+    IncompleteByteProvision {
+        /// The requested digest record: its domain and digest.
+        requested: String,
+        /// Where the package reference names it.
+        named_by: String,
+    },
     /// A `dependencies` entry has an empty identity
     /// (`invalid_identifier`, FR-071-AC-9).
     #[error("invalid_identifier: dependencies entry {index} has an empty identity")]
@@ -437,7 +442,7 @@ impl ReplayRequestRefusal {
                 Code::ResourceExhausted
             }
             Self::NoncanonicalNumber { .. } => Code::NoncanonicalWire,
-            Self::IncompleteByteProvision(_) => Code::MissingDeclaration,
+            Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } => Code::InvalidIdentifier,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
         }
@@ -594,15 +599,25 @@ impl ReplayRequest {
 
         // Completeness: every named source digest, the proved package's and
         // each dependency's, must have a matching entry (FR-071-AC-5, AC-9).
-        for source_digest in source_digests
+        let named = source_digests
             .iter()
-            .chain(dependencies.iter().flat_map(|entry| &entry.sources))
-        {
-            if byte_provision.get(source_digest.digest()).is_none() {
-                return Err(ReplayRequestRefusal::IncompleteByteProvision(format!(
-                    "{:?}",
-                    source_digest.digest()
-                )));
+            .enumerate()
+            .map(|(index, source)| (format!("source_digests[{index}]"), source))
+            .chain(dependencies.iter().enumerate().flat_map(|(index, entry)| {
+                entry.sources.iter().map(move |source| {
+                    (
+                        format!("dependencies[{index}] ({})", entry.identity.as_str()),
+                        source,
+                    )
+                })
+            }));
+        for (named_by, source) in named {
+            let digest = source.digest();
+            if byte_provision.get(digest).is_none() {
+                return Err(ReplayRequestRefusal::IncompleteByteProvision {
+                    requested: format!("{} {}", digest.domain().as_str(), digest.hex()),
+                    named_by,
+                });
             }
         }
 
@@ -868,7 +883,7 @@ mod tests {
         incomplete.byte_provision.pop();
         assert!(matches!(
             ReplayRequest::decode(incomplete),
-            Err(ReplayRequestRefusal::IncompleteByteProvision(_))
+            Err(ReplayRequestRefusal::IncompleteByteProvision { .. })
         ));
 
         // An empty identity.
@@ -961,10 +976,20 @@ mod tests {
             DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
             br#"{"b": 2}"#.to_vec(),
         ));
-        assert!(matches!(
-            ReplayRequest::decode(stale_package),
-            Err(ReplayRequestRefusal::ContentMismatch { .. })
-        ));
+        let stale_jcs = qsl_semantics::model::intake::PackageDocument::parse(br#"{"b": 2}"#)
+            .expect("the document parses")
+            .jcs_digest();
+        assert_ne!(stale_jcs, jcs);
+        assert_eq!(
+            ReplayRequest::decode(stale_package).unwrap_err(),
+            ReplayRequestRefusal::ContentMismatch {
+                selected: format!("{:?}", DigestRecord::mint(DigestDomain::Sha256Jcs, jcs)),
+                recomputed: format!(
+                    "{:?}",
+                    DigestRecord::mint(DigestDomain::Sha256Jcs, stale_jcs)
+                ),
+            }
+        );
         let mut not_a_document = wire(1);
         not_a_document.byte_provision.push((
             Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
@@ -991,7 +1016,7 @@ mod tests {
         incomplete.byte_provision.clear();
         assert!(matches!(
             ReplayRequest::decode(incomplete),
-            Err(ReplayRequestRefusal::IncompleteByteProvision(_))
+            Err(ReplayRequestRefusal::IncompleteByteProvision { .. })
         ));
 
         // Oversized encoding. B3: the bound check measures the wire value's

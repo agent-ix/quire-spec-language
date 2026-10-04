@@ -116,7 +116,7 @@ pub enum ReplayRefusal {
     /// ADR-015 D-4 rule 7: an entry's `package_id` is not the recompiled
     /// closure's selection of its identity
     /// (`stale_dependency`/`content-mismatch`).
-    #[error("stale_dependency: the request names {identity} as {} but it recompiles to {}", .requested.hex(), .recompiled.hex())]
+    #[error("stale_dependency/content-mismatch: the request names {identity} as {} but it recompiles to {}", .requested.hex(), .recompiled.hex())]
     DependencyIdentityMismatch {
         /// The entry's identity.
         identity: LibraryName,
@@ -127,7 +127,7 @@ pub enum ReplayRefusal {
     },
     /// The recompiled `package_id` is not the request's: the source's
     /// meaning changed since the proving run.
-    #[error("stale_dependency: the request names package {} but the source recompiles to {}", .requested.hex(), .recompiled.hex())]
+    #[error("stale_dependency/content-mismatch: the request names package {} but the source recompiles to {}", .requested.hex(), .recompiled.hex())]
     PackageIdMismatch {
         /// The `package_id` the request names.
         requested: DigestRecord,

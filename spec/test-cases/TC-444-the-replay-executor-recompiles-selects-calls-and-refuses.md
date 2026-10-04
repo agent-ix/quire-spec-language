@@ -76,7 +76,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `flag(0)` agrees and `flag(1)` is `inconclusive` with value `true`; `lt`
   is `5 < 3`, `false`, and agrees.
 - Step 3: `PackageIdMismatch` naming both identities; the edit keeps the
-  `package_id`, and the two supplies refuse `IncompleteByteProvision` and
+  `package_id`, and the two supplies refuse `IncompleteByteProvision` (`missing_import`/`missing-selection`) and
   `ByteDigestMismatch`.
 - Step 4: agreement with the document; stage `intake`, `missing_import`
   without it.

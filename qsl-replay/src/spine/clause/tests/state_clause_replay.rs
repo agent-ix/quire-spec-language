@@ -829,7 +829,9 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
 #[test]
 fn edited_invocation_bytes_refuse_content_mismatch() {
     let documents = changed_version();
-    let invocation = DigestRecord::mint(DigestDomain::Sha256Jcs, documents.read[0].digest).hex();
+    let selected_digest = documents.read[0].digest;
+    let invocation = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
+    let mut edited_digest = [0_u8; 32];
     let refusal = replay(case_with(
         config_version_unit(),
         "VersionUnchanged",
@@ -845,15 +847,30 @@ fn edited_invocation_bytes_refuse_content_mismatch() {
                 .expect("UTF-8")
                 .replace("\"boolean\":true", "\"boolean\":false")
                 .into_bytes();
+            edited_digest = document_digest(&entry.2);
         },
     ))
     .unwrap_err();
-    assert!(
-        matches!(
-            refusal,
-            ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch { .. })
-        ),
-        "{refusal:?}"
+    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
+        selected,
+        recomputed,
+    }) = &refusal
+    else {
+        panic!("expected a content mismatch, got {refusal:?}");
+    };
+    assert_eq!(
+        selected,
+        &format!(
+            "{:?}",
+            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
+        )
+    );
+    assert_eq!(
+        recomputed,
+        &format!(
+            "{:?}",
+            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
+        )
     );
     assert!(refusal
         .to_string()

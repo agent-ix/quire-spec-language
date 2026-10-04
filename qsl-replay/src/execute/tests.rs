@@ -486,7 +486,7 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
     assert!(matches!(
         replay(absent),
         Err(ReplayRefusal::Request(
-            ReplayRequestRefusal::IncompleteByteProvision(_)
+            ReplayRequestRefusal::IncompleteByteProvision { .. }
         ))
     ));
 
