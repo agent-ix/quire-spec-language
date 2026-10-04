@@ -1146,12 +1146,10 @@ mod tests {
     #[trace("TC-405", "FR-091-AC-24")]
     #[test]
     fn an_import_no_dependency_input_supplies_refuses() {
-        let unit = format!(
-            "language \"ix:native\" edition \"1-draft\";\n\
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              import \"test/units\" as u;\n\
-             function f using v(): Boolean pure {{ true }}\n"
-        );
+             function f using v(): Boolean pure { true }\n";
         let refusal = compose(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
