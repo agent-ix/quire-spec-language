@@ -83,6 +83,9 @@ pub struct AssemblyLimits {
     /// assembler forms `10^s` for (FR-091 "Dimension and unit
     /// declarations").
     pub decimal_scale: u64,
+    /// The type-environment ceilings the unit's records, tuples and object
+    /// types are admitted under (FR-082).
+    pub environment: TypeEnvironmentLimits,
 }
 
 /// The default decimal-scale bound (FR-091).
@@ -92,6 +95,7 @@ impl Default for AssemblyLimits {
     fn default() -> Self {
         Self {
             decimal_scale: DEFAULT_DECIMAL_SCALE,
+            environment: TypeEnvironmentLimits::default(),
         }
     }
 }
@@ -1077,6 +1081,7 @@ fn admit_types(
     mut declarations: Vec<CompositeDeclaration>,
     object_types: &[ObjectTypeDeclaration],
     spans: &BTreeMap<String, Span>,
+    environment: TypeEnvironmentLimits,
     cancel: &Cancel,
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
@@ -1084,7 +1089,7 @@ fn admit_types(
         match TypeEnvironment::bounded_with_cancel(
             declarations.clone(),
             object_types.iter().cloned(),
-            TypeEnvironmentLimits::default(),
+            environment,
             cancel,
         ) {
             Ok(types) if errors.is_empty() => return Ok(types),
@@ -1575,7 +1580,13 @@ impl PackageDeclarations {
         // A refused object type is located at its `model` declaration.
         let mut type_spans = object_spans;
         type_spans.extend(declared_type_spans.clone());
-        let types = admit_types(declarations, &object_types, &type_spans, cancel)?;
+        let types = admit_types(
+            declarations,
+            &object_types,
+            &type_spans,
+            limits.environment,
+            cancel,
+        )?;
         // SR-770 FND-006: both resolved before either refuses, so a unit
         // with a bad state clause and a bad attempt reports both in one
         // refusal (clause errors first, then attempt errors).

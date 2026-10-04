@@ -582,6 +582,17 @@ fn assert_check_cancelled_at(
 /// declarations, cancelled with `Deadline` from a second thread at its
 /// 1,000th charge, returns `Cancelled(Deadline)` and no package, and
 /// exactly one charge sees the cancellation.
+///
+/// The oracle counts polls of the handle, so it sees every charge only if
+/// every charge site polls. The sites that poll are: the kernel `Meter`
+/// charge, S1's leaf commit and parser step, I1's normalization `Meter`
+/// charge, S3's contract meter (one `DeclarationCheck` charge per
+/// declaration), S3's measure pass (one per node), S3's `Typer` node charge,
+/// the type-environment work budget and E4's entry and per-node write. The
+/// large-body, `select` and `package` tests below fail when their site does
+/// not poll, because each asserts the uncancelled run made at least as many
+/// charges as the input has nodes. Not polled: `model` dispatch linking,
+/// which no spine operation calls.
 #[trace("TC-757", "FR-276-AC-2")]
 #[test]
 fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
@@ -1104,6 +1115,12 @@ fn select_names_the_model_limit_field_it_reached() {
         run(|limits, value| limits.effective_declarations = value),
     );
     assert_field(
+        "model.ancestor_steps",
+        FoundationKind::NodeCount,
+        10_000,
+        run(|limits, value| limits.ancestor_steps = value),
+    );
+    assert_field(
         "model.hashed_bytes",
         FoundationKind::InputBytes,
         100_000,
@@ -1166,6 +1183,48 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits.checking = limits.checking.with_work_budget(value);
             limits
         }),
+    );
+}
+
+/// FR-277-AC-1 (TC-758 step 1) for the type-environment ceilings `check`
+/// admits the unit's object types under.
+#[trace("TC-758", "FR-277-AC-1")]
+#[test]
+fn check_names_the_type_environment_limit_field_it_reached() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let model = chain_of(
+        MODEL_FIXTURE.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .unwrap_or_else(|failure| panic!("the model fixture compiles: {failure:?}"));
+    let run = |edit: fn(&mut SpineLimits, u64)| {
+        let model = &model;
+        move |value: u64| {
+            let mut limits = SpineLimits::default();
+            edit(&mut limits, value);
+            reached(check(
+                &model.parsed,
+                &model.models,
+                &DependencyInput::default(),
+                &LockEvidence::default(),
+                limits,
+                &Cancel::new(),
+            ))
+        }
+    };
+    assert_field(
+        "environment.ancestor_steps",
+        FoundationKind::NodeCount,
+        10_000,
+        run(|limits, value| limits.environment.ancestor_steps = value),
+    );
+    assert_field(
+        "environment.work_units",
+        FoundationKind::WorkBudget,
+        10_000_000,
+        run(|limits, value| limits.environment.work_units = value),
     );
 }
 

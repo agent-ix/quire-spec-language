@@ -105,6 +105,7 @@ use qsl_semantics::model::accounting::LimitKind as ModelKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 
 use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, VisitedImport};
@@ -199,8 +200,32 @@ fn limit_of(refusal: &CompileRefusal, limits: &SpineLimits) -> Option<LimitExcee
             Some(at(limit, diagnostic.region.as_ref()))
         }
         CompileRefusal::Intake { refusal, region } => {
-            let UnitIntakeCause::Limit(incomplete) = &refusal.cause else {
-                return None;
+            let incomplete = match &refusal.cause {
+                UnitIntakeCause::Limit(incomplete) => incomplete,
+                // The two ceilings normalization reads rather than charges
+                // refuse as model causes; the counter is the first value
+                // past the bound.
+                UnitIntakeCause::Refused(refusals) => {
+                    let (kind, bound, field) =
+                        refusals
+                            .iter()
+                            .find_map(|refusal| match refusal.cause {
+                                ModelRefusalCause::AncestorSteps { limit, .. } => Some((
+                                    FoundationKind::NodeCount,
+                                    limit,
+                                    "model.ancestor_steps",
+                                )),
+                                ModelRefusalCause::FamilySteps { limit, .. } => Some((
+                                    FoundationKind::EdgeCount,
+                                    limit,
+                                    "model.family_steps",
+                                )),
+                                _ => None,
+                            })?;
+                    let limit = LimitExceeded::new(kind, bound, u128::from(bound) + 1).named(field);
+                    return Some(at(limit, region.as_ref()));
+                }
+                _ => return None,
             };
             let (kind, field) = match incomplete.limit_kind {
                 ModelKind::DeclarationRecords => {
@@ -246,7 +271,10 @@ fn limit_of(refusal: &CompileRefusal, limits: &SpineLimits) -> Option<LimitExcee
         }
         CompileRefusal::Assembly { refusal, .. } => {
             refusal.errors.iter().find_map(|error| match &error.cause {
-                AssemblyCause::TypeLimit(limit) => Some(limit.clone()),
+                AssemblyCause::TypeLimit(limit) => Some(match limit.kind() {
+                    FoundationKind::NodeCount => limit.clone().named("environment.ancestor_steps"),
+                    _ => limit.clone().named("environment.work_units"),
+                }),
                 _ => None,
             })
         }
@@ -791,7 +819,10 @@ impl Resolution<'_> {
                 unit,
                 models,
                 admitted,
-                AssemblyLimits::default(),
+                AssemblyLimits {
+                    environment: limits.environment,
+                    ..AssemblyLimits::default()
+                },
                 cancel,
             )
         })

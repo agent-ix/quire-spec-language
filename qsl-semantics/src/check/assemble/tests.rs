@@ -1631,7 +1631,10 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
             unit,
             Vec::new(),
             Vec::new(),
-            crate::check::AssemblyLimits { decimal_scale: 4 },
+            crate::check::AssemblyLimits {
+                decimal_scale: 4,
+                ..crate::check::AssemblyLimits::default()
+            },
         );
         (text, assembled)
     };

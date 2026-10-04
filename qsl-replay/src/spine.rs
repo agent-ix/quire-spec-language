@@ -38,6 +38,7 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::TypeEnvironmentLimits;
 
 mod lifecycle;
 pub use lifecycle::{
@@ -205,6 +206,7 @@ impl CompileRefusal {
             Self::Limit(limit) => match limit.limits_field() {
                 Some(field) if field.starts_with("source.") => SpineStage::Source,
                 Some(field) if field.starts_with("checking.") => SpineStage::Check,
+                Some(field) if field.starts_with("environment.") => SpineStage::Assembly,
                 Some(_) => SpineStage::Intake,
                 None => SpineStage::Assembly,
             },
@@ -890,6 +892,9 @@ pub struct SpineLimits {
     pub checking: CheckingLimits,
     /// The S4 source resolution's ceilings (ADR-015 D-1).
     pub dependencies: DependencyLimits,
+    /// The type-environment ceilings the assembler admits records, tuples
+    /// and object types under (FR-082).
+    pub environment: TypeEnvironmentLimits,
 }
 
 /// The S4 source resolution's ceilings. A library compile is charged the
