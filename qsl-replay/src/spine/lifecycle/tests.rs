@@ -1266,9 +1266,9 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
         )
     };
     let limits = SpineLimits::default();
-    let importer = |library: &SuppliedLibrary, digest: &str, lock: &LockEvidence| {
+    let importer = |library: &SuppliedLibrary, lock: &LockEvidence| {
         let unit = format!(
-            "{HEADER}import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+            "{HEADER}import \"test/geometry\" as g;\n\
              function h using v(): Boolean pure {{ true }}\n"
         );
         let dependencies = DependencyInput::new(vec![library.clone()]).expect("admissible");
@@ -1287,12 +1287,9 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
         .map(|checked| checked.into_value())
     };
 
-    // The digest names the library's package under its own evidence; both
-    // importers recompute it, so the digest check passes for both.
     let geometry = geometry();
-    let digest = library_id(&geometry).hex();
     for lock in [LockEvidence::default(), text_profile()] {
-        importer(&geometry, &digest, &lock)
+        importer(&geometry, &lock)
             .unwrap_or_else(|failure| panic!("the import resolves under {lock:?}: {failure:?}"));
     }
 
@@ -1307,7 +1304,7 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
         ..geometry
     };
     let refusal = refusal(
-        importer(&texty, &digest, &text_profile())
+        importer(&texty, &text_profile())
             .expect_err("the library lacks the text law under its own evidence"),
     );
     assert_eq!(refusal.code().as_str(), "missing_declaration");
