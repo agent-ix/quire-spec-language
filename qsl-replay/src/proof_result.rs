@@ -104,15 +104,11 @@ pub enum UnavailabilityCause {
     BackendAbsent,
 }
 
-/// FR-331's `inconclusive` cause (ADR-013 O-16 inconclusive row): a closed
-/// set.
+/// The cause of a `TerminalValue::Inconclusive`: a closed set that has no
+/// vacuous-proof member, because a vacuous proof is `Proved { success_checks: 0 }`
+/// (ADR-013 C-09) and a second spelling of it must be unrepresentable.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum InconclusiveCause {
-    /// `kani_vacuous_proof`: a `Proved` run with zero SUCCESS checks in the
-    /// obligation. Derived from `Proved { success_checks: 0 }` by
-    /// [`TerminalValue::vacuous_proof_cause`]; a terminal map produces no
-    /// `TerminalValue::Inconclusive` with it.
-    KaniVacuousProof,
+pub enum ReplayInconclusiveCause {
     /// `replay_parity`: the counterexample's E9 replay settled
     /// `inconclusive`, so the reason travels with the cause.
     ReplayParity(DisagreementCause),
@@ -124,7 +120,7 @@ pub enum InconclusiveCause {
     ReplayRefused(Code),
 }
 
-impl InconclusiveCause {
+impl ReplayInconclusiveCause {
     /// Bytes this cause adds to an encoded record beyond its fixed size:
     /// the nested witness records of a parity disagreement.
     fn measured_bytes(&self) -> usize {
@@ -134,9 +130,22 @@ impl InconclusiveCause {
                 .chain(derived)
                 .map(|record| record.measured_bytes())
                 .sum(),
-            Self::KaniVacuousProof | Self::ReplayParity(_) | Self::ReplayRefused(_) => 0,
+            Self::ReplayParity(_) | Self::ReplayRefused(_) => 0,
         }
     }
+}
+
+/// FR-331's `inconclusive` cause as an envelope reports it (ADR-013 O-16
+/// inconclusive row): a closed set covering both the vacuous proof and
+/// the replay causes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InconclusiveCause {
+    /// `kani_vacuous_proof`: a `Proved` run with zero SUCCESS checks in the
+    /// obligation, derived from `Proved { success_checks: 0 }` by
+    /// [`TerminalValue::vacuous_proof_cause`].
+    KaniVacuousProof,
+    /// A replay cause of a `TerminalValue::Inconclusive`.
+    Replay(ReplayInconclusiveCause),
 }
 
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
@@ -164,14 +173,20 @@ pub enum TerminalValue {
     /// A backend result of `refuted`: the property does not hold.
     Refuted,
     /// A backend result of `declined`, `invalid-input` or
-    /// `incomplete-input`, collapsed to one typed cause.
-    Declined(ProofRefusalCause),
+    /// `incomplete-input`, collapsed to one typed cause, with the code of
+    /// the refusal it settles (FR-121).
+    Declined {
+        /// The typed refusal cause.
+        cause: ProofRefusalCause,
+        /// The refusal's catalog code.
+        code: Code,
+    },
     /// A backend result of `unsupported`.
     Unsupported(UnavailabilityCause),
     /// A backend result of `incomplete`.
     Incomplete(IncompleteCause),
     /// A backend result of `inconclusive`, with its typed cause.
-    Inconclusive(InconclusiveCause),
+    Inconclusive(ReplayInconclusiveCause),
     /// A backend result of `failed`: the tool itself failed.
     Failed,
 }
@@ -186,7 +201,7 @@ impl TerminalValue {
             Self::Proved { success_checks: 0 } | Self::Inconclusive(_) => Category::Inconclusive,
             Self::Proved { .. } | Self::Tested => Category::Success,
             Self::Refuted => Category::Violation,
-            Self::Declined(_) => Category::Refusal,
+            Self::Declined { .. } => Category::Refusal,
             Self::Unsupported(_) => Category::Unsupported,
             Self::Incomplete(_) => Category::Incomplete,
             Self::Failed => Category::InternalFailure,
@@ -206,11 +221,11 @@ impl TerminalValue {
     /// `None` for every other value.
     pub fn inconclusive_cause(&self) -> Option<InconclusiveCause> {
         match self {
-            Self::Inconclusive(cause) => Some(cause.clone()),
+            Self::Inconclusive(cause) => Some(InconclusiveCause::Replay(cause.clone())),
             Self::Proved { .. } => self.vacuous_proof_cause(),
             Self::Tested
             | Self::Refuted
-            | Self::Declined(_)
+            | Self::Declined { .. }
             | Self::Unsupported(_)
             | Self::Incomplete(_)
             | Self::Failed => None,
@@ -229,7 +244,7 @@ impl TerminalValue {
             ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => {
                 Self::Failed
             }
-            _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
+            _ => Self::Inconclusive(ReplayInconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
 
@@ -240,7 +255,7 @@ impl TerminalValue {
             Self::Proved { .. }
             | Self::Tested
             | Self::Refuted
-            | Self::Declined(_)
+            | Self::Declined { .. }
             | Self::Unsupported(_)
             | Self::Incomplete(_)
             | Self::Failed => 0,
@@ -470,7 +485,10 @@ mod tests {
             (TerminalValue::Tested, Category::Success, None),
             (TerminalValue::Refuted, Category::Violation, None),
             (
-                TerminalValue::Declined(ProofRefusalCause::Refused),
+                TerminalValue::Declined {
+                    cause: ProofRefusalCause::Refused,
+                    code: Code::MissingDeclaration,
+                },
                 Category::Refusal,
                 None,
             ),
@@ -490,16 +508,20 @@ mod tests {
                 None,
             ),
             (
-                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity_cause())),
+                TerminalValue::Inconclusive(ReplayInconclusiveCause::ReplayParity(parity_cause())),
                 Category::Inconclusive,
-                Some(InconclusiveCause::ReplayParity(parity_cause())),
+                Some(InconclusiveCause::Replay(
+                    ReplayInconclusiveCause::ReplayParity(parity_cause()),
+                )),
             ),
             (
-                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                TerminalValue::Inconclusive(ReplayInconclusiveCause::ReplayRefused(
                     Code::StaleDependency,
                 )),
                 Category::Inconclusive,
-                Some(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
+                Some(InconclusiveCause::Replay(
+                    ReplayInconclusiveCause::ReplayRefused(Code::StaleDependency),
+                )),
             ),
             (TerminalValue::Failed, Category::InternalFailure, None),
         ];
@@ -550,7 +572,7 @@ mod tests {
         let refusal = ReplayRefusal::UnboundParameter(WireNodeId::from_digest([1; 32]));
         assert_eq!(
             TerminalValue::from_replay_refusal(&refusal),
-            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code()))
+            TerminalValue::Inconclusive(ReplayInconclusiveCause::ReplayRefused(refusal.code()))
         );
         assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
 
@@ -586,10 +608,15 @@ mod tests {
             TerminalValue::Proved { success_checks: 0 },
             TerminalValue::Tested,
             TerminalValue::Refuted,
-            TerminalValue::Declined(ProofRefusalCause::Refused),
+            TerminalValue::Declined {
+                cause: ProofRefusalCause::Refused,
+                code: Code::MissingDeclaration,
+            },
             TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
             TerminalValue::Incomplete(IncompleteCause::TimedOut),
-            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
+            TerminalValue::Inconclusive(ReplayInconclusiveCause::ReplayRefused(
+                Code::StaleDependency,
+            )),
             TerminalValue::Failed,
         ] {
             assert_ne!(value.category(), Category::Undefined, "{value:?}");
@@ -634,7 +661,7 @@ mod tests {
             TerminalRecord::new(RequestIndex::new(1), TerminalValue::Refuted),
             TerminalRecord::new(
                 RequestIndex::new(2),
-                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                TerminalValue::Inconclusive(ReplayInconclusiveCause::ReplayRefused(
                     Code::StaleDependency,
                 )),
             ),
