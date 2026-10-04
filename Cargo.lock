@@ -1594,7 +1594,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=task%2Fir582-import#0992d0d198b0ef0dbd79f86849626bc0503b9b03"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#1098e44e4fd2b7e93a41a59433a2f1cf08c88ac7"
 dependencies = [
  "num-bigint",
  "num-integer",
@@ -1627,7 +1627,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=task%2Fir582-import#0ee40dfb58e0adb3513afb51debc39bb258e520d"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=task%2Fir582-import#1b03d060915297516223127affeffc489b082ff3"
 dependencies = [
  "quire-canonical",
  "quire-exact",
