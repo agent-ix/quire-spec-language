@@ -163,18 +163,14 @@ fn conflicting_pins_for_one_identity_cannot_be_built() {
     let stale = PackageId::of_preimage(b"stale");
     for (first, second) in [(&good, &stale), (&stale, &good)] {
         assert_eq!(
-            PinnedRequest::new([
-                (identity("pkg"), first.clone()),
-                (identity("pkg"), second.clone()),
-            ]),
+            PinnedRequest::new([(identity("pkg"), *first), (identity("pkg"), *second),]),
             Err(ConflictingPin {
                 library: identity("pkg"),
-                selections: Box::new([first.clone(), second.clone()]),
+                selections: Box::new([*first, *second]),
             })
         );
     }
-    let repeated =
-        PinnedRequest::new([(identity("pkg"), good.clone()), (identity("pkg"), good)]).unwrap();
+    let repeated = PinnedRequest::new([(identity("pkg"), good), (identity("pkg"), good)]).unwrap();
     assert!(bind(candidate(recomputed()), &repeated).is_ok());
 }
 
