@@ -339,9 +339,15 @@ pub enum ReplayRequestRefusal {
         document_pointer: JsonPointer,
     },
     /// A byte-provision entry under a raw-byte domain does not hash to its
-    /// own declared digest: the raw bytes' own digest differs.
-    #[error("stale_dependency/byte-digest-mismatch: entry under {0} does not hash to its own declared digest")]
-    ByteDigestMismatch(String),
+    /// own declared digest: the raw bytes' own digest differs
+    /// (`stale_dependency`/`byte-digest-mismatch`).
+    #[error("stale_dependency/byte-digest-mismatch: entry under {declared} hashes to {actual}")]
+    ByteDigestMismatch {
+        /// The digest the entry is provided under.
+        declared: String,
+        /// The digest of the entry's raw bytes.
+        actual: String,
+    },
     /// A `sha256-jcs` byte-provision entry's document recomputes to a digest
     /// other than the one it is provided under
     /// (`stale_dependency`/`content-mismatch`).
@@ -432,7 +438,7 @@ impl ReplayRequestRefusal {
         match self {
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::DigestDomainMismatch(_)
-            | Self::ByteDigestMismatch(_)
+            | Self::ByteDigestMismatch { .. }
             | Self::ContentMismatch { .. } => Code::StaleDependency,
             Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
                 Code::InvalidDigest
@@ -590,7 +596,10 @@ impl ReplayRequest {
                         ),
                     }
                 } else {
-                    ReplayRequestRefusal::ByteDigestMismatch(format!("{digest:?}"))
+                    ReplayRequestRefusal::ByteDigestMismatch {
+                        declared: format!("{digest:?}"),
+                        actual: format!("{:?}", DigestRecord::mint(digest.domain(), recomputed)),
+                    }
                 });
             }
             provision.insert(digest, bytes);
@@ -881,10 +890,23 @@ mod tests {
         // An entry's source absent from the byte provision.
         let mut incomplete = with_dependencies(vec![dependency("test/a", 0x0A)]);
         incomplete.byte_provision.pop();
-        assert!(matches!(
-            ReplayRequest::decode(incomplete),
-            Err(ReplayRequestRefusal::IncompleteByteProvision { .. })
-        ));
+        let (omitted, _) = dependency("test/a", 0x0A);
+        let refused = ReplayRequest::decode(incomplete).unwrap_err();
+        assert_eq!(refused.code(), Code::MissingImport);
+        assert_eq!(
+            refused,
+            ReplayRequestRefusal::IncompleteByteProvision {
+                requested: format!(
+                    "{} {}",
+                    DigestDomain::SourceBytesV1.as_str(),
+                    omitted.sources[0].5
+                ),
+                named_by: "dependencies[0] (test/a)".to_owned(),
+            }
+        );
+        assert!(refused
+            .to_string()
+            .starts_with("missing_import/missing-selection:"));
 
         // An empty identity.
         let refused =
@@ -1006,18 +1028,45 @@ mod tests {
         // Byte/digest mismatch.
         let mut mismatched = wire(1);
         mismatched.byte_provision[0].2 = source_bytes(0xCD, 64);
-        assert!(matches!(
-            ReplayRequest::decode(mismatched),
-            Err(ReplayRequestRefusal::ByteDigestMismatch(_))
-        ));
+        let declared = DigestRecord::mint(
+            DigestDomain::SourceBytesV1,
+            ByteDigest::of(&source_bytes(0xAB, 64)).as_bytes(),
+        );
+        let actual = DigestRecord::mint(
+            DigestDomain::SourceBytesV1,
+            ByteDigest::of(&source_bytes(0xCD, 64)).as_bytes(),
+        );
+        assert_eq!(
+            ReplayRequest::decode(mismatched).unwrap_err(),
+            ReplayRequestRefusal::ByteDigestMismatch {
+                declared: format!("{declared:?}"),
+                actual: format!("{actual:?}"),
+            }
+        );
 
         // Incomplete byte provision: omit the one entry.
         let mut incomplete = wire(1);
         incomplete.byte_provision.clear();
-        assert!(matches!(
-            ReplayRequest::decode(incomplete),
-            Err(ReplayRequestRefusal::IncompleteByteProvision { .. })
-        ));
+        let refused = ReplayRequest::decode(incomplete).unwrap_err();
+        assert_eq!(refused.code(), Code::MissingImport);
+        assert_eq!(
+            refused,
+            ReplayRequestRefusal::IncompleteByteProvision {
+                requested: format!(
+                    "{} {}",
+                    DigestDomain::SourceBytesV1.as_str(),
+                    DigestRecord::mint(
+                        DigestDomain::SourceBytesV1,
+                        ByteDigest::of(&source_bytes(0xAB, 64)).as_bytes()
+                    )
+                    .hex()
+                ),
+                named_by: "source_digests[0]".to_owned(),
+            }
+        );
+        assert!(refused
+            .to_string()
+            .starts_with("missing_import/missing-selection:"));
 
         // Oversized encoding. B3: the bound check measures the wire value's
         // own content -- there is no `encoded_bytes` field a caller could

@@ -578,10 +578,11 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
                     .with("selected", hex(&expected))
                     .with("recomputed", hex(&recomputed)),
             ),
-            DigestMismatch::RawBytes { .. } => refuse(AdmissionRecord::new(
-                Code::StaleDependency,
-                "byte-digest-mismatch",
-            )),
+            DigestMismatch::RawBytes { digest } => refuse(
+                AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
+                    .with("selected", hex(&expected))
+                    .with("actual", hex(&digest)),
+            ),
         }
     })
 }
@@ -666,12 +667,14 @@ mod digest_tests {
             *quire_canonical::sha256(&last_wins, quire_canonical::Limits::new(u64::MAX))
                 .unwrap()
                 .as_bytes();
+        let raw: [u8; 32] = Sha256::digest(br#"{"a":1,"a":2}"#).into();
         assert_eq!(
             check_document_digest(br#"{"a":1,"a":2}"#, canonical),
-            Err(refuse(AdmissionRecord::new(
-                Code::StaleDependency,
-                "byte-digest-mismatch"
-            )))
+            Err(refuse(
+                AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
+                    .with("selected", hex(&canonical))
+                    .with("actual", hex(&raw))
+            ))
         );
     }
 

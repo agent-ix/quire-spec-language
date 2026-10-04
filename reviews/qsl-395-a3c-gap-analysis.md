@@ -44,3 +44,19 @@ clause the PR changed with no oracle that could fail.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-071 now says a `sha256-jcs` byte-provision entry refuses `content-mismatch` "carrying both digests", but every oracle on `ReplayRequestRefusal::ContentMismatch` matches `{ .. }`. Swapping `selected` and `recomputed`, or reporting the declared digest twice, passes every test. Assert both values in the TC-186 test (request.rs:963-967) with the document's real recomputed `sha256-jcs` digest. | qsl-replay/src/request.rs:963-967; qsl-replay/src/spine/clause/tests/frame_replay.rs:878-883; qsl-replay/src/spine/clause/tests/state_clause_replay.rs:851-856; spec/functional/FR-071-implement-typed-replay-request.md:109 |
 | FND-002 | medium | FR-261-AC-2 (TC-733 step 2) has no test. No test carries `#[trace("TC-733", "FR-261-AC-2")]` and none admits a 100,000-deep snapshot on a 512 KiB stack. The PR changes this AC's expected cause to `content-mismatch` and the PR body lists it among the changed sites, but nothing checks it. Write the test TC-733 step 2 describes, asserting `content-mismatch` with both digests under the other digest. | spec/functional/FR-261-read-other-untrusted-json-at-any-depth.md:63; spec/test-cases/TC-733-library-and-observation-reads-judge-deep-documents-on-content.md:36-43 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The fix round gives FR-071-AC-5 (and TC-186 step 5) an exact refusal: `missing_import`/`missing-selection`, naming the requested digest record and where the package reference names it. `IncompleteByteProvision` now has `requested` and `named_by` and maps to `Code::MissingImport`, but every oracle on it still matches `IncompleteByteProvision { .. }`, and none checks `code()` or the rendered cause. Reverting the code to `MissingDeclaration`, or dropping or swapping `named_by`, passes every test. Assert the code, the `missing_import/missing-selection` prefix and both fields in the TC-186 test. | qsl-replay/src/request.rs:886, :1019; qsl-replay/src/execute/tests.rs:486-491; spec/functional/FR-071-implement-typed-replay-request.md:136 |
+
+## Dispositions
+
+Round 1, reviewed at 27f7a3bf59244adaf41e4b5fa7e8d0826b4393e5 (fix commit
+27f7a3bf5). No builds this round.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 27f7a3bf5 |
+| FND-002 | fixed | 27f7a3bf5 |

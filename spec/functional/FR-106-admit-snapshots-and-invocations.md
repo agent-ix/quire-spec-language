@@ -197,7 +197,7 @@ required; check 10 settles it.
       carrying the selected digest and the recomputed digest (QSpec
       FR-272-AC-14).
       Bytes the shared reader refuses (FR-261) are digested raw, as FR-056
-      does, and so refuse `stale_dependency`/`byte-digest-mismatch`;
+      does, and so refuse `stale_dependency`/`byte-digest-mismatch` carrying the selected digest and the raw bytes' own digest;
       admission never refuses them as malformed.
       If a document the reader reads holds a number with no exact RFC 8785
       spelling, by FR-056's rule, then admission SHALL refuse

@@ -63,3 +63,29 @@ artifact cannot supply an invented actual digest." QSpec's
 | FND-003 | medium | Cross-repo: QSpec #187 now says the proved package's recompiled `package_id` differing from the request's refuses `stale_dependency`/`content-mismatch` "(QSL's `PackageIdMismatch`)" (FR-323 rule 5, TC-277 BP-05). QSL names no cause for `PackageIdMismatch` anywhere: FR-098 says "a stale `package_id`", ADR-015:207 says "the existing `PackageIdMismatch`", ADR-013:937 "stale `package_id`". It is a declared `package_id` against a recomputed one, so the ruling makes it `content-mismatch`. State it in FR-098 and ADR-013:937 (and in the `#[error]` string; SR-1292 FND-001). | spec/functional/FR-098-execute-a-replay-request.md:130, :150; spec/decisions/ADR-015-compile-and-replay-against-dependencies.md:207; quire-specification spec/objects/interfaces/FR-323-native-runtime-envelope.md:63-65 (PR #187) |
 | FND-004 | medium | TC-186 was not updated, though the PR body lists it. Step 3 builds an entry whose digest "does not match the RFC 8785/JCS bytes it is claimed to address" and Expected Results says `byte-digest-mismatch`. Under FR-071-AC-6 as amended, a JCS entry refuses `content-mismatch`; the test's step 3 actually uses a source-bytes entry. Make step 3 a raw-domain entry, and add the `sha256-jcs` step that the test already runs (`stale_package`), expecting `content-mismatch` carrying both digests. | spec/test-cases/TC-186-replay-request-digest-only-byte-provision.md:43-47, :75-77; qsl-replay/src/request.rs:940-967 |
 | FND-005 | medium | TC-491 step 2 still links against a catalog that holds a root's identity "with other bytes" and expects `stale_dependency` (now `content-mismatch`). FR-111-AC-2 says a root whose identity the catalog holds "resolves whatever revision label or bytes the catalog's definition carries", and the bundle code has no stale-dependency refusal. The PR renamed a refusal that no longer exists. Delete the "hold it with other bytes" clause and its expected cause. | spec/test-cases/TC-491-link-a-complete-v1-definition-bundle.md:28-30, :49-51; spec/functional/FR-111-*.md:137 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | Cross-repo, QSpec #187 at a0027709: FR-272, FR-323-AC-5 and TC-277 BP-03 now require `byte-digest-mismatch` to name the declared digest and the digest of the supplied bytes. QSL does not carry the actual digest at two raw-byte sites. `ReplayRequestRefusal::ByteDigestMismatch(String)` holds only the declared digest, and observation check 1.3's raw arm emits a `byte-digest-mismatch` record with no fields. Intake's `ByteDigestMismatch { expected, actual }` already carries both. Carry the raw digest in the request variant and the observation record, and say so in FR-071-AC-6 and FR-106 check 1.3. | qsl-replay/src/request.rs:343-344, :593; qsl-semantics/src/model/observation.rs:581-584; quire-specification spec/objects/interfaces/FR-323-native-runtime-envelope.md (AC-5), spec/test-cases/TC-277-replay-byte-provision.md:40 |
+
+## Dispositions
+
+Round 1, reviewed at 27f7a3bf59244adaf41e4b5fa7e8d0826b4393e5 (fix commit
+27f7a3bf5), with QSpec #187 at a00277090362f29cab250280be9782510b219f5d.
+FND-002 is settled by the coordinator's ruling: `missing_import`/`missing-selection`
+in both repos, per FR-271's "requested typed dependency". That supersedes
+this review's `missing_declaration` recommendation. Both repos now say it:
+QSL ADR-013:937, FR-071-AC-5, TC-186 step 5, TC-444, and the code; QSpec
+FR-323 and AC-5, and TC-277 BP-02. BP-03 is now limited to raw bytes, and
+the new BP-13 is the `sha256-jcs` case, which matches QSL's split. FR-323-AC-9
+and BP-05 match QSL's `PackageIdMismatch` spelling.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 27f7a3bf5 |
+| FND-002 | fixed | 27f7a3bf5 (QSL); QSpec a0027709 |
+| FND-003 | fixed | 27f7a3bf5 |
+| FND-004 | fixed | 27f7a3bf5 |
+| FND-005 | fixed | 27f7a3bf5 |

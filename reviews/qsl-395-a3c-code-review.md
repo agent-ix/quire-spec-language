@@ -76,3 +76,15 @@ FND-001), not repeated here.
 | FND-001 | low | `DependencyIdentityMismatch` (and `PackageIdMismatch`) render `stale_dependency: ...` with no cause. ADR-015 rule 7 now names `content-mismatch`, but that cause exists only in a doc comment; the request-side `ContentMismatch` renders `stale_dependency/content-mismatch:`. Spell the cause in the `#[error]` string so the refusal names it. | qsl-replay/src/execute.rs:116-127 |
 | FND-002 | low | The TC-147 test's doc comment still cites `refuses_byte_digest_mismatch`, which this PR renamed `a_parsed_document_under_another_digest_refuses_content_mismatch`. | qsl-semantics/tests/it/model_intake.rs:822 |
 | FND-003 | low | `run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken` is traced to FR-109-AC-5 / TC-468 step 5, but FR-109-AC-5 is report determinism and the FR-100 outcome mapping; nothing in it is a digest check. This PR edited the test's oracle. The behaviour is FR-106-AC-3's (TC-465). Retag it. | qsl-replay/src/spine/clause/tests.rs:2196-2202 |
+
+## Dispositions
+
+Round 1, reviewed at 27f7a3bf59244adaf41e4b5fa7e8d0826b4393e5 (fix commit
+27f7a3bf5, rebased on main; pre-merge `make ci` exit 0 per the coordinator's
+log). Each fix checked against the commit's diff. No builds this round.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 27f7a3bf5 |
+| FND-002 | fixed | 27f7a3bf5 |
+| FND-003 | fixed | 27f7a3bf5 |
