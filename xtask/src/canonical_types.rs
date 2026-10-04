@@ -114,7 +114,7 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
         let repository = if members.contains(id) {
             Repository::Workspace
         } else if let Some(leaf) = SHARED_LEAVES.iter().find(|leaf| **leaf == name) {
-            Repository::Ecosystem(*leaf)
+            Repository::Ecosystem(leaf)
         } else {
             match graph::classify(name, package["source"].as_str()) {
                 Some(repo) => Repository::Ecosystem(repo.as_str()),
