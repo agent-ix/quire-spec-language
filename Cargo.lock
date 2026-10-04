@@ -1685,7 +1685,7 @@ dependencies = [
 [[package]]
 name = "quire-walk"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-walk?branch=task%2Fimport-quire-walk#296b99313aa6e5d7b80e04dbae136dbf09c04182"
+source = "git+https://github.com/agent-ix/quire-walk?branch=main#89d05df2bcd6740c6f94f79bf6f3b5b007cf22a1"
 
 [[package]]
 name = "quote"
