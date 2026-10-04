@@ -178,7 +178,7 @@ declaration by declared identity, never by position.
   every such variant (`Compile`, `ModelIntake`, `DependencyInput`, `Import`,
   `Dependency`, `UnknownFunction`, `UnknownOperation`, `UnknownClause`) and
   its own code (`CallSiteRefusal::code`) as `DeclineCode::Qsl(code)`, which
-  `TerminalValue::from_call_site_refusal` builds. A code is carried in the registry that issued it: `DeclineCode::Qsl` holds a QSL catalog code only, and IR's `kani_*` codes are never remapped onto QSL catalog codes. IR's arm is added under QSL-351's follow-up once IR exports its typed code. A `ReplayRefusal` after a
+  `TerminalValue::from_call_site_refusal` builds. `DeclineCode` carries a QSL catalog code (`DeclineCode::Qsl`) or a STD-001 registry code (`DeclineCode::Std001`, IR's `kani_*` codes among them); a code is never remapped from one registry onto the other, the `Std001` arm records no issuer, and it refuses no unregistered code (`Std001Code`'s own form check is all). A `ReplayRefusal` after a
   backend run (the replay of a refutation) is no refusal of the obligation's
   input: it settles `TerminalValue::Inconclusive` with
   `InconclusiveCause::ReplayRefused` carrying its code, which

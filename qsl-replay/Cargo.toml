@@ -27,6 +27,10 @@ qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 qsl-source = { path = "../qsl-source", optional = true }
 quire-exact = { workspace = true }
+# `DeclineCode::Std001`: the STD-001 registry code type a `declined` result
+# carries (re-exported at the crate root, so CG, which depends on this crate
+# alone, builds the arm).
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
 quire-semantic-value = { workspace = true }
