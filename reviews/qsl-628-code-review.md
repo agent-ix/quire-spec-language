@@ -46,3 +46,9 @@ test that claims to cover it cannot fail if the entry is removed.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | `SHARED_LEAVES` still lists `quire-walk`, but with the real source (`git+https://github.com/agent-ix/quire-walk`) `classify` already returns None: neither the name nor the source contains quire-spec-language, quire-contract-ir, -runtime or -codegen. `edge_repo`'s exemption never fires for it. `tc_arch_lint_metadata_009` now uses that same `walk_git` source, so its first half (no edge for IR, RT or CG to quire-walk) passes with or without the `SHARED_LEAVES` entry. The test asserts the right behaviour, but it gives no evidence for the entry, and the doc comment on `edge_repo` and the const's own doc imply the entry is what admits the edge. Delete `quire-walk` from `SHARED_LEAVES` (make it `[&str; 2]`), restate test 009 as "a crate outside the four ADR-011 repositories contributes no edge, for every backend", and drop the matching `SHARED_LEAVES` claims from FR-356 Behavior 3, FR-356-AC-1 and ADR-011 §6.1 (see SR-1290 FND-001). | tools/arch-lint/metadata.rs:21; tools/arch-lint/metadata.rs:30-36; tools/arch-lint/metadata.rs:357-393; tools/arch-lint/graph.rs:54-70 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 944ee8c14646469d3f62ed5e274ec06817c7bfc8 |

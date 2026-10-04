@@ -44,3 +44,10 @@ repository are imprecise.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-356-AC-1 opens with "arch-lint's `SHARED_LEAVES` holds `quire-walk`". Behavior 3 and ADR-011 §6.1's "W is a shared leaf" rule say the same. With quire-walk sourced from agent-ix/quire-walk, the entry has no effect: `classify` gives the crate no repository, so the edge is admitted with or without it (SR-1288 FND-001). The AC binds an internal list's contents rather than behaviour, and its test cannot fail on that clause. Restate AC-1 as behaviour only: the direction check admits an IR, RT or CG edge to quire-walk sourced from agent-ix/quire-walk, and refuses one to any qsl-* crate other than CG's normal edge to qsl-replay. Drop the SHARED_LEAVES sentences from Behavior 3 and ADR-011 §6.1, together with the code change. | spec/functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md:53; spec/functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md:86; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:815 |
 | FND-002 | low | FR-356's Description, spec.md's FR-356 row and tests.md say the toolkit's "AC-2 to AC-4" (with TC-898 and TC-899) live in agent-ix/quire-walk. That repository's FR-356 holds AC-1 to AC-5: its AC-1 is the no_std build and dependency tree, and its AC-5 is arena identity. So QSL's FR-356-AC-1 and FR-356-AC-5 share ids with different criteria there. AC-1's Verification cell already points at "FR-356-AC-1 of agent-ix/quire-walk", so the Description and the index rows contradict it. Say "the toolkit's own criteria (agent-ix/quire-walk FR-356, all its ACs)" instead of "AC-2 to AC-4", and qualify cross-repository AC ids by repository. | spec/functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md:28-31; spec/spec.md:1237; spec/tests.md:1017-1019 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 944ee8c14646469d3f62ed5e274ec06817c7bfc8 |
+| FND-002 | fixed | 944ee8c14646469d3f62ed5e274ec06817c7bfc8 |
