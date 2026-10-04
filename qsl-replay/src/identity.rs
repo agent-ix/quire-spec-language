@@ -24,7 +24,7 @@
 use std::fmt;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
-use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use quire_exact::Identifier;
 
 /// ADR-013 O-09: the CG-computed digest identifying one obligation. Its
@@ -217,46 +217,27 @@ impl RawSourceRef {
 }
 
 /// ADR-013 O-19: the `backend` member every proof-result envelope, witness
-/// envelope and replay request carries unchanged (QC-8) -- the provider
-/// identity exactly as the FR-331 manifest states it, plus the digest of
-/// that manifest (domain `quire.tool-manifest.jcs/v1`, [`ManifestDigest`]).
-/// The manifest digest is the only binding to the backend's tool; there is
-/// no separate tool identity. Two backend identities are equal iff both
-/// fields are equal.
+/// envelope and replay request carries unchanged (QC-8): the provider
+/// identity exactly as the FR-331 manifest states it, and nothing else. Two
+/// backend identities are equal iff their strings are equal.
 ///
-/// The manifest digest is typed [`ManifestDigest`] (shared with
-/// `qsl_route::Candidate`, moved to `qsl_foundation` for exactly this
-/// reason), not a domain-agnostic `DigestRecord` -- a `Backend` cannot be
-/// built at all with a digest in any other FR-201 domain. `Backend` keeps
-/// its own struct, distinct from `Candidate`, because its `identity` field
-/// is a plain wire-carried `String` (this envelope only round-trips it,
-/// FR-070-AC-3/FR-071-AC-1) where `Candidate`'s `BackendId` additionally
-/// serves as an ordered, hashable `Registry` key (FR-290) -- a role this
-/// layer-6 facade has no registry to key. Layer 6 (`replay`) cannot depend
-/// on layer R (`route`) either way (ADR-011 §6.1).
+/// `Backend` keeps its own type, distinct from `qsl_route::BackendId`,
+/// because layer 6 (`replay`) cannot depend on layer R (`route`)
+/// (ADR-011 §6.1).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Backend {
     identity: String,
-    manifest_digest: ManifestDigest,
 }
 
 impl Backend {
-    /// Name a backend by its provider identity and manifest digest.
-    pub fn new(identity: String, manifest_digest: ManifestDigest) -> Self {
-        Self {
-            identity,
-            manifest_digest,
-        }
+    /// Name a backend by its provider identity.
+    pub fn new(identity: String) -> Self {
+        Self { identity }
     }
 
     /// The provider identity string, exactly as the FR-331 manifest states it.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// The manifest's digest (always domain `quire.tool-manifest.jcs/v1`).
-    pub fn manifest_digest(&self) -> ManifestDigest {
-        self.manifest_digest
     }
 }
 

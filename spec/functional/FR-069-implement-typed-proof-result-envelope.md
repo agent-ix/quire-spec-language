@@ -54,9 +54,17 @@ an FR-331 terminal value.
   fallback arm (ADR-013 O-16 category table).
 - A backend result `tested` SHALL remain `tested`. Only a Kani run with at
   least one SUCCESS check maps to `proved`.
-- A Kani run whose obligation has zero SUCCESS checks SHALL map to
-  `inconclusive` with the typed cause `kani_vacuous_proof`, never to
-  `proved` (ADR-013 O-16 proof column).
+- A Kani run whose obligation has zero SUCCESS checks SHALL stay
+  `Proved { success_checks: 0 }` (ADR-013 C-09: no separate vacuous variant,
+  no `NonZero` count) and map to `inconclusive` with the typed cause
+  `kani_vacuous_proof`, never to `proved`'s `success` (ADR-013 O-16 proof
+  column).
+- A terminal value `Inconclusive` SHALL carry a typed cause, `ReplayParity`
+  with the replay's `DisagreementCause` or `ReplayRefused` with the
+  refusal's catalog code, and SHALL map to `inconclusive`; the envelope's
+  cause is that value's own.
+- A terminal record SHALL be keyed by its typed `request_index` (QSpec
+  FR-331), one per index, never by display text.
 - The reader SHALL refuse an envelope whose encoded size exceeds the
   configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
@@ -71,7 +79,7 @@ an FR-331 terminal value.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-069-AC-1 | Given an FR-331 terminal record for each of the seven O-16 categories the proof column produces, including a vacuous `Proved` (zero SUCCESS checks, category `inconclusive`) and a `tested` backend result (category `success`, distinct from and never promoted to `proved`), the reader maps each to its exact O-16 category with no collapsing. | Test (TC-177) |
+| FR-069-AC-1 | Given an FR-331 terminal record for each of the seven O-16 categories the proof column produces, including a vacuous `Proved` (zero SUCCESS checks, category `inconclusive`, cause `kani_vacuous_proof`), an `Inconclusive` value with each of `replay_parity` and `replay_refused` (category `inconclusive`, its own cause, each record keyed by its `request_index`) and a `tested` backend result (category `success`, distinct from and never promoted to `proved`), the reader maps each to its exact O-16 category with no collapsing. | Test (TC-177) |
 | FR-069-AC-3 | Given a positive envelope, a construct → serialize → read round trip preserves the `backend` member (the backend identity) and every per-item disposition byte-for-byte. | Test (TC-179) |
 | FR-069-AC-4 | Given an envelope whose encoded size exceeds the configured reader bound, the reader refuses with a bound-exceeded cause and returns no truncated or partially-populated envelope. | Test (TC-178) |
 

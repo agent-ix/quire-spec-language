@@ -653,11 +653,7 @@ mod tests {
             selected_function: function,
             source: ReplaySource::Input(assignments),
             obligation_identity: [0; 32],
-            backend: (
-                "kani-backend-1".to_owned(),
-                Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [0; 32]).hex(),
-            ),
+            backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(u64::MAX),
             stage_limits: stage_limits(),

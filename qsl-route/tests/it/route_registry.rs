@@ -29,7 +29,7 @@ fn backend(
     seed: &[u8],
     advertises: impl IntoIterator<Item = (Capability, Mode)>,
 ) -> BackendDescriptor {
-    BackendDescriptor::new(Candidate::new(BackendId::new(id), digest(seed)), advertises)
+    BackendDescriptor::new(Candidate::new(BackendId::new(id)), digest(seed), advertises)
 }
 
 /// A candidate outcome's backend ids, in the order the registry returns
@@ -559,8 +559,8 @@ mod tc_282_duplicate_backend_identity {
     /// not asserted anywhere else, so this orders them at run time rather
     /// than assuming a fixed seed produces the smaller hash.
     fn ordered_digests() -> (ManifestDigest, ManifestDigest) {
-        let x = a1().candidate().manifest_digest();
-        let y = a2().candidate().manifest_digest();
+        let x = a1().manifest_digest();
+        let y = a2().manifest_digest();
         if x < y {
             (x, y)
         } else {
@@ -609,7 +609,7 @@ mod tc_282_duplicate_backend_identity {
     fn refusal_digests(registry: &Registry) -> Vec<ManifestDigest> {
         registry
             .refusals()
-            .map(|refusal| refusal.backend().manifest_digest())
+            .map(|refusal| refusal.manifest_digest())
             .collect()
     }
 
@@ -631,7 +631,7 @@ mod tc_282_duplicate_backend_identity {
             for refusal in err {
                 assert_eq!(refusal.identity().as_str(), "a");
                 assert_eq!(refusal.cause(), &RegistrationCause::DuplicateBackend);
-                let digest = refusal.backend().manifest_digest();
+                let digest = refusal.manifest_digest();
                 assert!(
                     valid_digests.contains(&digest),
                     "refusal digest must be one of this identity's own digests"
@@ -847,7 +847,7 @@ mod tc_282_duplicate_backend_identity {
     #[test]
     #[trace("TC-447", "FR-075-AC-4")]
     fn db_06_same_digest_different_contents_gives_one_refusal() {
-        let d1 = a1().candidate().manifest_digest();
+        let d1 = a1().manifest_digest();
         let pool = [a1(), a1_prime()];
         let orderings = permutations(pool.len());
         let baseline_registry = build(&orderings[0], &pool).0;
@@ -886,7 +886,8 @@ mod tc_282_duplicate_backend_identity {
             let mut registry = Registry::new();
             let attempt_m = || {
                 BackendDescriptor::admit(
-                    Candidate::new(BackendId::new("a"), d2),
+                    Candidate::new(BackendId::new("a")),
+                    d2,
                     [(Some("value-validity"), Some("finite"))],
                 )
                 .expect_err("`finite` is not an FR-290 mode")
@@ -897,9 +898,10 @@ mod tc_282_duplicate_backend_identity {
                 assert_eq!(refusal.identity().as_str(), "a", "m_first={m_first}");
                 assert_eq!(
                     refusal.backend(),
-                    &Candidate::new(BackendId::new("a"), d2),
+                    &Candidate::new(BackendId::new("a")),
                     "M's refusal is keyed (a, d2); m_first={m_first}"
                 );
+                assert_eq!(refusal.manifest_digest(), d2, "m_first={m_first}");
                 assert_eq!(
                     refusal.cause(),
                     &RegistrationCause::UnknownMode(Some("finite".to_owned()))
@@ -911,9 +913,10 @@ mod tc_282_duplicate_backend_identity {
                 assert_eq!(refusal.identity().as_str(), "a", "m_first={m_first}");
                 assert_eq!(
                     refusal.backend(),
-                    &Candidate::new(BackendId::new("a"), d2),
+                    &Candidate::new(BackendId::new("a")),
                     "M's refusal is keyed (a, d2); m_first={m_first}"
                 );
+                assert_eq!(refusal.manifest_digest(), d2, "m_first={m_first}");
                 assert_eq!(
                     refusal.cause(),
                     &RegistrationCause::UnknownMode(Some("finite".to_owned()))
@@ -956,7 +959,7 @@ mod tc_282_duplicate_backend_identity {
         for a2_first in [false, true] {
             let mut registry = Registry::new();
             let (first, second) = if a2_first { (a2(), a1()) } else { (a1(), a2()) };
-            let first_digest = first.candidate().manifest_digest();
+            let first_digest = first.manifest_digest();
 
             registry.register(first).unwrap();
             assert_eq!(
@@ -975,7 +978,15 @@ mod tc_282_duplicate_backend_identity {
             assert_eq!(
                 set.candidates()
                     .iter()
-                    .map(Candidate::manifest_digest)
+                    .map(|candidate| candidate.id().as_str())
+                    .collect::<Vec<_>>(),
+                ["a"],
+                "a2_first={a2_first}"
+            );
+            assert_eq!(
+                registry
+                    .descriptors()
+                    .map(BackendDescriptor::manifest_digest)
                     .collect::<Vec<_>>(),
                 [first_digest],
                 "a2_first={a2_first}"
@@ -1020,7 +1031,7 @@ mod tc_282_duplicate_backend_identity {
         );
         let mut digests: Vec<ManifestDigest> = [&a1, &a2, &a3]
             .iter()
-            .map(|d| d.candidate().manifest_digest())
+            .map(|d| d.manifest_digest())
             .collect();
         digests.sort();
         assert_eq!(
@@ -1039,7 +1050,7 @@ mod tc_282_duplicate_backend_identity {
             assert_refusals_well_formed(&errs, &digests);
             assert_eq!(
                 errs.iter()
-                    .flat_map(|err| err.iter().map(|r| r.backend().manifest_digest()))
+                    .flat_map(|err| err.iter().map(|r| r.manifest_digest()))
                     .collect::<std::collections::BTreeSet<_>>(),
                 digests
                     .iter()

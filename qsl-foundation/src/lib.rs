@@ -22,6 +22,7 @@ pub mod bound;
 pub mod diagnostic;
 pub mod digest;
 pub mod json_number;
+pub mod request_index;
 pub mod selection;
 pub mod serde_object;
 pub mod source;
@@ -34,4 +35,5 @@ pub use diagnostic::{
     UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
 pub use digest::ByteDigest;
+pub use request_index::RequestIndex;
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, SourceLabel, Span, Spanned};

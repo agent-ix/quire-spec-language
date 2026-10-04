@@ -58,11 +58,15 @@ pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
 };
+// The typed identity and catalog code a `TerminalRecord` and a
+// `TerminalValue` are built from, so the code generator, which depends on
+// this crate alone, names them without naming `qsl_foundation`.
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
-    InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, SettlementBasis,
-    TerminalRecord, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
+    IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
+    ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
 };
+pub use qsl_foundation::{Code, RequestIndex};
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads
 // them; re-exported at the root so CG names them without naming `spine`,
@@ -210,11 +214,7 @@ mod redaction_tests {
                 value: WitnessValue::Integer(1),
             }]),
             obligation_identity: [2; 32],
-            backend: (
-                "kani-backend-1".to_owned(),
-                Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [3; 32]).hex(),
-            ),
+            backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: StageLimits {
@@ -258,11 +258,7 @@ mod redaction_tests {
                 value: WitnessValue::Integer(1),
             }]),
             obligation_identity: [2; 32],
-            backend: (
-                "kani-backend-1".to_owned(),
-                Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [3; 32]).hex(),
-            ),
+            backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: StageLimits {

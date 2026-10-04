@@ -81,10 +81,8 @@ fn kani_backend_registry() -> Registry {
     let mut registry = Registry::new();
     registry
         .register(BackendDescriptor::new(
-            Candidate::new(
-                BackendId::new("kani"),
-                ManifestDigest::from_digest(ByteDigest::of(b"kani-manifest").as_bytes()),
-            ),
+            Candidate::new(BackendId::new("kani")),
+            ManifestDigest::from_digest(ByteDigest::of(b"kani-manifest").as_bytes()),
             [(Capability::OperationContract, Mode::Bounded)],
         ))
         .expect("a fresh registry accepts its one registration");

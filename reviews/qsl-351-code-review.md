@@ -1,64 +1,106 @@
 ---
 id: SR-935
-title: "Code review of PR #551 (delete ToolPin and the toolchain pin from qsl-replay)"
+title: "Code review of QSL-351 (reopened): TerminalValue::Inconclusive, Declined code, typed RequestIndex"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@cfef8e790f508ebbe8ffbdba796072805841ef1f; qsl-replay/src/execute.rs, qsl-replay/src/execute/frame.rs, qsl-replay/src/execute/state_clause.rs, qsl-replay/src/execute/tests.rs, qsl-replay/src/lib.rs, qsl-replay/src/proof_result.rs, qsl-replay/src/result.rs"
+scope: "agent-ix/quire-spec-language@65e310bc3990a417ba1117e5e610c34304cd7a65; qsl-foundation/src/lib.rs, qsl-foundation/src/request_index.rs, qsl-replay/src/lib.rs, qsl-replay/src/proof_result.rs, qsl-replay/src/result.rs, qsl-route/src/request.rs"
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-351 (ToolPin part only). Code review with the rust-review lane
-over `git diff origin/main...HEAD` on the seven qsl-replay files.
+Ticket: QSL-351 (reopened, early review, no PR yet; branch
+`task/351-inconclusive`, two commits on `3dc4f522c`). Code review with the
+rust-review lane over `git diff origin/main...HEAD`. This file replaces the
+clean SR-935 review of PR #551 (the ToolPin part, reviewed at `cfef8e79`);
+that review stays in git history and in its Linear comment.
+
+The rulings relayed with the dispatch are taken as decided and not
+re-litigated here: `TerminalValue::Inconclusive(ReplayInconclusiveCause)`,
+vacuity staying `Proved { success_checks: 0 }`, the reporting
+`InconclusiveCause`, FR-121's timing key, `Declined { cause, code }`, a typed
+`RequestIndex` in `qsl_foundation`, and `ManifestDigest` kept for route
+registry conflict detection.
 
 Checked:
 
-- `ToolPin` is gone from `proof_result.rs` and the `lib.rs` re-export;
-  `ProofResultEnvelope::tool_pin` (field and accessor),
-  `BackendProviderSource::tool_pin`, its share of
-  `measured_encoded_bytes` and its `to_source` write are all removed
-  together, so the reader, the size measurement and the round trip stay
-  consistent.
-- `WitnessArmResult`/`InputArmResult` lose `toolchain_pin` (field,
-  accessor, `settle` parameter). All six `settle` call sites in
-  `execute.rs`, `frame.rs` and `state_clause.rs` drop the argument; the
-  `TOOLCHAIN` constant and its `use super::...TOOLCHAIN` imports are gone.
-- `common_measured_bytes` now sums only resolved-region members. Its test
-  expects 21 = `registry` 8 + `pkg-a` 5 + `git` 3 + `rev-1` 5; the old
-  32 minus `kani-0.67.0` (11) is 21, so the change removes exactly the
-  pin's bytes.
-- Size bounds: both `read_bounded` (result.rs:359) and
-  `read_backend_provider_envelope` (proof_result.rs:291) compare a
-  self-measured byte count against `MAX_ENCODED_BYTES` (1 MiB). Their
-  oversized tests build content of `MAX_ENCODED_BYTES + 1` bytes by
-  themselves (result.rs:619, proof_result.rs:497); none relied on the pin's
-  bytes to cross the bound, and no boundary-exact test exists that the
-  11-byte drop could shift.
-- No other field, check or invariant was removed with the pin: `backend`
-  (identity + manifest digest), `inconclusive_cause`, `disagreement`,
-  `record`, `resolved_regions` and `charges` are untouched, and
-  TC-179/TC-189/TC-444 keep their remaining assertions.
-- Dangling names: `grep -rniE 'tool_?pin|toolchain_pin|ToolPin|TOOLCHAIN\b'`
-  over the tree (excluding `target/`, `.git`, `spec/reviews/`) finds no
-  code hit.
-- Consumers: the same grep over `/home/peter/dev/quire-contract-codegen`
-  (all `.rs`/`.md`/`.toml`, excluding target) hits only historical review
-  files in two CG worktrees, no code; `quire-contract-ir/src` has none.
-- Gate: the coder's `make ci` log for c399a24d ends `exit=0`.
-  `git diff c399a24d cfef8e79 -- . ':!spec'` differs only in three
-  `reviews/qsl-354-*.md` files from #550, so the code under review is the
-  code that passed. No focused re-run was made.
+- `TerminalValue` and `TerminalRecord` lose `Copy` and `Hash`. Needed:
+  `ReplayParity` carries a `DisagreementCause`, whose `Witness` arm boxes
+  `SeparatingWitnessRecord`s (a kernel `Value`, strings, a `Vec` path), so
+  neither derive can hold. Nothing in the workspace hashed or copied either
+  type; `category`, `vacuous_proof_cause` and the accessors move to `&self`
+  and `value()` returns `&TerminalValue`. Coherent.
+- `RequestIndex` moves to `qsl_foundation` and gains a public `new`. Both
+  writers in `qsl-route/src/request.rs` and the reader in
+  `proof_result.rs` use the one type, so the request and the terminal record
+  join on it. The only remaining in-workspace user outside those is a
+  `result.rs` test. `qsl_route::request::RequestIndex` is gone as a path
+  (the `use` is private); no workspace code named it.
+- `from_replay_refusal`: `Fault` and `Admission(AdmissionFailure::Fault)`
+  give `Failed`; every other `ReplayRefusal` gives
+  `Inconclusive(ReplayRefused(refusal.code()))`. Matches ADR-013 C-09 and
+  the IR confirmation on the ticket.
+- `inconclusive_cause` is exhaustive with no `_` arm; `category` still has
+  none. The envelope's cause is `Some` exactly for the three inconclusive
+  shapes (tc_177 asserts it for all eleven cases).
+- Consumer reach: CG depends on `qsl-replay` alone (CG `Cargo.toml`:
+  "qsl-replay is the only QSL crate this repository depends on (QSL
+  arch-lint T12-A)"). See FND-001.
+- Size bound: `measured_encoded_bytes` now adds
+  `size_of::<RequestIndex>() + size_of::<TerminalValue>()` per item plus
+  `ReplayInconclusiveCause::measured_bytes`, which sums the `given` and
+  `derived` witness records of a `DisagreementCause::Witness`. See FND-002
+  and FND-003.
+- No new `unwrap`, `unsafe`, integer narrowing or ambient read.
+- Focused run: `cargo test -p qsl-replay --lib proof_result` under
+  `locked-build.sh` (result in the Verdict).
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No findings (placeholder) | - |
+| FND-001 | high | CG, the C-09 producer of terminal records, depends on `qsl-replay` alone (arch-lint T12-A), but `qsl-replay` re-exports neither `RequestIndex` nor `Code`. CG cannot call `TerminalRecord::new(RequestIndex::new(i), ..)` at all, and cannot name `Code` for `Declined { cause, code }` literals or its own signatures. Add `pub use qsl_foundation::RequestIndex;` and `pub use qsl_foundation::diagnostic::Code;` to the `qsl-replay` root, with an outside-the-crate test that builds a `TerminalRecord` through root paths only | qsl-replay/src/lib.rs:61-64, qsl-replay/src/proof_result.rs:280 |
+| FND-002 | medium | `ReplayInconclusiveCause::measured_bytes` counts the two witness records but not `DisagreementCause::Witness.failure`: `WitnessFailure::Separation { reason }` carries free-length data in two arms: `UndefinedEvaluation { expression: Location, cause: String }` (a `Vec<usize>` path and a string) and `Refused(SeparationRefusal { code: String, cause: String, fields: BTreeMap<String, String> })`. None of it is in `size_of::<TerminalValue>()`, so an `Inconclusive(ReplayParity)` record can carry unmeasured content past `MAX_ENCODED_BYTES`, against the function's own B3 claim ("never a caller-declared number a source could understate") | qsl-replay/src/proof_result.rs:126-136, qsl-replay/src/result.rs:147-188 |
+| FND-003 | medium | No test reaches the new witness-byte measurement. tc_178's oversized source now inflates `backend_identity` only, and tc_177 uses the `Verdicts` parity arm, which measures 0. Replacing `ReplayInconclusiveCause::measured_bytes` with `0` passes every test. Add an oversized case whose bytes sit in a `DisagreementCause::Witness` record (and, after FND-002, in an `UndefinedEvaluation` cause and a `SeparationRefusal`) | qsl-replay/src/proof_result.rs:630-642 |
 
 ## Verdict
 
-Clean. A mechanical, complete deletion: every producer and reader of the pin
-goes in the same commit, the size measurement subtracts exactly the pin's
-bytes, and nothing with behaviour was removed alongside it. No new
-`unwrap`, `unsafe`, integer conversion or allocation is introduced.
+Changes requested. The type changes themselves are needed and coherent:
+dropping `Copy`/`Hash` follows from carrying a `DisagreementCause`, the
+`&self`/`&TerminalValue` API is the right consequence, and one
+`RequestIndex` shared by the writer and the record is what the ticket asked
+for. What is missing is reach and the bound: CG cannot construct a
+`TerminalRecord` through the only QSL crate it may depend on (FND-001), and
+the replay-parity size measurement is incomplete and untested (FND-002,
+FND-003).
+
+Focused run at the reviewed sha: `cargo test -p qsl-replay --lib proof_result`
+through `locked-build.sh`: 6 passed, 0 failed (tc_177, tc_178, tc_179,
+tc_769, the FR-121-AC-16 test, `to_source_refuses_an_empty_envelope_set`).
+
+## Dispositions
+
+Disposition pass 1, reviewed at `43a2844c6d8c37d0b6c4eea2d04c5ea4d297234a`
+(range `65e310bc..43a2844c`). Focused run through `locked-build.sh`:
+`cargo test -p qsl-replay --lib --test terminal_record_facade` filtered to
+`proof_result`, `disagreement_cause` and `terminal_records`: 10 passed, 0 failed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 43a2844c: `pub use qsl_foundation::{Code, RequestIndex};` at the `qsl-replay` root; `qsl-replay/tests/terminal_record_facade.rs` builds and reads terminal records through root paths only |
+| FND-002 | fixed | 43a2844c: `InconclusiveCause::measured_bytes` delegates to `DisagreementCause::measured_bytes`, which adds `WitnessFailure::measured_bytes` (origin name, location depth, undefined cause, refusal code, cause and fields) |
+| FND-003 | fixed | 43a2844c: `tc_178_refuses_an_oversized_replay_parity_cause` (bytes only in a `SeparationRefusal` cause) and `a_disagreement_cause_measures_its_records_and_failure` (each arm against independently summed totals) |
+
+Disposition pass 3, PR agent-ix/quire-spec-language#631, reviewed at
+`6a0087d327a03ddeec3b6c815e0ee09562bc4533` (commit `6a0087d32` only; the
+branch was rebased onto main `47dd209e7`). No finding was open, so this
+round adds no disposition rows. `git range-diff 3dc4f522c..42fa27ad
+47dd209e7..2410a6460` shows all four reviewed commits `=` (unchanged by the
+rebase) and `2410a6460` touches only `reviews/`. `6a0087d32` adds
+`DeclineCode { Qsl(Code) }` (owner ruling with IR/CG) as `Declined`'s code:
+FR-121 (statement, AC-17), ADR-013 (O-16 refusal row, O-24 Public type) and
+TC-516 step 17 state that a code stays in its issuing registry and IR's
+`kani_*` codes are never remapped onto QSL codes; every `Declined`
+construction in code and tests uses `DeclineCode::Qsl`, and the facade test
+imports `DeclineCode` from the `qsl_replay` root. No new findings. No build
+this round (coordinator's `make ci` exit 0 on the PR head).

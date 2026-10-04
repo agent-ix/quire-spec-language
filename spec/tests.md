@@ -56,7 +56,7 @@ names different artifacts in each.
 | TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-075-AC-4, FR-075-AC-7, FR-080-AC-1 | 🚧 Planned (implementation: one `duplicate-backend` refusal per identity, identity-only candidates) |
 | TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally |
 | TC-196 | A conflicting backend identity registration refuses both and withdraws the held registration | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; inverted (quire-specification FR-290-AC-10) |
-| TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | 🚧 Planned (implementation: identity-only `backend`) |
+| TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | ✅ Passed locally |
 | TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | 🚧 Planned (implementation: one `duplicate-backend` refusal per identity, identity-only candidates) |
 | TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ Passed locally (quire-specification FR-290-AC-9) |
 | TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ Passed locally |
@@ -253,7 +253,7 @@ names different artifacts in each.
 | TC-513 | S3 binds a protocol attempt to its operation's one anchor and frame | Integration | P1 | FR-114-AC-1, FR-114-AC-2, FR-114-AC-3, FR-114-AC-4 | 🚧 Planned; emitted-node assertions pending STD-111 |
 | TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5, FR-115-AC-6 | ✅ Passed locally |
 | TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5, FR-116-AC-6 | ✅ Passed locally |
-| TC-516 | call_site names a function's parameters and an operation's and a state clause's identities, matching what replay accepts | Unit | P1 | FR-121-AC-1, FR-121-AC-2, FR-121-AC-3, FR-121-AC-4, FR-121-AC-5, FR-121-AC-6, FR-121-AC-7, FR-121-AC-8, FR-121-AC-9, FR-121-AC-10, FR-121-AC-11, FR-121-AC-12, FR-121-AC-13, FR-121-AC-14, FR-121-AC-15 | ✅ Passed locally |
+| TC-516 | call_site names a function's parameters and an operation's and a state clause's identities, matching what replay accepts | Unit | P1 | FR-121-AC-1, FR-121-AC-2, FR-121-AC-3, FR-121-AC-4, FR-121-AC-5, FR-121-AC-6, FR-121-AC-7, FR-121-AC-8, FR-121-AC-9, FR-121-AC-10, FR-121-AC-11, FR-121-AC-12, FR-121-AC-13, FR-121-AC-14, FR-121-AC-15, FR-121-AC-16, FR-121-AC-17 | ✅ Passed locally |
 | TC-517 | The replay facade replays a state-clause counterexample and keeps its identities | Integration | P1 | FR-122-AC-1, FR-122-AC-2, FR-122-AC-3, FR-122-AC-4, FR-122-AC-5, FR-122-AC-6 | 🚧 Planned |
 | TC-740 | S6a stop reports and the decision path derive a state clause's basis and witness | Unit | P1 | FR-265-AC-1, FR-265-AC-2, FR-265-AC-3, FR-265-AC-4, FR-265-AC-5, FR-265-AC-6 | 🚧 Planned |
 | TC-741 | Clause run reports carry a settlement basis on every disposition and a witness only when decisive | Integration | P1 | FR-266-AC-1, FR-266-AC-2, FR-266-AC-3 | 🚧 Planned |

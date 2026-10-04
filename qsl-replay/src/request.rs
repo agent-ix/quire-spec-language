@@ -20,9 +20,7 @@ use crate::identity::{
 };
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
-use qsl_foundation::digest::{
-    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest,
-};
+use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::Code;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
@@ -241,9 +239,9 @@ pub struct ReplayRequestWire {
     /// The obligation this request replays: the ADR-013 O-09 obligation
     /// digest.
     pub obligation_identity: [u8; 32],
-    /// `(identity, manifest digest domain, manifest digest hex)` for the
-    /// backend that produced the originating counterexample.
-    pub backend: (String, Option<String>, String),
+    /// The provider identity of the backend that produced the originating
+    /// counterexample (ADR-013 O-19: the identity string alone).
+    pub backend: String,
     /// The scalar environment the replay starts from.
     pub state_environment: StateEnvironment,
     /// The accounting limits the replay run itself is charged against.
@@ -369,6 +367,9 @@ pub enum ReplayRequestRefusal {
         /// Where the package reference names it.
         named_by: String,
     },
+    /// The `backend` member is empty (`invalid_identifier`, ADR-013 O-19).
+    #[error("invalid_identifier: the backend identity is empty")]
+    EmptyBackendIdentity,
     /// A `dependencies` entry has an empty identity
     /// (`invalid_identifier`, FR-071-AC-9).
     #[error("invalid_identifier: dependencies entry {index} has an empty identity")]
@@ -449,7 +450,9 @@ impl ReplayRequestRefusal {
             }
             Self::NoncanonicalNumber { .. } => Code::NoncanonicalWire,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
-            Self::EmptyDependencySelection { .. } => Code::InvalidIdentifier,
+            Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
+                Code::InvalidIdentifier
+            }
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
         }
     }
@@ -496,8 +499,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             })
             .sum::<usize>()
         + wire.selected_function.to_string().len()
-        + wire.backend.0.len()
-        + wire.backend.2.len()
+        + wire.backend.len()
         + wire
             .state_environment
             .entries()
@@ -533,6 +535,10 @@ impl ReplayRequest {
                     required_role: SEMANTIC_PROFILE_ROLE,
                 });
             }
+        }
+
+        if wire.backend.is_empty() {
+            return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
 
         // Only past this point does decoding touch the package reference or
@@ -630,14 +636,6 @@ impl ReplayRequest {
             }
         }
 
-        let (backend_identity, backend_domain, backend_hex) = wire.backend;
-        // ADR-013 C-27: the backend digest is not just any FR-201
-        // domain -- it must be `quire.tool-manifest.jcs/v1`, checked before
-        // the hex bytes are read. `ManifestDigest::from_wire` cannot
-        // construct anything else.
-        let backend_digest = ManifestDigest::from_wire(backend_domain.as_deref(), &backend_hex)
-            .map_err(classify_digest_error)?;
-
         Ok(Self {
             package_id,
             source_digests,
@@ -646,7 +644,7 @@ impl ReplayRequest {
             source: wire.source,
             profile_selections: wire.profile_selections,
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
-            backend: Backend::new(backend_identity, backend_digest),
+            backend: Backend::new(wire.backend),
             state_environment: wire.state_environment,
             accounting_limits: wire.accounting_limits,
             stage_limits: wire.stage_limits,
@@ -684,11 +682,7 @@ impl ReplayRequest {
             selected_function: self.selected_function.clone(),
             source: self.source.clone(),
             obligation_identity: *self.obligation_identity.as_bytes(),
-            backend: (
-                self.backend.identity().to_owned(),
-                Some(self.backend.manifest_digest().domain().as_str().to_owned()),
-                self.backend.manifest_digest().hex(),
-            ),
+            backend: self.backend.identity().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits,
@@ -775,11 +769,7 @@ mod tests {
                 value: crate::witness::WitnessValue::Integer(42),
             }]),
             obligation_identity: [1; 32],
-            backend: (
-                "kani-backend-1".to_owned(),
-                Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [7; 32]).hex(),
-            ),
+            backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
             stage_limits: stage_limits(stage_seed),
@@ -1088,44 +1078,25 @@ mod tests {
         ));
     }
 
-    /// Positive control: a real request whose `backend` digest is in
-    /// the required `quire.tool-manifest.jcs/v1` domain (as `wire` already
-    /// builds it) decodes, and the resulting request's backend carries that
-    /// domain.
+    /// ADR-013 O-19: an empty `backend` member refuses, and a non-empty one
+    /// is kept verbatim.
     #[test]
-    fn backend_digest_in_the_required_domain_decodes() {
-        let request = ReplayRequest::decode(wire(1)).unwrap();
+    fn an_empty_backend_member_refuses_and_any_other_is_kept_verbatim() {
+        let mut empty = wire(1);
+        empty.backend = String::new();
         assert_eq!(
-            request.backend().manifest_digest().domain(),
-            DigestDomain::ToolManifestJcsV1
+            ReplayRequest::decode(empty),
+            Err(ReplayRequestRefusal::EmptyBackendIdentity)
         );
-    }
+        assert_eq!(
+            ReplayRequestRefusal::EmptyBackendIdentity.code(),
+            Code::InvalidIdentifier
+        );
 
-    /// ADR-013 C-27: a `backend` digest in a recognized FR-201
-    /// domain other than `quire.tool-manifest.jcs/v1` refuses with the same
-    /// typed cause the reader already uses for a byte-provision domain
-    /// mismatch, pinned to the exact `WrongDomain` cause so a different
-    /// refusal variant cannot pass, and the domain is checked before the
-    /// digest bytes: pairing the wrong domain with malformed hex still
-    /// reports the same domain mismatch, not a hex-encoding problem. No
-    /// FR-071 AC names the replay request's `backend` member, so this test
-    /// is untraced here; it is recorded at ADR-013 C-27 instead.
-    #[test]
-    fn backend_digest_in_any_other_fr201_domain_refuses() {
-        let wrong_domain =
-            ReplayRequestRefusal::DigestDomainMismatch(InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
-                found: DigestDomain::SourceBytesV1,
-            });
-
-        let mut bad_domain = wire(1);
-        bad_domain.backend.1 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
-        assert_eq!(ReplayRequest::decode(bad_domain), Err(wrong_domain.clone()));
-
-        let mut bad_domain_and_hex = wire(1);
-        bad_domain_and_hex.backend.1 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
-        bad_domain_and_hex.backend.2 = "not-hex".to_owned();
-        assert_eq!(ReplayRequest::decode(bad_domain_and_hex), Err(wrong_domain));
+        let mut spaced = wire(1);
+        spaced.backend = " kani ".to_owned();
+        let request = ReplayRequest::decode(spaced).unwrap();
+        assert_eq!(request.backend().identity(), " kani ");
     }
 
     /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field

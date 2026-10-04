@@ -29,7 +29,7 @@ library as `DependencyInput` or `Dependency`.
 It returns the compiled package's bytes its `package_id` names, and
 builds a `DeclaredDomain` through the facade's re-exports.
 
-Scope: FR-121-AC-1 to FR-121-AC-15.
+Scope: FR-121-AC-1 to FR-121-AC-17.
 
 ## Test Procedure
 
@@ -93,6 +93,11 @@ Scope: FR-121-AC-1 to FR-121-AC-15.
     with a comment and blank lines inserted before `p` and select `p`
     again. Over the step 6 unit, select `sameIdentity` and compare its
     `function` with every `ClauseSite` `node` of steps 6 and 8.
+16. Map `ReplayRefusal::UnboundParameter` and the two fault refusals
+    (`ReplayRefusal::Fault`, `ReplayRefusal::Admission` carrying
+    `AdmissionFailure::Fault`) through `TerminalValue::from_replay_refusal`.
+17. Map a `CallSiteRefusal::Compile`, a `CallSiteRefusal::UnknownFunction` and
+    a `CallSiteRefusal::Fault` through `TerminalValue::from_call_site_refusal`.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -146,3 +151,9 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   0; `q`'s `parameters` equal `p`'s and its `function` differs; the
   recompiled unit gives `p` the same `function` and `declaration`;
   `sameIdentity`'s `function` equals no `ClauseSite` `node`.
+- Step 16: `UnboundParameter` maps to `Inconclusive(ReplayRefused(code))` with
+  `ReplayRefusal::code`'s code and category `inconclusive`; both faults map
+  to `Failed`.
+- Step 17: the `Compile` and `UnknownFunction` refusals map to `Declined` with
+  cause `InvalidInput` and each refusal's own code as `DeclineCode::Qsl` (category `refusal`); the
+  `Fault` maps to `Failed`.
