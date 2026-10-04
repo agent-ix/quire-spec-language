@@ -81,3 +81,17 @@ Disposition pass 2, reviewed at `42fa27ad39406ee3537949a9322534991f18dce0`
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-003 | fixed | 42fa27ad: `BackendId::from_wire` refuses an empty identity (`EmptyBackendIdentity`, TC-433 step 2 test traced to FR-075-AC-6); the replay request refuses `EmptyBackendIdentity` (`invalid_identifier`) and the witness decoder refuses `WitnessRefusal::EmptyBackendIdentity`, each tested. `from_wire` has no caller inside QSL; the driver that reads manifests lives in quire-driver and should read the identity through it |
+
+Disposition pass 3, PR agent-ix/quire-spec-language#631, reviewed at
+`6a0087d327a03ddeec3b6c815e0ee09562bc4533` (commit `6a0087d32` only; the
+branch was rebased onto main `47dd209e7`). No finding was open, so this
+round adds no disposition rows. `git range-diff 3dc4f522c..42fa27ad
+47dd209e7..2410a6460` shows all four reviewed commits `=` (unchanged by the
+rebase) and `2410a6460` touches only `reviews/`. `6a0087d32` adds
+`DeclineCode { Qsl(Code) }` (owner ruling with IR/CG) as `Declined`'s code:
+FR-121 (statement, AC-17), ADR-013 (O-16 refusal row, O-24 Public type) and
+TC-516 step 17 state that a code stays in its issuing registry and IR's
+`kani_*` codes are never remapped onto QSL codes; every `Declined`
+construction in code and tests uses `DeclineCode::Qsl`, and the facade test
+imports `DeclineCode` from the `qsl_replay` root. No new findings. No build
+this round (coordinator's `make ci` exit 0 on the PR head).

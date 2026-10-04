@@ -90,3 +90,17 @@ Disposition pass 1, reviewed at `43a2844c6d8c37d0b6c4eea2d04c5ea4d297234a`
 | FND-001 | fixed | 43a2844c: `pub use qsl_foundation::{Code, RequestIndex};` at the `qsl-replay` root; `qsl-replay/tests/terminal_record_facade.rs` builds and reads terminal records through root paths only |
 | FND-002 | fixed | 43a2844c: `InconclusiveCause::measured_bytes` delegates to `DisagreementCause::measured_bytes`, which adds `WitnessFailure::measured_bytes` (origin name, location depth, undefined cause, refusal code, cause and fields) |
 | FND-003 | fixed | 43a2844c: `tc_178_refuses_an_oversized_replay_parity_cause` (bytes only in a `SeparationRefusal` cause) and `a_disagreement_cause_measures_its_records_and_failure` (each arm against independently summed totals) |
+
+Disposition pass 3, PR agent-ix/quire-spec-language#631, reviewed at
+`6a0087d327a03ddeec3b6c815e0ee09562bc4533` (commit `6a0087d32` only; the
+branch was rebased onto main `47dd209e7`). No finding was open, so this
+round adds no disposition rows. `git range-diff 3dc4f522c..42fa27ad
+47dd209e7..2410a6460` shows all four reviewed commits `=` (unchanged by the
+rebase) and `2410a6460` touches only `reviews/`. `6a0087d32` adds
+`DeclineCode { Qsl(Code) }` (owner ruling with IR/CG) as `Declined`'s code:
+FR-121 (statement, AC-17), ADR-013 (O-16 refusal row, O-24 Public type) and
+TC-516 step 17 state that a code stays in its issuing registry and IR's
+`kani_*` codes are never remapped onto QSL codes; every `Declined`
+construction in code and tests uses `DeclineCode::Qsl`, and the facade test
+imports `DeclineCode` from the `qsl_replay` root. No new findings. No build
+this round (coordinator's `make ci` exit 0 on the PR head).
