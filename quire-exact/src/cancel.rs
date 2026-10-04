@@ -117,7 +117,14 @@ impl Cancel {
     /// handle is cancelled. A denial is recorded for [`Self::tripped`].
     pub fn poll(&self) -> bool {
         if self.shared.counting.load(Ordering::Relaxed) != 0 {
-            self.shared.charges.fetch_add(1, Ordering::Relaxed);
+            // Saturating, so a count past `u32::MAX` pins there rather than
+            // wrapping to a small wrong number.
+            let _ =
+                self.shared
+                    .charges
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |charges| {
+                        Some(charges.saturating_add(1))
+                    });
         }
         if let Some(observer) = &self.shared.observer {
             observer();
@@ -146,8 +153,10 @@ impl Cancel {
     }
 
     /// How many charges polled this handle while an operation counted them,
-    /// whether or not it was cancelled, modulo 2^32: a difference of two
-    /// readings is the charges between them (`wrapping_sub`).
+    /// whether or not it was cancelled. The count saturates at `u32::MAX`
+    /// and stays there, so once it is reached it is a lower bound, never a
+    /// wrapped value; a difference of two readings (`saturating_sub`) is the
+    /// charges between them until then.
     pub fn charges(&self) -> u32 {
         self.shared.charges.load(Ordering::Relaxed)
     }
@@ -229,6 +238,21 @@ mod tests {
         }
         cancel.poll();
         assert_eq!(cancel.charges(), 2);
+    }
+
+    #[test]
+    fn the_charge_count_saturates_at_the_boundary_instead_of_wrapping() {
+        let cancel = Cancel::new();
+        let _counting = cancel.count_charges();
+        cancel
+            .shared
+            .charges
+            .store(u32::MAX - 1, core::sync::atomic::Ordering::Relaxed);
+        cancel.poll();
+        assert_eq!(cancel.charges(), u32::MAX);
+        cancel.poll();
+        cancel.poll();
+        assert_eq!(cancel.charges(), u32::MAX);
     }
 
     #[test]

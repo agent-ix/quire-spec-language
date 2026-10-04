@@ -114,3 +114,45 @@ operation reaches it.
 | FND-004 | fixed | 7116333d6 |
 | FND-005 | fixed | 7116333d6 |
 | FND-006 | fixed | 7116333d6 |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | `Cancel`'s charge counter is now a `u32`, because the no_std target has no 64-bit atomics, and `charged` takes `wrapping_sub` of two readings. If one stage of one operation makes 2^32 or more charges, its `StageWork` counter silently reports the count modulo 2^32, which is a wrong result. That takes raised limits and minutes of work, so it is rare, but nothing reports it. Fix: make `charged` saturate, by having the guard flag a wrap, or accept it and document on `StageWork` that each counter is modulo 2^32. | quire-exact/src/cancel.rs:146-153; qsl-replay/src/spine/lifecycle.rs:119-124 |
+
+Round 2, reviewed at 906b32262628682460096b4785d2d0cb2a71d798, rebased on
+main (fix commits 83f03a6f2, a294f79be, f314b57c0, 906b32262). The pre-merge
+`make ci` passed on this head (logs/qsl-624-premerge-ci.log). Lead ruling on
+FND-008: a library is checked under its own default `LockEvidence`.
+
+- **FND-007:** `poll` now pays for the count only while a `ChargeCount`
+  guard is held. Only `stage()` holds one, so `spine::run`'s `execute` polls
+  with a load alone. The coder's criterion runs show no regression against
+  the ddd162c7 baseline. call_chain/1 was 279 ns at ddd162c7 and 276 and
+  294 ns at head, which is within the run-to-run noise. checker/independent
+  showed no significant change at 5000 and an improvement at 1000.
+- **FND-008:** `compile_library` checks under `LockEvidence::default()`.
+  FR-278 Behavior and its row state this, and
+  `a_library_is_checked_under_its_own_lock_evidence_not_its_importers` tests
+  it.
+- **FND-009:** `source.source_bytes` reports the source's real length, and
+  `source.work_units` gives the bound and the counter both in parser steps.
+  Both are asserted in `parse_names_the_source_limit_field_it_reached`.
+
+I also checked the typed `LimitsField` (17 variants). It matches every field
+of `qsl_cst::Limits` (4), `ModelNormalizationLimits` (8),
+`TypeEnvironmentLimits` (2) and `CheckingLimits` (3). The match in
+`CompileRefusal::stage` is exhaustive with the same stage mapping as before,
+`None` included. `dependencies.depth` is absent, as B4 owns it. I found no
+defect in it.
+
+`ChargeCount` decrements `counting` in `Drop`. A leaked guard, from
+`mem::forget`, only keeps counting on, so it costs time and cannot give a
+wrong result. FND-010 above is the one new item.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 83f03a6f2 |
+| FND-008 | fixed | 83f03a6f2 |
+| FND-009 | fixed | 83f03a6f2 |

@@ -52,3 +52,12 @@ Round 1, reviewed at a47829387eae0445ada116f6594f599654187cf6 (fix commits
 | --- | --- | --- |
 | FND-001 | fixed | 7116333d6 |
 | FND-002 | fixed | 7116333d6 |
+
+Round 2, reviewed at 906b32262628682460096b4785d2d0cb2a71d798, rebased on
+main. The FR-278 row now reads "composing to the spine compile (S1 to E4)".
+The new FR-278 Behavior bullet, that libraries are checked under the default
+lock evidence, matches the lead's ruling and the code.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 83f03a6f2 |
