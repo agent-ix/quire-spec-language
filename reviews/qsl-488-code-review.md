@@ -55,3 +55,9 @@ frozen count is version tracking.
 | FND-002 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |
 | FND-003 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |
 | FND-004 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | `pub mod depth_forms` was inserted between the `imports` comment ("`imports` has no production caller yet ... public only under `test-support`") and `pub mod imports`. That comment now reads as if it describes `depth_forms`, and `depth_forms` has no comment explaining why it is gated. Move the declaration above the comment and give it its own one-line reason (test-only builders shared by the check and emitter tests). | qsl-semantics/src/check/mod.rs:82-88 |
