@@ -15,7 +15,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::fmt;
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 /// Why a [`Cancel`] handle was cancelled (FR-276).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -61,7 +61,7 @@ struct Shared {
     tripped: AtomicU8,
     /// How many charges have polled this handle while an operation counted
     /// them, for the per-stage work it reports (FR-275-AC-5).
-    charges: AtomicU64,
+    charges: AtomicU32,
     /// How many operations are counting charges now. A charge pays for the
     /// count only while this is above zero, so an evaluation that counts
     /// nothing polls with a load alone.
@@ -88,7 +88,7 @@ impl Cancel {
             shared: Arc::new(Shared {
                 state: AtomicU8::new(LIVE),
                 tripped: AtomicU8::new(LIVE),
-                charges: AtomicU64::new(0),
+                charges: AtomicU32::new(0),
                 counting: AtomicU32::new(0),
                 observer,
             }),
@@ -146,8 +146,9 @@ impl Cancel {
     }
 
     /// How many charges polled this handle while an operation counted them,
-    /// whether or not it was cancelled.
-    pub fn charges(&self) -> u64 {
+    /// whether or not it was cancelled, modulo 2^32: a difference of two
+    /// readings is the charges between them (`wrapping_sub`).
+    pub fn charges(&self) -> u32 {
         self.shared.charges.load(Ordering::Relaxed)
     }
 

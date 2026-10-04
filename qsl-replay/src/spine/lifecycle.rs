@@ -119,7 +119,7 @@ pub type FrontEndFailure = StageFailure<Box<CompileRefusal>>;
 fn charged<T>(cancel: &Cancel, counter: &mut u64, run: impl FnOnce() -> T) -> T {
     let before = cancel.charges();
     let output = run();
-    *counter = counter.saturating_add(cancel.charges().saturating_sub(before));
+    *counter = counter.saturating_add(u64::from(cancel.charges().wrapping_sub(before)));
     output
 }
 
