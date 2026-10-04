@@ -1685,9 +1685,7 @@ dependencies = [
 [[package]]
 name = "quire-walk"
 version = "0.1.0"
-dependencies = [
- "ix-trace-rs",
-]
+source = "git+https://github.com/agent-ix/quire-walk?branch=main#89d05df2bcd6740c6f94f79bf6f3b5b007cf22a1"
 
 [[package]]
 name = "quote"

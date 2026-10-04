@@ -108,7 +108,6 @@ mod parser;
 mod parser_differential;
 mod protocol_artifact;
 mod protocol_number;
-mod quire_walk_leaf;
 mod request_builder;
 mod runtime_evaluation;
 mod runtime_execution;

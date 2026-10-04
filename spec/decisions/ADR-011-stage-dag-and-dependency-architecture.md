@@ -24,7 +24,7 @@ Accepted, 2026-09-23 (proposed 2026-09-19). The §7.3 crate
 extraction X-1 to X-10 has landed, and ADR-011-OQ-2 is ruled. The owner
 widened FB-05 on 2026-10-01 with a shared `no_std` leaf class and layer SV
 (X-11). Amended by ADR-030 (FR-356): the walker toolkit `quire-walk`, layer
-W, joins that class, and the std-only `maybe_grow` crate `qsl-walk-grow`,
+W, joins that class (its own repository, `agent-ix/quire-walk`), and the std-only `maybe_grow` crate `qsl-walk-grow`,
 layer WG, sits outside the qualified core. Owning ticket: agent-ix/quire-spec-language#209 (ARCH-10),
 epic #205, Layer 1. Acceptance is tested by the change-scenario gate #212.
 Supersedes nothing.
@@ -141,7 +141,7 @@ Terms used below:
    AD-016 Owner decision 2 already accepted, the §6.1 layer crates
    (X-2 to X-10), the shared `no_std` leaf `quire-semantic-value` (X-11,
    layer SV), the shared `no_std` walker toolkit `quire-walk` (layer W,
-   ADR-030 FR-356), and the std-only `maybe_grow` crate `qsl-walk-grow`
+   ADR-030 FR-356; its own repository, `agent-ix/quire-walk`, not a workspace crate), and the std-only `maybe_grow` crate `qsl-walk-grow`
    (layer WG, outside the qualified core).
 7. The four observed lanes converge or retire as §8 states. Every producer
    path other than the spine is deleted in the PR that lands its spine
@@ -574,7 +574,7 @@ re-walks them against the scenarios.
 | FB-02 | Any consumer branches on diagnostic message text, `Display` output or rendered codes instead of the typed cause | Diagnostics are output for people, not a channel between stages | CG decides Kani verdicts by string-matching rendered backend output (agent-ix/quire-contract-codegen#59); it retires with #231's typed proof-result envelope | #216 evidence, #231, then #226 |
 | FB-03 | Wire-admitted data reaches an S6a evaluator, the S4 emitter or a backend as if it were checked, without the verified binding in §4 | A wire reader proves shape, not a source compile | `protocol_artifact::read` feeding `state` and `temporal` (ADR-010 OBS-015); checked-predicate and temporal-subject handoffs to IR (OBS-037) | #216 typestate evidence and "incompatible version fails without partial output", then #226 |
 | FB-04 | Lowering, execution or proof from an S2 form or any unchecked object | Checking precedes all executable lowering (§4) | none on the spine | #216 typestate evidence, then #226 |
-| FB-05 | A backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the public API of the QSL layer-6 `replay` module, which includes the #231 envelopes, and nothing else (AD-016 Owner decision 5). The shared `no_std` leaf crates are outside FB-05. The class has three members: the kernel `quire-exact` (K), the semantic-value leaf `quire-semantic-value` (SV, whose dependencies are K, ADR-013 §2's one RFC 8785 encoder `quire-canonical`, `serde` and `thiserror`, and no QSL layer), and the walker toolkit `quire-walk` (W, whose dependencies are `core` and `alloc` only; ADR-030 FR-356). Each is a leaf below every QSL layer it serves (§6.1), so an edge into it closes no cycle, and a backend may take a normal edge to it: RT → `quire-exact`, CG → `quire-exact`, RT → `quire-semantic-value`, CG → `quire-semantic-value`, and IR → `quire-walk`, RT → `quire-walk` and CG → `quire-walk` are §7.1 edges. `quire-walk` is the one QSL-workspace crate IR depends on. A crate joins the class only by an amendment of this row | IR reads the v2 wire only (AD-016 Decisions) | none from IR: neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (OBS-029) | a direction check over each backend's `cargo tree`, plus the API-surface check, whose part (a) fails any CG call outside the `replay` facade, owner to be named (T-12, a proposed #215 scope amendment) |
+| FB-05 | A backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the public API of the QSL layer-6 `replay` module, which includes the #231 envelopes, and nothing else (AD-016 Owner decision 5). The shared `no_std` leaf crates are outside FB-05. The class has three members: the kernel `quire-exact` (K), the semantic-value leaf `quire-semantic-value` (SV, whose dependencies are K, ADR-013 §2's one RFC 8785 encoder `quire-canonical`, `serde` and `thiserror`, and no QSL layer), and the walker toolkit `quire-walk` (W, whose dependencies are `core` and `alloc` only; ADR-030 FR-356). Each is a leaf below every QSL layer it serves (§6.1), so an edge into it closes no cycle, and a backend may take a normal edge to it: RT → `quire-exact`, CG → `quire-exact`, RT → `quire-semantic-value`, CG → `quire-semantic-value`, and IR → `quire-walk`, RT → `quire-walk` and CG → `quire-walk` are §7.1 edges. `quire-walk` is the crate IR depends on, from its own repository, `agent-ix/quire-walk`, so IR never depends on the QSL repository. A crate joins the class only by an amendment of this row | IR reads the v2 wire only (AD-016 Decisions) | none from IR: neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (OBS-029) | a direction check over each backend's `cargo tree`, plus the API-surface check, whose part (a) fails any CG call outside the `replay` facade, owner to be named (T-12, a proposed #215 scope amendment) |
 | FB-06 | S3 calls a backend crate to decide a semantic question such as definedness | The backend would become a second language authority | QSL checking, composed proofs and lowering call IR `DeclarationEnvironment::check_expression` (OBS-010) | module-DAG check (§6.1) |
 | FB-07 | Replay through any executor other than S6a, or replay evidence from an injected stub executor | AD-016 arrow 7 | IR `replay_with_native_runtime` → `runtime::execute` (removed by agent-ix/quire-contract-ir#140); stubbed CG and IR replay executors (OBS-028) | #217, #219 |
 | FB-08 | A witness typed by any means other than QSL `qsl-replay` `Witness::parse` and `decode` | AD-016 arrow 7: `decode` is the only typing step | IT-010 splits Kani stdout into an `i64` (OBS-002) | #217, #219 |
@@ -726,7 +726,7 @@ enforces it; before #226, §3's interim rule applies.
 |---|---|---|---|
 | K | `quire-exact` crate: the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8) (`Value`, `ValueType`, `Outcome`, `Refusal`, `Undefined`, `BoundViolation`, `CardinalityBound`, `BoundedInteger`, `NodeKey`, `EffectiveId`, `UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`, `PopulationId`, `Origin`/`Location`, `ChargePoint`, `Meter`, `Incomplete`) and the scalar and collection operations over them | foundation | none in the ecosystem |
 | SV | `quire-semantic-value` crate: the shared `no_std` semantic-value leaf. It holds `semantic_node` (the `invalid_semantic_graph` refusal vocabulary, the `check_terms` term check, the node-id preimage member `CanonicalNodeId` and the shared `IDENTITY_LIMITS`), `stop` (the `Stop` early-exit carrier), `quantity` (FR-142 quantities, the `UnitTable`/`UnitScope` over kernel `UnitId`s and the quantity operations) and `unit`'s runtime half (`Dimension`, `Unit`, `UnitEdge`, the checked `DimensionNode`/`UnitNode`, `UnitGraph`'s topology and lookups, `CompoundUnit` and its `compound_unit_id`, `InvalidCompoundUnit`), `enumeration`'s runtime half (the structural `EnumDeclaration`, `EnumValue`, `EnumMemberIndex`, `compare_enum`), `definition` (the lock's `SelectionRefusalCode` and the `invalid_package` `PackageRefusal` vocabulary), `declaration` (the FR-143 registry `TypeEnvironment`/`ObjectTypeDeclaration`, record and tuple construction, and the FR-149 checked equality), `containment` (the FR-143 `ValueGraph`), `checking` (`CheckMode`, `CheckingLimits` and the `DEFAULT_CHECKING_*` defaults), `location` (the expression `Origin` and `Location`), `call` (the argument-admission `InputRefusal`, with its catalog code string and cause tag) and `loss` (`ValueLoss`, `LocatedLoss`) | runtime semantic values and the call-surface vocabulary that S3 checking, S6a evaluation and a backend share | K; `quire-canonical`, `serde` and `thiserror`, each without `std` |
-| W | `quire-walk` crate: the shared `no_std` walker toolkit (ADR-030 FR-356): an explicit heap stack of typed frames with enter and exit callbacks, Kani-verified, with no features | walk traversal for every stage | none: `core` and `alloc` only |
+| W | `quire-walk` crate (external, `agent-ix/quire-walk`): the shared `no_std` walker toolkit (ADR-030 FR-356): an explicit heap stack of typed frames with enter and exit callbacks, Kani-verified, with no features | walk traversal for every stage | none: `core` and `alloc` only |
 | WG | `qsl-walk-grow` crate: the one `maybe_grow` wrapper (ADR-030 D-1 item 6, FR-356), which grows the stack on demand and is a plain call under `cfg(kani)`; std-only, outside the qualified core (ADR-029 CB-2) | grow-on-demand recursion outside the core | `stacker` only; depended on only by QSL crates outside the core (A, P, X, tool and the root crate), never by a core crate |
 | F | `absence` < `json_number` < `serde_object` < `digest` < `wire_format` < `source` (with `source_map`) < `selection` < `diagnostic` < `located_json` | foundation | K |
 | 1 | `token` < `lexer` < `cst` < `format` (moved from the tool layer by ADR-029 OP-1: the `format` library operation) | S1 | F |
@@ -746,7 +746,7 @@ enforces it; before #226, §3's interim rule applies.
 
 Crate map. Layers F, 1, I3, 2, 3, 4, 5, R, A, P, X and the layer-6 `replay` facade are
 each their own workspace crate (§7.2). K is `quire-exact` (X-1), SV is
-`quire-semantic-value` (X-11), W is `quire-walk` and WG is `qsl-walk-grow`
+`quire-semantic-value` (X-11), W is `quire-walk`, an external crate in its own repository, `agent-ix/quire-walk`, and WG is `qsl-walk-grow`
 (ADR-030 FR-356). A layer
 crate's `[dependencies]` name only the layer crates and the external crates in
 its "Depends on" cell above.
@@ -754,7 +754,7 @@ its "Depends on" cell above.
 | Crate | Layer |
 |---|---|
 | `quire-semantic-value` | SV |
-| `quire-walk` | W |
+| `quire-walk` (external) | W |
 | `qsl-walk-grow` | WG |
 | `qsl-foundation` | F |
 | `qsl-cst` | 1 |
@@ -806,14 +806,12 @@ Rules that close the ADR-010 OBS-016 cycles:
   the call surface a backend names when it calls checked code: the checking
   mode and limits, the expression location, the argument-admission refusal
   and the loss records.
-- **W is a shared leaf.** `quire-walk` depends on no crate: it is
+- **W is a shared leaf.** `quire-walk`, in its own repository `agent-ix/quire-walk`, depends on no crate: it is
   `#![no_std]`, uses only `core` and `alloc`, and has no features, so no
   feature unification can bring `std` or `stacker` into it. SV, F and every QSL layer
   may depend on it, and so may IR, RT and CG (FB-05's shared-leaf class),
-  each at `branch = "main"`. K stays a leaf with no dependency and keeps its
-  hand-written iterative traits (ADR-030 D-4.7). arch-lint's
-  `SHARED_LEAVES` lists `quire-walk` beside `quire-exact` and
-  `quire-semantic-value`.
+  each as a git dependency at `branch = "main"`. K stays a leaf with no dependency and keeps its
+  hand-written iterative traits (ADR-030 D-4.7).
 - **WG is outside the core and not a shared leaf.** `qsl-walk-grow` holds
   the one `maybe_grow` wrapper and depends only on `stacker`. Only QSL crates
   outside the qualified core may depend on it; no CB-2 crate may (ADR-029
@@ -1042,7 +1040,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 | QSL → `quire-semantic-value`, RT → `quire-semantic-value`, CG → `quire-semantic-value` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, RT and CG. | X-11 |
-| QSL → `quire-walk`, IR → `quire-walk`, RT → `quire-walk`, CG → `quire-walk` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, IR, RT and CG, each at `branch = "main"`. | ADR-030 FR-356 |
+| QSL → `quire-walk`, IR → `quire-walk`, RT → `quire-walk`, CG → `quire-walk` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, IR, RT and CG to the repository `agent-ix/quire-walk`, each at `branch = "main"`. | ADR-030 FR-356 |
 
 Rules:
 

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "quire-semantic-value", "quire-walk", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "quire-semantic-value", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
 resolver = "2"
 # A cargo-fuzz crate with its own workspace; fuzz/Cargo.toml says why.
 exclude = ["fuzz"]
@@ -9,6 +9,9 @@ exclude = ["fuzz"]
 # layer-SV leaf `quire-semantic-value` can mint the compound-unit id
 # through it; a crate that writes through `io::Write` turns on `std`.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", default-features = false }
+# ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
+# its own repository so IR, RT and CG depend on it without the QSL repo.
+quire-walk = { git = "https://github.com/agent-ix/quire-walk", branch = "main" }
 
 [package]
 name = "quire-spec-language"
