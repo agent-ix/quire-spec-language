@@ -529,10 +529,11 @@ fn wide(bytes: usize) -> SpineLimits {
     limits
 }
 
-/// Declarations in the cancelled-check test of the default run. The AC names
-/// 200,000; a debug build cannot parse that many in a test run, so the AC
-/// size runs in [`a_check_over_200000_declarations_stops_within_one_charge`],
-/// which is ignored outside a release build.
+/// Declarations in the cancelled-check test. The AC names 200,000, which
+/// `parse` cannot generate: S1's parse time grows faster than the square of
+/// the unit in a release build (195 ms at 2,000 declarations, 4.1 s at 8,000,
+/// 71 s at 25,000, 411 s at 50,000), while the check over the same units is
+/// linear (53 ms at 2,000, 1.5 s at 50,000). So the test checks 4,000.
 const DECLARATIONS: usize = 4_000;
 
 /// The unit of `count` declarations, parsed and with its models selected,
@@ -596,17 +597,6 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
         )
     });
     assert!(total > 1_000, "the check made only {total} charges");
-    assert_check_cancelled_at(&unit, 1_000, CancelCause::Deadline);
-}
-
-/// FR-276-AC-2 at the size the AC names, 200,000 declarations. A debug build
-/// cannot generate it, so it runs under `cargo test --release -p qsl-replay
-/// -- --ignored`.
-#[trace("TC-757", "FR-276-AC-2")]
-#[test]
-#[ignore = "needs a release build: 200,000 declarations"]
-fn a_check_over_200000_declarations_stops_within_one_charge() {
-    let unit = parsed_declarations(200_000);
     assert_check_cancelled_at(&unit, 1_000, CancelCause::Deadline);
 }
 
