@@ -34,7 +34,7 @@ use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
-use crate::model::intake::{admit_selections, read_records};
+use crate::model::intake::{admit_selections, read_records, DigestMismatch};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
@@ -571,11 +571,18 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
             None => None,
         },
     };
-    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|_| {
-        refuse(AdmissionRecord::new(
-            Code::StaleDependency,
-            "byte-digest-mismatch",
-        ))
+    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|mismatch| {
+        match mismatch {
+            DigestMismatch::Content { recomputed } => refuse(
+                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
+                    .with("selected", hex(&expected))
+                    .with("recomputed", hex(&recomputed)),
+            ),
+            DigestMismatch::RawBytes { .. } => refuse(AdmissionRecord::new(
+                Code::StaleDependency,
+                "byte-digest-mismatch",
+            )),
+        }
     })
 }
 
@@ -710,6 +717,30 @@ mod digest_tests {
         let text = r#"{"a":1,"a":2,"n":1e-400}"#;
         let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
         assert_eq!(check_document_digest(text.as_bytes(), raw), Ok(()));
+    }
+
+    /// FR-106 check 1.3: a document the reader reads, offered under another
+    /// digest, refuses `stale_dependency`/`content-mismatch` carrying the
+    /// selected digest and the digest recomputed from the document.
+    #[trace("TC-465", "FR-106-AC-3")]
+    #[test]
+    fn a_parsed_document_under_another_digest_refuses_content_mismatch() {
+        let text = br#"{"a":2}"#;
+        let recomputed = *quire_canonical::sha256(
+            &quire_canonical::read(text, u64::MAX).unwrap(),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .unwrap()
+        .as_bytes();
+        let selected: [u8; 32] = Sha256::digest(b"another document").into();
+        assert_eq!(
+            check_document_digest(text, selected),
+            Err(refuse(
+                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
+                    .with("selected", hex(&selected))
+                    .with("recomputed", hex(&recomputed))
+            ))
+        );
     }
 
     /// The reader's and the encoder's allocation failures refuse

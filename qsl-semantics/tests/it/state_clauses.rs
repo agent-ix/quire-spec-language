@@ -3384,7 +3384,7 @@ fn tc465_row3_deeply_nested_value_refuses_nesting_depth_exceeded() {
 /// digest.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
-fn tc465_row4_edited_bytes_under_original_digest_refuses_byte_digest_mismatch() {
+fn tc465_row4_edited_bytes_under_original_digest_refuses_content_mismatch() {
     let document = tc465_document();
     let model_digest_hex = tc465_model_digest_hex(&document);
     let label = frame_label("current-snap");
@@ -3392,12 +3392,21 @@ fn tc465_row4_edited_bytes_under_original_digest_refuses_byte_digest_mismatch() 
     let original_digest = frame_document_digest(&original.to_string().into_bytes());
     let mut edited = original;
     edited["populations"][0]["objects"][1]["fields"]["versionNumber"] = json!({"integer": "3"});
+    let edited_digest = frame_document_digest(&edited.to_string().into_bytes());
     let result = run_tc465_current(
         &document,
         |value| *value = edited.clone(),
         Some(original_digest),
     );
-    assert_tc465_refused(result, "stale_dependency", "byte-digest-mismatch");
+    let record = assert_tc465_refused(result, "stale_dependency", "content-mismatch");
+    assert_eq!(
+        record.fields.get("selected"),
+        Some(&qsl_semantics::model::key::hex(&original_digest))
+    );
+    assert_eq!(
+        record.fields.get("recomputed"),
+        Some(&qsl_semantics::model::key::hex(&edited_digest))
+    );
 }
 
 /// Row 5 (check 1.4): `format` `native-state-input/1`.
@@ -4241,7 +4250,7 @@ fn tc465_row28_undeclared_creation_refuses_delta_disagreement() {
 }
 
 /// Row 29 (check 1.3 over 1.6): row 4's edit plus row 7's extra member,
-/// kept under the original digest -- `byte-digest-mismatch` wins (check
+/// kept under the original digest -- `content-mismatch` wins (check
 /// 1.3 runs before 1.6).
 #[trace("TC-465", "FR-106-AC-7")]
 #[test]
@@ -4259,7 +4268,7 @@ fn tc465_row29_a_digest_mismatch_beats_an_unknown_member() {
         |value| *value = edited.clone(),
         Some(original_digest),
     );
-    assert_tc465_refused(result, "stale_dependency", "byte-digest-mismatch");
+    assert_tc465_refused(result, "stale_dependency", "content-mismatch");
 }
 
 /// Row 31 (check 11.2 over 11.3): post deletes `root` and sets

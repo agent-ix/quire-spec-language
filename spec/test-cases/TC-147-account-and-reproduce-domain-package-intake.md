@@ -26,6 +26,6 @@ FR-056-AC-7.
 
 - Step 1: the exact bound completes with N declarations; N − 1 is incomplete at
   `normalize.record` with no declaration.
-- Step 2 refuses `stale_dependency`/`byte-digest-mismatch`, not an incomplete
+- Step 2 refuses `stale_dependency`/`content-mismatch`, not an incomplete
   result: admission checks precede the first charge.
 - Step 3: all four results are byte-identical.

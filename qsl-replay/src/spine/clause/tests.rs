@@ -2196,7 +2196,7 @@ fn run_clause_evaluates_the_same_identity_family() {
 /// TC-468 step 5 (FR-109-AC-5): editing the snapshot bytes after the
 /// selection's digest was taken (so the stored digest no longer matches the
 /// bytes it labels) refuses `admit`, `stale_dependency`/
-/// `byte-digest-mismatch`.
+/// `content-mismatch`.
 #[trace("TC-468", "FR-109-AC-5")]
 #[test]
 fn run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken() {
@@ -2231,9 +2231,9 @@ fn run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken() {
                 record.code,
                 qsl_foundation::diagnostic::Code::StaleDependency
             );
-            assert_eq!(record.cause, "byte-digest-mismatch");
+            assert_eq!(record.cause, "content-mismatch");
         }
-        other => panic!("expected Admit(Refused(byte-digest-mismatch)), got {other:?}"),
+        other => panic!("expected Admit(Refused(content-mismatch)), got {other:?}"),
     }
 }
 
