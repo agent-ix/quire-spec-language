@@ -67,8 +67,7 @@ A compile takes a **dependency input**: a set of **supplied libraries**
 `source` a source unit: its
 FR-001 `SourceIdentity` (two labels), a display path and its bytes. It
 carries no `package_id`: a library's `package_id` is the one its own
-compile yields (ADR-013 O-02). Remaining work: QSpec FR-307 still states a
-library version; QSL selects by identity only. Building the input refuses, naming both
+compile yields (ADR-013 O-02). Building the input refuses, naming both
 offending libraries or the empty field:
 
 - a second library supplied under an identity already supplied, and a

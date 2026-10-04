@@ -185,10 +185,6 @@ replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented. The 
 region is in, a library's or the program's
 (`a_library_refusal_renders_over_the_library_source`).
 
-Remaining work: QSpec FR-307 still states a library version (a supplied
-library "under its identity `L` and its version string"); QSL selects by
-identity only.
-
 ## References
 
 - Linear QSL-264 (AC-8: call-site preconditions of an imported function).

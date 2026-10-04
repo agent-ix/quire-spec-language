@@ -75,3 +75,10 @@ on text the fix round changed.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-004 | low | The fix round dropped condition 3 from FR-087-AC-12's and item (e)'s list of classes, leaving three (I2 rule, condition 2, E3), but the same texts still say `DuplicatePackageId` lies "outside all four" and "one of the four". TC-282's Description still lists condition 3 as a fourth class, FR-087 item (e) still says `StaleDependency` "is raised by the §4 binding's condition 3", and `qsl-semantics` docs still say "outside all four". Make the count and the class list agree in FR-087, TC-282 and the two doc comments. | spec/functional/FR-087-typestate-and-cross-package-node-key.md:237, :239-240, :258, :354, :601; spec/test-cases/TC-282-resolve-libraries-refusals-map-to-i2-rules.md:14-21, :43; qsl-semantics/src/library/mod.rs:475, :508 |
+
+Disposition pass 2 at e8a89931f521cdc542bf024f7619a6d71f83c4b5 (fix commit
+e8a89931f).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | e8a89931f: FR-087 (item (e), :237, :258, :354, AC-12), TC-282, spec/tests.md and the `qsl-semantics` docs now say three classes; FR-087 says `StaleDependency` is raised by `verify_binding` and classifies to I2's first rule; `RefusalClass::BindingCondition` is a unit variant. |
