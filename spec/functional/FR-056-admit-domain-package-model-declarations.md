@@ -100,8 +100,10 @@ happens to equal their raw digest. No declaration is admitted.
 A number with no finite IEEE 754 double value (such as `1e400`) is not one
 of these: the reader refuses it with its RFC 6901 pointer and exact source
 text, and the compiler classifies it from that text under the two cases
-below. It is never a parse failure, never digested raw, and never refuses
-`stale_dependency`/`byte-digest-mismatch`. `1e400`, `-1e400` and every other
+below. Unless an earlier reader fault decides, it is never a parse failure,
+never digested raw, and never refuses `stale_dependency`/`byte-digest-mismatch`;
+`[{"a":1,"a":2},1e400]` is digested raw, because the repeated name is the
+reader's first refusal. `1e400`, `-1e400` and every other
 whole value beyond ±2^53 refuse `inexact-integer`; `1e-400`, which has a
 finite double (zero) and is not whole, refuses `inexact-number`. When the bytes carry
 several reader faults (a number with no finite double, a repeated member name

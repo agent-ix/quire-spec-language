@@ -264,9 +264,9 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// reaches it, before any tree exists, so it is named ahead of an earlier
 /// inexact number, and ahead of a repeated member name the reader would
 /// detect only when that object closes. When the bytes carry several reader
-/// faults, the first one `quire_canonical::read` returns decides:
-/// `inexact-integer` for a whole value beyond ±2^53, `inexact-number` for a
-/// value that is not its nearest double's shortest round-trip text. RFC 8785
+/// faults, the first one `quire_canonical::read` returns decides.
+/// The cause is `inexact-integer` for a whole value beyond ±2^53 and
+/// `inexact-number` for a value that is not its nearest double's shortest round-trip text. RFC 8785
 /// writes that text in its place, so the digest of such a document would be
 /// the digest of a different value, shared with every document differing
 /// from it only in that number. [`admit`] returns this refusal where it

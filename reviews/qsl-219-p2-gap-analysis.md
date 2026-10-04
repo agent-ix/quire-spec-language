@@ -46,3 +46,11 @@ The non-whole-overflow gap is recorded in SR-1284 FND-002.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | FR-056-AC-2 says `1e400`/`-1e400`/`1e-400` refuse "through admission under any digest, never `stale_dependency`". No test calls FR-154 `admit()` with these numbers. The tests cover `PackageDocument::parse` and observation's `check_document_digest` only. `admit` passes `NoncanonicalNumber` through (intake.rs:1054-1065), and AC-13's u64-bound test already covers that pass-through, so the risk is small. Fix: add `admit()` cases for `1e400` under its raw digest and under another digest, asserting the `noncanonical_wire` refusal. | qsl-semantics/src/model/intake.rs:1054-1065, spec/functional/FR-056-admit-domain-package-model-declarations.md:378 |
+
+## Dispositions
+
+Round 1, reviewed at c6f75258513125eaa5df0099a239de082a039d5f (diff 25610e30..c6f75258). The committed reviews/qsl-219-p2-*.md files are byte-identical to the reviewer copies as they stood before this round. Pre-merge make ci log (~/dev/worktrees/logs/qsl-625-premerge-ci.log, written after the fix commit) shows the four affected tests passing on all three test lanes, with no failures. I ran no extra build.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c6f7525: `admission_refuses_a_number_with_no_finite_double_under_an_unrelated_digest` calls FR-154 `admit()` with `1e400` (inexact-integer) and `-1e-400` (inexact-number) at `/package/count` under digest [7;32], and asserts `noncanonical_wire` with the exact cause. The unrelated digest is the case that tells pass-through from `stale_dependency`. The refusal comes before check 3, so the raw digest cannot change the outcome. |

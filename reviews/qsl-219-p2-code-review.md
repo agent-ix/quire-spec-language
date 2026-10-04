@@ -94,3 +94,18 @@ classification logic itself is exact and correct.
 | --- | --- | --- | --- |
 | FND-001 | medium | The doc comments still say the refusal names "the first such number in document order" / "the first such number". But `{"x":[1e-400,1e400]}` names `/x/1` (the PR's own test asserts this), because the reader refuses before the tree walk runs. The rustdoc states a contract the code does not keep. Fix: carve out the out-of-range case in both comments, in step with the FR-056 fix (SR-1286 FND-001). | qsl-semantics/src/model/intake.rs:260-262, qsl-semantics/src/model/observation.rs:539-545 |
 | FND-002 | medium | No test reaches `out_of_range_number`'s `Inexact::Number` arm. Every `inexact-number` case in the new tests is `1e-400`/`-1e-400`, which the reader accepts as 0.0, so those cases go through the #617 tree path, never through `read_refusal`/`digest_read_refusal`. Every overflow lexeme tested is whole. The ruling's "a non-whole one is inexact-number" is unproven through the new code, and so is a negative-exponent overflow. Fix: in `refuses_a_number_with_no_finite_double_by_its_lexeme` and the observation test, add a non-whole overflow (`format!("1{}.5", "0".repeat(400))`, which should give `inexact-number`) and a negative-exponent whole overflow (`format!("1{}e-1", "0".repeat(400))`, which should give `inexact-integer`). | qsl-semantics/src/model/intake.rs:438-446, qsl-semantics/src/model/intake.rs:5737-5766, qsl-semantics/src/model/observation.rs:671-691 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The doc paragraph was spliced. The new sentence "When the bytes carry several reader faults, the first one `quire_canonical::read` returns decides:" now runs into the old cause list ("`inexact-integer` for a whole value beyond ±2^53, `inexact-number` for ..."), so the colon makes the cause list read as what the first reader fault decides. Fix: end the reader-fault sentence with a full stop, and attach the cause list back to the "before any digest is taken" sentence. | qsl-semantics/src/model/intake.rs:260-268 |
+
+## Dispositions
+
+Round 1, reviewed at c6f75258513125eaa5df0099a239de082a039d5f (diff 25610e30..c6f75258). The committed reviews/qsl-219-p2-*.md files are byte-identical to the reviewer copies as they stood before this round. Pre-merge make ci log (~/dev/worktrees/logs/qsl-625-premerge-ci.log, written after the fix commit) shows the four affected tests passing on all three test lanes, with no failures. I ran no extra build.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c6f7525: intake.rs:260-267 and observation.rs:540-548 now state the exception (a number with no finite double is named when the reader reaches it, ahead of an earlier inexact number) and that the first reader fault decides. |
+| FND-002 | fixed | c6f7525: `refuses_a_number_with_no_finite_double_by_its_lexeme` and the observation digest test now cover `1`+400 zeros+`.5` (inexact-number, reaching the `Inexact::Number` arm) and `1`+400 zeros+`e-1` (inexact-integer). |
