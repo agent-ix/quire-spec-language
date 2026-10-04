@@ -298,13 +298,15 @@ By Acceptance Criterion:
   apart. Its second half, that no other enum in scope carries FR-290
   capability-kind variants, holds by inspection: `route` imports
   `qsl_semantics::check::Capability` and defines no capability-kind type.
-- FR-075-AC-6: partial (`TC-433`):
-  `backend_member_is_the_identity_string_alone` (`qsl-route/src/lib.rs`)
-  shows `Candidate` is the identity alone, kept verbatim. Remaining work
-  (implementation): an empty identity does not yet refuse.
-  `qsl_replay::Backend`, the replay request and the witness carry the
-  identity string alone; the digest stays in `qsl-route` as the key for one
-  `duplicate-backend` refusal per distinct manifest (FR-290).
+- FR-075-AC-6: backed (`TC-433`):
+  `backend_member_is_the_identity_string_alone` and
+  `an_empty_backend_member_refuses` (`qsl-route/src/lib.rs`,
+  `BackendId::from_wire`). `qsl_replay::Backend`, the replay request and the
+  witness carry the identity string alone and refuse an empty one
+  (`ReplayRequestRefusal::EmptyBackendIdentity`,
+  `WitnessRefusal::EmptyBackendIdentity`); the digest stays in `qsl-route` as
+  the key for one `duplicate-backend` refusal per distinct manifest
+  (FR-290).
 - FR-075-AC-7: backed (`TC-447`, `TC-448`):
   `identical_repeat_registration_is_not_refused`
   (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and

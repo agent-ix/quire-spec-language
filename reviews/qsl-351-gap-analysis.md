@@ -57,3 +57,18 @@ Changes requested, both medium. The four reopened scope items are present
 in code and spec, and the TC-177 binding is correct with independent
 oracles. AC-16's test misses its category clause, and the `declined` half
 of the FR-121 timing rule is untested and unanchored to any AC.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | FR-075 "Reading a `backend` member" says an empty member SHALL refuse, and FR-075-AC-6 / TC-433 step 2 test it. Now that the identity is the whole member, no QSL reader refuses an empty one: `BackendId::new` and `Candidate::new` are infallible, and the replay request (`Backend::new(wire.backend)`) and witness decoders accept `""`. An empty identity registers and routes as a backend that names nothing. The branch rewrote all three readers and marks AC-6 Partial; the refusal belongs in this PR | qsl-route/src/lib.rs:70, qsl-replay/src/request.rs:638, qsl-replay/src/witness.rs:932 |
+
+## Dispositions
+
+Disposition pass 1, reviewed at `43a2844c6d8c37d0b6c4eea2d04c5ea4d297234a`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 43a2844c: the AC-16 test now asserts `from_replay_refusal(&refusal).category() == Category::Inconclusive` |
+| FND-002 | fixed | 43a2844c: FR-121-AC-17 and TC-516 step 17 added; `TerminalValue::from_call_site_refusal` built; `a_call_site_refusal_settles_declined_with_its_code_and_a_fault_failed` asserts `Compile` and `UnknownFunction` give `Declined{InvalidInput, code}` with category refusal, and `Fault` gives `Failed` |

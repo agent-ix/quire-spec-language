@@ -77,3 +77,16 @@ FND-003).
 Focused run at the reviewed sha: `cargo test -p qsl-replay --lib proof_result`
 through `locked-build.sh`: 6 passed, 0 failed (tc_177, tc_178, tc_179,
 tc_769, the FR-121-AC-16 test, `to_source_refuses_an_empty_envelope_set`).
+
+## Dispositions
+
+Disposition pass 1, reviewed at `43a2844c6d8c37d0b6c4eea2d04c5ea4d297234a`
+(range `65e310bc..43a2844c`). Focused run through `locked-build.sh`:
+`cargo test -p qsl-replay --lib --test terminal_record_facade` filtered to
+`proof_result`, `disagreement_cause` and `terminal_records`: 10 passed, 0 failed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 43a2844c: `pub use qsl_foundation::{Code, RequestIndex};` at the `qsl-replay` root; `qsl-replay/tests/terminal_record_facade.rs` builds and reads terminal records through root paths only |
+| FND-002 | fixed | 43a2844c: `InconclusiveCause::measured_bytes` delegates to `DisagreementCause::measured_bytes`, which adds `WitnessFailure::measured_bytes` (origin name, location depth, undefined cause, refusal code, cause and fields) |
+| FND-003 | fixed | 43a2844c: `tc_178_refuses_an_oversized_replay_parity_cause` (bytes only in a `SeparationRefusal` cause) and `a_disagreement_cause_measures_its_records_and_failure` (each arm against independently summed totals) |

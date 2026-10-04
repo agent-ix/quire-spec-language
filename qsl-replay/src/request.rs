@@ -367,6 +367,9 @@ pub enum ReplayRequestRefusal {
         /// Where the package reference names it.
         named_by: String,
     },
+    /// The `backend` member is empty (`invalid_identifier`, ADR-013 O-19).
+    #[error("invalid_identifier: the backend identity is empty")]
+    EmptyBackendIdentity,
     /// A `dependencies` entry has an empty identity
     /// (`invalid_identifier`, FR-071-AC-9).
     #[error("invalid_identifier: dependencies entry {index} has an empty identity")]
@@ -447,7 +450,9 @@ impl ReplayRequestRefusal {
             }
             Self::NoncanonicalNumber { .. } => Code::NoncanonicalWire,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
-            Self::EmptyDependencySelection { .. } => Code::InvalidIdentifier,
+            Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
+                Code::InvalidIdentifier
+            }
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
         }
     }
@@ -530,6 +535,10 @@ impl ReplayRequest {
                     required_role: SEMANTIC_PROFILE_ROLE,
                 });
             }
+        }
+
+        if wire.backend.is_empty() {
+            return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
 
         // Only past this point does decoding touch the package reference or
@@ -1067,6 +1076,27 @@ mod tests {
             ReplayRequest::decode(with_dependencies(vec![(entry, bytes)])),
             Err(ReplayRequestRefusal::BoundExceeded(_))
         ));
+    }
+
+    /// ADR-013 O-19: an empty `backend` member refuses, and a non-empty one
+    /// is kept verbatim.
+    #[test]
+    fn an_empty_backend_member_refuses_and_any_other_is_kept_verbatim() {
+        let mut empty = wire(1);
+        empty.backend = String::new();
+        assert_eq!(
+            ReplayRequest::decode(empty),
+            Err(ReplayRequestRefusal::EmptyBackendIdentity)
+        );
+        assert_eq!(
+            ReplayRequestRefusal::EmptyBackendIdentity.code(),
+            Code::InvalidIdentifier
+        );
+
+        let mut spaced = wire(1);
+        spaced.backend = " kani ".to_owned();
+        let request = ReplayRequest::decode(spaced).unwrap();
+        assert_eq!(request.backend().identity(), " kani ");
     }
 
     /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field

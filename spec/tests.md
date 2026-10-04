@@ -56,7 +56,7 @@ names different artifacts in each.
 | TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-075-AC-4, FR-075-AC-7, FR-080-AC-1 | 🚧 Planned (implementation: one `duplicate-backend` refusal per identity, identity-only candidates) |
 | TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally |
 | TC-196 | A conflicting backend identity registration refuses both and withdraws the held registration | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; inverted (quire-specification FR-290-AC-10) |
-| TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | 🚧 Partial: step 1 passes (identity alone, verbatim); the empty-identity refusal of step 2 is not built |
+| TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | ✅ Passed locally |
 | TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | 🚧 Planned (implementation: one `duplicate-backend` refusal per identity, identity-only candidates) |
 | TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ Passed locally (quire-specification FR-290-AC-9) |
 | TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ Passed locally |

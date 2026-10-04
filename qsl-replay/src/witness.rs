@@ -860,6 +860,9 @@ pub enum WitnessRefusal {
     /// A required O-25 member is absent from the packet.
     #[error("missing_declaration: O-25 member {0:?} is absent")]
     MissingMember(&'static str),
+    /// The `backend` member is empty (`invalid_identifier`, ADR-013 O-19).
+    #[error("invalid_identifier: the backend identity is empty")]
+    EmptyBackendIdentity,
     /// A digest names a domain outside the closed FR-201 set, or supplies no
     /// domain at all.
     #[error("stale_dependency/digest-domain-mismatch: {0:?}: {1}")]
@@ -929,11 +932,13 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let declared_domains = packet
             .declared_domains
             .ok_or(WitnessRefusal::MissingMember("declared_domains"))?;
-        let backend = Backend::new(
-            packet
-                .backend
-                .ok_or(WitnessRefusal::MissingMember("backend"))?,
-        );
+        let backend_identity = packet
+            .backend
+            .ok_or(WitnessRefusal::MissingMember("backend"))?;
+        if backend_identity.is_empty() {
+            return Err(WitnessRefusal::EmptyBackendIdentity);
+        }
+        let backend = Backend::new(backend_identity);
         let trace_position = packet
             .trace_position
             .ok_or(WitnessRefusal::MissingMember("trace_position"))?;
@@ -1268,6 +1273,17 @@ mod envelope_tests {
             WitnessEnvelope::reconstruct(packet),
             Err(WitnessRefusal::MalformedDigest("source_digests", _))
         ));
+    }
+
+    /// ADR-013 O-19: an empty `backend` member refuses reconstruction.
+    #[test]
+    fn an_empty_backend_member_refuses() {
+        let mut packet = full_packet(0);
+        packet.backend = Some(String::new());
+        assert_eq!(
+            WitnessEnvelope::reconstruct(packet),
+            Err(WitnessRefusal::EmptyBackendIdentity)
+        );
     }
 
     /// FR-070-AC-7 (TC-181, bound half): an oversized encoding refuses, and

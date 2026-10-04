@@ -71,11 +71,27 @@ impl BackendId {
         Self(identity.into())
     }
 
+    /// Read a `BackendId` from the wire `backend` member (ADR-013 O-19,
+    /// FR-075-AC-6): the identity is kept verbatim, and an empty identity
+    /// refuses with [`EmptyBackendIdentity`].
+    pub fn from_wire(identity: &str) -> Result<Self, EmptyBackendIdentity> {
+        if identity.is_empty() {
+            Err(EmptyBackendIdentity)
+        } else {
+            Ok(Self::new(identity))
+        }
+    }
+
     /// The identity's exact wire spelling.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
+
+/// [`BackendId::from_wire`]'s refusal: the `backend` member is empty.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("invalid_identifier: the backend identity is empty")]
+pub struct EmptyBackendIdentity;
 
 impl fmt::Display for BackendId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -825,6 +841,17 @@ mod tests {
         );
         assert_eq!(original, Candidate::new(BackendId::new(" Kani/1 ")));
         assert_ne!(original, candidate("Kani/1"));
+        assert_eq!(
+            BackendId::from_wire(" Kani/1 ").unwrap().as_str(),
+            " Kani/1 "
+        );
+    }
+
+    /// FR-075-AC-6 (TC-433 step 2): an empty `backend` member refuses.
+    #[test]
+    #[trace("TC-433", "FR-075-AC-6")]
+    fn an_empty_backend_member_refuses() {
+        assert_eq!(BackendId::from_wire(""), Err(EmptyBackendIdentity));
     }
 
     /// FR-290 "Advertised mode": exactly `bounded` and `unbounded`, read
