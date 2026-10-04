@@ -186,7 +186,7 @@ fn limit_of(
                 SyntaxLimit::SourceBytes { bound } => (
                     FoundationKind::InputBytes,
                     bound,
-                    source_len(&diagnostic.source).map_or(bound + 1, |length| length),
+                    source_len(&diagnostic.source).unwrap_or(bound + 1),
                     "source.source_bytes",
                 ),
                 SyntaxLimit::Tokens { bound } => {
