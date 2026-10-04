@@ -107,6 +107,7 @@ extern crate alloc;
 extern crate std;
 
 mod accounting;
+mod cancel;
 mod collection;
 mod comparison;
 mod decimal;
@@ -159,6 +160,7 @@ mod value;
 pub use accounting::{
     length_amount, Charge, ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits,
 };
+pub use cancel::{Cancel, CancelCause, ChargeCount};
 pub use collection::{
     construct_collection, form, form_collection, form_grouped, from_admitted, member_equal,
     CardinalityBound, CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,

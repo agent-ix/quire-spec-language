@@ -38,7 +38,7 @@ use super::{
     admit_clause_observations, run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
     ClauseRunRefusal, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
 };
-use crate::spine::{compile, default_accounting, Compiled, DependencyInput, SpineLimits};
+use crate::spine::{compose, default_accounting, ComposedUnit, DependencyInput, SpineLimits};
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
 const PLACEHOLDER_DIGEST: &str =
@@ -193,9 +193,9 @@ fn source() -> qsl_foundation::SourceIdentity {
     qsl_foundation::SourceIdentity::new("agent-ix", "clause-run-fixture", "git", "1")
 }
 
-fn compiled() -> Compiled {
+fn compiled() -> ComposedUnit {
     let (unit, packages) = unit_and_packages();
-    compile(
+    compose(
         source(),
         "clause-run.native",
         unit.as_bytes(),
@@ -2310,7 +2310,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // postcondition to attempt it against -- `test/nodes` declares only
     // `NoCycle`, an invariant. FR-105 lifted the compile-time blocker this
     // comment used to describe (SR-751 FND-003): `post VersionUnchanged` on
-    // `attemptUpdate` now compiles through `spine::compile`, in
+    // `attemptUpdate` now compiles through the spine, in
     // `config_version_compiled()` below, in this same file. Constructing
     // `CallFailure::Fault` directly here rather than through
     // `package.evaluate_clause` against that fixture is still the
@@ -3204,7 +3204,7 @@ fn tc466_step3_reaches_target_true_self_a_target_a_over_the_loop() {
 fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evaluation {
     let documents = probe_documents(&config_version_step3_chain_objects(), "a", "c");
     let (unit, packages) = config_version_step3_unit_and_packages();
-    let compiled = compile(
+    let compiled = compose(
         source(),
         "clause-run-config-version-step3-denial.native",
         unit.as_bytes(),
@@ -3514,7 +3514,7 @@ mod extracted {
         );
         // The package the extracted body compiles to on its own: the unit
         // `run_clause` compiled is that body, not the original document.
-        let body_package_id = compile(
+        let body_package_id = compose(
             body.identity().clone(),
             body.path(),
             body.text().as_bytes(),
@@ -3620,9 +3620,9 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
 // FR-105: S4 state-node emission (TC-462, TC-463).
 // ---------------------------------------------------------------------------
 
-fn config_version_compiled() -> Compiled {
+fn config_version_compiled() -> ComposedUnit {
     let (unit, packages) = config_version_unit_and_packages();
-    compile(
+    compose(
         source(),
         "clause-run-config-version.native",
         unit.as_bytes(),
@@ -4253,7 +4253,7 @@ fn sorted_json(mut values: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
 /// bytes (the only place FR-105-AC-2's `dependencies` rule is observable --
 /// `BodyNames`/`Candidate::of` in `qsl-package`'s generic emitter compute
 /// them at emission time, never as an in-process `CheckedGraph` API).
-fn emitted_dependencies_of(compiled: &Compiled, key: NodeKey) -> Vec<serde_json::Value> {
+fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_json::Value> {
     let wire: serde_json::Value =
         serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
     let nodes = wire["semantic_graph"]["nodes"]
@@ -4644,8 +4644,8 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
 // ---------------------------------------------------------------------------
 
 /// Compile `unit` against `packages` through the whole spine (S1 to S5).
-fn compile_config_version_unit(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Compiled {
-    compile(
+fn compile_config_version_unit(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> ComposedUnit {
+    compose(
         source(),
         "clause-run-config-version.native",
         unit.as_bytes(),
@@ -4682,7 +4682,7 @@ fn insert_clause_after(unit: &str, after: &str, line: &str) -> String {
 }
 
 /// Every node key of `compiled`'s checked graph.
-fn node_keys(compiled: &Compiled) -> BTreeSet<NodeKey> {
+fn node_keys(compiled: &ComposedUnit) -> BTreeSet<NodeKey> {
     compiled
         .package
         .graph()
@@ -4764,7 +4764,7 @@ fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id()
         ".versionNumber <= self.versionNumber",
     );
     let edited = compile_config_version_unit(&edited_unit, &packages);
-    let identity = |compiled: &Compiled, name: &str| {
+    let identity = |compiled: &ComposedUnit, name: &str| {
         compiled
             .package
             .graph()

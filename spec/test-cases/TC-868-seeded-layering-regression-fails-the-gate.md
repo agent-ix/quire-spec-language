@@ -21,7 +21,7 @@ Scope: FR-345-AC-4 to FR-345-AC-9.
 ## Test Procedure
 
 Faults are injected only through FR-345's compile seam: the test passes the
-gate's comparison core a wrapper around `qsl_replay::spine::compile`,
+gate's comparison core a wrapper around the FR-278 composition,
 defined in the test module, that returns a chosen result for a named unit.
 Steps 1 to 6 pass a test registry holding one backend that advertises
 `operation-contract` and `value-validity` in `bounded` mode, unless a step

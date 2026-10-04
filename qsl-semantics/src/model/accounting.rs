@@ -8,6 +8,8 @@
 //! and is not reused here, per `value-accounting.md`: "These counters are
 //! independent of `ScalarLimitsV1`."
 
+use quire_exact::Cancel;
+
 /// `ModelNormalizationLimitsV1`. Every member is required; zero is a real
 /// limit and never means unlimited.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -283,52 +285,71 @@ impl Charge {
 /// A per-normalization-run scalar meter.
 ///
 /// **A count, not a log, as for the kernel meter.** A
-/// production meter holds only fixed-size state: the limits, the six
-/// counters and the number of admitted charges. It owns no heap memory, so
-/// the meter that bounds normalization's work does not itself grow with that
-/// work; the const assertion below this type holds that in every production
-/// build. The ordered charge log ([`Meter::admitted_charges`]) exists only
-/// under the `test-support` feature, which only a dev-dependency may enable.
+/// production meter holds only fixed-size counters: the limits, the six
+/// consumed values and the number of admitted charges. The counters own no
+/// heap memory, so the meter that bounds normalization's work does not
+/// itself grow with that work; the const assertion below holds that in every
+/// production build. The meter also shares the caller's
+/// [`Cancel`] handle, which is a reference count and not per-charge state.
+/// The ordered charge log ([`Meter::admitted_charges`]) exists only under
+/// the `test-support` feature, which only a dev-dependency may enable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Meter {
-    limits: ModelNormalizationLimits,
-    consumed: [u64; 6],
-    admissions: u64,
+    counters: Counters,
+    cancel: Option<Cancel>,
     #[cfg(feature = "test-support")]
     admitted: Vec<ChargePoint>,
 }
 
-// A production `Meter` owns no heap memory. A type with no drop
-// glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
-// fails the build rather than a test.
-#[cfg(not(feature = "test-support"))]
-const _: () = assert!(!std::mem::needs_drop::<Meter>());
+/// The fixed-size state a [`Meter`] charges against.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Counters {
+    limits: ModelNormalizationLimits,
+    consumed: [u64; 6],
+    admissions: u64,
+}
+
+// The counters own no heap memory. A type with no drop glue holds no
+// `Vec`, `Box` or `String`, so a heap-owning field added to it fails the
+// build rather than a test.
+const _: () = assert!(!std::mem::needs_drop::<Counters>());
 
 impl Meter {
     /// A fresh meter with nothing consumed.
     pub fn new(limits: ModelNormalizationLimits) -> Self {
         Self {
-            limits,
-            consumed: [0; 6],
-            admissions: 0,
+            counters: Counters {
+                limits,
+                consumed: [0; 6],
+                admissions: 0,
+            },
+            cancel: None,
             #[cfg(feature = "test-support")]
             admitted: Vec::new(),
         }
     }
 
+    /// This meter, polling `cancel` at every charge (FR-276): a cancelled
+    /// handle denies the charge as an exhausted work budget does.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: Cancel) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
     /// The configured limits.
     pub fn limits(&self) -> &ModelNormalizationLimits {
-        &self.limits
+        &self.counters.limits
     }
 
     /// Consumed value of one counter.
     pub fn consumed(&self, kind: LimitKind) -> u64 {
-        self.consumed[kind.index()]
+        self.counters.consumed[kind.index()]
     }
 
     /// How many charges this meter has admitted.
     pub fn admission_count(&self) -> u64 {
-        self.admissions
+        self.counters.admissions
     }
 
     /// Every admitted charge point in admission order. Test-only: a
@@ -341,7 +362,7 @@ impl Meter {
     fn incomplete(&self, kind: LimitKind, next: u64, point: ChargePoint) -> Incomplete {
         Incomplete {
             limit_kind: kind,
-            limit: kind.limit(&self.limits),
+            limit: kind.limit(&self.counters.limits),
             consumed: self.consumed(kind),
             next_charge: next,
             charge_point: point,
@@ -354,6 +375,9 @@ impl Meter {
     /// every counter exactly as it was.
     pub(super) fn charge(&mut self, charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
+        if self.cancel.as_ref().is_some_and(Cancel::poll) {
+            return Err(self.incomplete(LimitKind::WorkUnits, charge.work_units, point));
+        }
         let sized = match charge.size {
             None => None,
             Some((kind, amount)) => {
@@ -363,7 +387,9 @@ impl Meter {
                     Some(amount.max(self.consumed(kind)))
                 };
                 match candidate {
-                    Some(value) if value <= kind.limit(&self.limits) => Some((kind, value)),
+                    Some(value) if value <= kind.limit(&self.counters.limits) => {
+                        Some((kind, value))
+                    }
                     _ => return Err(self.incomplete(kind, amount, point)),
                 }
             }
@@ -372,14 +398,14 @@ impl Meter {
             .consumed(LimitKind::WorkUnits)
             .checked_add(charge.work_units)
         {
-            Some(total) if total <= self.limits.work_units => total,
+            Some(total) if total <= self.counters.limits.work_units => total,
             _ => return Err(self.incomplete(LimitKind::WorkUnits, charge.work_units, point)),
         };
         if let Some((kind, value)) = sized {
-            self.consumed[kind.index()] = value;
+            self.counters.consumed[kind.index()] = value;
         }
-        self.consumed[LimitKind::WorkUnits.index()] = work_total;
-        self.admissions = self.admissions.saturating_add(1);
+        self.counters.consumed[LimitKind::WorkUnits.index()] = work_total;
+        self.counters.admissions = self.counters.admissions.saturating_add(1);
         #[cfg(feature = "test-support")]
         self.admitted.push(point);
         Ok(())
@@ -402,7 +428,7 @@ mod tests {
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn a_production_meter_owns_no_heap_memory_and_counts_every_charge() {
-        assert!(!std::mem::needs_drop::<Meter>());
+        assert!(!std::mem::needs_drop::<Counters>());
         assert!(!std::mem::needs_drop::<Charge>());
         let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
         let mut admitted = 0_u64;

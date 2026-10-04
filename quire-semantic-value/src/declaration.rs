@@ -518,11 +518,16 @@ impl Default for TypeEnvironmentLimits {
 struct WorkBudget {
     spent: u64,
     limit: u64,
+    cancel: quire_exact::Cancel,
 }
 
 impl WorkBudget {
-    fn new(limit: u64) -> Self {
-        Self { spent: 0, limit }
+    fn new(limit: u64, cancel: quire_exact::Cancel) -> Self {
+        Self {
+            spent: 0,
+            limit,
+            cancel,
+        }
     }
 
     /// Charge `units`, or the [`EnvironmentLimitKind::WorkUnits`] limit (FR-082)
@@ -530,8 +535,12 @@ impl WorkBudget {
     /// refused charge would have reached.
     fn charge(&mut self, units: usize) -> Result<(), EnvironmentLimit> {
         let units = u64::try_from(units).unwrap_or(u64::MAX);
+        // A cancelled handle (FR-276) denies the charge as an exhausted
+        // budget does; the caller that owns the handle reports the
+        // cancellation.
+        let cancelled = self.cancel.poll();
         match self.spent.checked_add(units) {
-            Some(spent) if spent <= self.limit => {
+            Some(spent) if spent <= self.limit && !cancelled => {
                 self.spent = spent;
                 Ok(())
             }
@@ -793,6 +802,24 @@ impl TypeEnvironment {
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
         limits: TypeEnvironmentLimits,
     ) -> Admission<Self> {
+        Self::bounded_with_cancel(
+            composites,
+            object_types,
+            limits,
+            &quire_exact::Cancel::new(),
+        )
+    }
+
+    /// [`Self::bounded`] with the caller's [`quire_exact::Cancel`] handle
+    /// polled at every work charge (FR-276). A cancelled handle stops
+    /// admission with a [`EnvironmentLimitKind::WorkUnits`] limit, which the
+    /// caller that owns the handle reads as its cancellation.
+    pub fn bounded_with_cancel(
+        composites: impl IntoIterator<Item = CompositeDeclaration>,
+        object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
+        limits: TypeEnvironmentLimits,
+        cancel: &quire_exact::Cancel,
+    ) -> Admission<Self> {
         let mut environment = Self::default();
         for declaration in composites {
             let refuse = |cause| {
@@ -840,7 +867,7 @@ impl TypeEnvironment {
         environment
             .check_recursion(RecursionEdges::NonEscaping)
             .map_err(EnvironmentFailure::Refused)?;
-        let mut budget = WorkBudget::new(limits.work_units);
+        let mut budget = WorkBudget::new(limits.work_units, cancel.clone());
         environment.check_supertypes(&mut budget)?;
         environment.ancestry = environment.compute_ancestors(&mut budget)?;
         environment
@@ -2666,7 +2693,7 @@ mod work_budget_tests {
     /// admitted spend is unchanged.
     #[test]
     fn a_denied_charge_reports_the_total_it_would_have_reached() {
-        let mut budget = WorkBudget::new(4);
+        let mut budget = WorkBudget::new(4, quire_exact::Cancel::new());
         assert_eq!(budget.charge(3), Ok(()));
         assert_eq!(
             budget.charge(2),

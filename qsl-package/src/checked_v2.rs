@@ -137,6 +137,10 @@ pub(crate) enum Read {
     Refused(V2ReadRefusal),
     /// `StageFailure::Limit`.
     Limit(LimitExceeded),
+    /// `StageFailure::Cancelled`.
+    Cancelled(quire_exact::CancelCause),
+    /// `StageFailure::Fault`.
+    Fault(qsl_foundation::diagnostic::InternalFault),
 }
 
 /// [`read_checked_package_v2`], viewed as a [`Read`].
@@ -165,6 +169,8 @@ pub(crate) fn read_v2(
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
         Err(StageFailure::Limit(limit)) => Read::Limit(limit),
+        Err(StageFailure::Cancelled(cause)) => Read::Cancelled(cause),
+        Err(StageFailure::Fault(fault)) => Read::Fault(fault),
     }
 }
 
@@ -776,6 +782,10 @@ fn read_message(refusal: &StageFailure<V2ReadRefusal>) -> String {
             limit.configured_bound(),
             limit.actual()
         ),
+        StageFailure::Cancelled(cause) => format!("cancelled ({cause:?})"),
+        StageFailure::Fault(fault) => {
+            format!("internal fault ({}, {})", fault.stage(), fault.invariant())
+        }
     }
 }
 
@@ -797,6 +807,14 @@ impl ImportViewRefusal {
                 refusal: StageFailure::Limit(_),
                 ..
             } => Code::StageLimitExceeded,
+            Self::Read {
+                refusal: StageFailure::Cancelled(_),
+                ..
+            } => Code::Cancelled,
+            Self::Read {
+                refusal: StageFailure::Fault(_),
+                ..
+            } => Code::RuntimeInvariant,
         }
     }
 }

@@ -8,15 +8,20 @@
 //! nested 1 to 100,000 levels deep: nested brackets, a sum, an `else if`
 //! chain, nested `let`s, a mix of those four chosen level by level, or a
 //! nested `Option` type. [`DeepInput::compile`] runs it through the S1
-//! parser, S2 forms and the S3 checker (`qsl_replay::spine::compile`)
+//! parser, S2 forms and the S3 checker (`qsl_replay::spine`'s `parse`,
+//! `select`, `check` and `package`)
 //! under size and work limits raised to fit it, so a refusal is the stage's
 //! own outcome for the input, not a default size limit.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use qsl_replay::spine::{compile, CompileRefusal, Compiled, DependencyInput, SpineLimits};
+use qsl_replay::spine::{
+    DependencyInput, EmittedUnit, FrontEndFailure, LockEvidence, PackageLimits, ParseRequest,
+    SpineLimits,
+};
 use qsl_replay::SourceIdentity;
+use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The deepest input the generator builds.
@@ -194,15 +199,36 @@ impl DeepInput {
     }
 
     /// Compile the input through S1 to S4.
-    pub fn compile(&self) -> Result<Compiled, Box<CompileRefusal>> {
-        compile(
-            SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1"),
-            "deep-input.native",
-            self.source.as_bytes(),
-            &BTreeMap::new(),
+    pub fn compile(&self) -> Result<EmittedUnit, FrontEndFailure> {
+        self.compile_under(self.limits())
+    }
+
+    /// Compile the input through S1 to S4 under `limits`.
+    fn compile_under(&self, limits: SpineLimits) -> Result<EmittedUnit, FrontEndFailure> {
+        use qsl_replay::spine::{check, package, parse, select};
+        let cancel = Cancel::new();
+        let source = SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1");
+        let parsed = parse(
+            &ParseRequest {
+                source: &source,
+                path: "deep-input.native",
+                bytes: self.source.as_bytes(),
+            },
+            limits.source,
+            &cancel,
+        )?
+        .into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)?.into_value();
+        let checked = check(
+            &parsed,
+            &models,
             &DependencyInput::default(),
-            self.limits(),
-        )
+            &LockEvidence::default(),
+            limits,
+            &cancel,
+        )?
+        .into_value();
+        Ok(package(&checked, PackageLimits::default(), &cancel)?.into_value())
     }
 }
 
@@ -217,12 +243,12 @@ mod tests {
         for level in Level::ALL {
             let input = DeepInput::new(Shape::Expression(vec![level; 3]));
             if let Err(refusal) = input.compile() {
-                panic!("{level:?}: {refusal}\n{}", input.source);
+                panic!("{level:?}: {refusal:?}\n{}", input.source);
             }
         }
         let input = DeepInput::new(Shape::OptionType(3));
         if let Err(refusal) = input.compile() {
-            panic!("Option: {refusal}\n{}", input.source);
+            panic!("Option: {refusal:?}\n{}", input.source);
         }
     }
 
@@ -261,14 +287,7 @@ mod tests {
                 assert!(depth > 64, "S1 has no nesting ceiling: {depth}");
                 let input = DeepInput::new(Shape::OptionType(depth));
                 // Either outcome is a result; the test is that one arrives.
-                let _outcome: Result<Compiled, Box<CompileRefusal>> = compile(
-                    SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1"),
-                    "deep-input.native",
-                    input.source.as_bytes(),
-                    &BTreeMap::new(),
-                    &DependencyInput::default(),
-                    SpineLimits::default(),
-                );
+                let _outcome = input.compile_under(SpineLimits::default());
             })
             .expect("spawn a 2 MiB thread")
             .join()

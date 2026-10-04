@@ -247,6 +247,9 @@ pub struct ClauseDeclarations<'a> {
     pub(crate) location: &'a Location,
     /// The package's running expression-node total before this clause.
     pub(crate) nodes_used: u64,
+    /// The caller's cancellation handle, polled at every node charge of
+    /// this clause's check (FR-276).
+    pub(crate) cancel: Option<&'a quire_exact::Cancel>,
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
@@ -408,7 +411,8 @@ fn check_clause(
         input.checking_limits,
         &mut nodes,
         form.clause_kind(),
-    );
+    )
+    .with_cancel(input.cancel);
     bind_parameters(&mut typer, &parameters, location)?;
     typer.enter_state_clause(StateContext {
         kind: form.kind,

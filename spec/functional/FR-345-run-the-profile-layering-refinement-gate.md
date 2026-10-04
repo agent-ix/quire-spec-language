@@ -86,7 +86,7 @@ entry or empty corpus, all passed to FR-344's report.
 
 ### Compiling and comparing
 
-- The gate SHALL compile each unit through `qsl_replay::spine::compile`
+- The gate SHALL compile each unit through the FR-278 composition
   with the entry's packages, dependency input and limits (each unstated
   limit at its published default), and classify each result by FR-341.
   Both units of every `case` and `distinguishing` entry are compiled by the
@@ -128,7 +128,7 @@ entry or empty corpus, all passed to FR-344's report.
 
 The gate's comparison core SHALL take the compile function and the backend
 registry snapshot as parameters. `xtask refinement layering` passes
-`qsl_replay::spine::compile` and QSL's registry snapshot and nothing else.
+the FR-278 composition and QSL's registry snapshot and nothing else.
 A test substitutes a wrapper that returns a chosen result for a named unit,
 and a test registry; the wrapper lives only in the test module of the gate's crate
 (`#[cfg(test)]`), so no build of `xtask` or of the compiler carries a fault

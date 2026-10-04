@@ -119,7 +119,7 @@ passed to FR-344's report.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-340-CON-1 | The gate reaches compile and evaluation only through `qsl_replay::spine::run_clause` and `qsl_replay::spine::compile`; it calls no family checker, backend or router. | Design | Inspection |
+| FR-340-CON-1 | The gate reaches compile and evaluation only through `qsl_replay::spine::run_clause` and the FR-278 composition; it calls no family checker, backend or router. | Design | Inspection |
 
 ## Acceptance Criteria
 

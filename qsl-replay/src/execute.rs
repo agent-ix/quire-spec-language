@@ -3,7 +3,7 @@
 //! replay executor entry, [`replay`].
 //!
 //! It reads the request (FR-071), recompiles the one source unit the
-//! package reference names through the spine ([`crate::spine::compile`],
+//! package reference names through the spine ([`crate::spine::parse`],
 //! S1 to S4) from the digest-addressed byte provision, requires the
 //! recompiled `package_id` to equal the request's, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
@@ -29,7 +29,9 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType};
+use quire_exact::{
+    Cancel, Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
+};
 use quire_semantic_value::call::InputRefusal;
 
 use crate::bounds::MAX_ENCODED_BYTES;
@@ -39,7 +41,7 @@ use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
-    compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, SpineLimits,
+    self, CompileRefusal, DependencyInput, DependencyInputRefusal, ParseRequest, SpineLimits,
     SuppliedLibrary,
 };
 use crate::witness::{
@@ -458,7 +460,7 @@ pub enum DependencySelectionsCause {
 pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
     let compiled = recompile(&request)?;
-    let package = &compiled.package;
+    let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function())?;
     let arguments = arguments(
         package,
@@ -552,6 +554,11 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {
         CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
         CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
+        // The replay meter holds no `Cancel` handle, so no charge is
+        // cancelled.
+        CallFailure::Cancelled(_) => {
+            ReplayRefusal::Fault(InternalFault::new("replay", "cancelled-without-a-handle"))
+        }
     }
 }
 
@@ -584,12 +591,21 @@ fn spine_limits(stages: StageLimits) -> Result<SpineLimits, ReplayRefusal> {
     })
 }
 
+/// The recompile of a request's unit: its checked package and the bytes it
+/// emits.
+pub(crate) struct Recompiled {
+    /// The recompiled in-process package, with the sources it came from.
+    pub(crate) checked: spine::CheckedUnit,
+    /// The recompiled package's v2 bytes and `package_id`.
+    pub(crate) emitted: spine::EmittedUnit,
+}
+
 /// Recompile the request's one source unit from the byte provision against
 /// the dependency input its `dependencies` entries build, with every domain
 /// package the provision carries under its `sha256-jcs` digest as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
-fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
+fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
         if let [before, entry] = pair {
@@ -646,18 +662,43 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
     let bytes = provided(source)?;
     let packages = domain_packages(request);
     // Rule 4: the recompile.
-    let compiled = compile(
-        labels(source),
-        source.identity(),
-        bytes,
-        &packages,
-        &dependencies,
-        limits,
+    let cancel = Cancel::new();
+    let refusal = |failure| match spine::refusal_or_fault(failure) {
+        Ok(refusal) => ReplayRefusal::Recompile(refusal),
+        Err(fault) => ReplayRefusal::Fault(fault),
+    };
+    let unit = labels(source);
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &unit,
+            path: source.identity(),
+            bytes,
+        },
+        limits.source,
+        &cancel,
     )
-    .map_err(ReplayRefusal::Recompile)?;
+    .map_err(refusal)?
+    .into_value();
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        &models,
+        &dependencies,
+        &spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let compiled = Recompiled { checked, emitted };
     // Rule 5: the proved package's `package_id`.
     let requested = request.package_id();
-    let recompiled = compiled.emitted.package_id();
+    let recompiled = compiled.emitted.package().package_id();
     if !recompiled.matches(&requested) {
         return Err(ReplayRefusal::PackageIdMismatch {
             requested,
@@ -666,7 +707,7 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
     }
     // Rules 6 and 7: every entry names a selection of the recompiled
     // closure, then at its recomputed `package_id`.
-    let selections = compiled.package.dependency_selections();
+    let selections = compiled.checked.package().dependency_selections();
     for entry in request.dependencies() {
         if !selections.contains_key(entry.identity()) {
             return Err(ReplayRefusal::DependencySelections(
@@ -772,11 +813,11 @@ pub(crate) fn callable_parameter_keys(
 /// Complete-V1 declares no qualified names, so only a one-segment name
 /// can resolve. A function whose declared result is not `Boolean` states
 /// no property, and refuses here, before any call or charge.
-fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayRefusal> {
-    let package = &compiled.package;
+fn select(compiled: &Recompiled, name: &QualifiedName) -> Result<Selected, ReplayRefusal> {
+    let package = compiled.checked.package();
     let unknown = || ReplayRefusal::UnknownFunction {
         selection: name.clone(),
-        package: compiled.emitted.package_id(),
+        package: compiled.emitted.package().package_id(),
     };
     let [segment] = name.segments() else {
         return Err(unknown());
@@ -788,7 +829,7 @@ fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayR
     if *callable.result != ValueType::Boolean {
         return Err(ReplayRefusal::NotAPredicate {
             selection: name.clone(),
-            package: compiled.emitted.package_id(),
+            package: compiled.emitted.package().package_id(),
         });
     }
     let types: Vec<ValueType> = callable

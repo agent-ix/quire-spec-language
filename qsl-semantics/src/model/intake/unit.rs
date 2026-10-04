@@ -13,12 +13,13 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::selection::{ModelDigest, ModelSelection};
 use qsl_foundation::{Code, Span};
+use quire_exact::Cancel;
 
 use super::{admit_located, read_records, PackageDocument};
 use crate::model::accounting::{Incomplete, ModelNormalizationLimits};
 use crate::model::domain_package::{DomainPackage, DomainPackageRef};
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
-use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome, Refusals};
+use crate::model::normalize::{normalize_with_cancel, EffectiveView, NormalizeOutcome, Refusals};
 
 /// One `model` declaration of a unit, admitted at I1: its alias, the span
 /// of its declaration and its domain package's effective view.
@@ -100,6 +101,17 @@ pub fn admit_unit(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
+    admit_unit_with_cancel(selections, packages, limits, &Cancel::new())
+}
+
+/// [`admit_unit`] under the caller's [`Cancel`] handle, polled at every
+/// normalization charge (FR-276).
+pub fn admit_unit_with_cancel(
+    selections: &[ModelSelection],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: ModelNormalizationLimits,
+    cancel: &Cancel,
+) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
     let refuse = |selection: &ModelSelection, cause| UnitIntakeRefusal {
         alias: selection.alias.clone(),
         span: selection.span,
@@ -139,7 +151,11 @@ pub fn admit_unit(
                     .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);
                 refuse(selection, cause)
             })?;
-            let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
+            let view = match normalize_with_cancel(
+                &DomainPackage::new(package_ref, records),
+                limits,
+                cancel,
+            ) {
                 NormalizeOutcome::Completed(view) => view,
                 NormalizeOutcome::Refused(refusals) => {
                     return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
-use crate::spine::DependencyInput;
+use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord};
 use qsl_foundation::SourceIdentity;
@@ -55,11 +55,11 @@ fn arg(parameter: &str, value: i64) -> CallArgument {
 }
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
-/// integer `7`, and the returned `package_id` equals `spine::compile`'s.
+/// integer `7`, and the returned `package_id` equals the composed operations'.
 #[trace("TC-452", "FR-100-AC-7")]
 #[test]
 fn tc_452_seven_completes_and_agrees_with_compile() {
-    let compiled = compile(
+    let compiled = compose(
         source(),
         "spine-run.native",
         FIXTURE.as_bytes(),
@@ -319,7 +319,7 @@ fn evaluation(outcome: FamilyOutcome<Value>) -> qsl_eval::value::Evaluation {
 #[trace("TC-452", "FR-100-AC-9")]
 #[test]
 fn tc_452_step_4_outcome_mapping_covers_every_category() {
-    let compiled = compile(
+    let compiled = compose(
         source(),
         "tc-452-f.native",
         FIXTURE_F.as_bytes(),

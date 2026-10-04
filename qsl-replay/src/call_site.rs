@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! A thin CG-facing cut of [`crate::spine::compile`]: the facts a client
+//! A thin CG-facing cut of the front-end operations in [`crate::spine`]: the facts a client
 //! needs to key a `ReplayRequestWire` or a frame or state-clause
 //! counterexample by node id
 //! and package id (ADR-013 O-25, C-11), without reaching
@@ -26,7 +26,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
-use quire_exact::{Identifier, NodeKey, Origin, Role};
+use quire_exact::{Cancel, Identifier, NodeKey, Origin, Role};
 
 use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
@@ -319,20 +319,45 @@ pub fn call_site<'a, S: CallSiteSelection>(
     dependencies: &DependencyInput,
     selection: &S,
 ) -> Result<CallSite<S::Site>, Box<CallSiteRefusal>> {
-    let compiled = spine::compile(
-        source,
-        path,
-        bytes,
-        &package_input(packages),
-        dependencies,
-        spine::SpineLimits::default(),
+    let cancel = Cancel::new();
+    let refusal = |failure| match spine::refusal_or_fault(failure) {
+        Ok(refusal) => Box::new(CallSiteRefusal::from(*refusal)),
+        Err(fault) => Box::new(CallSiteRefusal::Fault(fault)),
+    };
+    let limits = spine::SpineLimits::default();
+    let packages = package_input(packages);
+    let parsed = spine::parse(
+        &spine::ParseRequest {
+            source: &source,
+            path,
+            bytes,
+        },
+        limits.source,
+        &cancel,
     )
-    .map_err(|refusal| Box::new(CallSiteRefusal::from(*refusal)))?;
-    let package_id = compiled.emitted.package_id().record();
-    let site = selection.locate(&compiled.package, package_id)?;
+    .map_err(refusal)?
+    .into_value();
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        &models,
+        dependencies,
+        &spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let package_id = emitted.package().package_id().record();
+    let site = selection.locate(checked.package(), package_id)?;
     Ok(CallSite {
         package_id,
-        package: compiled.emitted.bytes().to_vec(),
+        package: emitted.package().bytes().to_vec(),
         site,
     })
 }
@@ -366,6 +391,7 @@ impl From<CompileRefusal> for CallSiteRefusal {
             | CompileRefusal::Check { .. }
             | CompileRefusal::Link(_)
             | CompileRefusal::Emit(_)
+            | CompileRefusal::Limit(_)
             | CompileRefusal::Omitted(_)) => Self::Compile {
                 code,
                 message: refusal.to_string(),
@@ -744,7 +770,7 @@ mod tests {
     #[test]
     fn call_site_returns_the_checked_package_bytes_its_package_id_names() {
         let site = function_site(UNIT.as_bytes(), "f").expect("f is a declared function");
-        let compiled = crate::spine::compile(
+        let compiled = crate::spine::compose(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             UNIT.as_bytes(),

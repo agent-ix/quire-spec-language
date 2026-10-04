@@ -1244,6 +1244,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnlocatedOccurrence { .. }) => Seen::UnlocatedOccurrence,
             Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
+            Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
         }
     }
     assert_eq!(
@@ -1266,6 +1267,21 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         classify(emit_checked(&declared_types(Vec::new(), Vec::new()))),
         Seen::UnlocatedOccurrence
     );
+}
+
+/// FR-276: a handle cancelled before the call stops the emitter at its first
+/// charge, and it writes no bytes.
+#[test]
+fn a_cancelled_handle_stops_the_emitter_before_it_writes_a_node() {
+    let cancel = quire_exact::Cancel::new();
+    cancel.cancel(quire_exact::CancelCause::Deadline);
+    match emit_checked_with_cancel(&package(vec![t_read_from_text()]), &cancel) {
+        Err(EmitRefusal::Cancelled { cause }) => {
+            assert_eq!(cause, quire_exact::CancelCause::Deadline);
+        }
+        Err(other) => panic!("expected a cancellation, got {other:?}"),
+        Ok(_) => panic!("a cancelled emitter wrote bytes"),
+    }
 }
 
 /// TC-416 step 3 (FR-093-CON-2): the `package` crate's non-test code calls

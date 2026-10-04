@@ -16,7 +16,7 @@ Scope: FR-299-AC-1 to FR-299-AC-4.
 
 ## Test Procedure
 
-1. Over a `1-draft` source declaring `p(x: Int[0, 9]): Boolean { x < 10 }` and `q(x: Int[0, 9]): Boolean { x < 5 }` with a claim on each, call `check`, then `package`, then `execute` of `p` with `x = 3` on the interpreter; compile the same source with `qsl_replay::spine::compile`; map each outcome's category through FR-285.
+1. Over a `1-draft` source declaring `p(x: Int[0, 9]): Boolean { x < 10 }` and `q(x: Int[0, 9]): Boolean { x < 5 }` with a claim on each, call `check`, then `package`, then `execute` of `p` with `x = 3` on the interpreter; compile the same source with the FR-278 composition; map each outcome's category through FR-285.
 2. Serialize each step 1 outcome to its FR-286 document, twice.
 3. Repeat step 1 over a source importing `test/geometry`, with that library supplied.
 4. Call `check` over the step 1 source with its `Cancel` handle cancelled before the call.

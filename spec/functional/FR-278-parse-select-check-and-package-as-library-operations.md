@@ -45,9 +45,10 @@ call shape (ADR-029 OP-1):
   the digest-addressed source provision another party needs to import (I2)
   or replay (E9) the package.
 
-The composition `parse`, `select`, `check`, `package` is the spine `compile`
-(`qsl_replay::spine::compile`). FR-027's native-compile/1 request for a
-`1-draft` program is the command encoding of this composition.
+The composition `parse`, `select`, `check`, `package` is the spine compile: S1
+to E4 over one source. No single function runs the four; each caller composes
+them. FR-027's native-compile/1 request for a `1-draft` program is the command
+encoding of this composition.
 
 None of the four takes a backend registry (FR-289).
 
@@ -70,18 +71,23 @@ the refusing stage's own typed causes.
 - The `check` operation shall check and link the `ParsedSource` against the
   `AdmittedModels` and the dependency input, and return the
   `CheckedPackage` or S3's or S4's refusal.
+- The `check` operation shall check each library of the dependency closure
+  independently of the unit that imports it, under the default lock evidence
+  and never the importer's, so a library's recomputed `package_id` does not
+  depend on who imports it; the lock evidence it takes applies to the unit
+  itself.
 - The `package` operation shall emit the `CheckedPackage` as
   `quire.checked-package/v2` bytes with its source provision.
 - The composition of the four operations over a source shall return the same
-  bytes and the same refusal, stage and cause code that spine `compile`
-  returns for that source and inputs.
+  bytes, and for a refused source the same stage and cause code, that FR-027's
+  `compile` command writes and reports for that source and inputs.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-278-AC-1 | `parse`, `select`, `check` and `package` composed over `tests/fixtures/spine-compile.native`, over FR-027-AC-9's domain-package request and over FR-027-AC-10's library request each return the bytes `qsl_replay::spine::compile` returns for the same source and inputs, and QSL's I2 reader reads each back Verified. | Test (TC-759) |
-| FR-278-AC-2 | A source with a syntax error is refused by `parse` with `invalid_syntax`; a `model` declaration naming a document the request does not supply is refused by `select` at the `model` declaration; FR-100-AC-5's `inv` function is refused by `check` with `ill_typed`. Each refusal's stage and cause code equal those spine `compile` reports for the same source. | Test (TC-759) |
+| FR-278-AC-1 | `parse`, `select`, `check` and `package` composed over `tests/fixtures/spine-compile.native`, over FR-027-AC-9's domain-package request and over FR-027-AC-10's library request each return the bytes FR-027's `compile` command writes for the same source and inputs (FR-027-AC-5, AC-9, AC-10), and QSL's I2 reader reads each back Verified. | Test (TC-759) |
+| FR-278-AC-2 | A source with a syntax error is refused by `parse` with `invalid_syntax`; a `model` declaration naming a document the request does not supply is refused by `select` at the `model` declaration; FR-100-AC-5's `inv` function is refused by `check` with `ill_typed`. Each refusal's stage and cause code equal those FR-027's `compile` command reports for the same source. | Test (TC-759) |
 | FR-278-AC-3 | The `EmittedPackage` from `package` carries a source provision whose digests name every source the package was compiled from, and FR-098's `replay`, given that provision, recompiles the package to the same `package_id`. | Test (TC-759) |
 
 ## Dependencies

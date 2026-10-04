@@ -16,7 +16,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded, LimitExceeded, LimitKind};
+use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded, LimitExceeded, LimitKind, Stopped};
 use qsl_semantics::check::object_type_supertypes;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::dispatch::GeneralizationClosure;
@@ -385,9 +385,12 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
 
     // Check time: a stage limit (ADR-014 B-3), node count, the ceiling
     // plus one, and no locus (FR-082).
-    let limit = stage_failure(environment_of(&view, CEILING).unwrap_err())
+    let Stopped::Limit(limit) = stage_failure(environment_of(&view, CEILING).unwrap_err())
         .into_refused()
-        .unwrap_err();
+        .unwrap_err()
+    else {
+        panic!("a stage limit, not a cancellation");
+    };
     assert_eq!(
         limit,
         LimitExceeded::new(LimitKind::NodeCount, CEILING, u128::from(CEILING) + 1)
@@ -1101,9 +1104,12 @@ fn chain_slots(depth: u64) -> u64 {
 /// B-3): the refused charge's cumulative total passes the bound, and it
 /// carries no locus.
 fn work_limit(admission: Admission<TypeEnvironment>) -> LimitExceeded {
-    let limit = stage_failure(admission.unwrap_err())
+    let Stopped::Limit(limit) = stage_failure(admission.unwrap_err())
         .into_refused()
-        .expect_err("a work-budget stage limit, not a refusal");
+        .expect_err("a work-budget stage limit, not a refusal")
+    else {
+        panic!("a stage limit, not a cancellation");
+    };
     assert_eq!(limit.kind(), LimitKind::WorkBudget);
     assert!(limit.actual() > u128::from(limit.configured_bound()));
     assert_eq!(limit.locus(), None);

@@ -15,7 +15,7 @@ use quire_exact::{Identifier, ScalarLimits};
 use super::*;
 use crate::request::StateEnvironment;
 use crate::result::{InputSettlement, WitnessSettlement};
-use crate::spine::SpineStage;
+use crate::spine::{compose, ComposedUnit, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -72,8 +72,8 @@ fn stage_limits() -> StageLimits {
     }
 }
 
-fn spine(source: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Compiled {
-    compile(
+fn spine(source: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> ComposedUnit {
+    compose(
         SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
         IDENTITY,
         source.as_bytes(),
@@ -85,7 +85,7 @@ fn spine(source: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Compiled {
 }
 
 /// The wire node id of `function`'s parameter `index` in `compiled`.
-fn parameter(compiled: &Compiled, function: &str, index: usize) -> WireNodeId {
+fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> WireNodeId {
     let graph = compiled.package.graph();
     let identity = graph.callable(function).expect("declared").identity;
     let key = graph
@@ -209,6 +209,77 @@ fn tc_444_an_input_counterexample_replays_and_agrees() {
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.disagreement(), None);
     assert!(result.charges().work_units > 0);
+}
+
+/// FR-278-AC-3 (TC-759 step 3): the source provision of the `EmittedUnit`
+/// names every source the package was compiled from by digest, and `replay`,
+/// given that provision as its byte provision, recompiles the package to the
+/// same `package_id`.
+#[trace("TC-759", "FR-278-AC-3")]
+#[test]
+fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
+    let source = proved();
+    let limits = SpineLimits::default();
+    let cancel = quire_exact::Cancel::new();
+    let identity = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let packages = BTreeMap::new();
+    let parsed = crate::spine::parse(
+        &crate::spine::ParseRequest {
+            source: &identity,
+            path: IDENTITY,
+            bytes: source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("the unit parses")
+    .into_value();
+    let models = crate::spine::select(&parsed, &packages, limits.model, &cancel)
+        .expect("the unit selects")
+        .into_value();
+    let checked = crate::spine::check(
+        &parsed,
+        &models,
+        &crate::spine::DependencyInput::default(),
+        &crate::spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .expect("the unit checks")
+    .into_value();
+    let emitted = crate::spine::package(&checked, crate::spine::PackageLimits::default(), &cancel)
+        .expect("the unit emits")
+        .into_value();
+
+    let provision: Vec<_> = emitted
+        .sources()
+        .iter()
+        .map(|source| {
+            (
+                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+                source.reference().digest().hex(),
+                source.text().as_bytes().to_vec(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        provision.iter().map(|entry| &entry.1).collect::<Vec<_>>(),
+        vec![&source_digest(source.as_bytes()).hex()],
+        "the provision names the unit's one source by its digest"
+    );
+
+    let compiled = spine(&source, &packages);
+    let mut wire = request(
+        source.as_bytes(),
+        emitted.package().package_id(),
+        name(&["small"]),
+        input(parameter(&compiled, "small", 0), 7),
+    );
+    wire.byte_provision = provision;
+    assert!(
+        matches!(replay(wire), Ok(ReplayResult::Input(_))),
+        "the provision recompiles the package the request names"
+    );
 }
 
 /// FR-098-AC-2: a backend witness binds `x` by its parameter node id and
@@ -910,13 +981,13 @@ struct Importing {
     unit: String,
     units: String,
     units_id: PackageId,
-    compiled: Compiled,
+    compiled: ComposedUnit,
 }
 
 impl Importing {
     fn new() -> Self {
         let units = units_source(BIG);
-        let units_id = compile(
+        let units_id = compose(
             SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
             UNITS_IDENTITY,
             units.as_bytes(),
@@ -942,7 +1013,7 @@ impl Importing {
                 bytes: units.clone().into_bytes(),
             }])
             .unwrap();
-        let compiled = compile(
+        let compiled = compose(
             SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
             IDENTITY,
             unit.as_bytes(),

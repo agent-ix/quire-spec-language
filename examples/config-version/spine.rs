@@ -72,7 +72,7 @@ pub fn domain_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
 
 /// FR-108's own fixed `SourceIdentity` for the compiled unit, shared by
 /// every case (see [`request`]'s own doc for why it must not be
-/// case-suffixed) and by every direct `spine::compile` call comparing
+/// case-suffixed) and by every direct front-end composition comparing
 /// against it (`tests/it/config_version_spine.rs`'s step 6 tests). One
 /// function, not three copies of the same literal (SR-768 FND-005).
 pub fn unit_identity() -> qsl_foundation::SourceIdentity {
@@ -387,7 +387,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         // identical (TC-469 step 6's "every case shares the same unit and
         // package"). This is the same fixed identity
         // `tests/it/config_version_spine.rs`'s own independent
-        // `spine::compile` call uses for its direct-compile comparison.
+        // direct front-end composition uses for its comparison.
         source: ClauseRunSource::Program {
             identity: unit_identity(),
             path: "spine-unit.native".to_owned(),

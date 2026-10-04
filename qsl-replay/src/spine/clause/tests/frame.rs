@@ -123,7 +123,7 @@ fn changed_version() -> FrameInput {
 /// The identity of the one `state`/`frame` node the compiled unit emits.
 fn emitted_frame_identity() -> NodeKey {
     let (unit, packages) = config_version_unit_and_packages();
-    let compiled = compile(
+    let compiled = compose(
         source(),
         "frame.native",
         unit.as_bytes(),

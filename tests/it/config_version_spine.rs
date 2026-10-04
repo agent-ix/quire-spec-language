@@ -859,19 +859,18 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
     }
     let pinned = pinned.expect("at least one case compiles");
 
-    // The bytes spine `compile` emits for the FR-108 unit, independent of
+    // The bytes spine's operations emit for the FR-108 unit, independent of
     // any one case's request, share the same pinned `package_id`.
     let unit = spine::unit_text();
-    let compiled = qsl_replay::spine::compile(
+    let compiled = crate::support::front_end::emitted(
         spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
         &spine::domain_packages(),
         &qsl_replay::spine::DependencyInput::default(),
-        qsl_replay::spine::SpineLimits::default(),
     )
     .expect("the FR-108 unit compiles");
-    assert_eq!(compiled.emitted.package_id(), pinned);
+    assert_eq!(compiled.package().package_id(), pinned);
 }
 
 /// FR-108-AC-6's other half: the emitted package bytes admit through QSpec
@@ -882,18 +881,17 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
 #[test]
 fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     let unit = spine::unit_text();
-    let compiled = qsl_replay::spine::compile(
+    let compiled = crate::support::front_end::emitted(
         spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
         &spine::domain_packages(),
         &qsl_replay::spine::DependencyInput::default(),
-        qsl_replay::spine::SpineLimits::default(),
     )
     .expect("the FR-108 unit compiles");
-    let pinned = compiled.emitted.package_id();
+    let pinned = compiled.package().package_id();
 
-    let bytes = compiled.emitted.bytes();
+    let bytes = compiled.package().bytes();
     // I04 `read` needs the lock's required features as supported; they are
     // read straight from the emitted wire (`Emission::evidence` is
     // `pub(crate)` to `qsl_package`).

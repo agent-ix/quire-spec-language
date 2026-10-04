@@ -23,7 +23,7 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
 
 1. Run a native-run/1 request selecting `tests/fixtures/spine-compile.native`,
    no models, and `call` `{"function": "seven", "arguments": []}`. Compile the
-   same source with `qsl_replay::spine::compile` under the same labels, and
+   same source with the FR-278 composition under the same labels, and
    take the SHA-256 digest of the request file's bytes.
 2. Run the `0-draft` standalone requests of TC-103 and TC-104
    (`tests/it/standalone.rs`) and compare stdout and exit status with the

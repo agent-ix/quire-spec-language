@@ -31,7 +31,7 @@ relationships:
 ## Description
 
 When a complete-V1 unit declares an `import`, spine `compile`
-(`qsl_replay::spine::compile`) SHALL resolve it against the dependency
+(the FR-278 composition) SHALL resolve it against the dependency
 input its caller supplies, compile each imported library from its source
 through S1 to S4, bind each import to the library's recomputed
 `package_id`, type every use of an imported name from the library's checked

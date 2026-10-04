@@ -31,12 +31,12 @@ pub(super) const IDENTITY: &str = "clause-run-fixture";
 pub(super) struct Unit {
     pub(super) bytes: Vec<u8>,
     pub(super) domain_document: Vec<u8>,
-    pub(super) compiled: Compiled,
+    pub(super) compiled: ComposedUnit,
 }
 
 pub(super) fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
     let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]);
-    let compiled = compile(
+    let compiled = compose(
         source(),
         IDENTITY,
         unit.as_bytes(),

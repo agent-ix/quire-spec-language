@@ -24,7 +24,7 @@ relationships:
 
 ## Description
 
-When spine `compile` (`qsl_replay::spine::compile`) compiles a complete-V1
+When spine `compile` (the FR-278 composition) compiles a complete-V1
 unit, E3 SHALL resolve each of the unit's `profile <alias> = "<identity>";`
 header declarations in the catalog of the family that owns the selected
 definition, and refuse, with a catalogued code and cause, every header

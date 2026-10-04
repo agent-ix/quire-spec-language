@@ -53,7 +53,7 @@ fn call(function: &str, arguments: Value) -> Value {
 
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
 /// document's `package_id`, `source` and `request_digest` agree with a
-/// direct `qsl_replay::spine::compile`.
+/// composition of the `qsl_replay::spine` operations.
 #[test]
 #[trace("TC-450", "FR-100-AC-1")]
 fn tc_450_step_1_seven_completes_through_the_spine() {
@@ -76,16 +76,18 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         document["request_digest"],
         ByteDigest::of(&request_bytes).to_string()
     );
-    let compiled = qsl_replay::spine::compile(
+    let compiled = crate::support::front_end::emitted(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-run", "fixture", "fixture:1"),
         "program.native",
         &program,
         &std::collections::BTreeMap::new(),
         &qsl_replay::spine::DependencyInput::default(),
-        qsl_replay::spine::SpineLimits::default(),
     )
     .unwrap();
-    assert_eq!(document["package_id"], compiled.emitted.package_id().hex());
+    assert_eq!(
+        document["package_id"],
+        compiled.package().package_id().hex()
+    );
     assert_eq!(document["source"]["authority"], "agent-ix");
     assert_eq!(document["source"]["identity"], "test:spine-run");
     assert_eq!(document["source"]["revision_namespace"], "fixture");
@@ -108,7 +110,7 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         json!({
             "format": "spine-run-result/1",
             "request_digest": ByteDigest::of(&request_bytes).to_string(),
-            "package_id": compiled.emitted.package_id().hex(),
+            "package_id": compiled.package().package_id().hex(),
             "source": {
                 "authority": "agent-ix",
                 "identity": "test:spine-run",
@@ -706,16 +708,15 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
     const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let library = format!("{HEADER}{LIBRARY}").into_bytes();
-    let library_digest = qsl_replay::spine::compile(
+    let library_digest = crate::support::front_end::emitted(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry", "fixture", "fixture:1"),
         "geometry.native",
         &library,
         &std::collections::BTreeMap::new(),
         &qsl_replay::spine::DependencyInput::default(),
-        qsl_replay::spine::SpineLimits::default(),
     )
     .unwrap()
-    .emitted
+    .package()
     .package_id()
     .hex();
     let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();

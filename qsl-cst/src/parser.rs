@@ -19,6 +19,7 @@ use qsl_foundation::selection::{
     ModelSelection, ProfileSelection, SourceSelections,
 };
 use qsl_foundation::{Phase, Source, Span, SyntaxLimit};
+use quire_exact::Cancel;
 
 #[derive(Clone, Debug)]
 struct Significant {
@@ -63,13 +64,15 @@ impl Failure {
 pub(super) fn parse(
     source: Source,
     limits: Limits,
+    cancel: &Cancel,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let grammar = grammar::complete_v1();
     let compounds = grammar::complete_compound_spellings(&grammar);
-    let (tokens, significant, mut diagnostics, mut recoveries) = scan(&source, limits, &compounds)?;
-    let prelude_nodes = selection_prelude_nodes(&source, &grammar, &significant, limits);
+    let (tokens, significant, mut diagnostics, mut recoveries) =
+        scan(&source, limits, &compounds, cancel)?;
+    let prelude_nodes = selection_prelude_nodes(&source, &grammar, &significant, limits, cancel);
     let matched = if diagnostics.is_empty() {
-        let mut engine = Engine::new(&grammar, &significant, limits);
+        let mut engine = Engine::new(&grammar, &significant, limits, cancel);
         let matched = match engine.production(Production::CompleteUnit, 0) {
             // A top-level match always leaves its root pending. Were that
             // invariant broken, the unit is reported as a syntax failure
@@ -192,6 +195,7 @@ fn selection_prelude_nodes(
     grammar: &Grammar,
     tokens: &[Significant],
     limits: Limits,
+    cancel: &Cancel,
 ) -> Vec<RawNode> {
     fn raw(source: &Source, tokens: &[Significant], node: &Matched) -> RawNode {
         RawNode {
@@ -201,7 +205,7 @@ fn selection_prelude_nodes(
         }
     }
 
-    let mut engine = Engine::new(grammar, tokens, limits);
+    let mut engine = Engine::new(grammar, tokens, limits, cancel);
     let Outcome::Match(mut position) = engine.production(Production::Header, 0) else {
         return Vec::new();
     };
@@ -497,6 +501,7 @@ struct LeafBudget<'a> {
     pending: Vec<Span>,
     retained: usize,
     limit: usize,
+    cancel: &'a Cancel,
 }
 
 impl LeafBudget<'_> {
@@ -558,7 +563,9 @@ impl LeafBudget<'_> {
     }
 
     fn commit(&mut self, span: Span) -> Result<(), Box<CompleteDiagnostic>> {
-        if self.retained >= self.limit {
+        // A cancelled handle stops here as the token ceiling does; the
+        // lifecycle operation reports the cancellation, not the ceiling.
+        if self.retained >= self.limit || self.cancel.poll() {
             return Err(super::diagnostic::resource_exhausted(
                 self.source,
                 Phase::Lex,
@@ -575,6 +582,7 @@ fn enforce_leaf_budget(
     source: &Source,
     limit: usize,
     compounds: &[&'static str],
+    cancel: &Cancel,
 ) -> Result<(), Box<CompleteDiagnostic>> {
     // Count the final retained leaves before allocating one CST record per leaf.
     // `pending` is bounded by the longest grammar-owned compound spelling.
@@ -584,6 +592,7 @@ fn enforce_leaf_budget(
         pending: Vec::new(),
         retained: 0,
         limit,
+        cancel,
     };
     let mut cursor = 0;
     for (result, range) in Kind::lexer(source.text()).spanned() {
@@ -629,8 +638,9 @@ fn scan(
     source: &Source,
     limits: Limits,
     compounds: &[&'static str],
+    cancel: &Cancel,
 ) -> Result<Scan, Box<CompleteDiagnostic>> {
-    enforce_leaf_budget(source, limits.tokens, compounds)?;
+    enforce_leaf_budget(source, limits.tokens, compounds, cancel)?;
     let mut tokens = Vec::new();
     let mut significant = Vec::new();
     let mut diagnostics = Vec::new();
@@ -1068,6 +1078,7 @@ struct Engine<'a> {
     reserved_words: BTreeSet<&'static str>,
     tokens: &'a [Significant],
     limits: Limits,
+    cancel: &'a Cancel,
     frames: Vec<Frame<'a>>,
     matches: Vec<Matched>,
     links: Vec<usize>,
@@ -1095,7 +1106,12 @@ impl<'a> Engine<'a> {
     /// The work budget is [`Limits::work_units`] steps per significant
     /// token, plus one token's worth for the end of input, so parsing work
     /// is linear in the input.
-    fn new(grammar: &'a Grammar, tokens: &'a [Significant], limits: Limits) -> Self {
+    fn new(
+        grammar: &'a Grammar,
+        tokens: &'a [Significant],
+        limits: Limits,
+        cancel: &'a Cancel,
+    ) -> Self {
         Self {
             grammar,
             reserved_words: grammar::complete_reserved_words(grammar),
@@ -1106,6 +1122,7 @@ impl<'a> Engine<'a> {
             links: Vec::new(),
             pending: Vec::new(),
             memo: vec![None; tokens.len().saturating_add(1)],
+            cancel,
             steps: 0,
             maximum_steps: tokens
                 .len()
@@ -1118,10 +1135,12 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// One parser step. A cancelled handle denies it as an exhausted work
+    /// budget does; the lifecycle operation reports the cancellation.
     fn charge(&mut self, position: usize) -> bool {
         self.farthest = self.farthest.max(position.min(self.tokens.len()));
         self.steps = self.steps.saturating_add(1);
-        self.steps <= self.maximum_steps
+        self.steps <= self.maximum_steps && !self.cancel.poll()
     }
 
     /// Record `failure` as a farthest-failure candidate, then return it as
@@ -1659,10 +1678,11 @@ mod tests {
         let source = source(text);
         let grammar = grammar::complete_v1();
         let compounds = grammar::complete_compound_spellings(&grammar);
+        let cancel = Cancel::new();
         let (_, significant, diagnostics, _) =
-            scan(&source, Limits::default(), &compounds).expect("scan");
+            scan(&source, Limits::default(), &compounds, &cancel).expect("scan");
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        let mut engine = Engine::new(&grammar, &significant, Limits::default());
+        let mut engine = Engine::new(&grammar, &significant, Limits::default(), &cancel);
         let outcome = engine.production(Production::CompleteUnit, 0);
         assert!(matches!(outcome, Outcome::Match(_)), "{outcome:?}");
         (engine.steps, significant.len())
@@ -1694,10 +1714,11 @@ mod tests {
             .expect("test source");
             let grammar = grammar::complete_v1();
             let compounds = grammar::complete_compound_spellings(&grammar);
+            let cancel = Cancel::new();
             let (_, significant, diagnostics, _) =
-                scan(&source, unlimited, &compounds).expect("scan");
+                scan(&source, unlimited, &compounds, &cancel).expect("scan");
             assert!(diagnostics.is_empty(), "{diagnostics:?}");
-            let mut engine = Engine::new(&grammar, &significant, unlimited);
+            let mut engine = Engine::new(&grammar, &significant, unlimited, &cancel);
             let outcome = engine.production(Production::CompleteUnit, 0);
             assert!(matches!(outcome, Outcome::Match(_)), "{outcome:?}");
             let tokens = significant.len();
@@ -1772,9 +1793,10 @@ mod tests {
         let compounds = grammar::complete_compound_spellings(&grammar);
         let steps = |depth: usize| {
             let source = source(&nested_trailing_comma(depth));
+            let cancel = Cancel::new();
             let (_, significant, _, _) =
-                scan(&source, Limits::default(), &compounds).expect("scan");
-            let mut engine = Engine::new(&grammar, &significant, Limits::default());
+                scan(&source, Limits::default(), &compounds, &cancel).expect("scan");
+            let mut engine = Engine::new(&grammar, &significant, Limits::default(), &cancel);
             let outcome = engine.production(Production::CompleteUnit, 0);
             assert!(
                 matches!(outcome, Outcome::No(_)),
@@ -1824,7 +1846,7 @@ mod tests {
                 ),
                 temporal,
             ] {
-                match parse(source(&text), limits) {
+                match parse(source(&text), limits, &Cancel::new()) {
                     Ok(parsed) => assert!(parsed.is_admissible()),
                     Err(refusal) => {
                         let defaults = Limits::default();
@@ -1850,6 +1872,7 @@ mod tests {
                     ">".repeat(2_000)
                 )),
                 limits,
+                &Cancel::new(),
             )
             .expect("2000 nested Option<...> fit the node ceiling");
             assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());

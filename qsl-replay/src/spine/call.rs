@@ -28,10 +28,11 @@ use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{Integer, Meter, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType};
+use quire_exact::{Cancel, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType};
 use quire_semantic_value::location::Location;
 
-use super::{compile, CompileRefusal, DependencyInput, SpineLimits};
+use super::lifecycle as front_end;
+use super::{CompileRefusal, DependencyInput, SpineLimits};
 use qsl_foundation::SourceIdentity;
 
 /// FR-100: the default `work_units` limit when a request omits it.
@@ -289,30 +290,61 @@ pub fn run(
     limits: SpineLimits,
     call: &Call,
 ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
-    let compiled = compile(source, path, bytes, packages, dependencies, limits)
-        .map_err(|refusal| Box::new(RunRefusal::Compile(refusal)))?;
-    let package_id = compiled.emitted.package_id();
-    let package = &compiled.package;
+    let cancel = Cancel::new();
+    let refusal = |failure| match front_end::refusal_or_fault(failure) {
+        Ok(refusal) => Box::new(RunRefusal::Compile(refusal)),
+        Err(fault) => Box::new(RunRefusal::Fault(fault)),
+    };
+    let parsed = front_end::parse(
+        &front_end::ParseRequest {
+            source: &source,
+            path,
+            bytes,
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let models = front_end::select(&parsed, packages, limits.model, &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let checked = front_end::check(
+        &parsed,
+        &models,
+        dependencies,
+        &super::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let emitted = front_end::package(&checked, front_end::PackageLimits::default(), &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let package_id = emitted.package().package_id();
+    let package = checked.package();
     let selected = select(package, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
-    let mut meter = Meter::new(call.accounting);
-    use qsl_eval::value::CheckedPackageEvaluation;
-    let evaluation = package
-        .call(
-            &selected.name,
-            arguments,
-            &ObjectEnvironment::default(),
-            &mut meter,
-        )
-        .map_err(convert_call_failure)?;
+    let evaluation = front_end::execute(
+        &checked,
+        &front_end::ExecuteRequest {
+            function: &selected.name,
+            arguments: &arguments,
+            objects: &ObjectEnvironment::default(),
+        },
+        call.accounting,
+        &cancel,
+    )
+    .map_err(convert_call_failure)?;
     // FND-016: the unit's and every resolved library's source, reused
-    // exactly as `compile` already read them (FR-100: a locus is resolved
+    // exactly as the check already read them (FR-100: a locus is resolved
     // over "the `Source` whose reference equals the region's reference").
     // Never re-read: a completed call must never turn into a fault because
     // of I/O that a second read of already-admitted bytes could raise.
-    let mut sources = Vec::with_capacity(1 + compiled.libraries.len());
-    sources.push(compiled.source.clone());
-    sources.extend(compiled.libraries.iter().cloned());
+    let mut sources = Vec::with_capacity(1 + checked.libraries().len());
+    sources.push(checked.source().clone());
+    sources.extend(checked.libraries().iter().cloned());
     let outcome = convert_outcome(evaluation, package.graph(), &sources)?;
     Ok((package_id, outcome))
 }
@@ -474,6 +506,13 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
             "spine-run-supplies-admitted-name-and-arity",
         ))),
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
+        // `run` makes its own handle and gives it to `execute`, but shares it
+        // with nobody, so nothing cancels it: a cancellation here is a broken
+        // invariant.
+        CallFailure::Cancelled(_) => Box::new(RunRefusal::Fault(InternalFault::new(
+            "call",
+            "cancelled-without-a-shared-handle",
+        ))),
     }
 }
 
