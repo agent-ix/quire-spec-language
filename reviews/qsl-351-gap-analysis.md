@@ -72,3 +72,12 @@ Disposition pass 1, reviewed at `43a2844c6d8c37d0b6c4eea2d04c5ea4d297234a`.
 | --- | --- | --- |
 | FND-001 | fixed | 43a2844c: the AC-16 test now asserts `from_replay_refusal(&refusal).category() == Category::Inconclusive` |
 | FND-002 | fixed | 43a2844c: FR-121-AC-17 and TC-516 step 17 added; `TerminalValue::from_call_site_refusal` built; `a_call_site_refusal_settles_declined_with_its_code_and_a_fault_failed` asserts `Compile` and `UnknownFunction` give `Declined{InvalidInput, code}` with category refusal, and `Fault` gives `Failed` |
+
+Disposition pass 2, reviewed at `42fa27ad39406ee3537949a9322534991f18dce0`
+(range `43a2844c..42fa27ad`). Focused run through `locked-build.sh`:
+`cargo test -p qsl-route -p qsl-replay --lib -- empty_backend backend_member`:
+4 passed, 0 failed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 42fa27ad: `BackendId::from_wire` refuses an empty identity (`EmptyBackendIdentity`, TC-433 step 2 test traced to FR-075-AC-6); the replay request refuses `EmptyBackendIdentity` (`invalid_identifier`) and the witness decoder refuses `WitnessRefusal::EmptyBackendIdentity`, each tested. `from_wire` has no caller inside QSL; the driver that reads manifests lives in quire-driver and should read the identity through it |

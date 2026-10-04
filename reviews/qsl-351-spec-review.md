@@ -99,3 +99,9 @@ Disposition pass 1, reviewed at `43a2844c6d8c37d0b6c4eea2d04c5ea4d297234a`.
 | FND-004 | fixed | 43a2844c: ADR-013 C-09 says `InconclusiveCause` is the one enum `TerminalValue::Inconclusive` carries and the one the ADR-018/020/022/023/025 amendments extend |
 | FND-005 | fixed | 43a2844c: with the rename, QSL FR-331:108's `InconclusiveCause::ReplayParity` names the real variant |
 | FND-006 | fixed | 43a2844c: TC-516 Scope reads "FR-121-AC-1 to FR-121-AC-17" |
+
+Disposition pass 2, reviewed at `42fa27ad39406ee3537949a9322534991f18dce0`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 42fa27ad: ADR-013 C-09 reads "its cause `ReportedInconclusiveCause::KaniVacuousProof` is derived by `TerminalValue::vacuous_proof_cause`" |
