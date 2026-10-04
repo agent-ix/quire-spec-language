@@ -74,7 +74,7 @@ through it, or a crate alias or glob import that reaches it.
   or other than one source, refuses: the recompile reads no definition
   document, and each package compiles from one unit.
 - The executor SHALL build the dependency input (FR-099) from the entries:
-  each entry's `identity` and `version`, and its source's labels, identity
+  each entry's `identity`, and its source's labels, identity
   as path and provided bytes. It SHALL carry a dependency-input refusal,
   such as two entries whose sources share one authority and identity, as
   `ReplayRefusal::DependencyInput` (`invalid_package`/`conflicting-definition`).

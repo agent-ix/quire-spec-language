@@ -527,8 +527,8 @@ impl ReplayRequest {
             .into_iter()
             .enumerate()
             .map(|(index, entry)| {
-                let empty = || ReplayRequestRefusal::EmptyDependencySelection { index };
-                let identity = LibraryName::new(entry.identity).map_err(|_| empty())?;
+                let identity = LibraryName::new(entry.identity)
+                    .map_err(|_| ReplayRequestRefusal::EmptyDependencySelection { index })?;
                 let (domain, hex) = entry.package_id;
                 let package_id = DigestRecord::from_wire_expecting(
                     DigestDomain::PackageSemanticV2,
@@ -542,7 +542,7 @@ impl ReplayRequest {
                     .map(RawSourceRef::from_wire)
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(classify_digest_error)?;
-                Ok(DependencyEntry {
+                Ok::<_, ReplayRequestRefusal>(DependencyEntry {
                     identity,
                     package_id,
                     sources,

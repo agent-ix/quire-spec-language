@@ -70,9 +70,9 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   `dependencies`: `sources` names the proved package's own source
   references, and `dependencies` one entry per entry of the proved
   package's `dependency_selections`, in order, each
-  `{identity, version, package_id, sources}` (ADR-015 D-4). `identity` is a
+  `{identity, package_id, sources}` (ADR-015 D-4). `identity` is a
   `LibraryName` and `package_id` a `quire.package.semantic/v2`
-  `DigestRecord`; an empty identity or version, or a `package_id` in
+  `DigestRecord`; an empty identity, or a `package_id` in
   another domain, refuses at decode. Every source reference of every entry
   is a `RawSourceRef` the byte provision SHALL cover, as the proved
   package's are.
@@ -136,7 +136,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-5 | A request whose package reference names a `RawSourceRef` digest with no matching byte-provision entry refuses at construction; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
-| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity or an empty version, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
+| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
 | FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; an entry intake refuses at one of its limits refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096; and an entry holding `18446744073709551616` at `/package/count` refuses `noncanonical_wire`/`inexact-integer` with `document_pointer` `/package/count`, and one holding `0.1000000000000000000001` at `/a~1b/0` refuses `noncanonical_wire`/`inexact-number` with `document_pointer` `/a~1b/0`. | Test (TC-186) |
 

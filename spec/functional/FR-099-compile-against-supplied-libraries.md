@@ -185,10 +185,6 @@ replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented. The 
 region is in, a library's or the program's
 (`a_library_refusal_renders_over_the_library_source`).
 
-Remaining work: a supplied library carries no version. The code's
-`SuppliedLibrary` version, its empty-version refusal and the CLI and replay
-suppliers' version member are removed with it.
-
 ## References
 
 - Linear QSL-264 (AC-8: call-site preconditions of an imported function).

@@ -49,12 +49,12 @@ compiled package.
    whitespace-only authority label; a definition document or a second
    source in the package reference; and `id(4)` with a zero work budget.
 6. Replay `p(1)`, whose body calls `f`; replay `p(5)`.
-7. Library `test/units` version `2` declares
+7. Library `test/units` declares
    `function big using v(x: Int[0, 9]): Boolean pure { x > 5 }`. A second
    unit imports it `as u` and declares
    `function q using v(x: Int[0, 9]): Boolean pure { u::big(x) }`. Build its
    request from its spine compile against `test/units`: `sources` names the
-   unit's one source, `dependencies` holds `{test/units, 2, <its
+   unit's one source, `dependencies` holds `{test/units, <its
    package_id>, [its one source]}`, and the byte provision carries both.
    Replay `q(3)`. Then replace `test/units`'s bytes with `x > 6`, with the
    entry's digest updated to the new bytes; then restore them and change

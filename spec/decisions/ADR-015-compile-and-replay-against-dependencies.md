@@ -112,7 +112,7 @@ these steps to each import in this order:
 5. **View.** The library's `package_id` is recomputed by emitting its
    checked package and is the library's selection in the lock. The emitted
    v2 bytes are read through the I2 reader, with a pinned request holding
-   that one selection (identity, version, recomputed `package_id`), into a
+   that one selection (identity, recomputed `package_id`), into a
    `VerifiedPackage` and then its `ImportView` (ADR-011 §4 verified
    binding).
 
@@ -169,7 +169,7 @@ the wire's `contract_version`, which the in-process request does not
 carry (ADR-013 O-26). `sources` is the
 proved package's own lock `sources`. `dependencies` holds one entry per
 entry of the proved package's `dependency_selections`, in order, each
-`{identity, version, package_id, sources}`, where `sources` is that
+`{identity, package_id, sources}`, where `sources` is that
 dependency's own lock `sources`. CG copies them from the proved package
 and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).

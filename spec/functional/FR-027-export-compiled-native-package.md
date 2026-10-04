@@ -66,7 +66,8 @@ labels). The command hands
 them to spine `compile` as its dependency input (FR-099, ADR-015 D-1). A
 request with no `libraries` supplies none. Each library source counts toward
 FR-026's `dependent_bytes` limit. A `0-draft` request that
-carries a library, and a library with an empty identity or version, refuse
+carries a library, a library with an empty identity, and a library object
+with any member besides `identity` and `source` (a `version`, for one), refuse
 with `invalid-request`. A `1-draft` compile validates the
 program selection's `document` and `formal_revision` but does not record them:
 the `quire.checked-package/v2` wire has no member for them, so two requests that
@@ -117,7 +118,7 @@ typed failure without a successful artifact.
 | FR-027-AC-7 | A program source declaring any other edition refuses with `unknown_edition`, exit 20, empty stdout, and a message naming the file and the edition. A `1-draft` request selecting native rule models or clause bindings refuses with `invalid-request`, exit 20, whatever state the model files are in. | Test (TC-435) |
 | FR-027-AC-8 | A `1-draft` source each spine stage refuses (`source`, `forms`, `assembly`, `check`, `emit`) exits with that stage's cause code and reports the stage, with empty stdout. | Test (TC-435) |
 | FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's `sha256-jcs` digest writes exactly the bytes the FR-278 composition returns over the same source and package input. Their lock and identity preimage `model_selections` hold that package's identity, `digest_domain` (`sha256-jcs`) and digest, and no version, and QSL's I2 reader, given that digest as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing or different document and a `sha256:` digest refuse at stage `intake` at the `model` declaration. | Test (TC-442) |
-| FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes the FR-278 composition returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library, and a library with an empty identity or version, refuse with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
+| FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes the FR-278 composition returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library, a library with an empty identity, and a library carrying a `version` member, refuse with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
 | FR-027-AC-11 | For FR-027-AC-5's, AC-9's and AC-10's requests, the bytes the command writes equal the `package` output of `parse`, `select`, `check` and `package` composed over the same source, domain packages and libraries; for FR-027-AC-8's sources, the refusing operation's stage and cause code equal the command's, and its FR-285 exit code equals the command's exit status. | Test (TC-785) |
 
 ## Dependencies
