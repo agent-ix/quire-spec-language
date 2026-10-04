@@ -17,11 +17,8 @@ use qsl_route::{
 };
 use qsl_semantics::check::Capability;
 
-fn candidate(id: &str, digest_byte: u8) -> Candidate {
-    Candidate::new(
-        BackendId::new(id),
-        ManifestDigest::from_digest([digest_byte; 32]),
-    )
+fn candidate(id: &str) -> Candidate {
+    Candidate::new(BackendId::new(id))
 }
 
 fn admit(
@@ -30,7 +27,8 @@ fn admit(
     advertised: &[(Option<&str>, &str)],
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
     BackendDescriptor::admit(
-        candidate(id, digest_byte),
+        candidate(id),
+        ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
     )
 }
@@ -127,7 +125,8 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
 #[trace("TC-155", "FR-057-AC-8")]
 fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
     let absent_mode = BackendDescriptor::admit(
-        candidate("absent-mode", 1),
+        candidate("absent-mode"),
+        ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
     )
     .expect_err("an absent mode is never defaulted");
@@ -154,7 +153,11 @@ fn refusals_order_by_identity_then_manifest_digest() {
     let other_identity = admit("earlier", 200, &[(None, "bounded")]).unwrap_err();
     assert_ne!(later_digest, earlier_digest);
     assert_eq!(later_digest.identity(), earlier_digest.identity());
-    assert_eq!(earlier_digest.backend(), &candidate("same", 1));
+    assert_eq!(earlier_digest.backend(), &candidate("same"));
+    assert_eq!(
+        earlier_digest.manifest_digest(),
+        ManifestDigest::from_digest([1; 32])
+    );
 
     let mut refusals = vec![
         later_digest.clone(),
@@ -254,7 +257,7 @@ fn only_the_supported_item_is_routed() {
     };
 
     let forward = routes_for(&[0, 1, 2]);
-    assert_eq!(forward, [Some(candidate("protocol", 3)), None]);
+    assert_eq!(forward, [Some(candidate("protocol")), None]);
     assert_eq!(routes_for(&[2, 1, 0]), forward);
 }
 
@@ -264,8 +267,8 @@ fn only_the_supported_item_is_routed() {
 #[test]
 #[trace("TC-155", "FR-057-AC-6")]
 fn every_non_supported_disposition_gets_no_target_and_blocks_no_other_item() {
-    let first = candidate("first", 1);
-    let second = candidate("second", 2);
+    let first = candidate("first");
+    let second = candidate("second");
     let dispositions = [
         Disposition::Supported(first.clone()),
         Disposition::RequiresBound,

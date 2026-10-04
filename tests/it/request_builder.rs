@@ -66,10 +66,8 @@ fn package(declarations: &str) -> CheckedPackage {
 
 fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
     BackendDescriptor::new(
-        Candidate::new(
-            BackendId::new(id),
-            ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
-        ),
+        Candidate::new(BackendId::new(id)),
+        ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [advertises],
     )
 }

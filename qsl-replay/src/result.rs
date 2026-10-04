@@ -15,7 +15,7 @@ use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
 use quire_exact::{compare_keys, ScalarLimits, Value};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::{Location, Origin};
 
 use crate::bounds::BoundExceeded;
 
@@ -142,6 +142,30 @@ impl DisagreementCause {
     }
 }
 
+impl DisagreementCause {
+    /// The bytes of this cause's variable-length members: the nested
+    /// witness records and the failure's strings, location and refusal
+    /// fields. Zero for a verdict-only cause.
+    pub(crate) fn measured_bytes(&self) -> usize {
+        match self {
+            Self::Verdicts { .. } | Self::NoValue { .. } => 0,
+            Self::Witness {
+                given,
+                derived,
+                failure,
+                ..
+            } => {
+                given
+                    .iter()
+                    .chain(derived)
+                    .map(|record| record.measured_bytes())
+                    .sum::<usize>()
+                    + failure.measured_bytes()
+            }
+        }
+    }
+}
+
 /// FR-269: why a separating witness does not agree.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WitnessFailure {
@@ -155,6 +179,44 @@ pub enum WitnessFailure {
         /// Why it failed.
         reason: SeparationReason,
     },
+}
+
+/// The bytes of an expression origin's declared name; the index members
+/// are fixed-width and not counted.
+fn origin_bytes(origin: &Origin) -> usize {
+    match origin {
+        Origin::Body { function: name, .. }
+        | Origin::Measure { function: name, .. }
+        | Origin::TypeDeclaration { name }
+        | Origin::StateClause { clause: name, .. } => name.len(),
+        Origin::Expression | Origin::ProtocolAttempt { .. } => 0,
+    }
+}
+
+impl WitnessFailure {
+    /// The bytes of this failure's variable-length members.
+    fn measured_bytes(&self) -> usize {
+        match self {
+            Self::Mismatch => 0,
+            Self::Separation { reason, .. } => match reason {
+                SeparationReason::Unmet => 0,
+                SeparationReason::UndefinedEvaluation { expression, cause } => {
+                    origin_bytes(&expression.origin)
+                        + expression.depth() * std::mem::size_of::<usize>()
+                        + cause.len()
+                }
+                SeparationReason::Refused(refusal) => {
+                    refusal.code.len()
+                        + refusal.cause.len()
+                        + refusal
+                            .fields
+                            .iter()
+                            .map(|(name, value)| name.len() + value.len())
+                            .sum::<usize>()
+                }
+            },
+        }
+    }
 }
 
 /// FR-269: why a separation-check step failed.
@@ -659,6 +721,85 @@ mod tests {
         }
     }
 
+    fn witness_cause(
+        given: Option<SeparatingWitnessRecord>,
+        derived: Option<SeparatingWitnessRecord>,
+        failure: WitnessFailure,
+    ) -> DisagreementCause {
+        DisagreementCause::Witness {
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Violation),
+            given: given.map(Box::new),
+            derived: derived.map(Box::new),
+            failure,
+        }
+    }
+
+    /// FR-069-AC-4 (TC-178): a replay-parity cause measures every
+    /// variable-length member it carries -- both nested witness records, and
+    /// each failure's location, strings and refusal fields -- so none of it
+    /// escapes the reader bound. Each expected total is summed from the
+    /// parts independently of `measured_bytes`.
+    #[trace("TC-178", "FR-069-AC-4")]
+    #[test]
+    fn a_disagreement_cause_measures_its_records_and_failure() {
+        let one = record(vec!["a"]).measured_bytes();
+        let two = record(vec!["a", "bb"]).measured_bytes();
+        assert!(one > 0 && two > one);
+
+        let verdicts = DisagreementCause::Verdicts {
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Success),
+        };
+        assert_eq!(verdicts.measured_bytes(), 0);
+
+        let mismatch = witness_cause(
+            Some(record(vec!["a"])),
+            Some(record(vec!["a", "bb"])),
+            WitnessFailure::Mismatch,
+        );
+        assert_eq!(mismatch.measured_bytes(), one + two);
+
+        let undefined = witness_cause(
+            None,
+            None,
+            WitnessFailure::Separation {
+                step: SeparationStep::Body,
+                reason: SeparationReason::UndefinedEvaluation {
+                    expression: Location::at(
+                        Origin::Body {
+                            function: "check".to_owned(),
+                            index: 0,
+                        },
+                        &[1, 2, 3],
+                    ),
+                    cause: "division-by-zero".to_owned(),
+                },
+            },
+        );
+        assert_eq!(
+            undefined.measured_bytes(),
+            "check".len() + 3 * std::mem::size_of::<usize>() + "division-by-zero".len()
+        );
+
+        let refused = witness_cause(
+            None,
+            None,
+            WitnessFailure::Separation {
+                step: SeparationStep::Domain,
+                reason: SeparationReason::Refused(SeparationRefusal {
+                    code: "invalid_runtime_input".to_owned(),
+                    cause: "invalid-value".to_owned(),
+                    fields: BTreeMap::from([("path".to_owned(), "/x/y".to_owned())]),
+                }),
+            },
+        );
+        assert_eq!(
+            refused.measured_bytes(),
+            "invalid_runtime_input".len() + "invalid-value".len() + "path".len() + "/x/y".len()
+        );
+    }
+
     fn agrees(record: SeparatingWitnessRecord) -> WitnessCheck {
         WitnessCheck::Agrees(Some(Box::new(record)))
     }
@@ -913,7 +1054,6 @@ mod tests {
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {
             backend_identity: "kani-backend-1".to_owned(),
-            manifest_digest: qsl_foundation::digest::ManifestDigest::from_digest([1; 32]),
             items: vec![TerminalRecord::new(
                 qsl_foundation::RequestIndex::new(0),
                 TerminalValue::Refuted,
@@ -959,19 +1099,7 @@ mod tests {
                     profile_selections: Some(vec![]),
                     run_limits: Some(charges()),
                     declared_domains: Some(vec![]),
-                    backend: Some((
-                        "kani-backend-1".to_owned(),
-                        Some(
-                            qsl_foundation::digest::DigestDomain::ToolManifestJcsV1
-                                .as_str()
-                                .to_owned(),
-                        ),
-                        qsl_foundation::digest::DigestRecord::mint(
-                            qsl_foundation::digest::DigestDomain::ToolManifestJcsV1,
-                            [6; 32],
-                        )
-                        .hex(),
-                    )),
+                    backend: Some("kani-backend-1".to_owned()),
                     trace_position: Some(None),
                     source: Some(ReplaySource::Witness(witness)),
                     family_payload: Some(NoPayload),

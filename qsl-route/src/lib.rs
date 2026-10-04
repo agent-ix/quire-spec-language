@@ -30,10 +30,11 @@
 //! mode is admitted under the same exact-label rules as a requested pair,
 //! and an absent or unknown kind or an unknown mode refuses the whole
 //! registration, keyed by backend identity. A candidate is the ADR-013
-//! O-19 `backend{identity, manifest_digest}` value ([`Candidate`]); its
-//! digest is typed to domain `quire.tool-manifest.jcs/v1`
-//! ([`ManifestDigest`]), and reading one from its wire parts checks that
-//! domain before the digest bytes (ADR-013 C-27).
+//! O-19 `backend` value: the backend identity alone ([`Candidate`]). The
+//! digest of a backend's FR-331 provider manifest ([`ManifestDigest`],
+//! domain `quire.tool-manifest.jcs/v1`) stays here, on the descriptor and
+//! on the `duplicate-backend` refusal, as the key for one refusal per
+//! distinct manifest (FR-290); it is no part of the `backend` wire member.
 //!
 //! The registry is an ordinary value (FR-075 "The registry is an ordinary
 //! value, not ambient state"; FR-075-CON-1): it is built by the
@@ -49,16 +50,16 @@ pub mod routing;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
-pub use qsl_foundation::digest::{InvalidDigestRecord, ManifestDigest};
+pub use qsl_foundation::digest::ManifestDigest;
 use qsl_foundation::CatalogCode;
 use qsl_semantics::check::Capability;
 
 /// A backend's declared identity, unique within one [`Registry`] (FR-290
 /// "Candidate set and negotiation": "a backend identity is unique within a
 /// registry"). Opaque, typed data: on the wire it is the
-/// `backend{identity, manifest_digest}` member's `identity` field
-/// (ADR-012 §7.1, ADR-013 O-19), which this module receives already
-/// formed and does not itself mint.
+/// `backend` member, the identity string exactly as the FR-331 manifest
+/// states it (ADR-012 §7.1, ADR-013 O-19), which this module receives
+/// already formed and does not itself mint.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct BackendId(String);
 
@@ -131,61 +132,33 @@ impl Mode {
 // domain-first-checked type lives there and both readers share it instead of
 // each carrying its own copy of the same "not just any FR-201 domain" check.
 
-/// A candidate: the `(backend identity, manifest digest)` pair of a
-/// registered backend (FR-290 "Candidate set and negotiation"), which is
-/// also the ADR-013 O-19 `backend{identity, manifest_digest}` value.
+/// A candidate: the backend identity of a registered backend (FR-290
+/// "Candidate set and negotiation": "A candidate is the backend identity of
+/// a registered backend"), which is also the ADR-013 O-19 `backend` value.
 ///
-/// Ordering is derived over `(id, manifest_digest)` in that field order:
-/// bytewise by identity, then by digest, as FR-290 orders candidates.
+/// Candidates order bytewise by identity, as FR-290 orders them.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Candidate {
     id: BackendId,
-    manifest_digest: ManifestDigest,
 }
 
 impl Candidate {
-    /// Pair a backend identity with its manifest digest.
-    pub fn new(id: BackendId, manifest_digest: ManifestDigest) -> Self {
-        Self {
-            id,
-            manifest_digest,
-        }
-    }
-
-    /// Read the O-19 `backend` member from its wire parts (ADR-013 C-27):
-    /// the identity is kept verbatim, and the digest's domain is checked
-    /// before its bytes ([`ManifestDigest::from_wire`]).
-    ///
-    /// The inverse is total: `id().as_str()`,
-    /// `manifest_digest().record().domain().as_str()` and
-    /// `manifest_digest().record().hex()`.
-    pub fn from_wire(
-        identity: &str,
-        digest_domain: Option<&str>,
-        digest_hex: &str,
-    ) -> Result<Self, InvalidDigestRecord> {
-        Ok(Self::new(
-            BackendId::new(identity),
-            ManifestDigest::from_wire(digest_domain, digest_hex)?,
-        ))
+    /// The candidate for a backend identity.
+    pub fn new(id: BackendId) -> Self {
+        Self { id }
     }
 
     /// The backend identity.
     pub fn id(&self) -> &BackendId {
         &self.id
     }
-
-    /// The digest of that backend's FR-331 provider manifest.
-    pub fn manifest_digest(&self) -> ManifestDigest {
-        self.manifest_digest
-    }
 }
 
 /// One backend's registration (FR-075 Inputs): its identity, the digest of
 /// its own FR-331 provider manifest, and the `(capability kind, mode)` pairs
-/// it advertises. The manifest digest is the descriptor's only binding to
-/// the backend's tool; there is no separate tool identity (FR-057
-/// registers a backend from its identity and advertised labels alone).
+/// it advertises. The manifest digest only tells two registrations of one
+/// identity apart, so a conflict is refused once per distinct manifest
+/// (FR-290); it is never part of the candidate.
 ///
 /// `BackendDescriptor`, the candidate set and `Capability` cross repository
 /// boundaries as QSpec data, never through a shared Rust crate
@@ -193,6 +166,7 @@ impl Candidate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackendDescriptor {
     backend: Candidate,
+    manifest_digest: ManifestDigest,
     advertises: HashSet<(Capability, Mode)>,
 }
 
@@ -203,10 +177,12 @@ impl BackendDescriptor {
     /// Inputs).
     pub fn new(
         backend: Candidate,
+        manifest_digest: ManifestDigest,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> Self {
         Self {
             backend,
+            manifest_digest,
             advertises: advertises.into_iter().collect(),
         }
     }
@@ -218,7 +194,7 @@ impl BackendDescriptor {
     /// Each kind is admitted under the same rule as a requested pair: exact
     /// byte equality with one FR-290 label, no normalization or default.
     /// Any failing pair refuses the whole registration, keyed by
-    /// `backend` (identity, then manifest digest):
+    /// `backend` and `manifest_digest`:
     ///
     /// - kind `None` (absent or `null`): `invalid_capability`/`absent-kind`;
     /// - kind not an FR-290 label: `invalid_capability`/`unknown-kind`,
@@ -242,10 +218,12 @@ impl BackendDescriptor {
     /// registry.
     pub fn admit<'a>(
         backend: Candidate,
+        manifest_digest: ManifestDigest,
         advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     ) -> Result<Self, RegistrationRefusal> {
         let refuse = |cause| RegistrationRefusal {
             backend: backend.clone(),
+            manifest_digest,
             cause,
         };
         let mut advertises = HashSet::new();
@@ -263,6 +241,7 @@ impl BackendDescriptor {
         }
         Ok(Self {
             backend,
+            manifest_digest,
             advertises,
         })
     }
@@ -272,10 +251,14 @@ impl BackendDescriptor {
         &self.backend.id
     }
 
-    /// This backend as a candidate: its identity and the digest of its own
-    /// FR-331 provider manifest.
+    /// This backend as a candidate: its identity alone.
     pub fn candidate(&self) -> &Candidate {
         &self.backend
+    }
+
+    /// The digest of this backend's own FR-331 provider manifest.
+    pub fn manifest_digest(&self) -> ManifestDigest {
+        self.manifest_digest
     }
 
     /// Every advertised `(kind, mode)` pair, in no particular order: the
@@ -359,14 +342,15 @@ impl RegistrationCause {
 /// a caller cannot mistake a registration refusal for an empty candidate
 /// set or an unknown-backend marker by pattern-matching alone.
 ///
-/// Carries the refused registration's whole [`Candidate`], not only its
-/// identity, so refusals order as FR-290 reports them: bytewise by backend
-/// identity, then by manifest digest (`Ord` is derived over `(backend,
-/// cause)` in that field order).
+/// Carries the refused registration's manifest digest beside its
+/// [`Candidate`], so refusals order as FR-290 reports them: bytewise by
+/// backend identity, then by manifest digest (`Ord` is derived over
+/// `(backend, manifest_digest, cause)` in that field order).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, thiserror::Error)]
 #[error("invalid_capability/{}: registration of {} refused", cause.as_str(), backend.id)]
 pub struct RegistrationRefusal {
     backend: Candidate,
+    manifest_digest: ManifestDigest,
     cause: RegistrationCause,
 }
 
@@ -376,9 +360,14 @@ impl RegistrationRefusal {
         &self.backend.id
     }
 
-    /// The refused registration's identity and manifest digest.
+    /// The refused registration's candidate.
     pub fn backend(&self) -> &Candidate {
         &self.backend
+    }
+
+    /// The digest of the refused registration's manifest.
+    pub fn manifest_digest(&self) -> ManifestDigest {
+        self.manifest_digest
     }
 
     /// Why it was refused.
@@ -417,8 +406,7 @@ impl CandidateSet {
         self.requested_backend.as_ref()
     }
 
-    /// Every candidate, ordered bytewise by identity then by manifest
-    /// digest (FR-290 "Candidate set and negotiation"), independent of
+    /// Every candidate, ordered bytewise by identity (FR-290 "Candidate set and negotiation"), independent of
     /// registration order (FR-075-AC-2). Empty when no registrant
     /// advertises `kind` (FR-076): an ordinary, well-formed value, never a
     /// refusal or a hold.
@@ -523,10 +511,11 @@ impl Registry {
         let id = descriptor.id().clone();
 
         if let Some(digests) = self.conflicts.get_mut(&id) {
-            let digest = descriptor.candidate().manifest_digest();
+            let digest = descriptor.manifest_digest();
             digests.insert(digest);
             return Err(vec![RegistrationRefusal {
-                backend: Candidate::new(id, digest),
+                backend: Candidate::new(id),
+                manifest_digest: digest,
                 cause: RegistrationCause::DuplicateBackend,
             }]);
         }
@@ -539,15 +528,16 @@ impl Registry {
             Some(existing) if *existing == descriptor => Ok(()),
             Some(existing) => {
                 let mut digests = BTreeSet::new();
-                digests.insert(existing.candidate().manifest_digest());
-                digests.insert(descriptor.candidate().manifest_digest());
+                digests.insert(existing.manifest_digest());
+                digests.insert(descriptor.manifest_digest());
                 // Ascending because `digests` is a `BTreeSet`, so this is
                 // already in `Registry::refusals`' (identity, digest) order
                 // -- no separate sort needed.
                 let refusals: Vec<RegistrationRefusal> = digests
                     .iter()
                     .map(|&digest| RegistrationRefusal {
-                        backend: Candidate::new(id.clone(), digest),
+                        backend: Candidate::new(id.clone()),
+                        manifest_digest: digest,
                         cause: RegistrationCause::DuplicateBackend,
                     })
                     .collect();
@@ -567,7 +557,8 @@ impl Registry {
     pub fn refusals(&self) -> impl Iterator<Item = RegistrationRefusal> + '_ {
         self.conflicts.iter().flat_map(|(id, digests)| {
             digests.iter().map(move |&digest| RegistrationRefusal {
-                backend: Candidate::new(id.clone(), digest),
+                backend: Candidate::new(id.clone()),
+                manifest_digest: digest,
                 cause: RegistrationCause::DuplicateBackend,
             })
         })
@@ -592,7 +583,7 @@ impl Registry {
     /// caller requests one specific backend.
     ///
     /// - `named` absent: the set is every registered backend that
-    ///   advertises `kind`, sorted by `(identity, manifest digest)`.
+    ///   advertises `kind`, sorted by identity.
     /// - `named` present and registered: the set is that one backend when
     ///   it advertises `kind`, and empty otherwise.
     /// - `named` present and unregistered, including a conflicted identity:
@@ -636,15 +627,11 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::DigestDomain;
 
     use super::*;
 
-    fn candidate(id: &str, digest_byte: u8) -> Candidate {
-        Candidate::new(
-            BackendId::new(id),
-            ManifestDigest::from_digest([digest_byte; 32]),
-        )
+    fn candidate(id: &str) -> Candidate {
+        Candidate::new(BackendId::new(id))
     }
 
     fn descriptor(
@@ -652,7 +639,11 @@ mod tests {
         digest_byte: u8,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> BackendDescriptor {
-        BackendDescriptor::new(candidate(id, digest_byte), advertises)
+        BackendDescriptor::new(
+            candidate(id),
+            ManifestDigest::from_digest([digest_byte; 32]),
+            advertises,
+        )
     }
 
     /// FR-075-AC-5 (TC-193 step 6, narrowed to what a unit test -- not a
@@ -821,63 +812,19 @@ mod tests {
         );
     }
 
-    /// ADR-013 C-27: the O-19 `backend` member round-trips, identity kept
-    /// verbatim.
+    /// ADR-013 O-19: the `backend` member is the identity string alone,
+    /// kept verbatim, and two candidates are equal iff their identities are.
     #[test]
     #[trace("TC-433", "FR-075-AC-6")]
-    fn backend_member_round_trips_through_its_wire_parts() {
-        let original = candidate(" Kani/1 ", 0xab);
-        let record = original.manifest_digest().record();
-        let read = Candidate::from_wire(
+    fn backend_member_is_the_identity_string_alone() {
+        let original = candidate(" Kani/1 ");
+        assert_eq!(
             original.id().as_str(),
-            Some(record.domain().as_str()),
-            &record.hex(),
-        )
-        .expect("a quire.tool-manifest.jcs/v1 member reads back");
-        assert_eq!(read, original);
-        assert_eq!(read.id().as_str(), " Kani/1 ", "identity is not normalized");
-    }
-
-    /// ADR-013 C-27 adverse case: a wrong digest domain refuses, and the
-    /// domain is checked before the digest bytes -- a malformed digest
-    /// under a wrong domain still reports the domain.
-    #[test]
-    #[trace("TC-433", "FR-075-AC-6")]
-    fn backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes() {
-        let hex = "ab".repeat(32);
-        let wrong = DigestDomain::SourceBytesV1;
-        let wrong_domain = || InvalidDigestRecord::WrongDomain {
-            expected: ManifestDigest::DOMAIN,
-            found: wrong,
-        };
-        assert_eq!(
-            Candidate::from_wire("kani", Some(wrong.as_str()), &hex),
-            Err(wrong_domain())
+            " Kani/1 ",
+            "identity is not normalized"
         );
-        assert_eq!(
-            Candidate::from_wire("kani", Some(wrong.as_str()), "not-hex"),
-            Err(wrong_domain())
-        );
-        assert_eq!(
-            Candidate::from_wire("kani", None, &hex),
-            Err(InvalidDigestRecord::AbsentDomain)
-        );
-        assert!(matches!(
-            Candidate::from_wire("kani", Some("tool-manifest"), &hex),
-            Err(InvalidDigestRecord::UnknownDomain(_))
-        ));
-        assert!(matches!(
-            Candidate::from_wire(
-                "kani",
-                Some(ManifestDigest::DOMAIN.as_str()),
-                &"AB".repeat(32)
-            ),
-            Err(InvalidDigestRecord::NotLowerHex)
-        ));
-        assert!(matches!(
-            Candidate::from_wire("kani", Some(ManifestDigest::DOMAIN.as_str()), "ab"),
-            Err(InvalidDigestRecord::WrongLength(2))
-        ));
+        assert_eq!(original, Candidate::new(BackendId::new(" Kani/1 ")));
+        assert_ne!(original, candidate("Kani/1"));
     }
 
     /// FR-290 "Advertised mode": exactly `bounded` and `unbounded`, read

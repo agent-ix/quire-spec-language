@@ -141,11 +141,7 @@ fn request(
         selected_function: function,
         source,
         obligation_identity: [2; 32],
-        backend: (
-            "kani-backend-1".to_owned(),
-            Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [3; 32]).hex(),
-        ),
+        backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: UNLIMITED,
         stage_limits: stage_limits(),

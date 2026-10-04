@@ -670,7 +670,7 @@ the table, independent of registration order.
 | Syntax admission | Is this text a well-formed form of an admitted edition? | QSL parser; family productions | source → family `Form` | parse diagnostic; no form | that the form type-checks |
 | Semantic admission | Is this form meaningful in the language? | QSL checker; family `check` | `Form` + `CheckContext` → checked node + `Requirements` | family refusal with catalog code, or `StageFailure::Limit(LimitExceeded)`; no checked node | that any backend supports it |
 | Backend capability | Which registered backends advertise the item's capability kind, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7. Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
-| Runtime availability | Is the selected backend's tool present? | the executing adapter, after negotiation and before the run (CG for Kani) | backend descriptor, bound to its tool by manifest digest alone → tool present, or absence cause | solver-absence outcome (§7.4) | anything about language meaning |
+| Runtime availability | Is the selected backend's tool present? | the executing adapter, after negotiation and before the run (CG for Kani) | backend descriptor (its FR-331 provider manifest) → tool present, or absence cause | solver-absence outcome (§7.4) | anything about language meaning |
 
 Consequences of the separation:
 

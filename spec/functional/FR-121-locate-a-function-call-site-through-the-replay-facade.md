@@ -171,16 +171,20 @@ declaration by declared identity, never by position.
   `UnknownOperation` and `UnknownClause` `missing_declaration`; and `Fault`
   `runtime_invariant`. Each variant other than `Fault` carries the code of
   the refusal it was built from rather than only its rendered message.
-- The settlement of a refusal is keyed on timing. A `CallSiteRefusal` other
-  than `Fault` refuses the obligation's own input before any backend run, so
-  a consumer settles it `declined` (`TerminalValue::Declined`) and reports
-  its code (`CallSiteRefusal::code`), by the terminal mapping ADR-013 C-09
-  owns (QSpec FR-331). A `ReplayRefusal` after a backend run (the replay of
-  a refutation) is no refusal of the obligation's input: it settles
-  `TerminalValue::Inconclusive` with `InconclusiveCause::ReplayRefused`
-  carrying its code, which `TerminalValue::from_replay_refusal` builds. A
-  `Fault` of either, `CallSiteRefusal::Fault` or `ReplayRefusal::Fault`
-  (and `ReplayRefusal::Admission` with `AdmissionFailure::Fault`), settles
+- The settlement of a refusal is keyed on timing, by the terminal mapping
+  ADR-013 C-09 owns (QSpec FR-331). A `CallSiteRefusal` other than `Fault`
+  refuses the obligation's own input before any backend run, so it settles
+  `TerminalValue::Declined` with cause `ProofRefusalCause::InvalidInput` for
+  every such variant (`Compile`, `ModelIntake`, `DependencyInput`, `Import`,
+  `Dependency`, `UnknownFunction`, `UnknownOperation`, `UnknownClause`) and
+  its own code (`CallSiteRefusal::code`), which
+  `TerminalValue::from_call_site_refusal` builds. A `ReplayRefusal` after a
+  backend run (the replay of a refutation) is no refusal of the obligation's
+  input: it settles `TerminalValue::Inconclusive` with
+  `InconclusiveCause::ReplayRefused` carrying its code, which
+  `TerminalValue::from_replay_refusal` builds. A `Fault` of either,
+  `CallSiteRefusal::Fault` or `ReplayRefusal::Fault` (and
+  `ReplayRefusal::Admission` with `AdmissionFailure::Fault`), settles
   `failed` (`TerminalValue::Failed`).
 - `call_site` SHALL read no path, environment variable, clock or search
   location, and SHALL give the same result for the same input.
@@ -205,6 +209,7 @@ declaration by declared identity, never by position.
 | FR-121-AC-14 | `CallSiteRefusal::code` returns `missing_declaration` for AC-2's `UnknownFunction`, AC-5's `UnknownOperation` and AC-8's `UnknownClause`; for AC-9's `ModelIntake`, AC-10's `DependencyInput`, AC-11's `Dependency` and AC-4's `Import`, the code `ReplayRefusal::code` returns when `replay` is given the same unit, packages and dependency input; and for a unit with a syntax error, `Compile` carrying the same code as the `ReplayRefusal::Recompile` `replay` returns for it. | Test (TC-516) |
 | FR-121-AC-15 | Worked example. For a unit declaring `p(x: Int[0, 9]): Boolean { x < 5 }` and `q(x: Int[0, 9]): Boolean { x < 5 }`, the `FunctionSite` for `p` carries `function` equal to the compiled graph's `function` node whose `declaration` is `p`, and `declaration` equal to `OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))`. With a CG obligation kind and `arguments` `[(x's parameter node id, [0, 9])]`, these are the members of `p`'s ADR-013 O-09 function-contract obligation preimage. `q`'s `FunctionSite` has the same `parameters` (one shared parameter node) and a different `function`, so the two obligations differ. Recompiling the unit with a comment and blank lines inserted before `p` gives `p` the same `function` and `declaration`. Over the AC-6 unit, `sameIdentity`'s `function` equals no `ClauseSite` `node` returned for `attemptUpdate`, `probe` or any AC-8 clause selection. | Test (TC-516) |
 | FR-121-AC-16 | A `ReplayRefusal` that is no fault, such as `UnboundParameter`, maps by `TerminalValue::from_replay_refusal` to `TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(code))` with `code` equal to `ReplayRefusal::code` for it, and category `inconclusive`; `ReplayRefusal::Fault` and `ReplayRefusal::Admission` with `AdmissionFailure::Fault` map to `TerminalValue::Failed`. | Test (TC-516) |
+| FR-121-AC-17 | A `CallSiteRefusal` other than `Fault`, such as `Compile` or `UnknownFunction`, maps by `TerminalValue::from_call_site_refusal` to `TerminalValue::Declined { cause: ProofRefusalCause::InvalidInput, code }` with `code` equal to `CallSiteRefusal::code` for it, and category `refusal`; `CallSiteRefusal::Fault` maps to `TerminalValue::Failed`. | Test (TC-516) |
 
 ## Dependencies
 

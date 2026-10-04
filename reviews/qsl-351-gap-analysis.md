@@ -1,42 +1,59 @@
 ---
 id: SR-936
-title: "Gap analysis of PR #551 (delete ToolPin and the toolchain pin from qsl-replay)"
+title: "Gap analysis of QSL-351 (reopened): TerminalValue::Inconclusive, Declined code, typed RequestIndex"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@cfef8e790f508ebbe8ffbdba796072805841ef1f; qsl-replay/src/**, spec/functional/FR-069-implement-typed-proof-result-envelope.md, spec/functional/FR-072-implement-typed-replay-result.md, spec/functional/FR-098-execute-a-replay-request.md, spec/functional/FR-122-replay-a-state-clause-counterexample.md, spec/test-cases/TC-179-proof-result-round-trip.md, spec/tests.md"
+scope: "agent-ix/quire-spec-language@65e310bc3990a417ba1117e5e610c34304cd7a65; qsl-replay/src/proof_result.rs, qsl-route/src/request.rs, spec/functional/FR-069-implement-typed-proof-result-envelope.md, spec/functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md, spec/test-cases/TC-177-proof-result-category-preserving-map.md, spec/test-cases/TC-516-locate-a-function-call-site.md, spec/tests.md"
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-351 (ToolPin part only). Manual AC-to-test-to-code check for the
-ACs the PR edits.
+Ticket: QSL-351 (reopened, early review, no PR yet). Manual
+AC-to-test-to-code check for the ACs the branch adds or edits. This file
+replaces the clean SR-936 gap analysis of PR #551 (reviewed at `cfef8e79`).
 
-- FR-069-AC-3 (round trip preserves `backend` and every disposition) is
-  traced by `#[trace("TC-179", "FR-069-AC-3")]` on
-  `tc_179_round_trip_preserves_backend_and_dispositions`
-  (proof_result.rs:514), which still asserts backend identity, manifest
-  digest, the per-item records and the mutated-digest case. The tests.md row
-  and the TC-179 locator line name the renamed function.
-- FR-098-AC-2 is traced by `tc_444_an_input_counterexample_replays_and_agrees`
-  (execute/tests.rs:201); the AC no longer claims a pin and the test no
-  longer asserts one; the charges assertion it keeps matches the AC's
-  remaining "carrying the call's charges".
-- FR-072 Description/Inputs/Outputs and FR-122 Behavior no longer list a
-  pin; no FR-072 or FR-122 AC ever named one, so no AC was deleted or
-  renumbered.
-- No spec text now promises a member the code lacks, and no code member
-  survives without a spec owner.
-- Held items (`TerminalValue::Inconclusive`, typed `request_index`,
-  QSL-352) were not assessed, per the brief.
+Against the reopened ticket's four scope items:
+
+1. `TerminalValue::Inconclusive` with `ReplayParity(DisagreementCause)` and
+   `ReplayRefused(Code)`: present (proof_result.rs:111-121, :189).
+2. Typed `request_index` in place of the `String` item: present
+   (proof_result.rs:266-306, qsl-foundation/src/request_index.rs).
+3. FR-121 keyed on timing: amended (FR-121:174-184); see the spec review
+   for its wording.
+4. ADR-013:409 matches C-09: amended (vacuous `Proved` stays
+   `Proved { success_checks: 0 }`).
+
+Traces:
+
+- FR-069-AC-1 to `tc_177_every_fr331_value_maps_to_its_exact_category`
+  (`#[trace("TC-177", "FR-069-AC-1")]`). The test builds the eleven records
+  TC-177 step 1 lists, each with its own `RequestIndex`, and asserts per
+  record the category, the value, the `request_index` and the envelope cause
+  against independent literals (not values derived from the code under
+  test). Correct binding and a sound oracle.
+- FR-121-AC-16 to
+  `a_replay_refusal_settles_inconclusive_with_its_code_and_a_fault_failed`
+  (`#[trace("TC-516", "FR-121-AC-16")]`). The oracle uses
+  `refusal.code()`, the same call the code makes, but then pins it to the
+  literal `Code::InvalidRuntimeInput`, so it is not tautological. Both
+  fault shapes are asserted to give `Failed`. One clause is unasserted:
+  FND-001.
+- tests.md TC-516 row gains FR-121-AC-16; TC-177 has no row change needed.
+- FR-121's other half (a non-fault `CallSiteRefusal` settles `declined`
+  with its code; a `CallSiteRefusal::Fault` settles `failed`) has no AC and
+  no test, and no QSL function builds that settlement: FND-002.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No findings (placeholder) | - |
+| FND-001 | medium | FR-121-AC-16 requires category `inconclusive` for the mapped `UnboundParameter` refusal, and TC-516 step 16's expected result repeats it, but the test never calls `category()` on the value `from_replay_refusal` returns | qsl-replay/src/proof_result.rs:564-591 |
+| FND-002 | medium | FR-121's amended statement now names two settlements: before any backend run a non-fault `CallSiteRefusal` settles `TerminalValue::Declined` with `CallSiteRefusal::code`, and a `CallSiteRefusal::Fault` settles `Failed`. Neither has an AC, a TC step or a test; only the after-run `ReplayRefusal` half (AC-16) is covered | spec/functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md:174-184 |
 
 ## Verdict
 
-Clean. Every edited AC keeps a tagged test that exercises its remaining
-text, and the tests.md locators match the code.
+Changes requested, both medium. The four reopened scope items are present
+in code and spec, and the TC-177 binding is correct with independent
+oracles. AC-16's test misses its category clause, and the `declined` half
+of the FR-121 timing rule is untested and unanchored to any AC.

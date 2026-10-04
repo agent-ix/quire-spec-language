@@ -26,7 +26,7 @@ use crate::identity::{
 };
 use qsl_foundation::bound::FiniteBound;
 use qsl_foundation::digest::{
-    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId,
+    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 
@@ -778,9 +778,9 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub run_limits: Option<ScalarLimits>,
     /// The parameter domains declared for the proving run.
     pub declared_domains: Option<Vec<DeclaredDomain>>,
-    /// `(identity, manifest digest domain, manifest digest hex)` for the
-    /// backend that produced this counterexample.
-    pub backend: Option<(String, Option<String>, String)>,
+    /// The provider identity of the backend that produced this
+    /// counterexample (ADR-013 O-19: the identity string alone).
+    pub backend: Option<String>,
     /// The family's trace position: outer `None` means the packet omitted
     /// the member (refuses); `Some(None)` means the family has none
     /// (admitted).
@@ -821,10 +821,7 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
             })
             .sum()
     });
-    total += packet
-        .backend
-        .as_ref()
-        .map_or(0, |(identity, _, hex)| identity.len() + hex.len());
+    total += packet.backend.as_ref().map_or(0, String::len);
     total += packet
         .trace_position
         .as_ref()
@@ -932,16 +929,11 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let declared_domains = packet
             .declared_domains
             .ok_or(WitnessRefusal::MissingMember("declared_domains"))?;
-        let (backend_identity, backend_domain, backend_hex) = packet
-            .backend
-            .ok_or(WitnessRefusal::MissingMember("backend"))?;
-        // ADR-013 C-27: the backend digest is not just any FR-201
-        // domain -- it must be `quire.tool-manifest.jcs/v1`, checked before
-        // the hex bytes are read. `ManifestDigest::from_wire` cannot
-        // construct anything else.
-        let backend_digest = ManifestDigest::from_wire(backend_domain.as_deref(), &backend_hex)
-            .map_err(|e| classify_digest_error("backend", e))?;
-        let backend = Backend::new(backend_identity, backend_digest);
+        let backend = Backend::new(
+            packet
+                .backend
+                .ok_or(WitnessRefusal::MissingMember("backend"))?,
+        );
         let trace_position = packet
             .trace_position
             .ok_or(WitnessRefusal::MissingMember("trace_position"))?;
@@ -993,11 +985,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             profile_selections: Some(self.profile_selections.clone()),
             run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
-            backend: Some((
-                self.backend.identity().to_owned(),
-                Some(self.backend.manifest_digest().domain().as_str().to_owned()),
-                self.backend.manifest_digest().hex(),
-            )),
+            backend: Some(self.backend.identity().to_owned()),
             trace_position: Some(self.trace_position.clone()),
             source: Some(self.source.clone()),
             family_payload: Some(self.family_payload.clone()),
@@ -1079,11 +1067,7 @@ mod envelope_tests {
                 )
                 .expect("a non-empty range"),
             })]),
-            backend: Some((
-                "kani-backend-1".to_owned(),
-                Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::ToolManifestJcsV1, digest(7)).hex(),
-            )),
+            backend: Some("kani-backend-1".to_owned()),
             trace_position: Some(Some(TracePosition::new("frame-0".to_owned()))),
             source: Some(ReplaySource::Witness(
                 Witness::parse("<<<assertion|h|c|x=1>>>").unwrap(),
@@ -1286,62 +1270,6 @@ mod envelope_tests {
         ));
     }
 
-    /// Positive control: a real witness whose `backend` digest is in
-    /// the required `quire.tool-manifest.jcs/v1` domain (as `full_packet`
-    /// already builds it) reconstructs, and the resulting envelope's backend
-    /// carries that domain.
-    #[test]
-    fn backend_digest_in_the_required_domain_reconstructs() {
-        let envelope = WitnessEnvelope::reconstruct(full_packet(0)).unwrap();
-        assert_eq!(
-            envelope.backend().manifest_digest().domain(),
-            DigestDomain::ToolManifestJcsV1
-        );
-    }
-
-    /// FR-070-AC-6 (TC-181, digest-domain half; ADR-013 C-27): a
-    /// `backend` digest in a recognized FR-201 domain other than
-    /// `quire.tool-manifest.jcs/v1` refuses with the same typed cause the
-    /// reader already uses for a source-digest domain mismatch
-    /// (`tc_181_refuses_an_out_of_domain_digest`), pinned to the exact
-    /// `WrongDomain` cause so a different refusal variant cannot pass. The
-    /// domain is checked before the digest bytes: pairing the wrong domain
-    /// with malformed hex still reports the same domain mismatch, not a
-    /// hex-encoding problem.
-    #[trace("TC-181", "FR-070-AC-6")]
-    #[test]
-    fn backend_digest_in_any_other_fr201_domain_refuses() {
-        let wrong_domain = WitnessRefusal::DigestDomainMismatch(
-            "backend",
-            InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
-                found: DigestDomain::SourceBytesV1,
-            },
-        );
-
-        let mut packet = full_packet(0);
-        packet.backend = Some((
-            "kani-backend-1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::SourceBytesV1, digest(7)).hex(),
-        ));
-        assert_eq!(
-            WitnessEnvelope::reconstruct(packet),
-            Err(wrong_domain.clone())
-        );
-
-        let mut packet_with_bad_hex = full_packet(0);
-        packet_with_bad_hex.backend = Some((
-            "kani-backend-1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            "not-hex".to_owned(),
-        ));
-        assert_eq!(
-            WitnessEnvelope::reconstruct(packet_with_bad_hex),
-            Err(wrong_domain)
-        );
-    }
-
     /// FR-070-AC-7 (TC-181, bound half): an oversized encoding refuses, and
     /// no envelope is returned.
     #[trace("TC-181", "FR-070-AC-7")]
@@ -1351,7 +1279,7 @@ mod envelope_tests {
         // no `encoded_bytes` field a caller could understate -- so an
         // oversized packet has to actually carry oversized content.
         let mut packet = full_packet(0);
-        if let Some((identity, _, _)) = packet.backend.as_mut() {
+        if let Some(identity) = packet.backend.as_mut() {
             *identity = "x".repeat(MAX_ENCODED_BYTES + 1);
         } else {
             panic!("full_packet carries a backend");

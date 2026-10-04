@@ -271,11 +271,7 @@ pub(super) fn request(
         .unwrap(),
         source: witness_source(),
         obligation_identity: [2; 32],
-        backend: (
-            "kani-backend-1".to_owned(),
-            Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [3; 32]).hex(),
-        ),
+        backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: default_accounting(1_000_000),
         stage_limits: StageLimits {
@@ -357,11 +353,7 @@ pub(super) fn packet<P: FamilyPayload>(
         )]),
         run_limits: Some(default_accounting(1_000_000)),
         declared_domains: Some(Vec::new()),
-        backend: Some((
-            "kani-backend-1".to_owned(),
-            Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [3; 32]).hex(),
-        )),
+        backend: Some("kani-backend-1".to_owned()),
         trace_position: Some(None),
         source: Some(source),
         family_payload: Some(payload),
