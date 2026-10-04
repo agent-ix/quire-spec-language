@@ -821,10 +821,7 @@ mod tests {
     #[trace("TC-186", "FR-071-AC-9")]
     #[test]
     fn tc_186_dependencies_round_trip_and_refuse_at_decode() {
-        let entries = vec![
-            dependency("test/b", 0x0B),
-            dependency("test/a", 0x0A),
-        ];
+        let entries = vec![dependency("test/b", 0x0B), dependency("test/a", 0x0A)];
         let request = ReplayRequest::decode(with_dependencies(entries.clone())).unwrap();
         let identities: Vec<&str> = request
             .dependencies()
@@ -851,8 +848,8 @@ mod tests {
         ));
 
         // An empty identity.
-        let refused = ReplayRequest::decode(with_dependencies(vec![dependency("", 0x0A)]))
-            .unwrap_err();
+        let refused =
+            ReplayRequest::decode(with_dependencies(vec![dependency("", 0x0A)])).unwrap_err();
         assert_eq!(
             refused,
             ReplayRequestRefusal::EmptyDependencySelection { index: 0 }

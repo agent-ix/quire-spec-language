@@ -2106,12 +2106,8 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
-        library(),
-        Selection {
-            package_id,
-        },
-    );
+    let pinned: PinnedRequest =
+        qsl_semantics::library::fixtures::single_pin(library(), Selection { package_id });
     let outcome = read_v2(
         &jcs(&wire),
         library(),
@@ -2718,10 +2714,7 @@ fn a_diamond_selecting_one_package_unifies() {
     let mid = linked(vec![import("test/units", dependency())]);
     let root = CheckedPackage::link_with(
         root_graph(),
-        vec![
-            import("test/units", dependency()),
-            import("test/mid", mid),
-        ],
+        vec![import("test/units", dependency()), import("test/mid", mid)],
     )
     .expect("one selection of test/units by two paths unifies");
     let units = &root.dependency_selections()[&lib("test/units")];

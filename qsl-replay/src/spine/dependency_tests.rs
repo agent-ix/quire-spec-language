@@ -253,12 +253,8 @@ fn selection_and_dependency_input_refusals() {
     );
 
     // A library whose source has the unit's authority and identity.
-    let unit_owner = compile_as(
-        "u",
-        &source,
-        &input(vec![library("test/geometry", "u", F)]),
-    )
-    .expect_err("the library repeats the unit's owner");
+    let unit_owner = compile_as("u", &source, &input(vec![library("test/geometry", "u", F)]))
+        .expect_err("the library repeats the unit's owner");
     assert_eq!(unit_owner.stage(), SpineStage::Intake);
     assert_eq!(unit_owner.code(), Code::InvalidPackage);
     assert!(unit_owner.region().is_none());
@@ -291,11 +287,7 @@ fn a_cycle_and_a_library_refusal() {
     // test/a and test/b import each other.
     let b_imports_a = import("test/a", "la");
     let cycle_input = input(vec![
-        library(
-            "test/a",
-            "a",
-            &format!("{}{H}", import("test/b", "lb")),
-        ),
+        library("test/a", "a", &format!("{}{H}", import("test/b", "lb"))),
         library("test/b", "b", &format!("{b_imports_a}{H}")),
     ]);
     let source = unit(&format!("{}{H}", import("test/a", "la")));

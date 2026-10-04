@@ -133,11 +133,7 @@ fn import(library: &str, qualifier: Option<&str>) -> ImportDeclaration {
 
 /// Package `label` of `library`, whose `package_id` is the digest of its own
 /// preimage.
-fn package(
-    library: &str,
-    label: &str,
-    imports: Vec<ImportDeclaration>,
-) -> LibraryPackage {
+fn package(library: &str, label: &str, imports: Vec<ImportDeclaration>) -> LibraryPackage {
     LibraryPackage {
         library: name(library),
         package_id: id(label),

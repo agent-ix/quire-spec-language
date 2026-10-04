@@ -118,10 +118,7 @@ fn file_bytes() -> Vec<u8> {
 #[test]
 fn refuses_a_file_byte_digest_in_place_of_the_package_id() {
     let file_digest = PackageId::of_preimage(&file_bytes());
-    assert_package_id_mismatch(
-        bind(candidate(file_digest), &pin(file_digest)),
-        file_digest,
-    );
+    assert_package_id_mismatch(bind(candidate(file_digest), &pin(file_digest)), file_digest);
 }
 
 /// TC-253 step 6: the digest of the lock member's JCS bytes never
@@ -136,10 +133,7 @@ fn refuses_a_lock_digest_in_place_of_the_package_id() {
     }))
     .unwrap();
     let lock_digest = PackageId::of_preimage(&lock);
-    assert_package_id_mismatch(
-        bind(candidate(lock_digest), &pin(lock_digest)),
-        lock_digest,
-    );
+    assert_package_id_mismatch(bind(candidate(lock_digest), &pin(lock_digest)), lock_digest);
 }
 
 /// TC-253 step 7: the lock's source digest (`sha256("src")`) never

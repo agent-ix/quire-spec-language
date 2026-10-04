@@ -5005,14 +5005,9 @@ fn s4_state_package_reads_back_through_i2() {
     assert_eq!(emission.package().package_id(), first.emitted.package_id());
     let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
-    let view = qsl_package::read_import_view(
-        &first.package,
-        &emission,
-        library,
-        &packages,
-        &mut admitted,
-    )
-    .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
+    let view =
+        qsl_package::read_import_view(&first.package, &emission, library, &packages, &mut admitted)
+            .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
     let _ = view;
 }
 
