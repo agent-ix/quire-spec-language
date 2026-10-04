@@ -28,7 +28,9 @@ refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-CON-4.
    selection. Then offer a combination of the first and third faults.
 3. Offer bytes `agent-ix-semantic-ir` refuses. Then parse documents carrying
    a lone high surrogate escape, a lone low surrogate escape, a reversed pair,
-   a lone surrogate in a member name, and `1e400`. Offer a lone-surrogate
+   a lone surrogate in a member name. Parse documents carrying `1e400`,
+   `-1e400` and `1e-400`, at the top level and nested, and offer them to
+   admission under their raw digest and under another digest. Offer a lone-surrogate
    document under the `sha256-jcs` digest of the same document with U+FFFD in
    its place, and `not json` under its own raw digest with an empty identity
    and version. Offer a document over `intake.input_bytes`.
@@ -86,7 +88,10 @@ refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-CON-4.
   declaration; the combined case reports `digest-domain-mismatch`, the first
   check in FR-154 order.
 - Step 3 admits no declaration and retains every reader diagnostic with its IR
-  node, artifact id and span. The parse refuses each surrogate case and `1e400`.
+  node, artifact id and span. The parse refuses each surrogate case. It refuses `1e400` and `-1e400`
+  `noncanonical_wire`/`inexact-integer` and `1e-400`
+  `noncanonical_wire`/`inexact-number`, each with its `document_pointer`, and
+  admission does the same under either digest, never `stale_dependency`.
   The lone-surrogate document refuses `stale_dependency`/`byte-digest-mismatch`,
   and `not json` refuses `invalid_model_binding`/`wrong-model-selection`. Each
   limit case refuses `resource_exhausted`/`intake-limit-exceeded` naming its

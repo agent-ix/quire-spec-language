@@ -249,12 +249,13 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 ///
 /// The reader refuses malformed input with its byte offset: bytes that are
 /// not UTF-8, a byte order mark, a lone UTF-16 surrogate escape (RFC 8785,
-/// via RFC 7493, admits none), a number with no finite double (`1e400`), a
-/// repeated member name, and every other departure from the JSON grammar.
+/// via RFC 7493, admits none), a repeated member name, and every other
+/// departure from the JSON grammar.
 /// Each refuses as `invalid_model_binding`/`malformed-declaration` at the
 /// document root `$`, carrying that offset (FR-260 B4). That refusal is this
 /// parse's own: FR-154 admission ([`admit`]) and [`package_input`] digest
-/// bytes the reader refuses raw (FR-056).
+/// bytes the reader refuses raw (FR-056). A number with no finite double
+/// (`1e400`) is not among them: it refuses `noncanonical_wire` below.
 ///
 /// A number with no exact RFC 8785 spelling (`inexactness`) refuses
 /// `noncanonical_wire`, carrying the RFC 6901 `document_pointer` of the
@@ -407,6 +408,19 @@ fn read_refusal(error: quire_canonical::ReadError) -> ModelRefusal {
             limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
         }
         quire_canonical::ReadError::Allocation { requested } => allocation_failed(requested),
+        quire_canonical::ReadError::NumberOutOfRange {
+            pointer, lexeme, ..
+        } => match out_of_range_number(&pointer, &lexeme) {
+            Some((document_pointer, inexact)) => {
+                noncanonical_number(document_pointer, inexact, &lexeme)
+            }
+            None => malformed_declaration(
+                "$".to_owned(),
+                None,
+                None,
+                format!("package document number {lexeme} has no finite double"),
+            ),
+        },
         other => malformed_declaration(
             "$".to_owned(),
             None,
@@ -414,6 +428,21 @@ fn read_refusal(error: quire_canonical::ReadError) -> ModelRefusal {
             format!("package document could not be read: {other}"),
         ),
     }
+}
+
+/// The pointer and cause of a number the shared reader refused for having no
+/// finite double (FR-056): a whole value beyond ±2^53, exponent forms
+/// included, is [`Inexact::Integer`]; any other is [`Inexact::Number`]. Decided
+/// on the lexeme's digits alone, never through a double. `None` only when the
+/// reader's `pointer` is not RFC 6901, which it never produces.
+pub(super) fn out_of_range_number(pointer: &str, lexeme: &str) -> Option<(JsonPointer, Inexact)> {
+    let pointer = pointer.parse().ok()?;
+    let inexact = if Decimal::of(lexeme).is_whole_beyond_2_53() {
+        Inexact::Integer
+    } else {
+        Inexact::Number
+    };
+    Some((pointer, inexact))
 }
 
 /// [`PackageDocument::parse`]'s refusal for an error of the `sha256-jcs`
@@ -5666,8 +5695,9 @@ mod tests {
     /// already confirmed these bytes parse as JSON ...")`. The two parsers
     /// disagreed on a number serde_json cannot represent: the validator's
     /// reader accepted `1e400`, and the re-parse panicked on it. Intake now
-    /// reads once, through the shared reader, which refuses it as malformed
-    /// at the number's byte offset.
+    /// reads once, through the shared reader, which refuses the number with
+    /// its pointer and lexeme; intake refuses it `noncanonical_wire`, not as
+    /// a malformed document.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_number_serde_json_cannot_represent_at_the_one_parse() {
@@ -5684,17 +5714,55 @@ mod tests {
             agent_ix_semantic_ir::json::parse(&text).is_ok(),
             "the validator's own reader accepts it, which is what made the re-parse panic"
         );
-        let offset = text.find("1e400").expect("the number is in the text");
-        assert_eq!(
-            PackageDocument::parse(text.as_bytes()).unwrap_err(),
-            malformed(
-                "$",
-                &format!(
-                    "package document is malformed JSON at byte {offset}: \
-                     number has no finite IEEE 754 double"
-                )
-            )
+        let refusal = PackageDocument::parse(text.as_bytes()).unwrap_err();
+        assert_eq!(refusal.code, Code::NoncanonicalWire);
+        assert!(
+            matches!(
+                &refusal.cause,
+                ModelRefusalCause::NoncanonicalNumber {
+                    inexact: Inexact::Integer,
+                    document_pointer,
+                } if document_pointer.as_str().ends_with("/weight")
+            ),
+            "{refusal:?}"
         );
+    }
+
+    /// A number with no finite double refuses at the one parse
+    /// `noncanonical_wire`, decided from its lexeme: a whole value beyond
+    /// ±2^53, exponent and decimal forms included, is `inexact-integer`;
+    /// the underflow `1e-400` is `inexact-number`. Each carries its pointer
+    /// at the top level and nested, and none refuses as malformed.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_number_with_no_finite_double_by_its_lexeme() {
+        for number in ["1e400", "-1e400", "1.5E+400", "0.1e401", "123e1000000000"] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Integer,
+                "/package/count",
+                number,
+            );
+            assert_noncanonical(number, Inexact::Integer, "", number);
+        }
+        for number in ["1e-400", "-1e-400"] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Number,
+                "/package/count",
+                number,
+            );
+            assert_noncanonical(number, Inexact::Number, "", number);
+        }
+        assert_noncanonical(
+            r#"{"a/b":[0,{"c~d":-1e400}],"z":1e-400}"#,
+            Inexact::Integer,
+            "/a~1b/1/c~0d",
+            "-1e400",
+        );
+        // The reader refuses the out-of-range number before any tree exists
+        // to walk, so it is named ahead of an earlier inexact number.
+        assert_noncanonical(r#"{"x":[1e-400,1e400]}"#, Inexact::Integer, "/x/1", "1e400");
     }
 
     /// The JCS digest check still runs over the one parse.
