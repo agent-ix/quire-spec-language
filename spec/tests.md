@@ -533,7 +533,7 @@ names different artifacts in each.
 | TC-736 | A deep source and value replay to the proving run's verdict | Integration | P1 | FR-263-AC-1 | 🚧 Planned |
 | TC-737 | Replay passes every stage limit through and names the setting it reached | Integration | P1 | FR-263-AC-2, FR-263-AC-3 | 🚧 Planned |
 | TC-738 | A deep package emits, reads back and verifies, in the stratified grammar | Integration | P1 | FR-264-AC-1, FR-264-AC-2 | 🚧 Planned |
-| TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4 | 🚧 Planned |
+| TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4, FR-264-AC-5 | 🚧 Planned |
 | TC-902 | Core entry points and maybe_grow sites run 100,000 deep on a small stack | Unit | P1 | FR-356-AC-5, FR-356-AC-6 | 🚧 Planned |
 | TC-903 | A deep-input fuzz target drives the parser and the checker | Property | P1 | FR-356-AC-7 | 🚧 Planned |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |

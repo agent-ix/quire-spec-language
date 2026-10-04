@@ -425,6 +425,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         ),
         (K::Correspondence(CorrespondenceForm::BindingRole), NO_TAG),
         (
+            K::Correspondence(CorrespondenceForm::AbstractionRelation),
+            NO_TAG,
+        ),
+        (
             K::Correspondence(CorrespondenceForm::ProfileCorrespondence),
             NO_TAG,
         ),

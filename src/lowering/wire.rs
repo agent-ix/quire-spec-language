@@ -95,6 +95,16 @@ impl Serialize for ValueType<'_> {
     }
 }
 
+/// One of IR's eight integer members: a JSON string of base-ten digits, since
+/// a JSON number past 2^53 is not canonical JSON (IR's decimal-string wire).
+struct Decimal<T>(T);
+
+impl<T: std::fmt::Display> Serialize for Decimal<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.0)
+    }
+}
+
 // IR's public integer type has a nested value; its input wire uses flattened bounds.
 struct IntegerType<'a>(&'a ir::IntegerType);
 
@@ -103,8 +113,8 @@ impl Serialize for IntegerType<'_> {
         let mut map = serializer.serialize_map(Some(5))?;
         map.serialize_entry("kind", "integer")?;
         map.serialize_entry("domain", &self.0.domain())?;
-        map.serialize_entry("minimum", &self.0.minimum())?;
-        map.serialize_entry("maximum", &self.0.maximum())?;
+        map.serialize_entry("minimum", &Decimal(self.0.minimum()))?;
+        map.serialize_entry("maximum", &Decimal(self.0.maximum()))?;
         map.serialize_entry("overflow", &self.0.overflow())?;
         map.end()
     }
@@ -124,6 +134,7 @@ enum ExpressionKind<'a> {
         value: bool,
     },
     IntegerLiteral {
+        #[serde(serialize_with = "decimal")]
         value: i64,
         value_type: IntegerType<'a>,
     },
@@ -152,6 +163,10 @@ enum ExpressionKind<'a> {
         left: Box<Expression<'a>>,
         right: Box<Expression<'a>>,
     },
+}
+
+fn decimal<S: Serializer>(value: &i64, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    Decimal(value).serialize(serializer)
 }
 
 struct Conversion<'a> {
@@ -340,5 +355,64 @@ mod tests {
         let wire = serde_json::to_value(conversion.expression(&valid).unwrap()).unwrap();
         assert_eq!(wire["node"], "boolean_literal");
         assert_eq!(wire["value"], true);
+    }
+
+    /// FR-033-AC-3: an integer type's bounds and an integer literal's value
+    /// reach IR as decimal strings, exact at the `i64` extremes.
+    #[trace("TC-111", "FR-033-AC-3")]
+    #[test]
+    fn integer_members_serialize_as_decimal_strings() {
+        let source = FormalSource::new(
+            Source::read(
+                SourceIdentity {
+                    authority: "test".into(),
+                    identity: "test:wire".into(),
+                    revision_namespace: "test".into(),
+                    revision: "1".into(),
+                },
+                "rule.native",
+                b"true",
+                64,
+            )
+            .unwrap(),
+            ir::SourceIdentity::new(
+                ir::SourceDocumentId::new("WireSource").unwrap(),
+                ir::SourceRevision::new(1).unwrap(),
+            ),
+        );
+        let span = source
+            .to_ir(source.source(), Span { start: 0, end: 4 })
+            .unwrap();
+        let binding = ClauseBinding {
+            name: "Rule".into(),
+            requirement: ir::RequirementRef::parse("example/wire", "Rule", 1).unwrap(),
+            clause: ir::ClauseId::new("rule").unwrap(),
+            execution_point: ir::ExecutionPoint::Handler {
+                name: ir::AnchorName::new("validate").unwrap(),
+            },
+        };
+        let conversion = Conversion {
+            binding: &binding,
+            source: &source,
+        };
+        let value_type = ir::IntegerType::new(
+            ir::IntegerDomain::Signed,
+            i64::MIN,
+            i64::MAX,
+            ir::OverflowPolicy::Reject,
+        )
+        .unwrap();
+        let literal = ir::Expression::new(
+            ir::ExpressionKind::IntegerLiteral {
+                value: i64::MIN,
+                value_type,
+            },
+            span,
+        );
+        let wire = serde_json::to_value(conversion.expression(&literal).unwrap()).unwrap();
+        assert_eq!(wire["node"], "integer_literal");
+        assert_eq!(wire["value"], "-9223372036854775808");
+        assert_eq!(wire["value_type"]["minimum"], "-9223372036854775808");
+        assert_eq!(wire["value_type"]["maximum"], "9223372036854775807");
     }
 }

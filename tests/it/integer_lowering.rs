@@ -129,12 +129,12 @@ fn strict_readers_reconstruct_integer_operators_bounds_and_guarded_obligations()
         {
             assert_eq!(
                 literal["value_type"],
-                json!({"kind":"integer","domain":"signed","minimum":0,"maximum":1000,"overflow":"reject"})
+                json!({"kind":"integer","domain":"signed","minimum":"0","maximum":"1000","overflow":"reject"})
             );
         }
         assert_eq!(
             binding["expression"]["values"][0]["value_type"],
-            json!({"kind":"integer","domain":"signed","minimum":0,"maximum":1000,"overflow":"reject"})
+            json!({"kind":"integer","domain":"signed","minimum":"0","maximum":"1000","overflow":"reject"})
         );
     }
 }

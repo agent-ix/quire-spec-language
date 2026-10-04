@@ -13,7 +13,7 @@ relationships:
 Verify that a body outside the stratified grammar is a malformed wire, and
 that the I2 read limits report their setting and clear when raised.
 
-Scope: FR-264-AC-3, FR-264-AC-4.
+Scope: FR-264-AC-3, FR-264-AC-4, FR-264-AC-5.
 
 ## Test Procedure
 
@@ -22,8 +22,10 @@ Scope: FR-264-AC-3, FR-264-AC-4.
 2. Read an emitted artifact with `i2.nodes` at `B`, below its node count;
    then raise `i2.nodes` through the v2 read limits' builder and through
    FR-255's settings operation given `i2.nodes=<n>`.
+3. On a thread with a 512 KiB stack, read bytes that are 100,000 arrays deep
+   under the default limits.
 
-Tag the tests `#[trace("TC-739", "FR-264-AC-3")]`, `#[trace("TC-739", "FR-264-AC-4")]`.
+Tag the tests `#[trace("TC-739", "FR-264-AC-3")]`, `#[trace("TC-739", "FR-264-AC-4")]`, `#[trace("TC-739", "FR-264-AC-5")]`.
 
 ## Expected Results
 
@@ -31,6 +33,8 @@ Tag the tests `#[trace("TC-739", "FR-264-AC-3")]`, `#[trace("TC-739", "FR-264-AC
 - Step 2: `StageFailure::Limit` with kind node count, bound `B`, IR's
   consumed count, setting `i2.nodes` and `Locus::Artifact`; each raised
   read verifies.
+- Step 3: refused with code `malformed_wire`, with no limit outcome and no
+  outcome naming a depth.
 
 ## Status
 

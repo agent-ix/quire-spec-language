@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_model::{
-    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageRefusalCause,
-    CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedPackageEvidence, CheckedPackageRefusalCause, CheckedPackageRefusalCode,
+    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -919,42 +919,6 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
     }
 }
 
-/// A `depth` above IR's fixed maximum is charged at that maximum, so a
-/// verified read records `depth` as the maximum, not the requested value.
-#[trace("TC-253", "FR-087-AC-3")]
-#[test]
-fn a_verified_read_records_depth_as_the_charged_maximum() {
-    let preimage = identity_preimage(vec![]);
-    let bytes = jcs(&valid_envelope(&preimage));
-    let requested = V2ReadLimits {
-        depth: usize::MAX,
-        ..V2ReadLimits::default()
-    };
-    match read_v2(
-        &bytes,
-        identity("pkg"),
-        requested,
-        &CheckedPackageEvidence::new(),
-        &pinned_for(&preimage),
-    ) {
-        Read::Verified {
-            effective_limits, ..
-        } => assert_eq!(
-            effective_limits,
-            V2ReadLimits {
-                depth: maximum_depth(),
-                ..requested
-            }
-        ),
-        other => panic!("expected Verified, got {other:?}"),
-    }
-}
-
-/// IR's fixed depth maximum, in [`V2ReadLimits::depth`]'s type.
-fn maximum_depth() -> usize {
-    usize::try_from(CheckedPackageReadLimits::MAXIMUM_DEPTH).unwrap()
-}
-
 /// Reaching a *caller-raised* ceiling (not just the default)
 /// still refuses, naming the limit kind ([`LimitKind::InputBytes`]) and
 /// the caller's own configured bound.
@@ -980,26 +944,6 @@ fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_b
 }
 
 #[test]
-fn incomplete_when_a_depth_ceiling_is_reached() {
-    let preimage = identity_preimage(vec![]);
-    let bytes = jcs(&valid_envelope(&preimage));
-    let limits = V2ReadLimits {
-        depth: 1,
-        ..V2ReadLimits::default()
-    };
-    match read_v2(
-        &bytes,
-        identity("pkg"),
-        limits,
-        &CheckedPackageEvidence::new(),
-        &pinned_for(&preimage),
-    ) {
-        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
-        other => panic!("expected Incomplete(Limit(Depth)), got {other:?}"),
-    }
-}
-
-#[test]
 fn exact_selected_limits_admit_the_boundary() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
@@ -1017,205 +961,37 @@ fn exact_selected_limits_admit_the_boundary() {
     assert!(matches!(outcome, Read::Verified { .. }));
 }
 
+/// A wire nested 100,000 deep, read on a
+/// 512 KiB stack, is refused as a malformed wire. The outcome is no limit
+/// and names no depth.
+#[trace("TC-739", "FR-264-AC-5")]
 #[test]
-fn exact_depth_ceiling_admits_the_boundary() {
-    let preimage = identity_preimage(vec![]);
-    let bytes = jcs(&valid_envelope(&preimage));
-
-    // Measure the envelope's actual IR-reported depth with the engine under
-    // test itself, rather than a second, drifting reimplementation of IR's
-    // own depth count (L5): an unreachably low ceiling forces
-    // `Incomplete(Limit(Depth))`, whose `consumed` is IR's own count.
-    let actual_depth = match read_v2(
-        &bytes,
-        identity("pkg"),
-        V2ReadLimits {
-            depth: 0,
-            ..V2ReadLimits::default()
-        },
-        &CheckedPackageEvidence::new(),
-        &pinned_for(&preimage),
-    ) {
-        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => exceeded.actual(),
-        other => panic!("expected Incomplete(Limit(Depth)) at depth 0, got {other:?}"),
-    };
-
-    let admits = V2ReadLimits {
-        depth: actual_depth as usize,
-        ..V2ReadLimits::default()
-    };
-    let outcome = read_v2(
-        &bytes,
-        identity("pkg"),
-        admits,
-        &CheckedPackageEvidence::new(),
-        &pinned_for(&preimage),
-    );
-    assert!(
-        matches!(outcome, Read::Verified { .. }),
-        "expected Verified at the exact depth boundary, got {outcome:?}"
-    );
-
-    let refuses = V2ReadLimits {
-        depth: (actual_depth - 1) as usize,
-        ..V2ReadLimits::default()
-    };
-    match read_v2(
-        &bytes,
-        identity("pkg"),
-        refuses,
-        &CheckedPackageEvidence::new(),
-        &pinned_for(&preimage),
-    ) {
-        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
-        other => panic!("expected Incomplete(Limit(Depth)) one below the boundary, got {other:?}"),
-    }
-}
-
-/// Wraps `leaf` in `wraps` nested one-element JSON arrays, e.g.
-/// `nested_array(2, json!(1))` is `[[1]]`.
-fn nested_array(wraps: usize, leaf: Value) -> Value {
-    let mut value = leaf;
-    for _ in 0..wraps {
-        value = Value::Array(vec![value]);
-    }
-    value
-}
-
-/// The scalar `1` inside `wraps` nested arrays, written as bytes so no deep
-/// value is built or encoded on the test's stack: depth `wraps + 1` in IR's
-/// units.
-fn nested_array_bytes(wraps: usize) -> Vec<u8> {
-    format!("{}1{}", "[".repeat(wraps), "]".repeat(wraps)).into_bytes()
-}
-
-/// The read of `bytes` under `limits` as a depth incompleteness: its
-/// configured bound and measured depth.
-fn depth_incompleteness(bytes: &[u8], limits: V2ReadLimits) -> (u64, u128) {
-    match read_v2(
-        bytes,
-        identity("pkg"),
-        limits,
-        &CheckedPackageEvidence::new(),
-        &no_pins(),
-    ) {
-        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {
-            (exceeded.configured_bound(), exceeded.actual())
-        }
-        other => panic!("expected Incomplete(Limit(Depth)), got {other:?}"),
-    }
-}
-
-#[trace("TC-088", "NFR-007-M-5")]
-#[test]
-fn depth_far_past_the_default_limit_is_incomplete_not_malformed_wire() {
-    // A wire nested well past the default limit is a depth incompleteness
-    // naming that limit and the measured depth, not a malformed-wire
-    // refusal. Bare bytes, not a valid envelope: the depth check runs
-    // before schema decode, on any well-formed JSON document.
-    let limits = V2ReadLimits::default();
-    assert_eq!(
-        depth_incompleteness(&nested_array_bytes(200), limits),
-        (u64::try_from(limits.depth).unwrap(), 201)
-    );
-}
-
-#[trace("TC-088", "NFR-007-M-5")]
-#[test]
-fn depth_raised_past_the_default_admits_a_wire_deeper_than_the_default() {
-    // A raised depth is charged as given: the same 201-deep wire that is
-    // incomplete at the default passes the depth check at 300 and reaches
-    // envelope decode, which refuses the root array as no envelope. That
-    // refusal is at a value (the root pointer); a syntax refusal before the
-    // depth check carries no pointer.
-    let outcome = read_v2(
-        &nested_array_bytes(200),
-        identity("pkg"),
-        V2ReadLimits {
-            depth: 300,
-            ..V2ReadLimits::default()
-        },
-        &CheckedPackageEvidence::new(),
-        &no_pins(),
-    );
-    assert!(
-        matches!(
-            &outcome,
-            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
-                if refusal.path.as_ref().is_some_and(|path| path.as_str().is_empty())
-        ),
-        "expected the depth check to pass and the root value to be refused, got {outcome:?}"
-    );
-}
-
-#[trace("TC-088", "NFR-007-M-5")]
-#[test]
-fn depth_past_the_charged_maximum_is_incomplete_naming_the_maximum() {
-    // A caller depth above IR's fixed maximum is charged at the maximum: a
-    // wire one level past it is incomplete, naming the maximum, not the
-    // caller's requested limit.
-    let limits = V2ReadLimits {
-        depth: usize::MAX,
-        ..V2ReadLimits::default()
-    };
-    let maximum = CheckedPackageReadLimits::MAXIMUM_DEPTH;
-    assert_eq!(
-        depth_incompleteness(&nested_array_bytes(maximum_depth()), limits),
-        (maximum, u128::from(maximum) + 1)
-    );
-}
-
-#[test]
-fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
-    // Decided fail-closed: `V2ReadLimits::depth` is passed to
-    // IR unchanged, in entered-container units. IR's own depth count
-    // counts a scalar leaf as one further unit beyond the containers
-    // entered to reach it, but counts an empty container as exactly the
-    // containers entered including itself -- so at one shared limit the two
-    // kinds of deepest path disagree by one (module doc, "Ceilings").
-    // Bare bytes, not a valid envelope: the depth check runs before schema
-    // decode, on any well-formed JSON document.
-    let limits = V2ReadLimits {
-        depth: 3,
-        ..V2ReadLimits::default()
-    };
-    let is_depth_incomplete = |bytes: &[u8]| {
-        matches!(
-            read_v2(
-                bytes,
+fn a_wire_nested_100000_deep_reads_without_a_depth_outcome_on_a_small_stack() {
+    const WRAPS: usize = 100_000;
+    let bytes = format!("{}1{}", "[".repeat(WRAPS), "]".repeat(WRAPS)).into_bytes();
+    let outcome = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let outcome = read_v2(
+                &bytes,
                 identity("pkg"),
-                limits,
+                V2ReadLimits {
+                    artifact_bytes: bytes.len(),
+                    ..V2ReadLimits::default()
+                },
                 &CheckedPackageEvidence::new(),
-                &no_pins()
-            ),
-            Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth
-        )
-    };
-
-    // Three entered containers, terminal empty container: exactly at the
-    // limit, not refused for depth (fail-closed does not over-refuse).
-    let empty_terminated_at_limit = jcs(&nested_array(2, json!([])));
-    assert!(
-        !is_depth_incomplete(&empty_terminated_at_limit),
-        "an empty-container-terminated path exactly at the depth boundary must not be Incomplete(Limit(Depth))"
-    );
-
-    // Three entered containers, terminal scalar: one IR unit past the same
-    // limit -- refused fail-closed, the accepted cost of removing `+ 1`.
-    let scalar_terminated_at_limit = jcs(&nested_array(3, json!(1)));
-    assert!(
-        is_depth_incomplete(&scalar_terminated_at_limit),
-        "a scalar-terminated path exactly at the depth boundary must be Incomplete(Limit(Depth))"
-    );
-
-    // Four entered containers, terminal empty container: one container past
-    // the limit -- refused fail-closed. Under the old `+ 1` conversion this
-    // was wrongly admitted (the M2 over-admission finding).
-    let empty_terminated_past_limit = jcs(&nested_array(3, json!([])));
-    assert!(
-        is_depth_incomplete(&empty_terminated_past_limit),
-        "an empty-container-terminated path one past the depth boundary must be Incomplete(Limit(Depth))"
-    );
+                &no_pins(),
+            );
+            matches!(
+                &outcome,
+                Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
+                    if refusal.code == CheckedPackageRefusalCode::MalformedWire
+            )
+        })
+        .expect("the thread spawns")
+        .join()
+        .expect("the read completes on a 512 KiB stack");
+    assert!(outcome, "expected Refused(Envelope(MalformedWire))");
 }
 
 /// The occurrence key of `label`'s `declaration` occurrence.
@@ -1955,18 +1731,6 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
     edged["semantic_graph"]["nodes"][0]["dependencies"] = json!([node_ref("pkg::R")]);
 
     let cases = [
-        (
-            &base,
-            &preimage,
-            V2ReadLimits {
-                depth: 1,
-                ..defaults
-            },
-            LimitKind::NestingDepth,
-            1,
-            7,
-            "/capability_report",
-        ),
         (
             &two_nodes,
             &two_preimage,

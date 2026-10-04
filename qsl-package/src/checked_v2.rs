@@ -40,41 +40,19 @@
 //! # Ceilings
 //!
 //! [`V2ReadLimits`] carries every ceiling of this read: `artifact_bytes`,
-//! which this reader checks itself and also hands to IR as `bytes`,
-//! `depth`, handed to IR as its `depth`, and IR's other five
-//! [`quire_contract_model::CheckedPackageReadLimits`] ceilings (`nodes`,
-//! `edges`, `occurrences`, `diagnostics`, `work`), passed through unchanged.
-//! Every one is the caller's, used as given; the defaults are IR's own
-//! `bounded()` values plus this reader's 16 MiB byte default and a depth of
-//! 128. It is not the native-v1 `PackageLimits` (the root crate's `package`,
-//! FR-019, SEAM-1 until M-6): that type's `string_bytes` and `entries` exist
-//! only for the native encode/intake path and have no IR counterpart. Every
-//! IR ceiling a caller can hit is reported, verbatim, as
-//! [`V2ReadIncomplete::Limit`]'s [`quire_contract_model::CheckedPackageLimit`].
-//! Two facts shape `depth`:
-//!
-//! - **Charged at most IR's fixed maximum.** IR charges a caller's depth
-//!   limit up to [`CheckedPackageReadLimits::MAXIMUM_DEPTH`], which bounds
-//!   the stack its reader reserves; a larger `depth` is charged at that
-//!   maximum. A wire nested past the charged limit is reported
-//!   `Incomplete(Limit(Depth))` naming the charged limit and the measured
-//!   depth, never refused as malformed, however deep it is. A verified
-//!   read's `effective_limits` records the charged `depth`.
-//! - **Fail-closed at the boundary, for a scalar-terminated path.** IR's
-//!   depth count takes a scalar leaf as depth 1 even at zero entered
-//!   containers, while [`V2ReadLimits::depth`] counts only entered
-//!   containers, so e.g. `{"a":1}` is depth 2 in IR's units but depth 1
-//!   here. This reader passes `V2ReadLimits::depth` to IR *unchanged* --
-//!   no `+ 1` conversion (fail-closed): no wire deeper
-//!   than `V2ReadLimits::depth` containers is ever admitted, for either
-//!   kind of deepest path. The cost is one-sided: a wire whose deepest
-//!   path ends in a scalar exactly at the configured boundary is refused
-//!   `Incomplete` one level early (IR counts its terminal scalar as an
-//!   extra unit), while a wire whose deepest path ends in an empty
-//!   container is admitted exactly at the boundary (IR's count and this
-//!   reader's agree there). A caller that needs exact-boundary admission
-//!   for scalar-terminated documents must widen its own configured limit
-//!   by one; this reader does not guess which kind of path is deepest.
+//! which this reader checks itself and also hands to IR as `bytes`, and IR's
+//! other five [`quire_contract_model::CheckedPackageReadLimits`] ceilings
+//! (`nodes`, `edges`, `occurrences`, `diagnostics`, `work`), passed through
+//! unchanged. Every one is the caller's, used as given; the defaults are IR's
+//! own `bounded()` values plus this reader's 16 MiB byte default. There is no
+//! depth ceiling (FR-264): IR's flat v2 wire has a JSON depth fixed by its
+//! closed schema whatever the package's node count, so the read recurses to
+//! that fixed depth and no further. It is not the native-v1 `PackageLimits`
+//! (the root crate's `package`, FR-019, SEAM-1 until M-6): that type's
+//! `string_bytes` and `entries` exist only for the native encode/intake path
+//! and have no IR counterpart. Every IR ceiling a caller can hit is reported,
+//! verbatim, as [`V2ReadIncomplete::Limit`]'s
+//! [`quire_contract_model::CheckedPackageLimit`].
 //!
 //! # Loci (FR-096)
 //!
@@ -176,21 +154,12 @@ pub(crate) fn read_v2(
 /// Every ceiling of one [`read_checked_package_v2`] call (see the module
 /// doc's "Ceilings" section). Each field is used exactly as the caller
 /// supplies it, above or below [`Self::default`]: an implementation ceiling
-/// is not a domain bound (NFR-001). The one ceiling a caller cannot raise
-/// is `depth` past [`CheckedPackageReadLimits::MAXIMUM_DEPTH`]; a verified
-/// read's [`V2Read::effective_limits`] records that.
+/// is not a domain bound (NFR-001). There is no depth ceiling (FR-264).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct V2ReadLimits {
     /// Offered bytes, checked here and handed to IR as its `bytes`.
     /// Defaults to 16 MiB.
     pub(crate) artifact_bytes: usize,
-    /// Entered JSON containers, handed to IR as its `depth`. Defaults to
-    /// 128; IR charges at most [`CheckedPackageReadLimits::MAXIMUM_DEPTH`].
-    /// A package admitted deeper than the default is recursed over, one
-    /// frame per level, by every clone, comparison, `Debug` rendering and
-    /// drop of the [`V2Read`] holding it, on the caller's stack: a caller
-    /// that raises `depth` must run on a stack sized for it.
-    pub(crate) depth: usize,
     /// IR's semantic-graph node ceiling.
     pub(crate) nodes: u64,
     /// IR's graph dependency-edge ceiling.
@@ -208,7 +177,6 @@ impl Default for V2ReadLimits {
         let ir = CheckedPackageReadLimits::bounded();
         Self {
             artifact_bytes: 16_777_216,
-            depth: 128,
             nodes: ir.nodes,
             edges: ir.edges,
             occurrences: ir.occurrences,
@@ -220,30 +188,15 @@ impl Default for V2ReadLimits {
 
 impl V2ReadLimits {
     /// The ceilings IR's reader receives: every field passed through
-    /// unchanged. `depth` is fail-closed (see the module doc's
-    /// "Ceilings" section): never widened by one for IR's
-    /// scalar-counts-as-depth-1 convention, so no wire deeper than `depth`
-    /// containers is ever admitted.
+    /// unchanged.
     fn for_ir(self) -> CheckedPackageReadLimits {
         CheckedPackageReadLimits {
             bytes: u64::try_from(self.artifact_bytes).unwrap_or(u64::MAX),
-            depth: u64::try_from(self.depth).unwrap_or(u64::MAX),
             nodes: self.nodes,
             edges: self.edges,
             occurrences: self.occurrences,
             diagnostics: self.diagnostics,
             work: self.work,
-        }
-    }
-
-    /// The ceilings actually enforced: every field as given, except `depth`,
-    /// which IR charges at most [`CheckedPackageReadLimits::MAXIMUM_DEPTH`].
-    fn enforced(self) -> Self {
-        let maximum =
-            usize::try_from(CheckedPackageReadLimits::MAXIMUM_DEPTH).unwrap_or(usize::MAX);
-        Self {
-            depth: self.depth.min(maximum),
-            ..self
         }
     }
 }
@@ -514,7 +467,6 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
 fn limit_kind(kind: CheckedPackageLimit) -> LimitKind {
     match kind {
         CheckedPackageLimit::Bytes => LimitKind::InputBytes,
-        CheckedPackageLimit::Depth => LimitKind::NestingDepth,
         CheckedPackageLimit::Nodes => LimitKind::NodeCount,
         CheckedPackageLimit::Edges => LimitKind::EdgeCount,
         CheckedPackageLimit::Occurrences => LimitKind::OccurrenceCount,
@@ -574,10 +526,8 @@ pub(crate) struct V2Read {
     /// The package source map (ADR-013 O-12), read from the wire's
     /// `source_map`.
     pub(crate) source_map: PackageSourceMap,
-    /// The ceilings this read actually enforced: the caller's
-    /// [`V2ReadLimits`] as given, with `depth` reported as at most
-    /// [`CheckedPackageReadLimits::MAXIMUM_DEPTH`] (see
-    /// [`V2ReadLimits::enforced`]).
+    /// The ceilings this read enforced: the caller's [`V2ReadLimits`] as
+    /// given.
     pub(crate) effective_limits: V2ReadLimits,
     /// IR's admitted package, supplied to a later read whose
     /// `dependency_selections` name it.
@@ -696,7 +646,7 @@ pub(crate) fn read_checked_package_v2(
                 Ok(verified) => Ok(Staged::new(V2Read {
                     package: verified,
                     source_map,
-                    effective_limits: limits.enforced(),
+                    effective_limits: limits,
                     admitted: Arc::from(package),
                 })),
                 Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),
