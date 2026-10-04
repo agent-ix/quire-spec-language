@@ -155,5 +155,5 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   `ReplayRefusal::code`'s code and category `inconclusive`; both faults map
   to `Failed`.
 - Step 17: the `Compile` and `UnknownFunction` refusals map to `Declined` with
-  cause `InvalidInput` and each refusal's own code (category `refusal`); the
+  cause `InvalidInput` and each refusal's own code as `DeclineCode::Qsl` (category `refusal`); the
   `Fault` maps to `Failed`.

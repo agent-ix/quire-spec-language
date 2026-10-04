@@ -145,6 +145,16 @@ pub enum ReportedInconclusiveCause {
     Cause(InconclusiveCause),
 }
 
+/// The catalog code a `declined` result carries, in the registry that
+/// issued it. Codes are never remapped across registries: a code of
+/// another registry (IR's `kani_*` codes) is never spelled as a QSL catalog
+/// code. IR's arm is added when IR exports its typed code.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeclineCode {
+    /// A QSL catalog code.
+    Qsl(Code),
+}
+
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
 /// FR-331's `results` vocabulary admits eight wire values and `measured`
 /// is a ninth; this type names seven of the proof column's, with `Proved`
@@ -176,7 +186,7 @@ pub enum TerminalValue {
         /// The typed refusal cause.
         cause: ProofRefusalCause,
         /// The refusal's catalog code.
-        code: Code,
+        code: DeclineCode,
     },
     /// A backend result of `unsupported`.
     Unsupported(UnavailabilityCause),
@@ -262,7 +272,7 @@ impl TerminalValue {
             | CallSiteRefusal::UnknownOperation { .. }
             | CallSiteRefusal::UnknownClause { .. } => Self::Declined {
                 cause: ProofRefusalCause::InvalidInput,
-                code: refusal.code(),
+                code: DeclineCode::Qsl(refusal.code()),
             },
         }
     }
@@ -495,7 +505,7 @@ mod tests {
             (
                 TerminalValue::Declined {
                     cause: ProofRefusalCause::Refused,
-                    code: Code::MissingDeclaration,
+                    code: DeclineCode::Qsl(Code::MissingDeclaration),
                 },
                 Category::Refusal,
                 None,
@@ -622,7 +632,7 @@ mod tests {
             TerminalValue::Refuted,
             TerminalValue::Declined {
                 cause: ProofRefusalCause::Refused,
-                code: Code::MissingDeclaration,
+                code: DeclineCode::Qsl(Code::MissingDeclaration),
             },
             TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
             TerminalValue::Incomplete(IncompleteCause::TimedOut),
@@ -669,7 +679,7 @@ mod tests {
             TerminalValue::from_call_site_refusal(&compile),
             TerminalValue::Declined {
                 cause: ProofRefusalCause::InvalidInput,
-                code: Code::StaleDependency,
+                code: DeclineCode::Qsl(Code::StaleDependency),
             }
         );
         let unknown = CallSiteRefusal::UnknownFunction {
@@ -681,7 +691,7 @@ mod tests {
             settled,
             TerminalValue::Declined {
                 cause: ProofRefusalCause::InvalidInput,
-                code: Code::MissingDeclaration,
+                code: DeclineCode::Qsl(Code::MissingDeclaration),
             }
         );
         assert_eq!(settled.category(), Category::Refusal);

@@ -62,8 +62,8 @@ pub use identity::{
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
-    InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
+    read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
+    IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, RequestIndex};

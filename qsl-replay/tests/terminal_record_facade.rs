@@ -7,8 +7,9 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    read_backend_provider_envelope, BackendProviderSource, Category, Code, InconclusiveCause,
-    ProofRefusalCause, ReportedInconclusiveCause, RequestIndex, TerminalRecord, TerminalValue,
+    read_backend_provider_envelope, BackendProviderSource, Category, Code, DeclineCode,
+    InconclusiveCause, ProofRefusalCause, ReportedInconclusiveCause, RequestIndex, TerminalRecord,
+    TerminalValue,
 };
 
 /// Each record is keyed by the `RequestIndex` it was built with, a declined
@@ -20,7 +21,7 @@ fn terminal_records_are_built_and_read_through_the_facade_alone() {
     let values = [
         TerminalValue::Declined {
             cause: ProofRefusalCause::InvalidInput,
-            code: Code::MissingDeclaration,
+            code: DeclineCode::Qsl(Code::MissingDeclaration),
         },
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
         TerminalValue::Proved { success_checks: 0 },
