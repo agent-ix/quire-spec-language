@@ -46,3 +46,12 @@ frozen count is version tracking.
 | FND-002 | medium | TC-138 freezes the exact tuple `(4_825, 2_580, 1_168_366, 85_289)`. Its comment is a list of every past reason the number moved. The PR changed the number to the newly observed value (+456) without working it out independently, so the assert passes for whatever the code produces and only records the figure. The loop below it already tests the real behaviour: a limit of amount-1 fails in that dimension, the exact amount passes, limits above the hard cap clamp, and a retry matches. Delete the frozen tuple and its comment, or replace it with a relation (for example `byte_work >= emitted.bytes().len()`). | tests/it/compiled_protocol_v2.rs:2509-2537 |
 | FND-003 | low | `maximum_revision_survives_...` replaced the u64-overflow spelling `18446744073709551616` with `9007199254740993`. That swaps the parse-overflow path for the range check, though TC-083 asks for "malformed/overflowed integers". Keep both, and add `18446744073709551615`, which is now refused too. | tests/package_reading_cases/raw.rs:193 |
 | FND-004 | low | No test sends an integer bound or literal above 2^53 from QSL's lowering wire through IR's wire decoder. The wire.rs test checks serialization only, and the strict-reader test in integer_lowering uses 0..1000. Add an `i64::MAX` bound case to the strict-reader round trip. | src/lowering/wire.rs:359-417; tests/it/integer_lowering.rs:129-138 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |
+| FND-002 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |
+| FND-003 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |
+| FND-004 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |

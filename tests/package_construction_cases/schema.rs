@@ -101,6 +101,10 @@ fn structural_schema_rejects_missing_unknown_and_wrong_type_members() {
         ("/source/formal/revision", json!(0)),
         ("/source/formal/revision", json!(1.5)),
         ("/source/formal/revision", json!(9_007_199_254_740_993_u64)),
+        (
+            "/clauses/0/context/source/start/byte_offset",
+            json!(9_007_199_254_740_993_u64),
+        ),
         ("/required_features", json!(["boolean", "future-feature"])),
         ("/required_features", json!(["boolean", "boolean"])),
         ("/clauses/0/runtime/context_observations", json!(["future"])),

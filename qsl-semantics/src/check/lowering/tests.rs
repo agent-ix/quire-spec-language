@@ -17,6 +17,7 @@ use quire_exact::{
 use serde_json::{json, Value as Json};
 
 use super::*;
+use crate::check::depth_forms::{binary, boolean, function, int_form, integer_expr, name_expr};
 use crate::check::family::fixtures::{admitted_source, empty_scope, fixture_source, scope_with};
 use crate::check::{CheckedGraph, CheckedTypeNode, PackageDeclarations};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -1036,46 +1037,6 @@ fn the_type_and_lowering_matches_have_no_catch_all_arm() {
 // ---------------------------------------------------------------------
 // Function fixtures, checked through `PackageDeclarations::check`.
 // ---------------------------------------------------------------------
-
-fn boolean() -> TypeForm {
-    TypeForm::builtin(BuiltinType::Boolean, SPAN)
-}
-
-fn int_form(lower: i64, upper: i64) -> TypeForm {
-    TypeForm::builtin(BuiltinType::Int, SPAN)
-        .with_bounds(vec![lower.to_string(), upper.to_string()])
-}
-
-fn name_expr(name: &str) -> Expression {
-    Expression::name(name.to_owned())
-}
-
-fn integer_expr(value: i64) -> Expression {
-    Expression::integer(Integer::from(value))
-}
-
-fn binary(operator: BinaryOperator, left: Expression, right: Expression) -> Expression {
-    Expression::binary(operator, left, right)
-}
-
-fn function(
-    name: &str,
-    parameters: &[(&str, TypeForm)],
-    result: TypeForm,
-    measure: Option<Expression>,
-    body: Expression,
-) -> FunctionDeclaration {
-    FunctionDeclaration::new(
-        name,
-        parameters
-            .iter()
-            .map(|(name, form)| ((*name).to_owned(), form.clone()))
-            .collect(),
-        result,
-        measure,
-        body,
-    )
-}
 
 fn check_under(
     source: RawSourceRef,

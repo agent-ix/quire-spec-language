@@ -130,6 +130,101 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
     }
 }
 
+/// FR-264-AC-1: the 100,000-term sum, emitted under limits raised to fit it,
+/// reads back through the I2 read with `i2.*` raised to fit it and verifies at
+/// its emitted `package_id`. The `V2Read` clones, compares equal to its clone,
+/// formats for debug and drops, all on a 512 KiB stack.
+#[trace("TC-738", "FR-264-AC-1")]
+#[test]
+fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(STACK)
+        .spawn(|| {
+            let graph = deep_declarations(&deep_source("sum"))
+                .check(
+                    CheckingLimits::new(u64::MAX)
+                        .with_input_bytes(u64::MAX)
+                        .with_work_budget(u64::MAX),
+                )
+                .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
+            let package = CheckedPackage::link(graph);
+            let emission =
+                emit_checked(&package).unwrap_or_else(|refusal| panic!("emits: {refusal:?}"));
+            let bytes = emission.package.bytes();
+            let limits = crate::checked_v2::V2ReadLimits {
+                artifact_bytes: bytes.len(),
+                nodes: u64::MAX,
+                edges: u64::MAX,
+                occurrences: u64::MAX,
+                diagnostics: u64::MAX,
+                work: u64::MAX,
+            };
+            let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
+                library(),
+                emission.package.package_id(),
+            );
+            let read = crate::checked_v2::read_checked_package_v2(
+                bytes,
+                library(),
+                limits,
+                &read_evidence(&emission),
+                &pinned,
+            )
+            .unwrap_or_else(|failure| panic!("verifies at its package_id: {failure:?}"))
+            .into_value();
+            let clone = read.clone();
+            assert!(read == clone, "the read equals its clone");
+            assert!(!format!("{read:?}").is_empty());
+            drop(clone);
+            drop(read);
+        })
+        .expect("the thread spawns")
+        .join()
+        .expect("the read-back completes on a 512 KiB stack");
+}
+
+/// FR-264-AC-2: every body of every package emitted for each TC-415 nested
+/// expression form, at 2 and at 1,000 levels, is in the stratified grammar.
+/// An unguarded `value` chain refuses to check at both depths and emits
+/// nothing.
+#[trace("TC-738", "FR-264-AC-2")]
+#[test]
+fn every_nested_form_emits_in_the_stratified_grammar_at_2_and_1000_levels() {
+    use qsl_semantics::check::depth_forms::{declarations, Form, FORMS};
+    for form in FORMS {
+        for levels in [2, 1_000] {
+            std::thread::Builder::new()
+                .stack_size(STACK)
+                .spawn(move || {
+                    let checked = declarations(form, levels).check(CheckingLimits::default());
+                    if matches!(form, Form::Field) {
+                        assert!(checked.is_err(), "an unguarded `value` is unproved");
+                        return;
+                    }
+                    let graph = checked.unwrap_or_else(|refusals| {
+                        panic!("{form:?} x{levels} checks: {refusals:?}")
+                    });
+                    let package = CheckedPackage::link(graph);
+                    // The forms are built in code, not read from a source
+                    // unit, so every occurrence is placed at the fixture unit.
+                    let emission = crate::emit::emit_package(&package, whole_unit)
+                        .unwrap_or_else(|refusal| panic!("{form:?} x{levels} emits: {refusal:?}"));
+                    let written = wire(&emission);
+                    for node in nodes(&written) {
+                        assert!(
+                            qsl_semantics::check::stratum::is_stratified_body(&node["body"]),
+                            "{form:?} x{levels}: a written body is outside the grammar: {}",
+                            node["body"]
+                        );
+                    }
+                })
+                .expect("the thread spawns")
+                .join()
+                .unwrap_or_else(|_| panic!("{form:?} x{levels} completes on a 512 KiB stack"));
+        }
+    }
+}
+
 /// `function f using v(a: Boolean): Boolean pure { a and (a and (… a)) }`
 /// with `levels` connectives, through S1 at its default limits, S2 and the
 /// assembler, or `None` when S1's defaults do not admit it.

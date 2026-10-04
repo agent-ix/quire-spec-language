@@ -645,10 +645,11 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
-/// FR-264-AC-2: every node body of every package the corpus emits is in
-/// QSpec FR-322's stratified grammar, classified as Leaf, Group, Tuple,
-/// Member or Body by a walk of the emitted JSON.
-#[trace("TC-738", "FR-264-AC-2")]
+/// Every node body of every package the admission corpus emits is in QSpec
+/// FR-322's stratified grammar, classified as Leaf, Group, Tuple, Member or
+/// Body by a walk of the emitted JSON (FR-264-AC-2's walk over the families
+/// the corpus covers).
+#[trace("TC-738", "FR-264-AC-2", "TC-416")]
 #[test]
 fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
     let mut bodies = 0;

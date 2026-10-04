@@ -23,16 +23,10 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
    it, emit it, and read it back through QSL's I2 read with the `i2.*`
    settings raised to fit. Clone the `V2Read`, compare, format for debug and
    drop both.
-2. Walk the emitted JSON of every package of the TC-415 corpus and of step
-   1, classifying each body position as Leaf, Group, Member or Body.
+2. Walk the emitted JSON of every package of the TC-415 corpus (each nested
+   expression form at 2 and at 1,000 levels) and of step 1, classifying each body position as Leaf, Group, Member or Body.
 
 Tag the tests `#[trace("TC-738", "FR-264-AC-1")]`, `#[trace("TC-738", "FR-264-AC-2")]`.
-
-Verification status: step 1's read-back half (a 100,000-node flat `V2Read`
-cloned, compared, formatted and dropped on a 512 KiB stack) and step 2 over
-the emitted corpus are tested here. The emit half of step 1 (compiling the
-100,000-term sum on a 512 KiB stack) is verified by TC-902 (FR-356, Planned);
-FR-264-AC-1 is partial until then.
 
 ## Expected Results
 

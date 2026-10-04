@@ -35,3 +35,9 @@ left the spec text that names `u64::MAX`.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-014-AC-4 ("u64::MAX offset"), TC-038 ("at u64::MAX") and TC-035 ("including u64::MAX") still name values IR now refuses to construct (revision and byte offset at most 2^53). The tests `tc_035_retains_explicit_source_assignment` and `tc_038_refuses_false_constructor_valid_formal_coordinates` were moved to 2^53, so they no longer match the AC and TC text. Restate these as 2^53 (the largest IR admits). | spec/functional/FR-014-bind-native-formal-source.md:71; spec/test-cases/TC-038-refuse-inconsistent-formal-loci.md:19; spec/test-cases/TC-035-retain-formal-source-assignment.md:20; tests/it/formal_source.rs:59; tests/it/formal_source.rs:193 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4c0f5cc54ce95f2e0dd9b3ec9129235c9d02b60e |

@@ -83,6 +83,8 @@ mod identity;
 // FR-087-AC-13). Only the layer-4 reader's tests use it, so it is public
 // only under `test-support` (no test-only `pub`).
 #[cfg(any(test, feature = "test-support"))]
+pub mod depth_forms;
+#[cfg(any(test, feature = "test-support"))]
 pub mod imports;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) mod imports;
