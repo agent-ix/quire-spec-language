@@ -354,6 +354,11 @@ mod tests {
 /// The work each stage did for one operation, as the number of meter
 /// charges it made (FR-275-AC-5). S2 and S4 charge no meter, so their
 /// counters stay zero.
+///
+/// The counts are exact only when one operation counts at a time on a
+/// `Cancel` handle. Operations that run at once on a shared handle get an
+/// unspecified split of the shared count; use one handle per concurrent
+/// operation for exact counts.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StageWork {
     /// S1, reading source bytes into syntax.

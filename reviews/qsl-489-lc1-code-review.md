@@ -173,3 +173,21 @@ a small wrapped number. The boundary test pins that. FND-011 above is new.
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-010 | fixed | dbcb7890e |
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | The reset in `count_charges` is two separate atomic steps: `fetch_add` on `counting`, then `store(0)` on `charges`. A second session can slip in between them. Example: session B's `fetch_add` returns 0, then session C's `fetch_add` returns 1, so C does not reset. C's first `charged` reads `before`, which is still the stale count left by the last session, and C's stage polls. Then B's `store(0)` lands and erases them. C's later reading is below `before`, so `saturating_sub` gives 0 or an undercount, and C reports less work than it did. This needs two operations sharing one handle that start counting at almost the same moment. A guard dropping (1 to 0) at the same time as a new guard starting (0 to 1) is safe, because the dropped session's `charged` readings are all done before its guard drops. Overlapping sessions never reset, by design (the count covers them all). Fix: if per-operation counts matter for a shared handle, count in a per-guard or per-meter counter instead of the shared one. Otherwise document on `count_charges` that counts are unreliable for concurrent sessions on one handle. | quire-exact/src/cancel.rs:150-158; qsl-replay/src/spine/lifecycle.rs:119-124 |
+
+Round 4, reviewed at 961bfe0dae6c9510e669fb4a081d969415a9c498 (fix commit
+961bfe0da on dbcb7890e). The pre-merge `make ci` passed
+(logs/qsl-624-premerge-ci-3.log). A session that starts with none running
+now counts from zero. A reused handle therefore never carries one
+operation's count into the next, so saturation can only bite inside one
+session. `a_new_counting_session_starts_from_zero_after_a_saturated_one`
+pins this. FND-012 above is new.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-011 | fixed | 961bfe0da |

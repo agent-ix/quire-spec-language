@@ -145,8 +145,12 @@ impl Cancel {
     }
 
     /// Count the charges that poll this handle until the returned guard is
-    /// dropped, from zero when no other session is counting. A handle shared
-    /// by operations that count at once counts the charges of them all.
+    /// dropped, from zero when no other session is counting.
+    ///
+    /// The count is exact only when one operation counts at a time on a
+    /// handle. Operations that count at once on a shared handle all add to
+    /// the one count, and the split each reads from it is unspecified. Use
+    /// one `Cancel` per concurrent operation for exact counts.
     pub fn count_charges(&self) -> ChargeCount<'_> {
         // A session that starts with none running counts from zero, so a
         // handle reused across operations never carries one operation's
@@ -158,7 +162,9 @@ impl Cancel {
     }
 
     /// How many charges polled this handle while an operation counted them,
-    /// whether or not it was cancelled. The count saturates at `u32::MAX`
+    /// whether or not it was cancelled. It is exact only while one operation
+    /// counts at a time on this handle; concurrent operations on a shared
+    /// handle get an unspecified split of the shared count. The count saturates at `u32::MAX`
     /// and stays there, so once it is reached it is a lower bound, never a
     /// wrapped value; a difference of two readings (`saturating_sub`) is the
     /// charges between them until then.
