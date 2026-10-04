@@ -22,14 +22,14 @@ fn nonconforming_domain_and_encoding_vectors_cannot_match_the_producer() {
         &models[0],
         r#""test:\"\\/\u0000\b\f\n\r\té🦀""#,
         r#""draft:é\u0001""#,
-        9_007_199_254_740_993,
+        9_007_199_254_740_992,
     );
     let package = NativePackage::new(
         minimal(
             &models,
             "test:\"\\/\0\u{8}\u{c}\n\r\té🦀",
             "draft:é\u{1}",
-            9_007_199_254_740_993,
+            9_007_199_254_740_992,
             "preimage.native",
         ),
         PackageLimits::default(),
@@ -81,10 +81,10 @@ fn nonconforming_domain_and_encoding_vectors_cannot_match_the_producer() {
             expected.canonical.replace('é', "e\u{301}"),
         ),
         (
-            "binary64 rounding",
+            "revision off by one",
             expected
                 .canonical
-                .replace("9007199254740993", "9007199254740992"),
+                .replace("9007199254740992", "9007199254740991"),
         ),
         (
             "long newline escape",
@@ -134,7 +134,7 @@ fn real_native_and_formal_binding_changes_match_independent_static_expectations(
             r#""test:package""#,
             "draft:1",
             r#""draft:1""#,
-            u64::MAX,
+            9_007_199_254_740_992,
         ),
     ] {
         let expected = vectors::expected(&models[0], identity_json, revision_json, formal_revision);

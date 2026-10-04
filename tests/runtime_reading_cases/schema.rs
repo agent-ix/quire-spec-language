@@ -270,7 +270,10 @@ fn schema_checks_kind_pairing_identifiers_and_exact_representable_scalar_bounds(
     for (pointer, replacement) in [
         ("/body/arena/0/value", json!(i64::MIN)),
         ("/body/arena/0/value", json!(i64::MAX)),
-        ("/body/models/0/model/revision", json!(u64::MAX)),
+        (
+            "/body/models/0/model/revision",
+            json!(9_007_199_254_740_992_u64),
+        ),
         ("/body/values/0/value", json!(u32::MAX)),
         ("/body/models/0/model/package", json!("1example/a-B._9")),
         ("/body/populations/0/record", json!("A-b._9")),

@@ -56,7 +56,7 @@ fn assert_refusal<T: std::fmt::Debug>(result: Result<T, Box<FormalSourceError>>,
 #[test]
 #[trace("TC-035", "FR-014-AC-1")]
 fn tc_035_retains_explicit_source_assignment() {
-    for revision in [1, 91, u64::MAX] {
+    for revision in [1, 91, 9_007_199_254_740_992] {
         let source = source("invariant");
         let expected = identity("NativeClause", revision);
         let binding = FormalSource::new(source, expected.clone());
@@ -190,7 +190,7 @@ fn tc_038_refuses_false_constructor_valid_formal_coordinates() {
         formal_span(id, start, (11, 4, 2)),
         formal_span(id, start, (11, 3, 3)),
     ];
-    for point in [(4, 2, 2), (12, 3, 3), (u64::MAX, 3, 3)] {
+    for point in [(4, 2, 2), (12, 3, 3), (9_007_199_254_740_992, 3, 3)] {
         invalid.push(formal_span(id, point, point));
     }
     for wrong in invalid {

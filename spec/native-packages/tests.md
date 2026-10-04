@@ -132,7 +132,7 @@ TC-091 establishes that static identity cannot authorize forged capabilities.
 - Deleted-object pre capture and post result; source-bound incomplete event prefixes: TC-089.
 - Real checker proof supplied as an invented executable disposition: TC-081/086.
 - Distinct package/native-source/IR/JCS identity roles: TC-081/082.
-- Unicode/control escaping and exact revision 9007199254740993: TC-090.
+- Unicode/control escaping and exact revision 9007199254740992 (2^53, the largest IR admits): TC-090.
 - Same static identity with a forged excluded projection: TC-091.
 
 ## Integration Test Matrix

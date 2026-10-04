@@ -25,12 +25,12 @@ fn tc_042_generated_semantic_mutations_bind_the_changed_payload() {
         .find(|f| f["name"] == "wide")
         .unwrap();
     assert_eq!(
-        wide["value_type"]["value"]["minimum"].as_i64(),
-        Some(i64::MIN)
+        wide["value_type"]["value"]["minimum"].as_str(),
+        Some("-9223372036854775808")
     );
     assert_eq!(
-        wide["value_type"]["value"]["maximum"].as_i64(),
-        Some(i64::MAX)
+        wide["value_type"]["value"]["maximum"].as_str(),
+        Some("9223372036854775807")
     );
     // Each case regenerates the real producer's source loci. Assert the affected
     // semantic payload as well as digest sensitivity, so changed source bytes
@@ -90,7 +90,7 @@ fn tc_042_generated_semantic_mutations_bind_the_changed_payload() {
                     .iter()
                     .find(|f| f["name"] == "n")
                     .unwrap();
-                assert_eq!(field["value_type"]["value"]["maximum"], 999);
+                assert_eq!(field["value_type"]["value"]["maximum"], "999");
             }
             6 => {
                 assert_ne!(artifact["declarations"], original["declarations"]);

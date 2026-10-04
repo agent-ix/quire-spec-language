@@ -25,7 +25,7 @@ in the documented order. Keep the true fixture/implementation sequence in the
 qualification report: correcting a setup error is not a previously passing oracle.
 Include quote, backslash, slash, b/f/n/r/t controls, another U+0000–001F control,
 non-ASCII and supplementary Unicode in admitted opaque native source labels;
-use the exact positive formal revision 9007199254740993 without a float cast.
+use the exact positive formal revision 9007199254740992 (2^53, the largest revision IR admits).
 Compute the domain-prefixed SHA-256 expectation from these independent literal
 bytes using the existing Rust hash primitive, and compare production content
 and digest separately. Record fixture provenance and expected values.

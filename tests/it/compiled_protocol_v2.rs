@@ -2533,7 +2533,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // `temporal_bindings` entry moves `entries`, `byte_work`
             // and `output_bytes` but not `references`. The native-diagnostics
             // definition's rule paths move every figure but `entries`.
-            (4_825, 2_580, 1_167_910, 85_289)
+            (4_825, 2_580, 1_168_366, 85_289)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

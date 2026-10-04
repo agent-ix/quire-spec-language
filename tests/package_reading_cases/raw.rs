@@ -154,10 +154,10 @@ fn every_closed_record_rejects_raw_duplicate_members_before_typed_decoding() {
 
 #[test]
 #[trace("TC-083", "TC-082", "FR-020-AC-2", "FR-020-AC-10")]
-fn full_u64_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses() {
+fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses() {
     let models = [model()];
     let [mut vector, _, _] = package_vector_setup::cases();
-    vector.formal_revision = u64::MAX;
+    vector.formal_revision = 9_007_199_254_740_992;
     let package = NativePackage::new(
         package_vector_setup::checked(&vector, &models),
         PackageLimits::default(),
@@ -181,16 +181,16 @@ fn full_u64_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses
             .identity()
             .revision()
             .get(),
-        u64::MAX
+        9_007_199_254_740_992
     );
     let text = std::str::from_utf8(package.bytes()).unwrap();
-    let marker = "\"revision\":18446744073709551615";
+    let marker = "\"revision\":9007199254740992";
     assert_eq!(
         text.matches(marker).count(),
         1,
         "unique raw numeric test occurrence"
     );
-    for number in ["1.0", "1e0", "-0", "18446744073709551616", "0"] {
+    for number in ["1.0", "1e0", "-0", "9007199254740993", "0"] {
         let raw = text.replace(marker, &format!("\"revision\":{number}"));
         let error = NativePackage::read_verified(
             raw.as_bytes(),
