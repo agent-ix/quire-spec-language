@@ -86,8 +86,7 @@ document, computed by `quire-canonical`.
 A document does not parse when its bytes are not UTF-8 or not JSON, begin
 with a byte order mark, carry a lone UTF-16 surrogate escape (a
 `\uD800`-`\uDFFF` escape that is not a high surrogate followed by a low
-surrogate), carry a number with no finite IEEE 754 double value (such as
-`1e400`), or repeat a member name within one object (RFC 8785 requires
+surrogate), or repeat a member name within one object (RFC 8785 requires
 I-JSON, RFC 7493). RFC 8785 encodes none of these inputs, so such a document
 has no `sha256-jcs` digest.
 
@@ -97,6 +96,23 @@ check 4. Such bytes therefore refuse
 `stale_dependency`/`byte-digest-mismatch` under any `sha256-jcs` digest, and
 `invalid_model_binding`/`wrong-model-selection` when the selected digest
 happens to equal their raw digest. No declaration is admitted.
+
+A number with no finite IEEE 754 double value (such as `1e400`) is not one
+of these: the reader refuses it with its RFC 6901 pointer and exact source
+text, and the compiler classifies it from that text under the two cases
+below. Unless an earlier reader fault decides, it is never a parse failure,
+never digested raw, and never refuses `stale_dependency`/`byte-digest-mismatch`;
+`[{"a":1,"a":2},1e400]` is digested raw, because the repeated name is the
+reader's first refusal. `1e400`, `-1e400` and every other
+whole value beyond ±2^53 refuse `inexact-integer`; `1e-400`, which has a
+finite double (zero) and is not whole, refuses `inexact-number`. When the bytes carry
+several reader faults (a number with no finite double, a repeated member name
+the reader detects when the object closes, truncation), the refusal is the
+first one `quire-canonical`'s read returns. `{"a":1,"a":2,"n":1e400}` refuses
+`noncanonical_wire`/`inexact-integer` at `/n`, and `[1e400` refuses it at
+`/0`, while `{"a":1,"a":2,"n":1e-400}` has a repeated name the reader refuses
+first, so it is digested raw. A number with no finite double is also named
+ahead of an earlier inexact number.
 
 A document that parses can still carry a number with no exact RFC 8785
 spelling. RFC 8785 writes every number as the shortest round-trip text of
@@ -132,8 +148,11 @@ computed, with cause `inexact-integer` for the first case and
 9007199254740993 does, refuses `inexact-integer`; `inexact-number` covers
 every other inexact number, and a whole number within ±2^53 is refused
 under neither. The refusal carries `document_pointer`: the RFC 6901 pointer
-of the first such number in document order, each member name escaped (`~`
-as `~0`, `/` as `~1`) and each array element named by its decimal index.
+of the first such number in document order, except that a number with no
+finite double is named when the reader reaches it, before any tree exists, so
+it can be named ahead of an earlier inexact number. Each member name is
+escaped (`~` as `~0`, `/` as `~1`) and each array element named by its decimal
+index.
 The rule covers every number of the document, at any depth. The code is
 QSpec FR-271's `noncanonical_wire` (its `## Values` row), and the causes and
 `document_pointer` are QSpec FR-272's (the `noncanonical_wire` row of
@@ -366,7 +385,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-056-AC-1 | Lifted bytes of a valid domain package passed to the intake seam are read by `agent-ix-semantic-ir` and yield exactly one original declaration per IR node, ascending by (domain package identity, IR node identity), each with its bound meaning, export records and artifact id and span. | Test (TC-145) |
-| FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name, and `1e400`; a lone-surrogate document offered under the `sha256-jcs` digest of the same document with U+FFFD in its place refuses `stale_dependency`/`byte-digest-mismatch`; unparseable bytes offered under their own raw digest with an empty identity refuse `invalid_model_binding`/`wrong-model-selection`; bytes intake refuses at one of its limits refuse `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound. | Test (TC-145) |
+| FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name. It refuses `1e400` and `-1e400` `noncanonical_wire`/`inexact-integer` and `1e-400` `noncanonical_wire`/`inexact-number`, each with `document_pointer` naming it, at any depth, through intake and through admission under any digest, never `stale_dependency`. A lone-surrogate document offered under the `sha256-jcs` digest of the same document with U+FFFD in its place refuses `stale_dependency`/`byte-digest-mismatch`; unparseable bytes offered under their own raw digest with an empty identity refuse `invalid_model_binding`/`wrong-model-selection`; bytes intake refuses at one of its limits refuse `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound. | Test (TC-145) |
 | FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration`, reported in FR-154's declaration refusal order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
 | FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations; an artifact id matching FR-154's id rule, such as `sys_pump`, is admitted and named `M::sys_pump`, while one that does not, such as `sys-pump`, refuses `invalid_model_binding`/`malformed-declaration` with node, artifact and span, a reference to that node reports no `missing_declaration`/`missing-name`, and a second failing check on that node reports after the id refusal (FR-154-AC-8). | Test (TC-145) |
 | FR-056-AC-5 | Each relationship member yields one `relationship` export with its name and span; a relationship member missing either refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |

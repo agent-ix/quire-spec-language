@@ -684,12 +684,8 @@ mod tests {
     fn a_reader_refusal_with_no_offset_claims_none() {
         let limit = quire_canonical::read(b"[]", 1).unwrap_err();
         assert!(matches!(limit, quire_canonical::ReadError::Limit(_)));
-        assert_eq!(
-            read_defect(limit),
-            PreimageDefect::ReaderRefused {
-                reason: limit.to_string()
-            }
-        );
+        let reason = limit.to_string();
+        assert_eq!(read_defect(limit), PreimageDefect::ReaderRefused { reason });
         assert_eq!(
             read_defect(quire_canonical::read(b"{", u64::MAX).unwrap_err()),
             PreimageDefect::Malformed { offset: 1 }
