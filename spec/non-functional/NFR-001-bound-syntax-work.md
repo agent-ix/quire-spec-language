@@ -33,7 +33,7 @@ Native and complete-V1 source intake, tokenization and parsing, and native forma
 | Default token ceiling | 100000 tokens | 100000 tokens | negative-abuse-testing |
 | Default syntax-node ceiling | 50000 nodes | 50000 nodes | negative-abuse-testing |
 | Source-map segment ceiling | 50000 segments | 50000 segments | negative-abuse-testing |
-| S1 parse time | Linear in source bytes and tokens, measured at 2,000, 8,000, 50,000 and 200,000 declarations with the S1 ceilings raised to fit | Time per declaration at 200,000 declarations within 2 times the time per declaration at 2,000 | benchmark |
+| Parse time (S1 and S2 together) | Linear in source bytes and tokens, measured at 2,000, 8,000, 50,000 and 200,000 declarations with the S1 ceilings raised to fit | Time per declaration at 200,000 declarations within 2 times the time per declaration at 2,000 | benchmark |
 
 ## Nesting
 
