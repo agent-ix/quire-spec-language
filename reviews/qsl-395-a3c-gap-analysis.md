@@ -60,3 +60,11 @@ Round 1, reviewed at 27f7a3bf59244adaf41e4b5fa7e8d0826b4393e5 (fix commit
 | --- | --- | --- |
 | FND-001 | fixed | 27f7a3bf5 |
 | FND-002 | fixed | 27f7a3bf5 |
+
+Round 2, reviewed at bb944486746544b9b4fe7e09318e19b6eb81091c (fix range
+27f7a3bf5..bb9444867; pre-merge `make ci` exit 0 per the coordinator's log).
+No builds this round. No new findings.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | bb9444867 |

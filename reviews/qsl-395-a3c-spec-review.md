@@ -89,3 +89,14 @@ and BP-05 match QSL's `PackageIdMismatch` spelling.
 | FND-003 | fixed | 27f7a3bf5 |
 | FND-004 | fixed | 27f7a3bf5 |
 | FND-005 | fixed | 27f7a3bf5 |
+
+Round 2, reviewed at bb944486746544b9b4fe7e09318e19b6eb81091c (fix range
+27f7a3bf5..bb9444867). The coordinator's ruling: QSL carries both the
+declared digest and the raw digest. `ReplayRequestRefusal::ByteDigestMismatch
+{ declared, actual }` and observation's raw-arm record (`selected`, `actual`)
+now do, and FR-071 body, FR-071-AC-6 and FR-106 check 1.3 say so, which
+matches QSpec #187 FR-272, FR-323-AC-5 and TC-277 BP-03. No new findings.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | bb9444867 |
