@@ -472,7 +472,7 @@ impl LibraryRefusal {
     /// FR-087-AC-12's classification: every variant classifies, honestly,
     /// to exactly one of an ADR-011 I2 graph rule, the §4 binding's
     /// condition 2, or E3 name resolution, or to `DuplicatePackageId`'s
-    /// own named exception outside all four.
+    /// own named exception outside all three.
     pub fn class(&self) -> RefusalClass {
         match self {
             // The §4 binding's condition 2 itself (the digest recomputation
@@ -483,7 +483,7 @@ impl LibraryRefusal {
             Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::IdentityDivergedFromIr { .. }
-            | Self::UndeclaredExport { .. } => RefusalClass::BindingCondition(2),
+            | Self::UndeclaredExport { .. } => RefusalClass::BindingCondition,
             // E3 name resolution: moves conceptually with the removed
             // `resolve_name` (owner ruling item 3(b)).
             Self::InvalidQualifier { .. } => RefusalClass::E3NameResolution,
@@ -505,15 +505,14 @@ impl LibraryRefusal {
 
 /// FR-087-AC-12's classification of a [`LibraryRefusal`]: exactly one of an
 /// ADR-011 I2 graph rule, the §4 binding's condition 2, E3 name
-/// resolution, or the one named exception outside all four
+/// resolution, or the one named exception outside all three
 /// (`DuplicatePackageId`, a precondition on the supplied pool itself).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RefusalClass {
     /// One of ADR-011 `:203-210`'s three I2 graph rules (1, 2 or 3).
     I2Rule(u8),
-    /// The §4 binding's condition 2 (condition 3's stale pin is I2's first
-    /// rule), so the number is always 2.
-    BindingCondition(u8),
+    /// The §4 binding's condition 2 (a stale pin is I2's first rule).
+    BindingCondition,
     /// E3 name resolution (moves conceptually with the removed
     /// `resolve_name`, owner ruling item 3(b)).
     E3NameResolution,

@@ -68,3 +68,13 @@ the wrong behaviour, and FR-099-AC-7 is correctly recorded as pending.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No findings (placeholder) | - |
+
+## Dispositions
+
+Disposition pass 1 at 04e61dc192a1c46eed563dc747afe8e8f18d7200. The review
+pass was clean (placeholder row only), so no finding needs an outcome.
+Re-checked: deleting `refuses_when_the_pinned_id_disagrees` leaves
+FR-087-AC-3 condition 3 backed (checked_v2
+`refuses_when_the_pinned_package_id_disagrees`) and TC-253 step 8 backed
+(`refuses_when_conditions_2_and_3_both_fail`, the checked_v2 wire-path
+test). TC-446 step 8 stays pending, which is true at this head.

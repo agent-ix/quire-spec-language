@@ -55,3 +55,23 @@ FND-002 and FND-003 are low wording fixes.
 | FND-001 | medium | QSpec FR-307 on origin/main (396493c) still offers a supplied library "under its identity `L` and its version string" and has the conflicting-definition refusal retain "both supplied libraries' identity and version". QSL cites FR-307 for the supplied-library shape (ADR-015 D-1, the `SuppliedLibrary` doc), and FR-087-AC-11 says FR-307's criteria pass against this code. A2 deletes the version from the code and deletes FR-099's remaining-work line, which was the only record of the gap. No QSpec ticket is cited. Fix: name the QSpec change (an STD or FR-307 ticket) in FR-099 or ADR-015 Status, as FR-071 does for STD-150. | spec/decisions/ADR-015-compile-and-replay-against-dependencies.md:64-66; spec/functional/FR-099-compile-against-supplied-libraries.md:170-186; spec/functional/FR-087-typestate-and-cross-package-node-key.md:601 |
 | FND-002 | low | FR-027's Description and AC-10 read "A `0-draft` request that carries a library, a library with an empty identity, and a library object with any member besides `identity` and `source` ... refuse". The sentence makes all three cases `0-draft` requests, but the empty-identity and `version` cases are `1-draft` requests (and the test runs them as `1-draft`). The Description also refuses any extra member, while AC-10 names only `version`. Split the `0-draft` case out, and state the Description's wider rule in AC-10 or narrow the Description. | spec/functional/FR-027-export-compiled-native-package.md:68-71, :121 |
 | FND-003 | low | FR-087-AC-11 says "ADR-015 D-2 and D-3 reshape two of these relocated types" and then lists four (`ImportDeclaration`, `LibraryName`, `LibraryPackage`, `Selection`). The count is stale. | spec/functional/FR-087-typestate-and-cross-package-node-key.md:601 |
+
+## Dispositions
+
+Disposition pass 1 at 04e61dc192a1c46eed563dc747afe8e8f18d7200 (fix commit
+168aa7ecf).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 168aa7ecf: FR-099 Status and ADR-015 D-1 each record as remaining work that QSpec FR-307 still states a library version and QSL selects by identity only. The QSpec edit is queued in QSL's lane (coordinator ruling), so no ticket id is cited yet. |
+| FND-002 | fixed | 168aa7ecf: FR-027 Description and AC-10 split the `0-draft` case from the `1-draft` empty-identity and extra-member cases, and both now refuse any member besides `identity` and `source`. |
+| FND-003 | fixed | 168aa7ecf: FR-087-AC-11 says "reshape these relocated types" and names the `PackageId` selection. |
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at 04e61dc192a1c46eed563dc747afe8e8f18d7200. Raised only
+on text the fix round changed.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The fix round dropped condition 3 from FR-087-AC-12's and item (e)'s list of classes, leaving three (I2 rule, condition 2, E3), but the same texts still say `DuplicatePackageId` lies "outside all four" and "one of the four". TC-282's Description still lists condition 3 as a fourth class, FR-087 item (e) still says `StaleDependency` "is raised by the §4 binding's condition 3", and `qsl-semantics` docs still say "outside all four". Make the count and the class list agree in FR-087, TC-282 and the two doc comments. | spec/functional/FR-087-typestate-and-cross-package-node-key.md:237, :239-240, :258, :354, :601; spec/test-cases/TC-282-resolve-libraries-refusals-map-to-i2-rules.md:14-21, :43; qsl-semantics/src/library/mod.rs:475, :508 |

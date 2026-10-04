@@ -97,3 +97,14 @@ QSpec FR-307 divergence is a spec finding, SR-1283 FND-001.
 | FND-001 | low | `refuses_when_the_pinned_id_disagrees` is still documented as "TC-253 step 8", but it now fails one condition only (the pin's `package_id`). Step 8 is a doubly-failing input; `refuses_when_conditions_2_and_3_both_fail` and the checked_v2 wire-path test already back it. The test now duplicates checked_v2's `refuses_when_the_pinned_package_id_disagrees`. Relabel it as condition 3 (step 4, adverse) or delete it. | qsl-semantics/src/library/binding_tests.rs:161-177 |
 | FND-002 | low | `LibraryRefusal::class` and `RefusalClass::BindingCondition` still document "condition 2 or 3". After this change no variant classifies to `BindingCondition(3)`: the only one was `StaleDependency{RevisionMismatch}`. The doc now describes a class nothing produces. | qsl-semantics/src/library/mod.rs:479-482, :513-522 |
 | FND-003 | low | `Selection` is now a one-field struct around `PackageId`, which is already the domain identity newtype. Every site spells `Selection { package_id }`. Replace it with `PackageId` in `PinnedRequest`, `LibraryLock::selections`, `ResolvedDependency` and `ConflictingPin`, and keep `PinMismatch` as `{pinned: PackageId, presented: PackageId}`, whose two field names still say which side is which. | qsl-semantics/src/library/mod.rs:241-245, :296-301 |
+
+## Dispositions
+
+Disposition pass 1 at 04e61dc192a1c46eed563dc747afe8e8f18d7200 (fix commits
+168aa7ecf and 04e61dc19, still stacked on HL1 ad1859441).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 168aa7ecf: `refuses_when_the_pinned_id_disagrees` deleted; condition 3's stale pin stays backed by checked_v2 `refuses_when_the_pinned_package_id_disagrees`, step 8 by `refuses_when_conditions_2_and_3_both_fail`. |
+| FND-002 | fixed | 168aa7ecf: `class()` and `RefusalClass` docs now say condition 2 only, and `BindingCondition` says a stale pin is I2's first rule. |
+| FND-003 | fixed | 168aa7ecf: `Selection` deleted; `PinnedRequest`, `LibraryLock::selections`, `ResolvedDependency`, `ConflictingPin` and `single_pin` hold `PackageId`; `PinMismatch` is `{pinned: PackageId, presented: PackageId}`. |

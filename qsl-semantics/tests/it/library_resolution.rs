@@ -1022,7 +1022,7 @@ fn package_id_mismatch_classifies_to_4_condition_2() {
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
-        RefusalClass::BindingCondition(2),
+        RefusalClass::BindingCondition,
     );
 }
 
@@ -1040,7 +1040,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
-        RefusalClass::BindingCondition(2),
+        RefusalClass::BindingCondition,
     );
 }
 
@@ -1056,7 +1056,7 @@ fn undeclared_export_classifies_alongside_4_condition_2() {
         },
         Code::MissingDeclaration,
         LibraryCause::UndeclaredExport,
-        RefusalClass::BindingCondition(2),
+        RefusalClass::BindingCondition,
     );
 }
 
@@ -1110,7 +1110,7 @@ fn missing_import_classifies_to_i2_rule_1() {
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
-fn duplicate_package_id_is_the_named_exception_outside_all_four() {
+fn duplicate_package_id_is_the_named_exception_outside_all_three() {
     // Two packages sharing one byte-identical `identity_preimage` (hence one
     // recomputed `package_id`, each independently passing its own digest
     // check), differing only in `imports` -- a field the preimage excludes.
