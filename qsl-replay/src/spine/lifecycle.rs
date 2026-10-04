@@ -740,8 +740,6 @@ mod tests;
 /// its import view.
 #[derive(Debug)]
 struct ResolvedLibrary {
-    /// The version the library is supplied at.
-    version: String,
     package: Arc<pkg::CheckedPackage>,
     view: ImportView,
     /// This library's own source, exactly as its own `qsl_cst::parse` read
@@ -813,7 +811,6 @@ impl Resolution<'_> {
             });
             links.push(Import {
                 identity,
-                version: library.version.clone(),
                 package: Arc::clone(&library.package),
             });
         }
@@ -926,7 +923,6 @@ impl Resolution<'_> {
             &package,
             &emission,
             identity.clone(),
-            &supplied.version,
             self.packages,
             &mut self.admitted,
         )
@@ -940,7 +936,6 @@ impl Resolution<'_> {
             )
         })?;
         let library = Arc::new(ResolvedLibrary {
-            version: supplied.version.clone(),
             package: Arc::new(package),
             view,
             source: library_source,

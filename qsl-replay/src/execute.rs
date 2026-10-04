@@ -648,7 +648,6 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
         .map(|(entry, reference)| {
             Ok(SuppliedLibrary {
                 identity: entry.identity().as_str().to_owned(),
-                version: entry.version().to_owned(),
                 source: labels(reference),
                 path: reference.identity().to_owned(),
                 bytes: provided(reference)?.to_vec(),

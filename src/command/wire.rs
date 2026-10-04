@@ -46,12 +46,11 @@ pub(super) struct CompileRequest {
     pub libraries: Vec<Library>,
 }
 
-/// One supplied library: its identity, version and source selection.
+/// One supplied library: its identity and source selection.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Library {
     pub identity: String,
-    pub version: String,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
 }

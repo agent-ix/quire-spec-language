@@ -955,17 +955,15 @@ fn source_ref(identity: &str, revision: &str, bytes: &[u8]) -> crate::identity::
     )
 }
 
-/// A `dependencies` entry naming `identity` at `version` and `package_id`,
+/// A `dependencies` entry naming `identity` at `package_id`,
 /// with `sources`.
 fn entry(
     identity: &str,
-    version: &str,
     package_id: PackageId,
     sources: Vec<crate::identity::SourceDigestWire>,
 ) -> crate::request::DependencyEntryWire {
     crate::request::DependencyEntryWire {
         identity: identity.to_owned(),
-        version: version.to_owned(),
         package_id: (
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
@@ -1006,7 +1004,6 @@ impl Importing {
         let dependencies =
             crate::spine::DependencyInput::new(vec![crate::spine::SuppliedLibrary {
                 identity: "test/units".to_owned(),
-                version: "2".to_owned(),
                 source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
                 path: UNITS_IDENTITY.to_owned(),
                 bytes: units.clone().into_bytes(),
@@ -1065,7 +1062,6 @@ impl Importing {
     fn units_entry(&self) -> crate::request::DependencyEntryWire {
         entry(
             "test/units",
-            "2",
             self.units_id,
             vec![source_ref(UNITS_IDENTITY, REVISION, self.units.as_bytes())],
         )
@@ -1157,7 +1153,6 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     };
     let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
         identity: "test/units".to_owned(),
-        version: "2".to_owned(),
         source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
         path: UNITS_IDENTITY.to_owned(),
         bytes: importing.units.clone().into_bytes(),
@@ -1201,7 +1196,6 @@ fn locate_q_with_units(
 ) -> Result<crate::CallSite<crate::FunctionSite>, Box<crate::CallSiteRefusal>> {
     let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
         identity: "test/units".to_owned(),
-        version: "2".to_owned(),
         source,
         path: UNITS_IDENTITY.to_owned(),
         bytes: bytes.to_vec(),
@@ -1401,7 +1395,6 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let extra_bytes = units_source("function spare using v(): Boolean pure { true }\n");
     let extra = entry(
         "test/zzz",
-        "1",
         importing.units_id,
         vec![source_ref("test:zzz", REVISION, extra_bytes.as_bytes())],
     );

@@ -5009,7 +5009,6 @@ fn s4_state_package_reads_back_through_i2() {
         &first.package,
         &emission,
         library,
-        "1.0.0",
         &packages,
         &mut admitted,
     )

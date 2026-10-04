@@ -59,7 +59,6 @@ fn request(bytes: &[u8]) -> ParseRequest<'_> {
 fn geometry() -> SuppliedLibrary {
     SuppliedLibrary {
         identity: "test/geometry".to_owned(),
-        version: "1".to_owned(),
         source: SourceIdentity::new("a", "geometry", "git", "1"),
         path: "geometry.native".to_owned(),
         bytes: format!("{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n")
@@ -793,7 +792,6 @@ fn read_back(chain: &Chain, packages: &BTreeMap<[u8; 32], Vec<u8>>, identity: &s
         chain.checked.package(),
         &emission,
         LibraryName::new(identity).expect("a non-empty identity"),
-        "1",
         packages,
         &mut AdmittedPackages::default(),
     )

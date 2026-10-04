@@ -106,7 +106,6 @@ impl ByteProvision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyEntry {
     identity: LibraryName,
-    version: String,
     package_id: DigestRecord,
     sources: Vec<RawSourceRef>,
 }
@@ -115,10 +114,6 @@ impl DependencyEntry {
     /// The library identity.
     pub fn identity(&self) -> &LibraryName {
         &self.identity
-    }
-    /// The library version.
-    pub fn version(&self) -> &str {
-        &self.version
     }
     /// The dependency's `package_id` as the proving run recorded it: a
     /// `quire.package.semantic/v2` claim, compared with a recomputed
@@ -132,14 +127,12 @@ impl DependencyEntry {
     }
 }
 
-/// A [`DependencyEntry`] in wire-packet shape: `identity`, `version`,
+/// A [`DependencyEntry`] in wire-packet shape: `identity`,
 /// `(package_id digest domain, digest hex)` and its source references.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyEntryWire {
     /// The library identity; non-empty.
     pub identity: String,
-    /// The library version; non-empty.
-    pub version: String,
     /// `(digest domain, digest hex)`, in `quire.package.semantic/v2`.
     pub package_id: (Option<String>, String),
     /// The dependency's lock `sources`.
@@ -352,9 +345,9 @@ pub enum ReplayRequestRefusal {
     /// byte-provision entry.
     #[error("missing_declaration: package reference names digest {0} with no matching byte-provision entry")]
     IncompleteByteProvision(String),
-    /// A `dependencies` entry has an empty identity or version
+    /// A `dependencies` entry has an empty identity
     /// (`invalid_identifier`, FR-071-AC-9).
-    #[error("invalid_identifier: dependencies entry {index} has an empty identity or version")]
+    #[error("invalid_identifier: dependencies entry {index} has an empty identity")]
     EmptyDependencySelection {
         /// The entry's position in `dependencies`.
         index: usize,
@@ -468,7 +461,6 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .iter()
             .map(|entry| {
                 entry.identity.len()
-                    + entry.version.len()
                     + entry.package_id.1.len()
                     + entry
                         .sources
@@ -537,9 +529,6 @@ impl ReplayRequest {
             .map(|(index, entry)| {
                 let empty = || ReplayRequestRefusal::EmptyDependencySelection { index };
                 let identity = LibraryName::new(entry.identity).map_err(|_| empty())?;
-                if entry.version.is_empty() {
-                    return Err(empty());
-                }
                 let (domain, hex) = entry.package_id;
                 let package_id = DigestRecord::from_wire_expecting(
                     DigestDomain::PackageSemanticV2,
@@ -555,7 +544,6 @@ impl ReplayRequest {
                     .map_err(classify_digest_error)?;
                 Ok(DependencyEntry {
                     identity,
-                    version: entry.version,
                     package_id,
                     sources,
                 })
@@ -638,7 +626,6 @@ impl ReplayRequest {
                 .iter()
                 .map(|entry| DependencyEntryWire {
                     identity: entry.identity.as_str().to_owned(),
-                    version: entry.version.clone(),
                     package_id: (
                         Some(entry.package_id.domain().as_str().to_owned()),
                         entry.package_id.hex(),
@@ -789,7 +776,7 @@ mod tests {
     }
 
     /// A `dependencies` entry over one `fill`-byte source under `identity`.
-    fn dependency(identity: &str, version: &str, fill: u8) -> (DependencyEntryWire, Vec<u8>) {
+    fn dependency(identity: &str, fill: u8) -> (DependencyEntryWire, Vec<u8>) {
         let bytes = source_bytes(fill, 32);
         let digest = DigestRecord::mint(
             DigestDomain::SourceBytesV1,
@@ -798,7 +785,6 @@ mod tests {
         (
             DependencyEntryWire {
                 identity: identity.to_owned(),
-                version: version.to_owned(),
                 package_id: (
                     Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                     DigestRecord::mint(DigestDomain::PackageSemanticV2, [fill; 32]).hex(),
@@ -830,14 +816,14 @@ mod tests {
 
     /// FR-071-AC-9 (TC-186): two `dependencies` entries round-trip exactly,
     /// in order. An entry's source with no byte-provision entry refuses at
-    /// construction; an empty identity or version, and a `package_id` in
+    /// construction; an empty identity, and a `package_id` in
     /// the `quire.source.bytes/v1` domain, refuse at decode.
     #[trace("TC-186", "FR-071-AC-9")]
     #[test]
     fn tc_186_dependencies_round_trip_and_refuse_at_decode() {
         let entries = vec![
-            dependency("test/b", "2", 0x0B),
-            dependency("test/a", "1", 0x0A),
+            dependency("test/b", 0x0B),
+            dependency("test/a", 0x0A),
         ];
         let request = ReplayRequest::decode(with_dependencies(entries.clone())).unwrap();
         let identities: Vec<&str> = request
@@ -846,7 +832,6 @@ mod tests {
             .map(|entry| entry.identity().as_str())
             .collect();
         assert_eq!(identities, ["test/b", "test/a"]);
-        assert_eq!(request.dependencies()[0].version(), "2");
         let wire = request.to_wire();
         assert_eq!(
             wire.dependencies,
@@ -858,27 +843,24 @@ mod tests {
         assert_eq!(ReplayRequest::decode(wire).unwrap(), request);
 
         // An entry's source absent from the byte provision.
-        let mut incomplete = with_dependencies(vec![dependency("test/a", "1", 0x0A)]);
+        let mut incomplete = with_dependencies(vec![dependency("test/a", 0x0A)]);
         incomplete.byte_provision.pop();
         assert!(matches!(
             ReplayRequest::decode(incomplete),
             Err(ReplayRequestRefusal::IncompleteByteProvision(_))
         ));
 
-        // An empty identity, then an empty version.
-        for (identity, version) in [("", "1"), ("test/a", "")] {
-            let refused =
-                ReplayRequest::decode(with_dependencies(vec![dependency(identity, version, 0x0A)]))
-                    .unwrap_err();
-            assert_eq!(
-                refused,
-                ReplayRequestRefusal::EmptyDependencySelection { index: 0 }
-            );
-            assert_eq!(refused.code(), Code::InvalidIdentifier);
-        }
+        // An empty identity.
+        let refused = ReplayRequest::decode(with_dependencies(vec![dependency("", 0x0A)]))
+            .unwrap_err();
+        assert_eq!(
+            refused,
+            ReplayRequestRefusal::EmptyDependencySelection { index: 0 }
+        );
+        assert_eq!(refused.code(), Code::InvalidIdentifier);
 
         // A `package_id` in the source-bytes domain.
-        let (mut entry, bytes) = dependency("test/a", "1", 0x0A);
+        let (mut entry, bytes) = dependency("test/a", 0x0A);
         entry.package_id.0 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
         assert!(matches!(
             ReplayRequest::decode(with_dependencies(vec![(entry, bytes)])),
@@ -1003,8 +985,8 @@ mod tests {
             Err(ReplayRequestRefusal::BoundExceeded(_))
         ));
         // The bound measures the `dependencies` entries too.
-        let (mut entry, bytes) = dependency("test/a", "1", 0x0A);
-        entry.version = "x".repeat(MAX_ENCODED_BYTES + 1);
+        let (mut entry, bytes) = dependency("test/a", 0x0A);
+        entry.identity = "x".repeat(MAX_ENCODED_BYTES + 1);
         assert!(matches!(
             ReplayRequest::decode(with_dependencies(vec![(entry, bytes)])),
             Err(ReplayRequestRefusal::BoundExceeded(_))

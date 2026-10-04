@@ -20,7 +20,7 @@ use super::package_identity::fixtures::{hex, one_node_preimage};
 use super::{
     resolve_libraries, verify_binding, ConflictingPin, ImportDeclaration, LibraryName,
     LibraryPackage, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    Selection, StaleCause, SupportedV2Wire, VerifiedPackage,
+    Selection, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_foundation::digest::WireNodeId;
 
@@ -36,11 +36,10 @@ fn recomputed() -> PackageId {
     PackageId::of_preimage(&preimage())
 }
 
-/// `pkg@1` exporting `R`, claiming `package_id`.
+/// `pkg` exporting `R`, claiming `package_id`.
 fn candidate(package_id: PackageId) -> LibraryPackage {
     LibraryPackage {
         library: identity("pkg"),
-        version: "1".to_owned(),
         package_id,
         identity_preimage: preimage().into_boxed_slice(),
         imports: Vec::new(),
@@ -48,15 +47,12 @@ fn candidate(package_id: PackageId) -> LibraryPackage {
     }
 }
 
-fn selection(version: &str, package_id: PackageId) -> Selection {
-    Selection {
-        version: version.to_owned(),
-        package_id,
-    }
+fn selection(package_id: PackageId) -> Selection {
+    Selection { package_id }
 }
 
-fn pin(version: &str, package_id: PackageId) -> PinnedRequest {
-    PinnedRequest::new([(identity("pkg"), selection(version, package_id))])
+fn pin(package_id: PackageId) -> PinnedRequest {
+    PinnedRequest::new([(identity("pkg"), selection(package_id))])
         .expect("one entry never conflicts")
 }
 
@@ -86,7 +82,7 @@ fn assert_package_id_mismatch(result: Result<VerifiedPackage, LibraryRefusal>, c
 #[test]
 fn admits_when_all_three_conditions_hold() {
     let verified =
-        bind(candidate(recomputed()), &pin("1", recomputed())).expect("all three conditions hold");
+        bind(candidate(recomputed()), &pin(recomputed())).expect("all three conditions hold");
     assert_eq!(verified.package_id(), recomputed());
     let view = verified.into_import_view();
     let node = WireNodeId::from_hex(&hex(b"pkg::R")).unwrap();
@@ -103,7 +99,7 @@ fn admits_when_all_three_conditions_hold() {
 #[test]
 fn refuses_a_package_id_that_does_not_recompute() {
     let claimed = PackageId::of_preimage(b"not-the-preimage");
-    assert_package_id_mismatch(bind(candidate(claimed), &pin("1", claimed)), claimed);
+    assert_package_id_mismatch(bind(candidate(claimed), &pin(claimed)), claimed);
 }
 
 /// The envelope bytes a v2 file carrying `preimage()` would hold.
@@ -123,7 +119,7 @@ fn file_bytes() -> Vec<u8> {
 fn refuses_a_file_byte_digest_in_place_of_the_package_id() {
     let file_digest = PackageId::of_preimage(&file_bytes());
     assert_package_id_mismatch(
-        bind(candidate(file_digest), &pin("1", file_digest)),
+        bind(candidate(file_digest), &pin(file_digest)),
         file_digest,
     );
 }
@@ -141,7 +137,7 @@ fn refuses_a_lock_digest_in_place_of_the_package_id() {
     .unwrap();
     let lock_digest = PackageId::of_preimage(&lock);
     assert_package_id_mismatch(
-        bind(candidate(lock_digest), &pin("1", lock_digest)),
+        bind(candidate(lock_digest), &pin(lock_digest)),
         lock_digest,
     );
 }
@@ -153,7 +149,7 @@ fn refuses_a_lock_digest_in_place_of_the_package_id() {
 fn refuses_a_source_digest_in_place_of_the_package_id() {
     let source_digest = PackageId::of_preimage(b"src");
     assert_package_id_mismatch(
-        bind(candidate(source_digest), &pin("1", source_digest)),
+        bind(candidate(source_digest), &pin(source_digest)),
         source_digest,
     );
 }
@@ -168,21 +164,20 @@ fn refuses_when_conditions_2_and_3_both_fail() {
     assert_package_id_mismatch(bind(candidate(claimed), &PinnedRequest::default()), claimed);
 }
 
-/// TC-253 step 8: condition 3's two halves failing together (another
-/// `package_id` *and* another version pinned) refuse on the digest.
+/// TC-253 step 8: a pin naming another `package_id` refuses as a stale
+/// dependency, carrying both selections.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn refuses_when_the_pinned_id_and_version_both_disagree() {
+fn refuses_when_the_pinned_id_disagrees() {
     let other = PackageId::of_preimage(b"other");
     assert_eq!(
-        bind(candidate(recomputed()), &pin("2", other)),
+        bind(candidate(recomputed()), &pin(other)),
         Err(LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
             pin: Box::new(PinMismatch {
-                pinned: selection("2", other),
-                presented: selection("1", recomputed()),
+                pinned: selection(other),
+                presented: selection(recomputed()),
             }),
-            cause: StaleCause::ByteDigestMismatch,
         })
     );
 }
@@ -193,8 +188,8 @@ fn refuses_when_the_pinned_id_and_version_both_disagree() {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn conflicting_pins_for_one_identity_cannot_be_built() {
-    let good = selection("1", recomputed());
-    let stale = selection("1", PackageId::of_preimage(b"stale"));
+    let good = selection(recomputed());
+    let stale = selection(PackageId::of_preimage(b"stale"));
     for (first, second) in [(&good, &stale), (&stale, &good)] {
         assert_eq!(
             PinnedRequest::new([
@@ -213,16 +208,15 @@ fn conflicting_pins_for_one_identity_cannot_be_built() {
 }
 
 /// Condition 3 reads a resolved `LibraryLock` as its pinned request: a lock
-/// selecting `pkg@1` at the recomputed id admits the candidate, and a lock
-/// selecting another version of the same id refuses it as a revision
-/// mismatch.
+/// selecting `pkg` at the recomputed id admits the candidate, and a lock
+/// selecting a package of another `package_id` under that identity refuses
+/// it as a `byte-digest-mismatch`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn a_resolved_library_lock_is_a_pinned_request() {
     let root_preimage = one_node_preimage(b"root::Q", &["Q"]);
     let root = LibraryPackage {
         library: identity("root"),
-        version: "1".to_owned(),
         package_id: PackageId::of_preimage(&root_preimage),
         identity_preimage: root_preimage.clone().into_boxed_slice(),
         imports: vec![ImportDeclaration {
@@ -234,14 +228,18 @@ fn a_resolved_library_lock_is_a_pinned_request() {
     let lock = resolve_libraries(&root, &[candidate(recomputed())]).unwrap();
     assert!(bind(candidate(recomputed()), &PinnedRequest::from(&lock)).is_ok());
 
-    let mut other_version = candidate(recomputed());
-    other_version.version = "2".to_owned();
-    let lock = resolve_libraries(&root, &[other_version]).unwrap();
+    let changed_preimage = one_node_preimage(b"pkg::R-changed", &["R"]);
+    let changed = LibraryPackage {
+        package_id: PackageId::of_preimage(&changed_preimage),
+        identity_preimage: changed_preimage.into_boxed_slice(),
+        ..candidate(recomputed())
+    };
+    let lock = resolve_libraries(&root, &[changed]).unwrap();
     assert_eq!(
         bind(candidate(recomputed()), &PinnedRequest::from(&lock))
             .unwrap_err()
             .cause(),
-        super::LibraryCause::RevisionMismatch
+        super::LibraryCause::ByteDigestMismatch
     );
 }
 
@@ -283,13 +281,12 @@ fn import_view_carries_only_the_listed_exports() {
     let package_id = PackageId::of_preimage(&bytes);
     let package = LibraryPackage {
         library: identity("pkg"),
-        version: "1".to_owned(),
         package_id,
         identity_preimage: bytes.into_boxed_slice(),
         imports: Vec::new(),
         exports: vec!["Flag".to_owned()],
     };
-    let view = bind(package, &pin("1", package_id))
+    let view = bind(package, &pin(package_id))
         .expect("all three conditions hold")
         .into_import_view();
     let flag = PackageNodeKey::new(
@@ -312,13 +309,12 @@ fn import_view_carries_exports_of_different_kinds() {
     let package_id = PackageId::of_preimage(&bytes);
     let package = LibraryPackage {
         library: identity("pkg"),
-        version: "1".to_owned(),
         package_id,
         identity_preimage: bytes.into_boxed_slice(),
         imports: Vec::new(),
         exports: vec!["Flag".to_owned(), "go".to_owned()],
     };
-    let view = bind(package, &pin("1", package_id))
+    let view = bind(package, &pin(package_id))
         .expect("all three conditions hold")
         .into_import_view();
     let key = |seed: &str| {

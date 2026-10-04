@@ -148,12 +148,11 @@ pub(crate) enum Read {
 pub(crate) fn read_v2(
     bytes: &[u8],
     identity: LibraryName,
-    version: String,
     limits: V2ReadLimits,
     evidence: &CheckedPackageEvidence,
     pinned: &PinnedRequest,
 ) -> Read {
-    match read_checked_package_v2(bytes, identity, version, limits, evidence, pinned) {
+    match read_checked_package_v2(bytes, identity, limits, evidence, pinned) {
         Ok(staged) => {
             let V2Read {
                 package,
@@ -607,11 +606,11 @@ fn canonical_preimage(
 }
 
 /// Read and verify `bytes` as a `quire.checked-package/v2` artifact claiming
-/// library identity `identity`/`version` (ADR-011 §4 I2, all three verified-
-/// binding conditions). A wire artifact carries no library identity or
-/// version of its own -- those are FR-307 source-level facts the caller
-/// already knows (the import declaration, or the compiled unit's own
-/// manifest) -- so they are supplied here rather than read from the bytes.
+/// library identity `identity` (ADR-011 §4 I2, all three verified-binding
+/// conditions). A wire artifact carries no library identity of its own --
+/// that is an FR-307 source-level fact the caller already knows (the import
+/// declaration, or the compiled unit's own manifest) -- so it is supplied
+/// here rather than read from the bytes.
 /// `evidence` supplies the selected domain package documents, the admitted
 /// dependency packages and the supported features; the caller owns it, as
 /// this reader holds none of them itself. `pinned` is condition 3's own input: the
@@ -620,7 +619,6 @@ fn canonical_preimage(
 pub(crate) fn read_checked_package_v2(
     bytes: &[u8],
     identity: LibraryName,
-    version: String,
     limits: V2ReadLimits,
     evidence: &CheckedPackageEvidence,
     pinned: &PinnedRequest,
@@ -685,7 +683,6 @@ pub(crate) fn read_checked_package_v2(
             };
             let candidate = LibraryPackage {
                 library: identity,
-                version,
                 package_id,
                 identity_preimage: preimage_bytes.into_boxed_slice(),
                 imports: Vec::new(),
@@ -820,8 +817,8 @@ impl ImportViewRefusal {
 }
 
 /// ADR-015 D-1 step 6: read `package`'s `emission` through the I2
-/// reader, pinned to the one selection `identity`, `version` and the
-/// recomputed `package_id`, into the [`VerifiedPackage`]'s [`ImportView`]
+/// reader, pinned to the one selection `identity` and the recomputed
+/// `package_id`, into the [`VerifiedPackage`]'s [`ImportView`]
 /// (ADR-011 §4 verified binding). The lock is checked against the
 /// emission's own evidence of the artifacts it compiled against, against
 /// `domain_packages` (FR-056's package input, by `sha256-jcs` digest) for
@@ -841,7 +838,6 @@ pub fn read_import_view(
     package: &CheckedPackage,
     emission: &Emission,
     identity: LibraryName,
-    version: &str,
     domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
     admitted: &mut AdmittedPackages,
 ) -> Result<ImportView, ImportViewRefusal> {
@@ -852,7 +848,7 @@ pub fn read_import_view(
         domain_packages,
         admitted: std::mem::take(&mut admitted.0),
     };
-    let read = reader.read_emitted(package, emission, identity, version);
+    let read = reader.read_emitted(package, emission, identity);
     admitted.0 = reader.admitted;
     let read = read?;
     admitted
@@ -908,29 +904,27 @@ struct ClosureReader<'p> {
 }
 
 impl ClosureReader<'_> {
-    /// `package`, emitted and read under `identity` and `version`, with its
-    /// closure's admitted packages supplied first.
+    /// `package`, emitted and read under `identity`, with its closure's
+    /// admitted packages supplied first.
     fn read(
         &mut self,
         package: &CheckedPackage,
         identity: LibraryName,
-        version: &str,
     ) -> Result<V2Read, ImportViewRefusal> {
         let emission = emit_checked(package).map_err(|refusal| ImportViewRefusal::Emission {
             package: identity.clone(),
             refusal: Some(refusal),
         })?;
-        self.read_emitted(package, &emission, identity, version)
+        self.read_emitted(package, &emission, identity)
     }
 
-    /// `package`'s `emission`, read under `identity` and `version`, with
-    /// its closure's admitted packages supplied first.
+    /// `package`'s `emission`, read under `identity`, with its closure's
+    /// admitted packages supplied first.
     fn read_emitted(
         &mut self,
         package: &CheckedPackage,
         emission: &Emission,
         identity: LibraryName,
-        version: &str,
     ) -> Result<V2Read, ImportViewRefusal> {
         if !emission.omitted().is_empty() {
             return Err(ImportViewRefusal::Emission {
@@ -946,14 +940,12 @@ impl ClosureReader<'_> {
         let pinned = PinnedRequest::single(
             identity.clone(),
             Selection {
-                version: version.to_owned(),
                 package_id: emission.package.package_id(),
             },
         );
         read_checked_package_v2(
             emission.package.bytes(),
             identity.clone(),
-            version.to_owned(),
             V2ReadLimits::default(),
             &evidence,
             &pinned,
@@ -995,7 +987,7 @@ impl ClosureReader<'_> {
             .ok_or_else(|| ImportViewRefusal::UnheldDependency {
                 identity: identity.clone(),
             })?;
-        let read = self.read(package, identity.clone(), &resolved.selection.version)?;
+        let read = self.read(package, identity.clone())?;
         self.admitted.insert(id, Arc::clone(&read.admitted));
         Ok(read.admitted)
     }

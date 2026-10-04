@@ -225,8 +225,6 @@ pub struct ImportDeclaration {
 pub struct LibraryPackage {
     /// Library identity.
     pub library: LibraryName,
-    /// Version string.
-    pub version: String,
     /// Its claimed `package_id`.
     pub package_id: PackageId,
     /// The RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity
@@ -242,8 +240,6 @@ pub struct LibraryPackage {
 /// One exact library selection.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Selection {
-    /// Version string.
-    pub version: String,
     /// `package_id`.
     pub package_id: PackageId,
 }
@@ -254,8 +250,6 @@ pub type ImportPath = Vec<LibraryName>;
 /// The closed FR-272 cause of a library or name refusal.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LibraryCause {
-    /// A supplied library has the locked `package_id` but another version.
-    RevisionMismatch,
     /// No supplied library of the imported identity has the imported
     /// `package_id`.
     ByteDigestMismatch,
@@ -285,7 +279,6 @@ impl LibraryCause {
     /// The cause tag.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::RevisionMismatch => "revision-mismatch",
             Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::MissingSelection => "missing-selection",
             Self::AmbiguousName => "ambiguous-name",
@@ -299,21 +292,12 @@ impl LibraryCause {
     }
 }
 
-/// How a supplied library differs from its lock entry.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum StaleCause {
-    /// The `package_id` matches and the version differs.
-    RevisionMismatch,
-    /// The `package_id` differs.
-    ByteDigestMismatch,
-}
-
 /// A pinned selection and the one a verified-binding candidate presented.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PinMismatch {
     /// The selection the lock or request records.
     pub pinned: Selection,
-    /// The version and recomputed `package_id` the candidate presented.
+    /// The recomputed `package_id` the candidate presented.
     pub presented: Selection,
 }
 
@@ -379,8 +363,8 @@ pub enum LibraryRefusal {
         /// The cycle's dependency edges, first and last equal.
         cycle: ImportPath,
     },
-    /// A supplied library's version or `package_id` differs from the pinned
-    /// lock entry it was checked against (ADR-011 §4 condition 3).
+    /// A supplied library's `package_id` differs from the pinned lock
+    /// entry it was checked against (ADR-011 §4 condition 3).
     #[error("stale dependency")]
     StaleDependency {
         /// The bound library alone.
@@ -388,8 +372,6 @@ pub enum LibraryRefusal {
         /// The lock entry the package disagrees with, and the selection the
         /// candidate presented.
         pin: Box<PinMismatch>,
-        /// Which selection differs.
-        cause: StaleCause,
     },
     /// No library with the imported identity or `package_id` is supplied.
     #[error("missing import")]
@@ -473,14 +455,7 @@ impl LibraryRefusal {
             Self::UndeclaredExport { .. } => LibraryCause::UndeclaredExport,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
             Self::ImportCycle { .. } => LibraryCause::DefinitionCycle,
-            Self::StaleDependency {
-                cause: StaleCause::RevisionMismatch,
-                ..
-            } => LibraryCause::RevisionMismatch,
-            Self::StaleDependency {
-                cause: StaleCause::ByteDigestMismatch,
-                ..
-            } => LibraryCause::ByteDigestMismatch,
+            Self::StaleDependency { .. } => LibraryCause::ByteDigestMismatch,
             Self::MissingImport { .. } => LibraryCause::MissingSelection,
         }
     }
@@ -516,22 +491,12 @@ impl LibraryRefusal {
             | Self::InvalidPreimage { .. }
             | Self::IdentityDivergedFromIr { .. }
             | Self::UndeclaredExport { .. } => RefusalClass::BindingCondition(2),
-            // The §4 binding's condition 3: the identity is present: only
-            // the lock-recorded version disagrees.
-            Self::StaleDependency {
-                cause: StaleCause::RevisionMismatch,
-                ..
-            } => RefusalClass::BindingCondition(3),
             // E3 name resolution: moves conceptually with the removed
             // `resolve_name` (owner ruling item 3(b)).
             Self::InvalidQualifier { .. } => RefusalClass::E3NameResolution,
             // ADR-011 `:203-210`'s first I2 rule: a missing or unlisted
             // identity.
-            Self::MissingImport { .. }
-            | Self::StaleDependency {
-                cause: StaleCause::ByteDigestMismatch,
-                ..
-            } => RefusalClass::I2Rule(1),
+            Self::MissingImport { .. } | Self::StaleDependency { .. } => RefusalClass::I2Rule(1),
             // I2's second rule: two supplied packages claim one library
             // identity, so the identity has no one selection.
             Self::ConflictingDefinition { .. } => RefusalClass::I2Rule(2),
@@ -622,7 +587,7 @@ pub(crate) fn verify_package(
 /// reader mints: its minter is `pub` for the crate boundary and
 /// `library::witness`'s two gates confine its callers); 2, the FR-322
 /// `package_id` recompute (`verify_package`); and
-/// 3, this identity and version listed in the consumer's library lock or
+/// 3, this identity at this `package_id` listed in the consumer's library lock or
 /// pinned request (`PinnedRequest`). Not checked typestate
 /// (R-10): a `VerifiedPackage` is
 /// never accepted as, or converted into, a `CheckedGraph` or
@@ -669,11 +634,6 @@ impl VerifiedPackage {
         &self.package.library
     }
 
-    /// Its version string.
-    pub fn version(&self) -> &str {
-        &self.package.version
-    }
-
     /// Its content-addressed identity (condition 2's recomputed digest).
     pub fn package_id(&self) -> PackageId {
         self.package.package_id
@@ -700,8 +660,8 @@ impl VerifiedPackage {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
 
-/// Two entries of one pinned request select different versions or
-/// `package_id`s for one library identity (ADR-011 I2's second rule).
+/// Two entries of one pinned request select different `package_id`s for one
+/// library identity (ADR-011 I2's second rule).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("two pins for one library identity select different packages")]
 pub(crate) struct ConflictingPin {
@@ -761,12 +721,9 @@ impl From<&LibraryLock> for PinnedRequest {
 /// IR's own verified digest. It re-applies condition 2 through
 /// `verify_package` (owner ruling item 3(f): reused unchanged, not a second
 /// digest implementation), then condition 3: `pinned` must select
-/// `candidate`'s identity at `candidate`'s recomputed `package_id` and
-/// version. A different `package_id` refuses as
-/// `StaleDependency{ByteDigestMismatch}`, the same `package_id` at a
-/// different version as `StaleDependency{RevisionMismatch}` (FR-087
-/// Description item 3 ruling (e), FR-087-AC-12), and an unlisted identity as
-/// `MissingImport`. Every refusal names its cause and yields nothing
+/// `candidate`'s identity at `candidate`'s recomputed `package_id`. A
+/// different `package_id` refuses as `StaleDependency` (`byte-digest-mismatch`;
+/// FR-087-AC-12), and an unlisted identity as `MissingImport`. Every refusal names its cause and yields nothing
 /// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
 /// of the file bytes, a lock file or the source.
 pub fn verify_binding(
@@ -780,26 +737,20 @@ pub fn verify_binding(
             path: vec![candidate.library],
         });
     };
-    let cause = if selection.package_id != candidate.package_id {
-        StaleCause::ByteDigestMismatch
-    } else if selection.version != candidate.version {
-        StaleCause::RevisionMismatch
-    } else {
+    if selection.package_id == candidate.package_id {
         return Ok(VerifiedPackage {
             package: candidate,
             exports,
         });
-    };
+    }
     Err(LibraryRefusal::StaleDependency {
         pin: Box::new(PinMismatch {
             pinned: selection.clone(),
             presented: Selection {
-                version: candidate.version,
                 package_id: candidate.package_id,
             },
         }),
         path: vec![candidate.library],
-        cause,
     })
 }
 
@@ -994,7 +945,6 @@ impl LibraryLock {
                 (
                     library.clone(),
                     Selection {
-                        version: selected.package.version.clone(),
                         package_id: selected.package.package_id,
                     },
                 )
