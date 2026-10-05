@@ -1046,10 +1046,11 @@ fn convert_refusal_with_no_record_and_no_fallback_is_a_typed_fault() {
     }
 }
 
-/// FR-285-AC-5 (TC-769 step 5), driver view: changing `s3.nodes` alone
-/// through the re-exported `CheckingLimits` keeps the other s3 fields at
-/// their defaults, and the run refuses at that bound.
-#[trace("TC-769", "FR-285-AC-5")]
+/// FR-277-AC-1 (TC-758 step 1), driver view: each limits field is a
+/// caller limit set on its own. Changing `s3.nodes` alone through the
+/// re-exported `CheckingLimits` keeps the other s3 fields at their defaults,
+/// and the run refuses at that bound naming `checking.nodes`.
+#[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn changing_s3_nodes_alone_keeps_the_other_checking_limits() {
     use crate::spine::CheckingLimits;
@@ -1071,4 +1072,28 @@ fn changing_s3_nodes_alone_keeps_the_other_checking_limits() {
     };
     assert_eq!(limit.limits_field(), Some(LimitsField::CheckingNodes));
     assert_eq!(limit.configured_bound(), 1);
+}
+
+/// FR-277-AC-3 (TC-758 step 6): for a high-water counter the counter at the
+/// failed charge is the denied size itself, not the consumed value plus it;
+/// for a cumulative counter it is the sum.
+#[trace("TC-758", "FR-277-AC-3")]
+#[test]
+fn counter_is_the_denied_size_for_a_high_water_limit_and_the_sum_for_a_cumulative_one() {
+    let record = |limit_kind| Incomplete {
+        limit_kind,
+        limit: 8,
+        consumed: 5,
+        next_charge: Integer::from(9_u64),
+        charge_point: quire_exact::ChargePoint::IntegerArithmeticOperands,
+    };
+    let incomplete = |limit_kind| CallIncomplete {
+        record: record(limit_kind),
+        location: None,
+    };
+    let high_water = incomplete(quire_exact::LimitKind::IntegerBits);
+    assert_eq!(high_water.counter(), Integer::from(9_u64));
+    assert_eq!(high_water.limits_field(), "integer_bits");
+    let cumulative = incomplete(quire_exact::LimitKind::WorkUnits);
+    assert_eq!(cumulative.counter(), Integer::from(14_u64));
 }

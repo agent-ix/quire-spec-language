@@ -864,7 +864,8 @@ impl InternalFault {
 /// record carries it (O-17: each cause type has a fixed category). Every
 /// code is `Category::Refusal` except `runtime_invariant`, which is
 /// `InternalFault`'s one code and category `internal failure` (T-4), and
-/// `cancelled`, a caller cancellation, which O-16's `incomplete` row names.
+/// `cancelled` and `stage_limit_exceeded` (a reached stage limit), which
+/// O-16's `incomplete` row names and [`Code::is_incomplete`] agrees with.
 /// `resource_exhausted` is the caller work-budget code (the catalog's
 /// `insufficient-next-charge`; a semantic maximum is not a work budget). It
 /// is a refusal here, when a refusal record carries it (ADR-013's read-only
@@ -922,7 +923,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("resource_exhausted", Category::Refusal),
     ("cancelled", Category::Incomplete),
     ("duplicate_selection", Category::Refusal),
-    ("stage_limit_exceeded", Category::Refusal),
+    ("stage_limit_exceeded", Category::Incomplete),
     ("noncanonical_wire", Category::Refusal),
     ("unsupported_projection", Category::Refusal),
     ("invalid_capability", Category::Refusal),

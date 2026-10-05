@@ -103,7 +103,7 @@ One exit code.
 | FR-285-AC-2 | Multi-item outcomes with item codes {10, 22} exit 22; {0, 30, 20} exit 30; {21, 22} exit 21; {20, 21} exit 20; {0, 10} exit 10; {0} exit 0. | Test (TC-769) |
 | FR-285-AC-3 | `StageFailure::Refused` with a profile-gated cause exits 21 and with an `ill_typed` cause exits 20; `StageFailure::Limit` and `StageFailure::Cancelled` exit 22; `StageFailure::Fault` exits 30; `CallFailure::Input`, `Cancelled` and `Fault` exit 20, 22 and 30. | Test (TC-769) |
 | FR-285-AC-4 | FR-100's outcome mapping renders FR-100-AC-10's `sum-out-of-domain` evaluation as `{"kind": "undefined", "reason": "sum-out-of-domain"}` and exits 10. | Test (TC-769) |
-| FR-285-AC-5 | A `run` whose compile reaches a stage limit (the source byte limit set to 1, and one limit of a later stage) refuses with the `stage_limit_exceeded` code in category `incomplete`, exits 22 and not 20, and the refusal names the limits field and the configured bound. | Test (TC-769) |
+| FR-285-AC-5 | A `run` whose compile reaches a stage limit (the source byte limit set to 1, and `s3.nodes` set to 1) refuses with the `stage_limit_exceeded` code in category `incomplete`, exits 22 and not 20, and the refusal names the limits field and the configured bound. | Test (TC-769) |
 
 ## Dependencies
 
