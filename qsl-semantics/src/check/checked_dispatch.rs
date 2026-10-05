@@ -1325,7 +1325,7 @@ mod tests {
             deepest,
             &mut FamilySteps::new(deepest, FAMILY_STEPS),
         )
-            .expect("a chain exactly at family_steps must not be refused");
+        .expect("a chain exactly at family_steps must not be refused");
         assert_eq!(closure.len(), keys.len());
 
         let (keys, redefinitions) = chain("past", FAMILY_STEPS + 1);
@@ -1335,7 +1335,7 @@ mod tests {
             deepest,
             &mut FamilySteps::new(deepest, FAMILY_STEPS),
         )
-            .expect_err("a chain one edge past family_steps must be refused");
+        .expect_err("a chain one edge past family_steps must be refused");
         assert_family_steps_refusal(refusal, deepest);
     }
 

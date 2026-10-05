@@ -469,7 +469,7 @@ fn an_equal_import_reuses_the_completed_library() {
 #[trace("FR-099-AC-7", "TC-446")]
 #[test]
 fn a_dependency_chain_of_any_length_compiles() {
-    const CHAIN: usize = 100;
+    const CHAIN: usize = 200;
     // test/c0 imports nothing; test/cN imports test/c(N-1).
     let mut chain = Vec::new();
     for index in 0..CHAIN {

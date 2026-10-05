@@ -775,7 +775,10 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
                 limit: EDGES - 1,
             }
         ),
-        other => panic!("expected FamilyStepsExceeded at {}, got {other:?}", EDGES - 1),
+        other => panic!(
+            "expected FamilyStepsExceeded at {}, got {other:?}",
+            EDGES - 1
+        ),
     }
 }
 
