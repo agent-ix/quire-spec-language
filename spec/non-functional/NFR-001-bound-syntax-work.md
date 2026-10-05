@@ -23,7 +23,7 @@ When the next syntax-processing operation would exceed a selected resource ceili
 
 ## Scope
 
-Native and complete-V1 source intake, tokenization and parsing, and native formatting and source-map validation.
+Native and complete-V1 source intake, tokenization and parsing, S2 form building (`qsl_forms::build_unit`), and native formatting and source-map validation.
 
 ## Measurement and Evaluation
 

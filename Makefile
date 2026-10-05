@@ -398,6 +398,7 @@ BENCH_PROBE := cargo run --locked --release -q -p qsl-bench --bin qsl-bench-prob
 bench-probe:
 	$(BENCH_PROBE) parse
 	$(BENCH_PROBE) cst
+	for n in 2000 8000 50000 200000; do $(BENCH_PROBE) parse-volume $$n || exit 1; done
 	for n in 250 1000 2000 4000 8000; do $(BENCH_PROBE) check chain $$n || exit 1; done
 	for n in 1000 5000; do $(BENCH_PROBE) check independent $$n || exit 1; done
 	for n in 3 4 5 6 7 8 9 10 11 12; do $(BENCH_PROBE) check text-cluster $$n || exit 1; done
