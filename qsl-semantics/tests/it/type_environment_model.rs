@@ -365,18 +365,18 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 }
 
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
-/// `depth`. The model still normalizes it (its longest path is `depth`
-/// steps) but refuses the walk from `c.0` to `z` with `resource_exhausted`/
-/// `ancestor-steps`. Check time stops at a node-count stage limit naming the
+/// `depth - 1`. The model still normalizes it (its longest path is `depth`
+/// steps) but refuses the walk from `c.0` to `z`, which follows `depth`
+/// edges, with `resource_exhausted`/`ancestor-steps`. Check time stops at a node-count stage limit naming the
 /// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
 /// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
 #[test]
 fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     const DEPTH: u64 = 5;
-    const CEILING: u64 = DEPTH;
+    const CEILING: u64 = DEPTH - 1;
     let domain_package = chain_package(DEPTH);
-    let view = view(&domain_package, CEILING);
+    let view = view(&domain_package, DEPTH);
     let binding = binding(&view, CEILING);
     assert!(is_ancestor_steps(
         &evaluate_lookup(&binding, &view, "model.c.0", "model.z"),
@@ -402,20 +402,13 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     assert_eq!(limit.locus(), None);
 }
 
-/// `TypeEnvironment::new` admits under the same default ceiling the model's
-/// own limits default to, so a caller that sets neither gets one bound.
-#[trace("TC-220", "FR-082-AC-6")]
+/// The model's normalization and population walks default to NFR-012's one
+/// ceiling of 16777216 edges.
+#[trace("TC-434", "NFR-012")]
 #[test]
-fn check_and_evaluation_share_one_default_ancestor_ceiling() {
-    use quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS;
-    assert_eq!(
-        ModelNormalizationLimits::default().ancestor_steps,
-        DEFAULT_ANCESTOR_STEPS
-    );
-    assert_eq!(
-        PopulationAdmissionLimits::default().ancestor_steps,
-        DEFAULT_ANCESTOR_STEPS
-    );
+fn the_model_walks_share_one_default_ancestor_ceiling() {
+    assert_eq!(ModelNormalizationLimits::default().ancestor_steps, 16_777_216);
+    assert_eq!(PopulationAdmissionLimits::default().ancestor_steps, 16_777_216);
 }
 
 // ---- flattening and redefinition --------------------------------------------
