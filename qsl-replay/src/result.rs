@@ -92,6 +92,15 @@ pub enum DisagreementCause {
 }
 
 impl DisagreementCause {
+    /// The reason's wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Verdicts { .. } => "verdicts",
+            Self::NoValue { .. } => "no-value",
+            Self::Witness { .. } => "witness",
+        }
+    }
+
     /// The verdict the original proving run reached.
     pub fn proved(&self) -> Verdict {
         match self {

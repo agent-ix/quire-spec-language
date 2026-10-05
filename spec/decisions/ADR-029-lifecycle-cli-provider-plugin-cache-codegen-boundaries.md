@@ -270,6 +270,8 @@ document to stdout in machine mode. Its members are:
   T-5) and message.
 - `artifacts`: the identities of the artifacts produced, such as a
   `package_id` or a generated artifact's content identity.
+- `result`: an `execute` outcome's completed value, undefined reason or
+  exhausted limit (FR-286); `null` for every other outcome.
 
 The JSON document is the serialized library outcome, so the same request
 through the library and through the CLI gives the same document (QSpec

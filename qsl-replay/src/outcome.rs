@@ -3,38 +3,40 @@
 //! every QSL lifecycle operation's outcome serializes to, and its one
 //! serializer.
 //!
-//! A driver builds a document with [`OutcomeDocument::new`] and its `with_*`
-//! methods (items, diagnostics, artifacts) and writes it with
-//! [`OutcomeDocument::to_bytes`]; `check` and `execute` have constructors
-//! over their own outcome types ([`OutcomeDocument::from_check`],
-//! [`OutcomeDocument::from_call`]). The CLI in machine mode writes exactly
-//! these bytes, so the library and the CLI give one document for one
-//! request (QSpec FR-300-AC-3).
+//! A driver writes a document with a constructor over the operation's own
+//! outcome ([`OutcomeDocument::from_check`], [`OutcomeDocument::from_package`],
+//! [`OutcomeDocument::from_replay`]), or, for the operations whose outcome
+//! types live above this crate (`prove`, `analyze`, `monitor`), with
+//! [`OutcomeDocument::settled`] over their items; [`OutcomeDocument::to_bytes`]
+//! writes it. The CLI in machine mode writes exactly these bytes, so the
+//! library and the CLI give one document for one request (QSpec
+//! FR-300-AC-3).
 //!
-//! The document is a typed value: its members and their spellings are the
-//! types below, not keys inserted by hand. The same value serializes to the
-//! same bytes every time. A proof item's label type has no `undefined`
-//! member, so an undefined claim evaluation can only be written as a
-//! `refuted` item with the [`ItemCause::UndefinedEvaluation`] cause and
-//! category violation; the label `undefined` appears only as the category of
-//! a non-proof evaluation outcome such as `execute`.
+//! The serializer is pure: it runs no stage and reads no clock. The document
+//! is a typed value, so its members are the types below, not keys inserted by
+//! hand, and the same value serializes to the same bytes every time. Every
+//! cause spelling is its typed cause's own. A proof item's label type has no
+//! `undefined` member, so an undefined claim evaluation can only be written as
+//! a `refuted` item with the `undefined-evaluation` cause and category
+//! violation; the label `undefined` appears only as the category of a
+//! non-proof evaluation outcome such as `execute`.
 
 use qsl_foundation::diagnostic::{Category, Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
-use qsl_foundation::RequestIndex;
-use qsl_package::emit_checked;
+use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::library::PackageId;
 use quire_exact::CancelCause;
 use serde::{Serialize, Serializer};
 
 use crate::proof_result::{
-    DeclineCode, IncompleteCause, InconclusiveCause, ProofRefusalCause, TerminalRecord,
-    TerminalValue, UnavailabilityCause,
+    DeclineCode, InconclusiveCause, ReportedInconclusiveCause, TerminalRecord, TerminalValue,
 };
+use crate::result::ReplayResult;
 use crate::spine::{
-    CallOutcome, CallRefusal, CheckedUnit, CompileRefusal, FrontEndFailure, SpineStage,
+    CallOutcome, CallRefusal, CheckedUnit, CompileRefusal, EmittedUnit, FrontEndFailure, SpineStage,
 };
+use crate::ReplayRefusal;
 
 /// The document's `format` member.
 pub const OUTCOME_FORMAT: &str = "quire-outcome/1";
@@ -117,8 +119,8 @@ impl From<SpineStage> for OutcomeStage {
 }
 
 /// A proof item's result label (FR-331). It has no `undefined` member: an
-/// undefined claim evaluation is `Refuted` with
-/// [`ItemCause::UndefinedEvaluation`].
+/// undefined claim evaluation is `refuted` with the `undefined-evaluation`
+/// cause ([`ItemCause::undefined_evaluation`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemLabel {
@@ -134,58 +136,74 @@ pub enum ItemLabel {
     Unsupported,
     /// The run did not complete.
     Incomplete,
-    /// Neither proved nor refuted.
+    /// Neither proved nor refuted, a vacuous proof included.
     Inconclusive,
     /// The tool failed.
     Failed,
 }
 
-/// The typed cause an item's terminal record carries.
+/// Why a replay settled inconclusive: its disagreement reason and the two
+/// verdicts' categories.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind")]
-pub enum ItemCause {
+pub struct ParityReason {
+    reason: &'static str,
+    proved: &'static str,
+    replayed: &'static str,
+}
+
+/// The typed cause an item's terminal record carries: its FR-331 spelling in
+/// `kind`, and the members that spelling names.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ItemCause {
+    kind: &'static str,
+    #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
+    at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cause: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parity: Option<ParityReason>,
+}
+
+impl ItemCause {
+    fn kind(kind: &'static str) -> Self {
+        Self {
+            kind,
+            at: None,
+            cause: None,
+            code: None,
+            parity: None,
+        }
+    }
+
     /// The claim's evaluation was undefined at `at`, for `cause`: the item
     /// is refuted, category violation (FR-281, FR-283).
-    #[serde(rename = "UndefinedEvaluation")]
-    UndefinedEvaluation {
-        /// Where the evaluation was undefined.
-        #[serde(rename = "where")]
-        at: String,
-        /// Why it was undefined, such as `division-by-zero`.
-        cause: String,
-    },
-    /// A counterexample's replay settled inconclusive.
-    #[serde(rename = "replay_parity")]
-    ReplayParity,
-    /// A counterexample's replay refused.
-    #[serde(rename = "replay_refused")]
-    ReplayRefused {
-        /// The refusal's catalog code.
-        code: String,
-    },
-    /// A proof with no SUCCESS check.
-    #[serde(rename = "kani_vacuous_proof")]
-    KaniVacuousProof,
-    /// A declined request.
-    #[serde(rename = "declined")]
-    Declined {
-        /// The refusal cause.
-        cause: &'static str,
-        /// The refusal's code.
-        code: String,
-    },
-    /// An unavailable solver or backend.
-    #[serde(rename = "unsupported")]
-    Unsupported {
-        /// What is absent.
-        cause: &'static str,
-    },
-    /// A run that did not complete.
-    #[serde(rename = "incomplete")]
-    Incomplete {
-        /// Why it did not complete.
-        cause: &'static str,
-    },
+    pub fn undefined_evaluation(at: impl Into<String>, cause: impl Into<String>) -> Self {
+        Self {
+            at: Some(at.into()),
+            cause: Some(cause.into()),
+            ..Self::kind("undefined-evaluation")
+        }
+    }
+
+    fn inconclusive(cause: &ReportedInconclusiveCause) -> Self {
+        let mut item = Self::kind(cause.as_str());
+        match cause {
+            ReportedInconclusiveCause::KaniVacuousProof => {}
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
+                item.parity = Some(ParityReason {
+                    reason: parity.as_str(),
+                    proved: parity.proved().category().as_str(),
+                    replayed: parity.replayed().category().as_str(),
+                });
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayRefused(code)) => {
+                item.code = Some(code.as_str().to_owned());
+            }
+        }
+        item
+    }
 }
 
 /// One requested item of a `prove`, `analyze` or `monitor` outcome: its
@@ -200,58 +218,37 @@ pub struct OutcomeItem {
 }
 
 impl OutcomeItem {
-    /// The item an FR-331 terminal record settles.
+    /// The item an FR-331 terminal record settles. A vacuous proof is
+    /// `inconclusive` with its vacuity cause, never `proved`.
     pub fn from_terminal(record: &TerminalRecord) -> Self {
         let value = record.value();
         let (result, cause) = match value {
-            TerminalValue::Proved { success_checks: 0 } => {
-                (ItemLabel::Proved, Some(ItemCause::KaniVacuousProof))
-            }
+            TerminalValue::Proved { success_checks: 0 } | TerminalValue::Inconclusive(_) => (
+                ItemLabel::Inconclusive,
+                value
+                    .inconclusive_cause()
+                    .map(|cause| ItemCause::inconclusive(&cause)),
+            ),
             TerminalValue::Proved { .. } => (ItemLabel::Proved, None),
             TerminalValue::Tested => (ItemLabel::Tested, None),
             TerminalValue::Refuted => (ItemLabel::Refuted, None),
             TerminalValue::Declined { cause, code } => (
                 ItemLabel::Declined,
-                Some(ItemCause::Declined {
-                    cause: match cause {
-                        ProofRefusalCause::Refused => "refused",
-                        ProofRefusalCause::InvalidInput => "invalid_input",
-                        ProofRefusalCause::IncompleteInput => "incomplete_input",
-                    },
-                    code: match code {
+                Some(ItemCause {
+                    code: Some(match code {
                         DeclineCode::Qsl(code) => code.as_str().to_owned(),
                         DeclineCode::Std001(code) => code.as_str().to_owned(),
-                    },
+                    }),
+                    ..ItemCause::kind(cause.as_str())
                 }),
             ),
             TerminalValue::Unsupported(cause) => (
                 ItemLabel::Unsupported,
-                Some(ItemCause::Unsupported {
-                    cause: match cause {
-                        UnavailabilityCause::SolverAbsent => "solver_absent",
-                        UnavailabilityCause::BackendAbsent => "backend_absent",
-                    },
-                }),
+                Some(ItemCause::kind(cause.as_str())),
             ),
-            TerminalValue::Incomplete(cause) => (
-                ItemLabel::Incomplete,
-                Some(ItemCause::Incomplete {
-                    cause: match cause {
-                        IncompleteCause::TimedOut => "timed_out",
-                        IncompleteCause::Cancelled => "cancelled",
-                        IncompleteCause::ResourceExhausted => "resource_exhausted",
-                    },
-                }),
-            ),
-            TerminalValue::Inconclusive(cause) => (
-                ItemLabel::Inconclusive,
-                Some(match cause {
-                    InconclusiveCause::ReplayParity(_) => ItemCause::ReplayParity,
-                    InconclusiveCause::ReplayRefused(code) => ItemCause::ReplayRefused {
-                        code: code.as_str().to_owned(),
-                    },
-                }),
-            ),
+            TerminalValue::Incomplete(cause) => {
+                (ItemLabel::Incomplete, Some(ItemCause::kind(cause.as_str())))
+            }
             TerminalValue::Failed => (ItemLabel::Failed, None),
         };
         Self {
@@ -272,10 +269,7 @@ impl OutcomeItem {
         Self {
             request_index: request_index.get(),
             result: ItemLabel::Refuted,
-            cause: Some(ItemCause::UndefinedEvaluation {
-                at: at.into(),
-                cause: cause.into(),
-            }),
+            cause: Some(ItemCause::undefined_evaluation(at, cause)),
             category: Category::Violation,
         }
     }
@@ -298,6 +292,13 @@ pub enum OutcomeLocus {
         start: u64,
         /// The region's end offset.
         end: u64,
+    },
+    /// A region rendered over its source, as an evaluation records it.
+    Located {
+        /// The `sha256:` digest of the source.
+        source_digest: String,
+        /// The region's span.
+        span: LocatedSpan,
     },
     /// A kernel occurrence key, as its display form.
     Occurrence {
@@ -350,13 +351,13 @@ impl OutcomeDiagnostic {
     pub fn new(
         cause: Option<&'static str>,
         code: impl Into<String>,
-        locus: Option<&Locus>,
+        locus: Option<OutcomeLocus>,
         message: impl Into<String>,
     ) -> Self {
         Self {
             cause,
             code: code.into(),
-            locus: locus.map(OutcomeLocus::from),
+            locus,
             message: message.into(),
         }
     }
@@ -365,14 +366,36 @@ impl OutcomeDiagnostic {
     /// region and message.
     pub fn from_compile_refusal(refusal: &CompileRefusal) -> Self {
         Self::new(
-            compile_cause(refusal),
+            refusal.cause(),
             refusal.code().as_str(),
             refusal
                 .region()
-                .map(|region| Locus::Region(region.clone()))
-                .as_ref(),
+                .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
             refusal.to_string(),
         )
+    }
+
+    /// The diagnostic of a refused call: its catalog code and cause, and
+    /// the locus the refusal carries (its resolved region, else the
+    /// occurrence it arose at).
+    pub fn from_call_refusal(refusal: &CallRefusal) -> Self {
+        let (CallRefusal::Record { code, location, .. } | CallRefusal::Family { code, location }) =
+            refusal;
+        let resolved = match refusal {
+            CallRefusal::Record {
+                locus: Some(locus), ..
+            } => Some(OutcomeLocus::Located {
+                source_digest: locus.source_digest.clone(),
+                span: locus.span,
+            }),
+            CallRefusal::Record { locus: None, .. } | CallRefusal::Family { .. } => None,
+        };
+        let locus = resolved.or_else(|| {
+            location
+                .as_ref()
+                .map(|location| OutcomeLocus::from(&Locus::Occurrence(location.clone())))
+        });
+        Self::new(Some(code.cause()), code.code(), locus, code.to_string())
     }
 
     /// The catalog code.
@@ -391,31 +414,11 @@ impl OutcomeDiagnostic {
     }
 }
 
-/// The catalog cause tag of a compile refusal, where its stage cause names
-/// one.
-fn compile_cause(refusal: &CompileRefusal) -> Option<&'static str> {
-    match refusal {
-        CompileRefusal::Check { refusals, .. } => refusals.first()?.cause.cause(),
-        CompileRefusal::Profile { refusals, .. } => refusals.first().map(|r| r.cause()),
-        CompileRefusal::DependencyInput(refusal) => refusal.cause(),
-        CompileRefusal::Import { refusal, .. } => refusal.cause(),
-        CompileRefusal::Dependency { refusal, .. } => compile_cause(refusal),
-        CompileRefusal::Link(refusal) => refusal.cause(),
-        CompileRefusal::Limit(limit) => Some(limit.kind().catalog_cause()),
-        CompileRefusal::Source(_)
-        | CompileRefusal::Forms { .. }
-        | CompileRefusal::Intake { .. }
-        | CompileRefusal::Assembly { .. }
-        | CompileRefusal::Emit(_)
-        | CompileRefusal::Omitted(_) => None,
-    }
-}
-
 /// The kind of identity an artifact member holds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
-    /// A checked package's `package_id`.
+    /// An emitted package's `package_id`.
     PackageId,
     /// A generated artifact's content identity.
     Generated,
@@ -429,7 +432,7 @@ pub struct OutcomeArtifact {
 }
 
 impl OutcomeArtifact {
-    /// A checked package's identity.
+    /// An emitted package's identity.
     pub fn package_id(id: &PackageId) -> Self {
         Self {
             kind: ArtifactKind::PackageId,
@@ -454,7 +457,8 @@ impl OutcomeArtifact {
 /// The `quire-outcome/1` document (FR-286).
 ///
 /// `items` is always written, an empty array for an operation with no
-/// requested items.
+/// requested items. `last_stage` is `null` when no stage is known to have
+/// run.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct OutcomeDocument {
     format: &'static str,
@@ -473,10 +477,8 @@ pub struct OutcomeDocument {
 pub struct OutcomeWriteError(#[from] serde_json::Error);
 
 impl OutcomeDocument {
-    /// A document of `operation` that last reached `last_stage` (`None`
-    /// when no stage is known to have run, as when a handle was cancelled
-    /// before the first) with the outcome's `category`, and no items,
-    /// diagnostics or artifacts.
+    /// A document of `operation` that last reached `last_stage` with the
+    /// outcome's `category`, and no items, diagnostics or artifacts.
     pub fn new(operation: Operation, last_stage: Option<OutcomeStage>, category: Category) -> Self {
         Self {
             format: OUTCOME_FORMAT,
@@ -487,6 +489,26 @@ impl OutcomeDocument {
             diagnostics: Vec::new(),
             artifacts: Vec::new(),
         }
+    }
+
+    /// A document of `operation` over its requested `items`, in request
+    /// order. Its category is the most severe item's under ADR-029 CB-4
+    /// (FR-285's order 30, 20, 21, 22, 10, 0), the first such item's on a
+    /// tie, and `success` with no items. A `monitor` clause still pending
+    /// when the trace ends takes the trace row.
+    pub fn settled(
+        operation: Operation,
+        last_stage: Option<OutcomeStage>,
+        items: Vec<OutcomeItem>,
+    ) -> Self {
+        let code = |item: &OutcomeItem| match operation {
+            Operation::Monitor => item.category.trace_exit_code(),
+            _ => item.category.exit_code(),
+        };
+        let category = Category::most_severe(items.iter().map(code))
+            .and_then(|worst| items.iter().find(|item| code(item) == worst))
+            .map_or(Category::Success, |item| item.category);
+        Self::new(operation, last_stage, category).with_items(items)
     }
 
     /// This document with one entry per requested item, in request order.
@@ -525,42 +547,61 @@ impl OutcomeDocument {
         &self.diagnostics
     }
 
-    /// The document of a `check` outcome: success names the package's
-    /// identity at S4; a failure names its category and one diagnostic.
+    /// The document of a `check` outcome: success at S4, which mints no
+    /// identity, so no artifact; a failure names its category and one
+    /// diagnostic.
     pub fn from_check(result: &Result<Staged<CheckedUnit>, FrontEndFailure>) -> Self {
-        let failure = match result {
-            Ok(staged) => return Self::from_checked(staged.value()),
-            Err(failure) => failure,
-        };
+        match result {
+            Ok(_) => Self::new(Operation::Check, Some(OutcomeStage::S4), Category::Success),
+            Err(failure) => Self::from_failure(Operation::Check, failure),
+        }
+    }
+
+    /// The document of a `package` outcome: success at S4 holds the
+    /// emitted package's `package_id`.
+    pub fn from_package(result: &Result<Staged<EmittedUnit>, FrontEndFailure>) -> Self {
+        match result {
+            Ok(staged) => Self::new(
+                Operation::Package,
+                Some(OutcomeStage::S4),
+                Category::Success,
+            )
+            .with_artifacts(vec![OutcomeArtifact::package_id(
+                &staged.value().package().package_id(),
+            )]),
+            Err(failure) => Self::from_failure(Operation::Package, failure),
+        }
+    }
+
+    /// The document of a front-end operation's failure.
+    fn from_failure(operation: Operation, failure: &FrontEndFailure) -> Self {
         match failure {
-            StageFailure::Refused(refusal) => {
-                let category = refusal.code().category();
-                Self::new(Operation::Check, Some(refusal.stage().into()), category)
-                    .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(refusal)])
-            }
+            StageFailure::Refused(refusal) => Self::new(
+                operation,
+                Some(refusal.stage().into()),
+                refusal.code().category(),
+            )
+            .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(refusal)]),
             StageFailure::Limit(limit) => {
                 let refusal = CompileRefusal::Limit(limit.clone());
                 Self::new(
-                    Operation::Check,
+                    operation,
                     Some(refusal.stage().into()),
                     Category::Incomplete,
                 )
                 .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(&refusal)])
             }
-            StageFailure::Cancelled(cause) => {
-                Self::new(Operation::Check, None, Category::Incomplete).with_diagnostics(vec![
-                    OutcomeDiagnostic::new(
-                        Some(match cause {
-                            CancelCause::Requested => "requested",
-                            CancelCause::Deadline => "deadline",
-                        }),
-                        Code::Cancelled.as_str(),
-                        None,
-                        "the operation was cancelled",
-                    ),
-                ])
-            }
-            StageFailure::Fault(fault) => Self::new(Operation::Check, None, fault.category())
+            StageFailure::Cancelled(cause) => Self::new(operation, None, Category::Incomplete)
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    Some(match cause {
+                        CancelCause::Requested => "requested",
+                        CancelCause::Deadline => "deadline",
+                    }),
+                    Code::Cancelled.as_str(),
+                    None,
+                    "the operation was cancelled",
+                )]),
+            StageFailure::Fault(fault) => Self::new(operation, None, fault.category())
                 .with_diagnostics(vec![OutcomeDiagnostic::new(
                     Some(fault.catalog_code().cause()),
                     fault.catalog_code().code(),
@@ -574,30 +615,28 @@ impl OutcomeDocument {
         }
     }
 
-    /// A checked unit's document. The package identity is the one E4 gives
-    /// the package; a package that cannot be emitted has none, and the
-    /// document reports the emitter's refusal at S4 instead.
-    fn from_checked(unit: &CheckedUnit) -> Self {
-        let refusal = match emit_checked(unit.package()) {
-            Ok(emission) if emission.omitted().is_empty() => {
-                return Self::new(Operation::Check, Some(OutcomeStage::S4), Category::Success)
-                    .with_artifacts(vec![OutcomeArtifact::package_id(
-                        &emission.package().package_id(),
-                    )]);
+    /// The document of a `replay` outcome: a settled arm's category at S8,
+    /// or the refusal's category and diagnostic.
+    pub fn from_replay(result: &Result<ReplayResult, ReplayRefusal>) -> Self {
+        match result {
+            Ok(ReplayResult::Witness(arm)) => {
+                Self::new(Operation::Replay, Some(OutcomeStage::S8), arm.category())
             }
-            Ok(emission) => CompileRefusal::Omitted(emission.omitted().to_vec()),
-            Err(refusal) => CompileRefusal::Emit(refusal),
-        };
-        Self::new(
-            Operation::Check,
-            Some(refusal.stage().into()),
-            refusal.code().category(),
-        )
-        .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(&refusal)])
+            Ok(ReplayResult::Input(arm)) => {
+                Self::new(Operation::Replay, Some(OutcomeStage::S8), arm.category())
+            }
+            Err(refusal) => Self::new(Operation::Replay, None, refusal.code().category())
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    None,
+                    refusal.code().as_str(),
+                    None,
+                    refusal.to_string(),
+                )]),
+        }
     }
 
     /// The document of an `execute` outcome, last reaching S6a. A refused
-    /// call carries its catalog code and cause as one diagnostic. An
+    /// call carries its catalog code, cause and locus as one diagnostic. An
     /// undefined call has category `undefined`, the one place that label
     /// appears.
     pub fn from_call(outcome: &CallOutcome) -> Self {
@@ -609,13 +648,7 @@ impl OutcomeDocument {
         let CallOutcome::Refused(refusal) = outcome else {
             return document;
         };
-        let (CallRefusal::Record { code, .. } | CallRefusal::Family { code, .. }) = refusal;
-        document.with_diagnostics(vec![OutcomeDiagnostic::new(
-            Some(code.cause()),
-            code.code(),
-            None,
-            code.to_string(),
-        )])
+        document.with_diagnostics(vec![OutcomeDiagnostic::from_call_refusal(refusal)])
     }
 
     /// The document's bytes: the same document gives the same bytes.
@@ -633,13 +666,17 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_foundation::SourceIdentity;
-    use quire_exact::Cancel;
-    use serde_json::Value;
+    use qsl_foundation::diagnostic::{CatalogCode, InternalFault};
+    use qsl_foundation::{Position, SourceIdentity};
+    use quire_exact::{Cancel, ScalarLimits};
+    use serde_json::{json, Value};
 
     use super::*;
+    use crate::proof_result::{IncompleteCause, ProofRefusalCause, UnavailabilityCause};
+    use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
-        check, parse, select, DependencyInput, LockEvidence, ParseRequest, SpineLimits,
+        check, package, parse, select, CallLocus, DependencyInput, LockEvidence, PackageLimits,
+        ParseRequest, SpineLimits,
     };
 
     const FIXTURE: &str = include_str!("../../tests/fixtures/spine-compile.native");
@@ -648,7 +685,13 @@ mod tests {
         type Digit = Int[0, 9];\n\
         function inv using v(x: Digit): Boolean pure { 1 / x > 0 }\n";
 
-    fn checked(text: &str) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    /// `check`, then `package`, over `text`.
+    fn compiled(
+        text: &str,
+    ) -> (
+        Result<Staged<CheckedUnit>, FrontEndFailure>,
+        Option<Result<Staged<EmittedUnit>, FrontEndFailure>>,
+    ) {
         let source = SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1");
         let limits = SpineLimits::default();
         let cancel = Cancel::new();
@@ -657,47 +700,77 @@ mod tests {
             path: "unit.native",
             bytes: text.as_bytes(),
         };
-        let parsed = parse(&request, limits.source, &cancel)?.into_value();
-        let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)?.into_value();
-        check(
+        let parsed = parse(&request, limits.source, &cancel)
+            .expect("parses")
+            .into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+            .expect("selects")
+            .into_value();
+        let checked = check(
             &parsed,
             &models,
             &DependencyInput::default(),
             &LockEvidence::default(),
             limits,
             &cancel,
-        )
+        );
+        let emitted = checked
+            .as_ref()
+            .ok()
+            .map(|staged| package(staged.value(), PackageLimits::default(), &cancel));
+        (checked, emitted)
     }
 
-    fn json(document: &OutcomeDocument) -> Value {
+    fn json_of(document: &OutcomeDocument) -> Value {
         serde_json::from_slice(&document.to_bytes().expect("encodes")).expect("is JSON")
     }
 
-    /// FR-286-AC-1: the `check` outcome over the spine fixture.
+    fn text_of(document: &OutcomeDocument) -> String {
+        String::from_utf8(document.to_bytes().expect("encodes")).expect("is UTF-8")
+    }
+
+    fn record(index: usize, value: TerminalValue) -> OutcomeItem {
+        OutcomeItem::from_terminal(&TerminalRecord::new(RequestIndex::new(index), value))
+    }
+
+    /// FR-286-AC-1: `check` over the spine fixture is one whole document, at
+    /// S4 with no diagnostics; the package identity is `package`'s.
     #[trace("TC-770", "FR-286-AC-1")]
     #[test]
-    fn check_success_document_names_its_package_identity() {
-        let result = checked(FIXTURE);
-        let package_id = emit_checked(
-            result
-                .as_ref()
-                .expect("the fixture checks")
-                .value()
-                .package(),
-        )
-        .expect("the package emits")
-        .package()
-        .package_id()
-        .hex();
-        let document = json(&OutcomeDocument::from_check(&result));
-        assert_eq!(document["format"], "quire-outcome/1");
-        assert_eq!(document["operation"], "check");
-        assert_eq!(document["last_stage"], "S4");
-        assert_eq!(document["category"], "success");
-        assert_eq!(document["diagnostics"], serde_json::json!([]));
+    fn check_and_package_documents_over_the_fixture() {
+        let (checked, emitted) = compiled(FIXTURE);
         assert_eq!(
-            document["artifacts"],
-            serde_json::json!([{"kind": "package_id", "id": package_id}])
+            json_of(&OutcomeDocument::from_check(&checked)),
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "check",
+                "last_stage": "S4",
+                "category": "success",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [],
+            })
+        );
+        let emitted = emitted.expect("the fixture checks");
+        let id = emitted
+            .as_ref()
+            .expect("the fixture packages")
+            .value()
+            .package()
+            .package_id()
+            .hex();
+        assert_eq!(id.len(), 64);
+        assert_eq!(
+            json_of(&OutcomeDocument::from_package(&emitted)),
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "package",
+                "last_stage": "S4",
+                "category": "success",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [{"kind": "package_id", "id": id}],
+            })
         );
     }
 
@@ -706,114 +779,321 @@ mod tests {
     #[trace("TC-770", "FR-286-AC-2")]
     #[test]
     fn check_refusal_document_carries_the_refusals_diagnostic() {
-        let result = checked(ILL_TYPED);
+        let (result, _) = compiled(ILL_TYPED);
         let Err(StageFailure::Refused(refusal)) = &result else {
             panic!("expected a refusal");
         };
         let region = refusal.region().expect("the refusal is located");
-        let document = json(&OutcomeDocument::from_check(&result));
-        assert_eq!(document["category"], "refusal");
-        assert_eq!(document["last_stage"], "S3");
-        let diagnostics = document["diagnostics"].as_array().expect("an array");
-        assert_eq!(diagnostics.len(), 1);
-        let diagnostic = &diagnostics[0];
-        assert_eq!(diagnostic["code"], "ill_typed");
-        assert_eq!(diagnostic["code"], refusal.code().as_str());
+        let document = json_of(&OutcomeDocument::from_check(&result));
         assert_eq!(
-            diagnostic["cause"],
-            compile_cause(refusal).expect("a cause")
+            document,
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "check",
+                "last_stage": "S3",
+                "category": "refusal",
+                "items": [],
+                "diagnostics": [{
+                    "cause": "operator-ineligible",
+                    "code": "ill_typed",
+                    "locus": {
+                        "kind": "region",
+                        "source": serde_json::to_value(region.source()).expect("a source ref"),
+                        "start": region.start(),
+                        "end": region.end(),
+                    },
+                    "message": refusal.to_string(),
+                }],
+                "artifacts": [],
+            })
         );
-        assert_eq!(diagnostic["message"], refusal.to_string());
-        assert_eq!(diagnostic["locus"]["kind"], "region");
-        assert_eq!(diagnostic["locus"]["start"], region.start());
-        assert_eq!(diagnostic["locus"]["end"], region.end());
-        assert_eq!(
-            diagnostic["locus"]["source"],
-            serde_json::to_value(region.source()).expect("a source ref")
-        );
+        assert!(refusal.to_string().contains("integer"), "{refusal}");
     }
 
-    /// FR-286-AC-3: three items serialize in request order, each with its
-    /// record and category, and a document serializes to equal bytes twice.
+    /// FR-286-AC-3: three items serialize in request order with their
+    /// records and categories, to exactly these bytes, twice over.
     #[trace("TC-770", "FR-286-AC-3")]
     #[test]
     fn analyze_items_keep_request_order_and_bytes_are_stable() {
-        let records = [
-            TerminalRecord::new(
-                RequestIndex::new(0),
-                TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
-            ),
-            TerminalRecord::new(
-                RequestIndex::new(1),
-                TerminalValue::Proved { success_checks: 3 },
-            ),
-            TerminalRecord::new(RequestIndex::new(2), TerminalValue::Refuted),
-        ];
-        let document = OutcomeDocument::new(
+        let document = OutcomeDocument::settled(
             Operation::Analyze,
             Some(OutcomeStage::S6c),
-            Category::Unsupported,
-        )
-        .with_items(records.iter().map(OutcomeItem::from_terminal).collect());
-        assert_eq!(document.to_bytes().unwrap(), document.to_bytes().unwrap());
-        let items = &json(&document)["items"];
-        let seen: Vec<_> = items
-            .as_array()
-            .expect("an array")
-            .iter()
-            .map(|item| {
-                (
-                    item["request_index"].as_u64().unwrap(),
-                    item["result"].as_str().unwrap().to_owned(),
-                    item["category"].as_str().unwrap().to_owned(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            seen,
-            [
-                (0, "unsupported".to_owned(), "unsupported".to_owned()),
-                (1, "proved".to_owned(), "success".to_owned()),
-                (2, "refuted".to_owned(), "violation".to_owned()),
-            ]
+            vec![
+                record(
+                    0,
+                    TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
+                ),
+                record(1, TerminalValue::Proved { success_checks: 3 }),
+                record(2, TerminalValue::Refuted),
+            ],
         );
-        assert_eq!(items[0]["cause"]["cause"], "solver_absent");
-        let refused = checked(ILL_TYPED);
+        let expected = concat!(
+            r#"{"format":"quire-outcome/1","operation":"analyze","last_stage":"S6c","#,
+            r#""category":"unsupported","items":["#,
+            r#"{"request_index":0,"result":"unsupported","cause":{"kind":"solver-absent"},"category":"unsupported"},"#,
+            r#"{"request_index":1,"result":"proved","cause":null,"category":"success"},"#,
+            r#"{"request_index":2,"result":"refuted","cause":null,"category":"violation"}"#,
+            r#"],"diagnostics":[],"artifacts":[]}"#
+        );
+        assert_eq!(text_of(&document), expected);
+        assert_eq!(document.to_bytes().unwrap(), document.to_bytes().unwrap());
+        let (refused, _) = compiled(ILL_TYPED);
         assert_eq!(
             OutcomeDocument::from_check(&refused).to_bytes().unwrap(),
             OutcomeDocument::from_check(&refused).to_bytes().unwrap()
         );
     }
 
+    /// QSpec FR-331-AC-8: a proof with no SUCCESS check is `inconclusive`
+    /// with its vacuity cause, never `proved`.
+    #[trace("TC-770", "FR-286-AC-3")]
+    #[test]
+    fn a_vacuous_proof_is_inconclusive_never_proved() {
+        let item = serde_json::to_value(record(4, TerminalValue::Proved { success_checks: 0 }))
+            .expect("serializes");
+        assert_eq!(
+            item,
+            json!({
+                "request_index": 4,
+                "result": "inconclusive",
+                "cause": {"kind": "kani-vacuous-proof"},
+                "category": "inconclusive",
+            })
+        );
+    }
+
+    /// Each terminal cause is written in its FR-331 spelling, with its
+    /// payload.
+    #[trace("TC-770", "FR-286-AC-3")]
+    #[test]
+    fn terminal_causes_use_their_own_spellings() {
+        let parity = DisagreementCause::Verdicts {
+            proved: Verdict::from_category(Category::Success),
+            replayed: Verdict::from_category(Category::Violation),
+        };
+        let cases = [
+            (
+                TerminalValue::Declined {
+                    cause: ProofRefusalCause::InvalidInput,
+                    code: DeclineCode::Qsl(Code::IllTyped),
+                },
+                json!({"result": "declined", "cause": {"kind": "invalid-input", "code": "ill_typed"}, "category": "refusal"}),
+            ),
+            (
+                TerminalValue::Incomplete(IncompleteCause::Cancelled),
+                json!({"result": "incomplete", "cause": {"kind": "cancelled"}, "category": "incomplete"}),
+            ),
+            (
+                TerminalValue::Incomplete(IncompleteCause::ResourceExhausted),
+                json!({"result": "incomplete", "cause": {"kind": "limit-reached"}, "category": "incomplete"}),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                    Code::StaleDependency,
+                )),
+                json!({"result": "inconclusive", "cause": {"kind": "replay-refused", "code": "stale_dependency"}, "category": "inconclusive"}),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity)),
+                json!({"result": "inconclusive", "cause": {"kind": "replay-parity", "parity": {"reason": "verdicts", "proved": "success", "replayed": "violation"}}, "category": "inconclusive"}),
+            ),
+            (
+                TerminalValue::Failed,
+                json!({"result": "failed", "cause": null, "category": "internal-failure"}),
+            ),
+        ];
+        for (value, mut expected) in cases {
+            expected["request_index"] = json!(1);
+            assert_eq!(
+                serde_json::to_value(record(1, value.clone())).expect("serializes"),
+                expected,
+                "{value:?}"
+            );
+        }
+    }
+
     /// FR-286-AC-4: an undefined claim evaluation in an `analyze` or
-    /// `monitor` item is a violation with cause `UndefinedEvaluation` and no
+    /// `monitor` item is a violation with cause `undefined-evaluation` and no
     /// `undefined` label; an `execute` outcome that is undefined keeps it.
     #[trace("TC-770", "FR-286-AC-4")]
     #[test]
     fn undefined_label_appears_only_on_a_non_proof_outcome() {
-        for operation in [Operation::Analyze, Operation::Monitor] {
-            let document =
-                OutcomeDocument::new(operation, Some(OutcomeStage::S6c), Category::Violation)
-                    .with_items(vec![OutcomeItem::undefined_evaluation(
-                        RequestIndex::new(0),
-                        "position 1",
-                        "division-by-zero",
-                    )]);
-            let bytes = String::from_utf8(document.to_bytes().unwrap()).unwrap();
-            assert!(!bytes.contains("\"undefined\""), "{bytes}");
-            let item = &json(&document)["items"][0];
-            assert_eq!(item["category"], "violation");
-            assert_eq!(item["result"], "refuted");
-            assert_eq!(item["cause"]["kind"], "UndefinedEvaluation");
-            assert_eq!(item["cause"]["where"], "position 1");
-            assert_eq!(item["cause"]["cause"], "division-by-zero");
+        for (operation, name) in [
+            (Operation::Analyze, "analyze"),
+            (Operation::Monitor, "monitor"),
+        ] {
+            let document = OutcomeDocument::settled(
+                operation,
+                Some(OutcomeStage::S6c),
+                vec![OutcomeItem::undefined_evaluation(
+                    RequestIndex::new(0),
+                    "position 1",
+                    "division-by-zero",
+                )],
+            );
+            assert!(!text_of(&document).contains("\"undefined\""));
+            assert_eq!(
+                json_of(&document),
+                json!({
+                    "format": "quire-outcome/1",
+                    "operation": name,
+                    "last_stage": "S6c",
+                    "category": "violation",
+                    "items": [{
+                        "request_index": 0,
+                        "result": "refuted",
+                        "cause": {
+                            "kind": "undefined-evaluation",
+                            "where": "position 1",
+                            "cause": "division-by-zero",
+                        },
+                        "category": "violation",
+                    }],
+                    "diagnostics": [],
+                    "artifacts": [],
+                })
+            );
         }
         let execute = OutcomeDocument::from_call(&CallOutcome::Undefined {
             reason: "sum-out-of-domain",
         });
-        let bytes = String::from_utf8(execute.to_bytes().unwrap()).unwrap();
-        assert_eq!(json(&execute)["category"], "undefined");
-        assert_eq!(json(&execute)["operation"], "execute");
-        assert!(bytes.contains("\"undefined\""), "{bytes}");
+        assert_eq!(
+            json_of(&execute),
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "execute",
+                "last_stage": "S6a",
+                "category": "undefined",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [],
+            })
+        );
+    }
+
+    /// The whole-outcome category is the most severe item's, and a monitor
+    /// clause pending at the end of the trace exits 0.
+    #[trace("TC-770", "FR-286-AC-3")]
+    #[test]
+    fn the_document_category_is_the_most_severe_items() {
+        let declined = TerminalValue::Declined {
+            cause: ProofRefusalCause::Refused,
+            code: DeclineCode::Qsl(Code::IllTyped),
+        };
+        let mixed = OutcomeDocument::settled(
+            Operation::Prove,
+            Some(OutcomeStage::S8),
+            vec![
+                record(0, TerminalValue::Proved { success_checks: 1 }),
+                record(1, TerminalValue::Refuted),
+                record(2, declined),
+                record(3, TerminalValue::Incomplete(IncompleteCause::TimedOut)),
+            ],
+        );
+        assert_eq!(mixed.category(), Category::Refusal);
+        let pending = || {
+            vec![record(
+                0,
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                    Code::StaleDependency,
+                )),
+            )]
+        };
+        assert_eq!(
+            OutcomeDocument::settled(Operation::Monitor, None, pending()).category(),
+            Category::Success
+        );
+        assert_eq!(
+            OutcomeDocument::settled(Operation::Prove, None, pending()).category(),
+            Category::Inconclusive
+        );
+        assert_eq!(
+            OutcomeDocument::settled(Operation::Prove, None, Vec::new()).category(),
+            Category::Success
+        );
+    }
+
+    /// A refused call's diagnostic keeps the refusal's locus.
+    #[trace("TC-770", "FR-286-AC-2")]
+    #[test]
+    fn a_refused_call_keeps_its_locus() {
+        let span = qsl_foundation::LocatedSpan {
+            start: Position {
+                byte: 4,
+                line: 1,
+                column: 5,
+            },
+            end: Position {
+                byte: 9,
+                line: 1,
+                column: 10,
+            },
+        };
+        let refusal = CallRefusal::Record {
+            code: CatalogCode::new("ill_typed", "type-mismatch"),
+            fields: BTreeMap::new(),
+            locus: Some(CallLocus {
+                source_digest: "sha256:ab".to_owned(),
+                span,
+            }),
+            location: None,
+        };
+        let document = json_of(&OutcomeDocument::from_call(&CallOutcome::Refused(refusal)));
+        assert_eq!(document["category"], "refusal");
+        assert_eq!(document["diagnostics"][0]["code"], "ill_typed");
+        assert_eq!(document["diagnostics"][0]["cause"], "type-mismatch");
+        assert_eq!(
+            document["diagnostics"][0]["locus"],
+            json!({
+                "kind": "located",
+                "source_digest": "sha256:ab",
+                "span": serde_json::to_value(span).expect("a span"),
+            })
+        );
+    }
+
+    /// A replay outcome is its arm's category at S8, or its refusal's.
+    #[trace("TC-770", "FR-286-AC-3")]
+    #[test]
+    fn replay_documents_follow_the_arm_and_the_refusal() {
+        let charges = ScalarLimits {
+            integer_bits: 64,
+            decimal_digits: 34,
+            scale_expansion: 8,
+            text_input_bytes: 1024,
+            text_scalars: 1024,
+            normalized_scalars: 1024,
+            unit_edges: 4,
+            value_occurrences: 16,
+            work_units: 100,
+            result_units: 10,
+        };
+        let success = Verdict::from_category(Category::Success);
+        let arm = InputArmResult::settle(
+            success,
+            success,
+            Category::Success,
+            Some(EvaluatedValue::Boolean(true)),
+            &WitnessCheck::Agrees(None),
+            Vec::new(),
+            charges,
+        );
+        assert_eq!(
+            json_of(&OutcomeDocument::from_replay(&Ok(ReplayResult::Input(arm)))),
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "replay",
+                "last_stage": "S8",
+                "category": "success",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [],
+            })
+        );
+        let fault = ReplayRefusal::Fault(InternalFault::new("replay", "broken"));
+        let document = json_of(&OutcomeDocument::from_replay(&Err(fault)));
+        assert_eq!(document["category"], "internal-failure");
+        assert_eq!(document["last_stage"], Value::Null);
+        assert_eq!(document["diagnostics"][0]["code"], "runtime_invariant");
     }
 }

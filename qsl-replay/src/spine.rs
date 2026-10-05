@@ -190,6 +190,26 @@ impl CompileRefusal {
         }
     }
 
+    /// The catalog cause tag under [`Self::code`], where the stage cause
+    /// names one.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::Check { refusals, .. } => refusals.first()?.cause.cause(),
+            Self::Profile { refusals, .. } => refusals.first().map(ProfileRefusal::cause),
+            Self::DependencyInput(refusal) => refusal.cause(),
+            Self::Import { refusal, .. } => refusal.cause(),
+            Self::Dependency { refusal, .. } => refusal.cause(),
+            Self::Link(refusal) => refusal.cause(),
+            Self::Limit(limit) => Some(limit.kind().catalog_cause()),
+            Self::Source(_)
+            | Self::Forms { .. }
+            | Self::Intake { .. }
+            | Self::Assembly { .. }
+            | Self::Emit(_)
+            | Self::Omitted(_) => None,
+        }
+    }
+
     /// The stage that refused.
     pub fn stage(&self) -> SpineStage {
         match self {

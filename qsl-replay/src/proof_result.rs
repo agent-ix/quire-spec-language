@@ -81,6 +81,17 @@ pub enum IncompleteCause {
     ResourceExhausted,
 }
 
+impl IncompleteCause {
+    /// The cause's FR-331 wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TimedOut => "timed-out",
+            Self::Cancelled => "cancelled",
+            Self::ResourceExhausted => "limit-reached",
+        }
+    }
+}
+
 /// FR-331's `declined` (refusal) cause: `Refused`, `InvalidInput` or
 /// `IncompleteInput` all collapse to one FR-331 result with this typed
 /// cause (ADR-013 O-16, QC-9).
@@ -94,6 +105,17 @@ pub enum ProofRefusalCause {
     IncompleteInput,
 }
 
+impl ProofRefusalCause {
+    /// The cause's wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Refused => "refused",
+            Self::InvalidInput => "invalid-input",
+            Self::IncompleteInput => "incomplete-input",
+        }
+    }
+}
+
 /// FR-331's `unsupported` cause: the solver or backend is absent after
 /// negotiation (ADR-013 O-16).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -103,6 +125,16 @@ pub enum UnavailabilityCause {
     /// No backend satisfying the request's capability negotiation is
     /// present.
     BackendAbsent,
+}
+
+impl UnavailabilityCause {
+    /// The cause's wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SolverAbsent => "solver-absent",
+            Self::BackendAbsent => "backend-absent",
+        }
+    }
 }
 
 /// The cause of a `TerminalValue::Inconclusive`: a closed set that later
@@ -123,6 +155,14 @@ pub enum InconclusiveCause {
 }
 
 impl InconclusiveCause {
+    /// The cause's FR-331 wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::ReplayParity(_) => "replay-parity",
+            Self::ReplayRefused(_) => "replay-refused",
+        }
+    }
+
     /// Bytes this cause adds to an encoded record beyond its fixed size:
     /// the nested witness records and failure of a parity disagreement.
     fn measured_bytes(&self) -> usize {
@@ -200,6 +240,16 @@ pub enum TerminalValue {
     Inconclusive(InconclusiveCause),
     /// A backend result of `failed`: the tool itself failed.
     Failed,
+}
+
+impl ReportedInconclusiveCause {
+    /// The cause's wire spelling: a vacuous proof's, or the cause's own.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::KaniVacuousProof => "kani-vacuous-proof",
+            Self::Cause(cause) => cause.as_str(),
+        }
+    }
 }
 
 impl TerminalValue {

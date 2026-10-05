@@ -93,7 +93,13 @@ A `0-draft` request carries FR-026's members and no `call` or `libraries`.
 ### Outcome document
 
 For a call that reaches S6a, stdout is one `spine-run-result/1` JSON
-document, newline-terminated, and nothing else. Its members are:
+document, newline-terminated, and nothing else.
+
+`spine-run-result/1` is the current output of QSL's `quire-spec` CLI. It is
+retired with that CLI when the driver's verbs land (ADR-029 CB-1). The
+outcome document of the `execute` operation is FR-286's `quire-outcome/1`,
+whose `result` member carries the completed value, undefined reason or
+exhausted limit this document's `outcome` member carries. Its members are:
 
 - `format`: `"spine-run-result/1"`.
 - `package_id`: the compiled package's `package_id`, lowercase hex, equal
