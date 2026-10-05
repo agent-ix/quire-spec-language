@@ -486,7 +486,7 @@ pub enum ExecuteResult {
 }
 
 /// The exhausted limit of an incomplete `execute` result (FR-277): bound and
-/// counter (the consumed value at the denied charge, as FR-286 states) are
+/// counter (FR-277's counter at the failed charge) are
 /// ASCII decimal strings.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ResultLimit {
@@ -501,7 +501,7 @@ impl From<&CallIncomplete> for ResultLimit {
         Self {
             kind: incomplete.record.limit_kind.as_str(),
             bound: incomplete.record.limit.to_string(),
-            counter: incomplete.record.consumed.to_string(),
+            counter: incomplete.counter().to_string(),
             field: incomplete.limits_field(),
         }
     }
@@ -1109,7 +1109,7 @@ mod tests {
                 "diagnostics": [],
                 "artifacts": [],
                 "result": {"kind": "incomplete", "limit": {
-                    "kind": "work_units", "bound": "0", "counter": "0", "field": "work_units"}},
+                    "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units"}},
             })
         );
 
