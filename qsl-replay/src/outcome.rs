@@ -377,12 +377,10 @@ impl OutcomeDiagnostic {
     }
 
     /// The diagnostic of a refused call: its catalog code and cause, and
-    /// the locus the refusal carries (its resolved region, else the
-    /// occurrence it arose at).
+    /// the resolved region its record carries as locus.
     pub fn from_call_refusal(refusal: &CallRefusal) -> Self {
-        let (CallRefusal::Record { code, location, .. } | CallRefusal::Family { code, location }) =
-            refusal;
-        let resolved = match refusal {
+        let (CallRefusal::Record { code, .. } | CallRefusal::Family { code, .. }) = refusal;
+        let locus = match refusal {
             CallRefusal::Record {
                 locus: Some(locus), ..
             } => Some(OutcomeLocus::Located {
@@ -391,11 +389,6 @@ impl OutcomeDiagnostic {
             }),
             CallRefusal::Record { locus: None, .. } | CallRefusal::Family { .. } => None,
         };
-        let locus = resolved.or_else(|| {
-            location
-                .as_ref()
-                .map(|location| OutcomeLocus::from(&Locus::Occurrence(location.clone())))
-        });
         Self::new(Some(code.cause()), code.code(), locus, code.to_string())
     }
 
@@ -676,15 +669,31 @@ impl OutcomeDocument {
     /// completed or undefined call carries its `result`. An undefined call has category `undefined`, the one place that label
     /// appears.
     pub fn from_call(outcome: &CallOutcome) -> Self {
-        let document = Self::new(
+        let mut document = Self::new(
             Operation::Execute,
             Some(OutcomeStage::S6a),
             outcome.category(),
         );
-        let CallOutcome::Refused(refusal) = outcome else {
-            return document;
-        };
-        document.with_diagnostics(vec![OutcomeDiagnostic::from_call_refusal(refusal)])
+        match outcome {
+            CallOutcome::Refused(refusal) => {
+                document.diagnostics = vec![OutcomeDiagnostic::from_call_refusal(refusal)];
+            }
+            CallOutcome::Completed(value) => {
+                document.result = Some(ExecuteResult::Completed {
+                    value: match value {
+                        CallValue::Boolean(value) => ResultValue::Boolean { value: *value },
+                        CallValue::Integer(value) => ResultValue::Integer {
+                            decimal: value.to_string(),
+                        },
+                    },
+                });
+            }
+            CallOutcome::Undefined { reason } => {
+                document.result = Some(ExecuteResult::Undefined { reason });
+            }
+            CallOutcome::Incomplete { .. } => {}
+        }
+        document
     }
 
     /// The document's bytes: the same document gives the same bytes.
