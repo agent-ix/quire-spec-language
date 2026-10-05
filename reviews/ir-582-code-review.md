@@ -83,3 +83,17 @@ ecosystem repository, not as QSL's workspace and not as `quire-spec-language`.
 Under FR-272's own DT-5 rule a type owned by another repository is held by the
 `copy` rule, as IR's types already are. The leaves' internal one-definition
 check then belongs in their own repositories.
+
+## Dispositions
+
+Round 1, reviewed at c989d92266f8025c27bfdbe0c65bcc54a331f9e8 (rebased on
+main 02530e7a5). Absence, one-copy lock and no `path =` dependency re-checked
+at this head.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e36d68e99: each leaf is `Repository::Ecosystem(<crate>)` wherever it is sourced from; `in_qsl_workspace` deleted |
+| FND-002 | fixed | e36d68e99: `tc_747_shared_leaves_are_their_own_ecosystem_repositories` sources quire-exact from its own repository URL and quire-semantic-value from a path, asserts both labels, and checks `copy` versus no finding; TC-747's backend fixture now uses `EXACT_SOURCE` |
+| FND-003 | fixed | c989d9226: the module doc names the shared leaves beside the path dependencies |
+| FND-004 | fixed | e36d68e99: comments name `quire_exact::Meter`, `quire_exact::integer::Integer` and `quire_exact`'s accounting types |
+| FND-005 | fixed | e36d68e99: the joined lines are rewrapped under 100 columns; the remaining long lines (api_surface.rs:1251, family_outcome_layering.rs:262) were already on main |

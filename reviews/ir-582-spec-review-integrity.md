@@ -37,3 +37,19 @@ ids in the owning repository:
 Changes requested (no high). The three deleted ACs and two deleted TCs each
 moved to their owning repository with matching ids. FND-001 must land with
 SR-1298 FND-001's code fix so that FR-272 states the leaves' classification.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | FR-090-AC-7, AC-11 and AC-12 still end with kernel enum claims (`quire_exact::Refusal` has no variant naming `WrongSnapshotCause`; `quire_exact::Undefined` has no `PreconditionFalse` / `AbsentKey` variant). The fix round deleted the TC-388/407/408 step 5 that verified them, so in QSL those clauses no longer have a verifying step. They now belong to quire-exact's FR-090 (quire-exact#3). Drop the kernel clause from each of the three QSL ACs and point to `ix://agent-ix/quire-exact/FR-090` | spec/functional/FR-090-return-a-family-outcome-or-a-typed-family-refusal.md:461,465,466 |
+
+## Dispositions
+
+Round 1, reviewed at c989d92266f8025c27bfdbe0c65bcc54a331f9e8.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e36d68e99: FR-272 Inputs and a new Behavior bullet scan quire-exact and quire-semantic-value as their own ecosystem repositories; `identifier`/`re-export` never apply inside them |
+| FND-002 | fixed | e36d68e99: ADR-011 and FR-060 name quire-semantic-value FR-060-AC-5 and FR-060-AC-6 as the replacement |
+| FND-003 | fixed | e36d68e99: TC-292 and FR-089-AC-2 deleted from QSL and the step 5 inspections removed from TC-388/407/408; their successors are in quire-exact#3 (0edd08bf) |

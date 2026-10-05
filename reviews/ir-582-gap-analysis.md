@@ -41,3 +41,11 @@ the owning repositories under the same ids, with `#[trace]` tags on the tests
 One medium gap, fixable in quire-semantic-value, not in this PR. Every other
 scan that dropped the leaves either has a successor in the new repositories or
 never applied to them.
+
+## Dispositions
+
+Round 1, reviewed at c989d92266f8025c27bfdbe0c65bcc54a331f9e8.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | agent-ix/quire-semantic-value#2 head 0603727b: `clippy.toml` disallows `EffectiveId::from_digest` and `PopulationId::from_digest` (new FR-060-AC-6); fully closed when that PR merges |
