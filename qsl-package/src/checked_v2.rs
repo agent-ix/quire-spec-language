@@ -90,7 +90,7 @@ use qsl_semantics::library::{
 };
 use qsl_semantics::model::key::hex;
 
-use crate::checked::{CheckedPackage, ResolvedDependency};
+use crate::checked::CheckedPackage;
 use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 

@@ -841,16 +841,16 @@ mod checked {
         // unordered declaration node retains its members sorted, so a
         // declaration position never reaches the key.
         let reordered = declaration_preimage("Color", false, &["green", "red", "blue"]);
-        assert_eq!(
+        assert!(matches!(
             AdmittedEnumDeclaration::admit(
                 EnumDeclarationPreimage::from_json(reordered.clone()).unwrap(),
                 preimage_key(&reordered),
                 &owners(),
             )
-            .unwrap_err()
-            .cause,
-            SemanticGraphCause::UnsortedUnorderedMembers
-        );
+            .unwrap_err(),
+            qsl_semantics::value::NominalRefusal::Graph(invalid)
+                if invalid.cause == SemanticGraphCause::UnsortedUnorderedMembers
+        ));
 
         assert_eq!(
             ill_typed(

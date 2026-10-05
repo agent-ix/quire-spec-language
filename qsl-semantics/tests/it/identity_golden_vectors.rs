@@ -243,7 +243,7 @@ fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
     assert_golden(UNIT, UNIT_DIGEST, &hex(&unit.digest().unwrap()));
     let compound =
         CompoundUnitPreimage::from_json(serde_json::from_str(COMPOUND_UNIT).unwrap()).unwrap();
-    let id = compound.id();
+    let id = compound.id().unwrap();
     assert_eq!(id.domain(), quire_exact::UnitDomain::Compound);
     assert_golden(COMPOUND_UNIT, COMPOUND_UNIT_DIGEST, &hex(id.as_bytes()));
 }
@@ -277,12 +277,15 @@ fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
     let built = graph
         .compound_unit(compound.terms())
         .expect("metre is a root unit");
-    assert_eq!(hex(built.id().as_bytes()), COMPOUND_UNIT_DIGEST);
+    assert_eq!(hex(built.id().unwrap().as_bytes()), COMPOUND_UNIT_DIGEST);
     let metre = QuantityUnit::Declared(Box::new(graph.unit(metre).unwrap().clone()));
     let squared = result_unit(UnitOperation::Multiply, &metre, &metre).unwrap();
     assert_eq!(squared, QuantityUnit::Compound(built));
-    assert_eq!(hex(squared.id().as_bytes()), COMPOUND_UNIT_DIGEST);
-    assert_eq!(squared.id().domain(), quire_exact::UnitDomain::Compound);
+    assert_eq!(hex(squared.id().unwrap().as_bytes()), COMPOUND_UNIT_DIGEST);
+    assert_eq!(
+        squared.id().unwrap().domain(),
+        quire_exact::UnitDomain::Compound
+    );
 }
 
 /// Admit `raw` under the `sha256-jcs` digest `digest`: intake's check 3
