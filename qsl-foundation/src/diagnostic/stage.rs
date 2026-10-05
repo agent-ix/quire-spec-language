@@ -116,6 +116,9 @@ pub enum LimitsField {
     CheckingInputBytes,
     /// `checking.work_budget`.
     CheckingWorkBudget,
+    /// `identity.input_bytes`: the byte limit every identity preimage
+    /// encodes under (FR-259 Behavior 3).
+    IdentityInputBytes,
 }
 
 impl LimitsField {
@@ -142,6 +145,7 @@ impl LimitsField {
             Self::CheckingNodes => "checking.nodes",
             Self::CheckingInputBytes => "checking.input_bytes",
             Self::CheckingWorkBudget => "checking.work_budget",
+            Self::IdentityInputBytes => "identity.input_bytes",
         }
     }
 }

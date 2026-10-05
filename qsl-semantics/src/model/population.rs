@@ -200,7 +200,7 @@ impl Default for PopulationAdmissionLimits {
         Self {
             population_members: 100_000,
             work_units: 16_777_216,
-            ancestor_steps: 16_777_216,
+            ancestor_steps: quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS,
         }
     }
 }

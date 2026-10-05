@@ -202,7 +202,8 @@ pub use member::Member;
 // `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use semantic_node::{
-    ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
+    identity_limit, ModelSubject, NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSelection,
+    OwnerSubject,
 };
 // `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a

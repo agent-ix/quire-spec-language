@@ -488,12 +488,64 @@ impl EmittedPackage {
     }
 }
 
+/// A chain of `length` packages over one empty checked graph, each
+/// depending on the next under a distinct `package_id`: the shape a
+/// `length`-long library import chain links to, for the stack-depth tests.
+#[cfg(test)]
+pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
+    use qsl_semantics::check::PackageDeclarations;
+    use quire_semantic_value::checking::CheckingLimits;
+    let source = qsl_foundation::Source::read(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "u".to_owned(),
+        b"",
+        0,
+    )
+    .expect("an empty source reads")
+    .reference()
+    .clone();
+    let graph = Arc::new(
+        PackageDeclarations::new(source)
+            .check(CheckingLimits::default())
+            .expect("an empty package checks"),
+    );
+    (0..length).fold(
+        CheckedPackage {
+            graph: Arc::clone(&graph),
+            dependencies: BTreeMap::new(),
+            selections: BTreeMap::new(),
+        },
+        |dependency, link| CheckedPackage {
+            graph: Arc::clone(&graph),
+            dependencies: BTreeMap::from([(
+                PackageId::of_preimage(&link.to_le_bytes()),
+                Arc::new(dependency),
+            )]),
+            selections: BTreeMap::new(),
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_semantics::check::PackageDeclarations;
     use quire_semantic_value::checking::CheckingLimits;
+
+    /// ADR-030: dropping a 100,000-long dependency chain runs on a 128 KiB
+    /// stack. A derived, recursive drop would use one frame per link.
+    #[trace("FR-099-AC-7", "TC-446")]
+    #[test]
+    fn a_dependency_chain_of_any_length_drops_on_a_small_stack() {
+        let chain = dependency_chain(100_000);
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(move || drop(chain))
+            .expect("spawn a 128 KiB thread")
+            .join()
+            .expect("the drop must not overflow a 128 KiB stack");
+    }
 
     /// FR-094 (TC-417), through the layer-4 `CheckedPackage`: `check` is
     /// the model correspondence's only writer. A function over a

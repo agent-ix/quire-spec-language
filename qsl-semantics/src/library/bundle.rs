@@ -851,8 +851,8 @@ impl<'a> From<&'a DefinitionRef> for ExactRefPreimage<'a> {
 /// its [`ResolvedGraphPreimage`], through `quire-canonical`'s named-domain
 /// digest (ADR-013 §2, ADR-013:113: the one RFC 8785 implementation).
 ///
-/// A refusal of the encoder (only a failed heap reservation is reachable
-/// for a preimage of strings, which [`LIMITS`] does not bound) is
+/// A refusal of the encoder (for a preimage of strings, its bytes reaching
+/// [`LIMITS`] or a failed heap reservation) is
 /// [`PackageError::CanonicalSize`]: the graph's canonical form cannot be
 /// produced at its size.
 fn resolved_graph_identity(

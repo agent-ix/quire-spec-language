@@ -72,8 +72,7 @@ use qsl_foundation::ByteDigest;
 use quire_canonical::{Encode, FixedShape, Sink, Writer};
 use serde::Serialize;
 
-use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, OwnerSubject};
-use quire_semantic_value::semantic_node::InvalidSemanticGraph;
+use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSubject};
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 use qsl_foundation::absence::AbsenceMode;
@@ -1745,9 +1744,7 @@ pub(crate) fn declared_type_handle(
 /// [`node_key`] keys structural and application nodes and never a nominal
 /// preimage. Encoding a preimage can refuse, and the refusal is the
 /// caller's nominal-admission fault.
-pub(crate) fn nominal_key(
-    preimage: &impl NodeIdentityPreimage,
-) -> Result<NodeKey, InvalidSemanticGraph> {
+pub(crate) fn nominal_key(preimage: &impl NodeIdentityPreimage) -> Result<NodeKey, NominalRefusal> {
     preimage.digest().map(NodeKey::from_digest)
 }
 

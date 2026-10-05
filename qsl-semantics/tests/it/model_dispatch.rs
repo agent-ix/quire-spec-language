@@ -716,12 +716,15 @@ fn a_ten_thousand_long_redefines_chain_links_on_a_small_stack() {
         .expect("linking must not overflow a 512 KiB stack");
 }
 
-/// FR-083: `family_steps` counts the edges of the family walk and of every
-/// effective-precondition walk together. Dispatching on `op10` of a chain of
-/// 20 edges, the family walk follows the 10 edges below it and the winner's
-/// precondition walk follows all 20 up to `op0`, so the link follows 20
-/// distinct edges: admitted at 20, and refused by the bridge at 19 even
-/// though the family walk alone fits.
+/// FR-083: `family_steps` charges the effective-precondition walks as well
+/// as the family walk, and an edge both follow counts once. Dispatching on
+/// `op10` of a chain of 20 edges, the family walk follows the 10 edges below
+/// it and the winner's precondition walk follows all 20 up to `op0`, 10 of
+/// them the family walk's. At 19 the bridge refuses although the family
+/// walk alone fits, so the precondition walk is charged; at 20 it admits,
+/// so the 10 shared edges are not charged twice (30). That the walks share
+/// one count rather than each having its own is
+/// `family_steps_counts_the_edges_of_every_walk_together`'s.
 #[trace("TC-225", "FR-083-AC-4")]
 #[test]
 fn the_checked_bridge_counts_every_walk_against_one_family_steps() {

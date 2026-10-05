@@ -421,8 +421,10 @@ name.
 
 Partly implemented.
 
-- `LimitExceeded` carries an optional `Locus` (AC-2). The seven-kind
-  `LimitKind` and the setting field (FR-255) are not yet implemented.
+- `LimitExceeded` carries an optional `Locus` (AC-2), and `LimitKind` has
+  the seven kinds of AC-2. A reached limit names its setting through
+  `LimitsField` (FR-277); the FR-255 settings operation is not yet
+  implemented.
 - A family `check` locates its declaration-level limits at the
   declaration's span, and `Typer`'s node-count stop at the node whose
   entry failed. Declarations not read from a unit carry no locus (AC-4, AC-5,

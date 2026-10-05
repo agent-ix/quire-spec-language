@@ -21,10 +21,11 @@ use std::collections::BTreeSet;
 use quire_canonical::{Encode, FixedShape};
 use serde::{Deserialize, Serialize};
 
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, LimitsField};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
 use quire_semantic_value::semantic_node::{
-    InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
+    IdentityRefusal, InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
 };
 
 /// The stable subject projection of the exact admitted owner of a nominal
@@ -194,31 +195,113 @@ pub(crate) fn is_qualified_name(segments: &[String]) -> bool {
 /// node key's bytes.
 pub trait NodeIdentityPreimage {
     /// The SHA-256 digest of this preimage's RFC 8785 JCS encoding.
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph>;
+    ///
+    /// # Errors
+    ///
+    /// As [`preimage_digest`].
+    fn digest(&self) -> Result<[u8; 32], NominalRefusal>;
+}
+
+/// Why a nominal preimage was refused: an `invalid_semantic_graph` refusal,
+/// or its identity encoding reached the `identity.input_bytes` limit.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum NominalRefusal {
+    /// The preimage or its graph is invalid.
+    #[error(transparent)]
+    Graph(#[from] InvalidSemanticGraph),
+    /// The preimage's canonical bytes would exceed `identity.input_bytes`
+    /// (FR-259 Behavior 4): a stage limit, never a malformed value.
+    #[error("stage_limit_exceeded: {0:?}")]
+    Limit(LimitExceeded),
+}
+
+/// The `identity.input_bytes` stage limit an identity encoding reached:
+/// input bytes, its bound and the bytes it needed (FR-259 Behavior 4).
+pub fn identity_limit(bound: u64, required: u64) -> LimitExceeded {
+    LimitExceeded::new(LimitKind::InputBytes, bound, u128::from(required))
+        .named(LimitsField::IdentityInputBytes)
+}
+
+/// A nominal preimage's encoding error: the byte error as the
+/// `identity.input_bytes` limit, and anything else as a non-canonical
+/// preimage.
+fn nominal_refusal(error: quire_canonical::Error) -> NominalRefusal {
+    match IdentityRefusal::from(error) {
+        IdentityRefusal::InputBytes { bound, required } => {
+            NominalRefusal::Limit(identity_limit(bound, required))
+        }
+        IdentityRefusal::Allocation { .. } | IdentityRefusal::NonCanonical => {
+            refuse(SemanticGraphCause::NonCanonicalPreimage).into()
+        }
+    }
 }
 
 /// The SHA-256 digest of `value`'s RFC 8785 bytes, encoded and hashed by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
-/// implementation). A value with no RFC 8785 encoding refuses as
-/// non-canonical. QSL computes the digest here; `check` alone wraps it into a
-/// `NodeKey`.
-pub(crate) fn preimage_digest(value: &impl Encode) -> Result<[u8; 32], InvalidSemanticGraph> {
+/// implementation) under [`IDENTITY_LIMITS`]. QSL computes the digest here;
+/// `check` alone wraps it into a `NodeKey`.
+///
+/// # Errors
+///
+/// [`NominalRefusal::Limit`] naming `identity.input_bytes` when the bytes
+/// would exceed the limit, and a non-canonical preimage when `value` has no
+/// RFC 8785 encoding.
+pub(crate) fn preimage_digest(value: &impl Encode) -> Result<[u8; 32], NominalRefusal> {
     quire_canonical::sha256(value, IDENTITY_LIMITS)
         .map(|digest| *digest.as_bytes())
-        .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
+        .map_err(nominal_refusal)
 }
 
-/// `value`'s RFC 8785 bytes, the preimage [`preimage_digest`] hashes. A
-/// value with no RFC 8785 encoding refuses as non-canonical.
-pub(crate) fn preimage_bytes(value: &impl Encode) -> Result<Vec<u8>, InvalidSemanticGraph> {
-    quire_canonical::to_vec(value, IDENTITY_LIMITS)
-        .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
+/// `value`'s RFC 8785 bytes, the preimage [`preimage_digest`] hashes.
+///
+/// # Errors
+///
+/// As [`preimage_digest`].
+pub(crate) fn preimage_bytes(value: &impl Encode) -> Result<Vec<u8>, NominalRefusal> {
+    quire_canonical::to_vec(value, IDENTITY_LIMITS).map_err(nominal_refusal)
 }
 
 /// Whether `retained` is the node key `preimage` determines.
 pub(crate) fn retains(
     retained: NodeKey,
     preimage: &impl NodeIdentityPreimage,
-) -> Result<bool, InvalidSemanticGraph> {
+) -> Result<bool, NominalRefusal> {
     Ok(preimage.digest()? == *retained.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::{CatalogCoded, Code};
+
+    use super::*;
+
+    /// FR-259 Behavior 4: a nominal preimage whose canonical bytes exceed
+    /// `identity.input_bytes` stops with that stage limit (input bytes, the
+    /// bound, the bytes needed and the setting), `stage_limit_exceeded`, which
+    /// is incomplete work (exit 22), never a non-canonical preimage.
+    #[trace("TC-728", "FR-259-AC-2")]
+    #[test]
+    fn a_nominal_preimage_over_the_identity_byte_limit_is_the_identity_limit() {
+        let bound = IDENTITY_LIMITS.max_bytes();
+        let over = "a".repeat(usize::try_from(bound).expect("16 MiB fits usize"));
+        let Err(NominalRefusal::Limit(limit)) = preimage_digest(&over.as_str()) else {
+            panic!("a preimage of more than {bound} bytes reaches the identity limit");
+        };
+        assert_eq!(limit.kind(), LimitKind::InputBytes);
+        assert_eq!(limit.configured_bound(), bound);
+        assert!(limit.actual() > u128::from(bound));
+        assert_eq!(
+            limit.limits_field().map(LimitsField::as_str),
+            Some("identity.input_bytes")
+        );
+        assert_eq!(
+            limit.catalog_code().code(),
+            Code::StageLimitExceeded.as_str()
+        );
+        assert!(
+            preimage_digest(&"a").is_ok(),
+            "a short preimage has a digest"
+        );
+    }
 }

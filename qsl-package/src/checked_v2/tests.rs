@@ -2342,3 +2342,26 @@ fn frame_entry_of_an_ineligible_kind_refuses_as_invalid_model_binding() {
         other => panic!("expected an invalid_model_binding refusal, got {other:?}"),
     }
 }
+
+/// ADR-030: gathering a 100,000-long dependency closure runs on a 128 KiB
+/// stack and holds every package of it once. A recursive walk would use one
+/// frame per link.
+#[trace("FR-099-AC-7", "TC-446")]
+#[test]
+fn a_dependency_closure_of_any_length_is_held_on_a_small_stack() {
+    const LINKS: usize = 100_000;
+    let chain = crate::checked::dependency_chain(LINKS);
+    let held = std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn_scoped(scope, || {
+                let mut held = BTreeMap::new();
+                super::hold_closure(&chain, &mut held);
+                held.len()
+            })
+            .expect("spawn a 128 KiB thread")
+            .join()
+            .expect("holding the closure must not overflow a 128 KiB stack")
+    });
+    assert_eq!(held, LINKS);
+}

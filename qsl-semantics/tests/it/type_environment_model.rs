@@ -402,9 +402,10 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     assert_eq!(limit.locus(), None);
 }
 
-/// A diamond `model.d.d -> model.d.b, model.d.c; model.d.b -> model.d.a;
-/// model.d.c -> model.d.a` plus an unrelated `model.z`: four `supertypes`
-/// edges in `model.d.d`'s closure, and no chain longer than two.
+/// A diamond `model.d.d -> model.d.b, model.d.c, model.d.a;
+/// model.d.b -> model.d.a; model.d.c -> model.d.a` plus an unrelated
+/// `model.z`: five `supertypes` edges in `model.d.d`'s closure over four
+/// types, and no chain longer than two.
 fn diamond_package() -> DomainPackage {
     package(
         "bundle.qsl485-diamond",
@@ -412,7 +413,7 @@ fn diamond_package() -> DomainPackage {
             object_type_record("model.d.a", &[]),
             object_type_record("model.d.b", &["model.d.a"]),
             object_type_record("model.d.c", &["model.d.a"]),
-            object_type_record("model.d.d", &["model.d.b", "model.d.c"]),
+            object_type_record("model.d.d", &["model.d.b", "model.d.c", "model.d.a"]),
             object_type_record("model.z", &[]),
             population_record(&["model.d.a", "model.z"]),
         ],
@@ -421,10 +422,11 @@ fn diamond_package() -> DomainPackage {
 
 /// The model's walk and `TypeEnvironment` share one `ancestor_steps`: the
 /// same NFR-012 default of 16777216, and the same edge count over a type's
-/// closure. Over the diamond, both admit at 4 edges (the walk from
-/// `model.d.d` to `model.z` completes `type-mismatch`) and both stop at 3
+/// closure. Over the diamond, both admit at 5 edges (the walk from
+/// `model.d.d` to `model.z` completes `type-mismatch`) and both stop at 4
 /// (the walk refuses `ancestor-steps`, check time stops at an edge-count
-/// stage limit of 3 reaching 4), though no chain is longer than two.
+/// stage limit of 4 whose actual counter is the bound plus one), though the
+/// closure holds only four types and no chain is longer than two.
 #[trace("TC-220", "FR-082-AC-6", "TC-434", "NFR-012")]
 #[test]
 fn check_and_evaluation_share_one_default_and_one_edge_count() {
@@ -443,7 +445,7 @@ fn check_and_evaluation_share_one_default_and_one_edge_count() {
         DEFAULT_ANCESTOR_STEPS
     );
 
-    const EDGES: u64 = 4;
+    const EDGES: u64 = 5;
     let domain_package = diamond_package();
     let view = view(&domain_package, EDGES);
 

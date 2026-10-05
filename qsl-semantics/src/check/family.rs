@@ -1128,7 +1128,7 @@ pub(crate) fn check_declaration_body(
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             let measure = measure_typer.infer(measure, None, input.measure_location)?;
             measure_slot_names = measure_typer.slot_names().to_vec();
-            formed_units.extend(measure_typer.into_formed_units());
+            formed_units.append(measure_typer.into_formed_units());
             Some(measure)
         }
         None => None,

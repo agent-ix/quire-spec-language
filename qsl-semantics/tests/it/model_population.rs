@@ -3192,20 +3192,24 @@ fn qsl204_an_over_limit_domain_package_refuses_admission_naming_the_limit() {
     }
 }
 
-/// A diamond: `model.A`; `model.B -> model.A`; `model.C -> model.A`;
-/// `model.D -> model.B, model.C`, with [`P1_POPULATION`] closed over all
-/// four. `D`'s two ancestor paths to `A` are each two generalization steps.
+/// A diamond with an edge above its join and one across it: `model.Z`;
+/// `model.A -> model.Z`; `model.B -> model.A`; `model.C -> model.A`;
+/// `model.D -> model.B, model.C, model.A`, with [`P1_POPULATION`] closed over
+/// all five. `D`'s closure holds six distinct `supertypes` edges over five
+/// types; its three ancestor paths to `Z` follow eight edges between them,
+/// since `A -> Z` lies on all three.
 fn fixture_diamond() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.diamond"),
         vec![
-            object_type("model.A", vec![]),
+            object_type("model.Z", vec![]),
+            object_type("model.A", vec!["model.Z"]),
             object_type("model.B", vec!["model.A"]),
             object_type("model.C", vec!["model.A"]),
-            object_type("model.D", vec!["model.B", "model.C"]),
+            object_type("model.D", vec!["model.B", "model.C", "model.A"]),
             population_record(
                 P1_POPULATION,
-                &["model.A", "model.B", "model.C", "model.D"],
+                &["model.A", "model.B", "model.C", "model.D", "model.Z"],
                 Extent::Closed,
             ),
         ],
@@ -3215,20 +3219,21 @@ fn fixture_diamond() -> DomainPackage {
 /// The same bound on the build phases themselves. Ancestor-path
 /// enumeration is the one part of normalization bounded while it runs
 /// (`ancestor_steps`), an edge count over `D`'s whole closure (FR-082,
-/// NFR-012): the diamond's four `supertypes` edges are admitted at
-/// `ancestor_steps = 4`, and `ancestor_steps = 3` refuses `ancestor-steps`
-/// naming `model.D` and the bound, before admission runs, although no path
-/// is longer than two steps.
+/// NFR-012), each distinct edge charged once however many paths reach it:
+/// the diamond's six distinct edges are admitted at `ancestor_steps = 6`,
+/// and `ancestor_steps = 5` refuses `ancestor-steps` naming `model.D` and
+/// the bound, before admission runs, although no path is longer than three
+/// steps.
 ///
-/// Mutation used: raising the tight bound to 4 turns the refusal
-/// assertion red, since `D`'s four edges then fit.
+/// What each bound rules out: counting per path (8 edges) refuses at 6;
+/// counting types (5) admits at 5; a chain depth (3) admits at 5.
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
     let domain_package = fixture_diamond();
 
     let fits = ModelNormalizationLimits {
-        ancestor_steps: 4,
+        ancestor_steps: 6,
         ..ModelNormalizationLimits::UNLIMITED
     };
     assert!(
@@ -3240,7 +3245,7 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
     );
 
     let over = ModelNormalizationLimits {
-        ancestor_steps: 3,
+        ancestor_steps: 5,
         ..ModelNormalizationLimits::UNLIMITED
     };
     match admit_p1_under(&domain_package, over).map_err(|outcome| *outcome) {
@@ -3251,7 +3256,7 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
                 refusal.cause,
                 ModelRefusalCause::AncestorSteps {
                     from: DeclarationKey::fixture("model.D"),
-                    limit: 3,
+                    limit: 5,
                 }
             );
         }

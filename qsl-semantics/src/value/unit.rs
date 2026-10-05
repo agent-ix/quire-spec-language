@@ -24,13 +24,13 @@ use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
     is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalOwner,
-    CanonicalRational, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-    RationalDocument,
+    CanonicalRational, NodeIdDocument, NodeIdentityPreimage, NodeOwner, NominalRefusal,
+    OwnerSelection, RationalDocument,
 };
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
 use quire_semantic_value::semantic_node::{
-    CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
+    CanonicalNodeId, IdentityRefusal, InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
 };
 use quire_semantic_value::unit::{
     compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, NominalDeclaration,
@@ -180,13 +180,13 @@ impl DimensionPreimage {
     }
 
     /// The RFC 8785 bytes whose SHA-256 is the dimension's node key.
-    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, NominalRefusal> {
         preimage_bytes(&self.canonical())
     }
 
     /// The dimension's qualified name and preimage bytes, which lowering
     /// builds its node from (FR-094).
-    fn nominal_declaration(&self) -> Result<NominalDeclaration, InvalidSemanticGraph> {
+    fn nominal_declaration(&self) -> Result<NominalDeclaration, NominalRefusal> {
         Ok(NominalDeclaration {
             qualified_declaration: self.qualified_declaration.clone(),
             preimage: self.preimage_bytes()?,
@@ -195,7 +195,7 @@ impl DimensionPreimage {
 }
 
 impl NodeIdentityPreimage for DimensionPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+    fn digest(&self) -> Result<[u8; 32], NominalRefusal> {
         preimage_digest(&self.canonical())
     }
 }
@@ -345,13 +345,13 @@ impl UnitPreimage {
     }
 
     /// The RFC 8785 bytes whose SHA-256 is the unit's node key.
-    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, NominalRefusal> {
         preimage_bytes(&self.canonical())
     }
 
     /// The unit's qualified name and preimage bytes, which lowering builds
     /// its node from (FR-094).
-    fn nominal_declaration(&self) -> Result<NominalDeclaration, InvalidSemanticGraph> {
+    fn nominal_declaration(&self) -> Result<NominalDeclaration, NominalRefusal> {
         Ok(NominalDeclaration {
             qualified_declaration: self.qualified_declaration.clone(),
             preimage: self.preimage_bytes()?,
@@ -360,7 +360,7 @@ impl UnitPreimage {
 }
 
 impl NodeIdentityPreimage for UnitPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+    fn digest(&self) -> Result<[u8; 32], NominalRefusal> {
         preimage_digest(&self.canonical())
     }
 }
@@ -414,7 +414,7 @@ pub fn admit_unit_graph(
     dimensions: impl IntoIterator<Item = (DimensionPreimage, NodeKey)>,
     units: impl IntoIterator<Item = (UnitPreimage, NodeKey)>,
     owners: &OwnerSelection,
-) -> Result<UnitGraph, InvalidSemanticGraph> {
+) -> Result<UnitGraph, NominalRefusal> {
     let mut provenance = Vec::new();
     let mut keys = BTreeSet::new();
     let mut admitted_dimensions = BTreeMap::new();
@@ -429,7 +429,7 @@ pub fn admit_unit_graph(
         )
         .map_err(refuse)?;
         if !keys.insert(key) {
-            return Err(refuse(SemanticGraphCause::DuplicateNode));
+            return Err(refuse(SemanticGraphCause::DuplicateNode).into());
         }
         provenance.push(Provenance {
             key_matches: retains(key, &preimage)?,
@@ -443,7 +443,7 @@ pub fn admit_unit_graph(
             .check_semantics(preimage.nominal_declaration()?)
             .map_err(refuse)?;
         if !keys.insert(key) {
-            return Err(refuse(SemanticGraphCause::DuplicateNode));
+            return Err(refuse(SemanticGraphCause::DuplicateNode).into());
         }
         provenance.push(Provenance {
             key_matches: retains(key, &preimage)?,
@@ -453,10 +453,10 @@ pub fn admit_unit_graph(
     }
     let graph = UnitGraph::from_checked_nodes(&admitted_dimensions, &admitted_units)?;
     if provenance.iter().any(|node| !owners.contains(&node.owner)) {
-        return Err(refuse(SemanticGraphCause::OwnerNotSelected));
+        return Err(refuse(SemanticGraphCause::OwnerNotSelected).into());
     }
     if provenance.iter().any(|node| !node.key_matches) {
-        return Err(refuse(SemanticGraphCause::StaleKey));
+        return Err(refuse(SemanticGraphCause::StaleKey).into());
     }
     Ok(graph)
 }
@@ -513,8 +513,17 @@ impl CompoundUnitPreimage {
         &self.terms
     }
 
-    /// The compound-arm [`UnitId`] of exactly these spelled terms.
-    pub fn id(&self) -> UnitId {
-        compound_unit_id(self.terms.iter().map(|(id, exponent)| (*id, exponent)))
+    /// The compound-arm [`UnitId`] of exactly these spelled terms, under
+    /// [`IDENTITY_LIMITS`].
+    ///
+    /// # Errors
+    ///
+    /// As [`compound_unit_id`]: the preimage's bytes reached the identity
+    /// byte limit, or a heap reservation failed.
+    pub fn id(&self) -> Result<UnitId, IdentityRefusal> {
+        compound_unit_id(
+            self.terms.iter().map(|(id, exponent)| (*id, exponent)),
+            IDENTITY_LIMITS,
+        )
     }
 }

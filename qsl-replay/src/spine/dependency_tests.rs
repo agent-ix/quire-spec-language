@@ -526,8 +526,11 @@ fn reached_dependency_limit(
 
 /// ADR-030: no fixed ceiling bounds how deeply library compiles nest. A
 /// chain of 1,000 libraries compiles at the default limits on a thread with
-/// a 512 KiB stack: the resolution, the closure read and the drop of the
-/// nested packages all run on a constant native stack.
+/// a 512 KiB stack, so the resolution does not recurse per library. The
+/// closure read's gathering and the drop of a nested package chain are
+/// shown on a 128 KiB stack at 100,000 links in `qsl-package`
+/// (`a_dependency_closure_of_any_length_is_held_on_a_small_stack`,
+/// `a_dependency_chain_of_any_length_drops_on_a_small_stack`).
 #[trace("FR-099-AC-7", "TC-446")]
 #[test]
 fn a_dependency_chain_of_any_length_compiles_on_a_small_stack() {
@@ -572,6 +575,10 @@ fn the_libraries_limit_refuses_the_import_that_would_exceed_it() {
     assert_eq!(limit.configured_bound(), 2);
     assert_eq!(limit.actual(), 3);
     assert_eq!(limit.limits_field(), Some(LimitsField::DependencyLibraries));
+    assert_eq!(
+        limit.limits_field().map(LimitsField::as_str),
+        Some("dependency.libraries")
+    );
     assert!(compile_under(&source, chain, limits(3)).is_ok());
 }
 
@@ -596,6 +603,10 @@ fn the_import_edges_limit_refuses_the_import_that_would_exceed_it() {
     assert_eq!(
         limit.limits_field(),
         Some(LimitsField::DependencyImportEdges)
+    );
+    assert_eq!(
+        limit.limits_field().map(LimitsField::as_str),
+        Some("dependency.import_edges")
     );
     assert!(compile_under(&source, chain, limits(3)).is_ok());
 }
@@ -622,6 +633,10 @@ fn the_source_bytes_limit_refuses_the_library_that_would_exceed_it() {
     assert_eq!(
         limit.limits_field(),
         Some(LimitsField::DependencySourceBytes)
+    );
+    assert_eq!(
+        limit.limits_field().map(LimitsField::as_str),
+        Some("dependency.source_bytes")
     );
     assert!(compile_under(&source, chain, limits(total)).is_ok());
 }

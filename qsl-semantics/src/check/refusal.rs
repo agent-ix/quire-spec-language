@@ -8,6 +8,7 @@ use quire_exact::EffectiveId;
 use quire_exact::Integer;
 use quire_exact::{IllTyped, IllTypedCause};
 use quire_semantic_value::location::Location;
+use quire_semantic_value::semantic_node::IdentityRefusal;
 
 /// FR-113: why a protocol's `ProtocolClause` checker refused one scoped
 /// anchor, or a name it declares. Each variant's `span` is the refusal's
@@ -582,6 +583,12 @@ pub enum CheckCause {
     /// `invalid_package`: a node preimage that cannot be encoded (an empty
     /// or non-identifier name, a number RFC 8785 cannot render exactly).
     NodePreimage(super::node_key::NodeKeyRefusal),
+    /// A formed compound unit's identity could not be encoded (FR-259
+    /// Behavior 4): its bytes reached `identity.input_bytes`
+    /// (`stage_limit_exceeded`), a heap reservation failed
+    /// (`resource_exhausted`), or, a broken invariant, it has no RFC 8785
+    /// encoding.
+    Identity(IdentityRefusal),
     /// FR-113: a scoped anchor's resolution or a protocol's declaration
     /// collection refused. Boxed for the same reason as
     /// `InvalidDispatchDeclaration` above: this would otherwise be
@@ -814,6 +821,9 @@ impl CheckCause {
             Self::MissingSelection { .. } => Code::MissingDeclaration,
             Self::UnsupportedFeature { .. } => Code::UnknownRequiredFeature,
             Self::InternalFault(_) => Code::RuntimeInvariant,
+            Self::Identity(IdentityRefusal::InputBytes { .. }) => Code::StageLimitExceeded,
+            Self::Identity(IdentityRefusal::Allocation { .. }) => Code::ResourceExhausted,
+            Self::Identity(IdentityRefusal::NonCanonical) => Code::RuntimeInvariant,
             Self::ProtocolAnchor(cause) => cause.code(),
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
@@ -852,7 +862,13 @@ impl CheckCause {
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
             Self::UnsupportedFeature { .. } => Some("unsupported-feature"),
-            Self::InternalFault(_) => Some("established-invariant-broken"),
+            Self::InternalFault(_) | Self::Identity(IdentityRefusal::NonCanonical) => {
+                Some("established-invariant-broken")
+            }
+            Self::Identity(IdentityRefusal::InputBytes { .. }) => {
+                Some(LimitKind::InputBytes.catalog_cause())
+            }
+            Self::Identity(IdentityRefusal::Allocation { .. }) => Some("allocation-failed"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None
             }

@@ -106,7 +106,9 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::ModelRefusalCause;
+use qsl_semantics::value::identity_limit;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
+use quire_semantic_value::semantic_node::IdentityRefusal;
 
 use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary};
 
@@ -274,6 +276,16 @@ fn limit_of(
             Some(at(limit, region.as_ref()))
         }
         CompileRefusal::Check { refusals, region } => {
+            if let Some((bound, required)) =
+                refusals.iter().find_map(|refusal| match refusal.cause {
+                    CheckCause::Identity(IdentityRefusal::InputBytes { bound, required }) => {
+                        Some((bound, required))
+                    }
+                    _ => None,
+                })
+            {
+                return Some(at(identity_limit(bound, required), region.as_ref()));
+            }
             let cause = refusals.iter().find_map(|refusal| match &refusal.cause {
                 CheckCause::ResourceExhausted(cause) => Some(cause),
                 _ => None,
@@ -301,6 +313,7 @@ fn limit_of(
                     }
                     _ => limit.clone().named(LimitsField::EnvironmentWorkUnits),
                 }),
+                AssemblyCause::IdentityLimit(limit) => Some(limit.clone()),
                 _ => None,
             })
         }

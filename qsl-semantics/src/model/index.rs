@@ -760,8 +760,10 @@ mod tests {
         )
     }
 
-    /// The per-call walk `conformance::type_conforms` ran before the index,
-    /// kept verbatim as the oracle [`RecordIndex::conforms`] must match.
+    /// The reference edge-charging walk of FR-082, the oracle
+    /// [`RecordIndex::conforms`] must match: a depth-first walk over the
+    /// records with a visited set, charging each `supertypes` edge before it
+    /// is followed and refusing at the first edge past `max_steps`.
     fn walked(
         domain_package: &DomainPackage,
         s: &DeclarationKey,

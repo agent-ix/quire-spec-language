@@ -177,9 +177,14 @@ from source, binds it to the recomputed
 and links it through `CheckedPackage::link_with`; E3 types an imported call
 from the library's checked graph (`check::family` `Application::Imported`),
 lowers it to a `dependency_reference` callee, and the evaluator runs it
-against the library's package. TC-446 passes locally for AC-1 to AC-6
+against the library's package. TC-446 passes locally for AC-1 to AC-7
 (`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are `qsl-cst`'s
-`an_import_names_only_its_library_identity`). AC-5's `g::f(3)` clause was
+`an_import_names_only_its_library_identity`). AC-7's `DependencyLimits`
+(`dependency.libraries`, `dependency.import_edges`, `dependency.source_bytes`)
+are charged by the S4 resolution and refuse as named `LimitExceeded`s, also
+through the lifecycle `check` (`check_names_the_dependency_limit_field_it_reached`);
+the resolution, the closure read and the drop of a nested package chain run
+on a constant native stack. AC-5's `g::f(3)` clause was
 amended to expect the `Int[0, 9]` conversion node a local call also writes. D-1's CLI `libraries` supplier (FR-027-AC-10, TC-446 step 7) and
 replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented. The CLI renders a refusal against the source its
 region is in, a library's or the program's

@@ -1205,6 +1205,73 @@ fn check_names_the_type_environment_limit_field_it_reached() {
     );
 }
 
+/// FR-277-AC-1 (TC-758 step 1) and FR-099-AC-7 for the S4 source
+/// resolution `check` runs: a unit importing `test/geometry` reaches one
+/// library, one import edge and the library's source bytes, and each
+/// `dependency.*` limit one below that stops `check` with `LimitExceeded`
+/// naming its field.
+#[trace("TC-758", "FR-277-AC-1", "TC-446", "FR-099-AC-7")]
+#[test]
+fn check_names_the_dependency_limit_field_it_reached() {
+    let dependencies = DependencyInput::new(vec![geometry()]).expect("admissible");
+    let unit = format!(
+        "{HEADER}import \"test/geometry\" as g;\n\
+         function h using v(): Boolean pure {{ true }}\n"
+    );
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &request(unit.as_bytes()),
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .expect("the importing unit parses")
+    .into_value();
+    let models = select(
+        &parsed,
+        &BTreeMap::new(),
+        SpineLimits::default().model,
+        &cancel,
+    )
+    .expect("the importing unit selects no model")
+    .into_value();
+    let run = |edit: fn(&mut SpineLimits, usize)| {
+        let (parsed, models, dependencies) = (&parsed, &models, &dependencies);
+        move |value: u64| {
+            let mut limits = SpineLimits::default();
+            edit(
+                &mut limits,
+                usize::try_from(value).expect("a test bound fits usize"),
+            );
+            reached(check(
+                parsed,
+                models,
+                dependencies,
+                &LockEvidence::default(),
+                limits,
+                &Cancel::new(),
+            ))
+        }
+    };
+    assert_field(
+        LimitsField::DependencyLibraries,
+        FoundationKind::NodeCount,
+        10,
+        run(|limits, value| limits.dependencies.libraries = value),
+    );
+    assert_field(
+        LimitsField::DependencyImportEdges,
+        FoundationKind::EdgeCount,
+        10,
+        run(|limits, value| limits.dependencies.import_edges = value),
+    );
+    assert_field(
+        LimitsField::DependencySourceBytes,
+        FoundationKind::InputBytes,
+        1_000_000,
+        run(|limits, value| limits.dependencies.source_bytes = value),
+    );
+}
+
 /// A reached limit is a limit, never a refusal of the input or a fault, and
 /// it reads back as the stage's limit refusal for a caller that renders it.
 #[trace("TC-758", "FR-277-AC-1")]

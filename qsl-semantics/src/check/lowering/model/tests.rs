@@ -1161,11 +1161,18 @@ mod quantities {
         let square = form(UnitOperation::Multiply, &metre, &metre);
         let back = form(UnitOperation::Divide, &square, &metre);
         let mut formed = table.clone();
-        formed.extend([per_second.clone(), ratio.clone(), back.clone()]);
+        for unit in [&per_second, &ratio, &back] {
+            formed
+                .insert(unit.clone())
+                .expect("a compound unit has an id");
+        }
         let (keys, graph) = lower(&[], formed, |lowering| {
             [&per_second, &ratio, &back].map(|unit| {
                 lowering
-                    .type_node(&ValueType::Quantity(unit.id()), &generated_location())
+                    .type_node(
+                        &ValueType::Quantity(unit.id().expect("a compound unit has an id")),
+                        &generated_location(),
+                    )
                     .expect("a held compound unit keys")
             })
         });
@@ -1267,17 +1274,19 @@ mod quantities {
     }
 
     /// FR-094-AC-7: a table built from the graph's units through the public
-    /// `FromIterator`, not `UnitTable::declared`, holds the declared `metre`
-    /// unit but no admitted node to build it from. Keying a `metre`
+    /// `UnitTable::insert`, not `UnitTable::declared`, holds the declared
+    /// `metre` unit but no admitted node to build it from. Keying a `metre`
     /// quantity is an internal fault naming the unit's key, with no key and
     /// no node.
     #[trace("FR-094-AC-7", "TC-419")]
     #[test]
     fn a_declared_unit_with_no_admitted_node_is_an_internal_fault() {
-        let table: UnitTable = unit_graph()
-            .units()
-            .map(|unit| QuantityUnit::Declared(Box::new(unit.clone())))
-            .collect();
+        let mut table = UnitTable::default();
+        for unit in unit_graph().units() {
+            table
+                .insert(QuantityUnit::Declared(Box::new(unit.clone())))
+                .expect("a declared unit's id is its key");
+        }
         assert!(table.get(UnitId::declared(node_key(METRE))).is_some());
         let (result, graph) = lower(&[], table, |lowering| {
             lowering.type_node(&quantity(METRE), &generated_location())

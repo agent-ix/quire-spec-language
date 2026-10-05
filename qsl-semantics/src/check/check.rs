@@ -1536,9 +1536,13 @@ impl<'a> Typer<'a> {
                 };
                 let unit = result_unit(operation, l, r)
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+                let unit = IdentifiedUnit::new(unit).map_err(|refusal| CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::Identity(refusal),
+                })?;
                 (
                     NodeKind::Quantity(operator, left_box, right_box),
-                    ValueType::Quantity(self.units.form(IdentifiedUnit::new(unit))),
+                    ValueType::Quantity(self.units.form(unit)),
                 )
             }
             _ => return Err(mismatch(location)),

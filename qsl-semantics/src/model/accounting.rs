@@ -59,7 +59,7 @@ impl Default for ModelNormalizationLimits {
             dispatch_candidates: 1_600_000,
             hashed_bytes: 268_435_456,
             work_units: 16_777_216,
-            ancestor_steps: 16_777_216,
+            ancestor_steps: quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS,
             family_steps: 16_777_216,
         }
     }

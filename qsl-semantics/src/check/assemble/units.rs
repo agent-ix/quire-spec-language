@@ -17,7 +17,7 @@ use quire_exact::{Integer, NodeKey, Rational};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
 use crate::check::lowering::strongly_connected;
 use crate::check::node_key::{nominal_key, SourceOwner};
-use crate::value::semantic_node::OwnerSelection;
+use crate::value::semantic_node::{NominalRefusal, OwnerSelection};
 use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use quire_semantic_value::unit::UnitGraph;
@@ -331,9 +331,7 @@ pub(super) fn assemble(
         .min_by_key(|span| span.start)
         .copied()
         .unwrap_or(Span { start: 0, end: 0 });
-    let fault = |refusal: InvalidSemanticGraph| {
-        vec![error(AssemblyCause::NominalAdmission(refusal), first_span)]
-    };
+    let fault = |refusal: NominalRefusal| vec![error(AssemblyCause::nominal(refusal), first_span)];
     let node_owner = owner.node_owner();
     let mut dimension_keys: Vec<Option<NodeKey>> = vec![None; dimensions.len()];
     let mut dimension_nodes = Vec::with_capacity(dimensions.len());
@@ -353,7 +351,7 @@ pub(super) fn assemble(
             }
             let preimage =
                 DimensionPreimage::new(node_owner.clone(), vec![form.name.name.clone()], terms)
-                    .map_err(fault)?;
+                    .map_err(|refusal| fault(refusal.into()))?;
             let key = nominal_key(&preimage).map_err(fault)?;
             dimension_keys[index] = Some(key);
             dimension_nodes.push((preimage, key));
@@ -366,9 +364,12 @@ pub(super) fn assemble(
             let dimension = unit_dimension[index]
                 .and_then(|dimension| dimension_keys[dimension])
                 .ok_or_else(|| {
-                    fault(InvalidSemanticGraph {
-                        cause: SemanticGraphCause::UnknownDimension,
-                    })
+                    fault(
+                        InvalidSemanticGraph {
+                            cause: SemanticGraphCause::UnknownDimension,
+                        }
+                        .into(),
+                    )
                 })?;
             let target = unit_edges[index]
                 .first()
@@ -381,7 +382,7 @@ pub(super) fn assemble(
                 &scales[index],
                 &offsets[index],
             )
-            .map_err(fault)?;
+            .map_err(|refusal| fault(refusal.into()))?;
             let key = nominal_key(&preimage).map_err(fault)?;
             unit_keys[index] = Some(key);
             unit_nodes.push((preimage, key));
