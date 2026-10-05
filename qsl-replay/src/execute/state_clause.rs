@@ -23,7 +23,7 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, ObservationLimits,
-    Provisions,
+    OutOfRange, PostStateRange, Provisions,
 };
 use quire_exact::Identifier;
 
@@ -89,6 +89,7 @@ pub struct StateClauseReplayResult {
     occurrence_key: OccurrenceKey,
     observation: ClauseSelectionInput,
     documents: Vec<DocumentRef>,
+    range_violations: Vec<OutOfRange>,
 }
 
 impl StateClauseReplayResult {
@@ -128,6 +129,14 @@ impl StateClauseReplayResult {
     pub fn documents(&self) -> &[DocumentRef] {
         &self.documents
     }
+    /// FR-122's range violations: every integer the post snapshot holds
+    /// outside its field's declared range, each naming the object and
+    /// field, the declared range and the exact observed value, in walk
+    /// order. Empty when the post snapshot is in range or the observation
+    /// has no post snapshot.
+    pub fn range_violations(&self) -> &[OutOfRange] {
+        &self.range_violations
+    }
 }
 
 /// FR-122: replay `envelope`'s state-clause counterexample. `wire` is
@@ -144,7 +153,11 @@ impl StateClauseReplayResult {
 /// admission), and when FR-106 admission fails. The counterexample refuted
 /// the clause, so the proved verdict is `violation`: `false` reproduces;
 /// `true` is `inconclusive`, `Verdicts`; an evaluation that completed no
-/// value is `inconclusive`, `NoValue`.
+/// value is `inconclusive`, `NoValue`. A postcondition's post snapshot is
+/// the subject's output: an integer in it outside its declared range is
+/// admitted exactly and is itself the witness of a violation, so the
+/// replay reproduces whatever the clause evaluates over the exact value,
+/// and [`StateClauseReplayResult::range_violations`] names each one.
 ///
 /// Admission and the domain package re-normalization run under their
 /// published defaults: no `quire.value.accounting/v1` counter names either.
@@ -218,7 +231,10 @@ pub fn replay_state_clause(
             snapshots: &documents,
             invocations: &documents,
         },
-        observation_limits: ObservationLimits::default(),
+        observation_limits: ObservationLimits {
+            post_state: PostStateRange::Witness,
+            ..ObservationLimits::default()
+        },
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         package_id,
@@ -273,6 +289,19 @@ pub fn replay_state_clause(
         | ClauseDisposition::FrameViolation(_) => {
             return fault("clause-check-reports-admission-or-evaluation")
         }
+    };
+    // FR-106 check 6.5: a post-state integer outside its declared range is
+    // the witness of a violation of the operation's contract, whether or
+    // not the clause itself holds over the exact value.
+    let range_violations: Vec<OutOfRange> = observations
+        .as_ref()
+        .and_then(|observed| observed.post.as_ref())
+        .map(|post| post.out_of_range.clone())
+        .unwrap_or_default();
+    let replayed = if value.is_some() && !range_violations.is_empty() {
+        Category::Violation
+    } else {
+        replayed
     };
     let proved = Verdict::from_category(Category::Violation);
     // FR-268: an agreeing verdict compares the payload's record with the
@@ -334,6 +363,7 @@ pub fn replay_state_clause(
         occurrence_key: envelope.occurrence_key().clone(),
         observation: payload.observation.clone(),
         documents: report.provenance.documents,
+        range_violations,
     })
 }
 

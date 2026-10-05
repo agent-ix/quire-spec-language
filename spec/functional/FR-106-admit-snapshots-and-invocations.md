@@ -268,6 +268,20 @@ required; check 10 settles it.
       exactly when its target object's type conforms to `T` (QSpec FR-151:
       the same type, or a chain of declared supertypes leads from it to
       `T`).
+      Inputs are refused, outputs are evidence: this refusal applies to
+      every current snapshot, every pre snapshot and every operation
+      argument. A postcondition invocation's post snapshot is what the
+      subject produced, so, when the caller selects post-state witnessing
+      (`ObservationLimits::post_state` is `Witness`), an integer in it
+      outside its declared `Int[lower, upper]` is not refused. Admission
+      SHALL admit the exact integer, never coerced or clamped, and SHALL
+      report it as an out-of-range observation naming the object, the
+      field, the declared range and the observed value, in walk order. The
+      field's declared range is part of the operation's contract, so the
+      observation is the witness of a violation; the caller settles it. A
+      post-state value of the wrong kind or not in FR-038's spelling is
+      still refused. The default is `Refuse`, and a `Frame` run's post
+      snapshot always refuses.
 7. Completeness check. If a required population is not marked `complete`, then
    admission SHALL return `Incomplete` with `incomplete_population`/
    `incomplete-scope`, naming the first such population in walk order.
@@ -350,6 +364,7 @@ required; check 10 settles it.
 | FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; over the same unit in a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub` (so `config_history` stays the one population covering `ReachesTarget`), `target` naming `a1` in `archive`, which the snapshot lists with no objects and marks `complete: false`, and which no field of `a`, `b` or `c` reaches, returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `archive`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. In that variant, `target` naming a `Sub` object of a complete `archive` admits, typed `Sub`. Over the base `probe` unit plus an object type `Other` unrelated to `ConfigVersion` and a population `others` over it, `target` naming an `Other` object of a complete `others` refuses `invalid_runtime_input`/`wrong-value-kind`; over the variant plus an operation `probeSub(target: Sub)` on `ConfigVersion` and a precondition on it, `PreCall` with `target` naming `a` refuses `invalid_runtime_input`/`wrong-value-kind`. | Test (TC-464) |
 | FR-106-AC-9 | The forbidden-parent-change invocation (its post sets `child.parent` absent, outside `attemptUpdate`'s frame) selected for a precondition admits the pre observation, `self` and parameters with no post observation, result or delta and no frame check, and the precondition's verdict equals its verdict under `PreCall` over the same pre snapshot, `self` and parameters. The same invocation whose `post` snapshot is absent from the provision, and the same invocation whose `post` snapshot bytes are malformed (not JSON), each admit and give that same verdict, with no `unavailable_observation`, `byte-digest-mismatch` or other refusal. Beyond check 1.3's number rule (FR-106-AC-11), admission neither requires nor reads the invocation's `post`, `result`, `created` or `deleted` members: the same invocation with those four members removed, and with each of them ill-formed, admits and gives that same verdict, and a `probe` invocation whose `result` is `{"boolean": true}`, selected for `ReachesTarget`, admits and gives `ReachesTarget`'s verdict under `PreCall` over the same pre snapshot, `self` and parameters. | Test (TC-464) |
 | FR-106-AC-11 | The authorized-change invocation selected for the precondition `AttemptUpdatePre` refuses `noncanonical_wire` in check 1.3 when its `post` is `9007199254740993` (`inexact-integer`, `document_pointer` `/post`), its `result` is `0.1000000000000000000001` (`inexact-number`, `/result`), its `created` is `[0,1e-400]` (`inexact-number`, `/created/1`) or its `deleted` is `[{"a/b":18446744073709551616}]` (`inexact-integer`, `/deleted/0/a~1b`), although admission reads none of those members further; with those members `2`, `0.1`, `[0,1e-300]` and `[{"a/b":9007199254740992}]` it admits. | Test (TC-465) |
+| FR-106-AC-12 | Inputs are refused, outputs are evidence. Over `Int[0, 1000]`, an out-of-range integer in an operation argument, or in a snapshot admitted with no witness sink, refuses `invalid_runtime_input`/`invalid-value`; an in-range one admits. With the witness sink (a postcondition invocation's post snapshot under `PostStateRange::Witness`), `"-1"` and `"1001"` admit as exactly -1 and 1001 and each is reported with its declared range `[0, 1000]`, its object and its field; an in-range value reports nothing. | Test (TC-465) |
 
 ## Dependencies
 

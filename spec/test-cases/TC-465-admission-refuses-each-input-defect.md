@@ -15,7 +15,7 @@ and input path, that completeness precedes closure, that the frame compares
 scalar as well as reference fields, and that a document with several defects
 reports the first by FR-106's order.
 
-Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11.
+Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11, FR-106-AC-12.
 
 ## Test Procedure
 
@@ -98,11 +98,17 @@ config_history, "key": "root"}}}`, `result` `null`, and the healthy-parent
 snapshot as both pre and post. Tag the tests
 `#[trace("TC-465", "FR-106-AC-n")]`.
 
+FR-106-AC-12 (unit): admit an `Int[0, 1000]` scalar `-1`, `1000` and `1001`
+with no witness sink, then `-1`, `1001` and `7` with one.
+
 ## Expected Results
 
 Each row gives exactly its expected record and nothing else. Rows 1 and 23
 are `Incomplete`, row 25 admits, and every other row is `Refused`. No failing
-row yields an `AdmittedObservations`.
+row yields an `AdmittedObservations`. FR-106-AC-12: with no sink `-1` refuses
+`invalid_runtime_input`/`invalid-value`, `1000` admits; with a sink `-1` and
+`1001` admit exactly and are reported with `[0, 1000]`, and `7` reports
+nothing.
 
 ## Status
 

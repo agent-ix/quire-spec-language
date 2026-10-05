@@ -930,3 +930,143 @@ fn replaying_one_envelope_twice_gives_equal_results() {
         ]
     );
 }
+
+/// FR-122-AC-7: the post-state range violations of `result` as `(object
+/// key, field, lower, upper, observed)`.
+fn range_violations(
+    result: &StateClauseReplayResult,
+) -> Vec<(String, String, String, String, String)> {
+    result
+        .range_violations()
+        .iter()
+        .map(|violation| {
+            (
+                violation.object.object().as_str().to_owned(),
+                violation.field.clone(),
+                violation.range.lower().to_string(),
+                violation.range.upper().to_string(),
+                violation.observed.to_string(),
+            )
+        })
+        .collect()
+}
+
+/// TC-517 step 7 (FR-122-AC-7): the wrapping debit. `child.versionNumber`
+/// goes from 0 to a native post-state of -1 outside `Int[0, 1000]`. The
+/// replay admits -1 exactly, reproduces a violation, and names `child`,
+/// `versionNumber`, `[0, 1000]` and -1. `VersionUnchanged` evaluates `false`
+/// on the exact -1; clamped to 0 it would hold.
+#[trace("TC-517", "FR-122-AC-7")]
+#[test]
+fn an_out_of_range_post_state_value_reproduces_as_a_violation_naming_its_range() {
+    let wrapping_debit = invocation(
+        &[object("root", 1, None), object("child", 0, Some("root"))],
+        &[object("root", 1, None), object("child", -1, Some("root"))],
+    );
+    let result = replay(case(
+        config_version_unit(),
+        "VersionUnchanged",
+        wrapping_debit,
+    ))
+    .expect("the replay settles");
+    let arm = witness_arm(&result);
+    assert_eq!(
+        arm.settlement(),
+        WitnessSettlement::ReproducedWithEvaluatedWitness
+    );
+    assert_eq!(arm.category(), Category::Violation);
+    assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
+    assert_eq!(
+        range_violations(&result),
+        [(
+            "child".to_owned(),
+            "versionNumber".to_owned(),
+            "0".to_owned(),
+            "1000".to_owned(),
+            "-1".to_owned()
+        )]
+    );
+}
+
+/// TC-517 step 7 (FR-122-AC-7): an out-of-range post-state value the clause
+/// does not read still settles a violation: `root.versionNumber` goes to
+/// 1001 while `child` is unchanged, so `VersionUnchanged` holds over the
+/// exact values, and the result reproduces with the evaluated `true` and
+/// names `root`.
+#[trace("TC-517", "FR-122-AC-7")]
+#[test]
+fn an_out_of_range_post_state_value_violates_even_when_the_clause_holds() {
+    let root_overflows = invocation(
+        &[object("root", 1000, None), object("child", 2, Some("root"))],
+        &[object("root", 1001, None), object("child", 2, Some("root"))],
+    );
+    let result = replay(case(
+        config_version_unit(),
+        "VersionUnchanged",
+        root_overflows,
+    ))
+    .expect("the replay settles");
+    let arm = witness_arm(&result);
+    assert_eq!(
+        arm.settlement(),
+        WitnessSettlement::ReproducedWithEvaluatedWitness
+    );
+    assert_eq!(arm.category(), Category::Violation);
+    assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(true)));
+    assert_eq!(
+        range_violations(&result),
+        [(
+            "root".to_owned(),
+            "versionNumber".to_owned(),
+            "0".to_owned(),
+            "1000".to_owned(),
+            "1001".to_owned()
+        )]
+    );
+}
+
+/// TC-517 step 7 (FR-122-AC-7): an out-of-range pre-state value is still an
+/// input defect, refused `invalid_runtime_input`/`invalid-value` naming
+/// `child` and `versionNumber`, whatever the post-state holds.
+#[trace("TC-517", "FR-122-AC-7")]
+#[test]
+fn an_out_of_range_pre_state_value_still_refuses() {
+    let bad_pre = invocation(
+        &[object("root", 1, None), object("child", 1001, Some("root"))],
+        &[object("root", 1, None), object("child", 2, Some("root"))],
+    );
+    let refusal = replay(case(config_version_unit(), "VersionUnchanged", bad_pre)).unwrap_err();
+    let ReplayRefusal::Admission(AdmissionFailure::Refused(record)) = &refusal else {
+        panic!("expected a refused admission, got {refusal:?}");
+    };
+    assert_eq!(record.code.as_str(), "invalid_runtime_input");
+    assert_eq!(record.cause, "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
+/// TC-517 step 7 (FR-122-AC-7): an in-range post-state settles as before and
+/// reports no range violation.
+#[trace("TC-517", "FR-122-AC-7")]
+#[test]
+fn an_in_range_post_state_reports_no_range_violation() {
+    let result = assert_reproduces_keeping_identities(
+        case(config_version_unit(), "VersionUnchanged", changed_version()),
+        "VersionUnchanged",
+    );
+    assert!(result.range_violations().is_empty());
+    let holding = replay(case(
+        config_version_unit(),
+        "VersionUnchanged",
+        unchanged_version(),
+    ))
+    .expect("the replay settles");
+    assert!(holding.range_violations().is_empty());
+    assert_inconclusive_by_verdicts(&holding);
+}

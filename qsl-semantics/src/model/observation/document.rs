@@ -13,8 +13,8 @@ use super::helpers::{admission_record, object_reference};
 use super::ordered_json::{OrderedJson, OrderedObject};
 use super::{
     check_document_digest, fault, incomplete, population_universe, read_raw_value, refuse,
-    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, ObservationLimits, SelectedObject,
-    SnapshotValue,
+    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange,
+    PostStateRange, SelectedObject, SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
@@ -786,6 +786,10 @@ pub(super) struct AdmittedEnvironment {
     /// caller merges in `ReadDocument::usage`'s byte length and nesting
     /// depth, which this check-6-to-8 pass never sees.
     pub(super) usage: super::AdmissionUsage,
+    /// Each integer admitted outside its declared range, in walk order
+    /// (always empty for a document admitted under
+    /// [`PostStateRange::Refuse`]).
+    pub(super) out_of_range: Vec<OutOfRange>,
 }
 
 /// A model object-type field's raw kind test, keyed off `value_type` alone
@@ -984,10 +988,18 @@ impl<'a> References<'a> {
     }
 }
 
+/// An in-document integer outside its declared `Int[lower, upper]`, kept
+/// exactly: the value and the range it broke.
+type RangeBreach = (quire_exact::IntegerInterval, Integer);
+
+/// `witness` is `Some` for a post-state field (FR-106 check 6.5's
+/// post-state rule): an integer outside its declared range is admitted
+/// exactly and recorded there instead of refused. `None` refuses it.
 fn admit_scalar(
     references: &mut References<'_>,
     raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
+    witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<Value, AdmissionRecord> {
     match (raw, value_type) {
         (SnapshotValue::Boolean(value), quire_exact::ValueType::Boolean) => {
@@ -1002,9 +1014,14 @@ fn admit_scalar(
                 .parse::<Integer>()
                 .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?;
             if interval.contains(&value) {
-                Ok(Value::Integer(value))
-            } else {
-                Err(admission_record(Code::InvalidRuntimeInput, "invalid-value"))
+                return Ok(Value::Integer(value));
+            }
+            match witness {
+                Some(found) => {
+                    found.push((interval.clone(), value.clone()));
+                    Ok(Value::Integer(value))
+                }
+                None => Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")),
             }
         }
         (SnapshotValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
@@ -1030,6 +1047,7 @@ fn admit_object_field(
     raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
+    mut witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<FieldValue, AdmissionRecord> {
     if presence == quire_exact::Presence::Optional {
         return match raw {
@@ -1042,6 +1060,7 @@ fn admit_object_field(
                 inner,
                 value_type,
                 quire_exact::Presence::Required,
+                witness,
             ),
             // `object_field_kind_matches` already refused every other raw
             // form for an optional field before this is called.
@@ -1064,14 +1083,21 @@ fn admit_object_field(
             }
             let mut elements = Vec::with_capacity(items.len());
             for item in items {
-                elements.push(admit_scalar(references, item, collection.element())?);
+                elements.push(admit_scalar(
+                    references,
+                    item,
+                    collection.element(),
+                    witness.as_deref_mut(),
+                )?);
             }
             Ok(FieldValue::Present(quire_exact::from_admitted(
                 (**collection).clone(),
                 elements,
             )))
         }
-        (raw, value_type) => admit_scalar(references, raw, value_type).map(FieldValue::Present),
+        (raw, value_type) => {
+            admit_scalar(references, raw, value_type, witness).map(FieldValue::Present)
+        }
     }
 }
 
@@ -1110,6 +1136,9 @@ pub(super) struct PopulationValues<'t> {
     /// object and field-value counts (SR-751 FND-002 round 2).
     pub(super) objects_admitted: u64,
     pub(super) values_admitted: u64,
+    /// Each post-state integer admitted outside its declared range, in
+    /// walk order.
+    out_of_range: Vec<OutOfRange>,
 }
 
 /// FR-106 check 6: admit every population's every object's every field, in
@@ -1128,6 +1157,7 @@ pub(super) fn admit_population_values<'t>(
     types: &'t TypeEnvironment,
     populations: &[RawPopulation],
     limits: ObservationLimits,
+    range: PostStateRange,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
     let mut completeness = BTreeMap::new();
@@ -1135,6 +1165,7 @@ pub(super) fn admit_population_values<'t>(
     let mut object_count: u64 = 0;
     let mut value_count: u64 = 0;
     let mut references = References::over(views, types, populations);
+    let mut out_of_range: Vec<OutOfRange> = Vec::new();
 
     for entry in populations {
         completeness.insert(entry.population.clone(), entry.complete);
@@ -1242,6 +1273,7 @@ pub(super) fn admit_population_values<'t>(
             }
             // 6.5: value checks, per declared field, in declared order.
             let mut attributes: Vec<(&str, FieldValue)> = Vec::with_capacity(declared.len());
+            let mut breaches: Vec<(&str, RangeBreach)> = Vec::new();
             for attribute in declared {
                 let name = attribute.field().name();
                 let value_type = attribute.field().value_type();
@@ -1257,14 +1289,21 @@ pub(super) fn admit_population_values<'t>(
                             .with("field", name.to_owned()),
                     ));
                 }
-                let field_value = admit_object_field(&mut references, raw, value_type, presence)
-                    .map_err(|record| {
-                        refuse(
-                            record
-                                .with("object", object.key.clone())
-                                .with("field", name.to_owned()),
-                        )
-                    })?;
+                let mut found = Vec::new();
+                let witness = match range {
+                    PostStateRange::Witness => Some(&mut found),
+                    PostStateRange::Refuse => None,
+                };
+                let field_value =
+                    admit_object_field(&mut references, raw, value_type, presence, witness)
+                        .map_err(|record| {
+                            refuse(
+                                record
+                                    .with("object", object.key.clone())
+                                    .with("field", name.to_owned()),
+                            )
+                        })?;
+                breaches.extend(found.into_iter().map(|breach| (name, breach)));
                 value_count += 1;
                 if value_count > limits.values_per_document {
                     return Err(refuse(admission_record(
@@ -1279,6 +1318,14 @@ pub(super) fn admit_population_values<'t>(
             // own `invalid-value` (SR-750 FND-004 round 2): propagated
             // directly, never re-mapped to a `Fault`.
             let reference = object_reference(views, effective_type, &object.key)?;
+            out_of_range.extend(breaches.into_iter().map(|(field, (declared, observed))| {
+                OutOfRange {
+                    object: reference.clone(),
+                    field: field.to_owned(),
+                    range: declared,
+                    observed,
+                }
+            }));
             objects.push((reference, attributes));
         }
     }
@@ -1290,6 +1337,7 @@ pub(super) fn admit_population_values<'t>(
         unresolved: references.unresolved,
         objects_admitted: object_count,
         values_admitted: value_count,
+        out_of_range,
     })
 }
 
@@ -1494,6 +1542,7 @@ pub(super) fn finish_populations(
         objects: values.objects_admitted,
         values: values.values_admitted,
     };
+    let out_of_range = values.out_of_range;
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(types, values.objects, &tolerated).map_err(map_environment_refusal)?,
     );
@@ -1501,6 +1550,7 @@ pub(super) fn finish_populations(
         environment,
         completeness: values.completeness,
         usage,
+        out_of_range,
     })
 }
 
@@ -1519,7 +1569,8 @@ pub(super) fn admit_populations(
     self_population: Option<&str>,
     limits: ObservationLimits,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
-    let values = admit_population_values(views, types, populations, limits)?;
+    let values =
+        admit_population_values(views, types, populations, limits, PostStateRange::Refuse)?;
     check_population_completeness(populations, &values.completeness, self_population, &[])?;
     check_population_closure(
         populations,
@@ -1617,7 +1668,7 @@ pub(super) fn admit_parameters(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_scalar(references, raw, value_type)
+        let value = admit_scalar(references, raw, value_type, None)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         references.check_closure(raw).map_err(refuse)?;
         admitted.push((name.clone(), value));
@@ -1663,7 +1714,7 @@ pub(super) fn admit_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_scalar(references, raw, value_type).map_err(refuse)?;
+            let value = admit_scalar(references, raw, value_type, None).map_err(refuse)?;
             references.check_closure(raw).map_err(refuse)?;
             Ok(Some(value))
         }
@@ -1673,6 +1724,7 @@ pub(super) fn admit_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     /// SR-750 FND-002: a non-ASCII digest string must refuse, never panic
     /// on a byte-index char-boundary slice. `read_document_ref` is
@@ -1803,5 +1855,76 @@ mod tests {
             references.check_closure(&SnapshotValue::Boolean(true)),
             Ok(())
         );
+    }
+    /// The integer an admitted scalar holds.
+    fn integer_of(admitted: Result<Value, AdmissionRecord>) -> Integer {
+        match admitted {
+            Ok(Value::Integer(integer)) => integer,
+            other => panic!("expected an admitted integer, got {other:?}"),
+        }
+    }
+
+    fn range_0_1000() -> quire_exact::ValueType {
+        quire_exact::ValueType::Int(
+            quire_exact::IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64))
+                .expect("a non-empty interval"),
+        )
+    }
+
+    /// FR-106-AC-12: an operation argument (admitted with no witness sink)
+    /// outside its declared `Int[0, 1000]` is refused `invalid-value`, a
+    /// value in range is admitted.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn an_out_of_range_integer_with_no_witness_sink_refuses() {
+        let types = TypeEnvironment::new([], []).expect("an empty environment admits");
+        let mut references = References::over(&[], &types, &[]);
+        let record = admit_scalar(
+            &mut references,
+            &SnapshotValue::Integer("-1".to_owned()),
+            &range_0_1000(),
+            None,
+        )
+        .expect_err("-1 is outside [0, 1000]");
+        assert_eq!(record.code, Code::InvalidRuntimeInput);
+        assert_eq!(record.cause, "invalid-value");
+        let admitted = admit_scalar(
+            &mut references,
+            &SnapshotValue::Integer("1000".to_owned()),
+            &range_0_1000(),
+            None,
+        );
+        assert_eq!(integer_of(admitted), Integer::from(1000_i64));
+    }
+
+    /// FR-106-AC-12: with a witness sink the same integer is admitted
+    /// exactly (never clamped) and recorded with its declared range; an
+    /// in-range one records nothing.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn an_out_of_range_integer_with_a_witness_sink_is_admitted_exactly() {
+        let types = TypeEnvironment::new([], []).expect("an empty environment admits");
+        let mut references = References::over(&[], &types, &[]);
+        let mut found = Vec::new();
+        let admitted = admit_scalar(
+            &mut references,
+            &SnapshotValue::Integer("1001".to_owned()),
+            &range_0_1000(),
+            Some(&mut found),
+        );
+        assert_eq!(integer_of(admitted), Integer::from(1001_i64));
+        assert_eq!(found.len(), 1);
+        let (range, observed) = &found[0];
+        assert_eq!(range.lower(), &Integer::from(0_i64));
+        assert_eq!(range.upper(), &Integer::from(1000_i64));
+        assert_eq!(observed, &Integer::from(1001_i64));
+        let in_range = admit_scalar(
+            &mut references,
+            &SnapshotValue::Integer("7".to_owned()),
+            &range_0_1000(),
+            Some(&mut found),
+        );
+        assert_eq!(integer_of(in_range), Integer::from(7_i64));
+        assert_eq!(found.len(), 1);
     }
 }
