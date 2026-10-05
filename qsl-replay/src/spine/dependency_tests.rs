@@ -490,7 +490,7 @@ fn a_dependency_chain_of_any_length_compiles() {
     ));
     let compiled = compile_as("u", &source, &input(chain))
         .expect("a chain longer than the removed ceiling compiles");
-    assert_eq!(compiled.package.dependency_selections().len(), 1);
+    assert_eq!(compiled.package.dependency_selections().len(), CHAIN);
 }
 
 /// FR-091-AC-24's selective form (ADR-015 D-1): the assembler refuses
