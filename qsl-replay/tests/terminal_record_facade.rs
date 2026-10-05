@@ -7,9 +7,9 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    read_backend_provider_envelope, std001_code, BackendProviderSource, Category, Code,
-    DeclineCode, InconclusiveCause, ProofRefusalCause, ReportedInconclusiveCause, RequestIndex,
-    Std001Code, TerminalRecord, TerminalValue,
+    read_backend_provider_envelope, std001_code, BackendProviderSource, CallSiteRefusal, Category,
+    Code, DeclineCode, InconclusiveCause, InternalFault, ProofRefusalCause, ReplayRefusal,
+    ReportedInconclusiveCause, RequestIndex, Std001Code, TerminalRecord, TerminalValue,
 };
 
 /// Each record is keyed by the `RequestIndex` it was built with, a declined
@@ -72,4 +72,28 @@ fn terminal_records_are_built_and_read_through_the_facade_alone() {
         envelopes[4].inconclusive_cause(),
         Some(&ReportedInconclusiveCause::KaniVacuousProof)
     );
+}
+
+/// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
+/// is a `ReplayRefusal::Fault`, and `TerminalValue::from_replay_refusal`
+/// settles it `Failed` (an internal failure), never `Inconclusive`.
+#[trace("TC-516", "FR-121-AC-16")]
+#[test]
+fn a_replay_fault_built_through_the_facade_settles_failed() {
+    let fault = InternalFault::new("terminal-map", "kind-total");
+    assert_eq!(fault.category(), Category::InternalFailure);
+    let settled = TerminalValue::from_replay_refusal(&ReplayRefusal::Fault(fault));
+    assert_eq!(settled, TerminalValue::Failed);
+    assert_eq!(settled.category(), Category::InternalFailure);
+}
+
+/// FR-121-AC-17: a `CallSiteRefusal::Fault` built through the facade settles
+/// `Failed` by `TerminalValue::from_call_site_refusal`, never `Declined`.
+#[trace("TC-516", "FR-121-AC-17")]
+#[test]
+fn a_call_site_fault_built_through_the_facade_settles_failed() {
+    let fault = CallSiteRefusal::Fault(InternalFault::new("call-site", "function-node"));
+    let settled = TerminalValue::from_call_site_refusal(&fault);
+    assert_eq!(settled, TerminalValue::Failed);
+    assert_eq!(settled.category(), Category::InternalFailure);
 }

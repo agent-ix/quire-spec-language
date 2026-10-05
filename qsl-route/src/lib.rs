@@ -51,7 +51,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
 pub use qsl_foundation::digest::ManifestDigest;
-use qsl_foundation::CatalogCode;
+use qsl_foundation::{CatalogCode, Category, Code};
 use qsl_semantics::check::Capability;
 
 /// A backend's declared identity, unique within one [`Registry`] (FR-290
@@ -92,6 +92,21 @@ impl BackendId {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("invalid_identifier: the backend identity is empty")]
 pub struct EmptyBackendIdentity;
+
+impl EmptyBackendIdentity {
+    /// The catalog code of this refusal, the one
+    /// `qsl_replay::ReplayRequestRefusal::EmptyBackendIdentity` carries:
+    /// `invalid_identifier`.
+    pub const fn code(&self) -> Code {
+        Code::InvalidIdentifier
+    }
+
+    /// Always `Category::Refusal` (ADR-013 O-16): the input is refused, not
+    /// a fault.
+    pub const fn category(&self) -> Category {
+        Category::Refusal
+    }
+}
 
 impl fmt::Display for BackendId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -852,6 +867,18 @@ mod tests {
     #[trace("TC-433", "FR-075-AC-6")]
     fn an_empty_backend_member_refuses() {
         assert_eq!(BackendId::from_wire(""), Err(EmptyBackendIdentity));
+    }
+
+    /// FR-075-AC-6 (TC-433 step 2): the empty-identity refusal carries code
+    /// `invalid_identifier` and category `refusal` (exit 20), so a caller
+    /// forwards it without remapping.
+    #[test]
+    #[trace("TC-433", "FR-075-AC-6")]
+    fn an_empty_backend_member_is_an_invalid_identifier_refusal() {
+        let refusal = BackendId::from_wire("").unwrap_err();
+        assert_eq!(refusal.code(), Code::InvalidIdentifier);
+        assert_eq!(refusal.category(), Category::Refusal);
+        assert_eq!(refusal.category().exit_code(), 20);
     }
 
     /// FR-290 "Advertised mode": exactly `bounded` and `unbounded`, read
