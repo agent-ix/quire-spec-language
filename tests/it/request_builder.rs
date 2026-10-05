@@ -161,7 +161,10 @@ fn tc_449_an_unbounded_item_and_its_bounded_follow_up() {
         .node(graph.function_identity("big").expect("big is declared"))
         .and_then(|function| function.function_parameters())
         .expect("big's function node")[0];
-    let n = DomainKey::new(WireNodeId::from_digest(*n.as_bytes()), Vec::new());
+    let n = DomainKey::Node {
+        node: WireNodeId::from_digest(*n.as_bytes()),
+        path: Vec::new(),
+    };
     assert_eq!(item.unbounded(), [(n.clone(), DomainKind::Integer)]);
 
     let record = &records[item.occurrence()];

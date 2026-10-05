@@ -24,7 +24,9 @@ use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
@@ -147,6 +149,24 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// The key of `declaration`'s model node, keyed from the same content
+    /// [`Lowering::model_node`] keys, without adding a node to any graph:
+    /// a model node's key depends on its declaration alone, so this names
+    /// the node whether or not the package's own lowering minted it.
+    /// `None` when this package does not declare `declaration`, or declares
+    /// it as a record kind no checked node names.
+    pub(crate) fn model_node_key(&self, declaration: &DeclarationKey) -> Option<NodeKey> {
+        if self.selection.identity != declaration.package {
+            return None;
+        }
+        let (node_tag, form) = record_form(self.records.get(declaration)?)?;
+        let owner =
+            ModelOwner::new(self.selection.identity.clone(), declaration.node.clone()).ok()?;
+        crate::check::node_key::node_key(&model_node_content(owner, node_tag, form).input())
+            .ok()
+            .map(|keyed| keyed.key)
+    }
+
     /// The record `key` names in this package.
     pub(super) fn record(&self, key: &DeclarationKey) -> Option<&DomainPackageRecord> {
         self.records.get(key)
@@ -180,6 +200,23 @@ impl AdmittedModel {
                 declared == member && (*id == target || conforms(target, *id))
             })
         };
+        self.population_domains()
+            .filter(|(_, population, _)| population.member_types.iter().any(covers))
+            .map(|(ordinal, population, canonical)| (ordinal, &population.key, canonical))
+            .collect()
+    }
+
+    /// Every population declaration of this package, in ascending
+    /// `DeclarationKey` order, with its ordinal in that order and the
+    /// `EffectiveId` of its canonical member type (the least declared
+    /// member type by `DeclarationKey`): the ordering and canonical member
+    /// [`Self::populations_of`] keys a covering population by, and the one
+    /// `CheckedGraph::population_domain` names a population by. A
+    /// population whose canonical member is not an admitted type is
+    /// skipped, keeping its ordinal.
+    pub(crate) fn population_domains(
+        &self,
+    ) -> impl Iterator<Item = (usize, &PopulationRecord, EffectiveId)> {
         // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
         // population records iterate in ascending key order.
         self.records
@@ -190,19 +227,15 @@ impl AdmittedModel {
             })
             .enumerate()
             .filter_map(|(ordinal, population)| {
-                if !population.member_types.iter().any(covers) {
-                    return None;
-                }
                 // The canonical member: the least declared member type, by
-                // `DeclarationKey`, regardless of which one covers `target`.
+                // `DeclarationKey`, regardless of which one covers a target.
                 let canonical = population.member_types.iter().min()?;
                 let node = self
                     .types
                     .iter()
                     .find_map(|(id, declared)| (declared == canonical).then_some(*id))?;
-                Some((ordinal, &population.key, node))
+                Some((ordinal, population, node))
             })
-            .collect()
     }
 }
 
@@ -230,6 +263,21 @@ fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
         DeclaredClauseKind::Precondition => "precondition",
         DeclaredClauseKind::Body => "body",
         DeclaredClauseKind::Invariant => "invariant",
+    }
+}
+
+/// A model declaration node's content: QSpec's `ModelOwner`, the record's
+/// node tag and form, no semantic type, a `null` `declaration` and an empty
+/// body. The one definition [`Lowering::model_node`] keys and adds and
+/// [`AdmittedModel::model_node_key`] only keys.
+fn model_node_content(owner: ModelOwner, node_tag: NodeTag, form: &'static str) -> NodeContent {
+    NodeContent {
+        node_tag,
+        semantic_form: form,
+        semantic_type: None,
+        declaration: None,
+        owner: Some(Owner::Model(owner)),
+        body: BodyTerm::aggregate(Vec::new()),
     }
 }
 
@@ -286,14 +334,7 @@ impl<'a> Lowering<'a> {
             .ok_or_else(|| fault(location, KeyFault::UnknownDeclaration(declaration.clone())))?;
         let (node_tag, form) = record_form(record)
             .ok_or_else(|| fault(location, KeyFault::UnnamedRecordKind(declaration.clone())))?;
-        let key = self.insert_owned(
-            location,
-            node_tag,
-            form,
-            None,
-            Owner::Model(owner),
-            BodyTerm::aggregate(Vec::new()),
-        )?;
+        let key = self.insert_node(location, model_node_content(owner, node_tag, form))?;
         self.correspondence
             .record(key, declaration.clone())
             .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;

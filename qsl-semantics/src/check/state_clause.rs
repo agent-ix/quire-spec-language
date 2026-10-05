@@ -624,19 +624,19 @@ fn record(
                 })?;
                 let mut prefixed = vec![position];
                 prefixed.extend(path);
-                domains.insert(DomainKey::new(wire(frame), prefixed), kind);
+                domains.insert(
+                    DomainKey::Node {
+                        node: wire(frame),
+                        path: prefixed,
+                    },
+                    kind,
+                );
             }
         }
     }
     for (domain, object) in populations {
-        let ordinal = u32::try_from(domain.ordinal).map_err(|_| {
-            ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
-                "check.requirements",
-                "population-ordinal-past-u32",
-            ))
-        })?;
         domains.insert(
-            DomainKey::new(wire(*object), vec![ordinal]),
+            population_key(domain, *object).map_err(ClassifyFailure::Fault)?,
             DomainKind::Population,
         );
     }
@@ -648,6 +648,23 @@ fn record(
         ValueType::Boolean,
         wire(boolean),
     ))
+}
+
+/// `domain`'s ADR-012 §15.7 key, `object` being its member type's
+/// `model`/`object_type` node: the one place a population's key is built,
+/// for a requirement record and for `CheckedGraph::population_domain`
+/// alike.
+pub(crate) fn population_key(
+    domain: &PopulationDomain,
+    object: NodeKey,
+) -> Result<DomainKey, qsl_foundation::InternalFault> {
+    let ordinal = u32::try_from(domain.ordinal).map_err(|_| {
+        qsl_foundation::InternalFault::new("check.requirements", "population-ordinal-past-u32")
+    })?;
+    Ok(DomainKey::Population {
+        member_type: wire(object),
+        ordinal,
+    })
 }
 
 /// `failure` as a refusal at `location`. `limit_cause` is `check`'s one

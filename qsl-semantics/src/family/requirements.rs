@@ -227,7 +227,7 @@ pub fn classify_extent(
                 "domain-root-classified",
             )));
         };
-        domains.insert(DomainKey::new(*node, path), kind);
+        domains.insert(DomainKey::Node { node: *node, path }, kind);
     }
     Ok(ClaimExtent::from_domains(domains))
 }
@@ -419,7 +419,15 @@ mod tests {
         ClaimExtent::from_domains(
             domains
                 .iter()
-                .map(|(path, kind)| (DomainKey::new(node(7), path.clone()), *kind))
+                .map(|(path, kind)| {
+                    (
+                        DomainKey::Node {
+                            node: node(7),
+                            path: path.clone(),
+                        },
+                        *kind,
+                    )
+                })
                 .collect(),
         )
     }
@@ -497,8 +505,20 @@ mod tests {
         assert_eq!(
             listed,
             vec![
-                (DomainKey::new(node(1), vec![]), DomainKind::Integer),
-                (DomainKey::new(node(2), vec![]), DomainKind::Collection),
+                (
+                    DomainKey::Node {
+                        node: node(1),
+                        path: vec![]
+                    },
+                    DomainKind::Integer
+                ),
+                (
+                    DomainKey::Node {
+                        node: node(2),
+                        path: vec![]
+                    },
+                    DomainKind::Collection
+                ),
             ]
         );
         assert!(domains.all_boundable());
@@ -567,8 +587,20 @@ mod tests {
         assert_eq!(DomainKind::Loop.finite_kind(), None);
         assert_eq!(DomainKind::InfiniteTrace.finite_kind(), None);
         let mixed = ClaimExtent::from_domains(BTreeMap::from([
-            (DomainKey::new(node(1), vec![]), DomainKind::Integer),
-            (DomainKey::new(node(2), vec![]), DomainKind::Loop),
+            (
+                DomainKey::Node {
+                    node: node(1),
+                    path: vec![],
+                },
+                DomainKind::Integer,
+            ),
+            (
+                DomainKey::Node {
+                    node: node(2),
+                    path: vec![],
+                },
+                DomainKind::Loop,
+            ),
         ]));
         let ClaimExtent::Unbounded(domains) = mixed else {
             panic!("two domains");

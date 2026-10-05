@@ -11,13 +11,15 @@
 //! and locates one selection in the result: the compiled package's own
 //! `package_id` and a named function's parameters, each paired with its own
 //! node id, a named operation's anchor, frame and state clause identities,
-//! or a named state clause's identities. It also returns the compiled
-//! package's own `quire.checked-package/v2` bytes. Every node id is the same
+//! or a named state clause's identities, or a named state field's or
+//! population's domain key (ADR-012 §15.4, §15.7). It also returns the compiled package's own
+//! `quire.checked-package/v2` bytes. Every node id is the same
 //! `WireNodeId` a `CanonicalAssignment`, a witness transcript or a
 //! counterexample names, joined by declared identity, never by position (ADR-013 O-25).
 //! It builds no [`crate::execute::replay`] call and no
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
+use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -41,14 +43,62 @@ use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal
 ///   [`OperationSite`];
 /// - a [`ClauseName`] selects a state clause -- an invariant, a
 ///   precondition or a postcondition -- by its declared name, as FR-106's
-///   `ClauseSelection` names it, and locates a [`ClauseSite`].
+///   `ClauseSelection` names it, and locates a [`ClauseSite`];
+/// - a [`FieldName`] `M::T.f` selects a state field of an object type and
+///   locates a [`FieldSite`], its ADR-012 §15.4 domain key;
+/// - a [`PopulationName`] `M::P` selects a population of a model and
+///   locates a [`PopulationSite`], its ADR-012 §15.7 domain key.
 ///
-/// Sealed: these three are the selections.
+/// Sealed: these five are the selections.
 pub trait CallSiteSelection: sealed::Locate {}
 
 impl CallSiteSelection for QualifiedName {}
 impl CallSiteSelection for OperationName {}
 impl CallSiteSelection for ClauseName {}
+impl CallSiteSelection for FieldName {}
+impl CallSiteSelection for PopulationName {}
+
+/// A population `M::P`: the `model` alias `M` and a population declaration
+/// `P` of that model's domain package, by its artifact id (the `P` of
+/// `ix://<package>/P`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationName {
+    /// The model alias `M`.
+    pub model: Identifier,
+    /// The population `P`.
+    pub population: Identifier,
+}
+
+impl std::fmt::Display for PopulationName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}::{}", self.model.as_str(), self.population.as_str())
+    }
+}
+
+/// A state field `M::T.f`: the `model` alias `M`, an object type `T` of
+/// that model, and a field `f` of `T`'s effective attribute set, declared
+/// by `T` or inherited from a supertype.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FieldName {
+    /// The model alias `M`.
+    pub model: Identifier,
+    /// The object type `T` the field is named through.
+    pub object: Identifier,
+    /// The field `f`.
+    pub field: Identifier,
+}
+
+impl std::fmt::Display for FieldName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}::{}.{}",
+            self.model.as_str(),
+            self.object.as_str(),
+            self.field.as_str()
+        )
+    }
+}
 
 /// A state clause of the unit, by its declared name: the name FR-106's
 /// `ClauseSelection` and a state-clause counterexample name it by.
@@ -83,7 +133,8 @@ mod sealed {
 
 /// What [`call_site`] returns: the compiled package's own content-addressed
 /// identity, its lowered bytes, and what the selection located, a
-/// [`FunctionSite`], an [`OperationSite`] or a [`ClauseSite`].
+/// [`FunctionSite`], an [`OperationSite`], a [`ClauseSite`], a
+/// [`FieldSite`] or a [`PopulationSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite<S> {
     /// The compiled package's `package_id`, as a `quire.package.semantic/v2`
@@ -132,6 +183,30 @@ pub struct OperationSite {
     /// Every `pre` and `post` clause of the unit whose operation resolves
     /// to this operation, in declaration order.
     pub clauses: Vec<ClauseSite>,
+}
+
+/// A state field's domain in the compiled package (ADR-012 §15.4).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FieldSite {
+    /// The field's domain key, always a [`DomainKey::Node`]: the
+    /// `model`/`object_type` node of the type that declares the field, and
+    /// one path element, the field's ordinal among that type's own field
+    /// declarations in ascending field-name UTF-8 byte order. A domain
+    /// inside the field's type extends this path with the child-index path
+    /// into that type. The key a `DeclaredDomain` bounding the field names.
+    pub domain: DomainKey,
+}
+
+/// A population's domain in the compiled package (ADR-012 §15.7).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationSite {
+    /// The population's domain key, always a [`DomainKey::Population`]:
+    /// its canonical member type's `model`/`object_type` node and its
+    /// ordinal among the package's population declarations in ascending
+    /// `DeclarationKey` order -- the key the package's own requirement
+    /// records carry for it, and the one a `DeclaredDomain` bounding it
+    /// names.
+    pub domain: DomainKey,
 }
 
 /// One state clause's identities in the compiled package.
@@ -230,6 +305,28 @@ pub enum CallSiteRefusal {
         /// The compiled package's own `package_id`.
         package: DigestRecord,
     },
+    /// `selection` names no state field of the compiled `package`: its model
+    /// alias or object type does not resolve, or the object type's
+    /// effective attribute set has no field of that name. Paired with the
+    /// package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("missing_declaration/missing-name: package {} declares no field {selection}", .package.hex())]
+    UnknownField {
+        /// The field `call_site` was given.
+        selection: FieldName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
+    /// `selection` names no population of the compiled `package`: its model
+    /// alias does not resolve, or its domain package declares no population
+    /// of that artifact id. Paired with the package, as
+    /// [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("missing_declaration/missing-name: package {} declares no population {selection}", .package.hex())]
+    UnknownPopulation {
+        /// The population `call_site` was given.
+        selection: PopulationName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
     /// A broken invariant: the compiled package's own function node for a
     /// selected function is not itself a function node, or its parameter
     /// count does not match its checked signature, or a declared parameter
@@ -253,7 +350,9 @@ impl CallSiteRefusal {
             Self::DependencyInput(refusal) => refusal.code(),
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
-            | Self::UnknownClause { .. } => Code::MissingDeclaration,
+            | Self::UnknownClause { .. }
+            | Self::UnknownField { .. }
+            | Self::UnknownPopulation { .. } => Code::MissingDeclaration,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -497,6 +596,52 @@ impl sealed::Locate for ClauseName {
                 })
             })?;
         clause_site(clause)
+    }
+}
+
+impl sealed::Locate for FieldName {
+    type Site = FieldSite;
+
+    /// `self`'s domain key in `package` (ADR-012 §15.4).
+    fn locate(
+        &self,
+        package: &CheckedPackage,
+        package_id: DigestRecord,
+    ) -> Result<FieldSite, Box<CallSiteRefusal>> {
+        package
+            .graph()
+            .field_domain(&self.model, &self.object, &self.field)
+            .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?
+            .map(|domain| FieldSite { domain })
+            .ok_or_else(|| {
+                Box::new(CallSiteRefusal::UnknownField {
+                    selection: self.clone(),
+                    package: package_id,
+                })
+            })
+    }
+}
+
+impl sealed::Locate for PopulationName {
+    type Site = PopulationSite;
+
+    /// `self`'s domain key in `package` (ADR-012 §15.7).
+    fn locate(
+        &self,
+        package: &CheckedPackage,
+        package_id: DigestRecord,
+    ) -> Result<PopulationSite, Box<CallSiteRefusal>> {
+        package
+            .graph()
+            .population_domain(&self.model, &self.population)
+            .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?
+            .map(|domain| PopulationSite { domain })
+            .ok_or_else(|| {
+                Box::new(CallSiteRefusal::UnknownPopulation {
+                    selection: self.clone(),
+                    package: package_id,
+                })
+            })
     }
 }
 

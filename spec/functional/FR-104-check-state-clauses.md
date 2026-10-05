@@ -197,8 +197,9 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   population declaration never has a maximum (QSpec FR-153's own record has
   none), so each one is always an unbounded `Population(None)` domain,
   boundable by `Cardinality`.
-- The checker SHALL key a population domain as `DomainKey{node, path}` with
-  `node` the `model`/`object_type` node of the population's *canonical*
+- The checker SHALL key a population domain as
+  `DomainKey::Population{member_type, ordinal}` with `member_type` the
+  `model`/`object_type` node of the population's *canonical*
   member type: the least, in ascending `DeclarationKey` order, of its
   declared member types -- never a node of the clause's context type `T`
   itself when `T` is a proper subtype of a member (SR-736 FND-010), and
@@ -207,8 +208,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   exactly one `DomainKey`, whatever member type a clause's context conforms
   to. A clause over `T` and one over a subtype of `T`, or over any other
   member type the same population declares, all key that population's
-  domain identically. `path` is the one-element list naming the population:
-  its ordinal among the package's population declarations in ascending
+  domain identically. `ordinal` names the population: its ordinal among the package's population declarations in ascending
   `DeclarationKey` order (its own `Ord`: `package`, then `node`, each as
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
   within one domain-package digest only, and domain keys SHALL NOT be

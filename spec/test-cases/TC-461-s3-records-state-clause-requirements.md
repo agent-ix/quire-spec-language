@@ -37,8 +37,8 @@ Tag the tests `#[trace("TC-461", "FR-104-AC-n")]`.
 
 - Step 1: four records, each capability kind `operation-contract` and extent
   `Unbounded` with one domain, the `config_history` population (kind
-  population, boundable by `Cardinality`, keyed by `DomainKey{node: the
-  ConfigVersion object type node, path: [config_history's ordinal]}`): one
+  population, boundable by `Cardinality`, keyed by `DomainKey::Population{member_type: the
+  ConfigVersion object type node, ordinal: config_history's ordinal}`): one
   per clause keyed by that clause's `claim` occurrence, and one keyed by
   `attemptUpdate`'s frame node occurrence.
 - Step 2: two records, both clauses; no frame record.
