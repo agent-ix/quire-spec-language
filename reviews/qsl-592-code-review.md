@@ -77,3 +77,24 @@ Answers to the brief's questions:
 | FND-006 | medium | The document `category` is whatever the caller passes. Nothing ties it to the items, so a driver must fold the CB-4 "most severe" rule itself, which is the logic this PR exists to keep out of the driver. The facade test passes `InternalFailure` by hand. Nothing stops a document whose items are all `success` from saying `violation`. Fix: an items constructor (for example `OutcomeDocument::with_settled_items`) that computes the whole-outcome category with one fold over `Category` in FR-301 order. | qsl-replay/src/outcome.rs:480-497; qsl-replay/tests/it/outcome_facade.rs:26-31 |
 | FND-007 | low | `compile_cause` is a per-variant dispatch over `CompileRefusal` that lives in outcome.rs, apart from `CompileRefusal::code()`, `stage()` and `region()` in spine.rs. A new `CompileRefusal` variant has to be added in two files. Fix: move it to `CompileRefusal::cause()` in spine.rs. | qsl-replay/src/outcome.rs:394-412; qsl-replay/src/spine.rs:165-245 |
 | FND-008 | low | No test compares a whole document. Each test pokes chosen members, so an added or renamed member (for example a new top-level key, or the `cause: null` every plain item carries) passes unnoticed. The FR-286 Overlap says the driver checks "no member added or removed". The AC-1 `package_id` oracle is also computed by the same `emit_checked` call the code makes. Fix: one `json!` literal equality per constructor (check success, check refusal, execute undefined, one item of each label). | qsl-replay/src/outcome.rs:676-818 |
+
+## New findings (disposition pass 1)
+
+Reviewed at 9e42b2c56888c7432a6cec58136b2a6c4e6dd578, after the rebase onto #636 (merge base bcca43356). A three-way merge with current main (a9cfe1113) shows no conflict.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | `from_replay` writes `last_stage` `null` for every `ReplayRefusal`, including non-fault refusals such as a decode refusal, an identity mismatch or a stale dependency. This PR's own FR-286 text says `null` only "when no stage is known: a cancelled outcome that stopped before its first stage, or an internal-failure (fault) outcome", and its Behavior adds "for a cancelled outcome that reached no stage and for a fault outcome". The replay refusal's diagnostic also writes `cause` `null`. The only replay-refusal test uses a fault, so it cannot catch this. Fix: give a non-fault refusal its stage (S8 / E9 admission), keep `null` for `ReplayRefusal::Fault`, write the refusal's catalog cause where it has one, and test one non-fault refusal. Or widen FR-286's `null` rule to cover replay refusals. | qsl-replay/src/outcome.rs:676-692 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 17619203d (a vacuous proof is `inconclusive` with `kani-vacuous-proof`; test `a_vacuous_proof_is_inconclusive_never_proved`) |
+| FND-002 | fixed | 17619203d (`from_check` is pure and writes no artifact; `from_package` carries `package_id` from `EmittedUnit`; the tests use the real `package` operation) |
+| FND-003 | fixed | 17619203d (`as_str` on `ProofRefusalCause`, `UnavailabilityCause`, `IncompleteCause`, `InconclusiveCause`, `ReportedInconclusiveCause` and `DisagreementCause`, in kebab spelling; the parity reason is kept in `parity`) |
+| FND-004 | fixed | 2bbadf34e (`from_call_refusal` writes the record's resolved locus as `located`; test `a_refused_call_keeps_its_locus`) |
+| FND-005 | fixed | 2937875b2 (AC-2 asserts the whole document with the literal cause `ambiguous-literal`) |
+| FND-006 | fixed | 17619203d (`OutcomeDocument::settled` folds item categories by `Category::most_severe`, using `trace_exit_code` for `monitor`; test `the_document_category_is_the_most_severe_items`) |
+| FND-007 | fixed | 17619203d (`CompileRefusal::cause()` in spine.rs; outcome.rs calls it) |
+| FND-008 | fixed | 17619203d (`json!` whole-document equality per constructor, plus an exact-bytes literal for AC-3; the `package_id` comes from the `package` operation's output) |

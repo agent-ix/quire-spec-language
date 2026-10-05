@@ -26,6 +26,7 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::library::PackageId;
+use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::CancelCause;
 use serde::{Serialize, Serializer};
 
@@ -681,13 +682,17 @@ impl OutcomeDocument {
             Ok(ReplayResult::Input(arm)) => {
                 Self::new(Operation::Replay, Some(OutcomeStage::S8), arm.category())
             }
-            Err(refusal) => Self::new(Operation::Replay, None, refusal.code().category())
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    None,
-                    refusal.code().as_str(),
-                    None,
-                    refusal.to_string(),
-                )]),
+            Err(refusal) => Self::new(
+                Operation::Replay,
+                replay_stage(refusal),
+                refusal.code().category(),
+            )
+            .with_diagnostics(vec![OutcomeDiagnostic::new(
+                refusal.cause(),
+                refusal.code().as_str(),
+                None,
+                refusal.to_string(),
+            )]),
         }
     }
 
@@ -733,6 +738,37 @@ impl OutcomeDocument {
     }
 }
 
+/// The last stage a replay refusal reached: a recompile refusal's own spine
+/// stage, S8 for every other refusal (the replay itself refused), and none
+/// for a fault, whose stage is untyped.
+fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
+    match refusal {
+        ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
+        ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
+        ReplayRefusal::Request(_)
+        | ReplayRefusal::LimitAboveReader(_)
+        | ReplayRefusal::NotASource(_)
+        | ReplayRefusal::SourceCount(_)
+        | ReplayRefusal::DependencySelections(_)
+        | ReplayRefusal::DependencyInput(_)
+        | ReplayRefusal::DependencyIdentityMismatch { .. }
+        | ReplayRefusal::PackageIdMismatch { .. }
+        | ReplayRefusal::UnknownFunction { .. }
+        | ReplayRefusal::UnknownOperation { .. }
+        | ReplayRefusal::FrameIdentity(_)
+        | ReplayRefusal::ClauseIdentity(_)
+        | ReplayRefusal::UnknownClause { .. }
+        | ReplayRefusal::WrongObservation { .. }
+        | ReplayRefusal::Admission(_)
+        | ReplayRefusal::UnknownParameter(_)
+        | ReplayRefusal::DuplicateArgument(_)
+        | ReplayRefusal::UnboundParameter(_)
+        | ReplayRefusal::Witness { .. }
+        | ReplayRefusal::NotAPredicate { .. }
+        | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
+    }
+}
+
 fn category_str<S: Serializer>(category: &Category, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(category.as_str())
 }
@@ -743,7 +779,9 @@ mod tests {
 
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::{CatalogCode, InternalFault};
+    use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
+    use qsl_semantics::library::LibraryName;
     use quire_exact::{Cancel, CancelCause, ScalarLimits};
     use serde_json::{json, Value};
 
@@ -1272,6 +1310,16 @@ mod tests {
                 "result": null,
             })
         );
+        let mismatch = ReplayRefusal::DependencyIdentityMismatch {
+            identity: LibraryName::new("test/geometry").expect("a library name"),
+            requested: DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]),
+            recompiled: PackageId::of_preimage(b"other"),
+        };
+        let stale = json_of(&OutcomeDocument::from_replay(&Err(mismatch)));
+        assert_eq!(stale["last_stage"], "S8");
+        assert_eq!(stale["category"], "refusal");
+        assert_eq!(stale["diagnostics"][0]["code"], "stale_dependency");
+        assert_eq!(stale["diagnostics"][0]["cause"], "content-mismatch");
         let fault = ReplayRefusal::Fault(InternalFault::new("replay", "broken"));
         let document = json_of(&OutcomeDocument::from_replay(&Err(fault)));
         assert_eq!(document["category"], "internal-failure");
