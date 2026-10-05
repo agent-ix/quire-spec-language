@@ -8,8 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     read_backend_provider_envelope, std001_code, BackendProviderSource, Category, Code,
-    DeclineCode, InconclusiveCause, ProofRefusalCause, ReportedInconclusiveCause, RequestIndex,
-    Std001Code, TerminalRecord, TerminalValue,
+    DeclineCode, InconclusiveCause, InternalFault, ProofRefusalCause, ReportedInconclusiveCause,
+    RequestIndex, Std001Code, TerminalRecord, TerminalValue,
 };
 
 /// Each record is keyed by the `RequestIndex` it was built with, a declined
@@ -72,4 +72,19 @@ fn terminal_records_are_built_and_read_through_the_facade_alone() {
         envelopes[4].inconclusive_cause(),
         Some(&ReportedInconclusiveCause::KaniVacuousProof)
     );
+}
+
+/// A client outside the crate builds an `InternalFault` through
+/// `qsl_replay::InternalFault::new` and reads its stage, invariant, catalog
+/// code and category: a fault is always `runtime_invariant` and an internal
+/// failure, never a refusal.
+#[trace("TC-177", "FR-069-AC-1")]
+#[test]
+fn an_internal_fault_is_built_and_read_through_the_facade_alone() {
+    let fault = InternalFault::new("terminal-map", "kind-total");
+    assert_eq!(fault.stage(), "terminal-map");
+    assert_eq!(fault.invariant(), "kind-total");
+    assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+    assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
+    assert_eq!(fault.category(), Category::InternalFailure);
 }
