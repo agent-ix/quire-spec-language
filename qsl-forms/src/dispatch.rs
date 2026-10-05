@@ -376,14 +376,8 @@ fn dispatch(
 /// `node`'s own span, so a declaration never reads past its own end into
 /// the next construct's leading token.
 fn leading_token_spelling<'c>(cst: &'c LosslessCst, node: &CstNode) -> Option<&'c [u8]> {
-    let span = node.span();
-    cst.tokens()
-        .iter()
-        .find(|token| {
-            token.class() == TokenClass::Token
-                && token.span().start >= span.start
-                && token.span().end <= span.end
-        })
+    value::significant_tokens(cst, node)
+        .first()
         .map(|token| token.spelling())
 }
 
@@ -445,16 +439,7 @@ fn declared_edition(cst: &LosslessCst) -> Option<String> {
 /// `None` when the declaration declares no such clause (ADR-011 §2.2 E2
 /// row, proof metadata: "Declared bounds and extents carried as syntax").
 fn declared_extent(cst: &LosslessCst, node: &CstNode) -> Option<Box<str>> {
-    let span = node.span();
-    let significant: Vec<_> = cst
-        .tokens()
-        .iter()
-        .filter(|token| {
-            token.class() == TokenClass::Token
-                && token.span().start >= span.start
-                && token.span().end <= span.end
-        })
-        .collect();
+    let significant = value::significant_tokens(cst, node);
     for (index, token) in significant.iter().enumerate() {
         if token.spelling() == b"bound" {
             if let Some(literal) = significant.get(index + 1) {
