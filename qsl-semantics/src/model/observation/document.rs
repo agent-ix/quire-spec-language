@@ -19,7 +19,7 @@ use super::{
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
@@ -1047,7 +1047,7 @@ fn admit_object_field(
     raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
-    mut witness: Option<&mut Vec<RangeBreach>>,
+    witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<FieldValue, AdmissionRecord> {
     if presence == quire_exact::Presence::Optional {
         return match raw {
@@ -1083,12 +1083,9 @@ fn admit_object_field(
             }
             let mut elements = Vec::with_capacity(items.len());
             for item in items {
-                elements.push(admit_scalar(
-                    references,
-                    item,
-                    collection.element(),
-                    witness.as_deref_mut(),
-                )?);
+                // A sequence element out of range stays refused: only a
+                // scalar field is witnessed.
+                elements.push(admit_scalar(references, item, collection.element(), None)?);
             }
             Ok(FieldValue::Present(quire_exact::from_admitted(
                 (**collection).clone(),
@@ -1543,8 +1540,21 @@ pub(super) fn finish_populations(
         values: values.values_admitted,
     };
     let out_of_range = values.out_of_range;
+    // The closure admits each slot against its declared type, which an
+    // out-of-range post-state integer breaks by definition. Such a closure
+    // is built over the declarations with `Int[lo, hi]` widened to
+    // `Integer`; evaluation still resolves fields through the checked
+    // package's own `types`, and reads the exact slots.
+    let widened;
+    let closure_types = if out_of_range.is_empty() {
+        types
+    } else {
+        widened = widen_ranges(types)?;
+        &widened
+    };
     let environment = ObjectEnvironment::new(
-        ObjectClosure::new(types, values.objects, &tolerated).map_err(map_environment_refusal)?,
+        ObjectClosure::new(closure_types, values.objects, &tolerated)
+            .map_err(map_environment_refusal)?,
     );
     Ok(AdmittedEnvironment {
         environment,
@@ -1552,6 +1562,35 @@ pub(super) fn finish_populations(
         usage,
         out_of_range,
     })
+}
+
+/// `types` with every object field declared `Int[lo, hi]` declared
+/// `Integer` instead, everything else unchanged: the declaration order,
+/// presence, redefinitions, supertypes, composites and units all carry
+/// over, so a slot position means the same field in either environment.
+fn widen_ranges(types: &TypeEnvironment) -> Result<TypeEnvironment, AdmissionFailure> {
+    let object_types = types.object_types().map(|declaration| {
+        let attributes = declaration
+            .attributes()
+            .iter()
+            .map(|field| {
+                let value_type = match field.value_type() {
+                    quire_exact::ValueType::Int(_) => quire_exact::ValueType::Integer,
+                    other => other.clone(),
+                };
+                let widened = FieldDeclaration::new(field.name(), value_type, field.presence());
+                match field.redefines() {
+                    Some(target) => widened.with_redefines(target.clone()),
+                    None => widened,
+                }
+            })
+            .collect();
+        ObjectTypeDeclaration::new(declaration.key(), declaration.name(), attributes)
+            .with_supertypes(declaration.supertypes().to_vec())
+    });
+    TypeEnvironment::new(types.composites().cloned(), object_types)
+        .map(|widened| widened.with_units(types.units().clone()))
+        .map_err(|_| fault("widened-type-environment-refused"))
 }
 
 /// FR-106 checks 6 to 8 over one observation (a single document, not a

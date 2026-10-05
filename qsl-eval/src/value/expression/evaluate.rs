@@ -47,7 +47,9 @@ use quire_exact::{
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
-use quire_semantic_value::declaration::{operand_value, CompositeShape, FieldRef};
+use quire_semantic_value::declaration::{
+    operand_value, CompositeShape, EqualityOperator, FieldRef,
+};
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
@@ -1283,12 +1285,28 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let left = self.pop()?;
                 Value::Boolean(self.order(*operator, *kind, &left, &right)?)
             }
-            NodeKind::Equality(_, checked, _, _) => {
+            NodeKind::Equality(operator, checked, left_node, right_node) => {
                 let right = self.pop()?;
                 let left = self.pop()?;
-                Value::Boolean(outcome_into_stop(
-                    checked.evaluate(&left, &right, self.meter),
-                )?)
+                // A post-state integer outside its field's declared range
+                // (FR-106 check 6.5) is not admitted by its static type,
+                // which the kernel's checked equality requires of its
+                // operands. Integers compare by value whatever their
+                // declared range, so such a pair compares directly.
+                let outside_declared_range = |id, value: &Value| {
+                    matches!(value, Value::Integer(_)) && !node.at(id).value_type().admits(value)
+                };
+                match (&left, &right) {
+                    (Value::Integer(l), Value::Integer(r))
+                        if outside_declared_range(*left_node, &left)
+                            || outside_declared_range(*right_node, &right) =>
+                    {
+                        Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
+                    }
+                    _ => Value::Boolean(outcome_into_stop(
+                        checked.evaluate(&left, &right, self.meter),
+                    )?),
+                }
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;
@@ -1867,7 +1885,13 @@ impl<'a, 'm> Machine<'a, 'm> {
         match (slot, optional, value_type) {
             (FieldValue::Present(value), false, _) => Ok(value.clone()),
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                OptionValue::present((**payload).clone(), value.clone()).map_err(|_| invariant())
+                // The slot was admitted against the field's declared type; a
+                // post-state integer outside its range (FR-106 check 6.5) is
+                // present all the same.
+                Ok(OptionValue::from_admitted(
+                    (**payload).clone(),
+                    Some(value.clone()),
+                ))
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
                 Ok(OptionValue::none((**payload).clone()))

@@ -280,8 +280,9 @@ required; check 10 settles it.
       field's declared range is part of the operation's contract, so the
       observation is the witness of a violation; the caller settles it. A
       post-state value of the wrong kind or not in FR-038's spelling is
-      still refused. The default is `Refuse`, and a `Frame` run's post
-      snapshot always refuses.
+      still refused, as is an out-of-range element of a sequence field. The
+      default is `Refuse`, and a `Frame` run's post snapshot always refuses.
+      A clause that reads the field evaluates over the exact integer.
 7. Completeness check. If a required population is not marked `complete`, then
    admission SHALL return `Incomplete` with `incomplete_population`/
    `incomplete-scope`, naming the first such population in walk order.

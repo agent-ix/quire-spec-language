@@ -342,6 +342,7 @@ fn no_cycle_observations(
             },
             environment,
             populations: BTreeMap::from([(population_identity(), true)]),
+            out_of_range: Vec::new(),
         }),
         pre: None,
         post: None,
