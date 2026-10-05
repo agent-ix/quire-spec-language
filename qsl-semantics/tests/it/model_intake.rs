@@ -136,8 +136,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     );
     let actual_digest: [u8; 32] = Sha256::digest(&document).into();
 
-    let package: serde_json::Value =
-        serde_json::from_slice(&document).expect("lifted document is valid JSON");
+    let package = lifted;
     let identity = package["package"]["identity"]
         .as_str()
         .expect("document declares its package identity")

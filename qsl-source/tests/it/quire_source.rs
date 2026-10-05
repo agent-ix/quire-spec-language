@@ -39,7 +39,7 @@ fn source(text: &str) -> Source {
 fn context() -> SemanticContext {
     // Use Quire's real module validator, not an invented semantic context decoder.
     let module = read_semantic_block(
-        &json!({"contract_version":"1.0.0","semantic_core":"0.3.2","package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
+        &json!({"contract_version":CONTRACT_VERSION,"semantic_core":semantic_core_version(),"package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
         &["entity".to_owned()],
     ).unwrap();
     SemanticContext::new(module, "rules.md", BundleIndex::default())
@@ -254,7 +254,7 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
 #[test]
 #[trace("TC-108", "FR-030-AC-3", "FR-011-AC-3")]
 fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
-    use qsl_source::{CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
+    use qsl_source::{semantic_core_version, CONTRACT_VERSION};
     #[derive(Debug)]
     enum Foreign {
         Identity,
@@ -305,7 +305,7 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
                 foreign.module.semantic_core = "future".into();
                 PreflightFailure::SemanticCore {
                     actual: "future".into(),
-                    expected: SEMANTIC_CORE_VERSION,
+                    expected: semantic_core_version(),
                 }
             }
         };
