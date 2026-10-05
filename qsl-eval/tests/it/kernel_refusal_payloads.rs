@@ -10,10 +10,10 @@ use qsl_foundation::diagnostic::kernel_refusal_record;
 use quire_exact::{
     admit_text, convert_ieee_width, divide, evaluate_decimal, evaluate_ieee,
     evaluate_integer_arithmetic, evaluate_rational_arithmetic, exact_to_ieee, ieee_to_exact,
-    modulo, Decimal, DecimalOperation, DecimalType, DivisionMember, DivisionProfile, IeeeExactTarget,
-    IeeeOperation, IeeeValue, IeeeWidth, Integer, IntegerArithmetic, IntegerDomain,
-    IntegerInterval, Meter, Outcome, Rational, RationalArithmetic, RationalDomain, Refusal,
-    RoundingMode, ScalarLimits, TextPayload, TextProfile, TextType,
+    modulo, Decimal, DecimalOperation, DecimalType, DivisionMember, DivisionProfile,
+    IeeeExactTarget, IeeeOperation, IeeeValue, IeeeWidth, Integer, IntegerArithmetic,
+    IntegerDomain, IntegerInterval, Meter, Outcome, Rational, RationalArithmetic, RationalDomain,
+    Refusal, RoundingMode, ScalarLimits, TextPayload, TextProfile, TextType,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

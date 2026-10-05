@@ -525,8 +525,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     // fields (TC-452's payloads), a locus and the location.
     {
         use quire_exact::{
-            DecimalType, DivisionMember, IeeeFlag, IeeeFlags, IeeeWidth, InexactTarget, Integer, IntegerInterval,
-            RationalDomain, RoundingMode, TextProfile, TextType,
+            DecimalType, DivisionMember, IeeeFlag, IeeeFlags, IeeeWidth, InexactTarget, Integer,
+            IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType,
         };
         let int_0_9 = || IntegerInterval::spanning(Integer::zero(), Integer::from(9_i64));
         let decimal_0_100 = || {

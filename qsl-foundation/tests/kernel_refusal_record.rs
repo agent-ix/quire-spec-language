@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{kernel_refusal_record, CatalogCode, Category, Locus};
 use quire_exact::{
-    DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval, Location, NodeKey,
-    Origin, RationalDomain, Refusal, RoundingMode, TextProfile, TextType,
+    DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval,
+    Location, NodeKey, Origin, RationalDomain, Refusal, RoundingMode, TextProfile, TextType,
 };
 
 fn int(value: i64) -> Integer {

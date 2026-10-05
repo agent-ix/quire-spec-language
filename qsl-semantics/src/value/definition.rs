@@ -544,7 +544,14 @@ pub fn divide(
     domain: &IntegerDomain,
     meter: &mut Meter,
 ) -> Outcome<Integer> {
-    quire_exact::divide(selection.profile(), member, dividend, divisor, domain, meter)
+    quire_exact::divide(
+        selection.profile(),
+        member,
+        dividend,
+        divisor,
+        domain,
+        meter,
+    )
 }
 
 /// Evaluate `mod`: always the Euclidean remainder, independent of any selected

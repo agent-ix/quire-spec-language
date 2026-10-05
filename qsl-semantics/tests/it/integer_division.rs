@@ -12,9 +12,8 @@ use qsl_semantics::value::{
     divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
 };
 use quire_exact::{
-    ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer, IntegerDomain,
-    IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits,
-    Undefined,
+    ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer,
+    IntegerDomain, IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, PackageRefusalCode};
 
@@ -243,10 +242,7 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
     let signed_64_interval =
         || IntegerInterval::signed_twos_complement(NonZeroU32::new(64).unwrap());
     for profile in DivisionProfile::ALL {
-        assert_eq!(
-            pair(profile, min, -1),
-            (9_223_372_036_854_775_808, 0)
-        );
+        assert_eq!(pair(profile, min, -1), (9_223_372_036_854_775_808, 0));
         // Only the exposed member must be in the domain: `min div -1` is
         // outside signed 64, `min rem -1` is 0 and inside.
         let mut meter = Meter::new(UNLIMITED);
@@ -266,7 +262,13 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
         );
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
         assert_eq!(
-            completed(run(profile, DivisionMember::Remainder, min, -1, &signed_64())),
+            completed(run(
+                profile,
+                DivisionMember::Remainder,
+                min,
+                -1,
+                &signed_64()
+            )),
             0
         );
         for member in [DivisionMember::Quotient, DivisionMember::Remainder] {
@@ -274,8 +276,14 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
                 DivisionMember::Quotient => (min, max),
                 DivisionMember::Remainder => (0, 0),
             };
-            assert_eq!(completed(run(profile, member, min, 1, &signed_64())), expected.0);
-            assert_eq!(completed(run(profile, member, max, 1, &signed_64())), expected.1);
+            assert_eq!(
+                completed(run(profile, member, min, 1, &signed_64())),
+                expected.0
+            );
+            assert_eq!(
+                completed(run(profile, member, max, 1, &signed_64())),
+                expected.1
+            );
         }
         for outside in [min - 1, max + 1] {
             assert_eq!(
@@ -286,7 +294,13 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
                 })
             );
             assert_eq!(
-                completed(run(profile, DivisionMember::Remainder, outside, 1, &signed_64())),
+                completed(run(
+                    profile,
+                    DivisionMember::Remainder,
+                    outside,
+                    1,
+                    &signed_64()
+                )),
                 0
             );
         }
@@ -652,9 +666,14 @@ fn generated_members_match_the_law_oracle_domains_and_every_denial() {
                     (DivisionMember::Remainder, expected.1),
                 ] {
                     let mut meter = Meter::new(UNLIMITED);
-                    let outcome = divide(&selection, member, &big(a), &big(b), &bounded, &mut meter);
+                    let outcome =
+                        divide(&selection, member, &big(a), &big(b), &bounded, &mut meter);
                     if in_bounds(value) {
-                        assert_eq!(completed(outcome), value, "{profile:?} {member:?} ({a},{b})");
+                        assert_eq!(
+                            completed(outcome),
+                            value,
+                            "{profile:?} {member:?} ({a},{b})"
+                        );
                     } else {
                         assert!(
                             matches!(
@@ -717,13 +736,25 @@ fn only_the_exposed_member_must_lie_in_the_consumer_domain() {
             2
         );
         assert_eq!(
-            completed(run(profile, DivisionMember::Remainder, -10, -1, &minus_ten_to_five)),
+            completed(run(
+                profile,
+                DivisionMember::Remainder,
+                -10,
+                -1,
+                &minus_ten_to_five
+            )),
             0
         );
         // The exposed member outside the domain refuses with that member as the
         // cause: quotient 10 of `-10 div -1` and remainder 0 of `10 rem 5`.
         assert_eq!(
-            run(profile, DivisionMember::Quotient, -10, -1, &minus_ten_to_five),
+            run(
+                profile,
+                DivisionMember::Quotient,
+                -10,
+                -1,
+                &minus_ten_to_five
+            ),
             Outcome::Refused(Refusal::DivisionOutOfDomain {
                 domain: Box::new(IntegerInterval::new(big(-10), big(5)).unwrap()),
                 member: DivisionMember::Quotient,
