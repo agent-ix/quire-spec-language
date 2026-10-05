@@ -26,21 +26,24 @@ pub struct ModelNormalizationLimits {
     pub hashed_bytes: u64,
     /// Cumulative work units.
     pub work_units: u64,
-    /// Ceiling on generalization steps: the types one conformance walk
-    /// expands (the specific it starts from included), and the length of
-    /// any one ancestor path normalization enumerates. A target or ancestor
-    /// `n` generalization steps up a chain is reached at
-    /// `ancestor_steps == n`. Read, not charged, by normalization and by
-    /// every conformance, dispatch-applicability, dominance and
+    /// Ceiling on the `supertypes` edges one walk follows, charged before
+    /// each edge is followed: one conformance walk (FR-082), or one type's
+    /// ancestor-path enumeration in normalization. Under multiple
+    /// supertypes it counts the walk's closure, never a chain depth, and
+    /// each walk starts a fresh count. A target or ancestor `n` edges up a
+    /// chain is reached at `ancestor_steps == n`. Applies to normalization
+    /// and to every conformance, dispatch-applicability, dominance and
     /// systems-flow check that owns a `Meter`. Reaching it refuses
     /// `ModelRefusalCause::AncestorSteps` naming this bound.
     pub ancestor_steps: u64,
-    /// Ceiling on the `redefines` edges one dispatch-family walk follows,
-    /// one per redefiner admitted to the family: a linear chain of `n`
-    /// redefinitions is admitted at `family_steps == n`. Read, not charged,
-    /// by `dispatch::link_dispatch` and by the effective-precondition walk
-    /// of `check::checked_dispatch_operation`. Reaching it refuses
-    /// `ModelRefusalCause::FamilySteps` naming this bound.
+    /// Ceiling on the `redefines` edges one dispatch-family link follows,
+    /// charged before each edge is followed and counted over all the link's
+    /// walks together (FR-083): the family enumeration of
+    /// `dispatch::link_dispatch` and the effective-precondition walks of
+    /// `check::checked_dispatch_operation`, each distinct edge once. It
+    /// counts edges, never a chain depth: a linear chain of `n`
+    /// redefinitions is admitted at `family_steps == n`. Reaching it
+    /// refuses `ModelRefusalCause::FamilySteps` naming this bound.
     pub family_steps: u64,
 }
 
@@ -56,8 +59,8 @@ impl Default for ModelNormalizationLimits {
             dispatch_candidates: 1_600_000,
             hashed_bytes: 268_435_456,
             work_units: 16_777_216,
-            ancestor_steps: quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS,
-            family_steps: 100_000,
+            ancestor_steps: 16_777_216,
+            family_steps: 16_777_216,
         }
     }
 }

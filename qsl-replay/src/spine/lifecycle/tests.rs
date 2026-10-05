@@ -1095,7 +1095,7 @@ fn select_names_the_model_limit_field_it_reached() {
     );
     assert_field(
         LimitsField::ModelAncestorSteps,
-        FoundationKind::NodeCount,
+        FoundationKind::EdgeCount,
         10_000,
         run(|limits, value| limits.ancestor_steps = value),
     );
@@ -1113,9 +1113,7 @@ fn select_names_the_model_limit_field_it_reached() {
     );
 }
 
-/// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit. (The
-/// dependency depth is the import refusal of ADR-015 D-1, which names the
-/// chain.)
+/// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn check_names_the_checking_limit_field_it_reached() {

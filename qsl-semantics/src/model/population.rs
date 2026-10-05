@@ -181,10 +181,10 @@ pub struct PopulationAdmissionLimits {
     pub population_members: u64,
     /// Cumulative admission work units.
     pub work_units: u64,
-    /// Ceiling on the types one member-type conformance walk expands, with
-    /// the same meaning as
+    /// Ceiling on the `supertypes` edges one member-type conformance walk
+    /// follows, with the same meaning as
     /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`].
-    /// Read, not charged, by admission itself and recorded on the admitted
+    /// Not charged by admission itself; recorded on the admitted
     /// [`PopulationBinding`], so the frame check and the
     /// [`all_instances`]/[`lookup`] queries over that binding walk under the
     /// same caller-configured bound. Reaching it refuses
@@ -200,7 +200,7 @@ impl Default for PopulationAdmissionLimits {
         Self {
             population_members: 100_000,
             work_units: 16_777_216,
-            ancestor_steps: quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS,
+            ancestor_steps: 16_777_216,
         }
     }
 }
@@ -2022,7 +2022,7 @@ mod tests {
             PopulationAdmissionLimits {
                 population_members: 100_000,
                 work_units: 16_777_216,
-                ancestor_steps: 100_000,
+                ancestor_steps: 16_777_216,
             }
         );
     }

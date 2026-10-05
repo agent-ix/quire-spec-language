@@ -257,7 +257,7 @@ impl CompileRefusal {
             self,
             Self::DependencyInput(_)
                 | Self::Import {
-                    refusal: ImportRefusal::Cycle { .. } | ImportRefusal::DepthLimit { .. },
+                    refusal: ImportRefusal::Cycle { .. },
                     ..
                 }
         )
@@ -768,16 +768,6 @@ pub enum ImportRefusal {
         /// The identity the import names.
         identity: LibraryName,
     },
-    /// Step 4: compiling the library would nest library compiles deeper
-    /// than [`DependencyLimits::depth`] (`stage_limit_exceeded`/
-    /// `nesting-depth-exceeded`). Closure-level.
-    #[error("stage_limit_exceeded/nesting-depth-exceeded: {} nests library compiles deeper than {limit}", display_path(.path))]
-    DepthLimit {
-        /// The configured ceiling.
-        limit: usize,
-        /// The dependency path whose compile would exceed it.
-        path: Vec<LibraryName>,
-    },
     /// An import names the empty identity, which the parser never admits:
     /// a broken invariant (`runtime_invariant`).
     #[error("runtime_invariant: an admitted import names the empty library identity")]
@@ -799,7 +789,6 @@ impl ImportRefusal {
         match self {
             Self::Cycle { .. } => Code::InvalidPackage,
             Self::MissingSelection { .. } => Code::MissingImport,
-            Self::DepthLimit { .. } => Code::StageLimitExceeded,
             Self::UnnamedImport => Code::RuntimeInvariant,
             Self::View { refusal, .. } => refusal.code(),
         }
@@ -810,7 +799,6 @@ impl ImportRefusal {
         match self {
             Self::Cycle { .. } => Some("definition-cycle"),
             Self::MissingSelection { .. } => Some("missing-selection"),
-            Self::DepthLimit { .. } => Some("nesting-depth-exceeded"),
             Self::UnnamedImport => None,
             Self::View { .. } => None,
         }
@@ -828,27 +816,9 @@ pub struct SpineLimits {
     pub model: ModelNormalizationLimits,
     /// S3: the checker's ceilings.
     pub checking: CheckingLimits,
-    /// The S4 source resolution's ceilings (ADR-015 D-1).
-    pub dependencies: DependencyLimits,
     /// The type-environment ceilings the assembler admits records, tuples
     /// and object types under (FR-082).
     pub environment: TypeEnvironmentLimits,
-}
-
-/// The S4 source resolution's ceilings. A library compile is charged the
-/// full S1 to S4 limits as its own unit; this bounds how deeply library
-/// compiles nest, since each nested compile holds its caller's state.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DependencyLimits {
-    /// The most library compiles in progress at once: the longest
-    /// dependency path from the unit. Defaults to 64.
-    pub depth: usize,
-}
-
-impl Default for DependencyLimits {
-    fn default() -> Self {
-        Self { depth: 64 }
-    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,6 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_cst::CompleteCause;
-use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::selection::{DefinitionRef, MAX_SELECTED_DEFINITIONS};
 use qsl_foundation::Code;
 
@@ -579,7 +578,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
     let exact = PackageLimits {
         definitions: definitions.len(),
         dependency_edges: 0,
-        depth: 1,
         artifact_bytes,
         single_artifact_bytes: artifact_bytes,
     };
@@ -596,7 +594,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: definitions.len() - 1,
-            actual: None,
         }
     );
     assert_eq!(
@@ -611,7 +608,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::ArtifactBytes,
             limit: artifact_bytes - 1,
-            actual: None,
         }
     );
 
@@ -637,7 +633,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::ArtifactBytes,
             limit: artifact_bytes - 1,
-            actual: None,
         }
     );
     assert_eq!(
@@ -661,7 +656,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: 1,
-            actual: None,
         }
     );
 }
@@ -737,7 +731,6 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: raised.definitions,
-            actual: None,
         },
         "must name the raised ceiling actually in force, not the original default"
     );
@@ -752,7 +745,7 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
 
 #[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-1", "QSpec-FR-131-AC-2")]
 #[test]
-fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
+fn dependency_edge_limits_admit_exactly_and_refuse_one_below() {
     let leaf = definition(
         "acme.chain.leaf",
         DefinitionRole::MethodPlan,
@@ -779,7 +772,6 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     let exact = PackageLimits {
         definitions: 11,
         dependency_edges: 2,
-        depth: 3,
         ..PackageLimits::default()
     };
     let linked = link_roots(&definitions, 9, exact).unwrap();
@@ -812,7 +804,6 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: 10,
-            actual: None,
         }
     );
     assert_eq!(over.cause_tag, ResolutionCause::InsufficientNextCharge);
@@ -820,7 +811,6 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     let raised = PackageLimits {
         definitions: PackageLimits::default().definitions + 1,
         dependency_edges: PackageLimits::default().dependency_edges + 1,
-        depth: PackageLimits::default().depth + 1,
         artifact_bytes: PackageLimits::default().artifact_bytes + 1,
         single_artifact_bytes: PackageLimits::default().single_artifact_bytes + 1,
     };
@@ -843,31 +833,66 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::DependencyEdges,
             limit: 1,
-            actual: None,
         }
     );
     assert_eq!(edges.code, Code::ResourceExhausted);
     assert_eq!(edges.root, Some(0));
-    let depth_refusal =
-        link_roots(&definitions, 9, PackageLimits { depth: 2, ..exact }).unwrap_err();
+}
+
+/// FR-111: a dependency chain of any length within the limits closes.
+/// Only `dependency_edges` bounds the closure; the chain here is longer than
+/// any fixed depth ceiling the default limits ever carried.
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-2")]
+#[test]
+fn a_dependency_chain_of_any_length_closes_within_the_edge_limit() {
+    const CHAIN: usize = 2_000;
+    let mut definitions = complete_definitions();
+    let mut next: Option<DefinitionRef> = None;
+    let mut chain = Vec::with_capacity(CHAIN);
+    for index in (0..CHAIN).rev() {
+        let link = definition(
+            &format!("acme.chain.link{index}"),
+            DefinitionRole::MethodPlan,
+            next.iter().cloned().collect(),
+            BTreeSet::new(),
+            format!("chain link {index}").as_bytes(),
+        );
+        next = Some(link.exact().clone());
+        chain.push(link);
+    }
+    definitions[0] = definition(
+        definitions[0].exact().identity(),
+        DefinitionRole::Source,
+        next.iter().cloned().collect(),
+        inventory(),
+        b"source root over a long dependency chain",
+    );
+    let total = definitions.len() + CHAIN;
+    definitions.extend(chain);
+    let limits = PackageLimits {
+        definitions: total,
+        dependency_edges: CHAIN,
+        ..PackageLimits::default()
+    };
+    let linked = link_roots(&definitions, 9, limits).unwrap();
+    assert_eq!(linked.definitions().len(), total);
+    let refused = link_roots(
+        &definitions,
+        9,
+        PackageLimits {
+            dependency_edges: CHAIN - 1,
+            ..limits
+        },
+    )
+    .unwrap_err();
+    assert_eq!(refused.code, Code::ResourceExhausted);
     assert_eq!(
-        depth_refusal.cause,
+        refused.cause,
         PackageError::ResourceLimit {
-            kind: PackageLimitKind::Depth,
-            limit: 2,
-            actual: Some(3),
+            kind: PackageLimitKind::DependencyEdges,
+            limit: CHAIN - 1,
         }
     );
-    // The graph's own depth ceiling is the one `PackageLimitKind`
-    // that maps cleanly onto the catalog's `stage_limit_exceeded`, unlike
-    // `Definitions`/`DependencyEdges`/`ArtifactBytes` above, which stay
-    // `resource_exhausted`.
-    assert_eq!(depth_refusal.code, Code::StageLimitExceeded);
-    assert_eq!(
-        depth_refusal.cause_tag,
-        ResolutionCause::StageLimit(LimitKind::NestingDepth)
-    );
-    assert_catalogued(&depth_refusal);
 }
 
 /// Every `ResolutionCause` paired with the layer-1 `CompleteCause` of the
@@ -879,10 +904,6 @@ macro_rules! resolution_causes {
         fn covered(cause: ResolutionCause) {
             match cause {
                 $(ResolutionCause::$variant => {})+
-                // The one payload-bearing variant, covered
-                // separately below rather than through this macro's
-                // bare-identifier list.
-                ResolutionCause::StageLimit(_) => {}
             }
         }
         vec![$({
@@ -911,27 +932,6 @@ fn resolution_causes_match_the_complete_cause_catalog() {
         UnsupportedFeature,
     ];
     for (resolution, complete) in pairs {
-        assert_eq!(resolution.as_str(), complete.as_str());
-        for code in Code::all() {
-            assert_eq!(
-                resolution.is_cause_of(*code),
-                complete.is_cause_of(*code),
-                "{resolution:?} and {complete:?} disagree on {code:?}"
-            );
-        }
-    }
-    // `StageLimit`'s payload carries the kind, so it is checked
-    // directly rather than through the macro's bare-identifier list, over
-    // every kind the catalog admits (not only `NestingDepth`, the one the
-    // package graph itself produces).
-    for kind in [
-        LimitKind::InputBytes,
-        LimitKind::NestingDepth,
-        LimitKind::NodeCount,
-        LimitKind::WorkBudget,
-    ] {
-        let resolution = ResolutionCause::StageLimit(kind);
-        let complete = CompleteCause::StageLimit(kind);
         assert_eq!(resolution.as_str(), complete.as_str());
         for code in Code::all() {
             assert_eq!(
@@ -986,7 +986,6 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     let expected = PackageError::ResourceLimit {
         kind: PackageLimitKind::SingleArtifactBytes,
         limit: default.single_artifact_bytes,
-        actual: None,
     };
     assert_eq!(
         DefinitionCatalog::with_limits(vec![large.clone()], default).unwrap_err(),
@@ -1035,7 +1034,6 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::SingleArtifactBytes,
             limit: default.single_artifact_bytes,
-            actual: None,
         }
     );
     assert_catalogued(&refusal);
@@ -1048,9 +1046,7 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
 /// FR-111-AC-7 against QSpec's own catalog: every (code, cause) pair a
 /// bundle refusal can carry is one `quire.native.diagnostics/v1` lists, read
 /// at run time from `$QSPEC_DIR`. Skipped (and passing) when `QSPEC_DIR` is
-/// unset; `make conformance` requires it. `StageLimit` is the
-/// `PackageLimits::depth` refusal, whose `nesting-depth-exceeded` cause the
-/// catalog no longer lists; deleting that limit is separate work.
+/// unset; `make conformance` requires it.
 #[trace("TC-491", "FR-111-AC-7")]
 #[test]
 fn conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics() {

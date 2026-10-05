@@ -127,8 +127,6 @@ pub enum PackageLimitKind {
     Definitions,
     /// [`PackageLimits::dependency_edges`].
     DependencyEdges,
-    /// [`PackageLimits::depth`].
-    Depth,
     /// [`PackageLimits::artifact_bytes`].
     ArtifactBytes,
     /// [`PackageLimits::single_artifact_bytes`].
@@ -141,7 +139,6 @@ impl std::fmt::Display for PackageLimitKind {
         formatter.write_str(match self {
             Self::Definitions => "definitions",
             Self::DependencyEdges => "dependency_edges",
-            Self::Depth => "depth",
             Self::ArtifactBytes => "artifact_bytes",
             Self::SingleArtifactBytes => "single_artifact_bytes",
         })
@@ -160,9 +157,6 @@ pub struct PackageLimits {
     /// Maximum number of dependency edges traversed while resolving the
     /// package graph.
     pub dependency_edges: usize,
-    /// Maximum dependency-chain depth carried on the active resolution stack
-    /// before resolution is refused.
-    pub depth: usize,
     /// Maximum total artifact byte count admitted
     /// into one resolved package or catalog.
     pub artifact_bytes: usize,
@@ -179,7 +173,6 @@ impl PackageLimits {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::SingleArtifactBytes,
                 limit: self.single_artifact_bytes,
-                actual: None,
             });
         }
         Ok(())
@@ -191,7 +184,6 @@ impl Default for PackageLimits {
         Self {
             definitions: MAX_SELECTED_DEFINITIONS,
             dependency_edges: 16_384,
-            depth: 256,
             artifact_bytes: 16 * qsl_foundation::source::MAX_SOURCE_BYTES,
             single_artifact_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
         }
@@ -257,7 +249,6 @@ impl DefinitionCatalog {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
-                actual: None,
             });
         }
         let mut edges = 0_usize;
@@ -269,28 +260,24 @@ impl DefinitionCatalog {
                 PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
                     limit: limits.dependency_edges,
-                    actual: None,
                 },
             )?;
             bytes = bytes.checked_add(definition.exact_bytes.len()).ok_or(
                 PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
-                    actual: None,
                 },
             )?;
             if edges > limits.dependency_edges {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
                     limit: limits.dependency_edges,
-                    actual: None,
                 });
             }
             if bytes > limits.artifact_bytes {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
-                    actual: None,
                 });
             }
             if catalog
@@ -542,13 +529,6 @@ pub enum ResolutionCause {
     /// `unknown_required_feature`: a known capability the closure does not
     /// provide.
     UnsupportedFeature,
-    /// `stage_limit_exceeded`: the package
-    /// graph's own dependency-chain depth ceiling
-    /// ([`PackageLimitKind::Depth`]), the one [`PackageLimitKind`] that maps
-    /// cleanly onto a T-4 [`qsl_foundation::diagnostic::LimitKind`]. The
-    /// other ceilings (`Definitions`, `DependencyEdges`, `ArtifactBytes`,
-    /// `SingleArtifactBytes`) stay `InsufficientNextCharge`.
-    StageLimit(qsl_foundation::diagnostic::LimitKind),
 }
 
 impl ResolutionCause {
@@ -565,7 +545,6 @@ impl ResolutionCause {
             Self::FeatureSetMismatch => "feature-set-mismatch",
             Self::UnknownFeature => "unknown-feature",
             Self::UnsupportedFeature => "unsupported-feature",
-            Self::StageLimit(kind) => kind.catalog_cause(),
         }
     }
 
@@ -584,7 +563,6 @@ impl ResolutionCause {
             | Self::DefinitionCycle
             | Self::FeatureSetMismatch => code == Code::InvalidPackage,
             Self::UnknownFeature | Self::UnsupportedFeature => code == Code::UnknownRequiredFeature,
-            Self::StageLimit(_) => code == Code::StageLimitExceeded,
         }
     }
 }
@@ -607,7 +585,6 @@ pub fn link_bundle(
             PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
-                actual: None,
             },
         ));
     }
@@ -674,7 +651,6 @@ pub fn link_bundle(
                         PackageError::ResourceLimit {
                             kind: PackageLimitKind::Definitions,
                             limit: limits.definitions,
-                            actual: None,
                         },
                     ));
                 }
@@ -690,20 +666,6 @@ pub fn link_bundle(
                     ),
                 ));
             }
-            if active.len() >= limits.depth {
-                return Err(refusal(
-                    // The graph's dependency-chain depth ceiling
-                    // maps onto `stage_limit_exceeded`/`nesting-depth-exceeded`
-                    // (`cause_tag` picks the tag from the `PackageError`).
-                    Code::StageLimitExceeded,
-                    root_index,
-                    PackageError::ResourceLimit {
-                        kind: PackageLimitKind::Depth,
-                        limit: limits.depth,
-                        actual: Some(active.len() + 1),
-                    },
-                ));
-            }
             let edge_limit = || {
                 refusal(
                     Code::ResourceExhausted,
@@ -711,7 +673,6 @@ pub fn link_bundle(
                     PackageError::ResourceLimit {
                         kind: PackageLimitKind::DependencyEdges,
                         limit: limits.dependency_edges,
-                        actual: None,
                     },
                 )
             };
@@ -747,7 +708,6 @@ pub fn link_bundle(
             PackageError::ResourceLimit {
                 kind: PackageLimitKind::ArtifactBytes,
                 limit: limits.artifact_bytes,
-                actual: None,
             },
         ));
     }
@@ -839,14 +799,6 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
-        // The graph's own dependency-chain depth is the one
-        // `PackageLimitKind` that maps cleanly onto a T-4 `LimitKind`
-        // (`NestingDepth`); the byte and count ceilings do not and stay
-        // `InsufficientNextCharge`.
-        PackageError::ResourceLimit {
-            kind: PackageLimitKind::Depth,
-            ..
-        } => Tag::StageLimit(qsl_foundation::diagnostic::LimitKind::NestingDepth),
         PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
             Tag::InsufficientNextCharge
         }
@@ -975,13 +927,6 @@ pub enum PackageError {
         kind: PackageLimitKind,
         /// The configured bound in force when the ceiling was reached.
         limit: usize,
-        /// The counter value the refused step would have reached
-        /// (M2). Only [`PackageLimitKind::Depth`] fills this in: it is the
-        /// one kind that maps onto a catalogued stage limit. The byte and
-        /// count ceilings stay `resource_exhausted` (S1 `SyntaxLimit`
-        /// itself stays bound-only, with no matching `actual` field), so
-        /// they carry no counter here either.
-        actual: Option<usize>,
     },
     /// One required complete facet was omitted.
     #[error("complete V1 is missing facet {0:?}")]

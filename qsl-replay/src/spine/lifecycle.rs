@@ -212,16 +212,16 @@ fn limit_of(
         CompileRefusal::Intake { refusal, region } => {
             let incomplete = match &refusal.cause {
                 UnitIntakeCause::Limit(incomplete) => incomplete,
-                // The two ceilings normalization reads rather than charges
-                // refuse as model causes; the counter is the first value
-                // past the bound.
+                // The two edge ceilings refuse as model causes; the
+                // counter is the edge count the denied charge would have
+                // reached, the first value past the bound.
                 UnitIntakeCause::Refused(refusals) => {
                     let (kind, bound, field) =
                         refusals
                             .iter()
                             .find_map(|refusal| match refusal.cause {
                                 ModelRefusalCause::AncestorSteps { limit, .. } => Some((
-                                    FoundationKind::NodeCount,
+                                    FoundationKind::EdgeCount,
                                     limit,
                                     LimitsField::ModelAncestorSteps,
                                 )),
@@ -293,8 +293,6 @@ fn limit_of(
         CompileRefusal::Forms { .. }
         | CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
-        // The dependency depth stays the import refusal of ADR-015 D-1,
-        // which names the chain that nests too deep.
         | CompileRefusal::Import { .. }
         | CompileRefusal::Link(_)
         | CompileRefusal::Emit(_)
@@ -900,18 +898,7 @@ impl Resolution<'_> {
                 at_identity(),
             ));
         };
-        // 4. Compile, by this same resolution, within the depth ceiling.
-        if self.active.len() >= self.limits.dependencies.depth {
-            let mut path = self.active.clone();
-            path.push(identity);
-            return Err(refuse(
-                ImportRefusal::DepthLimit {
-                    limit: self.limits.dependencies.depth,
-                    path,
-                },
-                at_identity(),
-            ));
-        }
+        // 4. Compile, by this same resolution.
         self.active.push(identity.clone());
         let compiled =
             self.compile_library(supplied.source.clone(), &supplied.path, &supplied.bytes);

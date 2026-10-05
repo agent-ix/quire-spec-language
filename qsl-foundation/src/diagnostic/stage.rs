@@ -17,8 +17,8 @@ use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
 
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1` revision
-/// `1-draft.8`. The catalog row names which S1 or I2 limit carries each of
-/// the four `1-draft.7` kinds.
+/// `1-draft.8`. Nesting depth is not a kind: no stage refuses on depth
+/// (ADR-030).
 ///
 /// Distinct from `quire_exact::LimitKind`, which names the evaluation
 /// meter's counters.
@@ -27,8 +27,6 @@ pub enum LimitKind {
     /// Input bytes, such as a declaration's preimage byte length or the I2
     /// reader's wire bytes.
     InputBytes,
-    /// Nesting depth.
-    NestingDepth,
     /// Token count: S1's token ceiling (a retained CST leaf under complete
     /// V1).
     TokenCount,
@@ -48,9 +46,8 @@ pub enum LimitKind {
 
 impl LimitKind {
     /// Every kind, in the catalog row's order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 7] = [
         Self::InputBytes,
-        Self::NestingDepth,
         Self::TokenCount,
         Self::NodeCount,
         Self::EdgeCount,
@@ -64,7 +61,6 @@ impl LimitKind {
     pub const fn catalog_cause(self) -> &'static str {
         match self {
             Self::InputBytes => "input-bytes-exceeded",
-            Self::NestingDepth => "nesting-depth-exceeded",
             Self::TokenCount => "token-count-exceeded",
             Self::NodeCount => "node-count-exceeded",
             Self::EdgeCount => "edge-count-exceeded",
@@ -167,8 +163,8 @@ impl LimitExceeded {
     /// the stage's counter reached `actual`, with no locus yet.
     ///
     /// `actual` is the value the refused step would have taken the counter
-    /// to: the measured size for input bytes and node count, the level the
-    /// refused entry would have reached for nesting depth, and the
+    /// to: the measured size for input bytes and node count, the edge count
+    /// the refused step would have reached for edge count, and the
     /// cumulative total the refused charge would have reached for the work
     /// budget. It is wider than the bound because a cumulative total of two
     /// `u64` counters can exceed `u64::MAX`.
@@ -313,7 +309,7 @@ mod tests {
         }
     }
 
-    /// FR-096-AC-2 at catalog revision `1-draft.8`: each of the eight kinds
+    /// FR-096-AC-2 at catalog revision `1-draft.8`: each of the seven kinds
     /// reports `stage_limit_exceeded` with its own cause, and a
     /// `LimitExceeded` reports its kind's code with the bound and actual
     /// counter.
@@ -322,7 +318,6 @@ mod tests {
     fn limit_exceeded_reports_stage_limit_exceeded_per_kind() {
         let causes = [
             "input-bytes-exceeded",
-            "nesting-depth-exceeded",
             "token-count-exceeded",
             "node-count-exceeded",
             "edge-count-exceeded",

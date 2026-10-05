@@ -373,16 +373,14 @@ impl TryFrom<LimitKind> for CheckingLimitKind {
     /// 3, finding 4), so a new `LimitKind` forces a decision here.
     /// `NodeCount` maps onto the pre-existing `Self::Nodes` (both name "how
     /// many expression nodes"). The token, edge, occurrence and diagnostic
-    /// counts, and nesting depth, name S1, I2 and library ceilings no
-    /// checking limit has, and refuse: checking has no depth limit
-    /// (ADR-030 D-1).
+    /// counts name S1, I2 and library ceilings no checking limit has, and
+    /// refuse.
     fn try_from(kind: LimitKind) -> Result<Self, LimitKind> {
         match kind {
             LimitKind::NodeCount => Ok(Self::Nodes),
             LimitKind::InputBytes => Ok(Self::InputBytes),
             LimitKind::WorkBudget => Ok(Self::WorkBudget),
-            LimitKind::NestingDepth
-            | LimitKind::TokenCount
+            LimitKind::TokenCount
             | LimitKind::EdgeCount
             | LimitKind::OccurrenceCount
             | LimitKind::DiagnosticCount => Err(kind),
@@ -946,13 +944,11 @@ mod tests {
     }
 
     /// The three kinds a checking limit names convert back from
-    /// `LimitKind`; nesting depth and the S1 and I2 kinds no checking limit
-    /// names refuse,
+    /// `LimitKind`; the S1 and I2 kinds no checking limit names refuse,
     /// and name the `KeyFault` `check::mod` raises for them.
     #[test]
     fn only_checking_kinds_convert_from_a_limit_kind() {
         for (kind, expected) in [
-            (LimitKind::NestingDepth, Err(LimitKind::NestingDepth)),
             (LimitKind::NodeCount, Ok(CheckingLimitKind::Nodes)),
             (LimitKind::InputBytes, Ok(CheckingLimitKind::InputBytes)),
             (LimitKind::WorkBudget, Ok(CheckingLimitKind::WorkBudget)),

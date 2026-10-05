@@ -93,11 +93,12 @@ pub(crate) struct Redefiner {
 /// completion from that type once.
 #[derive(Clone, Debug, Default)]
 struct Ancestry {
-    /// How many distinct types the walk expands, the start type included.
-    expanded: u64,
+    /// How many `supertypes` edges the walk follows in all: every edge of
+    /// the start type's closure, once.
+    edges: u64,
     /// Every type some expanded type names as a direct supertype, ascending
-    /// by [`DeclIdx`], with the 1-based ordinal of the first expansion that
-    /// names it.
+    /// by [`DeclIdx`], with the 1-based ordinal of the first edge that names
+    /// it.
     first_named_at: Box<[(DeclIdx, u64)]>,
 }
 
@@ -620,30 +621,30 @@ impl RecordIndex {
     /// `index`'s ancestry, computed on first use.
     ///
     /// The walk: an explicit stack seeded with `index`; pop a type, skip it
-    /// if already expanded, otherwise expand it and push each of its
-    /// declared supertypes in record order. Every supertype an expansion
-    /// names is recorded with that expansion's ordinal the first time it is
-    /// named, whether or not it was already expanded.
+    /// if already expanded, otherwise expand it and follow each of its
+    /// declared supertypes in record order, one edge at a time. Every
+    /// supertype an edge names is recorded with that edge's ordinal the
+    /// first time it is named, whether or not it was already expanded.
     fn ancestry(&self, index: DeclIdx) -> &Ancestry {
         self.ancestry[index.0].get_or_init(|| {
             let mut stack = vec![index];
             let mut expanded: std::collections::HashSet<DeclIdx> = std::collections::HashSet::new();
             let mut first_named_at: HashMap<DeclIdx, u64> = HashMap::new();
-            let mut ordinal: u64 = 0;
+            let mut edges: u64 = 0;
             while let Some(current) = stack.pop() {
                 if !expanded.insert(current) {
                     continue;
                 }
-                ordinal += 1;
                 for general in &self.generals[current.0] {
-                    first_named_at.entry(*general).or_insert(ordinal);
+                    edges += 1;
+                    first_named_at.entry(*general).or_insert(edges);
                     stack.push(*general);
                 }
             }
             let mut first_named_at: Vec<(DeclIdx, u64)> = first_named_at.into_iter().collect();
             first_named_at.sort_unstable();
             Ancestry {
-                expanded: ordinal,
+                edges,
                 first_named_at: first_named_at.into_boxed_slice(),
             }
         })
@@ -654,20 +655,21 @@ impl RecordIndex {
     ///
     /// The rule is a bounded depth-first walk from `s` (an explicit stack, a
     /// visited set, supertypes pushed in record order) that stops as soon as
-    /// an expanded type names `t` as a direct supertype. `max_steps` is the
-    /// caller's `ancestor_steps` ceiling
+    /// an edge names `t`. `max_steps` is the caller's `ancestor_steps`
+    /// ceiling
     /// ([`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`]),
-    /// used as given: it bounds how many distinct types the walk expands,
-    /// `s` included, so a target `n` supertype steps above `s` along a chain
-    /// is reached at `max_steps == n`. Expanding one type more refuses
-    /// [`ModelRefusalCause::AncestorSteps`] naming `s` and `max_steps`; the
-    /// walk is never truncated into a verdict, so a cycle refuses rather
-    /// than loops.
+    /// used as given: it bounds how many `supertypes` edges the walk follows,
+    /// each charged before it is followed, so under multiple supertypes it
+    /// bounds the walk's closure, never a chain depth. A target `n` edges
+    /// above `s` along a chain is reached at `max_steps == n`. Following one
+    /// edge more refuses [`ModelRefusalCause::AncestorSteps`] naming `s` and
+    /// `max_steps`; the walk is never truncated into a verdict, so a cycle
+    /// refuses rather than loops.
     ///
     /// The answer is read from `s`'s ancestry, not by walking again: `t` is
-    /// found at the first expansion that names it, so the walk admits it
-    /// when that expansion's ordinal is within `max_steps`, and a walk that
-    /// never finds `t` expands every type it reaches.
+    /// found at the first edge that names it, so the walk admits it when
+    /// that edge's ordinal is within `max_steps`, and a walk that never finds
+    /// `t` follows every edge of the closure.
     pub(crate) fn conforms(
         &self,
         s: &DeclarationKey,
@@ -689,13 +691,9 @@ impl RecordIndex {
             ),
         };
         let Some(start) = self.position(s) else {
-            // An uninterned `s` declares no supertype: the walk expands `s`
-            // alone.
-            return if max_steps == 0 {
-                Err(exceeded())
-            } else {
-                Ok(false)
-            };
+            // An uninterned `s` declares no supertype: the walk follows no
+            // edge.
+            return Ok(false);
         };
         let ancestry = self.ancestry(start);
         let found = self.position(t).and_then(|target| {
@@ -707,7 +705,7 @@ impl RecordIndex {
         });
         match found {
             Some(ordinal) if ordinal <= max_steps => Ok(true),
-            None if ancestry.expanded <= max_steps => Ok(false),
+            None if ancestry.edges <= max_steps => Ok(false),
             Some(_) | None => Err(exceeded()),
         }
     }
@@ -792,21 +790,21 @@ mod tests {
                 if !visited.insert(current.clone()) {
                     continue;
                 }
-                if steps >= max_steps {
-                    return Err(ModelRefusal {
-                        code: Code::ResourceExhausted,
-                        cause: ModelRefusalCause::AncestorSteps {
-                            from: s.clone(),
-                            limit: max_steps,
-                        },
-                        detail: format!(
-                            "conformance check from {} exceeded the ancestor_steps limit of {max_steps}",
-                            s.node
-                        ),
-                    });
-                }
-                steps += 1;
                 for general in generals_by_specific.get(&current).into_iter().flatten() {
+                    if steps >= max_steps {
+                        return Err(ModelRefusal {
+                            code: Code::ResourceExhausted,
+                            cause: ModelRefusalCause::AncestorSteps {
+                                from: s.clone(),
+                                limit: max_steps,
+                            },
+                            detail: format!(
+                                "conformance check from {} exceeded the ancestor_steps limit of {max_steps}",
+                                s.node
+                            ),
+                        });
+                    }
+                    steps += 1;
                     if general == t {
                         break 'walk true;
                     }

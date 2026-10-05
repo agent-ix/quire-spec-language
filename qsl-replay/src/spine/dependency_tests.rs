@@ -463,16 +463,16 @@ fn an_equal_import_reuses_the_completed_library() {
     assert!(std::sync::Arc::ptr_eq(direct, through_a));
 }
 
-/// ADR-015 D-1 step 4: library compiles nest at most
-/// `DependencyLimits::depth` deep; a longer chain refuses
-/// `stage_limit_exceeded`/`nesting-depth-exceeded`, unwrapped, at the import
-/// that would exceed it.
-#[trace("FR-099-AC-3", "TC-446")]
+/// ADR-015 D-1 step 4, ADR-030: no fixed ceiling bounds how deeply library
+/// compiles nest. A chain longer than the removed default of 64 compiles at
+/// the default limits.
+#[trace("FR-099-AC-7", "TC-446")]
 #[test]
-fn a_dependency_chain_deeper_than_the_limit_refuses() {
+fn a_dependency_chain_of_any_length_compiles() {
+    const CHAIN: usize = 100;
     // test/c0 imports nothing; test/cN imports test/c(N-1).
     let mut chain = Vec::new();
-    for index in 0..4 {
+    for index in 0..CHAIN {
         let body = if index == 0 {
             H.to_owned()
         } else {
@@ -484,31 +484,13 @@ fn a_dependency_chain_deeper_than_the_limit_refuses() {
             &body,
         ));
     }
-    let source = unit(&format!("{}{H}", import("test/c3", "l")));
-    let refusal = compose(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "u.native",
-        source.as_bytes(),
-        &BTreeMap::new(),
-        &input(chain),
-        SpineLimits {
-            dependencies: super::DependencyLimits { depth: 2 },
-            ..SpineLimits::default()
-        },
-    )
-    .expect_err("a chain of four is deeper than two");
-    assert_eq!(refusal.code(), Code::StageLimitExceeded);
-    assert_eq!(refusal.stage(), SpineStage::Intake);
-    let CompileRefusal::Import {
-        refusal: depth @ ImportRefusal::DepthLimit { limit, path },
-        ..
-    } = &*refusal
-    else {
-        panic!("expected an unwrapped depth refusal, got {refusal:?}");
-    };
-    assert_eq!(depth.cause(), Some("nesting-depth-exceeded"));
-    assert_eq!(*limit, 2);
-    assert_eq!(*path, [lib("test/c3"), lib("test/c2"), lib("test/c1")]);
+    let source = unit(&format!(
+        "{}{H}",
+        import(&format!("test/c{}", CHAIN - 1), "l")
+    ));
+    let compiled = compile_as("u", &source, &input(chain))
+        .expect("a chain longer than the removed ceiling compiles");
+    assert_eq!(compiled.package.dependency_selections().len(), 1);
 }
 
 /// FR-091-AC-24's selective form (ADR-015 D-1): the assembler refuses

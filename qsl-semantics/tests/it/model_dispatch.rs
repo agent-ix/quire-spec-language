@@ -14,7 +14,9 @@
 use ix_trace_rs::trace;
 use qsl_forms::Expression;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{checked_dispatch_operation, DispatchRoot, OperationClauses};
+use qsl_semantics::check::{
+    checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
+};
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
@@ -688,6 +690,93 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
     )
     .unwrap_or_else(|refusal| panic!("expected a checked dispatch family, got {refusal:?}"));
     assert_eq!(declarations.dispatch_tables.len(), 1);
+}
+
+/// FR-083-AC-4: a 10,000-long `redefines` chain links on a thread with a
+/// 512 KiB stack once `family_steps` fits its edges: the walks are iterative
+/// and the limit counts edges, so no chain depth refuses it.
+#[trace("TC-225", "FR-083-AC-4")]
+#[test]
+fn a_ten_thousand_long_redefines_chain_links_on_a_small_stack() {
+    const EDGES: u64 = 10_000;
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            let limits = ModelNormalizationLimits {
+                family_steps: EDGES,
+                ..ModelNormalizationLimits::UNLIMITED
+            };
+            assert_links_model_a_to(
+                link_chain(&chain_package(EDGES), limits),
+                &format!("model.A.op{EDGES}"),
+            );
+        })
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("linking must not overflow a 512 KiB stack");
+}
+
+/// FR-083: `family_steps` counts the edges of the family walk and of every
+/// effective-precondition walk together. Dispatching on `op10` of a chain of
+/// 20 edges, the family walk follows the 10 edges below it and the winner's
+/// precondition walk follows all 20 up to `op0`, so the link follows 20
+/// distinct edges: admitted at 20, and refused by the bridge at 19 even
+/// though the family walk alone fits.
+#[trace("TC-225", "FR-083-AC-4")]
+#[test]
+fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
+    const EDGES: u64 = 20;
+    const ROOT: u64 = 10;
+    let domain_package = chain_package(EDGES);
+    let view = effective_view(&domain_package);
+    let mut clauses = OperationClauses::default();
+    let root = DeclarationKey::fixture(format!("model.A.op{ROOT}"));
+    clauses.member.insert(root.clone(), "op".to_owned());
+    for i in 0..=EDGES {
+        let key = DeclarationKey::fixture(format!("model.A.op{i}"));
+        clauses
+            .parameters
+            .insert(key.clone(), vec![("self".to_owned(), ValueType::Boolean)]);
+        clauses.result.insert(key.clone(), ValueType::Boolean);
+        clauses
+            .own_precondition
+            .insert(key.clone(), Expression::boolean(true));
+        if i == EDGES {
+            clauses.own_body.insert(key, Expression::boolean(true));
+        }
+    }
+    let run = |family_steps: u64| {
+        checked_dispatch_operation(
+            &view,
+            &DispatchRoot {
+                key: root.clone(),
+                closure: GeneralizationClosure::Closed,
+            },
+            &clauses,
+            qsl_semantics::check::admitted_source(
+                qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
+                b"",
+            ),
+            &mut Meter::new(ModelNormalizationLimits {
+                family_steps,
+                ..ModelNormalizationLimits::UNLIMITED
+            }),
+        )
+    };
+    assert!(
+        run(EDGES).is_ok(),
+        "every walk follows the same {EDGES} edges, counted once"
+    );
+    match run(EDGES - 1) {
+        Err(DispatchBridgeRefusal::FamilyStepsExceeded(refusal)) => assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::FamilySteps {
+                original: root,
+                limit: EDGES - 1,
+            }
+        ),
+        other => panic!("expected FamilyStepsExceeded at {}, got {other:?}", EDGES - 1),
+    }
 }
 
 /// TC-225: a family of exactly `family_steps` redefinition steps links with

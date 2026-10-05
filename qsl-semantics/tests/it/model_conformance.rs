@@ -2040,7 +2040,25 @@ fn a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits() {
     );
 }
 
-/// TC-220: a chain of exactly `ancestor_steps` generalization steps
+/// FR-082-AC-3: a 10,000-long `supertypes` chain's conformance walk completes
+/// on a thread with a 512 KiB stack at the default `ancestor_steps`, and the
+/// outcome names no depth.
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn a_ten_thousand_long_chain_conforms_on_a_small_stack_at_the_default_limits() {
+    let outcome = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| check_chain(10_000, ModelNormalizationLimits::default()))
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("the walk must not overflow a 512 KiB stack");
+    assert_eq!(
+        outcome,
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible)
+    );
+}
+
+/// TC-220: a chain of exactly `ancestor_steps` `supertypes` edges
 /// completes with a conformance verdict, and one step longer refuses with
 /// the distinct `resource_exhausted` outcome naming the configured bound --
 /// never a `Completed` verdict of either polarity, which is what a walk
