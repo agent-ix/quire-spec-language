@@ -761,13 +761,11 @@ mod tests {
         type Digit = Int[0, 9];\n\
         function inv using v(x: Digit): Boolean pure { 1 / x > 0 }\n";
 
+    type Checked = Result<Staged<CheckedUnit>, FrontEndFailure>;
+    type Packaged = Result<Staged<EmittedUnit>, FrontEndFailure>;
+
     /// `check`, then `package`, over `text`.
-    fn compiled(
-        text: &str,
-    ) -> (
-        Result<Staged<CheckedUnit>, FrontEndFailure>,
-        Option<Result<Staged<EmittedUnit>, FrontEndFailure>>,
-    ) {
+    fn compiled(text: &str) -> (Checked, Option<Packaged>) {
         let source = SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1");
         let limits = SpineLimits::default();
         let cancel = Cancel::new();
