@@ -156,8 +156,9 @@ impl StateClauseReplayResult {
 /// value is `inconclusive`, `NoValue`. A postcondition's post snapshot is
 /// the subject's output: an integer in it outside its declared range is
 /// admitted exactly and is itself the witness of a violation, so the
-/// replay reproduces whatever the clause evaluates over the exact value,
-/// and [`StateClauseReplayResult::range_violations`] names each one.
+/// replay reproduces a violation whatever the clause does over the exact
+/// value (its boolean, a refusal, an exhausted budget or a fault), and
+/// [`StateClauseReplayResult::range_violations`] names each one.
 ///
 /// Admission and the domain package re-normalization run under their
 /// published defaults: no `quire.value.accounting/v1` counter names either.
@@ -254,7 +255,20 @@ pub fn replay_state_clause(
             "replay", invariant,
         )))
     };
+    // FR-106 check 6.5: a post-state integer outside its declared range is
+    // the witness of a violation of the operation's contract, whatever the
+    // clause does over the exact value.
+    let range_violations: Vec<OutOfRange> = observations
+        .as_ref()
+        .and_then(|observed| observed.post.as_ref())
+        .map(|post| post.out_of_range.clone())
+        .unwrap_or_default();
     let (replayed, mut value) = match report.disposition {
+        // The violation stands even when the clause's own evaluation broke
+        // on the exact value: only the clause's outcome is lost.
+        ClauseDisposition::EvaluateFault(_) if !range_violations.is_empty() => {
+            (Category::Inconclusive, None)
+        }
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Boolean(holds))) => (
             if holds {
                 Category::Success
@@ -290,19 +304,29 @@ pub fn replay_state_clause(
             return fault("clause-check-reports-admission-or-evaluation")
         }
     };
-    // FR-106 check 6.5: a post-state integer outside its declared range is
-    // the witness of a violation of the operation's contract, whether or
-    // not the clause itself holds over the exact value.
-    let range_violations: Vec<OutOfRange> = observations
-        .as_ref()
-        .and_then(|observed| observed.post.as_ref())
-        .map(|post| post.out_of_range.clone())
-        .unwrap_or_default();
-    let replayed = if value.is_some() && !range_violations.is_empty() {
-        Category::Violation
-    } else {
-        replayed
-    };
+    if !range_violations.is_empty() {
+        let charges = consumed(&meter);
+        let result =
+            match envelope.source() {
+                ReplaySource::Witness(_) => ReplayResult::Witness(
+                    WitnessArmResult::settle_range_violation(value, Vec::new(), charges),
+                ),
+                ReplaySource::Input(_) => ReplayResult::Input(
+                    InputArmResult::settle_range_violation(value, Vec::new(), charges),
+                ),
+            };
+        return Ok(StateClauseReplayResult {
+            result,
+            source: source.clone(),
+            package_id,
+            clause: payload.clause.clone(),
+            clause_node: envelope.clause_node(),
+            occurrence_key: envelope.occurrence_key().clone(),
+            observation: payload.observation.clone(),
+            documents: report.provenance.documents,
+            range_violations,
+        });
+    }
     let proved = Verdict::from_category(Category::Violation);
     // FR-268: an agreeing verdict compares the payload's record with the
     // re-derived one, then checks the record separates the clause.
@@ -363,7 +387,7 @@ pub fn replay_state_clause(
         occurrence_key: envelope.occurrence_key().clone(),
         observation: payload.observation.clone(),
         documents: report.provenance.documents,
-        range_violations,
+        range_violations: Vec::new(),
     })
 }
 

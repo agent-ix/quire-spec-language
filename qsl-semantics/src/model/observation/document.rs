@@ -19,7 +19,9 @@ use super::{
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
-use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
+use quire_semantic_value::declaration::{
+    FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
@@ -989,8 +991,13 @@ impl<'a> References<'a> {
 }
 
 /// An in-document integer outside its declared `Int[lower, upper]`, kept
-/// exactly: the value and the range it broke.
-type RangeBreach = (quire_exact::IntegerInterval, Integer);
+/// exactly: the range it broke, the value, and its position when it is a
+/// sequence element.
+struct RangeBreach {
+    range: quire_exact::IntegerInterval,
+    observed: Integer,
+    index: Option<usize>,
+}
 
 /// `witness` is `Some` for a post-state field (FR-106 check 6.5's
 /// post-state rule): an integer outside its declared range is admitted
@@ -1018,7 +1025,11 @@ fn admit_scalar(
             }
             match witness {
                 Some(found) => {
-                    found.push((interval.clone(), value.clone()));
+                    found.push(RangeBreach {
+                        range: interval.clone(),
+                        observed: value.clone(),
+                        index: None,
+                    });
                     Ok(Value::Integer(value))
                 }
                 None => Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")),
@@ -1047,7 +1058,7 @@ fn admit_object_field(
     raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
-    witness: Option<&mut Vec<RangeBreach>>,
+    mut witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<FieldValue, AdmissionRecord> {
     if presence == quire_exact::Presence::Optional {
         return match raw {
@@ -1082,10 +1093,20 @@ fn admit_object_field(
                 ));
             }
             let mut elements = Vec::with_capacity(items.len());
-            for item in items {
-                // A sequence element out of range stays refused: only a
-                // scalar field is witnessed.
-                elements.push(admit_scalar(references, item, collection.element(), None)?);
+            for (index, item) in items.iter().enumerate() {
+                let first = witness.as_deref().map_or(0, Vec::len);
+                elements.push(admit_scalar(
+                    references,
+                    item,
+                    collection.element(),
+                    witness.as_deref_mut(),
+                )?);
+                // Each breach this element recorded is at `index`.
+                if let Some(found) = witness.as_deref_mut() {
+                    for breach in &mut found[first..] {
+                        breach.index = Some(index);
+                    }
+                }
             }
             Ok(FieldValue::Present(quire_exact::from_admitted(
                 (**collection).clone(),
@@ -1270,7 +1291,7 @@ pub(super) fn admit_population_values<'t>(
             }
             // 6.5: value checks, per declared field, in declared order.
             let mut attributes: Vec<(&str, FieldValue)> = Vec::with_capacity(declared.len());
-            let mut breaches: Vec<(&str, RangeBreach)> = Vec::new();
+            let mut breaches: Vec<(FieldRef, RangeBreach)> = Vec::new();
             for attribute in declared {
                 let name = attribute.field().name();
                 let value_type = attribute.field().value_type();
@@ -1300,7 +1321,11 @@ pub(super) fn admit_population_values<'t>(
                                     .with("field", name.to_owned()),
                             )
                         })?;
-                breaches.extend(found.into_iter().map(|breach| (name, breach)));
+                breaches.extend(
+                    found
+                        .into_iter()
+                        .map(|breach| (attribute.identity(), breach)),
+                );
                 value_count += 1;
                 if value_count > limits.values_per_document {
                     return Err(refuse(admission_record(
@@ -1315,13 +1340,12 @@ pub(super) fn admit_population_values<'t>(
             // own `invalid-value` (SR-750 FND-004 round 2): propagated
             // directly, never re-mapped to a `Fault`.
             let reference = object_reference(views, effective_type, &object.key)?;
-            out_of_range.extend(breaches.into_iter().map(|(field, (declared, observed))| {
-                OutOfRange {
-                    object: reference.clone(),
-                    field: field.to_owned(),
-                    range: declared,
-                    observed,
-                }
+            out_of_range.extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
+                object: reference.clone(),
+                field,
+                index: breach.index,
+                range: breach.range,
+                observed: breach.observed,
             }));
             objects.push((reference, attributes));
         }
@@ -1555,7 +1579,8 @@ pub(super) fn finish_populations(
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
-    );
+    )
+    .with_out_of_range(out_of_range.clone());
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -1953,10 +1978,11 @@ mod tests {
         );
         assert_eq!(integer_of(admitted), Integer::from(1001_i64));
         assert_eq!(found.len(), 1);
-        let (range, observed) = &found[0];
-        assert_eq!(range.lower(), &Integer::from(0_i64));
-        assert_eq!(range.upper(), &Integer::from(1000_i64));
-        assert_eq!(observed, &Integer::from(1001_i64));
+        let breach = &found[0];
+        assert_eq!(breach.range.lower(), &Integer::from(0_i64));
+        assert_eq!(breach.range.upper(), &Integer::from(1000_i64));
+        assert_eq!(breach.observed, Integer::from(1001_i64));
+        assert_eq!(breach.index, None);
         let in_range = admit_scalar(
             &mut references,
             &SnapshotValue::Integer("7".to_owned()),

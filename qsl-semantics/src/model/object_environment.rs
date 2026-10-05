@@ -13,8 +13,10 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::model::observation::OutOfRange;
 use crate::model::population::PopulationBinding;
-use quire_exact::PopulationId;
+use quire_exact::{Integer, ObjectReference, PopulationId};
+use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
 
 /// [`ObjectEnvironment::with_population`]'s refusal: `population_id` is
@@ -38,6 +40,9 @@ pub struct PopulationConflict {
 pub struct ObjectEnvironment {
     objects: ObjectClosure,
     populations: BTreeMap<PopulationId, Arc<PopulationBinding>>,
+    /// The post-state integers FR-106 check 6.5's witnessing admitted
+    /// outside their declared range; empty for every other environment.
+    out_of_range: Vec<OutOfRange>,
 }
 
 impl ObjectEnvironment {
@@ -46,7 +51,44 @@ impl ObjectEnvironment {
         Self {
             objects,
             populations: BTreeMap::new(),
+            out_of_range: Vec::new(),
         }
+    }
+
+    /// Records the integers this environment's snapshot holds outside
+    /// their declared range (FR-106 check 6.5), so evaluation can tell a
+    /// witnessed value from a value that breaks the checked types.
+    #[must_use]
+    pub fn with_out_of_range(mut self, out_of_range: Vec<OutOfRange>) -> Self {
+        self.out_of_range = out_of_range;
+        self
+    }
+
+    /// Whether `reference`'s slot for `field` holds a witnessed
+    /// out-of-range value (a scalar, or a sequence with a witnessed
+    /// element).
+    pub fn is_witnessed(
+        &self,
+        types: &TypeEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) -> bool {
+        let Some(attributes) = types.attributes(reference.object_type()) else {
+            return false;
+        };
+        self.out_of_range.iter().any(|witnessed| {
+            witnessed.object == *reference
+                && attributes.iter().any(|attribute| {
+                    attribute.identity() == witnessed.field && attribute.stands_for(field)
+                })
+        })
+    }
+
+    /// Whether `value` is one of the witnessed out-of-range integers.
+    pub fn witnesses_integer(&self, value: &Integer) -> bool {
+        self.out_of_range
+            .iter()
+            .any(|witnessed| witnessed.observed == *value)
     }
 
     /// The environment's core object closure.

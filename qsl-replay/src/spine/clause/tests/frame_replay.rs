@@ -979,3 +979,79 @@ fn a_check_time_frame_violation_replays_to_the_same_witness() {
     assert_eq!(result.claimed(), &claimed);
     assert_eq!(result.found(), Some(witness.as_ref()));
 }
+
+/// An invocation taking `child.versionNumber` from 0 to -1, outside
+/// `Int[0, 1000]`, with the frame respected.
+fn wrapping_debit() -> Invocation {
+    invocation(
+        &[object("root", 1, None), object("child", 0, Some("root"))],
+        &[object("root", 1, None), object("child", -1, Some("root"))],
+        |_| {},
+    )
+}
+
+/// `request` with every document of `input` provided.
+fn provide(mut request: ClauseRunRequest, input: &Invocation) -> ClauseRunRequest {
+    for (reference, bytes) in &input.documents {
+        request.snapshots.insert(reference.digest, bytes.clone());
+        request.invocations.insert(reference.digest, bytes.clone());
+    }
+    request
+}
+
+fn assert_refused_invalid_value(disposition: &ClauseDisposition) {
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = disposition else {
+        panic!("expected a refused admission, got {disposition:?}");
+    };
+    assert_eq!(record.code.as_str(), "invalid_runtime_input");
+    assert_eq!(record.cause, "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
+/// FR-106-AC-13: a `Frame` run admits its post snapshot as an input, so the
+/// wrapping debit still refuses `invalid_runtime_input`/`invalid-value`.
+#[trace("TC-465", "FR-106-AC-13")]
+#[test]
+fn a_frame_run_still_refuses_an_out_of_range_post_state_value() {
+    let input = wrapping_debit();
+    let request = provide(
+        config_version_request(ClauseRunSelection::Frame {
+            operation: OperationName {
+                model: identifier("Config"),
+                object: identifier("ConfigVersion"),
+                operation: identifier("attemptUpdate"),
+            },
+            invocation: input.invocation.clone(),
+        }),
+        &input,
+    );
+    let report = run_clause(request).expect("a well-formed request reports");
+    assert_refused_invalid_value(&report.disposition);
+}
+
+/// FR-106-AC-13: `run_clause`'s `Clause` selection runs under the caller's
+/// `ObservationLimits`, whose default refuses the wrapping debit's post
+/// snapshot.
+#[trace("TC-465", "FR-106-AC-13")]
+#[test]
+fn run_clause_still_refuses_an_out_of_range_post_state_value() {
+    let input = wrapping_debit();
+    let request = provide(
+        config_version_request(ClauseRunSelection::Clause(ClauseSelection {
+            name: "VersionUnchanged".to_owned(),
+            input: ClauseSelectionInput::Invocation {
+                invocation: input.invocation.clone(),
+            },
+        })),
+        &input,
+    );
+    let report = run_clause(request).expect("a well-formed request reports");
+    assert_refused_invalid_value(&report.disposition);
+}

@@ -1288,13 +1288,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Equality(operator, checked, left_node, right_node) => {
                 let right = self.pop()?;
                 let left = self.pop()?;
-                // A post-state integer outside its field's declared range
-                // (FR-106 check 6.5) is not admitted by its static type,
-                // which the kernel's checked equality requires of its
-                // operands. Integers compare by value whatever their
-                // declared range, so such a pair compares directly.
-                let outside_declared_range = |id, value: &Value| {
-                    matches!(value, Value::Integer(_)) && !node.at(id).value_type().admits(value)
+                // An integer FR-106 check 6.5 witnessed outside its field's
+                // declared range does not fit the static type the kernel's
+                // checked equality requires of its operand. Integers
+                // compare by value whatever their declared range, so such
+                // a pair compares directly. Only a witnessed value gets
+                // this: any other operand outside its type still faults.
+                let outside_declared_range = |id, value: &Value| match value {
+                    Value::Integer(integer) => {
+                        !node.at(id).value_type().admits(value) && self.is_witnessed(integer)
+                    }
+                    _ => false,
                 };
                 match (&left, &right) {
                     (Value::Integer(l), Value::Integer(r))
@@ -1322,7 +1326,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let slot = composite.slots().get(*index).ok_or_else(invariant)?;
-                let value = Self::project(slot, *optional, node.value_type())?;
+                let value = Self::project(slot, *optional, node.value_type(), false)?;
                 self.note_field(&composite, *index, &value);
                 value
             }
@@ -1351,12 +1355,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
-                let slot = self
-                    .objects_for(node)?
+                let objects = self.objects_for(node)?;
+                let slot = objects
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
-                let value = Self::project(slot, *optional, node.value_type())?;
+                let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
+                let value = Self::project(slot, *optional, node.value_type(), witnessed)?;
                 self.note_member(node, &reference, &field.name, &value);
                 value
             }
@@ -1881,23 +1886,37 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn project(slot: &FieldValue, optional: bool, value_type: &ValueType) -> Result<Value, Halt> {
+    /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
+    /// outside its declared range, which an optional slot's checked
+    /// construction would refuse. Every other slot is checked as before.
+    fn project(
+        slot: &FieldValue,
+        optional: bool,
+        value_type: &ValueType,
+        witnessed: bool,
+    ) -> Result<Value, Halt> {
         match (slot, optional, value_type) {
             (FieldValue::Present(value), false, _) => Ok(value.clone()),
+            (FieldValue::Present(value), true, ValueType::Option(payload)) if witnessed => Ok(
+                OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
+            ),
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                // The slot was admitted against the field's declared type; a
-                // post-state integer outside its range (FR-106 check 6.5) is
-                // present all the same.
-                Ok(OptionValue::from_admitted(
-                    (**payload).clone(),
-                    Some(value.clone()),
-                ))
+                OptionValue::present((**payload).clone(), value.clone()).map_err(|_| invariant())
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
                 Ok(OptionValue::none((**payload).clone()))
             }
             _ => Err(invariant()),
         }
+    }
+
+    /// Whether `integer` is a value FR-106 check 6.5 witnessed outside its
+    /// declared range in either snapshot this machine reads.
+    fn is_witnessed(&self, integer: &Integer) -> bool {
+        self.objects.witnesses_integer(integer)
+            || self
+                .pre_objects
+                .is_some_and(|pre| pre.witnesses_integer(integer))
     }
 
     fn order(

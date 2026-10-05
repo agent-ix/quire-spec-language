@@ -119,8 +119,11 @@ pub enum PostStateRange {
 pub struct OutOfRange {
     /// The object holding the field.
     pub object: ObjectReference,
-    /// The field's declared name.
-    pub field: String,
+    /// The field: its declaring object type and declared name.
+    pub field: quire_semantic_value::declaration::FieldRef,
+    /// The position of the offending element when the field is a
+    /// sequence, `None` for a scalar field.
+    pub index: Option<usize>,
     /// The field's declared range.
     pub range: quire_exact::IntegerInterval,
     /// The value observed.

@@ -942,7 +942,7 @@ fn range_violations(
         .map(|violation| {
             (
                 violation.object.object().as_str().to_owned(),
-                violation.field.clone(),
+                violation.field.name.clone(),
                 violation.range.lower().to_string(),
                 violation.range.upper().to_string(),
                 violation.observed.to_string(),
@@ -1069,4 +1069,43 @@ fn an_in_range_post_state_reports_no_range_violation() {
     .expect("the replay settles");
     assert!(holding.range_violations().is_empty());
     assert_inconclusive_by_verdicts(&holding);
+}
+
+/// TC-517 step 7 (FR-122-AC-7): the range violation is the witness, so it
+/// settles a violation even when the clause's own evaluation completes no
+/// value: the wrapping debit replayed with the evaluation budget at zero
+/// reproduces, holds no evaluated value, and names the range violation.
+#[trace("TC-517", "FR-122-AC-7")]
+#[test]
+fn a_range_violation_settles_even_when_the_clause_completes_no_value() {
+    for source in [witness_source(), ReplaySource::Input(Vec::new())] {
+        let wrapping_debit = invocation(
+            &[object("root", 1, None), object("child", 0, Some("root"))],
+            &[object("root", 1, None), object("child", -1, Some("root"))],
+        );
+        let result = replay(case_with(
+            config_version_unit(),
+            "VersionUnchanged",
+            wrapping_debit,
+            source,
+            |wire, _| wire.accounting_limits = default_accounting(0),
+        ))
+        .expect("the replay settles");
+        let (category, value, reproduced) = match result.result() {
+            ReplayResult::Witness(arm) => (
+                arm.category(),
+                arm.value(),
+                arm.settlement() == WitnessSettlement::ReproducedWithEvaluatedWitness,
+            ),
+            ReplayResult::Input(arm) => (
+                arm.category(),
+                arm.value(),
+                arm.settlement() == InputSettlement::ReproducedWithoutWitness,
+            ),
+        };
+        assert!(reproduced);
+        assert_eq!(category, Category::Violation);
+        assert_eq!(value, None);
+        assert_eq!(range_violations(&result).len(), 1);
+    }
 }
