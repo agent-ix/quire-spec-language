@@ -143,8 +143,8 @@ fn assert_expected(case: Case, report: &qsl_replay::spine::ClauseRunReport) {
                 case.id()
             );
             match disposition {
-                ClauseDisposition::Evaluate(CallOutcome::Incomplete { limit }) => {
-                    assert_eq!(*limit, "work_units", "{}", case.id());
+                ClauseDisposition::Evaluate(CallOutcome::Incomplete(incomplete)) => {
+                    assert_eq!(incomplete.limits_field(), "work_units", "{}", case.id());
                 }
                 other => panic!(
                     "{}: expected Evaluate(Incomplete), got {other:?}",
