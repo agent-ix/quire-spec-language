@@ -413,6 +413,11 @@ impl<T> Staged<T> {
         self.work
     }
 
+    /// The stage's output, borrowed.
+    pub const fn value(&self) -> &T {
+        &self.value
+    }
+
     /// The stage's output.
     pub fn into_value(self) -> T {
         self.value

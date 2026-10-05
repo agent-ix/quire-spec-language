@@ -23,6 +23,7 @@ use qsl_foundation::diagnostic::{Category, Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::RequestIndex;
+use qsl_package::emit_checked;
 use qsl_semantics::library::PackageId;
 use quire_exact::CancelCause;
 use serde::{Serialize, Serializer};
@@ -528,12 +529,7 @@ impl OutcomeDocument {
     /// identity at S4; a failure names its category and one diagnostic.
     pub fn from_check(result: &Result<Staged<CheckedUnit>, FrontEndFailure>) -> Self {
         let failure = match result {
-            Ok(staged) => {
-                return Self::new(Operation::Check, Some(OutcomeStage::S4), Category::Success)
-                    .with_artifacts(vec![OutcomeArtifact::package_id(
-                        &staged.value().package().package_id(),
-                    )])
-            }
+            Ok(staged) => return Self::from_checked(staged.value()),
             Err(failure) => failure,
         };
         match failure {
@@ -576,6 +572,28 @@ impl OutcomeDocument {
                     ),
                 )]),
         }
+    }
+
+    /// A checked unit's document. The package identity is the one E4 gives
+    /// the package; a package that cannot be emitted has none, and the
+    /// document reports the emitter's refusal at S4 instead.
+    fn from_checked(unit: &CheckedUnit) -> Self {
+        let refusal = match emit_checked(unit.package()) {
+            Ok(emission) if emission.omitted().is_empty() => {
+                return Self::new(Operation::Check, Some(OutcomeStage::S4), Category::Success)
+                    .with_artifacts(vec![OutcomeArtifact::package_id(
+                        &emission.package().package_id(),
+                    )]);
+            }
+            Ok(emission) => CompileRefusal::Omitted(emission.omitted().to_vec()),
+            Err(refusal) => CompileRefusal::Emit(refusal),
+        };
+        Self::new(
+            Operation::Check,
+            Some(refusal.stage().into()),
+            refusal.code().category(),
+        )
+        .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(&refusal)])
     }
 
     /// The document of an `execute` outcome, last reaching S6a. A refused
@@ -660,13 +678,17 @@ mod tests {
     #[test]
     fn check_success_document_names_its_package_identity() {
         let result = checked(FIXTURE);
-        let package_id = result
-            .as_ref()
-            .expect("the fixture checks")
-            .value()
-            .package()
-            .package_id()
-            .hex();
+        let package_id = emit_checked(
+            result
+                .as_ref()
+                .expect("the fixture checks")
+                .value()
+                .package(),
+        )
+        .expect("the package emits")
+        .package()
+        .package_id()
+        .hex();
         let document = json(&OutcomeDocument::from_check(&result));
         assert_eq!(document["format"], "quire-outcome/1");
         assert_eq!(document["operation"], "check");
