@@ -1055,8 +1055,10 @@ fn changing_s3_nodes_alone_keeps_the_other_checking_limits() {
     use crate::spine::CheckingLimits;
     use qsl_foundation::diagnostic::LimitsField;
     let defaults = CheckingLimits::default();
-    let mut limits = SpineLimits::default();
-    limits.checking = limits.checking.with_nodes(1);
+    let limits = SpineLimits {
+        checking: defaults.with_nodes(1),
+        ..SpineLimits::default()
+    };
     assert_eq!(limits.checking.nodes(), 1);
     assert_eq!(limits.checking.input_bytes(), defaults.input_bytes());
     assert_eq!(limits.checking.work_budget(), defaults.work_budget());
