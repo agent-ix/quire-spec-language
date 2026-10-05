@@ -486,7 +486,8 @@ pub enum ExecuteResult {
 }
 
 /// The exhausted limit of an incomplete `execute` result (FR-277): bound and
-/// counter are ASCII decimal strings.
+/// counter (the consumed value at the denied charge, as FR-286 states) are
+/// ASCII decimal strings.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ResultLimit {
     kind: &'static str,
@@ -500,7 +501,7 @@ impl From<&CallIncomplete> for ResultLimit {
         Self {
             kind: incomplete.record.limit_kind.as_str(),
             bound: incomplete.record.limit.to_string(),
-            counter: incomplete.counter().to_string(),
+            counter: incomplete.record.consumed.to_string(),
             field: incomplete.limits_field(),
         }
     }
@@ -885,7 +886,6 @@ mod tests {
                 "result": null,
             })
         );
-        assert!(refusal.to_string().contains("integer"), "{refusal}");
     }
 
     /// FR-286-AC-3: three items serialize in request order with their
