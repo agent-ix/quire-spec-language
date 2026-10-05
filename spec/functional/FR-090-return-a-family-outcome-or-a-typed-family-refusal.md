@@ -381,9 +381,9 @@ When an FR-151 dispatched call's selected method's effective precondition
 evaluates to `false`, S6a SHALL return `Ok(e)` with `e.outcome` equal to
 `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where
 `cause.undefined_record().reason` is `precondition-false`. The result is
-category `undefined`, never `refusal`. `quire_exact::Undefined` has no
-`PreconditionFalse` variant: the operation, selected method and receiver come
-from FR-151 dispatch, which is QSL model vocabulary (ADR-013 O-13).
+category `undefined`, never `refusal`. The operation, selected method and receiver come from FR-151 dispatch, which
+is QSL model vocabulary (ADR-013 O-13). The kernel's `Undefined` variant set is
+`ix://agent-ix/quire-exact/FR-090`'s.
 
 The owner is `StateModel` because ADR-012 assigns dispatch and dispatch
 preconditions to it (§1 family table and checked-type table, §3 per-family
@@ -421,11 +421,9 @@ selects which one S6a returns.
 
 ### The kernel refusal holds kernel causes only
 
-`quire_exact::Refusal` has no variant that names `WrongSnapshotCause`,
-`ModelRefusal` or any
-`qsl_foundation` type, and `quire_exact::Undefined` has no
-`PreconditionFalse` or `AbsentKey` variant. A caller that matches `FamilyOutcome::Evaluated(
-Outcome::Refused(r))` reads a kernel cause.
+What the kernel `Refusal` and `Undefined` variants may name is
+`ix://agent-ix/quire-exact/FR-090`'s. A caller that matches
+`FamilyOutcome::Evaluated(Outcome::Refused(r))` reads a kernel cause.
 
 ### Layering
 
@@ -484,13 +482,8 @@ undefined cause type.
   `InternalFault` landed with ADR-013 §7 S-5a.
 - **Downstream:** none. The removal of `src/value/outcome.rs`'s kernel
   copy in favour of `quire_exact::{Outcome, Refusal, Undefined}` needs no
-  FR-090-AC change: that copy was already stripped down to the kernel's
-  own variant set before this removal, so it carried no `WrongSnapshot`,
-  `Model`, `UnresolvedPopulation` or `PopulationMaximumMismatch` refusal
-  variant, and no `Undefined::PreconditionFalse` or `Undefined::AbsentKey`
-  variant, for the removal to affect (see Status, "`quire_exact::Undefined`
-  and `Refusal`, and QSL's kernel copy ... have no `PreconditionFalse`,
-  `AbsentKey`, `WrongSnapshot` or `Model` variant"). FR-090-AC-1's `Evaluated`
+  FR-090-AC change. The kernel's variant set is
+  `ix://agent-ix/quire-exact/FR-090`'s. FR-090-AC-1's `Evaluated`
   payload was already `quire_exact::Outcome<T>`; that removal is exactly the
   one that lets the `Value` evaluator produce it directly, with no
   coupled change on either side.
@@ -522,11 +515,9 @@ model-layer `ModelQueryHalt`, and the evaluator turns it into a
 `FamilyResult`. `ModelRefusalCause::catalog_code()` is one exhaustive match
 with no `_` arm (`qsl-semantics/src/model/refusal.rs`), and `ModelRefusal::catalog_code()`
 delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
-O-16 category. `quire_exact::Undefined` and `Refusal` have no
-`PreconditionFalse`, `AbsentKey`, `WrongSnapshot` or `Model` variant; nor did
-QSL's kernel copy, before `src/value/outcome.rs` was deleted and
-every caller repointed onto `quire_exact::{Outcome, Refusal, Undefined}`
-directly.
+O-16 category. The kernel `Undefined` and `Refusal` variant set is
+`ix://agent-ix/quire-exact/FR-090`'s. Every caller is repointed onto
+`quire_exact::{Outcome, Refusal, Undefined}` directly.
 
 The S6a family kind is `S6aFamilyKind { Value }`
 (`qsl-eval/src/value/expression/s6a/mod.rs`, layer 5, beside the `ReferenceEvaluation`
