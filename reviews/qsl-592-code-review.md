@@ -99,6 +99,7 @@ Reviewed at 9e42b2c56888c7432a6cec58136b2a6c4e6dd578, after the rebase onto #636
 | FND-007 | fixed | 17619203d (`CompileRefusal::cause()` in spine.rs; outcome.rs calls it) |
 | FND-008 | fixed | 17619203d (`json!` whole-document equality per constructor, plus an exact-bytes literal for AC-3; the `package_id` comes from the `package` operation's output) |
 | FND-009 | fixed | 3f0ba08fa (`replay_stage`: a recompile refusal gives its spine stage, every other refusal S8, and `null` only for `Fault` and `Admission(Fault)`; the diagnostic carries `ReplayRefusal::cause()`; tested with `DependencyIdentityMismatch` giving S8, refusal, stale_dependency, content-mismatch. The causes it still misses are FND-010.) |
+| FND-010 | fixed | 0307a4819 (`ReplayRefusal::cause()` returns `content-mismatch` for `PackageIdMismatch`, `missing-name` for the three Unknown* variants, `revision-mismatch` for `FrameIdentity`/`ClauseIdentity`, `wrong-observation`, and `refusal.cause()` for `Input`; tests over `PackageIdMismatch` and `UnknownFunction`) |
 
 ## New findings (disposition pass 2)
 
