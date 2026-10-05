@@ -407,8 +407,14 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
 #[trace("TC-434", "NFR-012")]
 #[test]
 fn the_model_walks_share_one_default_ancestor_ceiling() {
-    assert_eq!(ModelNormalizationLimits::default().ancestor_steps, 16_777_216);
-    assert_eq!(PopulationAdmissionLimits::default().ancestor_steps, 16_777_216);
+    assert_eq!(
+        ModelNormalizationLimits::default().ancestor_steps,
+        16_777_216
+    );
+    assert_eq!(
+        PopulationAdmissionLimits::default().ancestor_steps,
+        16_777_216
+    );
 }
 
 // ---- flattening and redefinition --------------------------------------------
