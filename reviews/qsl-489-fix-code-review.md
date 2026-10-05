@@ -81,3 +81,4 @@ judgement calls about codes that the single-source change now also moves.
 | FND-001 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |
 | FND-002 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |
 | FND-003 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |
+| FND-004 | fixed | 48d4ddd59bcb4036db7ffc6857743ea48760f7e7 |
