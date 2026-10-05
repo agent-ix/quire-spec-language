@@ -36,3 +36,17 @@ AC-to-test-to-code check for the `Std001` arm.
 
 Approve with one low finding. The arm is built and covered by
 independent oracles; it lacks an AC of its own.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | TC-177 step 1 still lists one `declined` record and says "Eleven records total"; since this PR the test builds a QSL and a STD-001 `declined` (twelve records), which only the new Expected Results bullet mentions. Separately, the amended FR-069-AC-1 lacks "and" after "keyed by its `request_index`)" before "a `declined` result" | spec/test-cases/TC-177-proof-result-category-preserving-map.md:32-42, spec/functional/FR-069-implement-typed-proof-result-envelope.md:82 |
+
+## Dispositions
+
+Disposition pass 1, reviewed at `00ad945c1` (range `6725aa7a..00ad945c`), no build.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 00ad945c: FR-069-AC-1 lists a `declined` with a QSL code and one with a STD-001 code, even unregistered (category `refusal`, never remapped); TC-177 adds the matching expected result; the IR form-check asserts (`std001_code!` equality, `Bad-Code` refusal) are dropped, leaving the test on QSL behaviour traced to the AC that now states it |

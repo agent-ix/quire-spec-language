@@ -33,3 +33,6 @@ three spec edits.
 ## Verdict
 
 Clean. The three records state the ruling consistently and match the code.
+
+Disposition pass 1, reviewed at `00ad945c1`: no finding was open; the fix
+round's FR-069-AC-1 and TC-177 edits are reviewed under SR-1302.

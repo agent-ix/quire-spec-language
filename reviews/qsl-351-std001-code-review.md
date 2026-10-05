@@ -63,3 +63,12 @@ constructors through the one crate it may name, and the lock holds one copy
 of each first-party crate.
 
 Focused run at the reviewed sha through `locked-build.sh`: `cargo test --locked -p qsl-replay --lib --test terminal_record_facade` filtered to `tc_177`, `std001` and `terminal_records`: 3 passed, 0 failed.
+
+## Dispositions
+
+Disposition pass 1, reviewed at `00ad945c1` (range `6725aa7a..00ad945c`), no
+build (the pre-merge `make ci` is the lead's).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 00ad945c: tc_177's STD-001 `Declined` row uses `Std001Code::KANI_BOUND_INVALID` (registered `kani_bound_invalid`, a refusal code) in place of `KANI_VACUOUS_PROOF` |

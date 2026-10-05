@@ -32,11 +32,13 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
 1. Construct one minimal FR-331 terminal record for each of the eight wire
    values FR-331's `results` vocabulary admits: `proved` (with at least one
    SUCCESS check), `proved` with zero SUCCESS checks (vacuous), `tested`,
-   `refuted`, `declined` (with a typed refusal cause), `unsupported` (with a
+   `refuted`, `declined` (with a typed refusal cause and a QSL catalog code),
+   `declined` (with a typed refusal cause and a STD-001 registry code, one
+   unregistered), `unsupported` (with a
    typed unavailability cause), `incomplete` (timeout cause), `incomplete`
    (cancellation cause), `inconclusive` with cause `replay_parity` (carrying
    a `DisagreementCause`), `inconclusive` with cause `replay_refused`
-   (carrying a catalog code), and `failed`. (Eleven records total: two
+   (carrying a catalog code), and `failed`. (Twelve records total: two
    distinct `incomplete` causes and two distinct `success`-category values,
    `proved` and `tested`, are each constructed once. Each record is built
    with its own typed `request_index`.)
