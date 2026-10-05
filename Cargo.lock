@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "agent-ix-extraction-frontend"
-version = "0.0.0"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=033e228408dd7b9f815800583af28e49c4e601a9#033e228408dd7b9f815800583af28e49c4e601a9"
+version = "0.2.1"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=68c0acba2390eb1593cc003d0a3e144638540a86#68c0acba2390eb1593cc003d0a3e144638540a86"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -17,8 +17,13 @@ dependencies = [
 
 [[package]]
 name = "agent-ix-semantic-ir"
-version = "0.0.0"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=033e228408dd7b9f815800583af28e49c4e601a9#033e228408dd7b9f815800583af28e49c4e601a9"
+version = "0.1.1"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=68c0acba2390eb1593cc003d0a3e144638540a86#68c0acba2390eb1593cc003d0a3e144638540a86"
+
+[[package]]
+name = "agent-ix-semantic-schema"
+version = "0.3.0"
+source = "git+https://github.com/agent-ix/filament-core-data?tag=semantic-schema-v0.3.0#6156f9e0e891f7d508ce7b137ba1f6eb849a099e"
 
 [[package]]
 name = "ahash"
@@ -1574,6 +1579,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-code-parse"
+version = "0.2.2"
+source = "git+https://github.com/agent-ix/quire-code-rs?rev=b58164a8cf4e6543d7bc5f5f2042ea792612ed16#b58164a8cf4e6543d7bc5f5f2042ea792612ed16"
+dependencies = [
+ "thiserror",
+ "tree-sitter",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "quire-contract-model"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#3be6ff70a6e20372b5181c2c53d242c86dba46d3"
@@ -1606,14 +1623,16 @@ dependencies = [
 
 [[package]]
 name = "quire-rs"
-version = "0.46.0"
-source = "git+https://github.com/agent-ix/quire-rs?rev=2823a93bd3797c970c1d389afae9b893dea6f232#2823a93bd3797c970c1d389afae9b893dea6f232"
+version = "0.50.1"
+source = "git+https://github.com/agent-ix/quire-rs?rev=8ab0d509db3a067eafd5c03f657b51eb2aaab7f2#8ab0d509db3a067eafd5c03f657b51eb2aaab7f2"
 dependencies = [
+ "agent-ix-semantic-schema",
  "globset",
  "ignore",
  "indexmap",
  "jsonschema 0.18.3",
  "loom",
+ "quire-rust-extraction",
  "rayon",
  "regex",
  "serde",
@@ -1623,6 +1642,14 @@ dependencies = [
  "unicode-normalization",
  "uuid",
  "yaml_serde",
+]
+
+[[package]]
+name = "quire-rust-extraction"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-rs?rev=8ab0d509db3a067eafd5c03f657b51eb2aaab7f2#8ab0d509db3a067eafd5c03f657b51eb2aaab7f2"
+dependencies = [
+ "quire-code-parse",
 ]
 
 [[package]]
@@ -1950,6 +1977,7 @@ version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -2066,6 +2094,12 @@ dependencies = [
  "psm",
  "winapi",
 ]
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strsim"
@@ -2335,6 +2369,56 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.26.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca0d1bf6fdd806e43ae5198f82f527056d359def39e54e67a0f478ac09dac081"
+
+[[package]]
+name = "tree-sitter-python"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bf85fd39652e740bf60f46f4cda9492c3a9ad75880575bf14960f775cb74a1c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-typescript"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c5f76ed8d947a75cc446d5fccd8b602ebf0cde64ccf2ffa434d873d7a575eff"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

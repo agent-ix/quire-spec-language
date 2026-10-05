@@ -41,7 +41,6 @@ fn context() -> SemanticContext {
     let module = read_semantic_block(
         &json!({"contract_version":"1.0.0","semantic_core":"0.1.0","package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
         &["entity".to_owned()],
-        &|name| name == "entity",
     ).unwrap();
     SemanticContext::new(module, "rules.md", BundleIndex::default())
         .with_source_identity(identity().identity)

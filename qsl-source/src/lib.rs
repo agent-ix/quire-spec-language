@@ -185,7 +185,6 @@ pub fn clause_context(
             "package": package, "exports": [], "targets": ["markdown"]
         }),
         &[],
-        &|_| false,
     )?;
     Ok(
         SemanticContext::new(module, original.path(), BundleIndex::default())
