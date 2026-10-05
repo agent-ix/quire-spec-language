@@ -288,11 +288,14 @@ impl Code {
             .find(|code| code.as_str() == value)
     }
 
-    /// Whether this code records incomplete work rather than invalid input.
+    /// Whether this code records incomplete work rather than invalid input:
+    /// a reached limit or budget, a cancellation, or an unavailable
+    /// observation (ADR-029 CB-4's incomplete row, exit 22).
     pub fn is_incomplete(self) -> bool {
         matches!(
             self,
             Self::ResourceExhausted
+                | Self::StageLimitExceeded
                 | Self::Cancelled
                 | Self::IncompletePopulation
                 | Self::UnavailableObservation

@@ -51,8 +51,8 @@ pub(crate) use lifecycle::{compose, ComposedUnit};
 
 mod call;
 pub use call::{
-    default_accounting, run, Call, CallArgument, CallLocus, CallOutcome, CallRefusal, CallValue,
-    RunRefusal, DEFAULT_WORK_UNITS,
+    default_accounting, run, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome,
+    CallRefusal, CallValue, RunRefusal, DEFAULT_WORK_UNITS,
 };
 
 mod clause;

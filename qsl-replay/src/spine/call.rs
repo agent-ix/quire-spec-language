@@ -28,7 +28,9 @@ use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{Cancel, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType};
+use quire_exact::{
+    Cancel, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType,
+};
 use quire_semantic_value::location::Location;
 
 use super::lifecycle as front_end;
@@ -159,10 +161,38 @@ pub enum CallOutcome {
         reason: &'static str,
     },
     /// `Outcome::Incomplete(i)`: `incomplete`, exit 22.
-    Incomplete {
-        /// The exhausted counter's `quire.value.accounting/v1` member name.
-        limit: &'static str,
-    },
+    Incomplete(CallIncomplete),
+}
+
+/// FR-277's accounting-limit outcome for `execute`: the counter that could
+/// not take its charge, with everything the caller needs to raise it.
+#[derive(Debug)]
+pub struct CallIncomplete {
+    /// The kernel's incomplete record: the limit kind, the configured
+    /// value, the counter before the denied charge, the denied amount and
+    /// the charge point.
+    pub record: Incomplete,
+    /// Where the outcome arose, when the evaluation knows.
+    pub location: Option<Location>,
+}
+
+impl CallIncomplete {
+    /// The `Call::accounting` field that raises this bound: the exhausted
+    /// counter's `quire.value.accounting/v1` member name.
+    pub fn limits_field(&self) -> &'static str {
+        self.record.limit_kind.as_str()
+    }
+
+    /// The counter at the failed charge: what the counter would have
+    /// reached had the charge been admitted.
+    pub fn counter(&self) -> Integer {
+        let consumed = Integer::from(self.record.consumed);
+        if self.record.limit_kind.is_cumulative() {
+            consumed.add(&self.record.next_charge)
+        } else {
+            self.record.next_charge.clone()
+        }
+    }
 }
 
 impl CallOutcome {
@@ -174,7 +204,7 @@ impl CallOutcome {
             Self::Completed(_) => Category::Success,
             Self::Refused(refusal) => refusal.category(),
             Self::Undefined { .. } => Category::Undefined,
-            Self::Incomplete { .. } => Category::Incomplete,
+            Self::Incomplete(_) => Category::Incomplete,
         }
     }
 }
@@ -631,9 +661,12 @@ pub(crate) fn convert_outcome(
         FamilyOutcome::Evaluated(Outcome::Undefined(reason)) => Ok(CallOutcome::Undefined {
             reason: kernel_undefined_reason(reason),
         }),
-        FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => Ok(CallOutcome::Incomplete {
-            limit: incomplete.limit_kind.as_str(),
-        }),
+        FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+            Ok(CallOutcome::Incomplete(CallIncomplete {
+                record: incomplete,
+                location,
+            }))
+        }
         FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
             let fallback = cause.catalog_code();
             Ok(CallOutcome::Refused(convert_refusal(

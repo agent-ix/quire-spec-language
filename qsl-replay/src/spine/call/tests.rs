@@ -250,15 +250,113 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
         ..call("seven", Vec::new())
     };
     let outcome = run_fixture(FIXTURE, &starved).unwrap();
-    assert!(
-        matches!(
-            outcome,
-            CallOutcome::Incomplete {
-                limit: "work_units"
-            }
-        ),
-        "{outcome:?}"
+    let CallOutcome::Incomplete(incomplete) = outcome else {
+        panic!("expected an incomplete outcome, got {outcome:?}");
+    };
+    assert_eq!(incomplete.limits_field(), "work_units");
+}
+
+fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunRefusal>> {
+    run(
+        source(),
+        "spine-run.native",
+        FIXTURE.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        limits,
+        call,
+    )
+    .map(|(_, outcome)| outcome)
+}
+
+fn run_fixture_call(call: &Call) -> CallOutcome {
+    run_fixture(FIXTURE, call).expect("the fixture compiles")
+}
+
+/// FR-277-AC-3 (TC-758 step 6): `execute` with `work_units` one below what
+/// the call needs returns `Incomplete` carrying the limit kind, the
+/// configured value, the counter at the failed charge and the field name.
+#[trace("TC-758", "FR-277-AC-3")]
+#[test]
+fn an_execute_accounting_limit_carries_its_kind_bound_counter_and_field() {
+    let with_work = |work_units: u64| Call {
+        accounting: default_accounting(work_units),
+        ..call("seven", Vec::new())
+    };
+    let needed = (0..=1_000)
+        .find(|work| {
+            matches!(
+                run_fixture_call(&with_work(*work)),
+                CallOutcome::Completed(_)
+            )
+        })
+        .expect("the call completes under a small work bound");
+    assert!(needed > 0, "the call charges work");
+    let CallOutcome::Incomplete(incomplete) = run_fixture_call(&with_work(needed - 1)) else {
+        panic!("one work unit short must be incomplete");
+    };
+    assert_eq!(
+        incomplete.record.limit_kind,
+        quire_exact::LimitKind::WorkUnits
     );
+    assert_eq!(incomplete.record.limit, needed - 1);
+    assert_eq!(incomplete.limits_field(), "work_units");
+    assert!(incomplete.record.consumed <= incomplete.record.limit);
+    assert!(
+        incomplete.counter() > Integer::from(incomplete.record.limit),
+        "the counter at the failed charge is past the bound"
+    );
+    assert_eq!(
+        incomplete.counter(),
+        Integer::from(incomplete.record.consumed).add(&incomplete.record.next_charge)
+    );
+    assert!(
+        incomplete.location.is_some(),
+        "the denied charge is located"
+    );
+}
+
+/// FR-285-AC-5 (TC-769 step 5): a stage limit reached by `run`'s compile
+/// refuses `stage_limit_exceeded` in category incomplete, exit 22, naming
+/// the limits field and configured bound: the source bytes at 1 and a
+/// checking node limit.
+#[trace("TC-769", "FR-285-AC-5")]
+#[test]
+fn a_stage_limit_refusal_of_run_is_incomplete_and_exits_22() {
+    use qsl_foundation::diagnostic::{Category, LimitKind, LimitsField};
+    let mut source_limit = SpineLimits::default();
+    source_limit.source.source_bytes = 1;
+    let checking_limit = SpineLimits {
+        checking: quire_semantic_value::checking::CheckingLimits::new(1),
+        ..SpineLimits::default()
+    };
+    for (limits, field, kind) in [
+        (
+            source_limit,
+            LimitsField::SourceBytes,
+            LimitKind::InputBytes,
+        ),
+        (
+            checking_limit,
+            LimitsField::CheckingNodes,
+            LimitKind::NodeCount,
+        ),
+    ] {
+        let refusal = run_limited(limits, &call("seven", Vec::new()))
+            .expect_err("a reached stage limit refuses");
+        assert_eq!(refusal.code().as_str(), "stage_limit_exceeded");
+        assert_eq!(refusal.category(), Category::Incomplete, "{field:?}");
+        assert_eq!(refusal.category().exit_code(), 22, "{field:?}");
+        let RunRefusal::Compile(compile) = *refusal else {
+            panic!("expected a compile refusal for {field:?}");
+        };
+        let CompileRefusal::Limit(limit) = *compile else {
+            panic!("expected a limit refusal for {field:?}");
+        };
+        assert_eq!(limit.limits_field(), Some(field));
+        assert_eq!(limit.kind(), kind);
+        assert_eq!(limit.configured_bound(), 1);
+    }
 }
 
 #[derive(Debug)]
@@ -662,7 +760,9 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         charge_point: quire_exact::ChargePoint::IntegerArithmeticOperands,
     };
     match convert(FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete))).unwrap() {
-        CallOutcome::Incomplete { limit } => assert_eq!(limit, "work_units"),
+        CallOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limits_field(), "work_units");
+        }
         other => panic!("{other:?}"),
     }
 
