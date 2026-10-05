@@ -8,8 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
 use qsl_source::{
-    extract, Cause, Limits, PreflightFailure, Selection, SemanticContext, MAX_LINES,
-    MAX_SOURCE_BYTES,
+    extract, semantic_core_version, Cause, Limits, PreflightFailure, Selection, SemanticContext,
+    CONTRACT_VERSION, MAX_LINES, MAX_SOURCE_BYTES,
 };
 use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex};
 use serde_json::json;
@@ -254,7 +254,6 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
 #[test]
 #[trace("TC-108", "FR-030-AC-3", "FR-011-AC-3")]
 fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
-    use qsl_source::{semantic_core_version, CONTRACT_VERSION};
     #[derive(Debug)]
     enum Foreign {
         Identity,
