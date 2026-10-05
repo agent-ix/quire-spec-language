@@ -8,14 +8,15 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_cst::HostCause;
+use qsl_foundation::diagnostic::{LimitKind, LimitsField};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view};
 use qsl_semantics::library::{LibraryName, PackageId};
 use serde_json::Value;
 
 use super::{
-    compose, CompileRefusal, ComposedUnit, DependencyInput, DependencyInputRefusal, ImportRefusal,
-    SourceHolder, SpineLimits, SpineStage, SuppliedLibrary,
+    compose, CompileRefusal, ComposedUnit, DependencyInput, DependencyInputRefusal,
+    DependencyLimits, ImportRefusal, SourceHolder, SpineLimits, SpineStage, SuppliedLibrary,
 };
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -463,16 +464,11 @@ fn an_equal_import_reuses_the_completed_library() {
     assert!(std::sync::Arc::ptr_eq(direct, through_a));
 }
 
-/// ADR-015 D-1 step 4, ADR-030: no fixed ceiling bounds how deeply library
-/// compiles nest. A chain longer than the removed default of 64 compiles at
-/// the default limits.
-#[trace("FR-099-AC-7", "TC-446")]
-#[test]
-fn a_dependency_chain_of_any_length_compiles() {
-    const CHAIN: usize = 200;
-    // test/c0 imports nothing; test/cN imports test/c(N-1).
+/// A unit importing `test/c{n-1}`, and the `n` libraries it reaches:
+/// `test/c0` imports nothing and `test/cN` imports `test/c(N-1)`.
+fn chain_of(libraries: usize) -> (String, Vec<SuppliedLibrary>) {
     let mut chain = Vec::new();
-    for index in 0..CHAIN {
+    for index in 0..libraries {
         let body = if index == 0 {
             H.to_owned()
         } else {
@@ -486,11 +482,143 @@ fn a_dependency_chain_of_any_length_compiles() {
     }
     let source = unit(&format!(
         "{}{H}",
-        import(&format!("test/c{}", CHAIN - 1), "l")
+        import(&format!("test/c{}", libraries - 1), "l")
     ));
-    let compiled = compile_as("u", &source, &input(chain))
-        .expect("a chain longer than the removed ceiling compiles");
-    assert_eq!(compiled.package.dependency_selections().len(), CHAIN);
+    (source, chain)
+}
+
+/// `compose` of `source` over `libraries` under `dependencies`.
+fn compile_under(
+    source: &str,
+    libraries: Vec<SuppliedLibrary>,
+    dependencies: DependencyLimits,
+) -> Result<ComposedUnit, Box<CompileRefusal>> {
+    compose(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "u.native",
+        source.as_bytes(),
+        &BTreeMap::new(),
+        &input(libraries),
+        SpineLimits {
+            dependencies,
+            ..SpineLimits::default()
+        },
+    )
+}
+
+/// The `LimitExceeded` an import refusal wraps, unwrapped from the
+/// dependency path of the libraries being compiled when it was reached.
+fn reached_dependency_limit(
+    refusal: &CompileRefusal,
+) -> (&[LibraryName], &qsl_foundation::diagnostic::LimitExceeded) {
+    let CompileRefusal::Dependency { path, refusal } = refusal else {
+        panic!("expected a refusal inside a library, got {refusal:?}");
+    };
+    let CompileRefusal::Import {
+        refusal: ImportRefusal::Limit(limit),
+        ..
+    } = &**refusal
+    else {
+        panic!("expected a dependency limit, got {refusal:?}");
+    };
+    (path, limit)
+}
+
+/// ADR-030: no fixed ceiling bounds how deeply library compiles nest. A
+/// chain of 1,000 libraries compiles at the default limits on a thread with
+/// a 512 KiB stack: the resolution, the closure read and the drop of the
+/// nested packages all run on a constant native stack.
+#[trace("FR-099-AC-7", "TC-446")]
+#[test]
+fn a_dependency_chain_of_any_length_compiles_on_a_small_stack() {
+    const CHAIN: usize = 1_000;
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            let (source, chain) = chain_of(CHAIN);
+            let compiled = compile_as("u", &source, &input(chain))
+                .expect("a chain longer than any fixed depth compiles");
+            assert_eq!(compiled.package.dependency_selections().len(), CHAIN);
+        })
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("the compile must not overflow a 512 KiB stack");
+}
+
+/// FR-099-AC-7: a unit importing `a`, which imports `b`, which imports `c`.
+/// With `dependency.libraries` at 2 the compile refuses at `b`'s import of
+/// `c` naming node count, bound 2, actual 3 and the setting, and at 3 it
+/// compiles.
+#[trace("FR-099-AC-7", "TC-446")]
+#[test]
+fn the_libraries_limit_refuses_the_import_that_would_exceed_it() {
+    let (source, chain) = chain_of(3);
+    let limits = |libraries| DependencyLimits {
+        libraries,
+        ..DependencyLimits::default()
+    };
+    let refusal =
+        compile_under(&source, chain.clone(), limits(2)).expect_err("a third library exceeds two");
+    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    assert_eq!(refusal.stage(), SpineStage::Intake);
+    let (path, limit) = reached_dependency_limit(&refusal);
+    assert_eq!(path, [lib("test/c2"), lib("test/c1")]);
+    assert_eq!(limit.kind(), LimitKind::NodeCount);
+    assert_eq!(limit.configured_bound(), 2);
+    assert_eq!(limit.actual(), 3);
+    assert_eq!(limit.limits_field(), Some(LimitsField::DependencyLibraries));
+    assert!(compile_under(&source, chain, limits(3)).is_ok());
+}
+
+/// FR-099-AC-7: with `dependency.import_edges` at 2 the same unit refuses at
+/// the third import naming edge count, bound 2, actual 3 and the setting; at
+/// 3 it compiles.
+#[trace("FR-099-AC-7", "TC-446")]
+#[test]
+fn the_import_edges_limit_refuses_the_import_that_would_exceed_it() {
+    let (source, chain) = chain_of(3);
+    let limits = |import_edges| DependencyLimits {
+        import_edges,
+        ..DependencyLimits::default()
+    };
+    let refusal =
+        compile_under(&source, chain.clone(), limits(2)).expect_err("a third import exceeds two");
+    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    let (_, limit) = reached_dependency_limit(&refusal);
+    assert_eq!(limit.kind(), LimitKind::EdgeCount);
+    assert_eq!(limit.configured_bound(), 2);
+    assert_eq!(limit.actual(), 3);
+    assert_eq!(
+        limit.limits_field(),
+        Some(LimitsField::DependencyImportEdges)
+    );
+    assert!(compile_under(&source, chain, limits(3)).is_ok());
+}
+
+/// FR-099-AC-7: with `dependency.source_bytes` one byte below the three
+/// libraries' summed source bytes the compile refuses naming input bytes and
+/// the setting; at the sum it compiles.
+#[trace("FR-099-AC-7", "TC-446")]
+#[test]
+fn the_source_bytes_limit_refuses_the_library_that_would_exceed_it() {
+    let (source, chain) = chain_of(3);
+    let total: usize = chain.iter().map(|library| library.bytes.len()).sum();
+    let limits = |source_bytes| DependencyLimits {
+        source_bytes,
+        ..DependencyLimits::default()
+    };
+    let refusal = compile_under(&source, chain.clone(), limits(total - 1))
+        .expect_err("one byte short of the three sources");
+    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    let (_, limit) = reached_dependency_limit(&refusal);
+    assert_eq!(limit.kind(), LimitKind::InputBytes);
+    assert_eq!(limit.configured_bound(), u64::try_from(total - 1).unwrap());
+    assert_eq!(limit.actual(), u128::try_from(total).unwrap());
+    assert_eq!(
+        limit.limits_field(),
+        Some(LimitsField::DependencySourceBytes)
+    );
+    assert!(compile_under(&source, chain, limits(total)).is_ok());
 }
 
 /// FR-091-AC-24's selective form (ADR-015 D-1): the assembler refuses

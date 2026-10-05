@@ -218,6 +218,22 @@ impl LinkRefusal {
     }
 }
 
+/// Drops the dependency closure over an explicit stack, so a chain of any
+/// length drops on a constant native stack (ADR-030 D-1): the derived drop
+/// would recurse once per link.
+impl Drop for CheckedPackage {
+    fn drop(&mut self) {
+        let mut pending: Vec<Arc<CheckedPackage>> = std::mem::take(&mut self.dependencies)
+            .into_values()
+            .collect();
+        while let Some(package) = pending.pop() {
+            if let Ok(mut owned) = Arc::try_unwrap(package) {
+                pending.extend(std::mem::take(&mut owned.dependencies).into_values());
+            }
+        }
+    }
+}
+
 impl CheckedPackage {
     /// The S4 link step (ADR-013 T-1): the sole conversion from
     /// `CheckedGraph` to `CheckedPackage`. Fed only by already-checked

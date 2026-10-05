@@ -224,7 +224,10 @@ impl CompileRefusal {
                     | LimitsField::ModelHashedBytes
                     | LimitsField::ModelWorkUnits
                     | LimitsField::ModelAncestorSteps
-                    | LimitsField::ModelFamilySteps,
+                    | LimitsField::ModelFamilySteps
+                    | LimitsField::DependencyLibraries
+                    | LimitsField::DependencyImportEdges
+                    | LimitsField::DependencySourceBytes,
                 ) => SpineStage::Intake,
             },
         }
@@ -768,6 +771,11 @@ pub enum ImportRefusal {
         /// The identity the import names.
         identity: LibraryName,
     },
+    /// Step 4: charging the import graph reached a [`DependencyLimits`]
+    /// ceiling, naming the limit kind, bound, counter and setting
+    /// (`stage_limit_exceeded`, FR-099).
+    #[error("{}", limit_message(.0))]
+    Limit(LimitExceeded),
     /// An import names the empty identity, which the parser never admits:
     /// a broken invariant (`runtime_invariant`).
     #[error("runtime_invariant: an admitted import names the empty library identity")]
@@ -789,6 +797,7 @@ impl ImportRefusal {
         match self {
             Self::Cycle { .. } => Code::InvalidPackage,
             Self::MissingSelection { .. } => Code::MissingImport,
+            Self::Limit(_) => Code::StageLimitExceeded,
             Self::UnnamedImport => Code::RuntimeInvariant,
             Self::View { refusal, .. } => refusal.code(),
         }
@@ -799,6 +808,7 @@ impl ImportRefusal {
         match self {
             Self::Cycle { .. } => Some("definition-cycle"),
             Self::MissingSelection { .. } => Some("missing-selection"),
+            Self::Limit(limit) => Some(limit.kind().catalog_cause()),
             Self::UnnamedImport => None,
             Self::View { .. } => None,
         }
@@ -816,9 +826,37 @@ pub struct SpineLimits {
     pub model: ModelNormalizationLimits,
     /// S3: the checker's ceilings.
     pub checking: CheckingLimits,
+    /// The S4 source resolution's ceilings (FR-099).
+    pub dependencies: DependencyLimits,
     /// The type-environment ceilings the assembler admits records, tuples
     /// and object types under (FR-082).
     pub environment: TypeEnvironmentLimits,
+}
+
+/// The S4 source resolution's ceilings (FR-099): caller-configurable
+/// resource limits on the import graph, each used as given. A library
+/// compile is charged the full S1 to S4 limits as its own unit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DependencyLimits {
+    /// A node count of the library compiles in the closure, set by
+    /// `dependency.libraries`. Defaults to 4096.
+    pub libraries: usize,
+    /// An edge count of the imports resolved across the closure, set by
+    /// `dependency.import_edges`. Defaults to 16384.
+    pub import_edges: usize,
+    /// The summed input bytes of the library sources compiled, set by
+    /// `dependency.source_bytes`. Defaults to 16777216.
+    pub source_bytes: usize,
+}
+
+impl Default for DependencyLimits {
+    fn default() -> Self {
+        Self {
+            libraries: 4096,
+            import_edges: 16384,
+            source_bytes: 16_777_216,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -296,7 +296,7 @@ fn limit_of(
         CompileRefusal::Assembly { refusal, .. } => {
             refusal.errors.iter().find_map(|error| match &error.cause {
                 AssemblyCause::TypeLimit(limit) => Some(match limit.kind() {
-                    FoundationKind::NodeCount => {
+                    FoundationKind::EdgeCount => {
                         limit.clone().named(LimitsField::EnvironmentAncestorSteps)
                     }
                     _ => limit.clone().named(LimitsField::EnvironmentWorkUnits),
@@ -304,6 +304,10 @@ fn limit_of(
                 _ => None,
             })
         }
+        CompileRefusal::Import {
+            refusal: ImportRefusal::Limit(limit),
+            region,
+        } => Some(at(limit.clone(), region.as_ref())),
         CompileRefusal::Dependency { refusal, .. } => limit_of(refusal, source_len),
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
@@ -541,6 +545,8 @@ pub fn check(
             cancel,
             active: Vec::new(),
             compiled: BTreeMap::new(),
+            import_edges: 0,
+            source_bytes: 0,
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
@@ -773,6 +779,12 @@ struct Resolution<'a> {
     /// once per compile, so the number of library compiles is at most the
     /// number of supplied libraries.
     compiled: BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+    /// The imports resolved so far across the closure
+    /// (`dependency.import_edges`).
+    import_edges: usize,
+    /// The summed input bytes of the library sources compiled so far
+    /// (`dependency.source_bytes`).
+    source_bytes: usize,
     /// IR's admitted package of each library read so far, which a later
     /// library's view read takes for its closure instead of reading again.
     admitted: AdmittedPackages,
@@ -1048,6 +1060,31 @@ impl<'a> Resolution<'a> {
     ) -> Result<Selected<'a>, Box<CompileRefusal>> {
         let at_identity = || region(raw, import.identity_span);
         let refuse = |refusal, region| Box::new(CompileRefusal::Import { refusal, region });
+        let limits = self.limits.dependencies;
+        let reached = |kind, bound: usize, actual: usize, field| {
+            refuse(
+                ImportRefusal::Limit(
+                    LimitExceeded::new(
+                        kind,
+                        u64::try_from(bound).unwrap_or(u64::MAX),
+                        u128::try_from(actual).unwrap_or(u128::MAX),
+                    )
+                    .named(field),
+                ),
+                at_identity(),
+            )
+        };
+        // Each import resolved is one edge of the import graph, charged
+        // before it is resolved.
+        self.import_edges = self.import_edges.saturating_add(1);
+        if self.import_edges > limits.import_edges {
+            return Err(reached(
+                FoundationKind::EdgeCount,
+                limits.import_edges,
+                self.import_edges,
+                LimitsField::DependencyImportEdges,
+            ));
+        }
         // The parser admits no empty identity.
         let Ok(identity) = LibraryName::new(import.identity.as_str()) else {
             return Err(refuse(ImportRefusal::UnnamedImport, at_identity()));
@@ -1071,6 +1108,31 @@ impl<'a> Resolution<'a> {
                 at_identity(),
             ));
         };
+        // A library compile is one node of the closure, and its source's
+        // bytes are summed, each charged before the compile starts.
+        let libraries = self
+            .compiled
+            .len()
+            .saturating_add(self.active.len())
+            .saturating_add(1);
+        if libraries > limits.libraries {
+            return Err(reached(
+                FoundationKind::NodeCount,
+                limits.libraries,
+                libraries,
+                LimitsField::DependencyLibraries,
+            ));
+        }
+        let source_bytes = self.source_bytes.saturating_add(supplied.bytes.len());
+        if source_bytes > limits.source_bytes {
+            return Err(reached(
+                FoundationKind::InputBytes,
+                limits.source_bytes,
+                source_bytes,
+                LimitsField::DependencySourceBytes,
+            ));
+        }
+        self.source_bytes = source_bytes;
         Ok(Selected::Compile(identity, supplied))
     }
 }

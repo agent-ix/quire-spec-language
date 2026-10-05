@@ -367,7 +367,7 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
 /// `depth - 1`. The model still normalizes it (its longest path is `depth`
 /// steps) but refuses the walk from `c.0` to `z`, which follows `depth`
-/// edges, with `resource_exhausted`/`ancestor-steps`. Check time stops at a node-count stage limit naming the
+/// edges, with `resource_exhausted`/`ancestor-steps`. Check time stops at an edge-count stage limit naming the
 /// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
 /// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
@@ -383,7 +383,7 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
         CEILING
     ));
 
-    // Check time: a stage limit (ADR-014 B-3), node count, the ceiling
+    // Check time: a stage limit (ADR-014 B-3), edge count, the ceiling
     // plus one, and no locus (FR-082).
     let Stopped::Limit(limit) = stage_failure(environment_of(&view, CEILING).unwrap_err())
         .into_refused()
@@ -393,27 +393,30 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     };
     assert_eq!(
         limit,
-        LimitExceeded::new(LimitKind::NodeCount, CEILING, u128::from(CEILING) + 1)
+        LimitExceeded::new(LimitKind::EdgeCount, CEILING, u128::from(CEILING) + 1)
     );
     assert_eq!(
         limit.catalog_code(),
-        CatalogCode::new("stage_limit_exceeded", "node-count-exceeded")
+        CatalogCode::new("stage_limit_exceeded", "edge-count-exceeded")
     );
     assert_eq!(limit.locus(), None);
 }
 
-/// The model's normalization and population walks default to NFR-012's one
-/// ceiling of 16777216 edges.
-#[trace("TC-434", "NFR-012")]
+/// `TypeEnvironment::new` admits under the same default ceiling the model's
+/// own limits default to, so a caller that sets neither gets one bound:
+/// NFR-012's 16777216 edges.
+#[trace("TC-220", "FR-082-AC-6")]
 #[test]
-fn the_model_walks_share_one_default_ancestor_ceiling() {
+fn check_and_evaluation_share_one_default_ancestor_ceiling() {
+    use quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS;
+    assert_eq!(DEFAULT_ANCESTOR_STEPS, 16_777_216);
     assert_eq!(
         ModelNormalizationLimits::default().ancestor_steps,
-        16_777_216
+        DEFAULT_ANCESTOR_STEPS
     );
     assert_eq!(
         PopulationAdmissionLimits::default().ancestor_steps,
-        16_777_216
+        DEFAULT_ANCESTOR_STEPS
     );
 }
 

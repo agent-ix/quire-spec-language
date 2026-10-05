@@ -104,6 +104,12 @@ pub enum LimitsField {
     EnvironmentAncestorSteps,
     /// `environment.work_units`.
     EnvironmentWorkUnits,
+    /// `dependency.libraries`.
+    DependencyLibraries,
+    /// `dependency.import_edges`.
+    DependencyImportEdges,
+    /// `dependency.source_bytes`.
+    DependencySourceBytes,
     /// `checking.nodes`.
     CheckingNodes,
     /// `checking.input_bytes`.
@@ -130,6 +136,9 @@ impl LimitsField {
             Self::ModelFamilySteps => "model.family_steps",
             Self::EnvironmentAncestorSteps => "environment.ancestor_steps",
             Self::EnvironmentWorkUnits => "environment.work_units",
+            Self::DependencyLibraries => "dependency.libraries",
+            Self::DependencyImportEdges => "dependency.import_edges",
+            Self::DependencySourceBytes => "dependency.source_bytes",
             Self::CheckingNodes => "checking.nodes",
             Self::CheckingInputBytes => "checking.input_bytes",
             Self::CheckingWorkBudget => "checking.work_budget",

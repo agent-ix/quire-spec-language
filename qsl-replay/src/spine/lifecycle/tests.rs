@@ -1193,7 +1193,7 @@ fn check_names_the_type_environment_limit_field_it_reached() {
     };
     assert_field(
         LimitsField::EnvironmentAncestorSteps,
-        FoundationKind::NodeCount,
+        FoundationKind::EdgeCount,
         10_000,
         run(|limits, value| limits.environment.ancestor_steps = value),
     );
