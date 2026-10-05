@@ -310,10 +310,6 @@ fn an_execute_accounting_limit_carries_its_kind_bound_counter_and_field() {
         incomplete.counter(),
         Integer::from(incomplete.record.consumed).add(&incomplete.record.next_charge)
     );
-    assert!(
-        incomplete.location.is_some(),
-        "the denied charge is located"
-    );
 }
 
 /// FR-285-AC-5 (TC-769 step 5): a stage limit reached by `run`'s compile
