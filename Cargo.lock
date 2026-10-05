@@ -1483,6 +1483,7 @@ dependencies = [
  "qsl-semantics",
  "qsl-source",
  "quire-canonical",
+ "quire-contract-model",
  "quire-exact",
  "quire-semantic-value",
  "serde",
@@ -1575,7 +1576,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#6fb6e974efd6b9a9c74515ee7e07df250fa4aacf"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#3be6ff70a6e20372b5181c2c53d242c86dba46d3"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-canonical",

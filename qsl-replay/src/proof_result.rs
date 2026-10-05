@@ -15,6 +15,7 @@ use crate::result::DisagreementCause;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
+use quire_contract_model::Std001Code;
 
 /// QSpec FR-243's settlement basis: the closed vocabulary every truth
 /// result carries exactly one of (ADR-031 SW-3, SW-10). Compared by its
@@ -145,14 +146,17 @@ pub enum ReportedInconclusiveCause {
     Cause(InconclusiveCause),
 }
 
-/// The catalog code a `declined` result carries, in the registry that
-/// issued it. Codes are never remapped across registries: a code of
-/// another registry (IR's `kani_*` codes) is never spelled as a QSL catalog
-/// code. IR's arm is added when IR exports its typed code.
+/// The code a `declined` result carries, in the registry it belongs to.
+/// Codes are never remapped across registries: a STD-001 registry code
+/// (IR's `kani_*` codes among them) is never spelled as a QSL catalog code,
+/// and the reverse. The `Std001` arm names the registry, not an issuer, and
+/// refuses no unregistered code: `Std001Code`'s own form check is all.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeclineCode {
     /// A QSL catalog code.
     Qsl(Code),
+    /// A STD-001 registry code.
+    Std001(Std001Code),
 }
 
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
@@ -464,6 +468,7 @@ mod tests {
     use crate::result::Verdict;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::WireNodeId;
+    use quire_contract_model::std001_code;
 
     fn source(items: Vec<TerminalRecord>) -> BackendProviderSource {
         BackendProviderSource {
@@ -506,6 +511,14 @@ mod tests {
                 TerminalValue::Declined {
                     cause: ProofRefusalCause::Refused,
                     code: DeclineCode::Qsl(Code::MissingDeclaration),
+                },
+                Category::Refusal,
+                None,
+            ),
+            (
+                TerminalValue::Declined {
+                    cause: ProofRefusalCause::Refused,
+                    code: DeclineCode::Std001(Std001Code::KANI_BOUND_INVALID),
                 },
                 Category::Refusal,
                 None,
@@ -701,6 +714,35 @@ mod tests {
             TerminalValue::from_call_site_refusal(&fault),
             TerminalValue::Failed
         );
+    }
+
+    /// FR-069-AC-1 (TC-177): a `Declined` with a STD-001 code, even an
+    /// unregistered one, builds, compares by the code, and is distinct from a
+    /// QSL catalog code of the same cause: no code is remapped across
+    /// registries.
+    #[trace("TC-177", "FR-069-AC-1")]
+    #[test]
+    fn a_declined_value_carries_a_std001_code_without_remapping_it() {
+        let parsed = Std001Code::new("kani_corpus_identity_collision").unwrap();
+        assert!(!parsed.is_registered());
+
+        let std001 = TerminalValue::Declined {
+            cause: ProofRefusalCause::Refused,
+            code: DeclineCode::Std001(parsed),
+        };
+        let same = TerminalValue::Declined {
+            cause: ProofRefusalCause::Refused,
+            code: DeclineCode::Std001(std001_code!("kani_corpus_identity_collision")),
+        };
+        let qsl = TerminalValue::Declined {
+            cause: ProofRefusalCause::Refused,
+            code: DeclineCode::Qsl(Code::MissingDeclaration),
+        };
+        assert_eq!(std001, same);
+        assert_ne!(std001, qsl);
+        assert_eq!(std001.category(), Category::Refusal);
+        let record = TerminalRecord::new(RequestIndex::new(3), std001.clone());
+        assert_eq!(record.value(), &std001);
     }
 
     /// FR-069-AC-4 (TC-178): an oversized replay-parity cause refuses even
