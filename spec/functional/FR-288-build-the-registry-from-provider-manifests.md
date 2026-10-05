@@ -58,6 +58,14 @@ FR-331 provider manifests.
   manifest's backend identity, verbatim.
 - Layer R and layer 6 shall name a backend by the one `qsl-foundation`
   `BackendId` type.
+- Layer R shall give every `BackendDescriptor` a `ProviderOrigin`, `Linked` or
+  `Process`. The conversion shall set `Linked` for a compile-time provider's
+  manifest and `Process` for a plugin `hello` frame's manifest, and no
+  manifest member shall state or change it.
+- If two registrations of one `BackendId` differ in any member, origin
+  included, then the registry shall withdraw both and record each
+  conflicting manifest digest as `duplicate-backend`, whatever the order of
+  registration; a registration equal in every member shall be idempotent.
 - If a manifest fails the FR-331 manifest reader, then the conversion shall
   refuse it with the reader's typed cause, and the registry shall not hold
   it.
@@ -66,10 +74,12 @@ FR-331 provider manifests.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-288-AC-1 | One manifest, passed to the conversion once as a compile-time provider's and once as the body of a plugin `hello` frame, gives two equal `BackendDescriptor` values. | Test (TC-772) |
+| FR-288-AC-1 | One manifest, passed to the conversion once as a compile-time provider's and once as the body of a plugin `hello` frame, gives two `BackendDescriptor` values that differ in their origin member alone. | Test (TC-772) |
 | FR-288-AC-2 | A descriptor's `BackendId` equals the manifest's backend identity, verbatim; changing any one other member of the manifest (an advertised kind, a domain, an option, a bound) changes the descriptor's advertised capabilities and leaves its `BackendId` unchanged. | Test (TC-772) |
 | FR-288-AC-3 | A manifest missing its advertised kinds is refused with the FR-331 reader's cause, and a registry built from it and one valid manifest holds only the valid one. | Test (TC-772) |
 | FR-288-AC-4 | For an item routed to a provider and settled with a replayed counterexample, the `BackendId` the registry's descriptor holds, the one the replay envelope records and the one the terminal record names are equal values; two manifests that differ only in a tool version member give the same `BackendId`. | Test (TC-772) |
+| FR-288-AC-5 | A descriptor built for a compile-time provider holds origin `Linked`, and one built for a plugin `hello` manifest holds `Process`; the `BackendId` is the same for both. | Test (TC-772) |
+| FR-288-AC-6 | Registering `Linked` and `Process` descriptors of one `BackendId` and manifest, in either order, withdraws both and records the conflicting manifest digest as `duplicate-backend`; a registration equal in every member, origin included, is idempotent. | Test (TC-772) |
 
 ## Dependencies
 

@@ -12,8 +12,8 @@
 use ix_trace_rs::trace;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, RegistrationCause,
-    Registry,
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, ProviderOrigin,
+    RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 
@@ -28,6 +28,7 @@ fn admit(
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
     BackendDescriptor::admit(
         candidate(id),
+        ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
     )
@@ -126,6 +127,7 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
 fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
     let absent_mode = BackendDescriptor::admit(
         candidate("absent-mode"),
+        ProviderOrigin::Linked,
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
     )
