@@ -42,7 +42,14 @@ use std::sync::Arc;
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::library::{LibraryName, PackageId};
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
+
+/// The limits the E4 emitter encodes a package's identity preimage and its
+/// `quire.checked-package/v2` bytes under: no byte bound of their own. Both
+/// project a checked graph the check stage already bounded (`checking.nodes`,
+/// `checking.input_bytes`), the stage budget FR-259 Behavior 3 has the site
+/// pass; a bound here could only refuse a package `check` admitted, with no
+/// setting to raise.
+pub(crate) const EMIT_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(u64::MAX);
 
 use crate::emit::{emit_checked, EmitRefusal};
 
@@ -469,7 +476,7 @@ impl EmittedPackage {
         // preimage through its `quire_canonical::Encode`: the encoder orders
         // members itself, and the projected node bodies nest as deep as
         // their expressions.
-        let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)?;
+        let preimage_bytes = quire_canonical::to_vec(identity_preimage, EMIT_LIMITS)?;
         let package_id = PackageId::of_preimage(&preimage_bytes);
         Ok(Self {
             bytes: encode(package_id)?,

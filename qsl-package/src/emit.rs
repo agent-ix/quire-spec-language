@@ -94,7 +94,6 @@ use qsl_semantics::value::{
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use super::{CheckedPackage, EmittedPackage};
 
@@ -1055,7 +1054,7 @@ fn emit_package_inner(
             capability_report: &capability_report,
             diagnostics: &diagnostics,
         };
-        quire_canonical::to_vec(&wire, IDENTITY_LIMITS).map_err(EmitRefusal::from)
+        quire_canonical::to_vec(&wire, crate::checked::EMIT_LIMITS).map_err(EmitRefusal::from)
     })?;
     let evidence = own_evidence(&lock);
     Ok(Emission {

@@ -17,7 +17,6 @@ use serde_json::{Map, Value};
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NODE_KEY_DOMAIN;
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// The identity preimage version constant.
 pub const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
@@ -435,7 +434,12 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
         MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
     })?;
-    match quire_canonical::to_vec(&document, LIMITS) {
+    // Canonical bytes are exactly as long as `bytes`, which the reader's own
+    // artifact byte limit already bounded: an encoding past that length is
+    // not `bytes`' canonical form (FR-259 Behavior 3).
+    let canonical_bound =
+        quire_canonical::Limits::new(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+    match quire_canonical::to_vec(&document, canonical_bound) {
         Ok(canonical) if canonical == bytes => {}
         Ok(_) => return Err(PreimageDefect::NonCanonical),
         Err(error) => return Err(encode_defect(error)),
@@ -594,7 +598,8 @@ mod tests {
         preimage["edition"]["names"] = serde_json::json!({"\u{E000}": 1, "😀": 2});
         let document =
             quire_canonical::read(&serde_json::to_vec(&preimage).unwrap(), u64::MAX).unwrap();
-        let rfc_8785 = quire_canonical::to_vec(&document, LIMITS).unwrap();
+        let rfc_8785 =
+            quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX)).unwrap();
         let text = std::str::from_utf8(&rfc_8785).unwrap();
         assert!(text.contains("{\"😀\":2,\"\u{E000}\":1}"), "{text}");
         assert!(project_declarations(&rfc_8785).is_ok());
