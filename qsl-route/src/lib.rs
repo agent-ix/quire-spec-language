@@ -200,9 +200,9 @@ pub enum ProviderOrigin {
 /// [`ProviderOrigin`], the digest of its own FR-331 provider manifest, and
 /// the `(capability kind, mode)` pairs it advertises. Two descriptors of one
 /// identity that differ in origin differ in a member, so they conflict like
-/// any other differing pair (FR-288-AC-6). The manifest digest only tells two registrations of one
-/// identity apart, so a conflict is refused once per distinct manifest
-/// (FR-290); it is never part of the candidate.
+/// any other differing pair (FR-288-AC-6). The manifest digest only tells
+/// two registrations of one identity apart, so a conflict is refused once
+/// per distinct manifest (FR-290); it is never part of the candidate.
 ///
 /// `BackendDescriptor`, the candidate set and `Capability` cross repository
 /// boundaries as QSpec data, never through a shared Rust crate

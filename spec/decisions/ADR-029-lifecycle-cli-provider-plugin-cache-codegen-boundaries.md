@@ -477,8 +477,14 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    alone: the advertised (kind, mode) pairs, domains and bounds, against the
    item's extent classification, under QSpec FR-290's rules. The descriptor
    CG receives carries the manifest's advertised domains and bounds, not the
-   (kind, mode) pairs alone. An item whose domain or bound the manifest does
-   not advertise declines under FR-290. It never calls the plugin.
+   (kind, mode) pairs alone. That descriptor is CG's own descriptor for the
+   Process variant, not `qsl_route::BackendDescriptor`, which holds only
+   (kind, mode); CG sources the domains and bounds from the FR-331 manifest
+   the `BackendDescriptor` came from. An item whose domain or bound the
+   manifest does not advertise declines under FR-290. The FR-290 decline
+   cause for an unadvertised domain, bound or unbounded mode is pending in
+   QSpec under QSL-637, in a QSpec PR that follows this one; until then CG
+   declines with no new cause. It never calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor
@@ -497,8 +503,14 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
 4. **Disposition from the manifest alone.** A bounded item routes when the
    manifest advertises the bounded mode with a bound that covers the item's.
    An unbounded item routes only when the manifest advertises the unbounded
-   mode. Otherwise the item declines under FR-290. There is no default
-   disposition.
+   mode. Otherwise the item declines under FR-290, with the pending cause
+   above. There is no default disposition. FR-290's existing
+   `requires-bound` row (an unbounded item on a bounded-only provider when a
+   finite bound is available) is the case where the manifest advertises the
+   bounded mode but the item's extent is unbounded; it stays a
+   `requires-bound` settlement of that row, and routing happens only once
+   a bound is supplied that the advertised bound covers. Every other
+   unadvertised case declines.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
    learns that a descriptor is a process provider. Not (a), a driver-supplied
    map beside the descriptors: it is a second source of truth that can
