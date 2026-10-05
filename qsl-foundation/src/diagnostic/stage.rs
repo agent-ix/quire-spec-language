@@ -334,7 +334,7 @@ mod tests {
             let exceeded = LimitExceeded::new(kind, 10, 11);
             let code = exceeded.catalog_code();
             assert_eq!(code, CatalogCode::new("stage_limit_exceeded", cause));
-            assert_eq!(category_of(&code), Some(Category::Refusal));
+            assert_eq!(category_of(&code), Some(Category::Incomplete));
             assert_eq!(exceeded.configured_bound(), 10);
             assert_eq!(exceeded.actual(), 11);
             assert_eq!(exceeded.locus(), None);

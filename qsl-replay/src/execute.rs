@@ -80,9 +80,11 @@ pub enum ReplayRefusal {
     /// digest, or an encoding above the reader bound.
     #[error(transparent)]
     Request(#[from] ReplayRequestRefusal),
-    /// The request's S1 source limit is above the reader limit.
+    /// The request's S1 source limit is above the reader limit: the request
+    /// asks for more than the reader allows, which is invalid input
+    /// (`invalid-request`, exit 20), not an exhausted limit.
     #[error(
-        "stage_limit_exceeded: the request's S1 text_input_bytes {} is above the reader limit {}",
+        "invalid-request: the request's S1 text_input_bytes {} is above the reader limit {}",
         .0.requested,
         .0.reader
     )]
@@ -236,7 +238,7 @@ impl ReplayRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::Request(refusal) => refusal.code(),
-            Self::LimitAboveReader(_) => Code::StageLimitExceeded,
+            Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::NotASource(_) | Self::SourceCount(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
             Self::PackageIdMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {

@@ -812,6 +812,13 @@ fn tc_444_stage_limits_bound_the_recompile() {
         ),
         "{refused:?}"
     );
+    // The request itself is invalid: a refusal (exit 20), not incomplete.
+    assert_eq!(refused.code(), Code::InvalidRequest);
+    assert_eq!(
+        refused.code().category(),
+        qsl_foundation::diagnostic::Category::Refusal
+    );
+    assert_eq!(refused.code().category().exit_code(), 20);
 
     let mut tight = small(7);
     tight.stage_limits.s1.text_input_bytes = 16;

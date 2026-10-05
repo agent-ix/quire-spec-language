@@ -252,7 +252,7 @@ pub fn replay_state_clause(
             return fault("state-clause-completes-a-boolean")
         }
         ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None),
-        ClauseDisposition::Evaluate(CallOutcome::Incomplete { .. }) => (Category::Incomplete, None),
+        ClauseDisposition::Evaluate(CallOutcome::Incomplete(_)) => (Category::Incomplete, None),
         // O-16's `undefined` row is not a proof category (as in FR-098).
         ClauseDisposition::Evaluate(CallOutcome::Undefined { .. }) => {
             (Category::Inconclusive, None)
@@ -507,7 +507,7 @@ pub(crate) fn stopped_reason(
             _ => fault("separation-evaluation-maps-to-an-outcome"),
         })?;
     Ok(match outcome {
-        CallOutcome::Incomplete { .. } => None,
+        CallOutcome::Incomplete(_) => None,
         CallOutcome::Undefined { reason } => Some(SeparationReason::UndefinedEvaluation {
             expression: location.ok_or_else(|| fault("undefined-evaluation-is-located"))?,
             cause: reason.to_owned(),

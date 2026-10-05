@@ -12,7 +12,7 @@ relationships:
 
 Verify the one exit function over every O-16 category, the severity order, the failure variants and the undefined case.
 
-Scope: FR-285-AC-1 to FR-285-AC-4.
+Scope: FR-285-AC-1 to FR-285-AC-5.
 
 ## Test Procedure
 
@@ -20,6 +20,7 @@ Scope: FR-285-AC-1 to FR-285-AC-4.
 2. Map the item-code sets {10, 22}, {0, 30, 20}, {21, 22}, {20, 21}, {0, 10} and {0}.
 3. Map `StageFailure::Refused` with a profile-gated cause and with `ill_typed`, `StageFailure::Limit`, `StageFailure::Cancelled`, `StageFailure::Fault`, and `CallFailure::Input`, `Cancelled` and `Fault`.
 4. Render FR-100-AC-10's `sum-out-of-domain` evaluation through FR-100's outcome mapping.
+5. Run a source with the source byte limit set to 1, and with `s3.nodes` set to 1.
 
 Tag the tests `#[trace("TC-769", "<AC id>")]`.
 
@@ -29,3 +30,4 @@ Tag the tests `#[trace("TC-769", "<AC id>")]`.
 - Step 2: 22, 30, 21, 20, 10, 0.
 - Step 3: 21, 20, 22, 22, 30, 20, 22, 30.
 - Step 4: outcome `{"kind": "undefined", "reason": "sum-out-of-domain"}` with exit 10.
+- Step 5: each run refuses `stage_limit_exceeded` in category `incomplete`, exits 22, and names its limits field and configured bound.

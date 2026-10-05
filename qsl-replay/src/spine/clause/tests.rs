@@ -2059,8 +2059,11 @@ fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     match &report.disposition {
-        ClauseDisposition::Evaluate(super::CallOutcome::Incomplete { limit }) => {
-            assert_eq!(*limit, quire_exact::LimitKind::WorkUnits.as_str());
+        ClauseDisposition::Evaluate(super::CallOutcome::Incomplete(incomplete)) => {
+            assert_eq!(
+                incomplete.limits_field(),
+                quire_exact::LimitKind::WorkUnits.as_str()
+            );
         }
         other => panic!("expected Evaluate(Incomplete {{ .. }}), got {other:?}"),
     }

@@ -78,9 +78,9 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
             .code,
         Code::SourceDigestMismatch
     );
-    // The source's own byte ceiling is now a stage limit
-    // (`stage_limit_exceeded`), a refusal, not incomplete work.
-    assert!(!Source::read_verified(id, "x", b"abc", digest, 2)
+    // The source's own byte ceiling is a stage limit
+    // (`stage_limit_exceeded`), incomplete work (ADR-029 CB-4).
+    assert!(Source::read_verified(id, "x", b"abc", digest, 2)
         .unwrap_err()
         .is_incomplete());
     for invalid in [
@@ -545,9 +545,9 @@ fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
     )
     .is_err());
     let body = source("body", "true");
-    // The source's own byte ceiling is now a stage limit
-    // (`stage_limit_exceeded`), a refusal, not incomplete work.
-    assert!(!parse_source(
+    // The source's own byte ceiling is a stage limit
+    // (`stage_limit_exceeded`), incomplete work (ADR-029 CB-4).
+    assert!(parse_source(
         body,
         Limits {
             source_bytes: 1,

@@ -279,7 +279,7 @@ pub fn replay_frame(
             )))
         }
         ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None, None),
-        ClauseDisposition::Evaluate(CallOutcome::Incomplete { .. }) => {
+        ClauseDisposition::Evaluate(CallOutcome::Incomplete(_)) => {
             (Category::Incomplete, None, None)
         }
         // O-16's `undefined` row is not a proof category (as in FR-098).

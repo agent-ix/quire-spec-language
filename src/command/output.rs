@@ -419,7 +419,9 @@ pub(super) fn spine_run_result(
             }
         }
         CallOutcome::Undefined { reason } => types::SpineOutcome::Undefined { reason },
-        CallOutcome::Incomplete { limit } => types::SpineOutcome::Incomplete { limit },
+        CallOutcome::Incomplete(incomplete) => types::SpineOutcome::Incomplete {
+            limit: incomplete.limits_field(),
+        },
     };
     let document = types::SpineRunReport {
         format: types::Format::SpineRunResult,

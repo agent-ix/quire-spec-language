@@ -12,7 +12,7 @@ relationships:
 
 Verify that each limit a lifecycle operation enforces comes from the caller's limits value, and that reaching it names the limit, its value and the field that raises it.
 
-Scope: FR-277-AC-1, FR-277-AC-2.
+Scope: FR-277-AC-1, FR-277-AC-2, FR-277-AC-3.
 
 ## Test Procedure
 
@@ -21,6 +21,7 @@ Scope: FR-277-AC-1, FR-277-AC-2.
 3. Rerun with that field set to the counter.
 4. Generate a source whose body is a 100,000-term sum and `check` it with `s3.nodes` raised to its node count, on a thread with the platform's default stack.
 5. `check` the same source with `s3.nodes` one below its node count.
+6. `execute` a function with `work_units` one below what it needs.
 
 Tag the tests `#[trace("TC-758", "<AC id>")]`.
 
@@ -31,3 +32,4 @@ Tag the tests `#[trace("TC-758", "<AC id>")]`.
 - Step 3: each run succeeds.
 - Step 4: `check` succeeds, and the thread does not overflow its stack.
 - Step 5: `check` returns `LimitExceeded` naming `s3.nodes`; no outcome names a depth.
+- Step 6: the outcome `Incomplete` carries the limit kind, the configured value, the counter at the failed charge and the `work_units` field name.
