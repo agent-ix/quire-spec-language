@@ -957,8 +957,7 @@ fn ancestor_paths(
     let mut out = Vec::new();
     let mut closing_cycles: Vec<ClosingCycle> = Vec::new();
     let mut followed: HashSet<(DeclarationKey, DeclarationKey)> = HashSet::new();
-    loop {
-        let Some(frame) = stack.last_mut() else { break };
+    while let Some(frame) = stack.last_mut() {
         if frame.next >= frame.directs.len() {
             stack.pop();
             continue;
