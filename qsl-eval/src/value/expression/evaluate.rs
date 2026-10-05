@@ -3119,4 +3119,21 @@ mod tests {
             ]))
         );
     }
+    /// FR-106 check 6.5: only a witnessed optional slot skips the checked
+    /// construction; the same out-of-range integer in an unwitnessed slot,
+    /// and a value of the wrong kind in any slot, is a broken invariant.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn project_relaxes_only_a_witnessed_optional_slot() {
+        let range = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64))
+                .expect("a non-empty interval"),
+        );
+        let optional = ValueType::option(range);
+        let outside = FieldValue::Present(Value::Integer(Integer::from(-1_i64)));
+        assert!(Machine::project(&outside, true, &optional, true).is_ok());
+        assert!(Machine::project(&outside, true, &optional, false).is_err());
+        let wrong_kind = FieldValue::Present(Value::Boolean(true));
+        assert!(Machine::project(&wrong_kind, true, &optional, false).is_err());
+    }
 }

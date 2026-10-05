@@ -1992,4 +1992,43 @@ mod tests {
         assert_eq!(integer_of(in_range), Integer::from(7_i64));
         assert_eq!(found.len(), 1);
     }
+    /// FR-106-AC-12: a post-state sequence field's out-of-range element is
+    /// admitted exactly and reported at its index under a witness sink,
+    /// and refused without one.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn an_out_of_range_sequence_element_is_witnessed_at_its_index() {
+        let types = TypeEnvironment::new([], []).expect("an empty environment admits");
+        let mut references = References::over(&[], &types, &[]);
+        let sequence = quire_exact::ValueType::collection(quire_exact::CollectionType::new(
+            CollectionKind::Sequence,
+            range_0_1000(),
+            None,
+        ));
+        let raw = SnapshotValue::Sequence(vec![
+            SnapshotValue::Integer("5".to_owned()),
+            SnapshotValue::Integer("1001".to_owned()),
+        ]);
+        let mut found = Vec::new();
+        admit_object_field(
+            &mut references,
+            &raw,
+            &sequence,
+            quire_exact::Presence::Required,
+            Some(&mut found),
+        )
+        .expect("a witnessed sequence admits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].index, Some(1));
+        assert_eq!(found[0].observed, Integer::from(1001_i64));
+        let record = admit_object_field(
+            &mut references,
+            &raw,
+            &sequence,
+            quire_exact::Presence::Required,
+            None,
+        )
+        .expect_err("an unwitnessed sequence refuses");
+        assert_eq!(record.cause, "invalid-value");
+    }
 }

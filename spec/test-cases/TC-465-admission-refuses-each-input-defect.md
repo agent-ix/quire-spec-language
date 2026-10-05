@@ -15,7 +15,7 @@ and input path, that completeness precedes closure, that the frame compares
 scalar as well as reference fields, and that a document with several defects
 reports the first by FR-106's order.
 
-Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11, FR-106-AC-12.
+Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11, FR-106-AC-12, FR-106-AC-13.
 
 ## Test Procedure
 
@@ -98,8 +98,15 @@ config_history, "key": "root"}}}`, `result` `null`, and the healthy-parent
 snapshot as both pre and post. Tag the tests
 `#[trace("TC-465", "FR-106-AC-n")]`.
 
-FR-106-AC-12 (unit): admit an `Int[0, 1000]` scalar `-1`, `1000` and `1001`
-with no witness sink, then `-1`, `1001` and `7` with one.
+FR-106-AC-12: admit an `Int[0, 1000]` scalar `-1`, `1000` and `1001` with no
+witness sink, then `-1`, `1001` and `7` with one; admit a sequence field of
+`Int[0, 1000]` elements `5`, `1001` with a sink; admit a `PreCall` over a
+package whose operation declares an `Int[0, 1000]` parameter with `-1`, under
+default and `Witness` limits; admit the wrapping-debit invocation under
+`Witness`, and with `-1` in its pre snapshot.
+FR-106-AC-13: admit the wrapping debit under default limits, run it through
+`run_clause`'s `Clause` selection of `VersionUnchanged` and its `Frame`
+selection of `attemptUpdate`.
 
 ## Expected Results
 
@@ -107,8 +114,12 @@ Each row gives exactly its expected record and nothing else. Rows 1 and 23
 are `Incomplete`, row 25 admits, and every other row is `Refused`. No failing
 row yields an `AdmittedObservations`. FR-106-AC-12: with no sink `-1` refuses
 `invalid_runtime_input`/`invalid-value`, `1000` admits; with a sink `-1` and
-`1001` admit exactly and are reported with `[0, 1000]`, and `7` reports
-nothing.
+`1001` admit exactly and are reported with `[0, 1000]`, `7` reports nothing,
+and the sequence element is reported at index 1; the argument refuses under
+both limits naming the parameter; the wrapping debit reports `child`,
+`versionNumber`, `[0, 1000]` and -1; the out-of-range pre snapshot refuses.
+FR-106-AC-13: each of the three refuses `invalid_runtime_input`/
+`invalid-value` naming `child` and `versionNumber`.
 
 ## Status
 
