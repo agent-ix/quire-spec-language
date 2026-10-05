@@ -23,10 +23,13 @@ relationships:
 The qualified core is the check path (S0 to S4), the prove path (E5 to S8,
 with replay through S6a) and the certificate checkers through which
 `analyze` enters it (ADR-029 CB-2, FR-282). Its QSL crates are
-`quire-exact`, `quire-semantic-value`, `qsl-foundation`, `qsl-cst`,
+`qsl-foundation`, `qsl-cst`,
 `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package`, `qsl-eval`,
 `qsl-route` and `qsl-replay`. Outside QSL it also holds the driver library
-`quire-driver`, the walker toolkit `quire-walk` (ADR-030 FR-356, its own
+`quire-driver`, the exact-value kernel `quire-exact` and the semantic-value
+leaf `quire-semantic-value` (each its own repository, `agent-ix/quire-exact`
+and `agent-ix/quire-semantic-value`, which `qsl-foundation`, `qsl-semantics`
+and other core crates depend on), the walker toolkit `quire-walk` (ADR-030 FR-356, its own
 repository `agent-ix/quire-walk`, which `qsl-forms` and `qsl-semantics`
 depend on) and the CG, IR and RT crates the prove path reaches, under
 their own records.

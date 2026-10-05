@@ -6,10 +6,12 @@
 //! surface never becomes a second path to a moved item.
 //!
 //! The layer crates are read from `cargo metadata`: every workspace crate
-//! the root crate names as a `path` dependency, by its Rust name, in any
-//! dependency table. `[dev-dependencies]` count too: `qsl-route`
-//! has no shipped caller in the root crate, so it is a dev dependency only,
-//! and a `#[cfg(test)]` item of `src/` can still name it. A crate extracted
+//! the root crate names as a `path` dependency, plus the shared leaves
+//! `quire-exact` and `quire-semantic-value` (git dependencies of their own
+//! repositories), by its Rust name, in any dependency table.
+//! `[dev-dependencies]` count too: `qsl-route` has no shipped caller in the
+//! root crate, so it is a dev dependency only, and a `#[cfg(test)]` item of
+//! `src/` can still name it. A crate extracted
 //! later is covered as soon as the root crate depends on it. The one
 //! non-layer path dependency, the dev-only `xtask`, joins the set too; no
 //! file under `src/` names it, so it adds nothing to find.
@@ -47,7 +49,9 @@ fn root() -> PathBuf {
 }
 
 /// Rust names of the workspace crates the root crate depends on, in its
-/// normal, dev and build tables alike.
+/// normal, dev and build tables alike, and of the shared leaves `quire-exact`
+/// and `quire-semantic-value`, which are git dependencies of their own
+/// repositories.
 fn layer_crates() -> BTreeSet<String> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
     let output = std::process::Command::new(cargo)
@@ -78,7 +82,13 @@ fn layer_crates() -> BTreeSet<String> {
         .as_array()
         .expect("a dependency list")
         .iter()
-        .filter(|dependency| dependency["path"].is_string())
+        .filter(|dependency| {
+            dependency["path"].is_string()
+                || matches!(
+                    dependency["name"].as_str(),
+                    Some("quire-exact" | "quire-semantic-value")
+                )
+        })
         .map(|dependency| {
             dependency["rename"]
                 .as_str()

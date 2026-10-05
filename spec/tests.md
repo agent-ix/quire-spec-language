@@ -35,7 +35,7 @@ names different artifacts in each.
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-6, FR-059-AC-8, FR-059-AC-9 | ✅ Passed locally |
-| TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-5 | ✅ Passed locally for FR-060-AC-1..AC-3 and AC-5; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
+| TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally for FR-060-AC-1..AC-3; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`), AC-7 backed by TC-378, AC-9 (step 8), AC-12, and AC-13 (steps 10 and 11); AC-3 (all three clauses, for `src/check` and `src/family`) and AC-6 (first sentence, an API-surface scan and a rename test); AC-1 (step 1: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case); depth steps re-planned for ADR-030 |
 | TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | ✅ Passed locally for FR-062-AC-8 (`CheckCause::code`), backed by the `make seam-probe` gate (part of `make ci`); FR-063-AC-6 backed (S1/S2/S3/S4 all land, including the qsl-forms leading-token-kind table via its own probe build); FR-063's other criteria per its own Status section |
 | TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | ✅ Passed locally |
@@ -141,12 +141,10 @@ names different artifacts in each.
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Partial: steps 1, 4 and 5 by `xtask::typestate_scan`; step 3 by TC-227; step 6 by `arch-lint`'s T12-B allow-list, which names only `check`; step 2's byte-identity against the pre-relocation tree is not backed |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
 | TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1, FR-089-AC-7 | ✅ Passed locally for the three-fact preimage; 🚧 Planned for ADR-016 ID-5's seven-member preimage (AC-1 as amended, AC-7), ADR-016 G-3 |
-| TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally |
 | TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | ✅ Passed locally |
 | TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | ✅ Passed locally |
 | TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | ✅ Passed locally |
 | TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | ✅ Passed locally |
-| TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally |
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC |
 | TC-378 | On a nested fixture, the node limit is the proximate cause of a function-declaration stop | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | 🚧 Planned (ADR-030: node limit replaces the deleted depth limit) |
@@ -232,7 +230,6 @@ names different artifacts in each.
 | TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | ✅ Passed locally; step 1 covered; steps 2 to 3 covered; step 4 covered |
 | TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8, FR-106-AC-9 | 🚧 Planned |
 | TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11 | 🚧 Planned |
-| TC-904 | The object closure refuses a duplicate identity triple and a non-model object type, and `find` refuses an ambiguous key | Unit | P1 | FR-106-AC-10 | ✅ Passed locally |
 | TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally |
 | TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned |
 | TC-468 | The spine clause run entry reports typed dispositions and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5, FR-109-AC-6, FR-109-AC-7 | 🚧 Planned |
@@ -741,16 +738,11 @@ opaque `PopulationId` type and `Value::Population(PopulationId)` in
 `(ValueType::Population(_), Value::Population(_))` pair, `plan_pairs` refuses
 a population pair with `Refusal::CheckedInvariant`, and `compare_keys` yields
 no key for one (FR-089-AC-6). QSL has no equality or key of its own: it
-calls `quire_exact::member_equal` and `quire_exact::compare_keys`. TC-297 is `✅ Passed locally`, backed by
-`value::tests::admits_refuses_a_population_pair`,
-`equality::tests::plan_pairs_refuses_a_population_pair` and
-`key::tests::compare_keys_yields_no_key_for_a_population_pair`. The
+calls `quire_exact::member_equal` and `quire_exact::compare_keys`. TC-297, with its three tests, is in `agent-ix/quire-exact`. The
 declared-maximum comparison is a QSL-layer check (FR-089-AC-5, TC-295): QSL
 `model`/the evaluator resolves the binding, then compares its declared
-maximum. TC-292 is `✅ Inspected locally`:
-the payload type is `PopulationId`, and the crate-DAG direction (ADR-011
-§6.1) makes a `PopulationBinding` import structurally impossible, not merely
-absent from a scan.
+maximum. TC-292, the inspection that the kernel payload is a `PopulationId`
+with no model dependency, is in `agent-ix/quire-exact`.
 
 The other half (`model` minting and the evaluator's
 resolution step) landed: `model::population::mint_population_id` mints a

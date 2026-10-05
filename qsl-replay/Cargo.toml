@@ -26,10 +26,10 @@ qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 qsl-source = { path = "../qsl-source", optional = true }
-quire-exact = { path = "../quire-exact" }
+quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
-quire-semantic-value = { path = "../quire-semantic-value" }
+quire-semantic-value = { workspace = true }
 thiserror = "2.0.20"
 # FR-269: the deciding element is written through the shared canonical writer
 # and read through the shared reader, so a value of any depth round-trips.
@@ -56,7 +56,7 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The ordered charge log (`Meter::admitted_charges`) FR-107-AC-3's
 # `reaches` charge-sequence test asserts. A production meter keeps a count
 # only; only this dev-dependency enables `test-support`.
-quire-exact = { path = "../quire-exact", features = ["test-support"] }
+quire-exact = { workspace = true, features = ["test-support"] }
 # FR-105-AC-6: the fault-injection seam
 # (`emit_checked_with_fault`/`checked_node_id_of`) is public only under
 # `test-support` (qsl-package's own Cargo.toml); this dev-dependency edge is

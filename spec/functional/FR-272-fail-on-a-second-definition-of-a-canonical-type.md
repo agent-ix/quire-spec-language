@@ -31,7 +31,9 @@ waits on IR.
   every target of every workspace member (for example `tools/arch-lint`'s
   `[[bin]] path = "main.rs"`), and every resolved package that FR-059's shared
   `graph::classify` assigns to an ecosystem repository, read from its manifest
-  directory.
+  directory, and the shared leaf crates `quire-exact` and
+  `quire-semantic-value`, each as its own ecosystem repository wherever it is
+  sourced from.
 - The shipped source of those directories (test code excluded, as
   `definition_scan` excludes it).
 
@@ -70,6 +72,11 @@ waits on IR.
   names of a trait), then the gate SHALL report a `copy` finding. The
   comparison ignores documentation, attributes, visibility and the paths of
   member types.
+- The gate SHALL scan `quire-exact` and `quire-semantic-value`, which live in
+  their own repositories, as ecosystem dependencies in every run, QSL's
+  included, so the `copy` rule holds them against the running workspace's code
+  and the `identifier` and `re-export` rules never apply inside them; their
+  own one-definition checks belong to their repositories.
 - The gate SHALL take the scanned directories from `cargo metadata` and
   FR-059's `graph::classify`, so the same subcommand run in a backend's
   workspace takes QSL's tagged crates as ecosystem dependencies and applies

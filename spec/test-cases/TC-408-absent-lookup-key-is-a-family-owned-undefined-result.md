@@ -46,7 +46,6 @@ query, which erases the refusal that query asks for.
    `CheckedPackage::evaluate`, match `Ok(e)` and `e.outcome` as
    `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, and take
    `cause.catalog_code()`.
-5. Inspect `quire-exact/src/outcome.rs`'s `Undefined` enum.
 
 Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
 
@@ -60,11 +59,9 @@ Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
   not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`.
 - Step 4's code is
   `CatalogCode::new("invalid_runtime_input", "absent-key")`.
-- Step 5 finds no `AbsentKey` variant.
 
 ## Status
 
 `✅ Passed locally`. Steps 1 to 3: `l14_lookup_expression_undefined_mode`, in
 `qsl-eval/tests/it/model_reference_queries.rs`, which also asserts `e.location` at
-the `lookup` node. Step 4: `l16_lookup_expression_refused_mode`. Step 5:
-`quire-exact/src/outcome.rs`'s `Undefined` has no `AbsentKey` variant.
+the `lookup` node. Step 4: `l16_lookup_expression_refused_mode`.

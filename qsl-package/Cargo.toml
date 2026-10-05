@@ -30,7 +30,7 @@ qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
 # (ADR-013 O-07).
-quire-exact = { path = "../quire-exact" }
+quire-exact = { workspace = true }
 # The v2 wire vocabulary: the identity-preimage types the emitter builds and
 # IR's `checked_package` v2 reader the I2 byte reader delegates to.
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
@@ -40,7 +40,7 @@ quire-canonical = { workspace = true }
 # ADR-011 §6.1 layer SV: `IDENTITY_LIMITS`, the limits every identity
 # preimage encodes under, the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
-quire-semantic-value = { path = "../quire-semantic-value" }
+quire-semantic-value = { workspace = true }
 # The emitter writes its wire envelope as a `Serialize` struct over IR's
 # types; it encodes through `quire-canonical` only.
 serde = { version = "1.0.228", features = ["derive"] }

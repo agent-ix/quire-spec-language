@@ -13,7 +13,7 @@ description = "ADR-011 §6.1 layer A: the in-process analysis engines above the 
 # `qsl-replay` item: the certificate checker's DBM there is separate code
 # (ADR-026 CF-6).
 [dependencies]
-quire-exact = { path = "../quire-exact" }
+quire-exact = { workspace = true }
 num-bigint = "0.4.8"
 num-integer = "0.1.47"
 num-traits = "0.2.19"

@@ -40,11 +40,12 @@ through FR-059-AC-6, FR-059-AC-8 and FR-059-AC-9.
    Separately, resolve QSL's own workspace manifest through
    `edges_for_manifest`, the path `direction` uses for `--qsl` (automated).
 7. Parse a synthetic `cargo metadata` document in which RT depends on
-   `quire-exact` and on `qsl-eval`, both sourced from the QSL repository's
-   git url, and run the check on the resulting edges.
+   `quire-exact`, sourced from the `agent-ix/quire-exact` git url, and on
+   `qsl-eval`, sourced from the QSL repository's git url, and run the check on the resulting edges.
 8. Parse a synthetic `cargo metadata` document in which RT depends on
-   `quire-semantic-value`, `qsl-semantics` and `qsl-eval`, all sourced from
-   the QSL repository's git url, and run the check on the resulting edges.
+   `quire-semantic-value`, sourced from the `agent-ix/quire-semantic-value` git
+   url, and on `qsl-semantics` and `qsl-eval`, sourced from the QSL
+   repository's git url, and run the check on the resulting edges.
 
 ## Expected Results
 

@@ -43,9 +43,9 @@ violating FB-11, and passes only when neither set of findings is non-empty.
 The check SHALL classify a resolved package as one of the four repositories by
 package name and dependency source URL, treating `quire-contract-model` (the
 crate name quire-contract-ir's workspace member publishes under) as
-`quire-contract-ir`. When it extracts edges, the check SHALL give each package in
-the named shared-leaf set, `quire-exact` and `quire-semantic-value`, no
-ecosystem repository, wherever it is sourced from. These are ADR-011 FB-05's
+`quire-contract-ir`. When it extracts edges, a package sourced from its own repository, such as
+`quire-exact` (`agent-ix/quire-exact`) or `quire-semantic-value`
+(`agent-ix/quire-semantic-value`), classifies as no ecosystem repository. These are ADR-011 FB-05's
 shared `no_std` leaf crates: the kernel K (§6.1 "K is a leaf") and the
 semantic-value leaf SV, whose dependencies are K, ADR-013's one RFC 8785
 encoder `quire-canonical`, `serde` and `thiserror`. Neither depends on a QSL

@@ -36,7 +36,6 @@ on QSL's kernel copy, which is the shape T-6 removes.
 4. Match the result as `Ok(e)` and `e.outcome` as
    `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, and take
    `cause.catalog_code()`.
-5. Inspect `quire-exact/src/outcome.rs`'s `Refusal` enum.
 
 Tag the test `#[trace("FR-090-AC-7", "TC-388")]`.
 
@@ -47,8 +46,6 @@ Tag the test `#[trace("FR-090-AC-7", "TC-388")]`.
   not an admission refusal.
 - Step 3 does not panic, and its result matches step 4's pattern;
   `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
-- Step 5 finds no variant whose payload is `WrongSnapshotCause`. This is
-  also a compile-time fact: `quire-exact` cannot import `crate::check`.
 
 ## Status
 

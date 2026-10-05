@@ -37,7 +37,7 @@ Verify the optional kernel bounds (ADR-014 N-3) end to end. Scope: FR-097-AC-7, 
 
 ## Status
 
-Backed: `quire-exact/src/collection.rs`,
+Backed: `agent-ix/quire-exact`'s `src/collection.rs`,
 `qsl-semantics/src/check/lowering/tests.rs`,
 `qsl-eval/tests/it/collection_queries.rs` and
 `qsl-eval/tests/it/model_reference_queries.rs`, each test tagged `#[trace("TC-441", "FR-097-AC-7")]` or, for the

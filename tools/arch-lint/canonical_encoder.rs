@@ -1171,7 +1171,7 @@ pub(crate) fn report(outcome: &Outcome) -> String {
 mod tests {
     use super::*;
 
-    const ROOTS: [&str; 12] = [
+    const ROOTS: [&str; 11] = [
         "src",
         "qsl-foundation/src",
         "qsl-cst/src",
@@ -1183,7 +1183,6 @@ mod tests {
         "qsl-route/src",
         "qsl-replay/src",
         "qsl-analyze/src",
-        "quire-semantic-value/src",
     ];
 
     fn write(root: &Path, relative: &str, contents: &str) {

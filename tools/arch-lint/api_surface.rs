@@ -1245,17 +1245,16 @@ pub(crate) fn evaluate(
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4), `qsl-forms`
 /// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-eval` (X-8), `qsl-route` (X-9),
-/// `qsl-replay` (X-10) and `qsl-analyze` (X-12, layer A), and the shared `no_std` leaf `quire-semantic-value`
-/// (layer SV), a consumer of the kernel that calls none of these
-/// constructors: it resolves node ids by lookup among admitted keys. A module path is relative to its own crate's
+/// `qsl-replay` (X-10) and `qsl-analyze` (X-12, layer A). A module path is relative to its own
+/// crate's
 /// `src/`, so `check` (T12-B), `model` (T12-C, T12-D) and `library` name
 /// `qsl-semantics`' modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
-/// extracted. `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
-/// constructors are defined *in*, never a caller of them (T12-B/T12-C/T12-D's
-/// own scope notes already exclude checking a copy of the constructor
-/// elsewhere; the crate that defines a constructor calling its own inherent
-/// `impl` is not a "caller"), and `qsl-attrs` is a proc-macro crate with no
-/// dependency on `quire-exact` at all.
+/// extracted. `quire-exact` and `quire-semantic-value` each have their own
+/// repository and are not scanned: `quire-exact` is the kernel these rules'
+/// constructors are defined *in*, never a caller of them, and
+/// `quire-semantic-value` resolves node ids by lookup among admitted keys.
+/// `qsl-attrs` is excluded too: a proc-macro crate with no dependency on
+/// `quire-exact` at all.
 pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
@@ -1271,7 +1270,6 @@ pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
             "qsl-route/src",
             "qsl-replay/src",
             "qsl-analyze/src",
-            "quire-semantic-value/src",
         ]
         .into_iter()
         .map(|relative| scan_root.join(relative))
@@ -1575,7 +1573,6 @@ mod tests {
             "qsl-route/src",
             "qsl-replay/src",
             "qsl-analyze/src",
-            "quire-semantic-value/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
@@ -1700,36 +1697,6 @@ mod tests {
         assert_eq!(outcome.violations[0].module, "library");
         assert_eq!(outcome.violations[0].line, 2);
         assert_eq!(outcome.violations[0].function, "f");
-        assert!(!outcome.passed());
-    }
-
-    /// tc_arch_lint_api_surface_026 (negative control, ADR-011 §6.1 layer
-    /// SV): a `Role::Qsl` rule scans the shared leaf `quire-semantic-value`'s
-    /// `src/`, so a `NodeKey` constructor call there is a T12-B violation.
-    /// The crate resolves node ids by lookup among admitted keys and mints
-    /// none.
-    #[trace("TC-157", "FR-060-AC-5")]
-    #[test]
-    fn tc_arch_lint_api_surface_026_semantic_value_crate_is_scanned() {
-        let dir = tempfile::tempdir().unwrap();
-        ensure_qsl_roots(dir.path());
-        write(
-            dir.path(),
-            "qsl-semantics/src/check/mod.rs",
-            "pub use quire_exact::NodeKey;\n",
-        );
-        write(
-            dir.path(),
-            "quire-semantic-value/src/unit.rs",
-            "fn f() {\n    let k = NodeKey::from_digest(bytes);\n}\n",
-        );
-        let rule = &RULES[1]; // T12-B
-        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
-        assert_eq!(outcome.violations.len(), 1);
-        assert_eq!(outcome.violations[0].module, "unit");
-        assert!(outcome.violations[0]
-            .file
-            .starts_with(dir.path().join("quire-semantic-value/src")));
         assert!(!outcome.passed());
     }
 
@@ -2208,7 +2175,6 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_019_missing_qsl_replay_or_qsl_source_crate_is_an_error() {
         for missing in [
-            "quire-semantic-value/src",
             "qsl-replay/src",
             "qsl-analyze/src",
             "qsl-source/src",

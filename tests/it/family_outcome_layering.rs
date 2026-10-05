@@ -24,15 +24,14 @@ const CAUSE_TYPES: [&str; 4] = [
 ];
 
 /// The modules ordered below the `check` core (ADR-011 §6.1, §6.2): layer 1
-/// `qsl-cst`, layer 2 `qsl-forms`, the layer-SV crate `quire-semantic-value`,
-/// and the layer-3 `semantic_value`, `model` and `library` modules, plus the
-/// layer-3 `value` modules that sit beside the evaluator
-/// (`value::model_query`) and the type environment
-/// (`value::environment_stage`).
-const BELOW_CORE: [&str; 10] = [
+/// `qsl-cst`, layer 2 `qsl-forms`, and the layer-3 `semantic_value`, `model`
+/// and `library` modules, plus the layer-3 `value` modules that sit beside the
+/// evaluator (`value::model_query`) and the type environment
+/// (`value::environment_stage`). The layer-SV crate `quire-semantic-value` is
+/// its own repository and is not scanned here.
+const BELOW_CORE: [&str; 9] = [
     "qsl-cst/src",
     "qsl-forms/src",
-    "quire-semantic-value/src",
     "qsl-semantics/src/model",
     "qsl-semantics/src/library",
     "qsl-semantics/src/value/definition.rs",
@@ -55,8 +54,6 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
         &workspace_root(),
         &[
             "src",
-            "quire-exact/src",
-            "quire-semantic-value/src",
             "qsl-foundation/src",
             "qsl-cst/src",
             "qsl-forms/src",
@@ -242,13 +239,14 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]` alike
 /// (a build dependency on a higher layer or on this crate fails as a normal
 /// one does). `qsl-semantics`
-/// (layer 3) names exactly `qsl-forms`, `qsl-foundation`, `quire-exact` and
-/// `quire-semantic-value` among the workspace crates in `[dependencies]`, never
-/// `qsl-cst`; its `[dev-dependencies]` may name `qsl-cst` so the FR-091
+/// (layer 3) names exactly `qsl-attrs`, `qsl-forms` and `qsl-foundation` among
+/// the workspace crates in `[dependencies]`, never `qsl-cst`; its `[dev-dependencies]` may name
+/// `qsl-cst` so the FR-091
 /// assembler's tests can run S1 (FR-091-AC-20), and only
-/// `model::intake` names its FCD dependencies. `quire-exact` names
-/// none, `quire-semantic-value` (layer SV) names exactly `quire-exact`,
-/// `quire-canonical`, `serde` and `thiserror`, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
+/// `model::intake` names its FCD dependencies. `quire-exact` and
+/// `quire-semantic-value` are external git dependencies of their own
+/// repositories, so no workspace check reaches them; `qsl-foundation` may name `quire-exact`,
+/// `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
 /// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4)
@@ -287,7 +285,6 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         .collect();
     for required in [
         "quire-spec-language",
-        "quire-semantic-value",
         "qsl-source",
         "qsl-cst",
         "qsl-forms",
@@ -302,8 +299,6 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         );
     }
     for (crate_name, allowed, dev_only) in [
-        ("quire-exact", &[][..], &[][..]),
-        ("quire-semantic-value", &["quire-exact"][..], &[][..]),
         ("qsl-foundation", &["qsl-attrs", "quire-exact"][..], &[][..]),
         (
             "qsl-cst",
@@ -317,13 +312,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-semantics",
-            &[
-                "qsl-attrs",
-                "qsl-forms",
-                "qsl-foundation",
-                "quire-exact",
-                "quire-semantic-value",
-            ][..],
+            &["qsl-attrs", "qsl-forms", "qsl-foundation"][..],
             &["qsl-cst"][..],
         ),
         (
@@ -370,27 +359,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             normal.sort_unstable();
             assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");
         }
-        if crate_name == "quire-semantic-value" {
-            // Layer SV: the shared `no_std` leaf (ADR-011 §6.1, X-11)
-            // depends on K, ADR-013 §2's one RFC 8785 encoder
-            // (`quire-canonical`, for the compound-unit id), `serde` and
-            // `thiserror` only, and has no build dependencies.
-            let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
-            normal.sort_unstable();
-            assert_eq!(
-                normal,
-                ["quire-canonical", "quire-exact", "serde", "thiserror"],
-                "{crate_name}'s [dependencies]"
-            );
-            assert!(
-                package.build.is_empty(),
-                "{crate_name}'s [build-dependencies]: {:?}",
-                package.build
-            );
-        }
         if crate_name == "qsl-semantics" {
             // Layer 3: its workspace-crate `[dependencies]` are
-            // exactly layers 2, F, K and SV -- no `qsl-cst` (layer 1) and no
+            // exactly layers 2 and F (K and SV are external) -- no `qsl-cst` (layer 1) and no
             // root crate. Its other entries are third-party crates and the
             // FCD crates, which `fcd_is_named_by_model_intake_only` below
             // confines to `model::intake`.
@@ -693,8 +664,6 @@ fn no_core_crate_depends_on_qsl_analyze() {
         "cargo metadata lists no qsl-analyze"
     );
     for core in [
-        "quire-exact",
-        "quire-semantic-value",
         "qsl-attrs",
         "qsl-foundation",
         "qsl-cst",

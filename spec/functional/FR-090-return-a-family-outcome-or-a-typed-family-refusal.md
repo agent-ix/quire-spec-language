@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: traces_to
+  - target: ix://agent-ix/quire-exact/FR-090
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-068
     type: traces_to
 ---
@@ -379,9 +381,9 @@ When an FR-151 dispatched call's selected method's effective precondition
 evaluates to `false`, S6a SHALL return `Ok(e)` with `e.outcome` equal to
 `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where
 `cause.undefined_record().reason` is `precondition-false`. The result is
-category `undefined`, never `refusal`. `quire_exact::Undefined` has no
-`PreconditionFalse` variant: the operation, selected method and receiver come
-from FR-151 dispatch, which is QSL model vocabulary (ADR-013 O-13).
+category `undefined`, never `refusal`. The operation, selected method and receiver come from FR-151 dispatch, which
+is QSL model vocabulary (ADR-013 O-13). The kernel's `Undefined` variant set is
+`ix://agent-ix/quire-exact/FR-090`'s.
 
 The owner is `StateModel` because ADR-012 assigns dispatch and dispatch
 preconditions to it (§1 family table and checked-type table, §3 per-family
@@ -397,9 +399,9 @@ When a `lookup<T>(p, r) absent undefined` query (FR-153) finds no member of
 `cause.undefined_record()` has reason `absent-key` and, as `fields`, the
 reason's catalog payload: the population binding and the requested reference
 key. The `lookup` locus is `e.location`, the location of the `lookup`
-node. The result is category `undefined`. `quire_exact::Undefined`
-has no `AbsentKey` variant, and this `UndefinedRecord` is the only carrier
-of undefined reason `absent-key`.
+node. The result is category `undefined`. This `UndefinedRecord` is the
+only carrier of undefined reason `absent-key`; that the kernel's `Undefined`
+has no `AbsentKey` variant is `ix://agent-ix/quire-exact/FR-090`'s.
 
 `absent-key` is a `StateModel` undefined cause for three reasons. The
 catalog requires a payload for it, which a payload-free kernel variant
@@ -419,11 +421,9 @@ selects which one S6a returns.
 
 ### The kernel refusal holds kernel causes only
 
-`quire_exact::Refusal` has no variant that names `WrongSnapshotCause`,
-`ModelRefusal` or any
-`qsl_foundation` type, and `quire_exact::Undefined` has no
-`PreconditionFalse` or `AbsentKey` variant. A caller that matches `FamilyOutcome::Evaluated(
-Outcome::Refused(r))` reads a kernel cause.
+What the kernel `Refusal` and `Undefined` variants may name is
+`ix://agent-ix/quire-exact/FR-090`'s. A caller that matches
+`FamilyOutcome::Evaluated(Outcome::Refused(r))` reads a kernel cause.
 
 ### Layering
 
@@ -458,12 +458,12 @@ undefined cause type.
 | FR-090-AC-4 | S6a's input type admits no `Relation`. The S6a family kind has no `Relation` variant, and the S6a seam's family parameter has that type; `FamilyOutcome` has exactly the two variants `Evaluated` and `FamilyEvaluated`. A test holds an exhaustive `match` with no `_` arm over each type whose arms name neither `Relation` nor a third `FamilyOutcome` variant, so adding either variant fails to compile, and the test passes each S6a family kind variant to the S6a seam's dispatch, which compiles only if the seam takes that type. This is the precise form of FR-062-AC-6. | Test (TC-385) |
 | FR-090-AC-5 | F `diagnostic`'s catalog-code-to-category map returns `Category::Refusal` for every code the `ProtocolClause` snapshot cause's `catalog_code()` returns and for every code `ModelRefusal::catalog_code()` returns; `qsl-foundation` has no dependency on the crate that defines `FamilyOutcome` or on any crate at layer 3 or above. | Test (TC-386) |
 | FR-090-AC-6 | The `ProtocolClause` family cause carrying `WrongSnapshotCause` has an exhaustive `catalog_code()` with no `_` arm that returns `wrong_snapshot`/`wrong-anchor` for `WrongAnchor` and `wrong_snapshot`/`forbidden-pre-read` for `ForbiddenPreRead`. | Test (TC-387) |
-| FR-090-AC-7 | Given a postcondition `pre(allInstances<T>(p))` evaluated through `CheckedPackage::evaluate` with a population argument admitted through `admit_binding` (no pre anchor), the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `wrong_snapshot`/`wrong-anchor`. The result is not a panic, not `FamilyOutcome::Evaluated(Outcome::Refused(_))` and not `Err(CallFailure::Input(_))`. `quire_exact::Refusal` has no variant naming `WrongSnapshotCause`. | Test (TC-388) |
+| FR-090-AC-7 | Given a postcondition `pre(allInstances<T>(p))` evaluated through `CheckedPackage::evaluate` with a population argument admitted through `admit_binding` (no pre anchor), the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `wrong_snapshot`/`wrong-anchor`. The result is not a panic, not `FamilyOutcome::Evaluated(Outcome::Refused(_))` and not `Err(CallFailure::Input(_))`. | Test (TC-388) |
 | FR-090-AC-8 | Given an `allInstances<T>(p)` query whose selected member count is above the population's declared maximum, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to the refusing `ModelRefusal`'s `catalog_code()`, `cardinality_out_of_bound`/`above-maximum`. The result is not a panic and not `FamilyOutcome::Evaluated(Outcome::Refused(_))`. The carried refusal holds no `qsl_foundation::diagnostic::Code` value. | Test (TC-389) |
-| FR-090-AC-9 | `FamilyOutcome`, `FamilyResult` and `EvalOutcome` are each defined once, in the layer-3 `check` core. No `use` edge or inline path under `qsl-forms/src/`, `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the `semantic_value` modules (`src/value/{definition, enumeration, unit, quantity, key, reference}`) or `qsl-cst/src/` resolves to any of the three. No `use` edge or inline path under the `check` core resolves to the `ProtocolClause` snapshot cause type, `ModelRefusal` or the `StateModel` undefined cause type. Neither `quire-exact`, `qsl-foundation` nor `qsl-cst` depends on the crate that defines the three. | Test (TC-390) |
+| FR-090-AC-9 | `FamilyOutcome`, `FamilyResult` and `EvalOutcome` are each defined once, in the layer-3 `check` core. No `use` edge or inline path under `qsl-forms/src/`, `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the `semantic_value` modules (`src/value/{definition, enumeration, unit, quantity, key, reference}`) or `qsl-cst/src/` resolves to any of the three. No `use` edge or inline path under the `check` core resolves to the `ProtocolClause` snapshot cause type, `ModelRefusal` or the `StateModel` undefined cause type. Neither `qsl-foundation` nor `qsl-cst` depends on the crate that defines the three. | Test (TC-390) |
 | FR-090-AC-10 | Given a checked `Value` function with a `Population<T>[N]` parameter, `CheckedPackage::call` with an argument whose `PopulationId` names no recorded binding, or whose resolved binding's declared maximum differs from `N`, returns `Err(CallFailure::Input(_))` before S6a runs. Given the same argument passed directly to the S6a seam, bypassing admission, S6a returns `Err(InternalFault)`, not a kernel or family refusal. | Test (TC-391) |
-| FR-090-AC-11 | Given an FR-151 dispatched call `receiver.member(args)` whose selected method's effective precondition evaluates to `false` (QSpec TC-196 D06), evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `precondition-false` and `fields` naming the called effective operation, the selected method's effective identity and the receiver reference, and `e.location` is the location of the dispatched call node, not of the evaluated expression's root. The result is not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Evaluated(Outcome::Undefined(_))` and not a panic, and `quire_exact::Undefined` has no `PreconditionFalse` variant. | Test (TC-407) |
-| FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and not a panic, and `quire_exact::Undefined` has no `AbsentKey` variant. The same query with `absent refused` returns `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test (TC-408) |
+| FR-090-AC-11 | Given an FR-151 dispatched call `receiver.member(args)` whose selected method's effective precondition evaluates to `false` (QSpec TC-196 D06), evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `precondition-false` and `fields` naming the called effective operation, the selected method's effective identity and the receiver reference, and `e.location` is the location of the dispatched call node, not of the evaluated expression's root. The result is not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Evaluated(Outcome::Undefined(_))` and not a panic. | Test (TC-407) |
+| FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and not a panic. The same query with `absent refused` returns `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test (TC-408) |
 
 ## Dependencies
 
@@ -482,13 +482,8 @@ undefined cause type.
   `InternalFault` landed with ADR-013 §7 S-5a.
 - **Downstream:** none. The removal of `src/value/outcome.rs`'s kernel
   copy in favour of `quire_exact::{Outcome, Refusal, Undefined}` needs no
-  FR-090-AC change: that copy was already stripped down to the kernel's
-  own variant set before this removal, so it carried no `WrongSnapshot`,
-  `Model`, `UnresolvedPopulation` or `PopulationMaximumMismatch` refusal
-  variant, and no `Undefined::PreconditionFalse` or `Undefined::AbsentKey`
-  variant, for the removal to affect (see Status, "`quire_exact::Undefined`
-  and `Refusal`, and QSL's kernel copy ... have no `PreconditionFalse`,
-  `AbsentKey`, `WrongSnapshot` or `Model` variant"). FR-090-AC-1's `Evaluated`
+  FR-090-AC change. The kernel's variant set is
+  `ix://agent-ix/quire-exact/FR-090`'s. FR-090-AC-1's `Evaluated`
   payload was already `quire_exact::Outcome<T>`; that removal is exactly the
   one that lets the `Value` evaluator produce it directly, with no
   coupled change on either side.
@@ -520,11 +515,9 @@ model-layer `ModelQueryHalt`, and the evaluator turns it into a
 `FamilyResult`. `ModelRefusalCause::catalog_code()` is one exhaustive match
 with no `_` arm (`qsl-semantics/src/model/refusal.rs`), and `ModelRefusal::catalog_code()`
 delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
-O-16 category. `quire_exact::Undefined` and `Refusal` have no
-`PreconditionFalse`, `AbsentKey`, `WrongSnapshot` or `Model` variant; nor did
-QSL's kernel copy, before `src/value/outcome.rs` was deleted and
-every caller repointed onto `quire_exact::{Outcome, Refusal, Undefined}`
-directly.
+O-16 category. The kernel `Undefined` and `Refusal` variant set is
+`ix://agent-ix/quire-exact/FR-090`'s. Every caller is repointed onto
+`quire_exact::{Outcome, Refusal, Undefined}` directly.
 
 The S6a family kind is `S6aFamilyKind { Value }`
 (`qsl-eval/src/value/expression/s6a/mod.rs`, layer 5, beside the `ReferenceEvaluation`

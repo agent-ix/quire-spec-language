@@ -133,7 +133,7 @@ pub(crate) mod unit;
 // `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
 // `Meter`, `ScalarLimits`, `Charge` and `length_amount` were this module's
 // own `accounting` submodule, re-exported from here. That submodule
-// duplicated `quire-exact/src/accounting.rs` byte-for-byte and is deleted;
+// duplicated `quire_exact`'s accounting types byte-for-byte and is deleted;
 // every former consumer (`crate::model::population` included, which reused
 // this crate-wide re-export the same way FR-153 reuses this crate's own
 // `quire.value.accounting/v1` meter for `lookup.*`/`population.visit`/

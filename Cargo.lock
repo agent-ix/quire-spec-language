@@ -1594,8 +1594,8 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#1098e44e4fd2b7e93a41a59433a2f1cf08c88ac7"
 dependencies = [
- "ix-trace-rs",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -1627,8 +1627,8 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#787d87bb0bbd2048f6368a1a005e8ee52713a736"
 dependencies = [
- "ix-trace-rs",
  "quire-canonical",
  "quire-exact",
  "serde",

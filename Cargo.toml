@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "quire-semantic-value", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
+members = [".", "xtask", "tools/arch-lint", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
 resolver = "2"
 # A cargo-fuzz crate with its own workspace; fuzz/Cargo.toml says why.
 exclude = ["fuzz"]
@@ -9,6 +9,10 @@ exclude = ["fuzz"]
 # layer-SV leaf `quire-semantic-value` can mint the compound-unit id
 # through it; a crate that writes through `io::Write` turns on `std`.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", default-features = false }
+# The shared no_std exact-value kernel and the semantic-value leaf above it,
+# each its own repository so IR, RT and CG depend on them without the QSL repo.
+quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
+quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
 # its own repository so IR, RT and CG depend on it without the QSL repo.
 quire-walk = { git = "https://github.com/agent-ix/quire-walk", branch = "main" }
@@ -40,10 +44,10 @@ handoff-writer = []
 # enforced by the ADR-011 T-12 arch-lint `api-surface` check (`tools/arch-lint`),
 # not by this dependency edge itself -- every crate that depends on
 # `quire-exact` is in that check's scope, this one included as of this edit.
-quire-exact = { path = "quire-exact" }
+quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the expression `Origin` the run output renders; the
 # tests also assert its refusal vocabulary and runtime enum values.
-quire-semantic-value = { path = "quire-semantic-value" }
+quire-semantic-value = { workspace = true }
 # ADR-013 §2 (ADR-013:113): the FR-051/FR-052 checked-handoff and
 # native-temporal document identities encode through the one RFC 8785
 # implementation.
@@ -112,7 +116,7 @@ xtask = { path = "xtask" }
 # The ordered charge log (`Meter::admitted_charges`) the
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
-quire-exact = { path = "quire-exact", features = ["test-support"] }
+quire-exact = { workspace = true, features = ["test-support"] }
 # TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
 # walks a parameter/return type's own AST directly (an exact path-segment
 # match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted
