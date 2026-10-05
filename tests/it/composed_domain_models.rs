@@ -134,9 +134,9 @@ pub(crate) fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDi
 fn lift(bundle: &Path) -> Vec<u8> {
     let fixtures = fcd_fixtures_dir();
     let modules = [
-        "modules/spec-objects-business",
-        "modules/edge-vocabulary",
-        "modules/spec-objects-architecture",
+        "modules/fixture-domain",
+        "modules/fixture-edges",
+        "modules/fixture-systems",
     ]
     .map(|root| fixtures.join(root));
     lift_document(bundle, &modules).expect("the edited bundle lifts")
@@ -162,7 +162,7 @@ pub(crate) fn admitted_with_bytes(bundle: &Path) -> (AdmittedPackage, Vec<u8>) {
 /// (`agent-ix-extraction-frontend` `constructs.rs`, "a population `Members`
 /// table", which no construct lowers), so each population is added to the
 /// real lifted document: a `populations[]` node, under one `constructs[]`
-/// entry for `spec-objects-business`' `population` construct with the
+/// entry for `fixture-domain`' `population` construct with the
 /// module version and manifest digest the lift recorded for that module.
 /// The document is re-encoded as RFC 8785 bytes, so its raw-byte and
 /// `sha256-jcs` digests agree as the lift's own do.
@@ -220,11 +220,11 @@ pub(crate) fn admitted_with(
         .expect("constructs array");
     let business = constructs
         .iter()
-        .find(|entry| entry["kind"]["module"] == "agent-ix/spec-objects-business")
-        .expect("the lift records spec-objects-business")
+        .find(|entry| entry["kind"]["module"] == "fixture/domain")
+        .expect("the lift records fixture-domain")
         .clone();
     constructs.push(serde_json::json!({
-        "kind": {"module": "agent-ix/spec-objects-business", "name": "population"},
+        "kind": {"module": "fixture/domain", "name": "population"},
         "moduleVersion": business["moduleVersion"],
         "manifestDigest": business["manifestDigest"],
         "construct": {
@@ -241,7 +241,7 @@ pub(crate) fn admitted_with(
             serde_json::json!({
                 "identity": identity,
                 "displayName": name,
-                "kind": {"module": "agent-ix/spec-objects-business", "name": "population"},
+                "kind": {"module": "fixture/domain", "name": "population"},
                 "members": members
                     .iter()
                     .map(|member| format!("ix://{PACKAGE}/{member}"))

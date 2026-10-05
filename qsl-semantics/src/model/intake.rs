@@ -221,7 +221,7 @@ pub enum LiftFailure {
 /// Lift one spec bundle to Semantic IR 2.0.0 document bytes.
 ///
 /// `lift` (FCD FR-099) always writes its document to a required output
-/// path; the diagnostics and provenance sidecars are skipped (`None`).
+/// path; the diagnostics sidecar is skipped (`None`).
 /// The scratch directory is removed when this function returns.
 pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec<u8>, LiftFailure> {
     let scratch = tempfile::tempdir().map_err(LiftFailure::Scratch)?;
@@ -230,7 +230,6 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
         module_roots: module_roots.to_vec(),
         out: scratch.path().join("document.json"),
         diagnostics: None,
-        provenance: None,
     };
     match lift(&request) {
         LiftOutcome::Refused(refusal) => Err(LiftFailure::Refused(refusal)),

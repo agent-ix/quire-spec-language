@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-030: distinguish input ceilings, profile skew and foreign Quire context.
 
-use super::{Limits, Selection, SemanticContext, Source, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
+use super::{semantic_core_version, Limits, Selection, SemanticContext, Source, CONTRACT_VERSION};
 use qsl_foundation::Code;
 
 /// Failure before invoking Quire, with a typed discriminator and actual context.
@@ -105,10 +105,10 @@ pub(super) fn check(
             expected: CONTRACT_VERSION,
         }));
     }
-    if context.module.semantic_core != SEMANTIC_CORE_VERSION {
+    if context.module.semantic_core != semantic_core_version() {
         return Err(Box::new(PreflightFailure::SemanticCore {
             actual: context.module.semantic_core.clone(),
-            expected: SEMANTIC_CORE_VERSION,
+            expected: semantic_core_version(),
         }));
     }
     if context.source_identity.as_deref() != Some(original.identity().identity.as_str()) {

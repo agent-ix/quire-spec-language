@@ -9,7 +9,7 @@
 //! `lifts_the_architecture_bundle_and_admits_it` proves
 //! `crate::model::intake::lift_document` drives FCD's real `lift` pipeline
 //! end to end (not a QSL-authored stand-in for its output) by checking the
-//! produced bytes against the fixture's own committed fingerprint, then
+//! produced document against the fixture's own committed expected document, then
 //! proves `crate::model::intake::admit` accepts that output under a
 //! matching selection.
 //!
@@ -113,39 +113,30 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     let fixtures = fcd_fixtures_dir();
     let bundle_root = fixtures.join("architecture");
     let module_roots = vec![
-        fixtures.join("modules/spec-objects-business"),
-        fixtures.join("modules/edge-vocabulary"),
-        fixtures.join("modules/spec-objects-architecture"),
+        fixtures.join("modules/fixture-domain"),
+        fixtures.join("modules/fixture-edges"),
+        fixtures.join("modules/fixture-systems"),
     ];
 
     let document = lift_document(&bundle_root, &module_roots)
         .expect("FCD's real architecture fixture lifts cleanly");
 
-    // The fixture's own committed fingerprint: proof this ran FCD's actual
+    // FCD's committed expected document: proof this ran FCD's actual
     // pipeline over the actual bundle, not a value this test invented.
-    let fingerprint: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(bundle_root.join("expected/semantic-ir.json.fingerprint"))
-            .expect("fixture fingerprint file is present"),
+    let expected: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(bundle_root.join("expected/semantic-ir.json"))
+            .expect("fixture expected document is present"),
     )
-    .expect("fixture fingerprint file is valid JSON");
-    let expected_digest = fingerprint["digest"]
-        .as_str()
-        .expect("fingerprint has a digest field")
-        .strip_prefix("sha256-jcs:")
-        .expect("fingerprint digest carries the sha256-jcs prefix");
-
-    let actual_digest: [u8; 32] = Sha256::digest(&document).into();
-    let actual_digest_hex = actual_digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    assert_eq!(
-        actual_digest_hex, expected_digest,
-        "lift_document's bytes must hash to the fixture's own committed fingerprint"
-    );
-
-    let package: serde_json::Value =
+    .expect("fixture expected document is valid JSON");
+    let lifted: serde_json::Value =
         serde_json::from_slice(&document).expect("lifted document is valid JSON");
+    assert_eq!(
+        lifted, expected,
+        "lift_document must produce the fixture's committed expected document"
+    );
+    let actual_digest: [u8; 32] = Sha256::digest(&document).into();
+
+    let package = lifted;
     let identity = package["package"]["identity"]
         .as_str()
         .expect("document declares its package identity")
@@ -1181,9 +1172,9 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
     )]);
     let fixtures = fcd_fixtures_dir();
     let module_roots = vec![
-        fixtures.join("modules/spec-objects-business"),
-        fixtures.join("modules/edge-vocabulary"),
-        fixtures.join("modules/spec-objects-architecture"),
+        fixtures.join("modules/fixture-domain"),
+        fixtures.join("modules/fixture-edges"),
+        fixtures.join("modules/fixture-systems"),
     ];
 
     let error = lift_document(bundle.path(), &module_roots)
@@ -1251,9 +1242,9 @@ fn lift_document_blocks_on_a_duplicate_identity() {
     ]);
     let fixtures = fcd_fixtures_dir();
     let module_roots = vec![
-        fixtures.join("modules/spec-objects-business"),
-        fixtures.join("modules/edge-vocabulary"),
-        fixtures.join("modules/spec-objects-architecture"),
+        fixtures.join("modules/fixture-domain"),
+        fixtures.join("modules/fixture-edges"),
+        fixtures.join("modules/fixture-systems"),
     ];
 
     let error = lift_document(bundle.path(), &module_roots).expect_err(

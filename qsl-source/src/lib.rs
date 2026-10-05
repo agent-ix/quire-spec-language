@@ -29,10 +29,15 @@ pub use quire_rs::semantic::{
 mod preflight;
 pub use preflight::PreflightFailure;
 
-/// Quire module contract admitted by this consumer and command adapters.
-pub const CONTRACT_VERSION: &str = "1.0.0";
-/// Quire semantic-core contract admitted by this consumer and command adapters.
-pub const SEMANTIC_CORE_VERSION: &str = "0.1.0";
+/// Quire module contract admitted by this consumer and command adapters: the
+/// one Quire embeds.
+pub use quire_rs::semantic::embedded::CONTRACT_VERSION;
+
+/// Quire semantic-core contract admitted by this consumer and command
+/// adapters: the one Quire embeds.
+pub fn semantic_core_version() -> &'static str {
+    quire_rs::semantic::embedded::embedded_semantic_core_version()
+}
 /// Default original-document byte ceiling before extraction; a caller's
 /// [`Limits::source_bytes`] is used as given (NFR-001).
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
@@ -171,7 +176,7 @@ impl ExtractedSource {
 
 /// Quire's own validated clause-only context for `original` and the authored `package`.
 ///
-/// It selects [`CONTRACT_VERSION`] and [`SEMANTIC_CORE_VERSION`], exports nothing,
+/// It selects [`CONTRACT_VERSION`] and [`semantic_core_version`], exports nothing,
 /// installs no archetype schemas and targets Markdown; it names `original`'s path and
 /// source identity. Native imports keep model authority. Quire validates the block
 /// and its failures are returned unchanged.
@@ -181,11 +186,10 @@ pub fn clause_context(
 ) -> Result<SemanticContext, Vec<SemanticFailure>> {
     let module = read_semantic_block(
         &serde_json::json!({
-            "contract_version": CONTRACT_VERSION, "semantic_core": SEMANTIC_CORE_VERSION,
+            "contract_version": CONTRACT_VERSION, "semantic_core": semantic_core_version(),
             "package": package, "exports": [], "targets": ["markdown"]
         }),
         &[],
-        &|_| false,
     )?;
     Ok(
         SemanticContext::new(module, original.path(), BundleIndex::default())

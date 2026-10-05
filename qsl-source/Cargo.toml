@@ -24,7 +24,7 @@ quire-extraction = [
 [dependencies]
 qsl-attrs = { path = "../qsl-attrs", optional = true }
 qsl-foundation = { path = "../qsl-foundation", optional = true }
-quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "2823a93bd3797c970c1d389afae9b893dea6f232", optional = true, default-features = false }
+quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "8ab0d509db3a067eafd5c03f657b51eb2aaab7f2", optional = true, default-features = false }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0.151", optional = true }
 thiserror = { version = "2.0.20", optional = true }
