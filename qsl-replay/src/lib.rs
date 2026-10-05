@@ -65,7 +65,7 @@ pub use identity::{
 pub use outcome::{
     ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
     OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
-    ParityReason, ResultValue, OUTCOME_FORMAT,
+    ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,

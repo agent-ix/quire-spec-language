@@ -34,8 +34,8 @@ use crate::proof_result::{
 };
 use crate::result::ReplayResult;
 use crate::spine::{
-    CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit, FrontEndFailure,
-    SpineStage,
+    CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
+    FrontEndFailure, SpineStage,
 };
 use crate::ReplayRefusal;
 
@@ -478,6 +478,32 @@ pub enum ExecuteResult {
         /// The reason, as FR-100's tables spell it.
         reason: &'static str,
     },
+    /// An accounting limit stopped the call.
+    Incomplete {
+        /// The exhausted limit.
+        limit: ResultLimit,
+    },
+}
+
+/// The exhausted limit of an incomplete `execute` result (FR-277): bound and
+/// counter are ASCII decimal strings.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ResultLimit {
+    kind: &'static str,
+    bound: String,
+    counter: String,
+    field: &'static str,
+}
+
+impl From<&CallIncomplete> for ResultLimit {
+    fn from(incomplete: &CallIncomplete) -> Self {
+        Self {
+            kind: incomplete.record.limit_kind.as_str(),
+            bound: incomplete.record.limit.to_string(),
+            counter: incomplete.counter().to_string(),
+            field: incomplete.limits_field(),
+        }
+    }
 }
 
 /// The `quire-outcome/1` document (FR-286).
@@ -691,7 +717,11 @@ impl OutcomeDocument {
             CallOutcome::Undefined { reason } => {
                 document.result = Some(ExecuteResult::Undefined { reason });
             }
-            CallOutcome::Incomplete { .. } => {}
+            CallOutcome::Incomplete(incomplete) => {
+                document.result = Some(ExecuteResult::Incomplete {
+                    limit: ResultLimit::from(incomplete),
+                });
+            }
         }
         document
     }
@@ -1053,6 +1083,35 @@ mod tests {
                 "diagnostics": [],
                 "artifacts": [],
                 "result": {"kind": "completed", "value": {"kind": "integer", "decimal": "7"}},
+            })
+        );
+
+        let starved = Call {
+            accounting: default_accounting(0),
+            ..call
+        };
+        let (_, outcome) = run(
+            SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            "unit.native",
+            FIXTURE.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &starved,
+        )
+        .expect("seven runs");
+        assert_eq!(
+            json_of(&OutcomeDocument::from_call(&outcome)),
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "execute",
+                "last_stage": "S6a",
+                "category": "incomplete",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [],
+                "result": {"kind": "incomplete", "limit": {
+                    "kind": "work_units", "bound": "0", "counter": "0", "field": "work_units"}},
             })
         );
 
