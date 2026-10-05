@@ -661,6 +661,7 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     ] {
         let refusal = locate(&unit, document, &selection)
             .expect_err("the selection names no field of the package");
+        assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
         match *refusal {
             CallSiteRefusal::UnknownField {
                 selection: refused,
@@ -879,6 +880,7 @@ fn call_site_refuses_an_unknown_population_paired_with_its_package() {
     ] {
         let refusal = locate(&unit, document, &selection)
             .expect_err("the selection names no population of the package");
+        assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
         match *refusal {
             CallSiteRefusal::UnknownPopulation {
                 selection: refused,

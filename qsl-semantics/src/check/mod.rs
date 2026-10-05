@@ -1962,7 +1962,7 @@ impl CheckedGraph {
             .ok_or_else(|| fault("declaring-type-is-admitted"))?
             .attributes()
             .iter()
-            .map(crate::value::declaration::FieldDeclaration::name)
+            .map(quire_semantic_value::declaration::FieldDeclaration::name)
             .collect();
         // `str`'s `Ord` is UTF-8 byte order.
         names.sort_unstable();

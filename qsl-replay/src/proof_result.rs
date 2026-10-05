@@ -274,7 +274,9 @@ impl TerminalValue {
             | CallSiteRefusal::Dependency { .. }
             | CallSiteRefusal::UnknownFunction { .. }
             | CallSiteRefusal::UnknownOperation { .. }
-            | CallSiteRefusal::UnknownClause { .. } => Self::Declined {
+            | CallSiteRefusal::UnknownClause { .. }
+            | CallSiteRefusal::UnknownField { .. }
+            | CallSiteRefusal::UnknownPopulation { .. } => Self::Declined {
                 cause: ProofRefusalCause::InvalidInput,
                 code: DeclineCode::Qsl(refusal.code()),
             },

@@ -350,7 +350,9 @@ impl CallSiteRefusal {
             Self::DependencyInput(refusal) => refusal.code(),
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
-            | Self::UnknownClause { .. } => Code::MissingDeclaration,
+            | Self::UnknownClause { .. }
+            | Self::UnknownField { .. }
+            | Self::UnknownPopulation { .. } => Code::MissingDeclaration,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
