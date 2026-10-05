@@ -40,3 +40,9 @@ Approve, with one low ambiguity.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | FR-285-AC-5's "and one limit of a later stage" does not say which limit, so two implementers could test different stages. TC-769 step 5 repeats the vagueness ("one limit of a later stage set below the counter its input reaches"), and the test picked `s3.nodes` at 1. Name it: "and `s3.nodes` set to 1". | spec/functional/FR-285-map-every-outcome-category-to-one-exit-code.md:106; spec/test-cases/TC-769-the-exit-function-maps-every-category-and-multi-item-outcome-with.md:23 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |

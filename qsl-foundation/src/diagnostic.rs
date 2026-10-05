@@ -864,8 +864,10 @@ impl InternalFault {
 /// record carries it (O-17: each cause type has a fixed category). Every
 /// code is `Category::Refusal` except `runtime_invariant`, which is
 /// `InternalFault`'s one code and category `internal failure` (T-4), and
-/// `cancelled` and `stage_limit_exceeded` (a reached stage limit), which
-/// O-16's `incomplete` row names and [`Code::is_incomplete`] agrees with.
+/// `cancelled`, `stage_limit_exceeded` (a reached stage limit),
+/// `incomplete_population` and `unavailable_observation`, which O-16's
+/// `incomplete` row names (FR-106, ADR-012's admission table) and
+/// [`Code::is_incomplete`] agrees with.
 /// `resource_exhausted` is the caller work-budget code (the catalog's
 /// `insufficient-next-charge`; a semantic maximum is not a work budget). It
 /// is a refusal here, when a refusal record carries it (ADR-013's read-only
@@ -880,9 +882,8 @@ impl InternalFault {
 /// category ([`Category::exit_code`]), which for a native code is
 /// [`Code::category`]. That map separates the unsupported
 /// codes (`unsupported_construct`, `unknown_required_feature`,
-/// `unsupported_projection`) and the incomplete ones (`resource_exhausted`,
-/// `incomplete_population`, `unavailable_observation`) that this table
-/// files under `Refusal`.
+/// `unsupported_projection`) and the incomplete `resource_exhausted` that
+/// this table files under `Refusal`.
 const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
@@ -914,8 +915,8 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("ieee_rational_out_of_domain", Category::Refusal),
     ("wrong_snapshot", Category::Refusal),
     ("invalid_runtime_input", Category::Refusal),
-    ("unavailable_observation", Category::Refusal),
-    ("incomplete_population", Category::Refusal),
+    ("unavailable_observation", Category::Incomplete),
+    ("incomplete_population", Category::Incomplete),
     ("foreign_reference", Category::Refusal),
     ("dangling_reference", Category::Refusal),
     ("population_delta_mismatch", Category::Refusal),
@@ -1371,10 +1372,19 @@ mod foundation_tests {
             category_of(&CatalogCode::new("wrong_snapshot", "wrong-anchor")),
             Some(Category::Refusal)
         );
-        assert_eq!(
-            category_of(&CatalogCode::new("cancelled", "caller-cancelled")),
-            Some(Category::Incomplete)
-        );
+        for code in [
+            "cancelled",
+            "stage_limit_exceeded",
+            "incomplete_population",
+            "unavailable_observation",
+        ] {
+            assert_eq!(
+                category_of(&CatalogCode::new(code, "x")),
+                Some(Category::Incomplete),
+                "{code}"
+            );
+            assert!(Code::from_code(code).unwrap().is_incomplete(), "{code}");
+        }
         assert_eq!(
             category_of(&CatalogCode::new("not_a_catalog_code", "x")),
             None

@@ -67,3 +67,17 @@ judgement calls about codes that the single-source change now also moves.
 | FND-001 | low | The FR-277-AC-3 test's last assertion `counter() == consumed + next_charge` restates `CallIncomplete::counter`'s cumulative branch, so it cannot fail independently. A stronger external oracle exists: `needed` is the least passing bound, so the denied charge's counter is exactly `needed` (it is > needed-1 and <= the total under bound `needed`). Assert `incomplete.counter() == Integer::from(needed)`. The high-water branch of `counter()` (returns `next_charge`) has no test. | qsl-replay/src/spine/call/tests.rs:279-313; qsl-replay/src/spine/call.rs:188-196 |
 | FND-002 | low | `ReplayRefusal::LimitAboveReader` (the request's own S1 `text_input_bytes` is above the reader limit) codes `stage_limit_exceeded`. With this change its category is incomplete (22). No limit was reached, and raising one cannot help: the request asks for more than the reader permits, which reads as invalid input (20). No exit is derived from `ReplayRefusal` yet, so nothing is wrong today. Either give it a request code, or have ADR-013 O-26 state that it is incomplete. | qsl-replay/src/execute.rs:83-89; qsl-replay/src/execute.rs:239 |
 | FND-003 | low | The refusal-record map `CATALOG_CATEGORIES` still gives `stage_limit_exceeded` category refusal, and `limit_exceeded_reports_stage_limit_exceeded_per_kind` pins that. The same table puts `cancelled` at incomplete because O-16's incomplete row names it, and ADR-029 CB-4 now names `StageFailure::Limit` there too. Nothing reads the record map for a stage limit today, but a refusal record for a stage limit would report refusal beside exit 22. | qsl-foundation/src/diagnostic.rs:925; qsl-foundation/src/diagnostic/stage.rs:337 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | `CATALOG_CATEGORIES` gives `incomplete_population` and `unavailable_observation` category refusal. The spec has no refusal-record case for either code: FR-106 admission returns `Incomplete` with them, ADR-012's admission table and ADR-016 SC-5 call both incomplete, and FR-109-AC-3 exits 22. The map's doc justifies the refusal row for `resource_exhausted` only (ADR-014 B-2: refusal record versus stopped outcome), which is spec-intended. It says nothing for these two. `explore::stop_category` reads this map for every stop cause other than `resource_exhausted`, so an expansion stopped with either code would report refusal instead of incomplete. Give both rows `Category::Incomplete`, and pin them in the category test. This predates the PR, but it is the same map this PR edits for the same reason. | qsl-foundation/src/diagnostic.rs:917-918; qsl-eval/src/simulation/explore.rs:178-184 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |
+| FND-002 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |
+| FND-003 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |

@@ -45,3 +45,10 @@ binding and the stale status cells.
 | --- | --- | --- | --- |
 | FND-001 | low | `changing_s3_nodes_alone_keeps_the_other_checking_limits` is tagged `TC-769`/`FR-285-AC-5`, but it asserts neither the category nor exit 22, which is FR-285-AC-5's oracle. What it checks (the `s3.nodes` field alone changes and the refusal names `s3.nodes` at bound 1) is FR-277-AC-1's field-naming property for `CheckingLimits`. Retag it `TC-758`/`FR-277-AC-1`, or add the category and exit assertions. | qsl-replay/src/spine/call/tests.rs:1049-1074 |
 | FND-002 | low | spec/tests.md adds FR-285-AC-5 and FR-277-AC-3 to the TC-769 and TC-758 rows, but the status cells still say "steps 2 to 4 pass locally" and list step 1 and step 2 work only. They do not record that TC-769 step 5 and TC-758 step 6 now pass. | spec/tests.md:986; spec/tests.md:989 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |
+| FND-002 | fixed | a04276c53700556ae1699ec78b947a01d0e33d5b |

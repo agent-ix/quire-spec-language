@@ -398,3 +398,32 @@ pub fn explore_request<S: TransitionSystem>(
     check_requires_bound(domains, types, position_limit)?;
     explore(system, limits, max_depth, poll).map_err(NotSimulated::from)
 }
+
+#[cfg(test)]
+mod stop_category_tests {
+    use super::{stop_category, CatalogCode, Category};
+    use ix_trace_rs::trace;
+
+    /// FR-101-AC-12: a stop for an unavailable observation or an incomplete
+    /// population is incomplete, as is a stop at a work budget; a refusal
+    /// code is not.
+    #[trace("TC-474", "FR-101-AC-12")]
+    #[test]
+    fn a_stop_for_missing_evidence_or_a_budget_is_incomplete() {
+        for code in [
+            "unavailable_observation",
+            "incomplete_population",
+            "resource_exhausted",
+        ] {
+            assert_eq!(
+                stop_category(&CatalogCode::new(code, "x")),
+                Category::Incomplete,
+                "{code}"
+            );
+        }
+        assert_eq!(
+            stop_category(&CatalogCode::new("wrong_snapshot", "x")),
+            Category::Refusal
+        );
+    }
+}
