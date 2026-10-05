@@ -482,9 +482,15 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    (kind, mode); CG sources the domains and bounds from the FR-331 manifest
    the `BackendDescriptor` came from. An item whose domain or bound the
    manifest does not advertise declines under FR-290. The FR-290 decline
-   cause for an unadvertised domain, bound or unbounded mode is pending in
-   QSpec under QSL-637, in a QSpec PR that follows this one; until then CG
-   declines with no new cause. It never calls the plugin.
+   cause for an unadvertised domain or bound is pending in QSpec under
+   QSL-637, in a QSpec PR that follows this one. Until then CG uses existing
+   FR-290 causes: an unadvertised unbounded mode settles by FR-290's
+   existing unbounded-extent row (`requires-bound` when a finite bound is
+   available, otherwise `unsupported`, warned,
+   `unsupported_projection`/`unbounded-extent`, as its table gives), and an
+   unadvertised domain or bound settles `unsupported`,
+   `unsupported_projection`/`unsupported-requested-capability`, until the
+   QSL-637 QSpec cause replaces it. It never calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor
@@ -503,8 +509,8 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
 4. **Disposition from the manifest alone.** A bounded item routes when the
    manifest advertises the bounded mode with a bound that covers the item's.
    An unbounded item routes only when the manifest advertises the unbounded
-   mode. Otherwise the item declines under FR-290, with the pending cause
-   above. There is no default disposition. FR-290's existing
+   mode. Otherwise the item declines under FR-290, with the interim or
+   pending causes above. There is no default disposition. FR-290's existing
    `requires-bound` row (an unbounded item on a bounded-only provider when a
    finite bound is available) is the case where the manifest advertises the
    bounded mode but the item's extent is unbounded; it stays a

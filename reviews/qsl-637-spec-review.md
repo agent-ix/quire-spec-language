@@ -51,3 +51,19 @@ descriptor carries domains and bounds.
 | FND-001 | medium | PV-4 items 1 and 4 say an item "declines under FR-290" when the manifest does not advertise its domain, bound or unbounded mode. QSpec FR-290 at quire-specification 2b2dd28 has no such decline cause, and its advertised-mode table gives requires-bound (not a decline) for an unbounded item on a bounded-only candidate with a finite bound. QSL-637 Q1 says FR-290 "gains one in this ticket" if missing; the PR body lists it as "Not in this PR" with no follow-up ticket. Fix: open (or name) the QSpec ticket that adds the cause, and cite it in PV-4 as pending, so CG IR-629 does not implement a cause that does not exist. | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:476-500 |
 | FND-002 | medium | PV-4 item 1 says "The descriptor CG receives carries the manifest's advertised domains and bounds". The descriptor PV-1 says reaches consumers is qsl_route::BackendDescriptor, which holds only identity, origin, digest and (kind, mode) pairs. Q1 means CG's own descriptor for the Process variant. As written, a reader can take it as a requirement on BackendDescriptor, and nothing says who fills domains and bounds. Fix: say "CG's descriptor for the Process variant" and name its source (the driver, from the FR-331 manifest the BackendDescriptor came from). | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:478-480 |
 | FND-003 | low | FR-288 Description still says "A BackendDescriptor holds the BackendId and the manifest's advertised capabilities, and no other identity of the tool", which omits the origin member the PR adds. Fix: add "and its ProviderOrigin". | spec/functional/FR-288-build-the-registry-from-provider-manifests.md:41-42 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The new PV-4 item 1 sentence says that until the QSpec cause lands "CG declines with no new cause". A decline in FR-290 always carries a cause, and the sentence does not say which existing one CG uses, so CG IR-629 has to guess. Fix: name the existing FR-290 cause CG uses in the meantime (for example unsupported_projection/unbounded-extent for the unbounded case and the existing unsupported-requested-capability cause for an unadvertised domain or bound), or say the item is withheld until the cause exists. | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:484-487 |
+
+## Dispositions
+
+Round 1, reviewed at eb5ccaf2fbb77a4ff0f439931c6a7aa8be9da1f0 (fix commit eb5ccaf2f on 3ce34b67; `git diff 3ce34b67 eb5ccaf2`). No build run; the change is spec text plus one comment reflow. FND-001: PV-4 now names QSL-637 as the owner of the pending QSpec FR-290 cause; QSL-637 must stay open until that QSpec PR lands, because the GitHub link can auto-close it when #642 merges. FND-002: PV-4 item 1 now says the descriptor is CG's own Process descriptor, not qsl_route::BackendDescriptor, sourced from the FR-331 manifest. FND-003: FR-288 Description now names ProviderOrigin. PV-4 item 4's requires-bound paragraph reads FR-290's existing row as the settlement Q5 defers to "under FR-290"; that is a reasonable reading and not a finding, but it is a gloss on a ruling the QSL planner may want to see.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | eb5ccaf2f |
+| FND-002 | fixed | eb5ccaf2f |
+| FND-003 | fixed | eb5ccaf2f |

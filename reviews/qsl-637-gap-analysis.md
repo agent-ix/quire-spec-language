@@ -40,3 +40,12 @@ only test storage; the AC should say whose code it binds.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-288-AC-5 says a descriptor "built for a compile-time provider holds origin Linked, and one built for a plugin hello manifest holds Process", and the Behavior bullet says "The conversion shall set Linked ... and Process". qsl-route has no manifest-to-descriptor conversion and no hello handling; origin is a caller-supplied argument to new/admit, and ADR-029 PV-1 says the driver builds the registry. So TC-772's test only proves the descriptor holds the origin it was given; the Provider-to-Linked and hello-to-Process choice is the driver's code (IR-609 lane) and no test here can fail if the driver gets it wrong. Fix: reword AC-5 to what layer R owns (the descriptor holds the origin passed to new/admit, and no manifest input reaches it), and add a sentence that the Linked/Process assignment at the Provider and hello call sites binds the driver's registry builder and is verified there. | spec/functional/FR-288-build-the-registry-from-provider-manifests.md:81 |
 | FND-002 | low | FR-288-AC-1, as reworded, still describes passing one manifest "to the conversion" twice; that conversion does not exist in the repo and no test carries FR-288-AC-1 (nor AC-2 to AC-4), while spec/tests.md keeps TC-772 at Planned. Fix: when FND-001 is resolved, state AC-1 against the same owner, or leave it to the driver's conversion explicitly. | spec/functional/FR-288-build-the-registry-from-provider-manifests.md:77 |
+
+## Dispositions
+
+Round 1, reviewed at eb5ccaf2fbb77a4ff0f439931c6a7aa8be9da1f0 (fix commit eb5ccaf2f on 3ce34b67; `git diff 3ce34b67 eb5ccaf2`). No build run; the change is spec text plus one comment reflow. AC-5 and the Behavior bullet now bind what layer R owns (the origin passed to new/admit) and name the driver's registry builder as owner of the Linked/Process assignment. TC-772 says steps 1-4 (AC-1..AC-4) run through the driver (IR-609 lane), and spec/tests.md marks TC-772 Partial. The round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | eb5ccaf2f |
+| FND-002 | fixed | eb5ccaf2f |

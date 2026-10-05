@@ -40,3 +40,11 @@ Q6 conflict rule correctly. FND-001 is a comment-layout nit.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The edited `BackendDescriptor` doc comment has one over-long line ("... (FR-288-AC-6). The manifest digest only tells two registrations of one"), about 100 columns, where the rest of the block wraps at 78. Fix: reflow the paragraph. | qsl-route/src/lib.rs:203 |
+
+## Dispositions
+
+Round 1, reviewed at eb5ccaf2fbb77a4ff0f439931c6a7aa8be9da1f0 (fix commit eb5ccaf2f on 3ce34b67; `git diff 3ce34b67 eb5ccaf2`). No build run; the change is spec text plus one comment reflow. The round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | eb5ccaf2f |
