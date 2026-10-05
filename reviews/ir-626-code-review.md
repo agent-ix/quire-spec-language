@@ -50,3 +50,12 @@ literals only because quire-rs changed.
 | --- | --- | --- | --- |
 | FND-001 | medium | `SEMANTIC_CORE_VERSION = "0.3.2"` hand-copies the one semantic-core version quire-rs embeds. quire-rs 8ab0d509 exposes it as `quire_rs::semantic::embedded::embedded_semantic_core_version()` (and `CONTRACT_VERSION` as `embedded::CONTRACT_VERSION`), and `read_semantic_block` already refuses any other value (`contract.rs:158-170`). Measured what breaks without the literal: nothing. `clause_context` must name the embedded version, and quire-rs gives it. The preflight refusal (`preflight.rs:108`) is functional and spec-backed (FR-030-AC-3, a foreign context keeps its typed `SemanticCore` cause), but it needs quire-rs's value, not a copy. Every quire-rs bump that moves the bundle breaks QSL until someone retypes the literal, which is this PR. The test literals `"semantic_core":"0.3.2"` (quire_source.rs:42) and `assert_eq!(..., "0.3.2")` (extraction.rs:247) are version assertions. Fix: take both constants from quire-rs, keep the preflight check, and have the tests use the constant, not a literal. | qsl-source/src/lib.rs:33-35; qsl-source/src/preflight.rs:102-113; qsl-source/tests/it/quire_source.rs:42; src/command/output/extraction.rs:247 |
 | FND-002 | low | The lift test parses `document` twice: once as `lifted` for the expected-document compare and again as `package` a few lines later. Reuse `lifted`. | qsl-semantics/tests/it/model_intake.rs:131-139 |
+
+## Dispositions
+
+Round 1, reviewed at eaec92ca69e9f816a4fa243f15c72b4b57134efe (range 8852006dc..eaec92ca6).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4843b3fbe: `CONTRACT_VERSION` re-exports `quire_rs::semantic::embedded::CONTRACT_VERSION`; `semantic_core_version()` returns `embedded_semantic_core_version()`; preflight refusals kept, comparing against these; test literals replaced by the accessors (eaec92ca6 moves the test imports). No `SEMANTIC_CORE_VERSION` or `"0.3.2"` remains in code. |
+| FND-002 | fixed | 4843b3fbe: `let package = lifted;` replaces the second parse. |
