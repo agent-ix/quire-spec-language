@@ -391,11 +391,12 @@ mod tests {
             let code = cause.catalog_code();
             // The two incomplete-evidence codes are incomplete (FR-106,
             // ADR-012's admission table); every other cause is a refusal.
-            let expected = if Code::from_code(code.code()).is_some_and(Code::is_incomplete) {
-                Category::Incomplete
-            } else {
-                Category::Refusal
-            };
+            let expected =
+                if ["incomplete_population", "unavailable_observation"].contains(&code.code()) {
+                    Category::Incomplete
+                } else {
+                    Category::Refusal
+                };
             assert_eq!(category_of(&code), Some(expected), "{cause:?} -> {code}");
             // The catalog code is a native code spelling, and the cause tag
             // is the cause's own.
