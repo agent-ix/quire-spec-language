@@ -273,7 +273,15 @@ impl ReplayRefusal {
             Self::Recompile(refusal) => refusal.cause(),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
-            Self::DependencyIdentityMismatch { .. } => Some("content-mismatch"),
+            Self::DependencyIdentityMismatch { .. } | Self::PackageIdMismatch { .. } => {
+                Some("content-mismatch")
+            }
+            Self::UnknownFunction { .. }
+            | Self::UnknownOperation { .. }
+            | Self::UnknownClause { .. } => Some("missing-name"),
+            Self::FrameIdentity(_) | Self::ClauseIdentity(_) => Some("revision-mismatch"),
+            Self::WrongObservation { .. } => Some("wrong-observation"),
+            Self::Input(refusal) => Some(refusal.cause()),
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
@@ -281,20 +289,12 @@ impl ReplayRefusal {
             | Self::LimitAboveReader(_)
             | Self::NotASource(_)
             | Self::SourceCount(_)
-            | Self::PackageIdMismatch { .. }
-            | Self::UnknownFunction { .. }
-            | Self::UnknownOperation { .. }
-            | Self::FrameIdentity(_)
-            | Self::ClauseIdentity(_)
-            | Self::UnknownClause { .. }
-            | Self::WrongObservation { .. }
             | Self::Admission(AdmissionFailure::Fault(_))
             | Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
             | Self::NotAPredicate { .. }
-            | Self::Input(_)
             | Self::Fault(_) => None,
         }
     }

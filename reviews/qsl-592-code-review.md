@@ -98,3 +98,12 @@ Reviewed at 9e42b2c56888c7432a6cec58136b2a6c4e6dd578, after the rebase onto #636
 | FND-006 | fixed | 17619203d (`OutcomeDocument::settled` folds item categories by `Category::most_severe`, using `trace_exit_code` for `monitor`; test `the_document_category_is_the_most_severe_items`) |
 | FND-007 | fixed | 17619203d (`CompileRefusal::cause()` in spine.rs; outcome.rs calls it) |
 | FND-008 | fixed | 17619203d (`json!` whole-document equality per constructor, plus an exact-bytes literal for AC-3; the `package_id` comes from the `package` operation's output) |
+| FND-009 | fixed | 3f0ba08fa (`replay_stage`: a recompile refusal gives its spine stage, every other refusal S8, and `null` only for `Fault` and `Admission(Fault)`; the diagnostic carries `ReplayRefusal::cause()`; tested with `DependencyIdentityMismatch` giving S8, refusal, stale_dependency, content-mismatch. The causes it still misses are FND-010.) |
+
+## New findings (disposition pass 2)
+
+Reviewed at 3f0ba08fa412bad509cac9a814f5b01b855be91d, rebased onto main 4403f2f0e. `git range-diff` shows commits 1 to 11 have the same content as round 1's 17619203d..9e42b2c56 under new SHAs (17619203d is 58af45b2d, 2bbadf34e is 29e98e1e1, 2937875b2 is d6650cfdc). Round 1's rows keep the SHAs reviewed then.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | medium | `ReplayRefusal::cause()` returns `None` for seven variants whose own `Display` spells a catalog cause. `PackageIdMismatch` is `stale_dependency/content-mismatch` (ADR-015 D-4 says the same). `UnknownFunction`, `UnknownOperation` and `UnknownClause` are `missing_declaration/missing-name`. `FrameIdentity` and `ClauseIdentity` are `stale_dependency/revision-mismatch`. `WrongObservation` is `wrong_snapshot/wrong-observation`. `Input(refusal)` writes `refusal.cause()` in its message. So the replay document writes `cause: null` on these paths, against FR-286's "each with its typed cause", and the cause now lives in two places, the `#[error]` strings and `cause()`, which already disagree. `DependencyIdentityMismatch` gets `content-mismatch` but the same-coded `PackageIdMismatch` does not. Fix: return those causes from `cause()` (`Input` from `refusal.cause()`), and test one of them, for example `PackageIdMismatch`. | qsl-replay/src/execute.rs:271-302; qsl-replay/src/execute.rs:132, 140, 175, 189, 200, 204, 214, 218 |

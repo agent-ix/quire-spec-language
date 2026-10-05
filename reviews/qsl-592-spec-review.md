@@ -66,3 +66,4 @@ So the one outcome document cannot replace FR-100's `run` output.
 | FND-004 | fixed | 17619203d (FR-100, FR-026 and FR-267 say `spine-run-result/1` is the `quire-spec` CLI's current output, retired with it under ADR-029 CB-1, and that the outcome document is FR-286's) |
 | FND-005 | fixed | 17619203d (TC-770 retitled to match spec/tests.md; it says the CLI half is the driver's test) |
 | FND-006 | fixed | 17619203d (FR-286 states when `last_stage` is `null` and that `items` is always present, in both the members list and Behavior) |
+| FND-007 | fixed | 3f0ba08fa (FR-286's items bullet keeps only the `undefined-evaluation{where, cause}` and `replay-parity` examples) |

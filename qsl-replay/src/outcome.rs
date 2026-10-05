@@ -782,10 +782,11 @@ mod tests {
     use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
     use qsl_semantics::library::LibraryName;
-    use quire_exact::{Cancel, CancelCause, ScalarLimits};
+    use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
     use serde_json::{json, Value};
 
     use super::*;
+    use crate::identity::QualifiedName;
     use crate::proof_result::{IncompleteCause, ProofRefusalCause, UnavailabilityCause};
     use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
@@ -1320,6 +1321,23 @@ mod tests {
         assert_eq!(stale["category"], "refusal");
         assert_eq!(stale["diagnostics"][0]["code"], "stale_dependency");
         assert_eq!(stale["diagnostics"][0]["cause"], "content-mismatch");
+        let changed = ReplayRefusal::PackageIdMismatch {
+            requested: DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]),
+            recompiled: PackageId::of_preimage(b"other"),
+        };
+        let changed = json_of(&OutcomeDocument::from_replay(&Err(changed)));
+        assert_eq!(changed["last_stage"], "S8");
+        assert_eq!(changed["diagnostics"][0]["code"], "stale_dependency");
+        assert_eq!(changed["diagnostics"][0]["cause"], "content-mismatch");
+        let unknown = ReplayRefusal::UnknownFunction {
+            selection: QualifiedName::new(vec![Identifier::new("seven").expect("an identifier")])
+                .expect("a qualified name"),
+            package: PackageId::of_preimage(b"geometry"),
+        };
+        let unknown = json_of(&OutcomeDocument::from_replay(&Err(unknown)));
+        assert_eq!(unknown["last_stage"], "S8");
+        assert_eq!(unknown["diagnostics"][0]["code"], "missing_declaration");
+        assert_eq!(unknown["diagnostics"][0]["cause"], "missing-name");
         let fault = ReplayRefusal::Fault(InternalFault::new("replay", "broken"));
         let document = json_of(&OutcomeDocument::from_replay(&Err(fault)));
         assert_eq!(document["category"], "internal-failure");
