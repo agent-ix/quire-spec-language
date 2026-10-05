@@ -399,9 +399,9 @@ When a `lookup<T>(p, r) absent undefined` query (FR-153) finds no member of
 `cause.undefined_record()` has reason `absent-key` and, as `fields`, the
 reason's catalog payload: the population binding and the requested reference
 key. The `lookup` locus is `e.location`, the location of the `lookup`
-node. The result is category `undefined`. `quire_exact::Undefined`
-has no `AbsentKey` variant, and this `UndefinedRecord` is the only carrier
-of undefined reason `absent-key`.
+node. The result is category `undefined`. This `UndefinedRecord` is the
+only carrier of undefined reason `absent-key`; that the kernel's `Undefined`
+has no `AbsentKey` variant is `ix://agent-ix/quire-exact/FR-090`'s.
 
 `absent-key` is a `StateModel` undefined cause for three reasons. The
 catalog requires a payload for it, which a payload-free kernel variant
