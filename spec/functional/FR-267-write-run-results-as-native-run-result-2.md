@@ -57,7 +57,9 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 - From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL write every command-error envelope
   with that format; before it, FR-100's refusals use FR-026's
   `native-run-result/1` envelope. A
-  function run's outcome document is FR-100's `spine-run-result/1`.
+  function run's output is FR-100's `spine-run-result/1`, the `quire-spec`
+  CLI's current output, retired when the driver's verbs land (ADR-029
+  CB-1); the outcome document is FR-286's `quire-outcome/1`.
 - A clause-run document SHALL carry the report's disposition and usage in
   the members QSpec FR-352 defines for them, `basis` on every
   document, and `witness` exactly when `basis` is

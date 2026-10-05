@@ -39,6 +39,7 @@ mod call_site;
 mod certificate;
 mod execute;
 mod identity;
+mod outcome;
 mod proof_result;
 mod request;
 mod result;
@@ -61,6 +62,11 @@ pub use identity::{
 // The typed identity and catalog code a `TerminalRecord` and a
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
+pub use outcome::{
+    ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
+    OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
+    ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
+};
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
     IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,

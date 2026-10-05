@@ -265,6 +265,39 @@ impl ReplayRefusal {
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
+
+    /// The catalog cause tag under [`Self::code`], where the refusing stage
+    /// or request check names one.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::Recompile(refusal) => refusal.cause(),
+            Self::DependencySelections(_) => Some("invalid-value"),
+            Self::DependencyInput(refusal) => refusal.cause(),
+            Self::DependencyIdentityMismatch { .. } | Self::PackageIdMismatch { .. } => {
+                Some("content-mismatch")
+            }
+            Self::UnknownFunction { .. }
+            | Self::UnknownOperation { .. }
+            | Self::UnknownClause { .. } => Some("missing-name"),
+            Self::FrameIdentity(_) | Self::ClauseIdentity(_) => Some("revision-mismatch"),
+            Self::WrongObservation { .. } => Some("wrong-observation"),
+            Self::Input(refusal) => Some(refusal.cause()),
+            Self::Admission(
+                AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
+            ) => Some(record.cause),
+            Self::Request(_)
+            | Self::LimitAboveReader(_)
+            | Self::NotASource(_)
+            | Self::SourceCount(_)
+            | Self::Admission(AdmissionFailure::Fault(_))
+            | Self::UnknownParameter(_)
+            | Self::DuplicateArgument(_)
+            | Self::UnboundParameter(_)
+            | Self::Witness { .. }
+            | Self::NotAPredicate { .. }
+            | Self::Fault(_) => None,
+        }
+    }
 }
 
 /// Why the package reference's `dependencies` refused (ADR-015 D-4 rules 1
