@@ -70,3 +70,6 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
   that record's own cause, `replay_parity` with its `DisagreementCause` or
   `replay_refused` with its code; a vacuous `proved` is not an
   `Inconclusive` record and keeps `Proved { success_checks: 0 }`.
+- A `declined` record with a QSL catalog code and one with a STD-001 registry
+  code (including an unregistered one) both map to `refusal`, keep their own
+  code, and compare unequal: no code is remapped across registries.

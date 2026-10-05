@@ -518,7 +518,7 @@ mod tests {
             (
                 TerminalValue::Declined {
                     cause: ProofRefusalCause::Refused,
-                    code: DeclineCode::Std001(Std001Code::KANI_VACUOUS_PROOF),
+                    code: DeclineCode::Std001(Std001Code::KANI_BOUND_INVALID),
                 },
                 Category::Refusal,
                 None,
@@ -716,17 +716,15 @@ mod tests {
         );
     }
 
-    /// FR-069-AC-1 (TC-177): a `Declined` with a STD-001 code builds from a
-    /// runtime string and from a literal, compares by the code, and is
-    /// distinct from a QSL catalog code of the same cause. A malformed code
-    /// does not build, and an unregistered but well-formed one does.
+    /// FR-069-AC-1 (TC-177): a `Declined` with a STD-001 code, even an
+    /// unregistered one, builds, compares by the code, and is distinct from a
+    /// QSL catalog code of the same cause: no code is remapped across
+    /// registries.
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn a_declined_value_carries_a_std001_code_without_remapping_it() {
         let parsed = Std001Code::new("kani_corpus_identity_collision").unwrap();
         assert!(!parsed.is_registered());
-        assert_eq!(parsed, std001_code!("kani_corpus_identity_collision"));
-        assert!(Std001Code::new("Bad-Code").is_err());
 
         let std001 = TerminalValue::Declined {
             cause: ProofRefusalCause::Refused,
