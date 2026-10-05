@@ -262,7 +262,7 @@ fn exact_header_versions_and_source_validation() {
 fn resource_limits_never_become_boolean_results() {
     // Every syntax ceiling, `tokens` included (`token-count-exceeded`,
     // catalog revision `1-draft.8`), is a stage limit
-    // (`stage_limit_exceeded`, a refusal, exit 20), and never becomes a
+    // (`stage_limit_exceeded`, incomplete work, exit 22), and never becomes a
     // boolean result.
     for (limits, incomplete) in [
         (
@@ -270,21 +270,21 @@ fn resource_limits_never_become_boolean_results() {
                 source_bytes: 1,
                 ..Limits::default()
             },
-            false,
+            true,
         ),
         (
             Limits {
                 tokens: 2,
                 ..Limits::default()
             },
-            false,
+            true,
         ),
         (
             Limits {
                 nodes: 0,
                 ..Limits::default()
             },
-            false,
+            true,
         ),
     ] {
         let error = read(document("true").as_bytes(), limits).unwrap_err();
