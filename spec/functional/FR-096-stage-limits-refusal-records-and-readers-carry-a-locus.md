@@ -43,7 +43,7 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
   masquerade as a located failure"); the `stage_limit_exceeded`,
   `unknown_wire`, `invalid_runtime_input` and `wrong_snapshot` rows; the ten
   value-refusal rows (`inexact_decimal`,
-  `decimal_out_of_domain`, `division_pair_out_of_domain`,
+  `decimal_out_of_domain`, `division_out_of_domain`,
   `modulo_out_of_domain`, `text_length_out_of_domain`,
   `integer_out_of_domain`, `rational_out_of_domain`, `ieee_not_exact`,
   `ieee_nan_payload_not_representable`, `ieee_rational_out_of_domain`); and
@@ -227,7 +227,7 @@ names the catalog payload item beside it (`quire.native.diagnostics/v1`):
 | kernel `Refusal::ForeignReference` | `foreign_reference` / `foreign-universe` | `required`: the universe already in force (an equality's left operand, or membership's collection or already-kept member), as lowercase hex; `supplied`: the universe of the value tested against it, as lowercase hex |
 | kernel `Refusal::InexactDecimal` | `inexact_decimal` / `nonzero-discarded-digit` | `expected`: the target type's declared domain, `Decimal[lo, hi; smin, smax]` for a decimal target and `Int[lo, hi]` for an integer target (scale zero) |
 | kernel `Refusal::DecimalOutOfDomain` | `decimal_out_of_domain` / `outside-domain` | `expected`: the target `Decimal[lo, hi; smin, smax]` domain |
-| kernel `Refusal::DivisionPairOutOfDomain` | `division_pair_out_of_domain` / `quotient-outside-domain`, `remainder-outside-domain` or `both-outside-domain` | `expected`: the bounded consumer's `Int[lo, hi]` domain |
+| kernel `Refusal::DivisionOutOfDomain` | `division_out_of_domain` / `quotient-outside-domain` or `remainder-outside-domain` | `expected`: the bounded consumer's `Int[lo, hi]` domain |
 | kernel `Refusal::ModuloOutOfDomain` | `modulo_out_of_domain` / `outside-domain` | `expected`: the bounded consumer's `Int[lo, hi]` domain |
 | kernel `Refusal::TextLengthOutOfDomain` | `text_length_out_of_domain` / `outside-domain` | `expected`: the declared `Text[min, max; profile]` bounds and profile |
 | kernel `Refusal::IntegerOutOfDomain` | `integer_out_of_domain` / `outside-domain` | `expected`: the target `Int[lo, hi]` domain |
@@ -267,11 +267,10 @@ the source width its `actual` field renders from. `kernel_refusal_record`
 reads each field from the variant and never from a message or from the
 checked tree.
 
-`DivisionPairOutOfDomain` SHALL take its cause from which members of the
-`div`/`rem` pair fail membership: `quotient-outside-domain` when only the
-quotient is outside, `remainder-outside-domain` when only the remainder is,
-and `both-outside-domain` when both are. The kernel raises it only when at
-least one member is outside.
+`DivisionOutOfDomain` SHALL take its cause from the member the expression
+exposes: `quotient-outside-domain` for `div` and `remainder-outside-domain`
+for `rem`. Both members are computed exactly; the kernel raises it only when
+the exposed member is outside the consumer's domain.
 
 `Refusal::code()` and `Refusal::cause()` SHALL return, for every kernel
 cause other than `CheckedInvariant`, the code and cause the key table gives
@@ -365,7 +364,7 @@ name.
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
 | FR-096-AC-11 | A function whose body is the source text `not not not true` (four expression nodes), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` node limit 3, returns `StageFailure::Limit` with kind node count, bound 3, actual 4, setting `s3.nodes`, and `Locus::Region` over the span of the node whose entry failed, reported as `stage_limit_exceeded`/`node-count-exceeded`. With node limit 4 and nothing else changed, it returns no limit. The same stop inside an FR-151 synthesized function carries no locus. | Test (TC-378) |
 | FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through its category's FR-285 exit code, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test (TC-470) |
-| FR-096-AC-13 | A kernel `DivisionPairOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when only the quotient is outside it, `remainder-outside-domain` when only the remainder is, and `both-outside-domain` when both are. | Test (TC-428) |
+| FR-096-AC-13 | A kernel `DivisionOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when the exposed member is the quotient and `remainder-outside-domain` when it is the remainder. | Test (TC-428) |
 | FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test (TC-500) |
 | FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. It returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
 | FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test (TC-427) |
@@ -493,8 +492,7 @@ STD-110, merged):
   but `CheckedInvariant`, `ForeignReference` included (`foreign-universe`).
   `kernel_refusal_record` builds the twelve records, and the ten codes are in
   the catalog category table.
-- AC-13: `DivisionPairOutOfDomain` takes its cause from its
-  `quotient_admitted`/`remainder_admitted` flags.
+- AC-13: `DivisionOutOfDomain` takes its cause from its `member`.
 - AC-14: S6a's `sum` checks the seed and each running total, returns
   `Undefined::SumOutOfDomain` located at the summand (seed) or the `sum`
   node (addition), charges nothing after the failed decision, and makes no

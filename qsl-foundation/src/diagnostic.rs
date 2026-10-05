@@ -905,7 +905,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("cardinality_out_of_bound", Category::Refusal),
     ("inexact_decimal", Category::Refusal),
     ("decimal_out_of_domain", Category::Refusal),
-    ("division_pair_out_of_domain", Category::Refusal),
+    ("division_out_of_domain", Category::Refusal),
     ("modulo_out_of_domain", Category::Refusal),
     ("text_length_out_of_domain", Category::Refusal),
     ("integer_out_of_domain", Category::Refusal),
@@ -1041,7 +1041,7 @@ pub fn kernel_refusal_record(
         Refusal::DecimalOutOfDomain { target } => {
             BTreeMap::from([("expected", spell_decimal(target))])
         }
-        Refusal::DivisionPairOutOfDomain { domain, .. } | Refusal::ModuloOutOfDomain { domain } => {
+        Refusal::DivisionOutOfDomain { domain, .. } | Refusal::ModuloOutOfDomain { domain } => {
             BTreeMap::from([("expected", spell_int(domain))])
         }
         Refusal::IntegerOutOfDomain { target } => BTreeMap::from([("expected", spell_int(target))]),

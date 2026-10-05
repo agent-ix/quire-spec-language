@@ -30,8 +30,8 @@ use serde::{Deserialize, Serialize};
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, SelectionRefusalCode};
 
 use quire_exact::{
-    ieee_intrinsic_identities, DivisionProfile, Integer, IntegerDomain, Meter, Outcome,
-    QuotientRemainder,
+    ieee_intrinsic_identities, DivisionMember, DivisionProfile, Integer, IntegerDomain, Meter,
+    Outcome,
 };
 
 /// QSpec's closed package-selection `trigger_vocabulary`.
@@ -533,15 +533,18 @@ impl AdmittedIntegerDivision {
     }
 }
 
-/// Evaluate paired `div`/`rem` under the admitted package law.
+/// Evaluate the one member of `div`/`rem` an expression exposes (`div` is the
+/// quotient, `rem` the remainder) under the admitted package law. Both members
+/// are computed exactly; only the exposed `member` must lie in `domain`.
 pub fn divide(
     selection: &AdmittedIntegerDivision,
+    member: DivisionMember,
     dividend: &Integer,
     divisor: &Integer,
     domain: &IntegerDomain,
     meter: &mut Meter,
-) -> Outcome<QuotientRemainder> {
-    quire_exact::divide(selection.profile(), dividend, divisor, domain, meter)
+) -> Outcome<Integer> {
+    quire_exact::divide(selection.profile(), member, dividend, divisor, domain, meter)
 }
 
 /// Evaluate `mod`: always the Euclidean remainder, independent of any selected

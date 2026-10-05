@@ -525,7 +525,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     // fields (TC-452's payloads), a locus and the location.
     {
         use quire_exact::{
-            DecimalType, IeeeFlag, IeeeFlags, IeeeWidth, InexactTarget, Integer, IntegerInterval,
+            DecimalType, DivisionMember, IeeeFlag, IeeeFlags, IeeeWidth, InexactTarget, Integer, IntegerInterval,
             RationalDomain, RoundingMode, TextProfile, TextType,
         };
         let int_0_9 = || IntegerInterval::spanning(Integer::zero(), Integer::from(9_i64));
@@ -568,33 +568,21 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 BTreeMap::from([("expected", "Decimal[0, 100; 0, 2]".to_owned())]),
             ),
             (
-                Refusal::DivisionPairOutOfDomain {
+                Refusal::DivisionOutOfDomain {
                     domain: Box::new(int_0_9()),
-                    quotient_admitted: false,
-                    remainder_admitted: true,
+                    member: DivisionMember::Quotient,
                 },
-                "division_pair_out_of_domain",
+                "division_out_of_domain",
                 "quotient-outside-domain",
                 BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
             ),
             (
-                Refusal::DivisionPairOutOfDomain {
+                Refusal::DivisionOutOfDomain {
                     domain: Box::new(int_0_9()),
-                    quotient_admitted: true,
-                    remainder_admitted: false,
+                    member: DivisionMember::Remainder,
                 },
-                "division_pair_out_of_domain",
+                "division_out_of_domain",
                 "remainder-outside-domain",
-                BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
-            ),
-            (
-                Refusal::DivisionPairOutOfDomain {
-                    domain: Box::new(int_0_9()),
-                    quotient_admitted: false,
-                    remainder_admitted: false,
-                },
-                "division_pair_out_of_domain",
-                "both-outside-domain",
                 BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
             ),
             (

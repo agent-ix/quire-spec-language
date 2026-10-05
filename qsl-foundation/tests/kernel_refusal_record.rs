@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{kernel_refusal_record, CatalogCode, Category, Locus};
 use quire_exact::{
-    DecimalType, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval, Location, NodeKey,
+    DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval, Location, NodeKey,
     Origin, RationalDomain, Refusal, RoundingMode, TextProfile, TextType,
 };
 
@@ -195,23 +195,21 @@ fn a_checked_invariant_builds_no_record() {
     );
 }
 
-/// FR-096-AC-13 (TC-428 step 5): a division pair's cause follows which
-/// members fail membership, and `expected` is the consumer's `Int[0, 9]`.
+/// FR-096-AC-13 (TC-428 step 5): a division refusal's cause follows the
+/// exposed member, and `expected` is the consumer's `Int[0, 9]`.
 #[trace("TC-428", "FR-096-AC-13")]
 #[test]
-fn a_division_pair_cause_follows_which_members_fail() {
-    for (quotient_admitted, remainder_admitted, cause) in [
-        (false, true, "quotient-outside-domain"),
-        (true, false, "remainder-outside-domain"),
-        (false, false, "both-outside-domain"),
+fn a_division_cause_follows_the_exposed_member() {
+    for (member, cause) in [
+        (DivisionMember::Quotient, "quotient-outside-domain"),
+        (DivisionMember::Remainder, "remainder-outside-domain"),
     ] {
-        let refusal = Refusal::DivisionPairOutOfDomain {
+        let refusal = Refusal::DivisionOutOfDomain {
             domain: interval(0, 9),
-            quotient_admitted,
-            remainder_admitted,
+            member,
         };
         assert_eq!(
-            record(&refusal, "division_pair_out_of_domain", cause),
+            record(&refusal, "division_out_of_domain", cause),
             expected("Int[0, 9]")
         );
     }

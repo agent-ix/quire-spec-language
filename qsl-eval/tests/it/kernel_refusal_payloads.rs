@@ -10,7 +10,7 @@ use qsl_foundation::diagnostic::kernel_refusal_record;
 use quire_exact::{
     admit_text, convert_ieee_width, divide, evaluate_decimal, evaluate_ieee,
     evaluate_integer_arithmetic, evaluate_rational_arithmetic, exact_to_ieee, ieee_to_exact,
-    modulo, Decimal, DecimalOperation, DecimalType, DivisionProfile, IeeeExactTarget,
+    modulo, Decimal, DecimalOperation, DecimalType, DivisionMember, DivisionProfile, IeeeExactTarget,
     IeeeOperation, IeeeValue, IeeeWidth, Integer, IntegerArithmetic, IntegerDomain,
     IntegerInterval, Meter, Outcome, Rational, RationalArithmetic, RationalDomain, Refusal,
     RoundingMode, ScalarLimits, TextPayload, TextProfile, TextType,
@@ -194,11 +194,11 @@ fn ieee_rational_refusal_names_its_target_domain() {
     );
 }
 
-/// `mod` and the `div`/`rem` pair refuse with the consumer's `Int[..]`
-/// domain, and the pair's cause follows the failing members.
+/// `mod` and `div`/`rem` refuse with the consumer's `Int[..]` domain, and
+/// the `div`/`rem` cause follows the exposed member.
 #[trace("TC-428", "FR-096-AC-8", "FR-096-AC-13")]
 #[test]
-fn division_refusals_name_the_consumer_domain_and_failing_members() {
+fn division_refusals_name_the_consumer_domain_and_exposed_member() {
     let domain = IntegerDomain::Bounded(interval(0, 1));
     let refused = refusal(modulo(&int(7), &int(4), &domain, &mut meter()));
     assert_record(
@@ -208,13 +208,13 @@ fn division_refusals_name_the_consumer_domain_and_failing_members() {
         &[("expected", "Int[0, 1]")],
     );
     for profile in DivisionProfile::ALL {
-        for (dividend, divisor, cause) in [
-            (7, 2, "quotient-outside-domain"),
-            (7, 4, "remainder-outside-domain"),
-            (15, 4, "both-outside-domain"),
+        for (member, dividend, divisor, cause) in [
+            (DivisionMember::Quotient, 7, 2, "quotient-outside-domain"),
+            (DivisionMember::Remainder, 7, 4, "remainder-outside-domain"),
         ] {
             let refused = refusal(divide(
                 profile,
+                member,
                 &int(dividend),
                 &int(divisor),
                 &domain,
@@ -222,7 +222,7 @@ fn division_refusals_name_the_consumer_domain_and_failing_members() {
             ));
             assert_record(
                 &refused,
-                "division_pair_out_of_domain",
+                "division_out_of_domain",
                 cause,
                 &[("expected", "Int[0, 1]")],
             );
