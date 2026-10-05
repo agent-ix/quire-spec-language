@@ -313,6 +313,21 @@ mod tests {
         );
     }
 
+    /// ADR-014 §4: every `Node` key sorts before every `Population` key,
+    /// whatever their nodes and member types; population keys order by
+    /// member type, then ordinal.
+    #[trace("TC-436", "FR-097-AC-1")]
+    #[test]
+    fn node_keys_sort_before_population_keys_which_order_by_member_then_ordinal() {
+        let population = |member: u8, ordinal| DomainKey::Population {
+            member_type: node(member),
+            ordinal,
+        };
+        assert!(at(9, vec![7]) < population(1, 0));
+        assert!(population(1, 0) < population(1, 1));
+        assert!(population(1, 1) < population(2, 0));
+    }
+
     /// ADR-014 TR-3: an interval key refuses `lower > upper` and compares
     /// componentwise, so a different clock binding is a different key.
     #[trace("TC-436", "FR-097-AC-1")]

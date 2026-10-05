@@ -17,7 +17,9 @@ deterministically. Scope: FR-097-AC-1.
 
 1. Build `FiniteBound::integer_range(5, 4)`, `FiniteBound::depth(0)`, a
    one-point range `[4, 4]`, `cardinality(0)` and `depth(1)`.
-2. Order three `DomainKey`s: (n1, []), (n1, [0]), (n2, []).
+2. Order three `Node` `DomainKey`s: (n1, []), (n1, [0]), (n2, []); then a
+   `Population` key (m1, 0) against them, and `Population` keys (m1, 1),
+   (m2, 0).
 3. Build `IntervalKey::new(3, 2, …)`, then keys that differ in one component
    each.
 
@@ -25,7 +27,9 @@ deterministically. Scope: FR-097-AC-1.
 
 - Step 1: the inverted range and zero depth refuse; each admitted bound
   reports its own `FiniteBoundKind`.
-- Step 2: (n1, []) < (n1, [0]) < (n2, []).
+- Step 2: (n1, []) < (n1, [0]) < (n2, []); every `Node` key sorts before
+  every `Population` key, even when the member type is below the node;
+  population (m1, 0) < (m1, 1) < (m2, 0).
 - Step 3: the inverted key refuses; keys that differ in lower, upper or clock
   binding are unequal.
 

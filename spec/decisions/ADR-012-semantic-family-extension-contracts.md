@@ -50,7 +50,7 @@ owner ruling 2026-10-01 that depth is never a limit kind). FR-313 and FR-316 to 
 implement §16. §16.10 states the QSpec rules SC-G1 to SC-G7 that §16 relies
 on: QSpec FR-440, FR-441, FR-143, FR-144 and FR-146.
 
-Amended 2026-09-30: §15.4 keys a state field's proof-bound domain under its
+Amended 2026-10-01: §15.4 keys a state field's proof-bound domain under its
 declaring object type's node, by the field's name ordinal, and §15.7 keys a
 population by its own `DomainKey::Population` subject (ADR-014 §4).
 
