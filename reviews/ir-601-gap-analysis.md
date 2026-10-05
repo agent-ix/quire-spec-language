@@ -54,3 +54,34 @@ change makes false. FND-003 (low) is an untested half of FR-147-AC-6.
 | FND-001 | medium | No QSL test is traced to QSpec FR-147-AC-9 (each profile: `div` with q outside refuses `division_out_of_domain`/`quotient-outside-domain`, `rem` with r outside refuses `remainder-outside-domain`, `mod` refuses `modulo_out_of_domain`) or FR-147-AC-10 (the unexposed member never refuses: `10 div 5` over `Int[1,10]` gives 2, `-10 rem -1` over `Int[-10,5]` gives 0). Both were added by QSpec #188 and are what IR-601 implements. `only_the_exposed_member_must_lie_in_the_consumer_domain` tests exactly the AC-10 vectors and the AC-9 causes, but is tagged `QSpec-FR-147-AC-1`, `QSpec-FR-147-AC-4`, which are the identity and profile-table ACs. The member checks in `div_04_div_06_...` and in the generated test are also untagged for AC-9/AC-10. Fix: tag the new test `QSpec-FR-147-AC-9`, `QSpec-FR-147-AC-10`, and add AC-9 to `div_04_div_06_mathematical_and_signed_64_domains` and `generated_members_match_the_law_oracle_domains_and_every_denial`. | qsl-semantics/tests/it/integer_division.rs:728 |
 | FND-002 | medium | TC-202 / FR-078-AC-3 claim that the tests in `integer_division.rs` "passed unchanged before and after the negotiate_* removal" and that evaluation is "unchanged". This PR changes `divide`'s signature, its result and its bounded-domain behaviour, and rewrites those tests. Every test in the file still carries the `TC-202`/`FR-078-AC-3` tags, so the TC now asserts a before/after equivalence that the tagged tests no longer have. This is a refactor-equivalence criterion (it tests a refactor, not a behaviour), and this change shows it is stale. Fix: retire FR-078-AC-3/TC-202 the way FR-078-AC-2 was retired, and drop the `TC-202`/`FR-078-AC-3` tags from the division tests. The QSpec FR-147 tags already carry the behaviour. | spec/test-cases/TC-202-evaluation-functions-unchanged-after-removal.md:22-29 |
 | FND-003 | low | QSpec FR-147-AC-6 requires exact-bound accounting "of `div` and of `rem`". DIV-08 (`div_08_exact_bound_succeeds_and_each_named_denial_is_atomic`, tagged AC-6) runs only `DivisionMember::Quotient`. `rem` is covered for injected denials in the generated test, but no test checks its exact-bound success, admitted charge order or `result_units` 1. Fix: run DIV-08's exact-bound and named-denial assertions for both members (for example, a loop over `[Quotient, Remainder]` with the expected 2 or 1). | qsl-semantics/tests/it/integer_division.rs:323-336 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The FND-002 retirement left the TC-202 status rows unchanged. spec/tests.md:68 still lists TC-202 as "✅ Passed locally; `tests/ieee_profiles.rs` + `tests/integer_division.rs`", but this PR removed every `TC-202` tag from those files, and TC-202 itself now says "no test carries the `TC-202` tag". spec/spec.md:994 still reads "Implemented — see TC-201, TC-202". Fix: mark the tests.md row retired (for example, "Retired with FR-078-AC-3; no test") and drop TC-202 from the spec.md status cell, or mark it retired there. | spec/tests.md:68 |
+
+## Dispositions
+
+Round 1, reviewed at 2156c32cedfe0b8da4a07cc0202d5746589fa298 (fix commit
+2156c32ce on 1d2705783; `git diff 1d2705783 2156c32ce`). No builds were run in
+this round. The coder reports `make ci` exit 0 (qsl-601-make-ci2.log).
+
+- FND-001: `only_the_exposed_member_must_lie_in_the_consumer_domain` is now
+  tagged QSpec-FR-147-AC-9 and AC-10. `div_04_div_06_mathematical_and_signed_64_domains`
+  and `generated_members_match_the_law_oracle_domains_and_every_denial` now
+  carry AC-9.
+- FND-002: FR-078-AC-3 is marked RETIRED, and TC-202's description says it is
+  retired. Every `TC-202`/`FR-078-AC-3` tag is gone from integer_division.rs
+  and ieee_profiles.rs (a `git grep` at the head finds them only in spec
+  prose). The leftover status rows are FND-004.
+- FND-003: DIV-08 now loops over Quotient (2) and Remainder (1). Each member
+  asserts the exact-bound success, the four charges in order, consumption with
+  `result_units` 1, both named denials, and an injected denial at each point.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2156c32ce |
+| FND-002 | fixed | 2156c32ce |
+| FND-003 | fixed | 2156c32ce |
+| FND-004 | still-open | New this round: spec/tests.md:68 and spec/spec.md:994 still report TC-202 as passing or implemented through tests that no longer carry the tag. |

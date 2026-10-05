@@ -49,3 +49,14 @@ causes come from the kernel. FND-001 is a wrong statement in a test doc comment.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The doc comment on `only_the_exposed_member_must_lie_in_the_consumer_domain` says `10 div y` over `1..=10` at `y = 5` "evaluates to 2 although the remainder 0 and quotient are both fine". The remainder 0 is outside `Int[1, 10]`, and that is the point of the case (QSpec FR-147-AC-10: "returns 2 although the remainder 0 is outside the domain"). Fix: "evaluates to 2 although the remainder 0 is outside that domain". | qsl-semantics/tests/it/integer_division.rs:724-727 |
+
+## Dispositions
+
+Round 1, reviewed at 2156c32cedfe0b8da4a07cc0202d5746589fa298 (fix commit
+2156c32ce on 1d2705783; `git diff 1d2705783 2156c32ce`). No builds were run in
+this round. The coder reports `make ci` exit 0 (qsl-601-make-ci2.log), and the
+log ends with exit=0. The round adds no new code-review finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2156c32ce |

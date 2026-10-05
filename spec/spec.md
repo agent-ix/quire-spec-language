@@ -991,7 +991,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-075](functional/FR-075-compute-candidates-from-registered-backends.md) | FR | Specified under #185; implemented as `src/route.rs`, now the crate `qsl-route` (`qsl-route/src/lib.rs`), over the canonical `Capability` type; AC-1..AC-5 backed (TC-193..TC-196); the lowering-target catalog is deleted with `lowering` in ADR-011 §7.3 M-6a |
 | [FR-076](functional/FR-076-settle-backend-absence-as-unsupported.md) | FR | Specified under #185; not yet implemented; exit waits on quire-contract-codegen#86 |
 | [FR-077](functional/FR-077-remove-composed-linker-backend-negotiation.md) | FR | Specified under #185; not yet implemented |
-| [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Implemented — see TC-201, TC-202 |
+| [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Implemented — see TC-201 |
 | [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185; not yet implemented |
 | [FR-081](functional/FR-081-preserve-model-correspondence-and-declaration-identity.md) | FR | Specified under #120; most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
 | [FR-082](functional/FR-082-resolve-conformance-subsetting-and-redefinition.md) | FR | Specified under #120; most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120. The type-environment ceilings are stage limits by ADR-014 §1 (AC-6, AC-7), implemented (S-5b) |
