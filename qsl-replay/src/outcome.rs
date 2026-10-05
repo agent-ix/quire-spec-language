@@ -841,7 +841,7 @@ mod tests {
                 "category": "refusal",
                 "items": [],
                 "diagnostics": [{
-                    "cause": "operator-ineligible",
+                    "cause": "ambiguous-literal",
                     "code": "ill_typed",
                     "locus": {
                         "kind": "region",
@@ -1088,7 +1088,7 @@ mod tests {
     }
 
     /// The whole-outcome category is the most severe item's, and a monitor
-    /// clause pending at the end of the trace exits 0.
+    /// clause pending at the end of the trace stays below a violation.
     #[trace("TC-770", "FR-286-AC-3")]
     #[test]
     fn the_document_category_is_the_most_severe_items() {
@@ -1115,10 +1115,18 @@ mod tests {
                 )),
             )]
         };
-        assert_eq!(
-            OutcomeDocument::settled(Operation::Monitor, None, pending()).category(),
-            Category::Success
+        let monitored = OutcomeDocument::settled(Operation::Monitor, None, pending());
+        assert_eq!(monitored.category(), Category::Inconclusive);
+        assert_eq!(monitored.category().trace_exit_code(), 0);
+        let violated = OutcomeDocument::settled(
+            Operation::Monitor,
+            None,
+            pending()
+                .into_iter()
+                .chain([record(1, TerminalValue::Refuted)])
+                .collect(),
         );
+        assert_eq!(violated.category(), Category::Violation);
         assert_eq!(
             OutcomeDocument::settled(Operation::Prove, None, pending()).category(),
             Category::Inconclusive
