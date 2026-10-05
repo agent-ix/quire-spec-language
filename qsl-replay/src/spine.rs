@@ -36,7 +36,7 @@ use qsl_semantics::check::{
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
-use quire_semantic_value::checking::CheckingLimits;
+pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::TypeEnvironmentLimits;
 
 mod lifecycle;

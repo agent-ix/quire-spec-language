@@ -319,11 +319,12 @@ fn an_execute_accounting_limit_carries_its_kind_bound_counter_and_field() {
 #[trace("TC-769", "FR-285-AC-5")]
 #[test]
 fn a_stage_limit_refusal_of_run_is_incomplete_and_exits_22() {
+    use crate::spine::CheckingLimits;
     use qsl_foundation::diagnostic::{Category, LimitKind, LimitsField};
     let mut source_limit = SpineLimits::default();
     source_limit.source.source_bytes = 1;
     let checking_limit = SpineLimits {
-        checking: quire_semantic_value::checking::CheckingLimits::new(1),
+        checking: CheckingLimits::new(1),
         ..SpineLimits::default()
     };
     for (limits, field, kind) in [
@@ -1043,4 +1044,29 @@ fn convert_refusal_with_no_record_and_no_fallback_is_a_typed_fault() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+/// FR-285-AC-5 (TC-769 step 5), driver view: changing `s3.nodes` alone
+/// through the re-exported `CheckingLimits` keeps the other s3 fields at
+/// their defaults, and the run refuses at that bound.
+#[trace("TC-769", "FR-285-AC-5")]
+#[test]
+fn changing_s3_nodes_alone_keeps_the_other_checking_limits() {
+    use crate::spine::CheckingLimits;
+    use qsl_foundation::diagnostic::LimitsField;
+    let defaults = CheckingLimits::default();
+    let mut limits = SpineLimits::default();
+    limits.checking = limits.checking.with_nodes(1);
+    assert_eq!(limits.checking.nodes(), 1);
+    assert_eq!(limits.checking.input_bytes(), defaults.input_bytes());
+    assert_eq!(limits.checking.work_budget(), defaults.work_budget());
+    let refusal = run_limited(limits, &call("seven", Vec::new())).expect_err("one node refuses");
+    let RunRefusal::Compile(compile) = *refusal else {
+        panic!("expected a compile refusal");
+    };
+    let CompileRefusal::Limit(limit) = *compile else {
+        panic!("expected a limit refusal");
+    };
+    assert_eq!(limit.limits_field(), Some(LimitsField::CheckingNodes));
+    assert_eq!(limit.configured_bound(), 1);
 }
