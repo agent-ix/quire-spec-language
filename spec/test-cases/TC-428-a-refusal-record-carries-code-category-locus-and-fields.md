@@ -33,9 +33,8 @@ Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15.
    `Int[0, 9]` for `InexactDecimal`, a `binary32` `IeeeNotExact` whose
    `nearest-even` flags are inexact and overflow, and a `binary64` to
    `binary32` NaN conversion. Build one from a kernel `CheckedInvariant`.
-5. Build a `DivisionPairOutOfDomain` record for consumer domain `Int[0, 9]`
-   with only the quotient outside, only the remainder outside, and both
-   outside.
+5. Build a `DivisionOutOfDomain` record for consumer domain `Int[0, 9]`
+   with the quotient as the exposed member and with the remainder.
 6. Evaluate `not x` for `x: Boolean` through the S6a seam with an Integer
    argument (FR-096-AC-15).
 
@@ -55,8 +54,7 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
   `Rational[-9, 9; 1, 9]`, `Text[1, 8; nfc]` and `Int[0, 9]`; `expected`
   `binary32` with `flags` `overflow,inexact`; and `expected` `binary32` with
   `actual` `binary64`. `CheckedInvariant` builds no record.
-- Step 5: causes `quotient-outside-domain`, `remainder-outside-domain` and
-  `both-outside-domain`, each with `expected` `Int[0, 9]`.
+- Step 5: causes `quotient-outside-domain` and `remainder-outside-domain`, each with `expected` `Int[0, 9]`.
 - Step 6: `Err(InternalFault)` naming `S6a` and `checked-program-invariant`,
   and no `Evaluation`.
 
@@ -68,6 +66,6 @@ variant carries the target domain or width its record renders,
 `Refusal::code()` and `Refusal::cause()` return the key table's code and
 cause (`ForeignReference` returns `foreign-universe`), and
 `kernel_refusal_record` builds each record, with a `CheckedInvariant`
-building none. Step 5 (FR-096-AC-13) covers the three
-`DivisionPairOutOfDomain` causes. Step 6 (FR-096-AC-15): `Machine::run`
+building none. Step 5 (FR-096-AC-13) covers the two
+`DivisionOutOfDomain` causes. Step 6 (FR-096-AC-15): `Machine::run`
 returns a kernel `CheckedInvariant` as `Err(InternalFault)`.

@@ -54,8 +54,8 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
      these payloads:
      - `InexactDecimal` with target domain `Decimal[0, 100; 0, 2]`;
      - `DecimalOutOfDomain` with target domain `Decimal[0, 100; 0, 2]`;
-     - `DivisionPairOutOfDomain` with consumer domain `Int[0, 9]`, once for
-       each of its three failing flag pairs;
+     - `DivisionOutOfDomain` with consumer domain `Int[0, 9]`, once for
+       each exposed member;
      - `ModuloOutOfDomain` with consumer domain `Int[0, 9]`;
      - `TextLengthOutOfDomain` with bounds and profile `Text[1, 8; binary-utf8]`;
      - `IntegerOutOfDomain` with target domain `Int[0, 9]`;
@@ -116,9 +116,9 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
       `{"expected": "Decimal[0, 100; 0, 2]"}`;
     - `DecimalOutOfDomain`: `decimal_out_of_domain`, `outside-domain`,
       `{"expected": "Decimal[0, 100; 0, 2]"}`;
-    - `DivisionPairOutOfDomain`: `division_pair_out_of_domain`, with cause
-      `quotient-outside-domain`, `remainder-outside-domain` and
-      `both-outside-domain` for its three flag pairs, each
+    - `DivisionOutOfDomain`: `division_out_of_domain`, with cause
+      `quotient-outside-domain` and `remainder-outside-domain` for its
+      two members, each
       `{"expected": "Int[0, 9]"}`;
     - `ModuloOutOfDomain`: `modulo_out_of_domain`, `outside-domain`,
       `{"expected": "Int[0, 9]"}`;

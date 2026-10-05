@@ -169,7 +169,7 @@ of FR-096's key table, and each exits 20:
 | `ForeignReference` | `foreign_reference` | `foreign-universe` | `required`, `supplied`, each lowercase hex |
 | `InexactDecimal` | `inexact_decimal` | `nonzero-discarded-digit` | `expected`: the target type's declared domain |
 | `DecimalOutOfDomain` | `decimal_out_of_domain` | `outside-domain` | `expected`: the target `Decimal[..]` domain |
-| `DivisionPairOutOfDomain` | `division_pair_out_of_domain` | `quotient-outside-domain`, `remainder-outside-domain` or `both-outside-domain`, from the variant's two admitted flags | `expected`: the consumer's integer domain |
+| `DivisionOutOfDomain` | `division_out_of_domain` | `quotient-outside-domain` or `remainder-outside-domain`, from the variant's exposed member | `expected`: the consumer's integer domain |
 | `ModuloOutOfDomain` | `modulo_out_of_domain` | `outside-domain` | `expected`: the consumer's integer domain |
 | `TextLengthOutOfDomain` | `text_length_out_of_domain` | `outside-domain` | `expected`: the declared `Text[..]` bounds and profile |
 | `IntegerOutOfDomain` | `integer_out_of_domain` | `outside-domain` | `expected`: the target `Int[..]` domain |

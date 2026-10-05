@@ -12,9 +12,8 @@ use qsl_semantics::value::{
     divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
 };
 use quire_exact::{
-    ChargePoint, DivisionProfile, Incomplete, InjectedDenial, Integer, IntegerDomain,
-    IntegerInterval, LimitKind, Meter, Outcome, QuotientRemainder, Refusal, ScalarLimits,
-    Undefined,
+    ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer,
+    IntegerDomain, IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, PackageRefusalCode};
 
@@ -71,12 +70,14 @@ fn big(value: i128) -> Integer {
 
 fn run(
     profile: DivisionProfile,
+    member: DivisionMember,
     a: i128,
     b: i128,
     domain: &IntegerDomain,
-) -> Outcome<QuotientRemainder> {
+) -> Outcome<Integer> {
     divide(
         &admitted(profile),
+        member,
         &big(a),
         &big(b),
         domain,
@@ -84,11 +85,21 @@ fn run(
     )
 }
 
-fn pair(outcome: Outcome<QuotientRemainder>) -> (i128, i128) {
+fn completed(outcome: Outcome<Integer>) -> i128 {
     match outcome {
-        Outcome::Completed(result) => (int(result.quotient()), int(result.remainder())),
-        other => panic!("expected a completed pair, got {other:?}"),
+        Outcome::Completed(result) => int(&result),
+        other => panic!("expected a completed member, got {other:?}"),
     }
+}
+
+/// `(a div b, a rem b)` under `profile`, each exposed on its own over the
+/// mathematical domain.
+fn pair(profile: DivisionProfile, a: i128, b: i128) -> (i128, i128) {
+    let member = |member| completed(run(profile, member, a, b, &IntegerDomain::Mathematical));
+    (
+        member(DivisionMember::Quotient),
+        member(DivisionMember::Remainder),
+    )
 }
 
 /// Independent law check: identity plus the profile's remainder constraint.
@@ -102,13 +113,7 @@ fn assert_law(profile: DivisionProfile, a: i128, b: i128, (q, r): (i128, i128)) 
     }
 }
 
-#[trace(
-    "QSpec-TC-192",
-    "QSpec-FR-147-AC-1",
-    "QSpec-FR-147-AC-4",
-    "TC-202",
-    "FR-078-AC-3"
-)]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-1", "QSpec-FR-147-AC-4")]
 #[test]
 fn signed_table_distinguishes_the_three_laws() {
     let operands = [(7, 3), (7, -3), (-7, 3), (-7, -3)];
@@ -125,20 +130,14 @@ fn signed_table_distinguishes_the_three_laws() {
     ];
     for (profile, expected) in table {
         for ((a, b), cell) in operands.into_iter().zip(expected) {
-            let actual = pair(run(profile, a, b, &IntegerDomain::Mathematical));
+            let actual = pair(profile, a, b);
             assert_eq!(actual, cell, "{profile:?} ({a},{b})");
             assert_law(profile, a, b, actual);
         }
     }
 }
 
-#[trace(
-    "QSpec-TC-192",
-    "QSpec-FR-147-AC-2",
-    "QSpec-FR-147-AC-5",
-    "TC-202",
-    "FR-078-AC-3"
-)]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-2", "QSpec-FR-147-AC-5")]
 #[test]
 fn div_01_zero_divisors_are_undefined_for_every_law_and_mod() {
     for profile in DivisionProfile::ALL {
@@ -147,6 +146,7 @@ fn div_01_zero_divisors_are_undefined_for_every_law_and_mod() {
             assert_eq!(
                 divide(
                     &admitted(profile),
+                    DivisionMember::Quotient,
                     &big(a),
                     &big(0),
                     &IntegerDomain::Mathematical,
@@ -168,7 +168,7 @@ fn div_01_zero_divisors_are_undefined_for_every_law_and_mod() {
     }
 }
 
-#[trace("QSpec-TC-192", "QSpec-FR-147-AC-5", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-5")]
 #[test]
 fn div_02_div_03_mod_is_euclidean_and_non_euclidean_claims_refuse() {
     for profile in DivisionProfile::ALL {
@@ -221,46 +221,75 @@ fn signed_64() -> IntegerDomain {
     "QSpec-TC-192",
     "QSpec-FR-147-AC-1",
     "QSpec-FR-147-AC-4",
-    "TC-202",
-    "FR-078-AC-3"
+    "QSpec-FR-147-AC-9"
 )]
 #[test]
 fn div_04_div_06_mathematical_and_signed_64_domains() {
     let (min, max) = (i128::from(i64::MIN), i128::from(i64::MAX));
+    let signed_64_interval =
+        || IntegerInterval::signed_twos_complement(NonZeroU32::new(64).unwrap());
     for profile in DivisionProfile::ALL {
-        assert_eq!(
-            pair(run(profile, min, -1, &IntegerDomain::Mathematical)),
-            (9_223_372_036_854_775_808, 0)
-        );
+        assert_eq!(pair(profile, min, -1), (9_223_372_036_854_775_808, 0));
+        // Only the exposed member must be in the domain: `min div -1` is
+        // outside signed 64, `min rem -1` is 0 and inside.
         let mut meter = Meter::new(UNLIMITED);
         assert_eq!(
             divide(
                 &admitted(profile),
+                DivisionMember::Quotient,
                 &big(min),
                 &big(-1),
                 &signed_64(),
                 &mut meter
             ),
-            Outcome::Refused(Refusal::DivisionPairOutOfDomain {
-                domain: Box::new(IntegerInterval::signed_twos_complement(
-                    NonZeroU32::new(64).unwrap()
-                )),
-                quotient_admitted: false,
-                remainder_admitted: true,
+            Outcome::Refused(Refusal::DivisionOutOfDomain {
+                domain: Box::new(signed_64_interval()),
+                member: DivisionMember::Quotient,
             })
         );
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
-        assert_eq!(pair(run(profile, min, 1, &signed_64())), (min, 0));
-        assert_eq!(pair(run(profile, max, 1, &signed_64())), (max, 0));
+        assert_eq!(
+            completed(run(
+                profile,
+                DivisionMember::Remainder,
+                min,
+                -1,
+                &signed_64()
+            )),
+            0
+        );
+        for member in [DivisionMember::Quotient, DivisionMember::Remainder] {
+            let expected = match member {
+                DivisionMember::Quotient => (min, max),
+                DivisionMember::Remainder => (0, 0),
+            };
+            assert_eq!(
+                completed(run(profile, member, min, 1, &signed_64())),
+                expected.0
+            );
+            assert_eq!(
+                completed(run(profile, member, max, 1, &signed_64())),
+                expected.1
+            );
+        }
         for outside in [min - 1, max + 1] {
-            assert!(matches!(
-                run(profile, outside, 1, &signed_64()),
-                Outcome::Refused(Refusal::DivisionPairOutOfDomain {
-                    quotient_admitted: false,
-                    remainder_admitted: true,
-                    ..
+            assert_eq!(
+                run(profile, DivisionMember::Quotient, outside, 1, &signed_64()),
+                Outcome::Refused(Refusal::DivisionOutOfDomain {
+                    domain: Box::new(signed_64_interval()),
+                    member: DivisionMember::Quotient,
                 })
-            ));
+            );
+            assert_eq!(
+                completed(run(
+                    profile,
+                    DivisionMember::Remainder,
+                    outside,
+                    1,
+                    &signed_64()
+                )),
+                0
+            );
         }
     }
 }
@@ -275,12 +304,13 @@ const DIV_08: ScalarLimits = ScalarLimits {
     unit_edges: 0,
     value_occurrences: 2,
     work_units: 4,
-    result_units: 2,
+    result_units: 1,
 };
 
-fn div_08(meter: &mut Meter) -> Outcome<QuotientRemainder> {
+fn div_08(member: DivisionMember, meter: &mut Meter) -> Outcome<Integer> {
     divide(
         &admitted(DivisionProfile::Truncating),
+        member,
         &big(7),
         &big(3),
         &IntegerDomain::Mathematical,
@@ -288,56 +318,67 @@ fn div_08(meter: &mut Meter) -> Outcome<QuotientRemainder> {
     )
 }
 
-#[trace("QSpec-TC-192", "QSpec-FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-6")]
 #[test]
 fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
-    let mut meter = Meter::new(DIV_08);
-    assert_eq!(pair(div_08(&mut meter)), (2, 1));
-    assert_eq!(
-        meter.admitted_charges(),
-        [
-            ChargePoint::IntegerDivisionOperands,
-            ChargePoint::IntegerDivisionArithmetic,
-            ChargePoint::IntegerDivisionDomainPair,
-            ChargePoint::IntegerDivisionResultPair,
-        ]
-    );
-    let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
-    assert_eq!(consumed, [3, 0, 0, 0, 0, 0, 0, 2, 4, 2]);
+    for (member, expected) in [
+        (DivisionMember::Quotient, 2),
+        (DivisionMember::Remainder, 1),
+    ] {
+        let mut meter = Meter::new(DIV_08);
+        assert_eq!(completed(div_08(member, &mut meter)), expected);
+        assert_eq!(
+            meter.admitted_charges(),
+            [
+                ChargePoint::IntegerDivisionOperands,
+                ChargePoint::IntegerDivisionArithmetic,
+                ChargePoint::IntegerDivisionDomain,
+                ChargePoint::IntegerDivisionResultRetain,
+            ]
+        );
+        let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
+        assert_eq!(consumed, [3, 0, 0, 0, 0, 0, 0, 2, 4, 1]);
 
-    assert_eq!(
-        div_08(&mut Meter::new(ScalarLimits {
-            work_units: 3,
-            ..DIV_08
-        })),
-        Outcome::Incomplete(Incomplete {
-            limit_kind: LimitKind::WorkUnits,
-            limit: 3,
-            consumed: 3,
-            next_charge: big(1),
-            charge_point: ChargePoint::IntegerDivisionResultPair,
-        })
-    );
-    assert_eq!(
-        div_08(&mut Meter::new(ScalarLimits {
-            result_units: 1,
-            ..DIV_08
-        })),
-        Outcome::Incomplete(Incomplete {
-            limit_kind: LimitKind::ResultUnits,
-            limit: 1,
-            consumed: 0,
-            next_charge: big(2),
-            charge_point: ChargePoint::IntegerDivisionResultPair,
-        })
-    );
-    for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
-        let mut denied = Meter::new(DIV_08).with_injected_denial(InjectedDenial {
-            point: *point,
-            occurrence: 1,
-        });
-        assert_eq!(div_08(&mut denied), work_denied(work, *point));
-        assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
+        assert_eq!(
+            div_08(
+                member,
+                &mut Meter::new(ScalarLimits {
+                    work_units: 3,
+                    ..DIV_08
+                })
+            ),
+            Outcome::Incomplete(Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: 3,
+                consumed: 3,
+                next_charge: big(1),
+                charge_point: ChargePoint::IntegerDivisionResultRetain,
+            })
+        );
+        assert_eq!(
+            div_08(
+                member,
+                &mut Meter::new(ScalarLimits {
+                    result_units: 0,
+                    ..DIV_08
+                })
+            ),
+            Outcome::Incomplete(Incomplete {
+                limit_kind: LimitKind::ResultUnits,
+                limit: 0,
+                consumed: 0,
+                next_charge: big(1),
+                charge_point: ChargePoint::IntegerDivisionResultRetain,
+            })
+        );
+        for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
+            let mut denied = Meter::new(DIV_08).with_injected_denial(InjectedDenial {
+                point: *point,
+                occurrence: 1,
+            });
+            assert_eq!(div_08(member, &mut denied), work_denied(work, *point));
+            assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
+        }
     }
 }
 
@@ -361,13 +402,7 @@ fn mod_10(domain: &IntegerDomain, meter: &mut Meter) -> Outcome<Integer> {
     modulo(&big(-7), &big(3), domain, meter)
 }
 
-#[trace(
-    "QSpec-TC-192",
-    "QSpec-FR-147-AC-5",
-    "QSpec-FR-147-AC-6",
-    "TC-202",
-    "FR-078-AC-3"
-)]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-5", "QSpec-FR-147-AC-6")]
 #[test]
 fn div_10_mod_charges_only_the_integer_modulus_points() {
     let mut meter = Meter::new(DIV_10);
@@ -395,13 +430,7 @@ fn div_10_mod_charges_only_the_integer_modulus_points() {
     }
 }
 
-#[trace(
-    "QSpec-TC-192",
-    "QSpec-FR-147-AC-2",
-    "QSpec-FR-147-AC-6",
-    "TC-202",
-    "FR-078-AC-3"
-)]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-2", "QSpec-FR-147-AC-6")]
 #[test]
 fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
     let one = |limits: ScalarLimits| ScalarLimits {
@@ -412,6 +441,7 @@ fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
     assert_eq!(
         divide(
             &admitted(DivisionProfile::Truncating),
+            DivisionMember::Quotient,
             &big(7),
             &big(0),
             &IntegerDomain::Mathematical,
@@ -440,6 +470,7 @@ fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
     assert_eq!(
         divide(
             &admitted(DivisionProfile::Truncating),
+            DivisionMember::Quotient,
             &big(7),
             &big(0),
             &IntegerDomain::Mathematical,
@@ -458,13 +489,7 @@ fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
     );
 }
 
-#[trace(
-    "QSpec-TC-192",
-    "QSpec-FR-147-AC-5",
-    "QSpec-FR-147-AC-6",
-    "TC-202",
-    "FR-078-AC-3"
-)]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-5", "QSpec-FR-147-AC-6")]
 #[test]
 fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
     let unit_interval = IntegerDomain::Bounded(IntegerInterval::new(big(0), big(1)).unwrap());
@@ -503,15 +528,18 @@ fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
     );
 }
 
-#[trace("QSpec-TC-192", "QSpec-FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-6")]
 #[test]
 fn div_13_the_first_short_counter_in_field_order_is_reported() {
     assert_eq!(
-        div_08(&mut Meter::new(ScalarLimits {
-            integer_bits: 2,
-            work_units: 0,
-            ..DIV_08
-        })),
+        div_08(
+            DivisionMember::Quotient,
+            &mut Meter::new(ScalarLimits {
+                integer_bits: 2,
+                work_units: 0,
+                ..DIV_08
+            })
+        ),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::IntegerBits,
             limit: 2,
@@ -522,7 +550,7 @@ fn div_13_the_first_short_counter_in_field_order_is_reported() {
     );
 }
 
-#[trace("QSpec-TC-192", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192")]
 #[test]
 fn div_09_missing_conflicting_or_foreign_division_definitions_refuse_admission() {
     let refuse = |cause| {
@@ -581,33 +609,30 @@ fn oracle(profile: DivisionProfile, a: i128, b: i128) -> (i128, i128) {
     "QSpec-FR-147-AC-4",
     "QSpec-FR-147-AC-5",
     "QSpec-FR-147-AC-6",
-    "TC-202",
-    "FR-078-AC-3"
+    "QSpec-FR-147-AC-9"
 )]
 #[test]
-fn generated_pairs_match_the_law_oracle_domains_and_every_denial() {
+fn generated_members_match_the_law_oracle_domains_and_every_denial() {
     let bounded = IntegerDomain::Bounded(IntegerInterval::new(big(-5), big(5)).unwrap());
+    let in_bounds = |value: i128| value.abs() <= 5;
     for profile in DivisionProfile::ALL {
         let selection = admitted(profile);
         for a in -20..=20 {
             for b in -20..=20 {
-                let mut meter = Meter::new(UNLIMITED);
-                let outcome = divide(
-                    &selection,
-                    &big(a),
-                    &big(b),
-                    &IntegerDomain::Mathematical,
-                    &mut meter,
-                );
                 let euclid = modulo(&big(a), &big(b), &bounded, &mut Meter::new(UNLIMITED));
                 if b == 0 {
-                    assert_eq!(outcome, Outcome::Undefined(Undefined::DivisionByZero));
+                    for member in [DivisionMember::Quotient, DivisionMember::Remainder] {
+                        assert_eq!(
+                            run(profile, member, a, b, &IntegerDomain::Mathematical),
+                            Outcome::Undefined(Undefined::DivisionByZero)
+                        );
+                    }
                     assert_eq!(euclid, Outcome::Undefined(Undefined::DivisionByZero));
                     continue;
                 }
                 let expected = oracle(profile, a, b);
                 assert_law(profile, a, b, expected);
-                assert_eq!(pair(outcome), expected, "{profile:?} ({a},{b})");
+                assert_eq!(pair(profile, a, b), expected, "{profile:?} ({a},{b})");
                 let euclidean = oracle(DivisionProfile::Euclidean, a, b).1;
                 if euclidean.abs() <= 5 {
                     assert_eq!(euclid.completed().map(|r| int(&r)), Some(euclidean));
@@ -618,44 +643,111 @@ fn generated_pairs_match_the_law_oracle_domains_and_every_denial() {
                     ));
                 }
 
-                let in_bounds = |value: i128| value.abs() <= 5;
-                match divide(
-                    &selection,
-                    &big(a),
-                    &big(b),
-                    &bounded,
-                    &mut Meter::new(UNLIMITED),
-                ) {
-                    Outcome::Completed(result) => {
-                        assert!(in_bounds(expected.0) && in_bounds(expected.1));
-                        assert_eq!((int(result.quotient()), int(result.remainder())), expected);
-                    }
-                    Outcome::Refused(Refusal::DivisionPairOutOfDomain {
-                        quotient_admitted,
-                        remainder_admitted,
-                        ..
-                    }) => {
+                for (member, value) in [
+                    (DivisionMember::Quotient, expected.0),
+                    (DivisionMember::Remainder, expected.1),
+                ] {
+                    let mut meter = Meter::new(UNLIMITED);
+                    let outcome =
+                        divide(&selection, member, &big(a), &big(b), &bounded, &mut meter);
+                    if in_bounds(value) {
                         assert_eq!(
-                            (quotient_admitted, remainder_admitted),
-                            (in_bounds(expected.0), in_bounds(expected.1))
+                            completed(outcome),
+                            value,
+                            "{profile:?} {member:?} ({a},{b})"
                         );
-                        assert!(!(quotient_admitted && remainder_admitted));
+                    } else {
+                        assert!(
+                            matches!(
+                                &outcome,
+                                Outcome::Refused(Refusal::DivisionOutOfDomain { member: got, .. })
+                                    if *got == member
+                            ),
+                            "{profile:?} {member:?} ({a},{b}): {outcome:?}"
+                        );
+                        assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
                     }
-                    other => panic!("{profile:?} ({a},{b}): {other:?}"),
-                }
 
-                for point in meter.admitted_charges() {
-                    let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
-                        point: *point,
-                        occurrence: 1,
-                    });
-                    assert!(matches!(
-                        divide(&selection, &big(a), &big(b), &IntegerDomain::Mathematical, &mut denied),
-                        Outcome::Incomplete(Incomplete { charge_point, .. }) if charge_point == *point
-                    ));
-                    assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
+                    let mut metered = Meter::new(UNLIMITED);
+                    let _ = divide(
+                        &selection,
+                        member,
+                        &big(a),
+                        &big(b),
+                        &IntegerDomain::Mathematical,
+                        &mut metered,
+                    );
+                    for point in metered.admitted_charges() {
+                        let mut denied =
+                            Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
+                                point: *point,
+                                occurrence: 1,
+                            });
+                        assert!(matches!(
+                            divide(
+                                &selection,
+                                member,
+                                &big(a),
+                                &big(b),
+                                &IntegerDomain::Mathematical,
+                                &mut denied
+                            ),
+                            Outcome::Incomplete(Incomplete { charge_point, .. })
+                                if charge_point == *point
+                        ));
+                        assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
+                    }
                 }
             }
         }
+    }
+}
+
+/// QSpec FR-147 member-only domain: `10 div y` over `1..=10` at `y = 5`
+/// evaluates to 2 although the remainder 0 is outside `1..=10`, and
+/// `x rem -1` over `-10..=5` at `x = -10` evaluates to 0 although the
+/// quotient 10 is outside that domain.
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-9", "QSpec-FR-147-AC-10")]
+#[test]
+fn only_the_exposed_member_must_lie_in_the_consumer_domain() {
+    let one_to_ten = IntegerDomain::Bounded(IntegerInterval::new(big(1), big(10)).unwrap());
+    let minus_ten_to_five = IntegerDomain::Bounded(IntegerInterval::new(big(-10), big(5)).unwrap());
+    for profile in DivisionProfile::ALL {
+        assert_eq!(
+            completed(run(profile, DivisionMember::Quotient, 10, 5, &one_to_ten)),
+            2
+        );
+        assert_eq!(
+            completed(run(
+                profile,
+                DivisionMember::Remainder,
+                -10,
+                -1,
+                &minus_ten_to_five
+            )),
+            0
+        );
+        // The exposed member outside the domain refuses with that member as the
+        // cause: quotient 10 of `-10 div -1` and remainder 0 of `10 rem 5`.
+        assert_eq!(
+            run(
+                profile,
+                DivisionMember::Quotient,
+                -10,
+                -1,
+                &minus_ten_to_five
+            ),
+            Outcome::Refused(Refusal::DivisionOutOfDomain {
+                domain: Box::new(IntegerInterval::new(big(-10), big(5)).unwrap()),
+                member: DivisionMember::Quotient,
+            })
+        );
+        assert_eq!(
+            run(profile, DivisionMember::Remainder, 10, 5, &one_to_ten),
+            Outcome::Refused(Refusal::DivisionOutOfDomain {
+                domain: Box::new(IntegerInterval::new(big(1), big(10)).unwrap()),
+                member: DivisionMember::Remainder,
+            })
+        );
     }
 }

@@ -65,7 +65,7 @@ names different artifacts in each.
 | TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | ✅ Passed locally; `compile_fail` doctests traced on `FR077Doctests` (`src/linking/composed/requests.rs`) |
 | TC-200 | Requests are still recorded as data after negotiation removal | Unit | P1 | FR-077-AC-3 | ✅ Passed locally; `tests/it/composed_admission_stages.rs` |
 | TC-201 | value::ieee and value::division carry no negotiate_* function | Unit | P1 | FR-078-AC-1, FR-078-AC-2 | ✅ Passed locally; `cargo test --doc -p quire-spec-language` |
-| TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | ✅ Passed locally; `tests/ieee_profiles.rs` + `tests/integer_division.rs` |
+| TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | Retired with FR-078-AC-3; no test carries the tag |
 | TC-205 | cargo-deny denies inventory, linkme and ctor | Integration | P1 | FR-080-AC-2 | ✅ Passed locally with `cargo-deny` installed; `qsl-route/tests/it/route_registry.rs` (the test skips when `cargo-deny` is absent; `make cargo-deny-bans` does not) |
 | TC-206 | The registry module lint gate finds no static, OnceLock or thread_local | Integration | P1 | FR-080-AC-3 | ✅ Passed locally; `xtask/src/route_lint.rs` |
 | TC-207 | One unit test exists and passes per ADR-012 §5.2 row | Unit | P1 | FR-080-AC-4 | ✅ Passed locally; `qsl-route/tests/it/route_registry.rs` |
