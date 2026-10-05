@@ -23,12 +23,7 @@ fn a_driver_writes_a_prove_document_through_the_facade() {
     .iter()
     .map(OutcomeItem::from_terminal)
     .collect();
-    let document = OutcomeDocument::new(
-        Operation::Prove,
-        Some(OutcomeStage::S8),
-        Category::InternalFailure,
-    )
-    .with_items(items);
+    let document = OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), items);
     let written: serde_json::Value =
         serde_json::from_slice(&document.to_bytes().expect("encodes")).expect("is JSON");
     assert_eq!(written["format"], "quire-outcome/1");
@@ -37,6 +32,7 @@ fn a_driver_writes_a_prove_document_through_the_facade() {
     assert_eq!(written["category"], "internal-failure");
     assert_eq!(written["items"][0]["result"], "proved");
     assert_eq!(written["items"][1]["result"], "failed");
+    assert_eq!(document.category(), Category::InternalFailure);
     assert_eq!(document.items()[1].category(), Category::InternalFailure);
     assert_ne!(ItemLabel::Proved, ItemLabel::Failed);
 }
