@@ -185,11 +185,24 @@ impl Candidate {
     }
 }
 
-/// One backend's registration (FR-075 Inputs): its identity, the digest of
-/// its own FR-331 provider manifest, and the `(capability kind, mode)` pairs
-/// it advertises. The manifest digest only tells two registrations of one
-/// identity apart, so a conflict is refused once per distinct manifest
-/// (FR-290); it is never part of the candidate.
+/// Where a registered provider comes from (ADR-029 PV-1, FR-288). The host
+/// knows this fact; the provider never states it about itself, so no
+/// manifest member carries it and a plugin cannot claim to be linked.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProviderOrigin {
+    /// A compile-time `Provider` linked into the binary.
+    Linked,
+    /// A plugin process that gave its manifest in a `hello` frame.
+    Process,
+}
+
+/// One backend's registration (FR-075 Inputs): its identity, its
+/// [`ProviderOrigin`], the digest of its own FR-331 provider manifest, and
+/// the `(capability kind, mode)` pairs it advertises. Two descriptors of one
+/// identity that differ in origin differ in a member, so they conflict like
+/// any other differing pair (FR-288-AC-6). The manifest digest only tells
+/// two registrations of one identity apart, so a conflict is refused once
+/// per distinct manifest (FR-290); it is never part of the candidate.
 ///
 /// `BackendDescriptor`, the candidate set and `Capability` cross repository
 /// boundaries as QSpec data, never through a shared Rust crate
@@ -197,6 +210,7 @@ impl Candidate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackendDescriptor {
     backend: Candidate,
+    origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertises: HashSet<(Capability, Mode)>,
 }
@@ -208,11 +222,13 @@ impl BackendDescriptor {
     /// Inputs).
     pub fn new(
         backend: Candidate,
+        origin: ProviderOrigin,
         manifest_digest: ManifestDigest,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> Self {
         Self {
             backend,
+            origin,
             manifest_digest,
             advertises: advertises.into_iter().collect(),
         }
@@ -249,6 +265,7 @@ impl BackendDescriptor {
     /// registry.
     pub fn admit<'a>(
         backend: Candidate,
+        origin: ProviderOrigin,
         manifest_digest: ManifestDigest,
         advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     ) -> Result<Self, RegistrationRefusal> {
@@ -272,6 +289,7 @@ impl BackendDescriptor {
         }
         Ok(Self {
             backend,
+            origin,
             manifest_digest,
             advertises,
         })
@@ -285,6 +303,12 @@ impl BackendDescriptor {
     /// This backend as a candidate: its identity alone.
     pub fn candidate(&self) -> &Candidate {
         &self.backend
+    }
+
+    /// Where this provider comes from: linked at compile time, or a plugin
+    /// process (ADR-029 PV-1, PV-4).
+    pub fn origin(&self) -> ProviderOrigin {
+        self.origin
     }
 
     /// The digest of this backend's own FR-331 provider manifest.
@@ -672,6 +696,7 @@ mod tests {
     ) -> BackendDescriptor {
         BackendDescriptor::new(
             candidate(id),
+            ProviderOrigin::Linked,
             ManifestDigest::from_digest([digest_byte; 32]),
             advertises,
         )

@@ -15,7 +15,8 @@ use qsl_route::request::{
     items_from_requirements, ExtentClassification, RequestWriter, RequirementItem,
 };
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode, Registry,
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
+    ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use qsl_semantics::family::DomainKind;
@@ -67,6 +68,7 @@ fn package(declarations: &str) -> CheckedPackage {
 fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new(id)),
+        ProviderOrigin::Linked,
         ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [advertises],
     )

@@ -416,6 +416,19 @@ its `hello` frame. Every manifest becomes a `BackendDescriptor` by the same
 conversion. The registry reaches each consumer as an argument (ADR-012
 §7.1).
 
+The descriptor carries a typed origin, `ProviderOrigin::Linked` or
+`ProviderOrigin::Process`, owned by layer R. The conversion sets it:
+`Linked` for a compile-time provider, `Process` for a plugin `hello`. Two
+descriptors of one `BackendId` that differ in origin differ in a member, so
+they conflict under the registration rule: both are withdrawn, `duplicate-backend`
+is recorded for each conflicting manifest digest, and the identity stays
+unregistered for the run (FR-288). The origin is a driver-supplied fact held in
+the registry. A manifest never states it, so a plugin cannot claim to be
+linked. A byte-identical registration stays idempotent, and the outcome does
+not depend on registration order (PV-2 item 2). The built-in `kani` and a
+plugin manifest declaring `kani` therefore neither wins: the identity is
+unregistered and its items have no candidate and decline.
+
 **PV-2 Negotiation leaves results unchanged.** Installing, removing or
 reordering providers changes results only through each item's candidate set,
 and only for items whose capability kind the change touches:
@@ -458,11 +471,58 @@ provider the same way after routing.
 **PV-4 Negotiation for a process provider.** ADR-012 §7.2 makes every
 settlement an arm of CG `negotiate_*` over a closed backend kind. A
 third-party provider cannot add an arm, so CG's closed kind gains one
-variant for process providers. Its arm settles from the provider's manifest
-alone: the advertised (kind, mode) pairs, domains and bounds, against the
-item's extent classification, under QSpec FR-290's rules. It never calls the
-plugin. The driver's pre-negotiation conversion maps every plugin
-`BackendId` to that variant (Amendments, below).
+variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
+
+1. **Manifest checked in full.** Its arm settles from the provider's manifest
+   alone: the advertised (kind, mode) pairs, domains and bounds, against the
+   item's extent classification, under QSpec FR-290's rules. The descriptor
+   CG receives carries the manifest's advertised domains and bounds, not the
+   (kind, mode) pairs alone. That descriptor is CG's own descriptor for the
+   Process variant, not `qsl_route::BackendDescriptor`, which holds only
+   (kind, mode); CG sources the domains and bounds from the FR-331 manifest
+   the `BackendDescriptor` came from. An item whose domain or bound the
+   manifest does not advertise declines under FR-290. The FR-290 decline
+   cause for an unadvertised domain or bound is pending in QSpec under
+   QSL-637, in a QSpec PR that follows this one. Until then CG uses existing
+   FR-290 causes: an unadvertised unbounded mode settles by FR-290's
+   existing unbounded-extent row (`requires-bound` when a finite bound is
+   available, otherwise `unsupported`, warned,
+   `unsupported_projection`/`unbounded-extent`, as its table gives), and an
+   unadvertised domain or bound settles `unsupported`,
+   `unsupported_projection`/`unsupported-requested-capability`, until the
+   QSL-637 QSpec cause replaces it. It never calls the plugin.
+2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
+   `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
+   the built-in static identities to their own kinds. CG settles a descriptor
+   to `Process(id)` when its `ProviderOrigin` is `Process`. A `Linked`
+   descriptor with an identity `from_identity` does not know is
+   `UnknownBackend`. CG never infers `Process` from an unknown identity or
+   from executable text.
+3. **Only negotiation is CG's.** Generation yields no CG artifact
+   (`KindOutput::Process`, empty), because the plugin receives the v2 package
+   bytes, not generated code (PL-4). CG has no adapter and no execution for a
+   process provider: the driver's plugin host runs the PV-3 process adapter.
+   CG has no terminal step: the driver reads the FR-331 result with the typed
+   reader and settles per PL-7 (`refuted` only through S6a replay; `proved`
+   keeps the basis label trusted). Each CG arm for `Process` is a typed
+   pass-through or empty output, never a panic.
+4. **Disposition from the manifest alone.** A bounded item routes when the
+   manifest advertises the bounded mode with a bound that covers the item's.
+   An unbounded item routes only when the manifest advertises the unbounded
+   mode. Otherwise the item declines under FR-290, with the interim or
+   pending causes above. There is no default disposition. FR-290's existing
+   `requires-bound` row (an unbounded item on a bounded-only provider when a
+   finite bound is available) is the case where the manifest advertises the
+   bounded mode but the item's extent is unbounded; it stays a
+   `requires-bound` settlement of that row, and routing happens only once
+   a bound is supplied that the advertised bound covers. Every other
+   unadvertised case declines.
+5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
+   learns that a descriptor is a process provider. Not (a), a driver-supplied
+   map beside the descriptors: it is a second source of truth that can
+   disagree with the registry. Not (c), a manifest member: origin is a fact
+   the host knows, not something a provider says about itself, and a plugin
+   must not be able to claim to be linked.
 
 ### 5. Plugins
 
@@ -561,8 +621,11 @@ QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of:
   domains and bounds, the options that affect a result, and every
   deterministic budget that can move a result to `incomplete` (work units,
   state and transition budgets);
-- the provider's `BackendId`, whose manifest content identity covers
-  everything the provider declares about itself, including its tool;
+- the provider's `BackendId`, the identity string alone, and the provider
+  manifest's content identity, the `ManifestDigest` that layer R computes over
+  the FR-331 manifest's canonical bytes, in its domain, as the `manifest`
+  member. A change to any manifest member, the tool version included,
+  changes the key;
 - for `generate`, the generation target and its options.
 
 Paths, timestamps, wall-clock deadlines, application version strings and the
@@ -806,7 +869,8 @@ except the ADR-011 amendment, which is applied in place.
 - ADR-013 T-4: `StageFailure::Cancelled(CancelCause)` and
   `CallFailure::Cancelled` (LC-3).
 - ADR-012 §7.2: CG's closed backend kind gains the process-provider variant,
-  and the driver maps every plugin `BackendId` to it (PV-4).
+  and CG settles a descriptor whose `ProviderOrigin` is `Process` to it
+  (PV-4). `BackendDescriptor` gains the origin (PV-1, FR-288).
 - `quire-semantic-value` `checking`: `MAX_CHECKING_DEPTH` and
   `DepthAboveMaximum` are deleted, with no depth setting in their place
   (LC-4, ADR-030 RU-1).

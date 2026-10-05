@@ -973,7 +973,7 @@ union-key order read QSpec's union spelling (FR-440, FR-441), accounting
 | TC-773 | Installing, removing or reordering providers changes nothing outside the touched candidate sets | Unit | P1 | FR-289-AC-1, FR-289-AC-2, FR-289-AC-3 | 🚧 Planned |
 | TC-774 | Plugin results settle as typed records, and plugin proofs carry the trusted label | Unit | P1 | FR-290-AC-1, FR-290-AC-2, FR-290-AC-3, FR-290-AC-4 | 🚧 Planned |
 | TC-775 | Plugin-run failures settle as typed records of the plugin's own items | Unit | P1 | FR-291-AC-1, FR-291-AC-2, FR-291-AC-3 | 🚧 Planned |
-| TC-772 | One manifest conversion serves compile-time providers and plugins | Unit | P1 | FR-288-AC-1, FR-288-AC-2, FR-288-AC-3, FR-288-AC-4 | 🚧 Planned |
+| TC-772 | One manifest conversion serves compile-time providers and plugins | Unit | P1 | FR-288-AC-1, FR-288-AC-2, FR-288-AC-3, FR-288-AC-4, FR-288-AC-5, FR-288-AC-6 | 🚧 Partial: AC-5 and AC-6 passed locally in qsl-route; AC-1 to AC-4 planned in the driver (IR-609) |
 | TC-764 | Certificate checkers accept genuine certificates and reject altered or misbound ones in a core-only process | Integration | P1 | FR-282-AC-1, FR-282-AC-2, FR-282-AC-3, FR-282-AC-4, FR-282-AC-5, FR-282-AC-6, FR-282-AC-7, FR-282-AC-8 | 🚧 Planned |
 | TC-765 | monitor reports violations, pending and tested verdicts over finite traces and lassos | Unit | P1 | FR-283-AC-1, FR-283-AC-2, FR-283-AC-5 | 🚧 Planned |
 | TC-766 | monitor refuses inadmissible traces and agrees with replay's trace evaluation | Unit | P1 | FR-283-AC-3, FR-283-AC-4, FR-283-AC-6 | 🚧 Planned |
