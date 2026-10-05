@@ -31,3 +31,13 @@ AC-to-test-to-code check; the PR changes no spec.
 ## Verdict
 
 Approve with one low finding: a mis-targeted trace on the facade test.
+
+## Dispositions
+
+Disposition pass 1, reviewed at `a933ea7e3af4422b94897f434e760aa5a61c8961`
+(range `0ce20489..a933ea7e`), no build (the lead's `make ci` exits 0 at the
+head; the intermediate `77036c9e9` does not compile and is squashed on merge).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a933ea7e: the facade test is replaced by `a_replay_fault_built_through_the_facade_settles_failed` (TC-516, FR-121-AC-16) and `a_call_site_fault_built_through_the_facade_settles_failed` (TC-516, FR-121-AC-17); each builds the fault refusal through `qsl_replay` root paths only and asserts it settles `TerminalValue::Failed`, category `InternalFailure`, the fault halves of those ACs |

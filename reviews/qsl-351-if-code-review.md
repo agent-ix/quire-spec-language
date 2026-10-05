@@ -52,3 +52,5 @@ Clean. Both additions have a consumer, the layering reading is right, and
 the route refusal now carries the same code as its replay twin.
 
 Focused run at the reviewed sha through `locked-build.sh`: `cargo test --locked -p qsl-route -p qsl-replay --lib --test terminal_record_facade -- empty_backend internal_fault`: 5 passed, 0 failed.
+
+Disposition pass 1, reviewed at `a933ea7e3`: no finding was open; the fix round touches only the facade test, reviewed under SR-1305.
