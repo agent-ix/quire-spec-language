@@ -865,7 +865,7 @@ mod tests {
         (
             "qsl-replay/src/spine/lifecycle.rs",
             Some("Resolution"),
-            "compile_library",
+            "finish_unit",
         ),
         // Lane-private: the native-v1 emitter's own `EmittedPackage`.
         ("src/protocol_artifact/native/mod.rs", None, "emit"),
