@@ -546,6 +546,7 @@ fn a_dependency_chain_of_any_length_compiles_on_a_small_stack() {
 }
 
 /// FR-099-AC-7: a unit importing `a`, which imports `b`, which imports `c`.
+/// The refusal is incomplete work (exit 22), never invalid input.
 /// With `dependency.libraries` at 2 the compile refuses at `b`'s import of
 /// `c` naming node count, bound 2, actual 3 and the setting, and at 3 it
 /// compiles.
@@ -560,6 +561,10 @@ fn the_libraries_limit_refuses_the_import_that_would_exceed_it() {
     let refusal =
         compile_under(&source, chain.clone(), limits(2)).expect_err("a third library exceeds two");
     assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    assert!(
+        refusal.code().is_incomplete(),
+        "a reached limit is incomplete (exit 22)"
+    );
     assert_eq!(refusal.stage(), SpineStage::Intake);
     let (path, limit) = reached_dependency_limit(&refusal);
     assert_eq!(path, [lib("test/c2"), lib("test/c1")]);
