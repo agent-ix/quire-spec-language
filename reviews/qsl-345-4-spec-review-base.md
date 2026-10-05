@@ -44,3 +44,11 @@ TC-436 still describing the struct-shaped key. None blocks the code.
 | FND-001 | low | ADR-012's amendment line reads "Amended 2026-09-30", but both rulings it implements are dated 2026-10-01 on QSL-345 (field rule at 03:22Z, subject enum at 04:03Z). Change the date to 2026-10-01. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:53-55 |
 | FND-002 | low | The FR-121 row in spec.md adds "a state field's ADR-012 §15.4 domain key" but leaves out the population selection (§15.7). It still says "TC-516 passed locally for AC-1 to AC-14; Remaining work (Linear QSL-352): AC-15". AC-15 to AC-22 have passing traced tests, and QSL-352 is Done. Restate it as "or a state field's or population's ADR-012 §15.4/§15.7 domain key ... TC-516 passed locally for AC-1 to AC-22" and drop the remaining-work clause. | spec/spec.md:1033 |
 | FND-003 | medium | FR-097-AC-1 ("`DomainKey`s order by node, then path") and TC-436 step 2 (three `(node, path)` keys) still describe the old struct. A `Population` key has neither a node nor a path, so the AC no longer says how population keys order or whether they can equal a node key. The code orders every `Node` before every `Population` (derived `Ord`), and a new test asserts that order under this AC. Amend FR-097-AC-1 and TC-436 to "Node keys order by node, then path; every Node key precedes every Population key, and the two never compare equal", and retag per SR-1311 FND-002. | spec/functional/FR-097-classify-claim-extent-and-write-bounded-requests.md:69; spec/test-cases/TC-436-proof-bound-and-interval-key-constructors-refuse-empty-ranges.md:9,20 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bea72a04bef9bba0c8be31e03f2cee763bd04986 |
+| FND-002 | fixed | bea72a04bef9bba0c8be31e03f2cee763bd04986 |
+| FND-003 | fixed | bea72a04bef9bba0c8be31e03f2cee763bd04986 |

@@ -55,3 +55,10 @@ Every AC is traced and tested with independent oracles. There are two low gaps.
 | --- | --- | --- | --- |
 | FND-001 | low | ADR-012 §15.4 and `FieldSite`'s doc tell a caller to key a domain inside a field's type by appending the child-index path itself. Nothing in QSL computes or tests such a key, and `FieldName` cannot select one, so CG would derive type positions on its own. That is the duplication the item-4 ruling ("so CG never computes ordinals") set out to avoid. It is honest as stated, but it has no owner: name it in the item-3 ticket (the replay domain check, the first consumer), or add a one-line note in FR-121 that nested field keys are not yet returned. | qsl-replay/src/call_site.rs:188-198; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1299-1315 |
 | FND-002 | low | `a_population_key_never_equals_a_node_key` is tagged `#[trace("TC-436", "FR-097-AC-1")]`, but FR-097-AC-1 says only "`DomainKey`s order by node, then path". It says nothing about a population key, distinctness from a node key, `Node < Population` order, or the Display form the test asserts. Retag it once FR-097-AC-1 is amended (SR-1312 FND-003), or tag it to FR-121-AC-20. | qsl-foundation/src/bound.rs:297-314 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bea72a04bef9bba0c8be31e03f2cee763bd04986 (the FR-121 Status and the spec.md row now name nested field keys `[ordinal, ...child path]` as remaining work under QSL-345, which gives the gap an owner) |
+| FND-002 | fixed | bea72a04bef9bba0c8be31e03f2cee763bd04986 (FR-097-AC-1 now states the variant order, so the existing tag is correct and needed no retag; the new `node_keys_sort_before_population_keys_which_order_by_member_then_ordinal` is traced to the same AC) |
