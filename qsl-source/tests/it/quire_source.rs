@@ -39,7 +39,7 @@ fn source(text: &str) -> Source {
 fn context() -> SemanticContext {
     // Use Quire's real module validator, not an invented semantic context decoder.
     let module = read_semantic_block(
-        &json!({"contract_version":"1.0.0","semantic_core":"0.1.0","package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
+        &json!({"contract_version":"1.0.0","semantic_core":"0.3.2","package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
         &["entity".to_owned()],
     ).unwrap();
     SemanticContext::new(module, "rules.md", BundleIndex::default())

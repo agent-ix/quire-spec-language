@@ -32,7 +32,7 @@ pub use preflight::PreflightFailure;
 /// Quire module contract admitted by this consumer and command adapters.
 pub const CONTRACT_VERSION: &str = "1.0.0";
 /// Quire semantic-core contract admitted by this consumer and command adapters.
-pub const SEMANTIC_CORE_VERSION: &str = "0.1.0";
+pub const SEMANTIC_CORE_VERSION: &str = "0.3.2";
 /// Default original-document byte ceiling before extraction; a caller's
 /// [`Limits::source_bytes`] is used as given (NFR-001).
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
