@@ -16,7 +16,7 @@ use qsl_semantics::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::NodeIdentityPreimage;
-use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
+use qsl_semantics::value::{NodeOwner, NominalRefusal, OwnerSelection, OwnerSubject};
 use quire_exact::NodeKey;
 use quire_exact::{
     admit_text, compare_text, ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause,
@@ -441,6 +441,16 @@ fn declaration(
         key,
         &owners(),
     )
+    .map_err(graph)
+}
+
+/// A nominal refusal as the graph refusal every fixture here makes: a
+/// fixture preimage never reaches the identity byte limit.
+fn graph(refusal: NominalRefusal) -> InvalidSemanticGraph {
+    match refusal {
+        NominalRefusal::Graph(invalid) => invalid,
+        NominalRefusal::Limit(limit) => panic!("a fixture preimage is small: {limit:?}"),
+    }
 }
 
 fn member_preimage(declaration: NodeKey, case: &str) -> Value {
@@ -684,6 +694,7 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     assert_eq!(
         status
             .admit_member(&restaged_case, ready_key)
+            .map_err(graph)
             .unwrap_err()
             .cause,
         SemanticGraphCause::StaleKey
@@ -747,7 +758,7 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     for changed in changes {
         let preimage = EnumDeclarationPreimage::from_json(changed.clone()).unwrap();
         assert_eq!(
-            AdmittedEnumDeclaration::admit(preimage.clone(), old_key, &selection),
+            AdmittedEnumDeclaration::admit(preimage.clone(), old_key, &selection).map_err(graph),
             Err(InvalidSemanticGraph {
                 cause: SemanticGraphCause::StaleKey
             }),
@@ -775,13 +786,17 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     assert_eq!(
         other
             .admit_member(&ready_preimage, ready_key)
+            .map_err(graph)
             .unwrap_err()
             .cause,
         SemanticGraphCause::ForeignDeclaration
     );
     let closed = EnumMemberPreimage::from_json(member_preimage(old_key, "CLOSED")).unwrap();
     assert_eq!(
-        old.admit_member(&closed, ready_key).unwrap_err().cause,
+        old.admit_member(&closed, ready_key)
+            .map_err(graph)
+            .unwrap_err()
+            .cause,
         SemanticGraphCause::UndeclaredCase
     );
 }
@@ -806,6 +821,7 @@ fn tc_409_declaration_key_is_never_accepted_as_a_member_key() {
     assert_eq!(
         status
             .admit_member(&ready_preimage, status.key())
+            .map_err(graph)
             .unwrap_err()
             .cause,
         SemanticGraphCause::StaleKey
