@@ -34,7 +34,8 @@ use crate::proof_result::{
 };
 use crate::result::ReplayResult;
 use crate::spine::{
-    CallOutcome, CallRefusal, CheckedUnit, CompileRefusal, EmittedUnit, FrontEndFailure, SpineStage,
+    CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit, FrontEndFailure,
+    SpineStage,
 };
 use crate::ReplayRefusal;
 
@@ -454,11 +455,44 @@ impl OutcomeArtifact {
     }
 }
 
+/// A completed call's value, in FR-100's rendering.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ResultValue {
+    /// A `Boolean` value.
+    Boolean {
+        /// The value.
+        value: bool,
+    },
+    /// An integer value, in FR-038's ASCII decimal spelling.
+    Integer {
+        /// The decimal digits.
+        decimal: String,
+    },
+}
+
+/// The evaluation result of an `execute` outcome (FR-286's `result`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecuteResult {
+    /// The call completed with a value.
+    Completed {
+        /// The value.
+        value: ResultValue,
+    },
+    /// The call's result is undefined.
+    Undefined {
+        /// The reason, as FR-100's tables spell it.
+        reason: &'static str,
+    },
+}
+
 /// The `quire-outcome/1` document (FR-286).
 ///
 /// `items` is always written, an empty array for an operation with no
 /// requested items. `last_stage` is `null` when no stage is known to have
-/// run.
+/// run. `result` is always written: `null` except for a completed,
+/// undefined or incomplete `execute` outcome.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct OutcomeDocument {
     format: &'static str,
@@ -469,6 +503,7 @@ pub struct OutcomeDocument {
     items: Vec<OutcomeItem>,
     diagnostics: Vec<OutcomeDiagnostic>,
     artifacts: Vec<OutcomeArtifact>,
+    result: Option<ExecuteResult>,
 }
 
 /// Why a document could not be written.
@@ -488,6 +523,7 @@ impl OutcomeDocument {
             items: Vec::new(),
             diagnostics: Vec::new(),
             artifacts: Vec::new(),
+            result: None,
         }
     }
 
@@ -636,8 +672,8 @@ impl OutcomeDocument {
     }
 
     /// The document of an `execute` outcome, last reaching S6a. A refused
-    /// call carries its catalog code, cause and locus as one diagnostic. An
-    /// undefined call has category `undefined`, the one place that label
+    /// call carries its catalog code, cause and locus as one diagnostic; a
+    /// completed or undefined call carries its `result`. An undefined call has category `undefined`, the one place that label
     /// appears.
     pub fn from_call(outcome: &CallOutcome) -> Self {
         let document = Self::new(
@@ -668,15 +704,15 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::{CatalogCode, InternalFault};
     use qsl_foundation::{Position, SourceIdentity};
-    use quire_exact::{Cancel, ScalarLimits};
+    use quire_exact::{Cancel, CancelCause, ScalarLimits};
     use serde_json::{json, Value};
 
     use super::*;
     use crate::proof_result::{IncompleteCause, ProofRefusalCause, UnavailabilityCause};
     use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
-        check, package, parse, select, CallLocus, DependencyInput, LockEvidence, PackageLimits,
-        ParseRequest, SpineLimits,
+        check, default_accounting, package, parse, run, select, Call, CallLocus, DependencyInput,
+        LockEvidence, PackageLimits, ParseRequest, SpineLimits,
     };
 
     const FIXTURE: &str = include_str!("../../tests/fixtures/spine-compile.native");
@@ -749,6 +785,7 @@ mod tests {
                 "items": [],
                 "diagnostics": [],
                 "artifacts": [],
+                "result": null,
             })
         );
         let emitted = emitted.expect("the fixture checks");
@@ -770,6 +807,7 @@ mod tests {
                 "items": [],
                 "diagnostics": [],
                 "artifacts": [{"kind": "package_id", "id": id}],
+                "result": null,
             })
         );
     }
@@ -805,6 +843,7 @@ mod tests {
                     "message": refusal.to_string(),
                 }],
                 "artifacts": [],
+                "result": null,
             })
         );
         assert!(refusal.to_string().contains("integer"), "{refusal}");
@@ -833,7 +872,7 @@ mod tests {
             r#"{"request_index":0,"result":"unsupported","cause":{"kind":"solver-absent"},"category":"unsupported"},"#,
             r#"{"request_index":1,"result":"proved","cause":null,"category":"success"},"#,
             r#"{"request_index":2,"result":"refuted","cause":null,"category":"violation"}"#,
-            r#"],"diagnostics":[],"artifacts":[]}"#
+            r#"],"diagnostics":[],"artifacts":[],"result":null}"#
         );
         assert_eq!(text_of(&document), expected);
         assert_eq!(document.to_bytes().unwrap(), document.to_bytes().unwrap());
@@ -951,6 +990,7 @@ mod tests {
                     }],
                     "diagnostics": [],
                     "artifacts": [],
+                    "result": null,
                 })
             );
         }
@@ -967,8 +1007,75 @@ mod tests {
                 "items": [],
                 "diagnostics": [],
                 "artifacts": [],
+                "result": {"kind": "undefined", "reason": "sum-out-of-domain"},
             })
         );
+    }
+
+    /// FR-286-AC-5: `seven` completes with integer 7 in the `result`
+    /// member, and a `check` under an already cancelled handle is incomplete
+    /// with no last stage and a null `result`.
+    #[trace("TC-770", "FR-286-AC-5")]
+    #[test]
+    fn execute_result_and_cancelled_check_documents() {
+        let call = Call {
+            function: "seven".to_owned(),
+            arguments: Vec::new(),
+            accounting: default_accounting(1_000_000),
+        };
+        let (_, outcome) = run(
+            SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            "unit.native",
+            FIXTURE.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &call,
+        )
+        .expect("seven runs");
+        assert_eq!(
+            json_of(&OutcomeDocument::from_call(&outcome)),
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "execute",
+                "last_stage": "S6a",
+                "category": "success",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [],
+                "result": {"kind": "completed", "value": {"kind": "integer", "decimal": "7"}},
+            })
+        );
+
+        let source = SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1");
+        let limits = SpineLimits::default();
+        let live = Cancel::new();
+        let request = ParseRequest {
+            source: &source,
+            path: "unit.native",
+            bytes: FIXTURE.as_bytes(),
+        };
+        let parsed = parse(&request, limits.source, &live)
+            .expect("parses")
+            .into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+            .expect("selects")
+            .into_value();
+        let cancelled = Cancel::new();
+        cancelled.cancel(CancelCause::Requested);
+        let result = check(
+            &parsed,
+            &models,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            limits,
+            &cancelled,
+        );
+        let document = json_of(&OutcomeDocument::from_check(&result));
+        assert_eq!(document["category"], "incomplete");
+        assert_eq!(document["last_stage"], Value::Null);
+        assert_eq!(document["items"], json!([]));
+        assert_eq!(document["result"], Value::Null);
     }
 
     /// The whole-outcome category is the most severe item's, and a monitor
@@ -1088,6 +1195,7 @@ mod tests {
                 "items": [],
                 "diagnostics": [],
                 "artifacts": [],
+                "result": null,
             })
         );
         let fault = ReplayRefusal::Fault(InternalFault::new("replay", "broken"));

@@ -63,8 +63,9 @@ pub use identity::{
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
 pub use outcome::{
-    ArtifactKind, ItemCause, ItemLabel, Operation, OutcomeArtifact, OutcomeDiagnostic,
-    OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError, OUTCOME_FORMAT,
+    ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
+    OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
+    ParityReason, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
