@@ -374,7 +374,8 @@ mod tests {
 
     /// TC-386 (FR-090-AC-5), steps 1 and 2: F `diagnostic`'s category map
     /// files every code the `ProtocolClause` snapshot cause and
-    /// `ModelRefusal` return under `Category::Refusal`. The model-query
+    /// `ModelRefusal` return under `Category::Refusal`, except the
+    /// incomplete-evidence codes, which it files under `Category::Incomplete`. The model-query
     /// causes come from `model::refusal`'s `exhaustive_samples`, which
     /// fails to compile when a cause variant is missing from it.
     #[trace("FR-090-AC-5", "TC-386")]
@@ -388,11 +389,14 @@ mod tests {
         assert!(!samples.is_empty());
         for cause in samples {
             let code = cause.catalog_code();
-            assert_eq!(
-                category_of(&code),
-                Some(Category::Refusal),
-                "{cause:?} -> {code}"
-            );
+            // The two incomplete-evidence codes are incomplete (FR-106,
+            // ADR-012's admission table); every other cause is a refusal.
+            let expected = if Code::from_code(code.code()).is_some_and(Code::is_incomplete) {
+                Category::Incomplete
+            } else {
+                Category::Refusal
+            };
+            assert_eq!(category_of(&code), Some(expected), "{cause:?} -> {code}");
             // The catalog code is a native code spelling, and the cause tag
             // is the cause's own.
             assert!(Code::from_code(code.code()).is_some(), "{code}");
