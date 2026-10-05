@@ -53,3 +53,17 @@ Round 1, reviewed at c989d92266f8025c27bfdbe0c65bcc54a331f9e8.
 | FND-001 | fixed | e36d68e99: FR-272 Inputs and a new Behavior bullet scan quire-exact and quire-semantic-value as their own ecosystem repositories; `identifier`/`re-export` never apply inside them |
 | FND-002 | fixed | e36d68e99: ADR-011 and FR-060 name quire-semantic-value FR-060-AC-5 and FR-060-AC-6 as the replacement |
 | FND-003 | fixed | e36d68e99: TC-292 and FR-089-AC-2 deleted from QSL and the step 5 inspections removed from TC-388/407/408; their successors are in quire-exact#3 (0edd08bf) |
+
+Round 2, reviewed at fbade25d8c9be802105caca2ffc429e9b4e33031 (the code
+change since round 1 is 67f46ae64's deref drop; make ci exit=0 on 67f46ae64 in
+`qsl-ir582-make-ci3.log`, and everything after it is spec only).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 3f11ecc7f: AC-7/11/12 drop the kernel-enum clauses and FR-090 gains `depends_on ix://agent-ix/quire-exact/FR-090`; c3f386ffe and fbade25d8 repoint the remaining kernel-enum prose |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-090-AC-9's last sentence still says "Neither `quire-exact`, `qsl-foundation` nor `qsl-cst` depends on the crate that defines the three". This PR dropped quire-exact's `Cargo.toml` from TC-390 step 4, so nothing in QSL verifies the `quire-exact` part. Drop `quire-exact` from the sentence. quire-exact's own FR-089-AC-2/TC-292 (no caller model crate in its dependencies) and its `deny.toml` `allow-git`, which omits quire-spec-language, already hold it. The round-0 review missed this | spec/functional/FR-090-return-a-family-outcome-or-a-typed-family-refusal.md:463 |
