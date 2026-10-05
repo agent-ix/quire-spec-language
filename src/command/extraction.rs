@@ -586,8 +586,7 @@ mod tests {
             // (`LimitKind::InputBytes`). `package_stop` trips the
             // complete-V1 package-graph artifact-bytes ceiling
             // (`PackageLimitKind::ArtifactBytes`), which stays on
-            // `resource_exhausted`: only `PackageLimitKind::Depth` maps
-            // cleanly onto one of the four catalogued stage-limit kinds.
+            // `resource_exhausted`.
             for (limits, expected) in [
                 (body_stop, Code::StageLimitExceeded),
                 (package_stop, Code::ResourceExhausted),
