@@ -8,6 +8,7 @@
 //! crate's own content-addressed keys for those preimages.
 
 use std::cmp::Ordering;
+use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
 use qsl_cst::{Limits, ParsedSource};
@@ -338,7 +339,10 @@ fn t11_text_accounting_exact_bounds_and_named_denials() {
         (ChargePoint::TextNormalizeInput, 1),
         (ChargePoint::TextNormalizeOutput, 1),
     ] {
-        let mut denied = Meter::new(T11).with_injected_denial(InjectedDenial { point, occurrence });
+        let mut denied = Meter::new(T11).with_injected_denial(InjectedDenial {
+            point,
+            occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
+        });
         assert!(matches!(
             run(&mut denied),
             Outcome::Incomplete(Incomplete { charge_point, .. }) if charge_point == point
@@ -348,7 +352,7 @@ fn t11_text_accounting_exact_bounds_and_named_denials() {
     // Admission of a value is metered the same way and exposes no truncation.
     let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
         point: ChargePoint::TextNormalizeOutput,
-        occurrence: 2,
+        occurrence: NonZeroU64::new(2).expect("nonzero occurrence"),
     });
     assert!(matches!(
         admit_text(&runtime(E_COMBINING), &text_type(0, 4, Nfd), &mut denied),
@@ -891,8 +895,10 @@ fn enum_accounting_exact_bounds_and_named_denials() {
         (ChargePoint::EnumIdentityRead, 2),
         (ChargePoint::EnumResultRetain, 1),
     ] {
-        let mut denied =
-            Meter::new(LIMITS).with_injected_denial(InjectedDenial { point, occurrence });
+        let mut denied = Meter::new(LIMITS).with_injected_denial(InjectedDenial {
+            point,
+            occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
+        });
         assert!(matches!(
             run(&mut denied),
             Outcome::Incomplete(Incomplete { charge_point, .. }) if charge_point == point
@@ -1014,7 +1020,7 @@ fn generated_text_profiles_match_the_unicode_17_oracle() {
                     u64::try_from(seen.iter().filter(|p| *p == point).count()).unwrap();
                 let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
                     point: *point,
-                    occurrence,
+                    occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
                 });
                 assert!(matches!(
                     compare_text(Equal, &left, &right, &mut denied).unwrap(),
