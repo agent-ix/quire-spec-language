@@ -2956,9 +2956,8 @@ fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
     let limits = request_limits(request.stage_limits(), ReplayLimits::default())
         .expect("the request's limits");
     let recompiled = recompile(&request, &limits).expect("the byte provision recompiles");
-    assert!(recompiled
-        .emitted
-        .package()
-        .package_id()
-        .matches(&compiled.emitted.package_id()));
+    assert_eq!(
+        recompiled.emitted.package().package_id(),
+        compiled.emitted.package_id()
+    );
 }
