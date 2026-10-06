@@ -18,9 +18,10 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Incomplete, Meter, ScalarLimits};
 use quire_semantic_value::call::InputRefusal;
 
+use super::argument::{self, Stopped};
 use super::{
-    arguments, call_failure_to_replay_refusal, consumed, recompile, request_limits, select, Claim,
-    ReplayRefusal,
+    arguments, call_failure_to_replay_refusal, consumed, exceeded_before_call, recompile,
+    request_limits, select, Claim, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::ObligationIdentity;
@@ -125,7 +126,12 @@ impl ValueParityResult {
 /// ([`ValueParityResult::Refused`]); a function whose declared result is
 /// `Boolean` refuses [`ReplayRefusal::NotAValueFunction`]. The report carries
 /// the full claim identity on every outcome ([`ValueParityReport::claim`]).
-pub fn replay_value_parity(wire: ReplayRequestWire, generated: ScalarOutcome) -> ValueParityReport {
+/// `replay_limits` is `replay.input_bytes`, as [`crate::replay`] takes it.
+pub fn replay_value_parity(
+    wire: ReplayRequestWire,
+    generated: ScalarOutcome,
+    replay_limits: ReplayLimits,
+) -> ValueParityReport {
     let claim = ValueIdentity {
         obligation: ObligationIdentity::from_digest(wire.obligation_identity),
         package_id: wire.package_id.clone(),
@@ -134,7 +140,7 @@ pub fn replay_value_parity(wire: ReplayRequestWire, generated: ScalarOutcome) ->
         limits: wire.accounting_limits,
         generated,
     };
-    let result = match settle(wire, &claim) {
+    let result = match settle(wire, &claim, replay_limits) {
         Ok(result) => result,
         Err(ReplayRefusal::Input(refusal)) => ValueParityResult::RefusedInput(refusal),
         Err(refusal) => ValueParityResult::Refused(Box::new(refusal)),
@@ -146,23 +152,33 @@ pub fn replay_value_parity(wire: ReplayRequestWire, generated: ScalarOutcome) ->
 fn settle(
     wire: ReplayRequestWire,
     claim: &ValueIdentity,
+    replay_limits: ReplayLimits,
 ) -> Result<ValueParityResult, ReplayRefusal> {
-    let request = ReplayRequest::decode(wire, ReplayLimits::default())?;
-    let limits = request_limits(request.stage_limits(), ReplayLimits::default())?;
+    let request = ReplayRequest::decode(wire, replay_limits)?;
+    let limits = request_limits(request.stage_limits(), replay_limits)?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::ValueParity)?;
-    let arguments = arguments(
+    let joined = arguments(
         package,
         &call,
         request.source(),
         request.obligation_identity(),
     )?;
-    let mut meter = Meter::new(request.accounting_limits());
+    let limits = request.accounting_limits();
+    let converted = match argument::convert_arguments(package, &call.types, &joined, &limits) {
+        Ok(converted) => converted,
+        Err(Stopped::Refusal(refusal)) => return Err(*refusal),
+        Err(Stopped::Limit(incomplete)) => return Ok(ValueParityResult::Incomplete(incomplete)),
+    };
+    if let Some(incomplete) = exceeded_before_call(&converted, &limits) {
+        return Ok(ValueParityResult::Incomplete(Box::new(incomplete)));
+    }
+    let mut meter = Meter::new(limits);
     let evaluation = package
         .call(
             &call.name,
-            arguments,
+            converted.values,
             &ObjectEnvironment::default(),
             &mut meter,
         )

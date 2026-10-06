@@ -23,7 +23,10 @@ agrees with QSL's exact semantics: its observed outcome equals the exact
 one. It is a claim about the lowering, never a property of a spec. A
 counterexample is the pair of the exact evaluation's inputs and the generated
 outcome. Neither entry settles `Refuted`: that stays with a `Boolean`
-predicate that is false at its bindings (FR-098).
+predicate that is false at its bindings (FR-098). Both entries take a
+`ReplayLimits` as their last argument, as `qsl_replay::replay` does, so a
+caller can raise `replay.input_bytes` (FR-263-AC-3); a raised bound admits a
+request the default refuses (TC-904).
 
 ## Inputs
 
@@ -174,7 +177,7 @@ predicate that is false at its bindings (FR-098).
 | FR-357-AC-13 | Function and operator level: `report.claim()` equals the claim the caller sent on every outcome: diverged, agrees, refused input or operand, generated fault, incomplete, an identity refusal, a stale package, an undecodable request and a function the entry refuses; claims that differ in any member are not equal, and an agreement's claim is the report's `claim()`. | Test (TC-904) |
 | FR-357-AC-14 | Operator level: the observation digest is carried unchanged on every outcome and held by an agreement's claim, a digest that matches nothing is not refused, and claims differing only in the digest are different claims: QSL never recomputes or authenticates it. | Test (TC-904) |
 | FR-357-AC-15 | Operator level: the recomputed obligation identity equals the digest of the preimage's canonical text, written out independently, for `GraphChild` operands and for `InlineLiteral` operands, with a negative range bound among them; two literals at different positions of one application get distinct identities. | Test (TC-904) |
-| FR-357-AC-16 | Operator level: a request whose `obligation_identity` was minted over another claim, one whose range, operand identity, occurrence key, obligation kind or native outcome differs, refuses `ScalarIdentity` (`stale_dependency`/`revision-mismatch`) with the cause `Obligation` naming both digests and settles `Inconclusive(ReplayRefused(stale_dependency))`, with the claim identity carried. | Test (TC-904) |
+| FR-357-AC-16 | Operator level: a request whose `obligation_identity` was minted over another claim, one whose range, operand identity, occurrence key or obligation kind differs, refuses `ScalarIdentity` (`stale_dependency`/`revision-mismatch`) with the cause `Obligation` naming both digests and settles `Inconclusive(ReplayRefused(stale_dependency))`, with the claim identity carried. A difference in the native outcome alone leaves the obligation identity unchanged and is detected as `report.claim()` differing from the claim sent. | Test (TC-904) |
 | FR-357-AC-17 | Operator level: each check of the preimage against the package refuses `ScalarIdentity` (`revision-mismatch`) under a correctly minted identity, with its own cause: a node the package does not hold (`Node`) or an operator it does not apply (`Operator`); an occurrence key the node does not have (`Occurrence`); a `GraphChild` that is not the node's argument at its position (`OperandChild`); an `InlineLiteral` that is not an inline integer literal there (`NotInlineLiteral`) or whose value or singleton range is not the literal's (`LiteralValue`); a different number of operands (`OperandCount`). A claim of a graph child and an inline literal together passes. | Test (TC-904) |
 | FR-357-AC-18 | Operator level: a preimage the encoder refuses (an occurrence ordinal beyond 2^53) refuses `ScalarIdentity` with the cause `Encoding` for any claimed identity, the all-zero one included, and a zero identity over a preimage that encodes refuses `Obligation`. | Test (TC-904) |
 | FR-357-AC-19 | `parity_obligation`, the one preimage encoder both parity arms call, gives for ADR-013 O-09's worked example (a record with one `Sequence` field, bounds on the sequence and its element) the digest the ADR states, for the argument entry and for the whole preimage, and orders harness bounds by the bytes of each key's RFC 8785 encoding and refuses a repeated key. | Test (TC-904) |

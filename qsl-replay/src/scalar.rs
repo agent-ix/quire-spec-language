@@ -18,6 +18,7 @@ use quire_exact::{
 
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 
+use crate::composite::{CompositeIdentity, EqualityOutcome};
 use crate::execute::ReplayRefusal;
 use crate::identity::{ObligationIdentity, QualifiedName};
 use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
@@ -45,6 +46,9 @@ pub enum ScalarOutcome {
     /// inexact decimal. A refusal because the result is outside its range
     /// is [`Self::OutOfRange`], never this.
     OtherRefusal,
+    /// A composite equality completed this verdict and occurrence-pair
+    /// count (FR-358).
+    Equality(EqualityOutcome),
 }
 
 impl ScalarOutcome {
@@ -53,19 +57,37 @@ impl ScalarOutcome {
     pub fn same_as(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Value(left), Self::Value(right)) => same_element(left, right),
+            (Self::Equality(left), Self::Equality(right)) => left == right,
             (Self::OutOfRange, Self::OutOfRange)
             | (Self::Undefined, Self::Undefined)
             | (Self::OtherRefusal, Self::OtherRefusal) => true,
-            (Self::Value(_), Self::OutOfRange | Self::Undefined | Self::OtherRefusal)
-            | (Self::OutOfRange, Self::Value(_) | Self::Undefined | Self::OtherRefusal)
-            | (Self::Undefined, Self::Value(_) | Self::OutOfRange | Self::OtherRefusal)
-            | (Self::OtherRefusal, Self::Value(_) | Self::OutOfRange | Self::Undefined) => false,
+            (
+                Self::Value(_),
+                Self::Equality(_) | Self::OutOfRange | Self::Undefined | Self::OtherRefusal,
+            )
+            | (
+                Self::Equality(_),
+                Self::Value(_) | Self::OutOfRange | Self::Undefined | Self::OtherRefusal,
+            )
+            | (
+                Self::OutOfRange,
+                Self::Value(_) | Self::Equality(_) | Self::Undefined | Self::OtherRefusal,
+            )
+            | (
+                Self::Undefined,
+                Self::Value(_) | Self::Equality(_) | Self::OutOfRange | Self::OtherRefusal,
+            )
+            | (
+                Self::OtherRefusal,
+                Self::Value(_) | Self::Equality(_) | Self::OutOfRange | Self::Undefined,
+            ) => false,
         }
     }
 
     fn measured_bytes(&self) -> usize {
         match self {
             Self::Value(value) => value_bytes(value),
+            Self::Equality(_) => 2 * std::mem::size_of::<u64>(),
             Self::OutOfRange | Self::Undefined | Self::OtherRefusal => 0,
         }
     }
@@ -389,6 +411,8 @@ pub enum ScalarClaim {
     Operator(Box<OperatorIdentity>),
     /// A function-level claim: the function and its parameter bindings.
     Function(Box<ValueIdentity>),
+    /// A composite equality-parity claim (FR-358).
+    CompositeEquality(Box<CompositeIdentity>),
 }
 
 /// The cause data of `InconclusiveCause::ScalarAgrees`: the claim, and the
@@ -433,6 +457,7 @@ impl ScalarAgreement {
                     + identity.result_range.upper().to_string().len()
             }
             ScalarClaim::Function(identity) => identity.measured_bytes(),
+            ScalarClaim::CompositeEquality(identity) => identity.measured_bytes(),
         };
         claim + self.outcome.measured_bytes()
     }

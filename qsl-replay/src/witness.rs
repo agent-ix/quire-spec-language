@@ -30,6 +30,11 @@ use qsl_foundation::digest::{
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 
+mod value;
+mod value_text;
+pub use value::{QuantityMagnitude, WitnessField, WitnessSlot, WitnessValue};
+pub use value_text::{EntryFault, ValueTextError};
+
 // ---------------------------------------------------------------------------
 // `Witness`: the one-stored-field transcript carrier (ADR-013 O-25, QC-13).
 // ---------------------------------------------------------------------------
@@ -153,12 +158,15 @@ impl Witness {
     /// order equals `arguments` order). Each transcript entry is joined to
     /// the binding whose parameter node id it names, never by position,
     /// and its text is read as the binding's declared
-    /// [`WitnessValueType`]. Refuses with [`DecodeRefusal::Missing`] when a
-    /// binding's parameter has no entry, [`DecodeRefusal::Duplicate`] when
-    /// it has more than one, [`DecodeRefusal::MalformedEntry`] when an entry
-    /// is not a `name=value` pair, [`DecodeRefusal::Unbound`] when an entry
-    /// names no binding's parameter, and [`DecodeRefusal::Malformed`] when an
-    /// entry's text is not a value of the binding's type.
+    /// [`WitnessValueType`]. Refuses with [`DecodeRefusal::MalformedEntry`]
+    /// when an entry is not a `name=value` pair, [`DecodeRefusal::Unbound`]
+    /// when an entry names no binding's parameter,
+    /// [`DecodeRefusal::Duplicate`] when a parameter has more than one entry,
+    /// [`DecodeRefusal::EntryOrder`] when the entries are not in strictly
+    /// ascending parameter node id order (FR-070), [`DecodeRefusal::Missing`]
+    /// when a binding's parameter has no entry, and
+    /// [`DecodeRefusal::Malformed`] when an entry's text is not a value of
+    /// the binding's type. No refusal leaves a partial result.
     pub fn decode(&self, bindings: &[WitnessBinding]) -> Result<Vec<WitnessValue>, DecodeRefusal> {
         let entries = self
             .raw_bindings()
@@ -175,6 +183,18 @@ impl Witness {
         {
             return Err(DecodeRefusal::Unbound((*name).to_owned()));
         }
+        for (binding, name) in bindings.iter().zip(&names) {
+            if entries.iter().filter(|(entry, _)| entry == name).count() > 1 {
+                return Err(DecodeRefusal::Duplicate(binding.parameter));
+            }
+        }
+        for pair in entries.windows(2) {
+            if let [(before, _), (after, _)] = pair {
+                if after <= before {
+                    return Err(DecodeRefusal::EntryOrder((*after).to_owned()));
+                }
+            }
+        }
         bindings
             .iter()
             .zip(&names)
@@ -189,17 +209,18 @@ impl Witness {
                 binding
                     .value_type
                     .read(text)
-                    .ok_or_else(|| DecodeRefusal::Malformed {
+                    .map_err(|fault| DecodeRefusal::Malformed {
                         parameter: binding.parameter,
                         value_type: binding.value_type,
-                        text: (*text).to_owned(),
+                        fault,
                     })
             })
             .collect()
     }
 }
 
-/// The declared primitive type of one harness argument (ADR-013 O-25).
+/// The declared type of one harness argument (ADR-013 O-25): how its
+/// transcript entry is read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WitnessValueType {
     /// A Boolean, written `0` (`false`) or `1` (`true`) in a transcript, as
@@ -207,19 +228,26 @@ pub enum WitnessValueType {
     Boolean,
     /// A signed 64-bit integer, written in decimal in a transcript.
     I64,
+    /// Every other parameter: a witness value text (FR-070), the escaped RFC
+    /// 8785 encoding of the value in its typed canonical form.
+    Canonical,
 }
 
 impl WitnessValueType {
-    /// `text` as a value of this type, or `None` when it is not one.
+    /// `text` as a value of this type, or the fault that makes it none.
     #[qsl_attrs::string_edge]
-    fn read(self, text: &str) -> Option<WitnessValue> {
+    fn read(self, text: &str) -> Result<WitnessValue, EntryFault> {
         match self {
             Self::Boolean => match text {
-                "0" => Some(WitnessValue::Boolean(false)),
-                "1" => Some(WitnessValue::Boolean(true)),
-                _ => None,
+                "0" => Ok(WitnessValue::Boolean(false)),
+                "1" => Ok(WitnessValue::Boolean(true)),
+                _ => Err(EntryFault::Scalar),
             },
-            Self::I64 => text.parse().ok().map(WitnessValue::Integer),
+            Self::I64 => text
+                .parse()
+                .map(WitnessValue::Integer)
+                .map_err(|_| EntryFault::Scalar),
+            Self::Canonical => WitnessValue::from_value_text(text),
         }
     }
 }
@@ -232,17 +260,6 @@ pub struct WitnessBinding {
     pub parameter: WireNodeId,
     /// The argument's declared primitive type.
     pub value_type: WitnessValueType,
-}
-
-/// One concrete argument value, typed by the binding or assignment that
-/// carries it. An integer widens into the kernel's unbounded integer
-/// without loss (ADR-013 C-11).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WitnessValue {
-    /// A Boolean value.
-    Boolean(bool),
-    /// A signed 64-bit integer value.
-    Integer(i64),
 }
 
 /// [`Witness::decode`]'s structured refusal. Each join failure is its own
@@ -261,16 +278,22 @@ pub enum DecodeRefusal {
     /// A transcript entry is not a `name=value` pair.
     #[error("witness entry {0:?} is not a name=value pair")]
     MalformedEntry(String),
-    /// A transcript entry's text is not a value of its binding's type.
-    #[error("witness entry for parameter {parameter} is not a {value_type:?} value: {text:?}")]
+    /// A transcript entry's text is not a value of its binding's type. It
+    /// names the parameter and the fault, never the entry's content
+    /// (FR-073).
+    #[error("witness entry for parameter {parameter} is not a {value_type:?} value: {fault:?}")]
     Malformed {
         /// The parameter the entry names.
         parameter: WireNodeId,
         /// The binding's declared type.
         value_type: WitnessValueType,
-        /// The entry's text.
-        text: String,
+        /// What is wrong with the entry.
+        fault: EntryFault,
     },
+    /// The transcript's entries are not in strictly ascending parameter node
+    /// id order; this names the first entry out of order (FR-070).
+    #[error("witness entry {0:?} is out of ascending node id order")]
+    EntryOrder(String),
 }
 
 /// FR-073: `Debug` never reproduces the full transcript -- only a bounded
@@ -372,14 +395,22 @@ pub enum ReplaySource {
 }
 
 impl ReplaySource {
-    /// The bytes this source adds to an encoded record: a witness's
-    /// transcript, or for each canonical assignment a 32-byte node id plus a
-    /// value of at most 8 bytes (QC-1's digest-addressed shape), a fixed
-    /// per-entry bound with no `Debug`-rendered text involved.
+    /// This source's measured encoded size: a witness transcript's length,
+    /// or per assignment a 32-byte node id plus its value, which is at most 8
+    /// bytes for a scalar and the byte length of the escaped witness value
+    /// text for any other (FR-070).
     pub(crate) fn measured_bytes(&self) -> usize {
         match self {
             Self::Witness(witness) => witness.transcript().len(),
-            Self::Input(assignments) => assignments.len() * (32 + 8),
+            Self::Input(assignments) => assignments
+                .iter()
+                .map(|assignment| {
+                    32_usize.saturating_add(match &assignment.value {
+                        WitnessValue::Boolean(_) | WitnessValue::Integer(_) => 8,
+                        other => other.value_text_len(),
+                    })
+                })
+                .fold(0, usize::saturating_add),
         }
     }
 }
@@ -397,13 +428,20 @@ impl fmt::Debug for ReplaySource {
                 let mut buf = Vec::with_capacity(assignments.len() * 40);
                 for assignment in assignments {
                     buf.extend_from_slice(assignment.parameter.as_bytes());
-                    match assignment.value {
+                    match &assignment.value {
                         WitnessValue::Boolean(value) => {
-                            buf.extend_from_slice(&[0, u8::from(value)])
+                            buf.extend_from_slice(&[0, u8::from(*value)])
                         }
                         WitnessValue::Integer(value) => {
                             buf.push(1);
                             buf.extend_from_slice(&value.to_le_bytes());
+                        }
+                        other => {
+                            buf.push(2);
+                            match other.to_value_text() {
+                                Ok(text) => buf.extend_from_slice(text.as_bytes()),
+                                Err(_) => buf.push(0xff),
+                            }
                         }
                     }
                 }
@@ -650,8 +688,8 @@ mod witness_tests {
     }
 
     /// FR-098-AC-2: `decode` reads one typed value per binding, in binding
-    /// order whatever order the transcript lists its entries in, joined by
-    /// parameter node id: `0`/`1` as a Boolean binding's `false`/`true`, and
+    /// order whatever order the bindings list their parameters in, joined by
+    /// parameter node id from entries in ascending node id order: `0`/`1` as a Boolean binding's `false`/`true`, and
     /// decimal text as an integer binding's value, `i64::MIN` and
     /// `i64::MAX` included.
     #[trace("TC-444", "FR-098-AC-2")]
@@ -660,7 +698,7 @@ mod witness_tests {
         let flag = WireNodeId::from_digest([1; 32]);
         let low = WireNodeId::from_digest([2; 32]);
         let high = WireNodeId::from_digest([3; 32]);
-        let values = format!("{high}={};{flag}=1;{low}={}", i64::MAX, i64::MIN);
+        let values = format!("{flag}=1;{low}={};{high}={}", i64::MIN, i64::MAX);
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
             witness.decode(&[boolean(flag), integer(low), integer(high)]),
@@ -715,7 +753,7 @@ mod witness_tests {
             Err(DecodeRefusal::Malformed {
                 parameter: b,
                 value_type: WitnessValueType::Boolean,
-                text: "2".to_owned(),
+                fault: EntryFault::Scalar,
             })
         );
         let past_max = format!("{}0", i64::MAX);
@@ -725,7 +763,7 @@ mod witness_tests {
                 Err(DecodeRefusal::Malformed {
                     parameter: x,
                     value_type: WitnessValueType::I64,
-                    text: text.to_owned(),
+                    fault: EntryFault::Scalar,
                 })
             );
         }
@@ -843,10 +881,11 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
         .as_ref()
         .and_then(|position| position.as_ref())
         .map_or(0, |position| position.as_str().len());
-    total += packet
-        .source
-        .as_ref()
-        .map_or(0, ReplaySource::measured_bytes);
+    total += match &packet.source {
+        Some(source @ ReplaySource::Witness(_)) => source.measured_bytes(),
+        Some(source @ ReplaySource::Input(_)) => source.measured_bytes(),
+        None => 0,
+    };
     total += packet
         .family_payload
         .as_ref()
@@ -857,12 +896,13 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
 /// A declared domain's measured size: 32 bytes for its parameter node id,
 /// then 8 per fixed-width maximum, or the decimal digits of both ends of an
 /// integer range, whose ends are unbounded integers.
-fn finite_bound_bytes(bound: &FiniteBound) -> usize {
+pub(crate) fn finite_bound_bytes(bound: &FiniteBound) -> usize {
     32 + match bound {
         FiniteBound::Cardinality { .. } | FiniteBound::Depth { .. } => 8,
         FiniteBound::IntegerRange(range) => {
             range.lower().to_string().len() + range.upper().to_string().len()
         }
+        FiniteBound::Variants { members } => members.iter().map(String::len).sum(),
     }
 }
 
@@ -1051,7 +1091,7 @@ mod envelope_tests {
         }
     }
 
-    fn full_packet(occurrence_ordinal: u64) -> WitnessPacket<NoPayload> {
+    pub(in crate::witness) fn full_packet(occurrence_ordinal: u64) -> WitnessPacket<NoPayload> {
         WitnessPacket {
             obligation_identity: Some(digest(1)),
             occurrence_key: Some(OccurrenceKey::new(

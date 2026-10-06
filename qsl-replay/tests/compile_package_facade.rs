@@ -9,8 +9,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::Setting;
 use qsl_replay::spine::{self, CompileRefusal, ParseRequest, SpineLimits};
 use qsl_replay::{
-    compile_package, Code, DependencyInput, ReplayRefusal, SourceIdentity, StageLimits,
-    SuppliedLibrary,
+    compile_package, Code, DependencyInput, ReplayLimits, ReplayRefusal, SourceIdentity,
+    StageLimits, SuppliedLibrary,
 };
 use qsl_semantics::model::intake::package_input;
 use quire_exact::Cancel;
@@ -83,6 +83,7 @@ fn compile(text: &str, stages: StageLimits) -> Result<qsl_replay::CompiledPackag
         [],
         &DependencyInput::default(),
         stages,
+        ReplayLimits::default(),
     )
 }
 
@@ -137,6 +138,7 @@ fn a_library_with_the_units_owner_refuses() {
         [],
         &dependencies,
         limits(1 << 20),
+        ReplayLimits::default(),
     );
     assert!(matches!(refusal, Err(ReplayRefusal::DependencyInput(_))));
 }
@@ -155,6 +157,32 @@ fn stage_limits_refuse_as_the_replay_recompile_does() {
         compile(&text, limits(u64::MAX)),
         Err(ReplayRefusal::LimitAboveReader(_))
     ));
+}
+
+/// `replay.input_bytes` is the caller's: an S1 limit above the default reader
+/// limit refuses under the default `ReplayLimits` and compiles once the
+/// caller raises it.
+#[trace("TC-908", "FR-060-AC-6")]
+#[test]
+fn a_raised_replay_input_bound_admits_an_s1_limit_the_default_refuses() {
+    let text = format!("{HEADER}{LIST}");
+    let above = qsl_replay::DEFAULT_REPLAY_INPUT_BYTES * 2;
+    let compile_with = |replay: ReplayLimits| {
+        compile_package(
+            identity(),
+            "unit.native",
+            text.as_bytes(),
+            [],
+            &DependencyInput::default(),
+            limits(above),
+            replay,
+        )
+    };
+    assert!(matches!(
+        compile_with(ReplayLimits::default()),
+        Err(ReplayRefusal::LimitAboveReader(_))
+    ));
+    assert!(compile_with(ReplayLimits::default().with_input_bytes(above)).is_ok());
 }
 
 /// A unit selecting a domain package compiles through the facade to the
@@ -185,6 +213,7 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
         [document.as_slice()],
         &DependencyInput::default(),
         limits(1 << 20),
+        ReplayLimits::default(),
     )
     .expect("the facade compiles the unit");
     assert_eq!(compiled.bytes(), bytes.as_slice());

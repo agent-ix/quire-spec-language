@@ -43,6 +43,7 @@ pub struct ObjectEnvironment {
     /// The post-state integers FR-106 check 6.5's witnessing admitted
     /// outside their declared range; empty for every other environment.
     out_of_range: Vec<OutOfRange>,
+    unresolved_references: bool,
 }
 
 impl ObjectEnvironment {
@@ -52,7 +53,26 @@ impl ObjectEnvironment {
             objects,
             populations: BTreeMap::new(),
             out_of_range: Vec::new(),
+            unresolved_references: false,
         }
+    }
+
+    /// This environment with its references left unresolved: it holds no
+    /// object, and a reference argument is admitted by its identity alone
+    /// instead of being refused as dangling. A read through such a
+    /// reference has no object to read, so it completes no value. A replay,
+    /// which has no object environment of its own, runs under this
+    /// (FR-098).
+    #[must_use]
+    pub fn with_unresolved_references(mut self) -> Self {
+        self.unresolved_references = true;
+        self
+    }
+
+    /// Whether references are left unresolved
+    /// ([`Self::with_unresolved_references`]).
+    pub fn references_are_unresolved(&self) -> bool {
+        self.unresolved_references
     }
 
     /// Records the integers this environment's snapshot holds outside

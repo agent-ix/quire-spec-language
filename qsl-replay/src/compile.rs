@@ -40,7 +40,8 @@ impl CompiledPackage {
 ///
 /// `limits` are read as a replay request's stage limits are: each setting
 /// at its entry or its published default, with the default reader limit
-/// bounding the source bytes.
+/// bounding the source bytes. `replay_limits` carries `replay.input_bytes`
+/// as [`crate::replay`]'s does, so a caller can raise it.
 /// The refusals are the replay recompile's: [`ReplayRefusal::Recompile`]
 /// with the stage's catalog code for a source that does not compile,
 /// [`ReplayRefusal::DependencyInput`] for a library that shares the unit's
@@ -53,8 +54,9 @@ pub fn compile_package<'a>(
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
+    replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
-    let limits = request_limits(&limits, ReplayLimits::default())?;
+    let limits = request_limits(&limits, replay_limits)?;
     dependencies
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;

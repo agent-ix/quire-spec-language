@@ -231,6 +231,18 @@ fn bound<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, bound: &FiniteBound) -> R
             writer.string("depth")?;
             writer.end_object()
         }
+        FiniteBound::Variants { members } => {
+            writer.begin_object()?;
+            writer.name("tag")?;
+            writer.string("variants")?;
+            writer.name("variants")?;
+            writer.begin_array()?;
+            for member in members {
+                writer.string(member)?;
+            }
+            writer.end_array()?;
+            writer.end_object()
+        }
     }
 }
 

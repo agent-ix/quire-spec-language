@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
-    ProtocolClauseUnsupported, StateModelUndefined,
+    ProtocolClauseUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
@@ -1360,6 +1360,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
                 let objects = self.objects_for(node)?;
+                // A replay's references are unresolved: there is no object to
+                // read, so the read completes no value.
+                if objects.references_are_unresolved() && !objects.objects().contains(&reference) {
+                    return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                        ReferenceUnresolved,
+                    ))));
+                }
                 let slot = objects
                     .objects()
                     .attribute(self.scope.types(), &reference, field)

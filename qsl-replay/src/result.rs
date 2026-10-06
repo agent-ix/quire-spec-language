@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
-use quire_exact::{compare_keys, ScalarLimits, Value};
+use quire_exact::{compare_keys, Incomplete, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
@@ -468,6 +468,7 @@ pub struct WitnessArmResult {
     record: Option<Box<SeparatingWitnessRecord>>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
+    limit: Option<Incomplete>,
 }
 
 impl WitnessArmResult {
@@ -505,6 +506,7 @@ impl WitnessArmResult {
             record,
             resolved_regions,
             charges,
+            limit: None,
         }
     }
 
@@ -528,7 +530,23 @@ impl WitnessArmResult {
             record: None,
             resolved_regions,
             charges,
+            limit: None,
         }
+    }
+
+    /// The accounting limit that stopped the replay, when one did: the
+    /// `Incomplete` outcome naming the counter, its configured value and the
+    /// count reached (FR-098).
+    pub fn limit(&self) -> Option<&Incomplete> {
+        self.limit.as_ref()
+    }
+
+    /// This result carrying `limit` as the accounting limit that stopped
+    /// the replay.
+    #[must_use]
+    pub fn with_limit(mut self, limit: Incomplete) -> Self {
+        self.limit = Some(limit);
+        self
     }
 
     /// Whether this arm settled with evaluated-witness backend evidence or
@@ -578,6 +596,7 @@ pub struct InputArmResult {
     value: Option<EvaluatedValue>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
+    limit: Option<Incomplete>,
 }
 
 impl InputArmResult {
@@ -607,6 +626,7 @@ impl InputArmResult {
             value,
             resolved_regions,
             charges,
+            limit: None,
         }
     }
 
@@ -625,7 +645,23 @@ impl InputArmResult {
             value,
             resolved_regions,
             charges,
+            limit: None,
         }
+    }
+
+    /// The accounting limit that stopped the replay, when one did: the
+    /// `Incomplete` outcome naming the counter, its configured value and the
+    /// count reached (FR-098).
+    pub fn limit(&self) -> Option<&Incomplete> {
+        self.limit.as_ref()
+    }
+
+    /// This result carrying `limit` as the accounting limit that stopped
+    /// the replay.
+    #[must_use]
+    pub fn with_limit(mut self, limit: Incomplete) -> Self {
+        self.limit = Some(limit);
+        self
     }
 
     /// Whether this arm settled without a witness or went inconclusive.
@@ -666,6 +702,51 @@ pub enum ReplayResult {
     Witness(WitnessArmResult),
     /// The `Input`-arm result.
     Input(InputArmResult),
+}
+
+impl ReplayResult {
+    /// The accounting limit that stopped the replay, when one did (FR-098).
+    pub fn limit(&self) -> Option<&Incomplete> {
+        match self {
+            Self::Witness(result) => result.limit(),
+            Self::Input(result) => result.limit(),
+        }
+    }
+
+    /// This result carrying `limit` as the accounting limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_limit(self, limit: Incomplete) -> Self {
+        match self {
+            Self::Witness(result) => Self::Witness(result.with_limit(limit)),
+            Self::Input(result) => Self::Input(result.with_limit(limit)),
+        }
+    }
+
+    /// The category the result carries.
+    pub fn category(&self) -> Category {
+        match self {
+            Self::Witness(result) => result.category(),
+            Self::Input(result) => result.category(),
+        }
+    }
+
+    /// The typed disagreement cause, present when the replay settled
+    /// `inconclusive`.
+    pub fn disagreement(&self) -> Option<&DisagreementCause> {
+        match self {
+            Self::Witness(result) => result.disagreement(),
+            Self::Input(result) => result.disagreement(),
+        }
+    }
+
+    /// The accounting charges the replay's call incurred.
+    pub fn charges(&self) -> ScalarLimits {
+        match self {
+            Self::Witness(result) => result.charges(),
+            Self::Input(result) => result.charges(),
+        }
+    }
 }
 
 /// `resolved_regions`' combined byte length -- shared by both arms of
