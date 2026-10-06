@@ -562,13 +562,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .iter()
             .map(|(_, hex, bytes)| hex.len() + bytes.len())
             .sum::<usize>()
-        + match &wire.source {
-            ReplaySource::Witness(witness) => witness.transcript().len(),
-            // A 32-byte node id plus a value of at most 8 bytes per entry
-            // (QC-1's digest-addressed shape), a fixed bound independent of
-            // any `Debug`-rendered text.
-            ReplaySource::Input(assignments) => assignments.len() * (32 + 8),
-        }
+        + wire.source.measured_bytes()
 }
 
 impl ReplayRequest {

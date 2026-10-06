@@ -7,7 +7,12 @@
 use qsl_semantics::check::{NodeTag, SemanticGraph, SemanticNode};
 use quire_exact::NodeKey;
 
-use crate::scalar::ScalarOperator;
+use qsl_foundation::diagnostic::InternalFault;
+use qsl_foundation::digest::WireNodeId;
+
+use super::operator_parity::ScalarIdentityMismatch;
+use super::ReplayRefusal;
+use crate::scalar::{OperandIdentity, ScalarOperand, ScalarOperation, ScalarOperator};
 
 /// Whether `target` is `function`'s node or one its body reaches. The walk
 /// follows every node reference of a node's preimage, and stops at another
@@ -78,4 +83,83 @@ pub(super) fn applies(node: &SemanticNode, operator: ScalarOperator) -> bool {
         .is_some_and(|preimage| {
             preimage["body"]["operation"]["identity"] == operator.catalog_identity()
         })
+}
+
+/// [`check_operands`] over `node`'s own preimage, as the refusal the replay
+/// settles.
+pub(super) fn check_node_operands(
+    node: &SemanticNode,
+    application: WireNodeId,
+    operation: &ScalarOperation,
+) -> Result<(), ReplayRefusal> {
+    let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).map_err(|_| {
+        ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "a-checked-node-preimage-is-json",
+        ))
+    })?;
+    check_operands(&preimage, application, operation)
+        .map_err(|mismatch| ReplayRefusal::ScalarIdentity(Box::new(mismatch)))
+}
+
+/// Whether `preimage`, an application node's preimage, carries the operands
+/// the claim names, position by position (FR-357-AC-17): the same number of
+/// arguments; for a `GraphChild` the argument is a reference to that node;
+/// for an `InlineLiteral` the argument is an inline integer literal, whose
+/// value is the operand's value and whose singleton range is the operand's.
+#[qsl_attrs::string_edge]
+pub(super) fn check_operands(
+    preimage: &serde_json::Value,
+    application: WireNodeId,
+    operation: &ScalarOperation,
+) -> Result<(), ScalarIdentityMismatch> {
+    let (first, second) = operation.operands();
+    let claimed: Vec<&ScalarOperand> = std::iter::once(first).chain(second).collect();
+    let arguments = preimage["body"]["arguments"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
+    if arguments.len() != claimed.len() {
+        return Err(ScalarIdentityMismatch::OperandCount {
+            node: application,
+            claimed: claimed.len(),
+            found: arguments.len(),
+        });
+    }
+    for (position, (operand, argument)) in claimed.into_iter().zip(arguments).enumerate() {
+        match operand.identity {
+            OperandIdentity::GraphChild(node) => {
+                let found = (argument["term"] == "reference")
+                    .then(|| argument["target"]["digest"].as_str())
+                    .flatten()
+                    .and_then(WireNodeId::from_hex);
+                if found != Some(node) {
+                    return Err(ScalarIdentityMismatch::OperandChild {
+                        node: application,
+                        position,
+                        claimed: node,
+                        found,
+                    });
+                }
+            }
+            OperandIdentity::InlineLiteral => {
+                if argument["term"] != "literal" || argument["value_kind"] != "integer" {
+                    return Err(ScalarIdentityMismatch::NotInlineLiteral {
+                        node: application,
+                        position,
+                    });
+                }
+                let found = argument["value"].as_str().unwrap_or_default();
+                if found != operand.value.to_string()
+                    || operand.range != ScalarOperand::literal(operand.value).range
+                {
+                    return Err(ScalarIdentityMismatch::LiteralValue {
+                        node: application,
+                        position,
+                        found: found.to_owned(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }

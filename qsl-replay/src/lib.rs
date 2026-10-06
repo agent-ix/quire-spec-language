@@ -56,9 +56,10 @@ pub use call_site::{
 };
 pub use compile::{compile_package, CompiledPackage};
 pub use execute::{
-    replay, replay_frame, replay_operator_parity, replay_value_parity, DependencySelectionsCause,
-    FrameIdentityMismatch, FrameReplayResult, LimitAboveReader, ReplayRefusal,
-    ScalarIdentityMismatch, ValueParityResult,
+    parity_obligation, replay, replay_frame, replay_operator_parity, replay_value_parity,
+    BoundEntries, DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
+    IdentityEncodeError, LimitAboveReader, ParityArgument, ParityPreimage, ReplayRefusal,
+    ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
@@ -146,9 +147,9 @@ pub use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
 pub use scalar::{
-    GeneratedFault, NativeOutcome, OperandRefusal, OperatorClaim, OperatorIdentity,
-    OperatorParityReport, OperatorParityResult, ScalarAgreement, ScalarClaim, ScalarOperand,
-    ScalarOperation, ScalarOperator, ScalarOutcome,
+    GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,
+    OperatorIdentity, OperatorParityReport, OperatorParityResult, ScalarAgreement, ScalarClaim,
+    ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueIdentity,
 };
 pub use witness::{
     CanonicalAssignment, ClaimedChange, DecodeRefusal, FamilyPayload, FrameCounterexample,

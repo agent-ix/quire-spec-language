@@ -23,13 +23,16 @@ use super::{
     ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
+use crate::identity::ObligationIdentity;
 use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
 use crate::request::{ReplayRequest, ReplayRequestWire};
-use crate::scalar::{evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome};
+use crate::scalar::{
+    evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome, ValueIdentity,
+};
 
 /// FR-357: what a value-parity replay found. None of these is a `Refuted`
 /// result.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum ValueParityResult {
     /// QSL's outcome differs from the generated one: the generated code
     /// does not implement QSL's semantics, a lowering defect and a generator
@@ -58,13 +61,44 @@ pub enum ValueParityResult {
     /// The evaluation reached a limit before it produced an outcome, so
     /// there is nothing to compare.
     Incomplete(Box<Incomplete>),
+    /// The request failed before any outcome: FR-098's refusals (a stale
+    /// package, an unknown function, an unbound parameter, a `Boolean`
+    /// function) and a broken checked invariant.
+    Refused(Box<ReplayRefusal>),
+}
+
+/// What a value-parity replay settled, with the full claim identity carried
+/// through unchanged on every outcome, a refusal included.
+#[derive(Debug)]
+pub struct ValueParityReport {
+    claim: ValueIdentity,
+    result: ValueParityResult,
+}
+
+impl ValueParityReport {
+    /// The claim identity the request and the generated outcome fixed. A
+    /// consumer checks `claim()` equals the claim it sent.
+    pub fn claim(&self) -> &ValueIdentity {
+        &self.claim
+    }
+
+    /// What the replay found.
+    pub fn result(&self) -> &ValueParityResult {
+        &self.result
+    }
+
+    /// The terminal value this report settles ([`ValueParityResult::terminal_value`]).
+    pub fn terminal_value(&self) -> TerminalValue {
+        self.result.terminal_value()
+    }
 }
 
 impl ValueParityResult {
     /// The terminal value this result settles: `Failed` for a divergence,
     /// `Inconclusive(ScalarAgrees)` for an agreement,
     /// `Inconclusive(ReplayRefused)` with the admission refusal's code for a
-    /// refused input and `Incomplete` for a reached limit.
+    /// refused input, `Incomplete` for a reached limit and the request
+    /// refusal's own settlement for a refusal.
     pub fn terminal_value(&self) -> TerminalValue {
         match self {
             Self::Diverged { .. } => TerminalValue::Failed,
@@ -75,6 +109,7 @@ impl ValueParityResult {
                 InconclusiveCause::ReplayRefused(input_refusal_code(refusal)),
             ),
             Self::Incomplete(_) => TerminalValue::Incomplete(IncompleteCause::ResourceExhausted),
+            Self::Refused(refusal) => TerminalValue::from_replay_refusal(refusal),
         }
     }
 }
@@ -86,23 +121,31 @@ impl ValueParityResult {
 /// (FR-098's request, whose `source` is the witness's bindings). `generated`
 /// is the generated code's outcome at those bindings. A binding that names no
 /// parameter of `f`, a parameter bound twice or not at all, and every other
-/// failure before an outcome refuses as FR-098's does (`ReplayRefusal`); a
-/// function whose declared result is `Boolean` refuses
-/// [`ReplayRefusal::NotAValueFunction`].
-pub fn replay_value_parity(
-    wire: ReplayRequestWire,
-    generated: ScalarOutcome,
-) -> Result<ValueParityResult, ReplayRefusal> {
-    match settle(wire, generated) {
-        Err(ReplayRefusal::Input(refusal)) => Ok(ValueParityResult::RefusedInput(refusal)),
-        settled => settled,
-    }
+/// failure before an outcome refuses as FR-098's does
+/// ([`ValueParityResult::Refused`]); a function whose declared result is
+/// `Boolean` refuses [`ReplayRefusal::NotAValueFunction`]. The report carries
+/// the full claim identity on every outcome ([`ValueParityReport::claim`]).
+pub fn replay_value_parity(wire: ReplayRequestWire, generated: ScalarOutcome) -> ValueParityReport {
+    let claim = ValueIdentity {
+        obligation: ObligationIdentity::from_digest(wire.obligation_identity),
+        package_id: wire.package_id.clone(),
+        function: wire.selected_function.clone(),
+        source: wire.source.clone(),
+        limits: wire.accounting_limits,
+        generated,
+    };
+    let result = match settle(wire, &claim) {
+        Ok(result) => result,
+        Err(ReplayRefusal::Input(refusal)) => ValueParityResult::RefusedInput(refusal),
+        Err(refusal) => ValueParityResult::Refused(Box::new(refusal)),
+    };
+    ValueParityReport { claim, result }
 }
 
 #[deny(clippy::wildcard_enum_match_arm)]
 fn settle(
     wire: ReplayRequestWire,
-    generated: ScalarOutcome,
+    claim: &ValueIdentity,
 ) -> Result<ValueParityResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, ReplayLimits::default())?;
     let limits = request_limits(request.stage_limits(), ReplayLimits::default())?;
@@ -115,7 +158,6 @@ fn settle(
         request.source(),
         request.obligation_identity(),
     )?;
-    let bindings = arguments.clone();
     let mut meter = Meter::new(request.accounting_limits());
     let evaluation = package
         .call(
@@ -146,22 +188,15 @@ fn settle(
         Evaluated::Incomplete(incomplete) => return Ok(ValueParityResult::Incomplete(incomplete)),
     };
     let charges = consumed(&meter);
-    Ok(if qsl.same_as(&generated) {
+    Ok(if qsl.same_as(&claim.generated) {
         ValueParityResult::Agrees {
-            agreement: ScalarAgreement::new(
-                ScalarClaim::Function {
-                    obligation: request.obligation_identity(),
-                    function: request.selected_function().clone(),
-                    bindings,
-                },
-                qsl,
-            ),
+            agreement: ScalarAgreement::new(ScalarClaim::Function(Box::new(claim.clone())), qsl),
             charges,
         }
     } else {
         ValueParityResult::Diverged {
             qsl,
-            generated,
+            generated: claim.generated.clone(),
             charges,
         }
     })

@@ -371,6 +371,19 @@ pub enum ReplaySource {
     Input(Vec<CanonicalAssignment>),
 }
 
+impl ReplaySource {
+    /// The bytes this source adds to an encoded record: a witness's
+    /// transcript, or for each canonical assignment a 32-byte node id plus a
+    /// value of at most 8 bytes (QC-1's digest-addressed shape), a fixed
+    /// per-entry bound with no `Debug`-rendered text involved.
+    pub(crate) fn measured_bytes(&self) -> usize {
+        match self {
+            Self::Witness(witness) => witness.transcript().len(),
+            Self::Input(assignments) => assignments.len() * (32 + 8),
+        }
+    }
+}
+
 /// FR-073-AC-2/AC-3: neither arm's rendering reproduces its full content.
 /// The `Witness` arm delegates to [`Witness`]'s own redacted `Debug`; the
 /// `Input` arm renders only its entry count and a content digest, never any
@@ -830,14 +843,10 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
         .as_ref()
         .and_then(|position| position.as_ref())
         .map_or(0, |position| position.as_str().len());
-    total += match &packet.source {
-        Some(ReplaySource::Witness(witness)) => witness.transcript().len(),
-        // Each canonical assignment is a 32-byte node id plus a value of at
-        // most 8 bytes on the wire (QC-1's digest-addressed shape) -- a
-        // fixed per-entry bound, no `Debug`-rendered text involved.
-        Some(ReplaySource::Input(assignments)) => assignments.len() * (32 + 8),
-        None => 0,
-    };
+    total += packet
+        .source
+        .as_ref()
+        .map_or(0, ReplaySource::measured_bytes);
     total += packet
         .family_payload
         .as_ref()

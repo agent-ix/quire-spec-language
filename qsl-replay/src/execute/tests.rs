@@ -1665,11 +1665,12 @@ fn one_over(denominator: i64) -> ScalarOutcome {
 #[trace("TC-904", "FR-357-AC-1")]
 #[test]
 fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
+    let report = replay_value_parity(parity("inc", 3), integer(5));
     let ValueParityResult::Diverged {
         qsl,
         generated,
         charges,
-    } = replay_value_parity(parity("inc", 3), integer(5)).expect("the replay runs")
+    } = report.result()
     else {
         panic!("inc(3) is 4, not 5");
     };
@@ -1677,9 +1678,8 @@ fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
     assert!(generated.same_as(&integer(5)), "{generated:?}");
     assert!(charges.work_units > 0);
 
-    let ValueParityResult::Diverged { qsl, .. } =
-        replay_value_parity(parity("inc", 3), ScalarOutcome::OutOfRange).expect("the replay runs")
-    else {
+    let report = replay_value_parity(parity("inc", 3), ScalarOutcome::OutOfRange);
+    let ValueParityResult::Diverged { qsl, .. } = report.result() else {
         panic!("inc(3) is a value, not out of range");
     };
     assert!(qsl.same_as(&integer(4)), "{qsl:?}");
@@ -1690,9 +1690,8 @@ fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-1")]
 #[test]
 fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
-    let ValueParityResult::Diverged { qsl, generated, .. } =
-        replay_value_parity(parity("inv", 2), one_over(3)).expect("the replay runs")
-    else {
+    let report = replay_value_parity(parity("inv", 2), one_over(3));
+    let ValueParityResult::Diverged { qsl, generated, .. } = report.result() else {
         panic!("inv(2) is 1/2, not 1/3");
     };
     assert!(qsl.same_as(&one_over(2)), "{qsl:?}");
@@ -1703,9 +1702,8 @@ fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-2")]
 #[test]
 fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
-    let ValueParityResult::Agrees { agreement, .. } =
-        replay_value_parity(parity("inc", 3), integer(4)).expect("the replay runs")
-    else {
+    let report = replay_value_parity(parity("inc", 3), integer(4));
+    let ValueParityResult::Agrees { agreement, .. } = report.result() else {
         panic!("inc(3) is 4");
     };
     let outcome = agreement.outcome();
@@ -1716,9 +1714,8 @@ fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-2")]
 #[test]
 fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
-    let ValueParityResult::Agrees { agreement, .. } =
-        replay_value_parity(parity("inv", 2), one_over(2)).expect("the replay runs")
-    else {
+    let report = replay_value_parity(parity("inv", 2), one_over(2));
+    let ValueParityResult::Agrees { agreement, .. } = report.result() else {
         panic!("inv(2) is 1/2");
     };
     let outcome = agreement.outcome();
@@ -1732,8 +1729,8 @@ fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
 #[test]
 fn tc_904_bindings_that_fail_admission_are_refused_input() {
     for (function, outcome) in [("inc", integer(13)), ("inv", one_over(12))] {
-        let result =
-            replay_value_parity(parity(function, 12), outcome).expect("the replay settles");
+        let report = replay_value_parity(parity(function, 12), outcome);
+        let result = report.result();
         assert!(
             matches!(
                 result,
@@ -1741,13 +1738,13 @@ fn tc_904_bindings_that_fail_admission_are_refused_input() {
             ),
             "{function}: {result:?}"
         );
-        let result = replay_value_parity(
+        let report = replay_value_parity(
             parity_request(function, |parameter| {
                 typed_input(parameter, WitnessValue::Boolean(true))
             }),
             integer(0),
-        )
-        .expect("the replay settles");
+        );
+        let result = report.result();
         assert!(
             matches!(
                 result,
@@ -1767,19 +1764,17 @@ fn tc_904_only_the_declared_parameters_are_bound() {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
     let other = parameter(&compiled, "inv", 0);
-    let stray =
-        replay_value_parity(parity_request("inc", |_| input(other, 3)), integer(4)).unwrap_err();
+    let stray = replay_value_parity(parity_request("inc", |_| input(other, 3)), integer(4));
     assert!(
-        matches!(&stray, ReplayRefusal::UnknownParameter(node) if *node == other),
+        matches!(stray.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnknownParameter(node) if node == other)),
         "{stray:?}"
     );
     let unbound = replay_value_parity(
         parity_request("inc", |_| ReplaySource::Input(Vec::new())),
         integer(4),
-    )
-    .unwrap_err();
+    );
     assert!(
-        matches!(unbound, ReplayRefusal::UnboundParameter(_)),
+        matches!(unbound.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnboundParameter(_))),
         "{unbound:?}"
     );
 }
@@ -1792,10 +1787,9 @@ fn tc_904_a_boolean_function_has_no_value_parity_replay() {
     let refused = replay_value_parity(
         parity("small", 3),
         ScalarOutcome::Value(Value::Boolean(true)),
-    )
-    .unwrap_err();
+    );
     assert!(
-        matches!(&refused, ReplayRefusal::NotAValueFunction { selection, .. } if selection == &name(&["small"])),
+        matches!(refused.result(), ValueParityResult::Refused(refusal) if matches!(&**refusal, ReplayRefusal::NotAValueFunction { selection, .. } if selection == &name(&["small"]))),
         "{refused:?}"
     );
 }
@@ -1827,14 +1821,88 @@ fn tc_904_a_starved_function_evaluation_is_incomplete() {
         work_units: 0,
         ..UNLIMITED
     };
-    let result = replay_value_parity(starved, integer(4)).expect("the replay settles");
+    let report = replay_value_parity(starved, integer(4));
     assert!(
-        matches!(result, ValueParityResult::Incomplete(_)),
-        "{result:?}"
+        matches!(report.result(), ValueParityResult::Incomplete(_)),
+        "{report:?}"
     );
     assert_eq!(
-        result.terminal_value(),
+        report.terminal_value(),
         TerminalValue::Incomplete(crate::IncompleteCause::ResourceExhausted)
+    );
+}
+
+/// The identity a function-level report must carry for `wire` and
+/// `generated`, built as a consumer builds the claim it sent.
+fn sent_value_claim(wire: &ReplayRequestWire, generated: &ScalarOutcome) -> crate::ValueIdentity {
+    crate::ValueIdentity::sent(wire, generated)
+}
+
+/// The settlement a value-parity result names, for asserting each case of a
+/// claim-identity test reached the outcome it is labelled with.
+fn value_kind(result: &ValueParityResult) -> &'static str {
+    match result {
+        ValueParityResult::Diverged { .. } => "diverged",
+        ValueParityResult::Agrees { .. } => "agrees",
+        ValueParityResult::RefusedInput(_) => "refused input",
+        ValueParityResult::Incomplete(_) => "incomplete",
+        ValueParityResult::Refused(_) => "refused",
+    }
+}
+
+/// FR-357-AC-13: a function-level report carries the claim identity the
+/// request and generated outcome fixed on every outcome: diverged, agrees,
+/// refused input, incomplete and each kind of refusal. Two claims that differ
+/// in any member are not equal.
+#[trace("TC-904", "FR-357-AC-13")]
+#[test]
+fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
+    let mut starved = parity("inc", 3);
+    starved.accounting_limits = ScalarLimits {
+        work_units: 0,
+        ..UNLIMITED
+    };
+    let mut stale = parity("inc", 3);
+    stale.package_id = (
+        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+        DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
+    );
+    let mut undecodable = parity("inc", 3);
+    undecodable.backend = String::new();
+    let cases = [
+        (parity("inc", 3), integer(5), "diverged"),
+        (parity("inc", 3), integer(4), "agrees"),
+        (parity("inc", 12), integer(13), "refused input"),
+        (starved, integer(4), "incomplete"),
+        (
+            parity("small", 3),
+            ScalarOutcome::Value(Value::Boolean(true)),
+            "refused",
+        ),
+        (stale, integer(4), "refused"),
+        (undecodable, integer(4), "refused"),
+    ];
+    for (wire, generated, kind) in cases {
+        let sent = sent_value_claim(&wire, &generated);
+        let report = replay_value_parity(wire, generated);
+        assert_eq!(value_kind(report.result()), kind, "{:?}", report.result());
+        assert_eq!(report.claim(), &sent, "{kind}: {:?}", report.result());
+    }
+    let sent = sent_value_claim(&parity("inc", 3), &integer(4));
+    for other in [
+        sent_value_claim(&parity("inc", 3), &integer(5)),
+        sent_value_claim(&parity("inc", 4), &integer(4)),
+        sent_value_claim(&parity("dec", 3), &integer(4)),
+    ] {
+        assert_ne!(sent, other);
+    }
+    let agrees = replay_value_parity(parity("inc", 3), integer(4));
+    let ValueParityResult::Agrees { agreement, .. } = agrees.result() else {
+        panic!("inc(3) is 4");
+    };
+    assert_eq!(
+        agreement.claim(),
+        &crate::ScalarClaim::Function(Box::new(agrees.claim().clone()))
     );
 }
 
@@ -1858,6 +1926,7 @@ mod operator_arm {
         ScalarOperand {
             value,
             range: range(0, 100),
+            identity: crate::OperandIdentity::GraphChild(WireNodeId::from_digest([0x11; 32])),
         }
     }
 
@@ -1888,12 +1957,79 @@ mod operator_arm {
         }
     }
 
-    /// A claim over `operation` at its own node, result range `[-200, 200]`.
+    /// The nodes `node`'s application takes as arguments, in order.
+    fn children_of(node: WireNodeId) -> Vec<WireNodeId> {
+        let compiled = spine(&parity_unit(), &BTreeMap::new());
+        let graph = compiled.package.graph().semantic_graph();
+        let key = graph.resolve_wire(node).expect("the node is in the unit");
+        let preimage: serde_json::Value =
+            serde_json::from_slice(graph.node(key).expect("the node").preimage()).unwrap();
+        preimage["body"]["arguments"]
+            .as_array()
+            .expect("an application")
+            .iter()
+            .map(|argument| {
+                WireNodeId::from_hex(argument["target"]["digest"].as_str().unwrap()).unwrap()
+            })
+            .collect()
+    }
+
+    /// `operation` with each operand still naming the placeholder node
+    /// renamed to the application's real child at its position.
+    fn with_real_children(operation: ScalarOperation, node: WireNodeId) -> ScalarOperation {
+        let children = children_of(node);
+        let placeholder = operand(0).identity;
+        let fix = |operand: ScalarOperand, position: usize| {
+            if operand.identity == placeholder {
+                ScalarOperand {
+                    identity: crate::OperandIdentity::GraphChild(children[position]),
+                    ..operand
+                }
+            } else {
+                operand
+            }
+        };
+        match operation {
+            ScalarOperation::Add { left, right } => ScalarOperation::Add {
+                left: fix(left, 0),
+                right: fix(right, 1),
+            },
+            ScalarOperation::Subtract { left, right } => ScalarOperation::Subtract {
+                left: fix(left, 0),
+                right: fix(right, 1),
+            },
+            ScalarOperation::Multiply { left, right } => ScalarOperation::Multiply {
+                left: fix(left, 0),
+                right: fix(right, 1),
+            },
+            ScalarOperation::Negate { operand } => ScalarOperation::Negate {
+                operand: fix(operand, 0),
+            },
+        }
+    }
+
+    /// A claim over `operation` at its own node, its placeholder operands
+    /// naming the node's real children, result range `[-200, 200]`.
     fn claim(operation: ScalarOperation, generated: NativeOutcome) -> OperatorClaim {
         let (identity, _) = site(&operation);
+        let node = node_of(identity);
         OperatorClaim {
-            node: node_of(identity),
+            operation: with_real_children(operation, node),
+            ..claim_raw(node, add(0, 0), generated)
+        }
+    }
+
+    /// A claim over `operation` at `node`, exactly as given.
+    fn claim_raw(
+        node: WireNodeId,
+        operation: ScalarOperation,
+        generated: NativeOutcome,
+    ) -> OperatorClaim {
+        OperatorClaim {
+            node,
             operation,
+            occurrence: quire_exact::Origin::new(quire_exact::Role::new("expression"), 0),
+            obligation_kind: "bounded_shadow".to_owned(),
             result_range: range(-200, 200),
             limits: UNLIMITED,
             generated,
@@ -1901,11 +2037,26 @@ mod operator_arm {
         }
     }
 
+    /// The obligation identity O-09's preimage gives `claim`.
+    fn minted(claim: &OperatorClaim) -> crate::ObligationIdentity {
+        let identity = claim.identity(obligation());
+        crate::parity_obligation(&super::operator_parity::preimage_of(&identity))
+            .expect("the preimage encodes")
+    }
+
+    /// A request for `function` carrying the identity minted for `claim`.
+    fn wire_for(function: &str, claim: &OperatorClaim) -> ReplayRequestWire {
+        let mut wire = parity(function, 3);
+        wire.obligation_identity = *minted(claim).as_bytes();
+        wire
+    }
+
     /// Replay `claim` through the public entry, in its own function.
     fn replayed(claim: OperatorClaim) -> crate::OperatorParityReport {
         let (_, function) = site(&claim.operation);
-        let report = crate::replay_operator_parity(parity(function, 3), claim);
-        assert_eq!(report.obligation(), obligation());
+        let expected = minted(&claim);
+        let report = crate::replay_operator_parity(wire_for(function, &claim), claim);
+        assert_eq!(report.obligation(), expected);
         report
     }
 
@@ -1940,6 +2091,19 @@ mod operator_arm {
         NativeOutcome::Completed(int(value))
     }
 
+    /// The settlement an operator result names, for asserting each case of a
+    /// claim-identity test reached the outcome it is labelled with.
+    fn kind(result: &OperatorParityResult) -> &'static str {
+        match result {
+            OperatorParityResult::Diverged { .. } => "diverged",
+            OperatorParityResult::Agrees { .. } => "agrees",
+            OperatorParityResult::GeneratedFault(_) => "generated fault",
+            OperatorParityResult::RefusedInput(_) => "refused input",
+            OperatorParityResult::Incomplete(_) => "incomplete",
+            OperatorParityResult::Refused(_) => "refused",
+        }
+    }
+
     fn obligation() -> crate::ObligationIdentity {
         crate::ObligationIdentity::from_digest([2; 32])
     }
@@ -1967,7 +2131,10 @@ mod operator_arm {
             (mul(6, 7), 42),
             (negate(7), -7),
         ] {
-            let report = replayed(claim(operation.clone(), completed(value)));
+            let sent_claim = claim(operation.clone(), completed(value));
+            let sent_operation = sent_claim.operation.clone();
+            let expected = minted(&sent_claim);
+            let report = replayed(sent_claim);
             assert!(agreed(&report).same_as(&exact_value(value)));
             let OperatorParityResult::Agrees { agreement, charges } = report.result() else {
                 unreachable!()
@@ -1983,13 +2150,13 @@ mod operator_arm {
                 operation: named,
                 ..
             } = &**found;
-            assert_eq!(*carried, obligation());
+            assert_eq!(*carried, expected);
             assert_eq!(*node, node_of(site(&operation).0));
             assert_eq!(
                 *identity,
                 DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32])
             );
-            assert_eq!(named, &operation);
+            assert_eq!(named, &sent_operation);
         }
     }
 
@@ -2091,7 +2258,8 @@ mod operator_arm {
             left: operand(1),
             right: ScalarOperand {
                 value,
-                ..literal.clone()
+                range: literal.range.clone(),
+                identity: operand(0).identity,
             },
         };
         assert!(matches!(
@@ -2159,8 +2327,9 @@ mod operator_arm {
         use crate::ScalarIdentityMismatch as Mismatch;
         let add_claim = || claim(add(1, 2), completed(3));
         let refusal_of = |wire: ReplayRequestWire, claim: OperatorClaim| {
+            let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
             let report = crate::replay_operator_parity(wire, claim);
-            assert_eq!(report.obligation(), obligation());
+            assert_eq!(report.obligation(), sent_id);
             let OperatorParityResult::Refused(refusal) = report.result() else {
                 panic!("{:?}", report.result());
             };
@@ -2212,6 +2381,13 @@ mod operator_arm {
                 Mismatch::Node { .. } => "Node",
                 Mismatch::Function { .. } => "Function",
                 Mismatch::Operator { .. } => "Operator",
+                Mismatch::Obligation { .. } => "Obligation",
+                Mismatch::Encoding(_)
+                | Mismatch::Occurrence { .. }
+                | Mismatch::OperandCount { .. }
+                | Mismatch::OperandChild { .. }
+                | Mismatch::NotInlineLiteral { .. }
+                | Mismatch::LiteralValue { .. } => "Other",
             };
             assert_eq!(found, expected);
         }
@@ -2230,5 +2406,461 @@ mod operator_arm {
             OperatorParityResult::Refused(refusal)
                 if matches!(**refusal, ReplayRefusal::UnknownFunction { .. })
         ));
+    }
+
+    /// The identity an operator report must carry for `claim` sent under the
+    /// request's obligation.
+    fn sent(claim: &OperatorClaim) -> OperatorIdentity {
+        claim.identity(minted(claim))
+    }
+
+    /// FR-357-AC-13: an operator report carries the claim identity, with the
+    /// obligation, node, operator, operands and ranges, result range, limits
+    /// and observation digest, on every outcome: agrees, diverged, generated
+    /// fault, refused operand, incomplete and each kind of refusal.
+    #[trace("TC-904", "FR-357-AC-13")]
+    #[test]
+    fn tc_904_an_operator_report_carries_the_sent_claim_on_every_outcome() {
+        let mut starved = claim(add(1, 2), completed(3));
+        starved.limits = ScalarLimits {
+            work_units: 0,
+            ..UNLIMITED
+        };
+        let mut missing_node = claim(add(1, 2), completed(3));
+        missing_node.node = WireNodeId::from_digest([1; 32]);
+        let mut stale = parity("inc", 3);
+        stale.package_id = (
+            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+            DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
+        );
+        let mut undecodable = parity("inc", 3);
+        undecodable.backend = String::new();
+        let cases = [
+            (parity("inc", 3), claim(add(40, 2), completed(42)), "agrees"),
+            (
+                parity("inc", 3),
+                claim(add(40, 2), completed(43)),
+                "diverged",
+            ),
+            (
+                parity("inc", 3),
+                claim(add(1, 2), NativeOutcome::Incomplete),
+                "generated fault",
+            ),
+            (
+                parity("inc", 3),
+                claim(add(1, 101), completed(102)),
+                "refused input",
+            ),
+            (parity("inc", 3), starved, "incomplete"),
+            (parity("inc", 3), missing_node, "refused"),
+            (stale, claim(add(1, 2), completed(3)), "refused"),
+            (undecodable, claim(add(1, 2), completed(3)), "refused"),
+        ];
+        for (mut wire, claim, expected_kind) in cases {
+            wire.obligation_identity = *minted(&claim).as_bytes();
+            let expected = sent(&claim);
+            let report = crate::replay_operator_parity(wire, claim);
+            assert_eq!(
+                kind(report.result()),
+                expected_kind,
+                "{:?}",
+                report.result()
+            );
+            assert_eq!(report.claim(), &expected, "{expected_kind}");
+        }
+        let base = claim(add(40, 2), completed(42));
+        let mut other_node = base.clone();
+        other_node.node = node_of("quire.op.integer.mul");
+        let mut other_range = base.clone();
+        other_range.result_range = range(-100, 100);
+        let mut other_limits = base.clone();
+        other_limits.limits = ScalarLimits {
+            work_units: 7,
+            ..UNLIMITED
+        };
+        let mut other_outcome = base.clone();
+        other_outcome.generated = completed(43);
+        for other in [
+            claim(add(40, 3), completed(42)),
+            claim(sub(40, 2), completed(42)),
+            other_node,
+            other_range,
+            other_limits,
+            other_outcome,
+        ] {
+            assert_ne!(sent(&base), sent(&other));
+        }
+    }
+
+    /// FR-357-AC-14: the observation digest is carry-and-bind: the report
+    /// carries exactly the digest the claim carried, on every outcome, and an
+    /// agreement's claim holds it too. A digest that matches nothing is not
+    /// refused, and claims that differ only in the digest are different
+    /// claims.
+    #[trace("TC-904", "FR-357-AC-14")]
+    #[test]
+    fn tc_904_the_observation_digest_is_carried_unchanged_and_never_recomputed() {
+        let digest = |byte: u8| DigestRecord::mint(DigestDomain::Sha256Jcs, [byte; 32]);
+        let with = |byte: u8, generated: NativeOutcome| {
+            let mut claim = claim(add(40, 2), generated);
+            claim.identity = digest(byte);
+            claim
+        };
+        let agrees = replayed(with(7, completed(42)));
+        assert_eq!(kind(agrees.result()), "agrees");
+        assert_eq!(agrees.claim().identity, digest(7));
+        let OperatorParityResult::Agrees { agreement, .. } = agrees.result() else {
+            panic!("{:?}", agrees.result());
+        };
+        let ScalarClaim::Operator(held) = agreement.claim() else {
+            panic!("an operator claim");
+        };
+        assert_eq!(held.identity, digest(7));
+        for (byte, native, expected_kind) in [
+            (0, completed(43), "diverged"),
+            (255, NativeOutcome::ExecutionFault, "generated fault"),
+            (1, completed(42), "agrees"),
+        ] {
+            let report = replayed(with(byte, native));
+            assert_eq!(kind(report.result()), expected_kind);
+            assert_eq!(report.claim().identity, digest(byte));
+        }
+        let other = replayed(with(8, completed(42)));
+        assert_ne!(agrees.claim(), other.claim());
+    }
+
+    /// The SHA-256 of `text`, taken here independently of the encoder under
+    /// test.
+    fn digest_of(text: &str) -> crate::ObligationIdentity {
+        crate::ObligationIdentity::from_digest(
+            qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes(),
+        )
+    }
+
+    fn at(node: WireNodeId, operation: ScalarOperation) -> OperatorClaim {
+        claim_raw(node, operation, completed(0))
+    }
+
+    /// FR-357-AC-15: the recomputed obligation identity is the digest of the
+    /// preimage's RFC 8785 text, written out here by hand, for graph-child
+    /// operands and for inline literals; two literals at different positions
+    /// of one application have distinct identities.
+    #[trace("TC-904", "FR-357-AC-15")]
+    #[test]
+    fn tc_904_the_obligation_identity_is_recomputed_from_the_o09_preimage() {
+        let node = WireNodeId::from_digest([0xaa; 32]);
+        let app = "aa".repeat(32);
+        let child = "11".repeat(32);
+
+        let graph = at(
+            node,
+            ScalarOperation::Add {
+                left: ScalarOperand::graph_child(
+                    1,
+                    range(-5, 100),
+                    WireNodeId::from_digest([0x11; 32]),
+                ),
+                right: operand(2),
+            },
+        );
+        let expected = format!(
+            "{{\"arguments\":[\
+{{\"domain\":{{\"lower\":\"-5\",\"tag\":\"range\",\"upper\":\"100\"}},\"operand\":{{\"node_id\":\"{child}\",\"tag\":\"graph_child\"}},\"position\":0}},\
+{{\"domain\":{{\"lower\":\"0\",\"tag\":\"range\",\"upper\":\"100\"}},\"operand\":{{\"node_id\":\"{child}\",\"tag\":\"graph_child\"}},\"position\":1}}],\
+\"node\":\"{app}\",\"obligation_kind\":\"bounded_shadow\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}}}}"
+        );
+        assert_eq!(minted(&graph), digest_of(&expected));
+
+        let literals = at(
+            node,
+            ScalarOperation::Add {
+                left: ScalarOperand::literal(7),
+                right: ScalarOperand::literal(7),
+            },
+        );
+        let literal = |position: u8| {
+            format!(
+                "{{\"domain\":{{\"lower\":\"7\",\"tag\":\"range\",\"upper\":\"7\"}},\"operand\":{{\"node_id\":\"{app}\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}},\"position\":{position},\"tag\":\"inline_literal\"}},\"position\":{position}}}"
+            )
+        };
+        let expected = format!(
+            "{{\"arguments\":[{},{}],\"node\":\"{app}\",\"obligation_kind\":\"bounded_shadow\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}}}}",
+            literal(0),
+            literal(1)
+        );
+        assert_eq!(minted(&literals), digest_of(&expected));
+
+        // Two literals of one application with the same value and range
+        // differ only in position, and a literal and a graph child with the
+        // same position and range differ in operand identity.
+        let swapped = at(
+            node,
+            ScalarOperation::Add {
+                left: ScalarOperand::literal(7),
+                right: ScalarOperand {
+                    identity: crate::OperandIdentity::GraphChild(node),
+                    ..ScalarOperand::literal(7)
+                },
+            },
+        );
+        assert_ne!(minted(&literals), minted(&swapped));
+        let only_second = at(
+            node,
+            ScalarOperation::Add {
+                left: operand(7),
+                right: ScalarOperand::literal(7),
+            },
+        );
+        let only_first = at(
+            node,
+            ScalarOperation::Add {
+                left: ScalarOperand::literal(7),
+                right: operand(7),
+            },
+        );
+        assert_ne!(minted(&only_first), minted(&only_second));
+    }
+
+    /// FR-357-AC-16: a request whose obligation identity is not the
+    /// recomputed one refuses `ScalarIdentity` (`revision-mismatch`) with the
+    /// cause `Obligation` naming both digests, after any member of the
+    /// preimage changes.
+    #[trace("TC-904", "FR-357-AC-16")]
+    #[test]
+    fn tc_904_a_tampered_obligation_identity_is_refused() {
+        let base = claim(add(40, 2), completed(42));
+        let mut other_range = base.clone();
+        if let ScalarOperation::Add { left, .. } = &mut other_range.operation {
+            left.range = range(0, 99);
+        }
+        let mut other_identity = base.clone();
+        if let ScalarOperation::Add { right, .. } = &mut other_identity.operation {
+            right.identity = crate::OperandIdentity::InlineLiteral;
+        }
+        let mut other_key = base.clone();
+        other_key.occurrence = quire_exact::Origin::new(quire_exact::Role::new("expression"), 1);
+        let mut other_kind = base.clone();
+        other_kind.obligation_kind = "other".to_owned();
+        for (label, minted_over) in [
+            ("range", other_range),
+            ("operand identity", other_identity),
+            ("occurrence key", other_key),
+            ("kind", other_kind),
+        ] {
+            let wire = wire_for("inc", &minted_over);
+            let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
+            let report = crate::replay_operator_parity(wire, base.clone());
+            let OperatorParityResult::Refused(refusal) = report.result() else {
+                panic!("{label}: {:?}", report.result());
+            };
+            assert!(
+                matches!(&**refusal, ReplayRefusal::ScalarIdentity(cause)
+                    if matches!(&**cause, crate::ScalarIdentityMismatch::Obligation { claimed, recomputed }
+                        if *claimed == sent_id && *recomputed == minted(&base))),
+                "{label}: {refusal:?}"
+            );
+            assert_eq!(refusal.code(), Code::StaleDependency, "{label}");
+            assert_eq!(refusal.cause(), Some("revision-mismatch"), "{label}");
+            let text = refusal.to_string();
+            assert!(
+                text.contains(&sent_id.to_string()) && text.contains(&minted(&base).to_string()),
+                "{text}"
+            );
+            assert_eq!(report.claim().obligation, sent_id);
+        }
+    }
+
+    fn mismatch_of(report: &crate::OperatorParityReport) -> &crate::ScalarIdentityMismatch {
+        let OperatorParityResult::Refused(refusal) = report.result() else {
+            panic!("expected a refusal: {:?}", report.result());
+        };
+        let ReplayRefusal::ScalarIdentity(cause) = &**refusal else {
+            panic!("expected ScalarIdentity: {refusal:?}");
+        };
+        assert_eq!(refusal.code(), Code::StaleDependency);
+        assert_eq!(refusal.cause(), Some("revision-mismatch"));
+        cause
+    }
+
+    /// A claim at `inc`'s `+` node: `x` (a graph child) and the literal `1`
+    /// (also a graph node in this package), replayed with its minted
+    /// identity.
+    fn refused_claim(claim: OperatorClaim) -> crate::OperatorParityReport {
+        let wire = wire_for("inc", &claim);
+        crate::replay_operator_parity(wire, claim)
+    }
+
+    /// FR-357-AC-17: the application node and its operator must be the
+    /// recompiled package's, even under a correctly minted identity.
+    #[trace("TC-904", "FR-357-AC-17")]
+    #[test]
+    fn tc_904_a_claim_on_another_node_or_operator_is_refused_before_the_identity() {
+        let mut missing = claim(add(1, 2), completed(3));
+        missing.node = WireNodeId::from_digest([1; 32]);
+        assert!(matches!(
+            mismatch_of(&refused_claim(missing)),
+            crate::ScalarIdentityMismatch::Node { .. }
+        ));
+        let mut other_operator = claim(add(1, 2), completed(3));
+        other_operator.operation = mul(1, 2);
+        assert!(matches!(
+            mismatch_of(&refused_claim(other_operator)),
+            crate::ScalarIdentityMismatch::Operator { .. }
+        ));
+    }
+
+    /// FR-357-AC-17: the occurrence key must be one of the node's.
+    #[trace("TC-904", "FR-357-AC-17")]
+    #[test]
+    fn tc_904_an_occurrence_the_node_does_not_have_is_refused() {
+        for occurrence in [
+            quire_exact::Origin::new(quire_exact::Role::new("expression"), 1),
+            quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
+        ] {
+            let mut claim = claim(add(1, 2), completed(3));
+            claim.occurrence = occurrence.clone();
+            let report = refused_claim(claim);
+            assert!(
+                matches!(mismatch_of(&report), crate::ScalarIdentityMismatch::Occurrence { occurrence: found, .. } if *found == occurrence),
+                "{:?}",
+                report.result()
+            );
+        }
+    }
+
+    /// FR-357-AC-17: a `GraphChild` operand must be the application's child
+    /// at its position.
+    #[trace("TC-904", "FR-357-AC-17")]
+    #[test]
+    fn tc_904_a_graph_child_that_is_not_the_nodes_child_is_refused() {
+        let node = node_of("quire.op.integer.add");
+        let children = children_of(node);
+        let mut swapped = claim(add(1, 2), completed(3));
+        if let ScalarOperation::Add { left, right } = &mut swapped.operation {
+            left.identity = crate::OperandIdentity::GraphChild(children[1]);
+            right.identity = crate::OperandIdentity::GraphChild(children[0]);
+        }
+        let report = refused_claim(swapped);
+        assert!(
+            matches!(mismatch_of(&report), crate::ScalarIdentityMismatch::OperandChild { position: 0, claimed, found: Some(found), .. } if *claimed == children[1] && *found == children[0]),
+            "{:?}",
+            report.result()
+        );
+        let mut invented = claim(add(1, 2), completed(3));
+        if let ScalarOperation::Add { right, .. } = &mut invented.operation {
+            right.identity = crate::OperandIdentity::GraphChild(WireNodeId::from_digest([7; 32]));
+        }
+        assert!(matches!(
+            mismatch_of(&refused_claim(invented)),
+            crate::ScalarIdentityMismatch::OperandChild { position: 1, .. }
+        ));
+    }
+
+    /// FR-357-AC-17: an `InlineLiteral` operand must be an inline integer
+    /// literal of the node at its position, with the literal's value as its
+    /// value and its singleton range. This package lowers every operand as a
+    /// node, so a claim of an inline literal refuses; the application's JSON
+    /// is replaced by hand for the literal cases.
+    #[trace("TC-904", "FR-357-AC-17")]
+    #[test]
+    fn tc_904_an_inline_literal_the_node_does_not_have_is_refused() {
+        let report = refused_claim(claim(
+            ScalarOperation::Add {
+                left: operand(1),
+                right: ScalarOperand::literal(1),
+            },
+            completed(2),
+        ));
+        assert!(
+            matches!(
+                mismatch_of(&report),
+                crate::ScalarIdentityMismatch::NotInlineLiteral { position: 1, .. }
+            ),
+            "{:?}",
+            report.result()
+        );
+
+        let child = WireNodeId::from_digest([0x22; 32]);
+        let application = WireNodeId::from_digest([0xaa; 32]);
+        let body = serde_json::json!({"body": {"arguments": [
+            {"term": "reference", "target": {"digest": child.to_string()}},
+            {"term": "literal", "value_kind": "integer", "value": "7"},
+        ]}});
+        let check = |operation: ScalarOperation| {
+            super::super::scalar_site::check_operands(&body, application, &operation)
+        };
+        let mixed = |value: i64| ScalarOperation::Add {
+            left: ScalarOperand::graph_child(5, range(0, 100), child),
+            right: ScalarOperand::literal(value),
+        };
+        // A graph child and an inline literal together pass.
+        assert!(check(mixed(7)).is_ok());
+        // A different value, and a literal whose range is not the singleton.
+        assert!(matches!(
+            check(mixed(8)),
+            Err(crate::ScalarIdentityMismatch::LiteralValue { position: 1, ref found, .. }) if found == "7"
+        ));
+        let mut wide = mixed(7);
+        if let ScalarOperation::Add { right, .. } = &mut wide {
+            right.range = range(0, 9);
+        }
+        assert!(matches!(
+            check(wide),
+            Err(crate::ScalarIdentityMismatch::LiteralValue { position: 1, .. })
+        ));
+        // The same operands in the other order name a literal where the node
+        // has a reference.
+        let reversed = ScalarOperation::Add {
+            left: ScalarOperand::literal(7),
+            right: ScalarOperand::graph_child(5, range(0, 100), child),
+        };
+        assert!(matches!(
+            check(reversed),
+            Err(crate::ScalarIdentityMismatch::NotInlineLiteral { position: 0, .. })
+        ));
+        // A claim of one operand on a node of two.
+        assert!(matches!(
+            check(negate(1)),
+            Err(crate::ScalarIdentityMismatch::OperandCount {
+                claimed: 1,
+                found: 2,
+                ..
+            })
+        ));
+    }
+
+    /// FR-357-AC-18: a claimed identity and a preimage the encoder refuses
+    /// (an occurrence ordinal beyond 2^53) refuse with the typed encoding
+    /// cause, whatever identity was claimed, the all-zero one included; a
+    /// zero identity over a preimage that encodes is a mismatch.
+    #[trace("TC-904", "FR-357-AC-18")]
+    #[test]
+    fn tc_904_a_preimage_the_encoder_refuses_never_yields_an_identity() {
+        let verify = super::super::operator_parity::verify_obligation;
+        let zero = crate::ObligationIdentity::from_digest([0; 32]);
+        let mut huge = claim(add(1, 2), completed(3)).identity(zero);
+        huge.occurrence =
+            quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
+        assert!(matches!(
+            verify(&huge, zero),
+            Err(crate::ScalarIdentityMismatch::Encoding(
+                crate::IdentityEncodeError::IntegerBeyondEncoder { magnitude }
+            )) if magnitude == i128::from(1_u64 << 60)
+        ));
+        let sane = claim(add(1, 2), completed(3)).identity(zero);
+        assert!(matches!(
+            verify(&sane, zero),
+            Err(crate::ScalarIdentityMismatch::Obligation { .. })
+        ));
+        // The same through the entry: a huge ordinal is no occurrence of the
+        // node, so the membership check refuses first, and it still refuses.
+        let mut claim = claim(add(1, 2), completed(3));
+        claim.occurrence =
+            quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
+        let mut wire = parity("inc", 3);
+        wire.obligation_identity = [0; 32];
+        let report = crate::replay_operator_parity(wire, claim);
+        assert_eq!(kind(report.result()), "refused");
     }
 }
