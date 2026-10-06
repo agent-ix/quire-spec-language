@@ -1366,7 +1366,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "thiserror",
 ]
 
@@ -1391,7 +1391,7 @@ dependencies = [
  "qsl-replay",
  "qsl-semantics",
  "quire-canonical",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-semantic-value",
  "serde_json",
  "sha2",
@@ -1405,7 +1405,7 @@ dependencies = [
  "logos",
  "qsl-attrs",
  "qsl-foundation",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "serde_json",
 ]
 
@@ -1421,7 +1421,7 @@ dependencies = [
  "qsl-package",
  "qsl-semantics",
  "quire-canonical",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-semantic-value",
  "serde",
  "serde_json",
@@ -1437,7 +1437,7 @@ dependencies = [
  "proc-macro2",
  "qsl-cst",
  "qsl-foundation",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-walk",
  "syn 2.0.119",
 ]
@@ -1448,7 +1448,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "qsl-attrs",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "serde",
  "sha2",
  "thiserror",
@@ -1466,7 +1466,7 @@ dependencies = [
  "qsl-semantics",
  "quire-canonical",
  "quire-contract-model",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-semantic-value",
  "serde",
  "serde_json",
@@ -1489,7 +1489,7 @@ dependencies = [
  "qsl-source",
  "quire-canonical",
  "quire-contract-model",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-semantic-value",
  "serde",
  "serde_json",
@@ -1503,7 +1503,7 @@ dependencies = [
  "ix-trace-rs",
  "qsl-foundation",
  "qsl-semantics",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "tempfile",
  "thiserror",
 ]
@@ -1523,7 +1523,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "quire-canonical",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-semantic-value",
  "quire-walk",
  "serde",
@@ -1612,7 +1612,19 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://www.github.com/agent-ix/quire-exact?rev=13951d6909266bbd1cce82932ba516c738db4460#13951d6909266bbd1cce82932ba516c738db4460"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#cb51a153f9555ffc5686c7932a2a9381ce6d4c4d"
+dependencies = [
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "thiserror",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "quire-exact"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0#07ba6fc4bb8122f0f66a2284015def2dfb6f96c0"
 dependencies = [
  "num-bigint",
  "num-integer",
@@ -1658,7 +1670,7 @@ version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-semantic-value?rev=e0ada80708fe73469923a9d6c2263cfebc0087a0#e0ada80708fe73469923a9d6c2263cfebc0087a0"
 dependencies = [
  "quire-canonical",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?branch=main)",
  "serde",
  "thiserror",
 ]
@@ -1684,7 +1696,7 @@ dependencies = [
  "qsl-source",
  "quire-canonical",
  "quire-contract-model",
- "quire-exact",
+ "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-exact?rev=07ba6fc4bb8122f0f66a2284015def2dfb6f96c0)",
  "quire-semantic-value",
  "serde",
  "serde_json",

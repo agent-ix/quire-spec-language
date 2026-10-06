@@ -11,7 +11,7 @@ exclude = ["fuzz"]
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", default-features = false }
 # The shared no_std exact-value kernel and the semantic-value leaf above it,
 # each its own repository so IR, RT and CG depend on them without the QSL repo.
-quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
+quire-exact = { git = "https://github.com/agent-ix/quire-exact", rev = "07ba6fc4bb8122f0f66a2284015def2dfb6f96c0" }
 quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", rev = "e0ada80708fe73469923a9d6c2263cfebc0087a0" }
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
 # its own repository so IR, RT and CG depend on it without the QSL repo.
@@ -161,8 +161,3 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
 
 [lints.clippy]
 all = "deny"
-
-# Temporary: pins quire-exact at the exact rev of the single-shot denial change.
-# The www host spelling makes this a distinct source from the one it patches (cargo refuses a same-URL patch); remove once that change is on quire-exact main.
-[patch."https://github.com/agent-ix/quire-exact"]
-quire-exact = { git = "https://www.github.com/agent-ix/quire-exact", rev = "13951d6909266bbd1cce82932ba516c738db4460" }
