@@ -56,6 +56,7 @@ mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod operator_parity;
+mod scalar_site;
 pub use operator_parity::{replay_operator_parity, ScalarIdentityMismatch};
 
 mod value_parity;
