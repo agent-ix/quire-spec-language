@@ -176,4 +176,4 @@ writes the checked `call` node codegen's FR-021 oracle generator reads.
 AC-6 and AC-7 (ADR-015 D-4) are implemented;
 TC-444 step 7 passes locally.
 
-AC-11 (QSL-642, integer bounds up to i128) is specified and not implemented.
+AC-11 (QSL-642, integer bounds up to i128) is implemented; TC-913 passes locally.

@@ -911,8 +911,9 @@ of each declared type's name for FR-096, and reports every error it finds.
 Remaining work:
 
 - QSL-642's i128 ceiling and the `i128::MIN` fold (FR-091-AC-36 to AC-38)
-  are specified and not implemented: the `IntegerOutsideI128` cause does
-  not exist yet.
+  are implemented: S2 builds the folded literal, the assembler refuses a
+  bound and `Typer` a literal with `IntegerOutsideI128`. The IR wire still
+  carries `i64` until IR-662 (FR-033-AC-6, TC-912).
 - AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
   publishes the topology causes the topology cause reports
   `invalid_package` with the informational cause `unit-graph-topology`.

@@ -675,7 +675,7 @@ Key: `03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9`
 
 Key: `9f42fd255e4db2821dffdd2da201755df67dec54e8b0814f8160cab40a44b29b`
 
-**L7**: literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded)
+**L7**: literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091)
 
 ```json
 {"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
@@ -1052,10 +1052,9 @@ implemented: lowering writes `predicate` for a declaration of kind
 `Predicate` outside a recursion group, and a source enum's declaration and
 member nodes reach lowering through the assembler's `enums`.
 
-QSL-642's wide integers (AC-14, AC-15) are specified and not implemented:
-integer values are already decimal strings, and keying still refuses a
-counter above 2^53-1 with `UnsafeInteger` instead of writing its decimal
-string.
+QSL-642's wide integers (AC-14, AC-15) are implemented: integer values are
+decimal strings, and a counter is a JSON number up to 2^53-1 and its decimal
+string beyond.
 
 ## Open Questions
 
