@@ -198,7 +198,10 @@ pub trait NodeIdentityPreimage {
     ///
     /// # Errors
     ///
-    /// As [`preimage_digest`].
+    /// [`NominalRefusal::Limit`] naming `identity.input_bytes` when the
+    /// encoding would exceed that byte limit, [`NominalRefusal::Allocation`]
+    /// when a heap reservation fails, and a non-canonical preimage when it
+    /// has no RFC 8785 encoding.
     fn digest(&self) -> Result<[u8; 32], NominalRefusal>;
 }
 
@@ -251,7 +254,8 @@ fn nominal_refusal(error: quire_canonical::Error) -> NominalRefusal {
 /// # Errors
 ///
 /// [`NominalRefusal::Limit`] naming `identity.input_bytes` when the bytes
-/// would exceed the limit, and a non-canonical preimage when `value` has no
+/// would exceed the limit, [`NominalRefusal::Allocation`] when a heap
+/// reservation fails, and a non-canonical preimage when `value` has no
 /// RFC 8785 encoding.
 pub(crate) fn preimage_digest(value: &impl Encode) -> Result<[u8; 32], NominalRefusal> {
     quire_canonical::sha256(value, IDENTITY_LIMITS)
