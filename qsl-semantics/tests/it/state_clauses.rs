@@ -1295,6 +1295,33 @@ fn run_frame_clause_editing(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_frame_clause_limited(
+        clause_name,
+        pre_objects,
+        post_objects,
+        self_key,
+        created,
+        deleted,
+        edit_invocation,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+/// [`run_frame_clause_editing`] under the given `limits`.
+#[allow(clippy::too_many_arguments)]
+fn run_frame_clause_limited(
+    clause_name: &str,
+    pre_objects: &[(&str, i64, Option<&str>)],
+    post_objects: &[(&str, i64, Option<&str>)],
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+    edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let document = frame_test_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -1372,7 +1399,7 @@ fn run_frame_clause_editing(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &provisions,
         &selection,
-        qsl_semantics::model::observation::ObservationLimits::default(),
+        limits,
     )
 }
 
@@ -4828,4 +4855,159 @@ fn undeclared_population_in_created_still_refuses_delta_disagreement() {
         },
     );
     assert_tc465_refused(result, "population_delta_mismatch", "delta-disagreement");
+}
+
+// ---------------------------------------------------------------------------
+// FR-106 check 6.5 (FR-106-AC-12, FR-106-AC-13): inputs are refused, outputs
+// are evidence.
+// ---------------------------------------------------------------------------
+
+fn witness_limits() -> qsl_semantics::model::observation::ObservationLimits {
+    qsl_semantics::model::observation::ObservationLimits {
+        post_state: qsl_semantics::model::observation::PostStateRange::Witness,
+        ..qsl_semantics::model::observation::ObservationLimits::default()
+    }
+}
+
+/// The wrapping debit: `child.versionNumber` 0 to -1 under `AttemptUpdatePost`.
+fn run_wrapping_debit(
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_frame_clause_limited(
+        "AttemptUpdatePost",
+        &[("root", 1, None), ("child", 0, Some("root"))],
+        &[("root", 1, None), ("child", -1, Some("root"))],
+        "child",
+        &[],
+        &[],
+        |bytes| bytes,
+        limits,
+    )
+}
+
+/// FR-106-AC-12: under `Witness` the wrapping debit's post snapshot admits
+/// and reports the exact -1 with its object, field and declared range.
+#[trace("TC-465", "FR-106-AC-12")]
+#[test]
+fn a_witnessed_post_state_value_is_admitted_and_reported_exactly() {
+    let admitted = run_wrapping_debit(witness_limits()).expect("the post snapshot admits");
+    let post = admitted
+        .post
+        .expect("a postcondition admits a post snapshot");
+    let [violation] = &post.out_of_range[..] else {
+        panic!("expected one range violation, got {:?}", post.out_of_range);
+    };
+    assert_eq!(violation.object.object().as_str(), "child");
+    assert_eq!(violation.field.name, "versionNumber");
+    assert_eq!(violation.index, None);
+    assert_eq!(violation.range.lower().to_string(), "0");
+    assert_eq!(violation.range.upper().to_string(), "1000");
+    assert_eq!(violation.observed.to_string(), "-1");
+    let pre = admitted.pre.expect("a postcondition admits a pre snapshot");
+    assert!(pre.out_of_range.is_empty());
+}
+
+/// FR-106-AC-13: the default limits refuse the same post snapshot.
+#[trace("TC-465", "FR-106-AC-13")]
+#[test]
+fn the_default_limits_refuse_an_out_of_range_post_state_value() {
+    let result =
+        run_wrapping_debit(qsl_semantics::model::observation::ObservationLimits::default());
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
+/// FR-106-AC-12: witnessing never reaches the pre snapshot.
+#[trace("TC-465", "FR-106-AC-12")]
+#[test]
+fn an_out_of_range_pre_state_value_refuses_under_witnessing() {
+    let result = run_frame_clause_limited(
+        "AttemptUpdatePost",
+        &[("root", 1, None), ("child", 1001, Some("root"))],
+        &[("root", 1, None), ("child", 2, Some("root"))],
+        "child",
+        &[],
+        &[],
+        |bytes| bytes,
+        witness_limits(),
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+}
+
+/// FR-106-AC-12: an out-of-range operation argument refuses
+/// `invalid_runtime_input`/`invalid-value` naming the parameter, under the
+/// default limits and under `Witness`, while `1000` admits.
+#[trace("TC-465", "FR-106-AC-12")]
+#[test]
+fn an_out_of_range_argument_refuses_whatever_the_limits() {
+    let probe_int = operation(
+        "probeInt",
+        json!([operation_parameter(
+            "probeInt",
+            "amount",
+            &version_number_identity()
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        probe_int,
+    ]));
+    let clauses = format!(
+        "{TC465_CLAUSES}pre AmountHolds using v on Config::ConfigVersion::probeInt {{ true }}\n"
+    );
+    let snapshot_bytes = tc464_chain(&document, "pre", true);
+    let snapshot = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&snapshot_bytes),
+        ..frame_label("pre-call-snap")
+    };
+    let run = |amount: &str, limits| {
+        run_tc465_with_clauses(
+            &document,
+            &clauses,
+            "AmountHolds",
+            qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
+                snapshot: snapshot.clone(),
+                self_object: qsl_semantics::model::observation::SelectedObject {
+                    population: TC464_CONFIG_HISTORY.to_owned(),
+                    key: "a".to_owned(),
+                },
+                parameters: BTreeMap::from([(
+                    quire_exact::Identifier::new("amount").unwrap(),
+                    qsl_semantics::model::observation::SnapshotValue::Integer(amount.to_owned()),
+                )]),
+            },
+            BTreeMap::from([(snapshot.digest, snapshot_bytes.clone())]),
+            BTreeMap::new(),
+            limits,
+        )
+    };
+    for limits in [
+        qsl_semantics::model::observation::ObservationLimits::default(),
+        witness_limits(),
+    ] {
+        let record =
+            assert_tc465_refused(run("-1", limits), "invalid_runtime_input", "invalid-value");
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some("amount")
+        );
+        assert!(run("1000", limits).is_ok());
+    }
 }

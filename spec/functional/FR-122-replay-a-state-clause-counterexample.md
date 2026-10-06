@@ -106,7 +106,8 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   `occurrence_key`,
   the identity and digest of every document admission read, for a
   `PreCall` observation its self object and parameter values, the
-  evaluated value when there is one, and the evaluation charges.
+  evaluated value when there is one, the post-state range violations when
+  there are any, and the evaluation charges.
 - A result that reproduces (`false`) carries the QSpec FR-351 record FR-268
   re-derives exactly when the clause's settlement basis is decisive
   (FR-265), and no record otherwise. A result that settles `inconclusive`
@@ -143,7 +144,8 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   (`clause`, `observation`), reading every document only from the byte
   provision by its `sha256-jcs` digest, under FR-106's default
   `ObservationLimits` (no `quire.value.accounting/v1` counter names an
-  admission limit). For an `Invocation` observation, admission runs
+  admission limit) with post-state witnessing selected
+  (`post_state: Witness`). For an `Invocation` observation, admission runs
   FR-106's frame and delta check (check 11) over the pre and post
   snapshots; a `PreCall` observation has no post snapshot and admission
   runs no frame check.
@@ -157,20 +159,35 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   fresh evaluation meter built from the request's
   `quire.value.accounting/v1` limits, and compare verdicts as FR-072 does. The counterexample refuted the clause, so the
   proved verdict is `violation`.
-  - If the evaluation completes `false` and FR-268's witness comparison and
+  - If the post snapshot holds no range violation, the evaluation completes
+    `false` and FR-268's witness comparison and
     separation check pass, then the executor SHALL settle the
     agreement of the envelope's arm: `reproduced-with-evaluated-witness` on
     the `Witness` arm, `reproduced-without-witness` on the `Input` arm. The
     agreement is between the proved verdict and the clause's evaluation
     over the admitted documents.
-  - If the evaluation completes `true`, then the executor SHALL settle
+  - If the post snapshot of an `Invocation` observation holds an integer
+    outside its field's declared range (FR-106 check 6.5's post-state
+    rule), then the executor SHALL settle the agreement of the envelope's
+    arm, `Violation`, on that alone: the range violation is the witness
+    of a violation, and it takes precedence over each of the verdict
+    bullets below. The clause still runs over the exact value, never a
+    coerced or clamped one, and its own outcome is reported alongside:
+    the evaluated boolean when it completes one, no value when it
+    refuses, runs out of budget or faults. The result SHALL name each
+    range violation (object, field, declared range, observed value) in
+    `range_violations`, and carries no QSpec FR-351 record. Pre-state
+    values and arguments out of range are still refused by admission.
+  - If the post snapshot holds no range violation and the evaluation completes
+    `true`, then the executor SHALL settle
     `inconclusive` with cause `Verdicts` (`violation` proved, `success`
     replayed), never repaired (FR-072).
-  - If the evaluation completes no value (a `refused`, `incomplete` or
+  - If the post snapshot holds no range violation and the evaluation completes no value (a `refused`, `incomplete` or
     `undefined` S6a outcome, or a family result), then the executor SHALL
     settle `inconclusive` with cause `NoValue` (FR-072). An exhausted
     evaluation meter is an `incomplete` outcome and settles this way.
-  - If the evaluation ends in an outcome FR-100 handles as an internal
+  - If the post snapshot holds no range violation and the evaluation ends in an
+    outcome FR-100 handles as an internal
     failure (the kernel `Refusal::CheckedInvariant`, or
     `CallFailure::Fault`), then the executor SHALL refuse with the
     `InternalFault` and settle no result.
@@ -191,6 +208,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 | FR-122-AC-4 | Precondition: over TC-466 step 3's `probe` unit (precondition `ReachesTarget`, `reaches(self, target, parent)`, over the chain `a -> b -> c`), an envelope whose observation is `PreCall` over the chain's pre snapshot with `self` `a` and `target` `a` settles `reproduced-with-evaluated-witness`, holding that one snapshot's identity and digest and no post snapshot; with `target` `c` it settles `inconclusive`, `Verdicts`. The result holds `self` `a` and `target` `a` as the values it reproduced. Form mismatches refuse `wrong_snapshot`/`wrong-observation` with no admission (the observation's documents absent from the byte provision change none of these refusals): `ReachesTarget` with an `Invocation` observation over the `probe` invocation, `VersionUnchanged` with a `PreCall` observation, and `VersionUnchanged` with a `Current` observation over healthy-parent's snapshot. | Test (TC-517) |
 | FR-122-AC-5 | Admission refusals settle no result: the `VersionUnchanged` envelope over the forbidden-parent-change invocation refuses with FR-106's `frame_violation`/`unauthorized-change` record naming `child` and `parent`; the changed-version envelope with its pre snapshot absent from the byte provision refuses with FR-106's `unavailable_observation` record; with its invocation bytes edited under the same digest it refuses `stale_dependency`/`content-mismatch`; the `ParentOrder` envelope over incomplete-population's snapshot (`complete: false`) refuses with FR-106's `Incomplete` `incomplete_population`/`incomplete-scope` record. | Test (TC-517) |
 | FR-122-AC-6 | Replaying one envelope twice gives equal results. `StateClauseCounterexample` implements `FamilyPayload`, the envelope carries it as its generic parameter with no string-keyed field, and its `observation` is a sum of the `PreCall`, `Invocation` and `Current` inputs, so a payload holds exactly one. | Test (TC-517) |
+| FR-122-AC-7 | Over FR-108's ConfigVersion unit (`versionNumber` is `Int[0, 1000]`), `VersionUnchanged` over an invocation taking `child.versionNumber` from 0 to a native post-state of -1 settles `reproduced-with-evaluated-witness`, holding the evaluated `false` (the clause ran over the exact -1; clamped to 0 it would hold) and one range violation naming `child`, `versionNumber`, `[0, 1000]` and -1. Over an invocation taking `root.versionNumber` from 1000 to 1001 with `child` unchanged it settles `reproduced-with-evaluated-witness` holding the evaluated `true` and one range violation naming `root`, `[0, 1000]` and 1001. An invocation whose pre-state holds `child.versionNumber` 1001 still refuses `invalid_runtime_input`/`invalid-value` naming `child` and `versionNumber`. Replayed with the request's evaluation budget at zero (on both arms), the wrapping debit still settles reproduced, holding no evaluated value and the one range violation. An in-range post-state reports no range violation and settles as FR-122-AC-1 and FR-122-AC-2 say. | Test (TC-517) |
 
 ## Dependencies
 

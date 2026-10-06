@@ -508,6 +508,29 @@ impl WitnessArmResult {
         }
     }
 
+    /// FR-122: settles a state-clause replay whose post snapshot holds an
+    /// integer outside its declared range (FR-106 check 6.5). The range
+    /// violation is itself the witness, so the arm settles
+    /// `ReproducedWithEvaluatedWitness` with category `Violation`
+    /// whatever the clause did over the exact value: `value` is the
+    /// clause's own boolean when it completed one, `None` when it refused,
+    /// ran out of budget or faulted. It carries no FR-351 record.
+    pub fn settle_range_violation(
+        value: Option<EvaluatedValue>,
+        resolved_regions: Vec<SourceRegion>,
+        charges: ScalarLimits,
+    ) -> Self {
+        Self {
+            settlement: WitnessSettlement::ReproducedWithEvaluatedWitness,
+            disagreement: None,
+            category: Category::Violation,
+            value,
+            record: None,
+            resolved_regions,
+            charges,
+        }
+    }
+
     /// Whether this arm settled with evaluated-witness backend evidence or
     /// went inconclusive.
     pub fn settlement(&self) -> WitnessSettlement {
@@ -581,6 +604,24 @@ impl InputArmResult {
             },
             disagreement,
             category,
+            value,
+            resolved_regions,
+            charges,
+        }
+    }
+
+    /// FR-122: [`WitnessArmResult::settle_range_violation`]'s `Input`-arm
+    /// counterpart: settles `ReproducedWithoutWitness` with category
+    /// `Violation`.
+    pub fn settle_range_violation(
+        value: Option<EvaluatedValue>,
+        resolved_regions: Vec<SourceRegion>,
+        charges: ScalarLimits,
+    ) -> Self {
+        Self {
+            settlement: InputSettlement::ReproducedWithoutWitness,
+            disagreement: None,
+            category: Category::Violation,
             value,
             resolved_regions,
             charges,

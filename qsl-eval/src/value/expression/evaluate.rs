@@ -47,7 +47,9 @@ use quire_exact::{
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
-use quire_semantic_value::declaration::{operand_value, CompositeShape, FieldRef};
+use quire_semantic_value::declaration::{
+    operand_value, CompositeShape, EqualityOperator, FieldRef,
+};
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
@@ -443,6 +445,10 @@ pub(crate) struct Machine<'a, 'm> {
     /// How many queries and folds are in progress: a node is on the
     /// claim's own level only when none is.
     iterations: usize,
+    /// The `Attribute` nodes whose latest read came from a slot FR-106
+    /// check 6.5 witnessed out of range: the provenance an equality needs
+    /// before it compares such an operand instead of faulting.
+    witnessed_reads: std::collections::BTreeSet<Location>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -523,6 +529,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             imported: Vec::new(),
             trail: None,
             iterations: 0,
+            witnessed_reads: std::collections::BTreeSet::new(),
         }
     }
 
@@ -1283,12 +1290,31 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let left = self.pop()?;
                 Value::Boolean(self.order(*operator, *kind, &left, &right)?)
             }
-            NodeKind::Equality(_, checked, _, _) => {
+            NodeKind::Equality(operator, checked, left_node, right_node) => {
                 let right = self.pop()?;
                 let left = self.pop()?;
-                Value::Boolean(outcome_into_stop(
-                    checked.evaluate(&left, &right, self.meter),
-                )?)
+                // An integer FR-106 check 6.5 witnessed outside its field's
+                // declared range does not fit the static type the kernel's
+                // checked equality requires of its operand. Integers
+                // compare by value whatever their declared range, so such
+                // a pair compares directly. Only a witnessed value gets
+                // this: any other operand outside its type still faults.
+                let outside_declared_range = |id, value: &Value| {
+                    matches!(value, Value::Integer(_))
+                        && !node.at(id).value_type().admits(value)
+                        && self.reads_witnessed(node.at(id))
+                };
+                match (&left, &right) {
+                    (Value::Integer(l), Value::Integer(r))
+                        if outside_declared_range(*left_node, &left)
+                            || outside_declared_range(*right_node, &right) =>
+                    {
+                        Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
+                    }
+                    _ => Value::Boolean(outcome_into_stop(
+                        checked.evaluate(&left, &right, self.meter),
+                    )?),
+                }
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;
@@ -1304,7 +1330,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let slot = composite.slots().get(*index).ok_or_else(invariant)?;
-                let value = Self::project(slot, *optional, node.value_type())?;
+                let value = Self::project(slot, *optional, node.value_type(), false)?;
                 self.note_field(&composite, *index, &value);
                 value
             }
@@ -1333,12 +1359,18 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
-                let slot = self
-                    .objects_for(node)?
+                let objects = self.objects_for(node)?;
+                let slot = objects
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
-                let value = Self::project(slot, *optional, node.value_type())?;
+                let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
+                if witnessed {
+                    self.witnessed_reads.insert(node.location().clone());
+                } else {
+                    self.witnessed_reads.remove(node.location());
+                }
+                let value = Self::project(slot, *optional, node.value_type(), witnessed)?;
                 self.note_member(node, &reference, &field.name, &value);
                 value
             }
@@ -1863,9 +1895,20 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn project(slot: &FieldValue, optional: bool, value_type: &ValueType) -> Result<Value, Halt> {
+    /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
+    /// outside its declared range, which an optional slot's checked
+    /// construction would refuse. Every other slot is checked as before.
+    fn project(
+        slot: &FieldValue,
+        optional: bool,
+        value_type: &ValueType,
+        witnessed: bool,
+    ) -> Result<Value, Halt> {
         match (slot, optional, value_type) {
             (FieldValue::Present(value), false, _) => Ok(value.clone()),
+            (FieldValue::Present(value), true, ValueType::Option(payload)) if witnessed => Ok(
+                OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
+            ),
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
                 OptionValue::present((**payload).clone(), value.clone()).map_err(|_| invariant())
             }
@@ -1873,6 +1916,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(OptionValue::none((**payload).clone()))
             }
             _ => Err(invariant()),
+        }
+    }
+
+    /// Whether `operand` reads a slot FR-106 check 6.5 witnessed out of
+    /// range: an `Attribute` node whose latest read was witnessed, seen
+    /// through `value(..)`.
+    fn reads_witnessed(&self, operand: CheckedNode<'_>) -> bool {
+        match operand.kind() {
+            NodeKind::Attribute { .. } => self.witnessed_reads.contains(operand.location()),
+            NodeKind::Value(inner) => self.reads_witnessed(operand.at(*inner)),
+            _ => false,
         }
     }
 
@@ -3075,5 +3129,71 @@ mod tests {
                 ValuePathStep::OptionValue,
             ]))
         );
+    }
+    /// FR-106 check 6.5: only a witnessed optional slot skips the checked
+    /// construction; the same out-of-range integer in an unwitnessed slot,
+    /// and a value of the wrong kind in any slot, is a broken invariant.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn project_relaxes_only_a_witnessed_optional_slot() {
+        let range = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64))
+                .expect("a non-empty interval"),
+        );
+        let optional = ValueType::option(range);
+        let outside = FieldValue::Present(Value::Integer(Integer::from(-1_i64)));
+        assert!(Machine::project(&outside, true, &optional, true).is_ok());
+        assert!(Machine::project(&outside, true, &optional, false).is_err());
+        let wrong_kind = FieldValue::Present(Value::Boolean(true));
+        assert!(Machine::project(&wrong_kind, true, &optional, false).is_err());
+    }
+    /// FR-106 check 6.5: an equality compares an out-of-type integer by
+    /// value only when the operand reads a witnessed slot. Two integers
+    /// outside `Int[0, 1000]` that no witnessed slot produced (here, passed
+    /// in as arguments that bypass admission) still fault, whether or not
+    /// an equal value was witnessed elsewhere.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn an_unwitnessed_out_of_type_operand_equal_to_a_witnessed_value_still_faults() {
+        let (package, _identity) = population_function_package();
+        let graph = package.graph();
+        let range = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64))
+                .expect("a non-empty interval"),
+        );
+        let expression = graph
+            .check_expression(
+                vec![("x".to_owned(), range.clone()), ("y".to_owned(), range)],
+                &Expression::binary(
+                    qsl_forms::BinaryOperator::Equal,
+                    Expression::name("x".to_owned()),
+                    Expression::name("y".to_owned()),
+                ),
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("x = y checks as a standalone expression");
+        let objects = ObjectEnvironment::default();
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::new();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let outside = Value::Integer(Integer::from(-1_i64));
+        let fault = Machine::with_pre(
+            graph.scope(),
+            graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(
+            expression.root(),
+            expression.slots(),
+            vec![outside.clone(), outside],
+        )
+        .expect_err("operands outside their type with no witnessed read fault");
+        assert_eq!(fault.invariant(), "checked-program-invariant");
     }
 }

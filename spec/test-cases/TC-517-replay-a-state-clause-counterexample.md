@@ -16,7 +16,7 @@ is inconclusive, a precondition replays over its pre state alone, a stale
 envelope identity refuses before admission, and an admission failure
 settles no result.
 
-Scope: FR-122-AC-1 to FR-122-AC-6.
+Scope: FR-122-AC-1 to FR-122-AC-7.
 
 ## Test Procedure
 
@@ -52,6 +52,7 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
    with its invocation bytes edited under the same digest; `ParentOrder` over
    incomplete-population's snapshot.
 6. Step 1's `VersionUnchanged` envelope twice.
+7. `VersionUnchanged` over invocations whose post-state holds `child.versionNumber` -1 (pre 0), `root.versionNumber` 1001 (pre 1000, `child` unchanged), and whose pre-state holds `child.versionNumber` 1001; and over changed-version.
 
 Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 
@@ -86,3 +87,10 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 - Step 6: equal results. `StateClauseCounterexample: FamilyPayload`
   compiles, the envelope has no string-keyed field, and a payload's
   `observation` is one of `PreCall`, `Invocation` or `Current`.
+- Step 7: `reproduced-with-evaluated-witness` holding `false` and one range
+  violation naming `child`, `versionNumber`, `[0, 1000]` and -1;
+  `reproduced-with-evaluated-witness` holding `true` and one range violation
+  naming `root`, `[0, 1000]` and 1001; `invalid_runtime_input`/
+  `invalid-value` naming `child` and `versionNumber`; changed-version holds
+  no range violation.
+

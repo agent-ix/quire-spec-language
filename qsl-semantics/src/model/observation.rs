@@ -91,6 +91,43 @@ pub struct ObservationLimits {
     pub objects_per_document: u64,
     /// The values-per-document ceiling (default 100,000).
     pub values_per_document: u64,
+    /// How an out-of-range post-state integer is admitted (default
+    /// [`PostStateRange::Refuse`]).
+    pub post_state: PostStateRange,
+}
+
+/// FR-106 check 6.5's post-state rule: inputs are refused, outputs are
+/// evidence. A pre-state value and an operation argument outside the
+/// declared `Int[lower, upper]` are always refused `invalid_runtime_input`/
+/// `invalid-value`. A postcondition invocation's post snapshot is what the
+/// subject produced, so an integer outside its declared range there can be
+/// admitted exactly, as an [`OutOfRange`] observation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PostStateRange {
+    /// Refuse the post snapshot's out-of-range integer, as for any input.
+    #[default]
+    Refuse,
+    /// Admit it exactly, never coerced or clamped, and report it in
+    /// [`Observation::out_of_range`].
+    Witness,
+}
+
+/// One integer a post snapshot holds outside its declared `Int[lower,
+/// upper]` range: the witness of a violation of the operation's contract
+/// (FR-106 check 6.5). The value is the exact one the document holds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OutOfRange {
+    /// The object holding the field.
+    pub object: ObjectReference,
+    /// The field: its declaring object type and declared name.
+    pub field: quire_semantic_value::declaration::FieldRef,
+    /// The position of the offending element when the field is a
+    /// sequence, `None` for a scalar field.
+    pub index: Option<usize>,
+    /// The field's declared range.
+    pub range: quire_exact::IntegerInterval,
+    /// The value observed.
+    pub observed: quire_exact::Integer,
 }
 
 impl Default for ObservationLimits {
@@ -100,6 +137,7 @@ impl Default for ObservationLimits {
             nesting_depth: 64,
             objects_per_document: 10_000,
             values_per_document: 100_000,
+            post_state: PostStateRange::Refuse,
         }
     }
 }
@@ -316,6 +354,10 @@ pub struct Observation {
     /// The populations this instant admitted, each with whether it was
     /// declared `complete`.
     pub populations: BTreeMap<String, bool>,
+    /// Every integer this instant holds outside its declared range, in
+    /// walk order: empty unless this is a post instant admitted under
+    /// [`PostStateRange::Witness`].
+    pub out_of_range: Vec<OutOfRange>,
 }
 
 /// The amount [`ObservationLimits`]' four document-shape ceilings actually
@@ -1097,6 +1139,7 @@ fn admit_invariant(
             identity: read.identity,
             environment: environment.environment,
             populations: environment.completeness,
+            out_of_range: environment.out_of_range,
         }),
         pre: None,
         post: None,
@@ -1289,10 +1332,26 @@ fn admit_invocation_documents(
     // postcondition (SR-750 FND-006), never for a `Frame` run, whose
     // operation may delete it.
     let post_self_population = post_self.then_some(self_object.population.as_str());
-    let pre_values =
-        document::admit_population_values(views, types, &pre_snapshot.populations, limits)?;
-    let post_values =
-        document::admit_population_values(views, types, &post_snapshot.populations, limits)?;
+    let pre_values = document::admit_population_values(
+        views,
+        types,
+        &pre_snapshot.populations,
+        limits,
+        PostStateRange::Refuse,
+    )?;
+    let post_values = document::admit_population_values(
+        views,
+        types,
+        &post_snapshot.populations,
+        limits,
+        // Only a postcondition reads the post snapshot as the
+        // subject's output; a frame run refuses as for any input.
+        if post_self {
+            limits.post_state
+        } else {
+            PostStateRange::Refuse
+        },
+    )?;
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,
@@ -1492,6 +1551,7 @@ fn admit_pre_call(
         context.types,
         &snapshot.populations,
         limits,
+        PostStateRange::Refuse,
     )?;
     document::check_population_completeness(
         &snapshot.populations,
@@ -1542,6 +1602,7 @@ fn admit_pre_call(
             identity: input.pre.identity,
             environment: admitted.environment,
             populations: admitted.completeness,
+            out_of_range: admitted.out_of_range,
         }),
         post: None,
         self_object: self_reference,
@@ -1604,11 +1665,13 @@ fn admit_operation(
             identity: admitted.documents.pre.identity,
             environment: admitted.pre.environment,
             populations: admitted.pre.completeness,
+            out_of_range: admitted.pre.out_of_range,
         }),
         post: Some(Observation {
             identity: admitted.documents.post.identity,
             environment: admitted.post.environment,
             populations: admitted.post.completeness,
+            out_of_range: admitted.post.out_of_range,
         }),
         self_object: admitted.self_reference,
         parameters: admitted.parameters,
