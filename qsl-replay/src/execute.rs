@@ -770,7 +770,7 @@ pub(crate) fn run_spine(
     )
     .map_err(refusal)?
     .into_value();
-    let models = spine::select(&parsed, packages, limits.model, &cancel)
+    let models = spine::select(&parsed, packages, limits.intake, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = spine::check(
@@ -847,7 +847,7 @@ fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompile
         .check_unit_owner(&labels(source))
         .map_err(ReplayRefusal::DependencyInput)?;
     let bytes = provided(source)?;
-    let packages = domain_packages(request);
+    let packages = domain_packages(request, limits);
     // Rule 4: the recompile.
     let compiled = run_spine(
         &labels(source),
@@ -903,13 +903,17 @@ fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompile
 /// I1's package input: every entry the byte provision carries under a
 /// `sha256-jcs` digest (QC-1). A state document there is keyed by its raw
 /// bytes' digest, which no model selection names.
-fn domain_packages(request: &ReplayRequest) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
+fn domain_packages(
+    request: &ReplayRequest,
+    limits: &CallerLimits,
+) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
     package_input(
         request
             .byte_provision()
             .entries()
             .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
             .map(|(_, bytes)| bytes),
+        limits.spine.intake,
     )
 }
 

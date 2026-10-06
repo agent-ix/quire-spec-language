@@ -33,6 +33,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use qsl_foundation::IntakeLimits;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::conformance::{resolve_redefinition_target, RedefinitionTargetOutcome};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
@@ -250,13 +251,14 @@ pub fn admit_offer(
         &offer.selection,
         SHA256_JCS_DIGEST_DOMAIN,
         &offer.bytes_by_digest,
+        IntakeLimits::default(),
     )
     .map_err(Box::new)
 }
 
 /// Parse package bytes the way `admit` does (`PackageDocument::parse`).
 pub fn parse_document(bytes: &[u8]) -> Result<PackageDocument, Box<ModelRefusal>> {
-    PackageDocument::parse(bytes).map_err(Box::new)
+    PackageDocument::parse(bytes, IntakeLimits::default()).map_err(Box::new)
 }
 
 /// The per-node reader (`intake::read_records`) over an admitted document.

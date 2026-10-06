@@ -91,6 +91,7 @@ use qsl_foundation::diagnostic::{
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source::Source;
+use qsl_foundation::IntakeLimits;
 use qsl_foundation::Setting;
 use qsl_foundation::SourceIdentity;
 use qsl_foundation::SyntaxLimit;
@@ -450,12 +451,13 @@ pub fn parse(
 pub fn select(
     parsed: &ParsedSource,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
     stage(cancel, &|_| None, |work| {
         let models = charged(cancel, &mut work.i1, || {
-            select_models(parsed, packages, limits, cancel)
+            select_models(parsed, packages, intake, limits, cancel)
         })?;
         Ok(AdmittedModels {
             models,
@@ -613,18 +615,24 @@ fn parse_unit(
 fn select_models(
     parsed: &ParsedSource,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
-    admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel).map_err(
-        |refusal| {
-            Box::new(CompileRefusal::Intake {
-                region: region(raw, refusal.span),
-                refusal,
-            })
-        },
+    admit_unit_with_cancel(
+        &parsed.unit.selections().models,
+        packages,
+        intake,
+        limits,
+        cancel,
     )
+    .map_err(|refusal| {
+        Box::new(CompileRefusal::Intake {
+            region: region(raw, refusal.span),
+            refusal,
+        })
+    })
 }
 
 /// E4 over one checked package, refusing a wire that would omit nodes: a
@@ -684,7 +692,7 @@ pub(crate) fn compose(
     )
     .map_err(refusal)?
     .into_value();
-    let models = select(&parsed, packages, limits.model, &cancel)
+    let models = select(&parsed, packages, limits.intake, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = check(
@@ -844,7 +852,7 @@ impl<'a> Resolution<'a> {
             )
         })?;
         let models = charged(cancel, &mut self.work.i1, || {
-            select_models(&parsed, packages, limits.model, cancel)
+            select_models(&parsed, packages, limits.intake, limits.model, cancel)
         })?;
         // A library is compiled independently of whoever imports it, so its
         // recomputed `package_id` cannot depend on the importer: it is

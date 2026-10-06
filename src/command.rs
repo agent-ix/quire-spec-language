@@ -556,6 +556,7 @@ fn complete(
         documents
             .iter()
             .map(|document| document.source().text().as_bytes()),
+        qsl_replay::spine::SpineLimits::default().intake,
     );
     let libraries = library_sources(request, intake)?;
     // A refusal is rendered over the source its region is in, by that
@@ -608,9 +609,10 @@ fn complete(
     )
     .map_err(failure)?
     .into_value();
-    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
-        .map_err(failure)?
-        .into_value();
+    let models =
+        qsl_replay::spine::select(&parsed, &packages, limits.intake, limits.model, &cancel)
+            .map_err(failure)?
+            .into_value();
     let checked = qsl_replay::spine::check(
         &parsed,
         &models,
@@ -944,6 +946,7 @@ fn run_complete(
         documents
             .iter()
             .map(|document| document.source().text().as_bytes()),
+        qsl_replay::spine::SpineLimits::default().intake,
     );
     let libraries = request
         .libraries

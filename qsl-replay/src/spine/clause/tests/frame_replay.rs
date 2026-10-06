@@ -35,7 +35,10 @@ pub(super) struct Unit {
 }
 
 pub(super) fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
-    let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [domain_document.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let compiled = compose(
         source(),
         IDENTITY,
@@ -218,9 +221,12 @@ pub(super) fn request(
     documents: &[(DocumentRef, Vec<u8>)],
 ) -> ReplayRequestWire {
     let source = source_digest(source_bytes);
-    let jcs = qsl_semantics::model::intake::PackageDocument::parse(domain_document)
-        .expect("the domain package parses")
-        .jcs_digest();
+    let jcs = qsl_semantics::model::intake::PackageDocument::parse(
+        domain_document,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("the domain package parses")
+    .jcs_digest();
     let sha256_jcs = |digest: [u8; 32]| {
         (
             Some(DigestDomain::Sha256Jcs.as_str().to_owned()),

@@ -1323,7 +1323,10 @@ fn run_frame_clause_limited(
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     let document = frame_test_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [document.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -1396,6 +1399,7 @@ fn run_frame_clause_limited(
         graph.scope().types(),
         &clause_facts,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &provisions,
         &selection,
@@ -2788,7 +2792,10 @@ fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
 }
 
 fn tc465_model_digest_hex(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [document],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -2987,7 +2994,10 @@ fn run_tc465_with_clauses_under(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [document],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let declarations = admit_and_assemble_with_body(document, clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
@@ -3024,6 +3034,7 @@ fn run_tc465_with_clauses_under(
                     graph.scope().types(),
                     &clause_facts,
                     &packages,
+                    qsl_foundation::IntakeLimits::default(),
                     model_limits,
                     &provisions,
                     &selection,

@@ -60,7 +60,8 @@ use sha2::{Digest, Sha256};
 
 /// Parses test document bytes through intake's one parse.
 fn parse_document(bytes: &[u8]) -> PackageDocument {
-    PackageDocument::parse(bytes).expect("the test document parses as JSON")
+    PackageDocument::parse(bytes, qsl_foundation::IntakeLimits::default())
+        .expect("the test document parses as JSON")
 }
 
 /// Resolves to the checked-out `agent-ix-extraction-frontend` git
@@ -154,10 +155,13 @@ fn lifts_the_architecture_bundle_and_admits_it() {
         version: version.clone(),
         digest: actual_digest,
     };
-    let (admitted, admitted_document) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-        .expect(
-            "a selection matching the lifted package's own identity/version/digest is admitted",
-        );
+    let (admitted, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a selection matching the lifted package's own identity/version/digest is admitted");
     assert_eq!(admitted.identity, identity);
     assert_eq!(admitted.version, version);
     assert_eq!(admitted_document.tree(), &package);
@@ -751,9 +755,13 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         version: "1.0.0".to_owned(),
         digest,
     };
-    let (package_ref, admitted_document) =
-        admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-            .expect("a matching selection admits");
+    let (package_ref, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a matching selection admits");
 
     let records = read_records(package_identity, &admitted_document)
         .expect("a QSpec-conformant document reads with no refusals");
@@ -978,7 +986,13 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     };
     let bytes_by_digest = BTreeMap::new();
 
-    let refusal = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest).expect_err(
+    let refusal = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect_err(
         "a selection naming the quire/native pseudo-package never admits, \
          regardless of what bytes it would otherwise resolve to",
     );
@@ -1030,6 +1044,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
         &[first, second],
         SHA256_JCS_DIGEST_DOMAIN,
         &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
     )
     .expect_err("a second selection of the same domain-package identity never admits");
     assert_eq!(
@@ -1134,8 +1149,13 @@ fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
         version: "1.0.0".to_owned(),
         digest,
     };
-    let (_, admitted_document) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-        .expect("a matching selection admits");
+    let (_, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a matching selection admits");
 
     let refusals = read_records(package_identity, &admitted_document)
         .expect_err("a systems part carrying an operation refuses, broken frame or not");

@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::selection::{ModelDigest, ModelSelection};
-use qsl_foundation::{Code, Span};
+use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
 
 use super::{admit_located, read_records, PackageDocument};
@@ -81,11 +81,12 @@ pub struct UnitIntakeRefusal {
 /// selection admits it.
 pub fn package_input<'a>(
     documents: impl IntoIterator<Item = &'a [u8]>,
+    limits: IntakeLimits,
 ) -> BTreeMap<[u8; 32], Vec<u8>> {
     documents
         .into_iter()
         .map(|bytes| {
-            let digest = PackageDocument::parse(bytes)
+            let digest = PackageDocument::parse(bytes, limits)
                 .map_or_else(|_| raw_bytes_digest(bytes), |document| document.jcs_digest);
             (digest, bytes.to_vec())
         })
@@ -99,9 +100,10 @@ pub fn package_input<'a>(
 pub fn admit_unit(
     selections: &[ModelSelection],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
-    admit_unit_with_cancel(selections, packages, limits, &Cancel::new())
+    admit_unit_with_cancel(selections, packages, intake, limits, &Cancel::new())
 }
 
 /// [`admit_unit`] under the caller's [`Cancel`] handle, polled at every
@@ -109,6 +111,7 @@ pub fn admit_unit(
 pub fn admit_unit_with_cancel(
     selections: &[ModelSelection],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
@@ -136,6 +139,7 @@ pub fn admit_unit_with_cancel(
         |(_, offered_ref)| offered_ref,
         SHA256_JCS_DIGEST_DOMAIN,
         packages,
+        intake,
     )
     .map_err(|((selection, _), refusal)| {
         refuse(

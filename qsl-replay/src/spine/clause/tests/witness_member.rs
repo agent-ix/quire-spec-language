@@ -60,7 +60,10 @@ fn history_domain_document() -> Vec<u8> {
 
 fn packages() -> BTreeMap<[u8; 32], Vec<u8>> {
     let document = history_domain_document();
-    qsl_semantics::model::intake::package_input([document.as_slice()])
+    qsl_semantics::model::intake::package_input(
+        [document.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    )
 }
 
 fn model_digest_hex() -> String {

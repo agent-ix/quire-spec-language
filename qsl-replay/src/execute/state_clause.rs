@@ -211,7 +211,7 @@ pub fn replay_state_clause(
         source: labels(source),
         extraction: None,
     };
-    let packages = domain_packages(&request);
+    let packages = domain_packages(&request, &limits);
     // FR-106 reads every document only from the byte provision, by its
     // `sha256-jcs` digest.
     let documents: BTreeMap<[u8; 32], Vec<u8>> = request
@@ -229,6 +229,7 @@ pub fn replay_state_clause(
     };
     let run = CompiledRun {
         packages: &packages,
+        intake_limits: limits.spine.intake,
         model_limits: limits.spine.model,
         provisions: Provisions {
             snapshots: &documents,

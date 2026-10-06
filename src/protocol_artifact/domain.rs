@@ -251,9 +251,14 @@ pub(super) fn verify_document(
 ) -> Result<(), Error> {
     work.bytes(bytes.len())?;
     let offered = BTreeMap::from([(selection.digest, bytes.to_vec())]);
-    qsl_semantics::model::intake::admit(selection, SHA256_JCS_DIGEST_DOMAIN, &offered)
-        .map(|_| ())
-        .map_err(|_| Error::Invalid(Invalid::Model))
+    qsl_semantics::model::intake::admit(
+        selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &offered,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .map(|_| ())
+    .map_err(|_| Error::Invalid(Invalid::Model))
 }
 
 /// Whether `population` covers the object type `object` (FR-153): one of

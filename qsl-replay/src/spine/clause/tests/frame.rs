@@ -651,7 +651,10 @@ fn each_model_alias_resolves_its_own_packages_object_type() {
         .replace(CONFIG_VERSION_PACKAGE_IDENTITY, COPY_PACKAGE_IDENTITY)
         .into_bytes();
     let (unit, mut packages) = config_version_unit_and_packages_for(original);
-    let copy_packages = qsl_semantics::model::intake::package_input([copy.as_slice()]);
+    let copy_packages = qsl_semantics::model::intake::package_input(
+        [copy.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let [(copy_digest, _)] = copy_packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };

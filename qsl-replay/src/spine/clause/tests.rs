@@ -173,7 +173,10 @@ fn domain_document() -> Vec<u8> {
 /// `NoCycle` and the `Function`-selection fixtures.
 fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [document.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -699,6 +702,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
+        intake_limits: qsl_foundation::IntakeLimits::default(),
         model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
@@ -1212,7 +1216,10 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
 #[test]
 fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [document.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let model_selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: PACKAGE_IDENTITY.to_owned(),
         version: "1.0.0".to_owned(),
@@ -1227,6 +1234,7 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         std::slice::from_ref(&model_selection),
         qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
     )
     .expect("the fixture package admits cleanly");
     let (package_ref, package_document) =
@@ -1257,6 +1265,7 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let admitted_universe = qsl_semantics::model::observation::population_universe_for(
         std::slice::from_ref(&model_selection),
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         limits,
         node_effective,
     )
@@ -1635,7 +1644,10 @@ fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
 fn config_version_unit_and_packages_for(
     document: Vec<u8>,
 ) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input(
+        [document.as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -1691,6 +1703,7 @@ fn config_version_request_for(
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
+        intake_limits: qsl_foundation::IntakeLimits::default(),
         model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
@@ -2882,7 +2895,10 @@ fn config_version_step3_domain_document() -> Vec<u8> {
 /// The package provision holding [`config_version_step3_domain_document`]
 /// and nothing else.
 fn config_version_step3_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
-    qsl_semantics::model::intake::package_input([config_version_step3_domain_document().as_slice()])
+    qsl_semantics::model::intake::package_input(
+        [config_version_step3_domain_document().as_slice()],
+        qsl_foundation::IntakeLimits::default(),
+    )
 }
 
 /// The hex model digest of [`config_version_step3_packages`]'s one document.
@@ -3233,6 +3249,7 @@ fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evalu
         package.graph(),
         clause,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &provisions,
         &selection,
@@ -3278,6 +3295,7 @@ fn a_postcondition_with_only_a_pre_observation_faults() {
         package.graph(),
         clause,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &Provisions {
             snapshots: &snapshots,

@@ -382,7 +382,7 @@ fn frame_key_of(owner: &str, name: &str) -> DeclarationKey {
 /// package input map (`model::intake::unit::package_input`'s own digest
 /// keying).
 fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
+    let packages = package_input([document], qsl_foundation::IntakeLimits::default());
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -402,7 +402,7 @@ pub(super) fn config_unit_with_body(
     document: &[u8],
     body: &str,
 ) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
+    let packages = package_input([document], qsl_foundation::IntakeLimits::default());
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -428,6 +428,7 @@ pub(super) fn admit_and_assemble_with_body(
     let models = admit_unit(
         &built.selections().models,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
@@ -852,6 +853,7 @@ fn admit(
     admit_unit(
         &built.selections().models,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
     )
 }
@@ -865,6 +867,7 @@ fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations, String> {
     let models = admit_unit(
         &built.selections().models,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
     )
     .map_err(|refusal| format!("I1 refused: {refusal:?}"))?;
@@ -911,6 +914,7 @@ fn an_operation_and_its_frame_admit_and_assemble() {
     let views = admit_unit(
         &built.selections().models,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
     )
     .expect("the package admits");
@@ -1009,6 +1013,7 @@ fn bound_integer_value_type_admits_and_assembles() {
     let views = admit_unit(
         &built.selections().models,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
     )
     .expect("the package admits");
@@ -1305,6 +1310,7 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
     let views = admit_unit(
         &built.selections().models,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
     )
     .expect("the package admits");
@@ -1475,6 +1481,7 @@ fn admission_is_deterministic_regardless_of_document_order() {
         let views = admit_unit(
             &built.selections().models,
             &packages,
+            qsl_foundation::IntakeLimits::default(),
             ModelNormalizationLimits::default(),
         )
         .expect("the package admits");

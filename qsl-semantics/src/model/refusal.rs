@@ -588,7 +588,10 @@ pub enum ModelRefusalCause {
         /// The limit the document reached.
         limit: IntakeLimit,
         /// That limit's bound.
-        bound: usize,
+        bound: u64,
+        /// What the document measured: its length in bytes for the byte
+        /// limit.
+        actual: u64,
     },
     /// FR-259 B6: reading or digesting a domain package document could not
     /// reserve memory. Not a limit: it names no bound and no setting.
@@ -749,6 +752,15 @@ pub enum IntakeLimit {
 }
 
 impl IntakeLimit {
+    /// The setting that raises this limit (FR-255): the byte limit's, and
+    /// none for the nesting depth.
+    pub const fn setting(self) -> Option<qsl_foundation::Setting> {
+        match self {
+            Self::InputBytes => Some(qsl_foundation::Setting::IntakeInputBytes),
+            Self::NestingDepth => None,
+        }
+    }
+
     /// The limit's name.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -809,8 +821,9 @@ impl ModelRefusalCause {
     }
 
     /// This refusal as the stage limit outcome FR-255 Behavior 1 describes,
-    /// when it is a reached step ceiling: the setting that raises it, its
-    /// bound and the count the refused edge would have reached.
+    /// when it is a reached step ceiling or intake's byte limit: the setting
+    /// that raises it, its bound and the count the refused step would have
+    /// reached.
     pub fn limit_exceeded(&self) -> Option<qsl_foundation::diagnostic::LimitExceeded> {
         let (setting, limit, reached) = match self {
             Self::AncestorSteps {
@@ -825,6 +838,11 @@ impl ModelRefusalCause {
                 reached,
                 ..
             } => (*setting, *limit, *reached),
+            Self::IntakeLimitExceeded {
+                limit,
+                bound,
+                actual,
+            } => (limit.setting()?, *bound, *actual),
             _ => return None,
         };
         Some(qsl_foundation::diagnostic::LimitExceeded::new(
@@ -1405,6 +1423,7 @@ pub mod fixtures {
         IntakeLimitExceeded => ModelRefusalCause::IntakeLimitExceeded {
             limit: super::IntakeLimit::NestingDepth,
             bound: 0,
+            actual: 1,
         },
         AllocationFailed => ModelRefusalCause::AllocationFailed { requested: 0 },
         NoncanonicalNumber => ModelRefusalCause::NoncanonicalNumber {

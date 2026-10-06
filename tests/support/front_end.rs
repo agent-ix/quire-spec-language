@@ -38,9 +38,15 @@ pub fn emitted(
     )
     .map_err(refusal)?
     .into_value();
-    let models = select(&parsed, packages, limits.model, &cancel)
-        .map_err(refusal)?
-        .into_value();
+    let models = select(
+        &parsed,
+        packages,
+        qsl_foundation::IntakeLimits::default(),
+        limits.model,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
     let checked = check(
         &parsed,
         &models,

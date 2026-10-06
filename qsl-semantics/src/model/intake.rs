@@ -57,6 +57,7 @@ use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::refusal::{Inexact, IntakeLimit};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use qsl_foundation::source::{LocatedSpan, Position};
+use qsl_foundation::IntakeLimits;
 use quire_canonical::Node;
 use quire_exact::Presence;
 
@@ -290,7 +291,7 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 ///
 /// The `sha256-jcs` digest is taken here, once, by `quire-canonical` (ADR-013
 /// §2, ADR-013:113: the one RFC 8785 implementation) under
-/// `INTAKE_DIGEST_LIMITS`, and [`admit`]'s check 3 compares it.
+/// `digest_limits`, and [`admit`]'s check 3 compares it.
 #[derive(Debug, Clone)]
 pub struct PackageDocument {
     /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
@@ -325,22 +326,28 @@ impl PackageDocument {
     /// number with no exact RFC 8785 spelling refuses `noncanonical_wire`
     /// (`inexact-integer` or `inexact-number`) at that number's pointer,
     /// before the digest is taken.
-    pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
-        use agent_ix_semantic_ir::json::{MAX_DEPTH, MAX_INPUT_BYTES};
+    pub fn parse(bytes: &[u8], limits: IntakeLimits) -> Result<Self, ModelRefusal> {
+        use agent_ix_semantic_ir::json::MAX_DEPTH;
+        let max_input_bytes = limits.input_bytes;
         // `usize` is at most 64 bits on every target Rust supports: lossless.
-        let max_input_bytes = MAX_INPUT_BYTES as u64;
-        if bytes.len() > MAX_INPUT_BYTES {
-            return Err(limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES));
+        let length = bytes.len() as u64;
+        if length > max_input_bytes {
+            return Err(input_bytes_exceeded(max_input_bytes, length));
         }
         if too_deep(bytes) {
-            return Err(limit_exceeded(IntakeLimit::NestingDepth, MAX_DEPTH));
+            return Err(limit_exceeded(
+                IntakeLimit::NestingDepth,
+                MAX_DEPTH as u64,
+                MAX_DEPTH as u64 + 1,
+            ));
         }
-        let document = quire_canonical::read(bytes, max_input_bytes).map_err(read_refusal)?;
+        let document = quire_canonical::read(bytes, max_input_bytes)
+            .map_err(|error| read_refusal(error, max_input_bytes, length))?;
         if let Some((document_pointer, inexact, lexeme)) = first_inexact_number(document.root()) {
             return Err(noncanonical_number(document_pointer, inexact, lexeme));
         }
-        let jcs_digest = *quire_canonical::sha256(&document, INTAKE_DIGEST_LIMITS)
-            .map_err(digest_refusal)?
+        let jcs_digest = *quire_canonical::sha256(&document, digest_limits(max_input_bytes))
+            .map_err(|error| digest_refusal(error, max_input_bytes, length))?
             .as_bytes();
         let tree = value_of(document.root()).map_err(view_refusal)?;
         let ir = match json_of(document.root()) {
@@ -381,19 +388,28 @@ impl PackageDocument {
 const CANONICAL_GROWTH: u64 = 6;
 
 /// The limits intake's `sha256-jcs` digest encodes under: canonical text up
-/// to [`CANONICAL_GROWTH`] times the reader's `MAX_INPUT_BYTES` (384 MiB), a
-/// ceiling no admitted document reaches.
-const INTAKE_DIGEST_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(
-    // `usize` is at most 64 bits on every target Rust supports: lossless.
-    agent_ix_semantic_ir::json::MAX_INPUT_BYTES as u64 * CANONICAL_GROWTH,
-);
+/// to [`CANONICAL_GROWTH`] times the document's byte limit, a ceiling no
+/// admitted document reaches.
+fn digest_limits(input_bytes: u64) -> quire_canonical::Limits {
+    quire_canonical::Limits::new(input_bytes.saturating_mul(CANONICAL_GROWTH))
+}
+
+/// FR-260 B5: a package document of `actual` bytes is over
+/// `intake.input_bytes` at `bound`.
+fn input_bytes_exceeded(bound: u64, actual: u64) -> ModelRefusal {
+    limit_exceeded(IntakeLimit::InputBytes, bound, actual)
+}
 
 /// ADR-011 Limits: a package document reached `limit`, whose bound is
-/// `bound`.
-fn limit_exceeded(limit: IntakeLimit, bound: usize) -> ModelRefusal {
+/// `bound` and whose measure reached `actual`.
+fn limit_exceeded(limit: IntakeLimit, bound: u64, actual: u64) -> ModelRefusal {
     ModelRefusal {
         code: Code::ResourceExhausted,
-        cause: ModelRefusalCause::IntakeLimitExceeded { limit, bound },
+        cause: ModelRefusalCause::IntakeLimitExceeded {
+            limit,
+            bound,
+            actual,
+        },
         detail: format!(
             "package document exceeds intake's {} limit of {bound}",
             limit.as_str()
@@ -402,8 +418,7 @@ fn limit_exceeded(limit: IntakeLimit, bound: usize) -> ModelRefusal {
 }
 
 /// [`PackageDocument::parse`]'s refusal for a refusal of the shared reader.
-fn read_refusal(error: quire_canonical::ReadError) -> ModelRefusal {
-    use agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+fn read_refusal(error: quire_canonical::ReadError, bound: u64, actual: u64) -> ModelRefusal {
     match error {
         quire_canonical::ReadError::Malformed { offset, kind } => malformed_declaration(
             "$".to_owned(),
@@ -411,9 +426,7 @@ fn read_refusal(error: quire_canonical::ReadError) -> ModelRefusal {
             None,
             format!("package document is malformed JSON at byte {offset}: {kind}"),
         ),
-        quire_canonical::ReadError::Limit(_) => {
-            limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
-        }
+        quire_canonical::ReadError::Limit(_) => input_bytes_exceeded(bound, actual),
         quire_canonical::ReadError::Allocation { requested } => allocation_failed(requested),
         quire_canonical::ReadError::NumberOutOfRange {
             pointer, lexeme, ..
@@ -454,12 +467,9 @@ pub(super) fn out_of_range_number(pointer: &str, lexeme: &str) -> Option<(JsonPo
 
 /// [`PackageDocument::parse`]'s refusal for an error of the `sha256-jcs`
 /// digest's encoding.
-fn digest_refusal(error: quire_canonical::Error) -> ModelRefusal {
-    use agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+fn digest_refusal(error: quire_canonical::Error, bound: u64, actual: u64) -> ModelRefusal {
     match error {
-        quire_canonical::Error::Limit(_) => {
-            limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
-        }
+        quire_canonical::Error::Limit(_) => input_bytes_exceeded(bound, actual),
         quire_canonical::Error::Allocation { requested } => allocation_failed(requested),
         // A read tree always has an RFC 8785 encoding: every number is a
         // finite double and every member name a string.
@@ -1004,6 +1014,7 @@ pub fn admit(
     offered: &DomainPackageRef,
     digest_domain: &str,
     bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: IntakeLimits,
 ) -> Result<(DomainPackageRef, PackageDocument), ModelRefusal> {
     // ADR-010 OBS-006 / ADR-013 O-03: the reserved `quire/native`
     // pseudo-package never selects, regardless of what its bytes would
@@ -1058,7 +1069,7 @@ pub fn admit(
     // mismatch. Any other parse failure is not itself a refusal here: bytes
     // the shared reader refuses are digested raw by check 3 (FR-056), and
     // supply no identity/version to check 4.
-    let document = match PackageDocument::parse(bytes) {
+    let document = match PackageDocument::parse(bytes, limits) {
         Ok(document) => Some(document),
         Err(
             refusal @ ModelRefusal {
@@ -1222,12 +1233,14 @@ pub fn admit_selections(
     offered: &[DomainPackageRef],
     digest_domain: &str,
     bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: IntakeLimits,
 ) -> Result<Vec<(DomainPackageRef, PackageDocument)>, ModelRefusal> {
     admit_located(
         offered,
         |selection| selection,
         digest_domain,
         bytes_by_digest,
+        limits,
     )
     .map(|admitted| {
         admitted
@@ -1250,6 +1263,7 @@ pub(crate) fn admit_located<'a, T>(
     selection: impl Fn(&T) -> &DomainPackageRef,
     digest_domain: &str,
     bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: IntakeLimits,
 ) -> Result<Vec<Admitted<'a, T>>, (&'a T, ModelRefusal)> {
     let mut admitted = Vec::with_capacity(offered.len());
     let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
@@ -1276,7 +1290,7 @@ pub(crate) fn admit_located<'a, T>(
                 },
             ));
         }
-        let (admitted_ref, document) = admit(offered_ref, digest_domain, bytes_by_digest)
+        let (admitted_ref, document) = admit(offered_ref, digest_domain, bytes_by_digest, limits)
             .map_err(|refusal| (item, refusal))?;
         selected_versions.insert(&offered_ref.identity, &offered_ref.version);
         admitted.push((item, admitted_ref, document));
@@ -3142,13 +3156,17 @@ mod tests {
     fn canonical(value: &Value) -> Vec<u8> {
         let text = serde_json::to_vec(value).expect("the test value serializes");
         let document = quire_canonical::read(&text, u64::MAX).expect("the test value reads");
-        quire_canonical::to_vec(&document, INTAKE_DIGEST_LIMITS)
-            .expect("the test value has an RFC 8785 encoding")
+        quire_canonical::to_vec(
+            &document,
+            digest_limits(IntakeLimits::default().input_bytes),
+        )
+        .expect("the test value has an RFC 8785 encoding")
     }
 
     /// Test document bytes through intake's one parse.
     fn parse_document(bytes: &[u8]) -> PackageDocument {
-        PackageDocument::parse(bytes).expect("the test document parses as JSON")
+        PackageDocument::parse(bytes, qsl_foundation::IntakeLimits::default())
+            .expect("the test document parses as JSON")
     }
 
     fn package_bytes(identity: &str, version: &str) -> Vec<u8> {
@@ -3185,7 +3203,13 @@ mod tests {
         map.insert(digest, bytes.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, document) = admit(&offered, &digest_domain, &map).unwrap();
+        let (package_ref, document) = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap();
         assert_eq!(package_ref.identity, "acme/orders");
         assert_eq!(package_ref.version, "1");
         assert_eq!(package_ref.digest, digest);
@@ -3214,7 +3238,13 @@ mod tests {
         map.insert(digest, padded.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, document) = admit(&offered, &digest_domain, &map).unwrap();
+        let (package_ref, document) = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap();
         assert_eq!(package_ref.digest, digest);
         assert_eq!(
             document.tree(),
@@ -3234,7 +3264,13 @@ mod tests {
     fn refuses_foreign_digest_domain() {
         let map = BTreeMap::new();
         let (offered, digest_domain) = selection("acme/orders", "1", "sha1", [0; 32]);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3262,7 +3298,13 @@ mod tests {
     fn refuses_a_valid_fr201_domain_that_is_not_sha256_jcs() {
         let map = BTreeMap::new();
         let (offered, digest_domain) = selection("acme/orders", "1", "ir-canonical", [0; 32]);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3284,7 +3326,13 @@ mod tests {
         let map = BTreeMap::new();
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, [0; 32]);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3311,7 +3359,13 @@ mod tests {
         map.insert(wrong_digest, bytes);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, wrong_digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3338,7 +3392,13 @@ mod tests {
         map.insert(digest, bytes);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3373,7 +3433,13 @@ mod tests {
         map.insert(digest, bytes);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3408,7 +3474,13 @@ mod tests {
         map.insert(digest, bytes);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3510,7 +3582,8 @@ mod tests {
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_document_that_is_not_json() {
-        let refusal = PackageDocument::parse(b"not json").unwrap_err();
+        let refusal = PackageDocument::parse(b"not json", qsl_foundation::IntakeLimits::default())
+            .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -3874,7 +3947,10 @@ mod tests {
             Inexact::Integer,
             &EXACT.to_string(),
         );
-        assert_eq!(PackageDocument::parse(&bytes).unwrap_err(), expected);
+        assert_eq!(
+            PackageDocument::parse(&bytes, qsl_foundation::IntakeLimits::default()).unwrap_err(),
+            expected
+        );
 
         // The RFC 8785 text the document used to admit under, the bound
         // spelled as ECMAScript spells 2^60.
@@ -3889,7 +3965,16 @@ mod tests {
         for digest in [rounded_digest, raw] {
             let (offered, digest_domain) =
                 selection("acme/orders", "1.0.0", SHA256_JCS_DIGEST_DOMAIN, digest);
-            assert_eq!(admit(&offered, &digest_domain, &map).unwrap_err(), expected);
+            assert_eq!(
+                admit(
+                    &offered,
+                    &digest_domain,
+                    &map,
+                    qsl_foundation::IntakeLimits::default()
+                )
+                .unwrap_err(),
+                expected
+            );
         }
     }
 
@@ -5935,7 +6020,9 @@ mod tests {
             agent_ix_semantic_ir::json::parse(&text).is_ok(),
             "the validator's own reader accepts it, which is what made the re-parse panic"
         );
-        let refusal = PackageDocument::parse(text.as_bytes()).unwrap_err();
+        let refusal =
+            PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                .unwrap_err();
         assert_eq!(refusal.code, Code::NoncanonicalWire);
         assert!(
             matches!(
@@ -6008,7 +6095,11 @@ mod tests {
             "1e400",
         );
         assert_noncanonical("[1e400", Inexact::Integer, "/0", "1e400");
-        let repeated = PackageDocument::parse(br#"{"a":1,"a":2,"n":1e-400}"#).unwrap_err();
+        let repeated = PackageDocument::parse(
+            br#"{"a":1,"a":2,"n":1e-400}"#,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert!(
             matches!(
                 repeated.cause,
@@ -6046,7 +6137,13 @@ mod tests {
             ),
         ] {
             let bytes = BTreeMap::from([(digest, text.clone().into_bytes())]);
-            let refusal = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes).unwrap_err();
+            let refusal = admit(
+                &offered,
+                SHA256_JCS_DIGEST_DOMAIN,
+                &bytes,
+                qsl_foundation::IntakeLimits::default(),
+            )
+            .unwrap_err();
             assert_eq!(refusal.code, Code::NoncanonicalWire, "{text}");
             assert_eq!(
                 refusal.cause,
@@ -6081,8 +6178,13 @@ mod tests {
         map.insert(digest, padded);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, admitted) = admit(&offered, &digest_domain, &map)
-            .expect("a document within the reader's 200-deep bound admits under its JCS digest");
+        let (package_ref, admitted) = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .expect("a document within the reader's 200-deep bound admits under its JCS digest");
         assert_eq!(package_ref.digest, digest);
         assert_eq!(admitted.tree(), &document);
     }
@@ -6097,7 +6199,8 @@ mod tests {
     fn assert_lone_surrogate_refused(text: &str, escape: &str) {
         let offset = text.find(escape).expect("the escape is in the text");
         assert_eq!(
-            PackageDocument::parse(text.as_bytes()).unwrap_err(),
+            PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                .unwrap_err(),
             malformed_declaration(
                 "$".to_owned(),
                 None,
@@ -6141,7 +6244,9 @@ mod tests {
         let offset = text.find(r"\udc00").expect("the escape is in the text");
         let refusal = std::thread::Builder::new()
             .stack_size(512 * 1024)
-            .spawn(move || PackageDocument::parse(text.as_bytes()))
+            .spawn(move || {
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+            })
             .expect("the test thread spawns")
             .join()
             .expect("the parse does not panic")
@@ -6176,8 +6281,9 @@ mod tests {
             r#"{"s":"\\ud800"}"#,
             r#"{"s":"\"😀\""}"#,
         ] {
-            let document = PackageDocument::parse(text.as_bytes())
-                .unwrap_or_else(|refusal| panic!("{text} refused: {refusal:?}"));
+            let document =
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                    .unwrap_or_else(|refusal| panic!("{text} refused: {refusal:?}"));
             assert_eq!(
                 document.tree(),
                 &serde_json::from_str::<Value>(text).unwrap(),
@@ -6201,7 +6307,13 @@ mod tests {
         map.insert(digest, lone.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(refusal.code, Code::StaleDependency);
         assert_eq!(
             refusal.cause,
@@ -6248,11 +6360,14 @@ mod tests {
                 within,
                 "the scan, around {label}"
             );
-            match PackageDocument::parse(text.as_bytes()) {
+            match PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default()) {
                 Ok(_) => assert!(within, "{label}"),
                 Err(refusal) => {
                     assert!(!within, "{label}: {refusal:?}");
-                    assert_eq!(refusal, limit_exceeded(IntakeLimit::NestingDepth, max));
+                    assert_eq!(
+                        refusal,
+                        limit_exceeded(IntakeLimit::NestingDepth, max as u64, max as u64 + 1)
+                    );
                 }
             }
         }
@@ -6276,46 +6391,76 @@ mod tests {
         map.insert(digest, bytes);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::IntakeLimitExceeded {
                     limit: IntakeLimit::NestingDepth,
-                    bound: max,
+                    bound: max as u64,
+                    actual: max as u64 + 1,
                 },
                 detail: format!("package document exceeds intake's nesting_depth limit of {max}"),
             }
         );
     }
 
-    #[trace("TC-145", "FR-056-AC-2")]
+    /// FR-260-AC-4 (FR-056-AC-2): a document one byte over `intake.input_bytes`
+    /// at bound `B` refuses naming the limit, `B`, `B + 1` and the setting;
+    /// raised to `B + 1` through the builder and through the settings
+    /// operation, the same document is judged on its content.
+    #[trace("TC-732", "FR-260-AC-4")]
     #[test]
     fn refuses_an_oversize_document_with_its_correct_digest_as_a_size_limit() {
-        let max = agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+        use qsl_foundation::SettingLimits;
         let head = r#"{"package":{"identity":"acme/orders","version":"1"},"pad":""#;
         let tail = r#""}"#;
-        let pad = max + 1 - head.len() - tail.len();
+        let bound = 4096_u64;
+        let pad = bound as usize + 1 - head.len() - tail.len();
         let bytes = format!("{head}{}{tail}", "x".repeat(pad)).into_bytes();
-        assert_eq!(bytes.len(), max + 1);
+        assert_eq!(bytes.len() as u64, bound + 1);
         let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let at_bound = IntakeLimits::default().with_input_bytes(bound);
+        let refusal = admit(&offered, &digest_domain, &map, at_bound).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::IntakeLimitExceeded {
                     limit: IntakeLimit::InputBytes,
-                    bound: max,
+                    bound,
+                    actual: bound + 1,
                 },
-                detail: format!("package document exceeds intake's input_bytes limit of {max}"),
+                detail: format!("package document exceeds intake's input_bytes limit of {bound}"),
             }
         );
+        let outcome = refusal.cause.limit_exceeded().expect("a limit outcome");
+        assert_eq!(outcome.setting(), qsl_foundation::Setting::IntakeInputBytes);
+        assert_eq!(outcome.configured_bound(), bound);
+        assert_eq!(outcome.actual(), u128::from(bound) + 1);
+        // Raised through the builder: judged on its content, not the size.
+        let raised = at_bound.with_input_bytes(bound + 1);
+        assert!(admit(&offered, &digest_domain, &map, raised).is_ok());
+        // Raised through the settings operation.
+        let mut operated = at_bound;
+        let operand = format!("intake.input_bytes={}", bound + 1);
+        for (setting, value) in qsl_foundation::setting::parse_operands([operand.as_str()]).unwrap()
+        {
+            assert!(operated.set_bound(setting, value));
+        }
+        assert_eq!(operated, raised);
+        assert!(admit(&offered, &digest_domain, &map, operated).is_ok());
     }
 
     /// PR #379 review F3: unparseable bytes supply no document, so even an
@@ -6330,7 +6475,13 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
         let (offered, digest_domain) = selection("", "", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -6383,7 +6534,10 @@ mod tests {
         ];
         for text in cases {
             let expected = serde_json::from_slice::<Value>(text.as_bytes());
-            match (PackageDocument::parse(text.as_bytes()), expected) {
+            match (
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default()),
+                expected,
+            ) {
                 (Ok(document), Ok(expected)) => {
                     assert_eq!(document.tree(), &expected, "{text}");
                     assert_eq!(
@@ -6407,7 +6561,9 @@ mod tests {
     #[test]
     fn a_non_whole_number_in_the_tree_is_the_digests_double() {
         for text in ["1.5e-300", "0.1", "2.5", "-3e-7"] {
-            let document = PackageDocument::parse(text.as_bytes()).unwrap();
+            let document =
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                    .unwrap();
             let expected: f64 = text.parse().unwrap();
             assert_eq!(document.tree().as_f64(), Some(expected), "{text}");
             assert_eq!(
@@ -6427,7 +6583,9 @@ mod tests {
     /// `text` refuses at the one parse `noncanonical_wire` with cause
     /// `inexact` and `document_pointer` `pointer`, naming `number`.
     fn assert_noncanonical(text: &str, inexact: Inexact, pointer: &str, number: &str) {
-        let refusal = PackageDocument::parse(text.as_bytes()).unwrap_err();
+        let refusal =
+            PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                .unwrap_err();
         assert_eq!(
             refusal,
             noncanonical_number(pointer.parse().unwrap(), inexact, number),
@@ -6567,8 +6725,11 @@ mod tests {
             "-1125899906842624.2",
             "2.9802322387695312e-8",
         ] {
-            let document = PackageDocument::parse(document_with_count(number).as_bytes())
-                .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
+            let document = PackageDocument::parse(
+                document_with_count(number).as_bytes(),
+                qsl_foundation::IntakeLimits::default(),
+            )
+            .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
             let expected: f64 = number.parse().unwrap();
             assert_eq!(
                 document.tree()["package"]["count"].as_f64(),
@@ -6622,8 +6783,9 @@ mod tests {
             ("0.10", None),
         ] {
             let text = document_with_count(number);
-            let document = PackageDocument::parse(text.as_bytes())
-                .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
+            let document =
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                    .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
             let count = &document.tree()["package"]["count"];
             if let Some(exact) = exact {
                 assert_eq!(count.as_i64(), Some(exact), "{number}");
@@ -6663,7 +6825,13 @@ mod tests {
             let (offered, digest_domain) =
                 selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, shared);
             assert_eq!(
-                admit(&offered, &digest_domain, &map).unwrap_err(),
+                admit(
+                    &offered,
+                    &digest_domain,
+                    &map,
+                    qsl_foundation::IntakeLimits::default()
+                )
+                .unwrap_err(),
                 noncanonical_number("/package/count".parse().unwrap(), inexact, number),
                 "{number}"
             );
@@ -6672,7 +6840,13 @@ mod tests {
         let map = BTreeMap::from([(shared_tenth, tenth)]);
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, shared_tenth);
-        assert!(admit(&offered, &digest_domain, &map).is_ok());
+        assert!(admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default()
+        )
+        .is_ok());
     }
 
     /// The decision reads the number's text in time linear in its length
@@ -6757,7 +6931,8 @@ mod tests {
                 .find(repeated)
                 .expect("the repeated name is in the text");
             assert_eq!(
-                PackageDocument::parse(text.as_bytes()).unwrap_err(),
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                    .unwrap_err(),
                 malformed(
                     "$",
                     &format!(
@@ -6771,7 +6946,7 @@ mod tests {
 
         let bom = b"\xEF\xBB\xBF{}";
         assert_eq!(
-            PackageDocument::parse(bom).unwrap_err(),
+            PackageDocument::parse(bom, qsl_foundation::IntakeLimits::default()).unwrap_err(),
             malformed(
                 "$",
                 "package document is malformed JSON at byte 0: unexpected character"
@@ -6785,7 +6960,13 @@ mod tests {
         map.insert(digest, repeated.to_vec());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        let refusal = admit(
+            &offered,
+            &digest_domain,
+            &map,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(refusal.code, Code::StaleDependency);
         assert_eq!(
             refusal.cause,
@@ -6811,11 +6992,15 @@ mod tests {
         );
         assert_eq!(expected.cause.as_str(), "allocation-failed");
         assert_eq!(
-            read_refusal(quire_canonical::ReadError::Allocation { requested: 4096 }),
+            read_refusal(
+                quire_canonical::ReadError::Allocation { requested: 4096 },
+                1,
+                2
+            ),
             expected
         );
         assert_eq!(
-            digest_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
+            digest_refusal(quire_canonical::Error::Allocation { requested: 4096 }, 1, 2),
             expected
         );
     }

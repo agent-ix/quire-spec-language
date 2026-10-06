@@ -67,7 +67,10 @@ pub fn model_digest_hex() -> String {
 /// [`DOMAIN_PACKAGE`], keyed the way `compile`/`run_clause` expect their
 /// `packages` map.
 pub fn domain_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
-    qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE.as_bytes()])
+    qsl_semantics::model::intake::package_input(
+        [DOMAIN_PACKAGE.as_bytes()],
+        qsl_foundation::IntakeLimits::default(),
+    )
 }
 
 /// FR-108's own fixed `SourceIdentity` for the compiled unit, shared by
@@ -372,7 +375,10 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
     // leaves `models` empty in `request.json`.
     let packages = if case.spec().include_model {
         let package = std::fs::read(directory.join("spine-model.semantic-ir.json"))?;
-        qsl_semantics::model::intake::package_input([package.as_slice()])
+        qsl_semantics::model::intake::package_input(
+            [package.as_slice()],
+            qsl_foundation::IntakeLimits::default(),
+        )
     } else {
         BTreeMap::new()
     };
@@ -401,6 +407,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
+        intake_limits: qsl_foundation::IntakeLimits::default(),
         model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         // `exhausted-work`'s own `work_units: 0` (FR-108's Corpus table);
         // every other case gets a generous ceiling it never approaches.

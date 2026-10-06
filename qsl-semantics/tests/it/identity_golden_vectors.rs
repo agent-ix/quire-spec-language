@@ -317,7 +317,13 @@ fn refusal_under(raw: &str, digest: [u8; 32]) -> Option<ModelRefusal> {
         digest,
     };
     let bytes = BTreeMap::from([(digest, raw.as_bytes().to_vec())]);
-    admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes).err()
+    admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .err()
 }
 
 /// `raw`, offered under `digest`, refuses `noncanonical_wire` with cause

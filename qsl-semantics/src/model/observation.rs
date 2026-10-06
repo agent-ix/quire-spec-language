@@ -32,7 +32,7 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{
     CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
 };
-use qsl_foundation::Setting;
+use qsl_foundation::{IntakeLimits, Setting};
 use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
@@ -714,9 +714,10 @@ impl ModelView {
 fn model_views(
     model_selections: &[DomainPackageRef],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<ModelView>, AdmissionFailure> {
-    let admitted = admit_selections(model_selections, SHA256_JCS_DIGEST_DOMAIN, packages)
+    let admitted = admit_selections(model_selections, SHA256_JCS_DIGEST_DOMAIN, packages, intake)
         .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
@@ -1172,12 +1173,13 @@ pub fn admit_current_snapshot(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     model_limits: ModelNormalizationLimits,
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
-    let views = model_views(model_selections, packages, model_limits)?;
+    let views = model_views(model_selections, packages, intake, model_limits)?;
     let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
     let snapshot = read
         .as_snapshot()
@@ -1207,10 +1209,11 @@ pub fn admit_current_snapshot(
 pub fn population_universe_for(
     model_selections: &[DomainPackageRef],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     model_limits: ModelNormalizationLimits,
     type_identity: EffectiveId,
 ) -> Result<UniverseId, AdmissionFailure> {
-    let views = model_views(model_selections, packages, model_limits)?;
+    let views = model_views(model_selections, packages, intake, model_limits)?;
     population_universe(&views, type_identity)
 }
 
@@ -1230,6 +1233,7 @@ pub fn admit_observations(
     types: &TypeEnvironment,
     clause: &ClauseFacts,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selection: &ClauseSelection,
@@ -1259,7 +1263,7 @@ pub fn admit_observations(
         }
     }
 
-    let views = model_views(model_selections, packages, model_limits)?;
+    let views = model_views(model_selections, packages, intake, model_limits)?;
     let context_view =
         view_of(&views, clause.context).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
@@ -2158,12 +2162,13 @@ pub fn admit_frame_invocation<'t>(
     types: &'t TypeEnvironment,
     frame: &FrameFacts,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    intake: IntakeLimits,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<AdmittedInvocation<'t>, AdmissionFailure> {
-    let views = model_views(model_selections, packages, model_limits)?;
+    let views = model_views(model_selections, packages, intake, model_limits)?;
     let context_view =
         view_of(&views, frame.context).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view

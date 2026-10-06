@@ -19,10 +19,12 @@ use crate::identity::{
     Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire,
 };
+use crate::limits::CallerLimits;
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::Code;
+use qsl_foundation::IntakeLimits;
 use qsl_foundation::Setting;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
@@ -355,7 +357,9 @@ pub enum ReplayRequestRefusal {
         /// The limit reached.
         limit: IntakeLimit,
         /// That limit's bound.
-        bound: usize,
+        bound: u64,
+        /// What the entry measured.
+        actual: u64,
     },
     /// Reading or digesting a byte-provision entry under a `sha256-jcs`
     /// digest could not reserve memory: `resource_exhausted`/
@@ -445,10 +449,14 @@ pub enum ReplayRequestRefusal {
 /// (`model::intake::package_input`, ADR-013 QC-1). A refusal of intake's
 /// read keeps its cause ([`package_document_refusal`]), and every other
 /// domain refuses as ineligible.
-fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayRequestRefusal> {
+fn digest_of(
+    digest: DigestRecord,
+    bytes: &[u8],
+    intake: IntakeLimits,
+) -> Result<[u8; 32], ReplayRequestRefusal> {
     let domain = digest.domain();
     if domain == DigestDomain::Sha256Jcs {
-        return PackageDocument::parse(bytes)
+        return PackageDocument::parse(bytes, intake)
             .map(|document| document.jcs_digest())
             .map_err(|refusal| package_document_refusal(digest, refusal));
     }
@@ -467,13 +475,16 @@ fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayReque
 fn package_document_refusal(digest: DigestRecord, refusal: ModelRefusal) -> ReplayRequestRefusal {
     let entry = format!("{digest:?}");
     match refusal.cause {
-        ModelRefusalCause::IntakeLimitExceeded { limit, bound } => {
-            ReplayRequestRefusal::IntakeLimitExceeded {
-                entry,
-                limit,
-                bound,
-            }
-        }
+        ModelRefusalCause::IntakeLimitExceeded {
+            limit,
+            bound,
+            actual,
+        } => ReplayRequestRefusal::IntakeLimitExceeded {
+            entry,
+            limit,
+            bound,
+            actual,
+        },
         ModelRefusalCause::AllocationFailed { requested } => {
             ReplayRequestRefusal::AllocationFailed { entry, requested }
         }
@@ -605,6 +616,9 @@ impl ReplayRequest {
             return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
+        let intake = CallerLimits::for_request(&stage_limits, limits)
+            .spine
+            .intake;
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
@@ -656,7 +670,7 @@ impl ReplayRequest {
             // builds, so admitting one here would always refuse with a
             // misleading staleness cause instead of the real "wrong domain
             // for this position" one.
-            let recomputed = digest_of(digest, &bytes)?;
+            let recomputed = digest_of(digest, &bytes, intake)?;
             if recomputed != *digest.as_bytes() {
                 return Err(if digest.domain() == DigestDomain::Sha256Jcs {
                     ReplayRequestRefusal::ContentMismatch {
@@ -1049,9 +1063,12 @@ mod tests {
         // digest, verified over its RFC 8785 bytes; other bytes under that
         // digest refuse as a content mismatch.
         let document = br#"{"b": 1, "a": [true]}"#.to_vec();
-        let jcs = qsl_semantics::model::intake::PackageDocument::parse(&document)
-            .expect("the document parses")
-            .jcs_digest();
+        let jcs = qsl_semantics::model::intake::PackageDocument::parse(
+            &document,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .expect("the document parses")
+        .jcs_digest();
         let mut domain_package = wire(1);
         domain_package.byte_provision.push((
             Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
@@ -1070,9 +1087,12 @@ mod tests {
             DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
             br#"{"b": 2}"#.to_vec(),
         ));
-        let stale_jcs = qsl_semantics::model::intake::PackageDocument::parse(br#"{"b": 2}"#)
-            .expect("the document parses")
-            .jcs_digest();
+        let stale_jcs = qsl_semantics::model::intake::PackageDocument::parse(
+            br#"{"b": 2}"#,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .expect("the document parses")
+        .jcs_digest();
         assert_ne!(stale_jcs, jcs);
         assert_eq!(
             ReplayRequest::decode(stale_package, crate::ReplayLimits::default()).unwrap_err(),
@@ -1242,8 +1262,13 @@ mod tests {
         // Nested far past the semantic-IR reader's depth limit, and far
         // below the request's encoded-size bound.
         let deep = format!("{}{}", "[".repeat(1000), "]".repeat(1000)).into_bytes();
-        let ModelRefusalCause::IntakeLimitExceeded { limit, bound } =
-            PackageDocument::parse(&deep).unwrap_err().cause
+        let ModelRefusalCause::IntakeLimitExceeded {
+            limit,
+            bound,
+            actual,
+        } = PackageDocument::parse(&deep, qsl_foundation::IntakeLimits::default())
+            .unwrap_err()
+            .cause
         else {
             panic!("a 1000-deep document is over intake's depth limit");
         };
@@ -1255,6 +1280,7 @@ mod tests {
                 entry: entry.clone(),
                 limit,
                 bound,
+                actual,
             }
         );
         assert_eq!(over_limit.code(), Code::ResourceExhausted);

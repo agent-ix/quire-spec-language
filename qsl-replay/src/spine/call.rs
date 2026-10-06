@@ -336,7 +336,7 @@ pub fn run(
     )
     .map_err(refusal)?
     .into_value();
-    let models = front_end::select(&parsed, packages, limits.model, &cancel)
+    let models = front_end::select(&parsed, packages, limits.intake, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = front_end::check(

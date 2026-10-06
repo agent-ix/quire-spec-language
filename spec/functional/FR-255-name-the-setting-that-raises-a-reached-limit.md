@@ -63,7 +63,7 @@ ported takes its row, with its limits type, when that operation lands.
 | `s3.decimal_scale` | S3 assembly | work budget | `AssemblyLimits` decimal scale | 4096 digits |
 | `environment.ancestor_steps` | S3 type-environment admission | edge count | `TypeEnvironmentLimits` ancestor_steps | 16777216 edges |
 | `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
-| `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes (pending QSL-487) | 67108864 bytes |
+| `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes | 67108864 bytes |
 | `model.declaration_records` | model normalization | node count | `ModelNormalizationLimitsV1` declaration_records | 100000 records |
 | `model.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
 | `model.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
@@ -160,16 +160,11 @@ The setting table, the one-mapping-per-limits-type rule, the builders, the
 settings operation, a request's `stage_limits` and the defaults are
 implemented (TC-720, TC-721). Backing of the criteria:
 
-- The `intake.input_bytes` row is pending: it has no setting in the code, no
-  limits type and no entry point yet, and lands with the semantic-IR intake
-  work (B6, QSL-487, FR-260). Until then the settings operation refuses it
-  as an unknown setting, AC-3 and AC-6 hold for every row but that one, and
-  the table marks it "(pending QSL-487)" so the tests can tell it from a
-  row the code forgot.
-- FR-255-AC-1 is stage-driven for every row but the pending one: the step
+- FR-255-AC-1 is stage-driven for the step ceilings and the byte limits: the step
   ceilings (`model.ancestor_steps`, `admission.ancestor_steps`,
   `model.family_steps`) carry their setting and the count reached in the
-  model refusal cause itself.
+  model refusal cause itself, and `intake.input_bytes` in the intake
+  refusal (FR-260-AC-4).
 - FR-255-AC-3 compares the limits types against the table in this file.
 - FR-255-AC-4 is stage-driven through the settings operation and a request's
   `stage_limits` for `s1.tokens`, `s3.nodes`, `s3.work_units` and
