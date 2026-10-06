@@ -283,7 +283,7 @@ node (T3) for a text value.
 | `Option<T>` | `composite_type` / `option` | itself | `aggregate{[reference(T)]}` |
 | `K<T>` for a collection kind `K` | `composite_type` / `sequence`, `set`, `bag`, `ordered_set` | itself | `aggregate{[reference(T)]}` |
 | `K<T>[min, max]` | `bounded_domain` / `collection_bounds` | the `K<T>` node | bindings `min`, `max` |
-| a declared `record R { f: T; ... }` | `composite_type` / `record`, with `declaration` and `owner` | itself | one binding per field in declaration order, `f` = `reference(T)`; an optional field `f?: T` is `f` = `aggregate{binding{name: "optional", value: reference(Option<T>)}}`, a Group, so `f?: T` and `f: Option<T>` differ and no binding holds a binding |
+| a declared `record R { f: T; ... }` | `composite_type` / `record`, with `declaration` and `owner` | itself | one binding per field in declaration order, `f` = `reference(T)`; an optional field `f: T?` is `f` = `aggregate{binding{name: "optional", value: reference(Option<T>)}}`, a Group, so `f: T?` and `f: Option<T>` differ and no binding holds a binding |
 | a declared `tuple Q(T0, ...)` | `composite_type` / `tuple`, with `declaration` and `owner` | itself | `aggregate{[reference(T0), ...]}` in position order |
 
 Each binding is `{term: "binding", name, value}` and each body with bindings
@@ -407,7 +407,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc` |
 | D1 | record Point, owner (a, u) | `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4` |
 | D2 | record Point, owner (a, w) | `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88` |
-| D3 | record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
+| D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
 | D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | `11e8d0d336ec22793fc88addb6b493975d8064dcd2de4c2184f15a1302925600` |
 | D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | `e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560` |
 | P1 | parameter a: Boolean, level 0 | `838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1` |
@@ -429,7 +429,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | E12 | `x - 1` | `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a` |
 | E13 | `x - 1` narrowed into `Int[0, 9]` | `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e` |
 | G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
-| G2 | `record List { next?: List; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
+| G2 | `record List { next: List?; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
 | G3 | `Option<List>`, ordinal 0 | `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b` |
 | G4 | function `f`, ordinal 1 | `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d` |
 | G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc` |
@@ -556,7 +556,7 @@ Key: `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4`
 
 Key: `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88`
 
-**D3**: record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u)
+**D3**: record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u)
 
 ```json
 {"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -697,7 +697,7 @@ declared member is under owner (`a`, `u`):
   that FR-143 refuses, since it passes no optional field, `Option` or
   minimum-zero collection. TC-413 keys G1
   through the key function directly.
-- G2 and G3: `record List { next?: List; }`, a group of two.
+- G2 and G3: `record List { next: List?; }`, a group of two.
 - G4 to G6: `function f using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then f(x - 1) else true }`,
   a self-recursive function, a group of three. `x - 1` is `Integer` (E12),
   and the call narrows it into the parameter's `Int[0, 9]` (E13).
@@ -764,7 +764,7 @@ Key: `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e`
 
 Key: `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31`
 
-**G2**: `record List { next?: List; }`, ordinal 1
+**G2**: `record List { next: List?; }`, ordinal 1
 
 ```json
 {"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
@@ -936,7 +936,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-6 | No function node's body contains an `application` term, and every function node's key is the SHA-256 of its `quire.structural-node/v1` preimage, which carries the unit's `owner`. The node of `a and b` in `both` is keyed by `quire.application-node/v1`; its preimage has no `owner` member, and its key is E1. | Test (TC-414) |
 | FR-092-AC-7 | On a thread with a 512 KiB stack, a parameter typed with 100,000 nested `Option`s around `Boolean`, under S1 and S3 limits raised to fit it, is keyed, and its type node's key equals the key of the same type keyed on a thread with an 8 MiB stack. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both hash to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. On a 2 MiB stack, at the default limits, a chain of 30 records each holding an optional field of the next, the last into a text field, checks. | Test (TC-413) |
 | FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the recorded `sha256`. | Test (TC-413) |
-| FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b?: Int[0, 9]; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
+| FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b: Int[0, 9]?; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
 | FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |

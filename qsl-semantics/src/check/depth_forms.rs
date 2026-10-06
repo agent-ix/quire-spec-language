@@ -69,7 +69,7 @@ fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
 }
 
-/// `record N { v: Boolean; next?: N; }` and `tuple T(Boolean)`.
+/// `record N { v: Boolean; next: N?; }` and `tuple T(Boolean)`.
 pub fn types() -> TypeEnvironment {
     TypeEnvironment::new(
         vec![

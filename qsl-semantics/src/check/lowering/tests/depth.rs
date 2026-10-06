@@ -16,7 +16,7 @@ fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
 }
 
-/// `C0 .. C{length-1}`, each `record Ci { next?: C{i+1}; }`, the last one's
+/// `C0 .. C{length-1}`, each `record Ci { next: C{i+1}?; }`, the last one's
 /// field into `record Leaf { label: Text[0, 8; nfc]; }`, declared in chain
 /// order.
 pub(super) fn chain(length: usize) -> Vec<CompositeDeclaration> {

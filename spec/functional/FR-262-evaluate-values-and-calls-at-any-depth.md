@@ -51,7 +51,7 @@ evaluator.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-262-AC-1 | On a thread with a 512 KiB stack, the recursive function `function count using v(n: Int[0, 1000000]): Integer pure decreases(n) { if n = 0 then 0 else count(n - 1) + 1 }`, called with `100000` under a `work_units` budget sized for it, completes with `100000`. With `work_units` one below the run's measured spend, the same call returns `incomplete { limit_kind: work_units }` at the denied charge, and completes once `work_units` is raised to the measured spend. | Test (TC-734) |
-| FR-262-AC-2 | On a thread with a 512 KiB stack, a recursive list value 100,000 long (`record List { head: Int[0, 9]; tail?: List; }`), built by a recursive function, evaluates; it keys as simulation state, and its state-key bytes equal the RFC 8785 text of its canonical JSON form; it compares equal to its clone, and it and its clone drop. A `ValueType` of 100,000 nested `Option`s around `Boolean` clones, compares equal to its clone, hashes equal to its clone, formats for debug and drops on the same thread. | Test (TC-735) |
+| FR-262-AC-2 | On a thread with a 512 KiB stack, a recursive list value 100,000 long (`record List { head: Int[0, 9]; tail: List?; }`), built by a recursive function, evaluates; it keys as simulation state, and its state-key bytes equal the RFC 8785 text of its canonical JSON form; it compares equal to its clone, and it and its clone drop. A `ValueType` of 100,000 nested `Option`s around `Boolean` clones, compares equal to its clone, hashes equal to its clone, formats for debug and drops on the same thread. | Test (TC-735) |
 
 ## Dependencies
 

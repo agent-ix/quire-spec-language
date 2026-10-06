@@ -201,6 +201,22 @@ only through a renamed import is a known limitation of this check, not a
 silent pass. The check's own report SHALL state these limitations (#249
 review, MEDIUM-5).
 
+### The facade's compile entry
+
+The layer-6 `qsl-replay` facade that T12-A protects SHALL carry a compile
+entry beside `replay`: `qsl_replay::compile_package(source, path, bytes,
+packages, dependencies, limits)`, with `source` a `SourceIdentity`, `path` the
+display path, `bytes` the source, `packages` the domain package documents
+(the same input, in the same position, as `call_site` takes), `dependencies` a
+`DependencyInput` and `limits` the `StageLimits` a replay request carries. It returns a `CompiledPackage` whose
+`bytes()` are the emitted `quire.checked-package/v2` bytes and whose
+`package_id()` is the `package_id` they declare, or a `ReplayRefusal`. It
+runs the one S1-to-E4 spine run that `replay`'s recompile runs, under the
+stage limits `replay` reads from a request (S1 `text_input_bytes`, S3
+`work_units`), and it refuses as that recompile does. A consumer that builds
+checked-package bytes from source of its own, such as CG testing against real
+QSL output, calls this entry and never names `qsl_replay::spine`.
+
 ### Honest reporting of real findings
 
 Running the check against QSL's real source tree at any commit SHALL report
@@ -219,6 +235,9 @@ each list can only shrink.
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
 | FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and rules T12-B, T12-C and T12-D are still evaluated and reported; rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
+| FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes and `package_id` equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
+| FR-060-AC-6 | `qsl_replay::compile_package` refuses as the spine does: a malformed source refuses `ReplayRefusal::Recompile` with the spine refusal's catalog code and stage; a library whose source has the unit's owner refuses `ReplayRefusal::DependencyInput`; an S1 `text_input_bytes` limit below the source's size refuses `stage_limit_exceeded`; and an S1 limit above the reader limit refuses `LimitAboveReader`. | Test (TC-908) |
+| FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes and `package_id` of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |
 
 ## Dependencies
 
@@ -260,6 +279,9 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`
   outside `model`, `qsl-eval/src/value/expression/evaluate.rs`, is a test literal
   inside `#[cfg(test)]`.
+
+The facade's compile entry, `qsl_replay::compile_package` (FR-060-AC-5 to
+AC-7, TC-908), is implemented.
 
 Remediating the debt-list sites is #211/#213's work, not this requirement's.
 Remaining work: #211.
