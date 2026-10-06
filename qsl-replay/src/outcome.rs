@@ -984,7 +984,7 @@ mod tests {
 
     /// Each terminal cause is written in its FR-331 spelling, with its
     /// payload.
-    #[trace("TC-770", "FR-286-AC-3")]
+    #[trace("TC-770", "FR-286-AC-3", "FR-357-AC-12")]
     #[test]
     fn terminal_causes_use_their_own_spellings() {
         let parity = DisagreementCause::Verdicts {

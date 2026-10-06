@@ -47,7 +47,9 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   it is an empty array for every other operation and for an outcome with no
   items. Each item carries its QSpec FR-331 terminal record with its label
   and cause in FR-331's wire spelling (its wire-spelling table): for example
-  `undefined-evaluation{where, cause}` and `replay-parity`. A proof item (`prove`,
+  `undefined-evaluation{where, cause}` and `replay-parity`. The scalar-parity
+  cause `ScalarAgrees` (FR-357) is spelled `scalar-agrees` and carries its kind
+  only: the claim identity and outcome stay on the typed `ScalarAgreement`. A proof item (`prove`,
   `analyze`) never carries the label `undefined`: an undefined claim
   evaluation is `refuted` with cause `undefined-evaluation{where, cause}`,
   category violation (FR-281). A `monitor` clause whose evaluation over the

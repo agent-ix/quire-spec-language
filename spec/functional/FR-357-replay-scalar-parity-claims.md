@@ -106,7 +106,8 @@ predicate that is false at its bindings (FR-098).
   `Inconclusive` with the typed cause `ScalarAgrees`, which holds the claim
   identity (operator or function, its operands or bindings, and for an
   operator claim its node and generated-content identity), the agreed outcome
-  and no predicate verdict. The encoded-size bound of the proof envelope
+  and no predicate verdict; the outcome document spells it `scalar-agrees`,
+  kind only. The encoded-size bound of the proof envelope
   (FR-069-AC-4) counts it.
 - An exact evaluation that reaches a limit before an outcome settles
   `Incomplete`, never a verdict.
@@ -129,6 +130,7 @@ predicate that is false at its bindings (FR-098).
 | FR-357-AC-9 | Operator level: an operand outside its own range settles `Inconclusive(ReplayRefused(invalid_runtime_input))` with nothing evaluated; a literal's range is the singleton `(value, value)`. | Test (TC-904) |
 | FR-357-AC-10 | Function and operator level: an agreement settles `Inconclusive(ScalarAgrees)` naming the claim and the outcome, a divergence settles `Failed`, an exact evaluation that reaches its limits (function arm and operator arm each) settles `Incomplete`, and no scalar result settles `Refuted`; a `ScalarAgrees` cause is counted by the envelope's encoded-size bound and round-trips through the envelope. | Test (TC-904, TC-177, TC-178, TC-179) |
 | FR-357-AC-11 | Operator level: the call site of a non-`Boolean` function recompiles, its scalar node is found in the selected function's body as an application of the operator, and an agreement, a divergence and a refused operand each settle with the request's obligation identity carried unchanged. A stale `package_id` refuses `PackageIdMismatch` (`content-mismatch`); a node the package does not hold, a node outside the selected function's body and an operator the node is not an application of each refuse `ScalarIdentity` (`revision-mismatch`) with their own cause; an undeclared enclosing function refuses `UnknownFunction` (`missing-name`). Each settles `Inconclusive(ReplayRefused(code))` with the obligation identity carried. | Test (TC-904) |
+| FR-357-AC-12 | The outcome document writes a `ScalarAgrees` cause as `{"kind": "scalar-agrees"}`, the kind only (FR-286). | Test (TC-770) |
 
 ## Dependencies
 
