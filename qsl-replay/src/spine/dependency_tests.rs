@@ -506,22 +506,18 @@ fn compile_under(
     )
 }
 
-/// The `LimitExceeded` an import refusal wraps, unwrapped from the
-/// dependency path of the libraries being compiled when it was reached.
+/// The dependency limit a compile stopped at, and the identity of the
+/// library source whose import reached it (the limit's locus).
 fn reached_dependency_limit(
     refusal: &CompileRefusal,
-) -> (&[LibraryName], &qsl_foundation::diagnostic::LimitExceeded) {
-    let CompileRefusal::Dependency { path, refusal } = refusal else {
-        panic!("expected a refusal inside a library, got {refusal:?}");
-    };
-    let CompileRefusal::Import {
-        refusal: ImportRefusal::Limit(limit),
-        ..
-    } = &**refusal
-    else {
+) -> (&str, &qsl_foundation::diagnostic::LimitExceeded) {
+    let CompileRefusal::Limit(limit) = refusal else {
         panic!("expected a dependency limit, got {refusal:?}");
     };
-    (path, limit)
+    let Some(qsl_foundation::diagnostic::Locus::Region(region)) = limit.locus() else {
+        panic!("a dependency limit is located at its import, got {limit:?}");
+    };
+    (region.source().identity(), limit)
 }
 
 /// ADR-030: no fixed ceiling bounds how deeply library compiles nest. A
@@ -569,8 +565,8 @@ fn the_libraries_limit_refuses_the_import_that_would_exceed_it() {
         "a reached limit is incomplete (exit 22)"
     );
     assert_eq!(refusal.stage(), SpineStage::Intake);
-    let (path, limit) = reached_dependency_limit(&refusal);
-    assert_eq!(path, [lib("test/c2"), lib("test/c1")]);
+    let (importer, limit) = reached_dependency_limit(&refusal);
+    assert_eq!(importer, "c1", "the second library's import of the third");
     assert_eq!(limit.kind(), LimitKind::NodeCount);
     assert_eq!(limit.configured_bound(), 2);
     assert_eq!(limit.actual(), 3);

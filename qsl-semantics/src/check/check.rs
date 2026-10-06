@@ -333,6 +333,29 @@ pub struct Scope {
     imports: BTreeMap<String, super::AdmittedImport>,
 }
 
+/// Drops the chain of imported checked graphs over an explicit stack
+/// (ADR-030): each import holds its library's graph, whose scope holds that
+/// library's own imports, so a derived drop would recurse once per library
+/// of an import chain.
+impl Drop for Scope {
+    fn drop(&mut self) {
+        let mut pending: Vec<std::sync::Arc<super::CheckedGraph>> =
+            std::mem::take(&mut self.imports)
+                .into_values()
+                .map(|import| import.graph)
+                .collect();
+        while let Some(graph) = pending.pop() {
+            if let Ok(mut graph) = std::sync::Arc::try_unwrap(graph) {
+                pending.extend(
+                    std::mem::take(&mut graph.scope.imports)
+                        .into_values()
+                        .map(|import| import.graph),
+                );
+            }
+        }
+    }
+}
+
 /// `Scope`'s by-name lookups, keyed by the parsed parts of a name,
 /// so resolving a name is a map lookup, not a scan of every declaration.
 #[derive(Clone, Debug, Default)]
