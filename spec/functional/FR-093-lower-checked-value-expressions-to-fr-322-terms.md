@@ -814,7 +814,9 @@ body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decima
 the lowering and the keys; the M-4 emitter serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218, and the `owner`
-member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet.
+member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet:
+IR adds `owner` to its `CheckedSemanticNodeV2` first, and the emitter then
+writes it.
 
 The emitter writes `diagnostics.catalog`, each lock definition and each law
 `definition` as the identity-only `DefinitionRef`: AC-17 states it for
