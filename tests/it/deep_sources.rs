@@ -231,9 +231,9 @@ fn cli_parse_takes_caller_limits() {
     let refused = parse(&[]);
     assert_eq!(refused.status.code(), Some(22));
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("resource_exhausted"),
+        String::from_utf8_lossy(&refused.stdout).contains("stage_limit_exceeded"),
         "{}",
-        String::from_utf8_lossy(&refused.stderr)
+        String::from_utf8_lossy(&refused.stdout)
     );
     let parsed = parse(&[
         "--source-bytes",

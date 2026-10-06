@@ -26,7 +26,7 @@ Tag the test `#[trace("TC-750", "FR-256-AC-5")]`.
 
 ## Expected Results
 
-- Step 1: exits with the resource refusal naming the exhausted limit.
+- Step 1: exits 22 with `stage_limit_exceeded` and the exhausted ceiling in its message.
 - Step 2: exits 0 and reports `"status":"parsed"`.
 - Step 3: exits with the usage error.
 
