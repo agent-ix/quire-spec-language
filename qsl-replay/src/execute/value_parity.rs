@@ -97,6 +97,7 @@ pub fn replay_value_parity(
     }
 }
 
+#[deny(clippy::wildcard_enum_match_arm)]
 fn settle(
     wire: ReplayRequestWire,
     generated: ScalarOutcome,
