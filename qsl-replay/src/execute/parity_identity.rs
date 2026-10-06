@@ -427,6 +427,50 @@ mod tests {
         );
     }
 
+    /// FR-357-AC-19 (IR-631): an operator-parity preimage over one graph-child
+    /// operand with the range `[-2, 3]`. The canonical text is written by
+    /// hand from ADR-013 O-09's rules (members sorted, bounds as decimal
+    /// strings, node ids as 64 lowercase hex digits, counters as numbers); the
+    /// encoder's bytes and the identity digest must equal it.
+    #[trace("TC-904", "FR-357-AC-19")]
+    #[test]
+    fn an_operator_parity_range_preimage_has_its_hand_written_text_and_digest() {
+        let text = concat!(
+            r#"{"arguments":[{"domain":{"lower":"-2","tag":"range","upper":"3"},"#,
+            r#""operand":{"node_id":"2222222222222222222222222222222222222222222222222222222222222222","tag":"graph_child"},"#,
+            r#""position":0}],"#,
+            r#""node":"1111111111111111111111111111111111111111111111111111111111111111","#,
+            r#""obligation_kind":"operator_parity","#,
+            r#""occurrence_key":{"ordinal":0,"role":"expression"}}"#
+        );
+        let preimage = ParityPreimage {
+            node: node(),
+            occurrence: Origin::new(Role::new("expression"), 0),
+            obligation_kind: "operator_parity".to_owned(),
+            arguments: vec![ParityArgument {
+                identity: OperandIdentity::GraphChild(WireNodeId::from_digest([0x22; 32])),
+                domain: Domain::Range(
+                    IntegerInterval::new(Integer::from(-2_i64), Integer::from(3_i64)).unwrap(),
+                ),
+            }],
+        };
+        let bytes = quire_canonical::to_vec(&preimage, Limits::new(u64::MAX)).unwrap();
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), text);
+        let digest = ByteDigest::of(text.as_bytes());
+        assert_eq!(
+            digest
+                .as_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "ce7c6db3f790558d63e613427d14cfc5916802329b1e3ce032daa5878dc8ee2a"
+        );
+        assert_eq!(
+            parity_obligation(&preimage).unwrap(),
+            ObligationIdentity::from_digest(digest.as_bytes())
+        );
+    }
+
     /// FR-357-AC-19: harness bounds order by the encoded key's bytes, not by
     /// `DomainKey`'s derived order, and a repeated key refuses.
     #[trace("TC-904", "FR-357-AC-19")]
