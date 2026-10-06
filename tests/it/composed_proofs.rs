@@ -733,13 +733,13 @@ fn excluded_numeric_meanings_keep_the_actual_type_refusal_and_original_locus() {
             composed::CauseKind::ForbiddenOperator,
         ),
         (
-            "lhs_arg = 9223372036854775808",
-            "9223372036854775808",
+            "lhs_arg = 170141183460469231731687303715884105728",
+            "170141183460469231731687303715884105728",
             composed::CauseKind::LiteralDomain,
         ),
         (
-            "fraction = rational(9223372036854775808,9223372036854775808)",
-            "rational(9223372036854775808,9223372036854775808)",
+            "fraction = rational(170141183460469231731687303715884105728,170141183460469231731687303715884105728)",
+            "rational(170141183460469231731687303715884105728,170141183460469231731687303715884105728)",
             composed::CauseKind::UnsupportedPrerequisite(
                 composed::Prerequisite::RationalNormalization,
             ),

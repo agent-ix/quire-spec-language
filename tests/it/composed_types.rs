@@ -644,7 +644,7 @@ fn normalization_requires_exact_formal_source_without_erasing_inferred_types() {
             );
         },
     );
-    inspect("predicate WideRaw using S (input: M::Q): Boolean { input = rational(9223372036854775808,9223372036854775808) }", |binding, formal| {
+    inspect("predicate WideRaw using S (input: M::Q): Boolean { input = rational(170141183460469231731687303715884105728,170141183460469231731687303715884105728) }", |binding, formal| {
         let report = composed::admit_types(binding, formal, TypeLimits::default());
         refused(&report, "WideRaw", CauseKind::UnsupportedPrerequisite(Prerequisite::RationalNormalization));
     });
