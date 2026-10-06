@@ -16,6 +16,9 @@ exactly.
 
 Scope: FR-033-AC-6.
 
+Planned: this test lands when Linear IR-662 (i128 `IntegerType` and
+`IntegerLiteral` in the IR) merges.
+
 ## Test Procedure
 
 1. Lower a declaration bounded by 0 and 9223372036854775808 and the

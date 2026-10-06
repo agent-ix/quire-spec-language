@@ -70,4 +70,4 @@ promise transactional directory publication.
 - [FR-009](FR-009-lower-qualified-projections.md): existing complete projection/binder.
 - [FR-029](FR-029-export-executable-projection.md): existing standalone lower command.
 - [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md): the i128 ceiling on integer bounds and literals.
-- The IR's executable `IntegerType` bounds and `IntegerLiteral` value (`quire-contract-model`'s `expression.rs`) are `i64` on quire-contract-ir `main`; AC-6 needs them as `i128`, which the IR lane owns (QSL-642).
+- Linear IR-662 widens the IR's executable `IntegerType` bounds and `IntegerLiteral` value (`quire-contract-model`'s `expression.rs`) from `i64` to `i128`. FR-033-AC-6 is planned and its test lands when IR-662's code merges; QSL-642 does not wait for it.

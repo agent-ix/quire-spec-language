@@ -538,7 +538,7 @@ names different artifacts in each.
 | TC-909 | Integer bounds and literals up to i128 check, and one beyond refuses at check | Unit | P1 | FR-091-AC-36, FR-091-AC-37 | 🚧 Planned |
 | TC-910 | Wide integer ranges key to their vectors, and counters keep one exact spelling | Unit | P1 | FR-092-AC-14, FR-092-AC-15 | 🚧 Planned |
 | TC-911 | Field refinement decides wide integer domains and literals exactly | Unit | P1 | FR-056-AC-16, FR-082-AC-9 | 🚧 Planned |
-| TC-912 | The IR wire round-trips integer bounds and literals up to i128 | Integration | P1 | FR-033-AC-6 | 🚧 Planned |
+| TC-912 | The IR wire round-trips integer bounds and literals up to i128 | Integration | P1 | FR-033-AC-6 | 🚧 Planned (waits on IR-662) |
 | TC-913 | A wide-range source recompiles to its package_id and replays | Integration | P1 | FR-098-AC-8 | 🚧 Planned |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 Planned |
