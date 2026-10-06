@@ -513,7 +513,8 @@ names different artifacts in each.
 | TC-834 | Unions compile under the value profile with the same lock selections as records | Integration | P1 | FR-324-AC-1 | 🚧 Planned |
 | TC-720 | A reached limit names its kind, bound, count and setting | Unit | P1 | FR-255-AC-1, FR-255-AC-2, FR-255-AC-3 | 🚧 Planned |
 | TC-721 | Every setting raises its limit through the library, the replay request and the settings operation the driver CLI calls | Integration | P1 | FR-255-AC-4, FR-255-AC-5, FR-255-AC-6 | 🚧 Planned |
-| TC-749 | The root native parser parses 100,000-deep sources on a small stack | Unit | P1 | FR-256-AC-4 | ✅ Passed locally |
+| TC-749 | The root native parser parses 100,000-deep sources on a small stack | Integration | P1 | FR-256-AC-4 | ✅ Passed locally |
+| TC-750 | `quire-spec parse` takes caller limits and parses a 100,000-deep source | Integration | P1 | FR-256-AC-5 | ✅ Passed locally |
 | TC-722 | Deep sources parse on a small stack under raised S1 limits | Unit | P1 | FR-256-AC-1 | 🚧 Planned |
 | TC-723 | S1 parses to its default limits and names the setting it reached | Unit | P1 | FR-256-AC-2, FR-256-AC-3 | 🚧 Planned |
 | TC-724 | Deep forms and control anchors build on a small stack | Unit | P1 | FR-257-AC-1, FR-257-AC-2, FR-257-AC-3 | 🚧 Planned |

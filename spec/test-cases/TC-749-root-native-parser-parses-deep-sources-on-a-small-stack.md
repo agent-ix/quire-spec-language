@@ -31,7 +31,7 @@ Tag the tests `#[trace("TC-749", "FR-256-AC-4")]`.
 
 ## Expected Results
 
-- Steps 1 and 2: each input parses, and the thread completes.
+- Steps 1 and 2: each input parses, the thread completes, and the parsed unit has the shape the input has (one invariant clause, with at least as many expressions as the input has operators or brackets).
 
 ## Status
 

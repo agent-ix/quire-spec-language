@@ -136,6 +136,7 @@ fn syntax(
     command: SyntaxCommand,
     source_identity: SourceIdentity,
     path: &Path,
+    parse_limits: Limits,
 ) -> Result<String, (u8, String)> {
     let display_path = path.to_string_lossy();
     // FR-010: a blank label refuses as `invalid_source_identity` before the
@@ -162,7 +163,7 @@ fn syntax(
             format(&parsed).map_err(|refusal| complete_diagnostic(refusal.diagnostic(), &bytes))
         }
         SyntaxCommand::Parse => {
-            let limits = Limits::default();
+            let limits = parse_limits;
             let bytes = read_bounded(path, limits.source_bytes)?;
             let unit = parse(source_identity, display_path.as_ref(), &bytes, limits)
                 .map_err(|error| diagnostic(&error))?;
@@ -195,7 +196,12 @@ fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String)
 
 fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
     match command {
-        Command::Syntax { kind, source, path } => syntax(kind, source, path)
+        Command::Syntax {
+            kind,
+            source,
+            path,
+            limits,
+        } => syntax(kind, source, path, limits)
             .map(|text| (Category::Success.exit_code(), Output::Line(text))),
         Command::Run { path } => quire_spec_language::command::run(path)
             .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
@@ -210,9 +216,10 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
 }
 
 fn main() -> ExitCode {
-    // Six operands including the command are admitted; retain one extra to
-    // reject excess arguments without collecting an unbounded process argument list.
-    let arguments: Vec<_> = std::env::args_os().skip(1).take(7).collect();
+    // The longest form is `parse` with five operands and three limit options
+    // (twelve including the command); retain one extra to reject excess
+    // arguments without collecting an unbounded process argument list.
+    let arguments: Vec<_> = std::env::args_os().skip(1).take(13).collect();
     let outcome = Command::try_from(arguments.as_slice())
         .map_err(|error| {
             // An unrecognized lowering target names a real, catalogued
