@@ -24,7 +24,7 @@ the members those fixtures pin. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
-Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-AC-19, FR-093-AC-20, FR-093-CON-2.
+Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-AC-19, FR-093-AC-20, FR-093-AC-21, FR-093-AC-22, FR-093-CON-2.
 
 ## Test Procedure
 
@@ -83,6 +83,20 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     recursive `Tree` of step 6. Read each through QSL's I2 read, and decode
     each checked node's (`node_tag`, `semantic_form`) through IR's node
     kinds (FR-093-AC-19).
+12. Check and emit `record P { x: Int[0, 9]; }` and the `Tree` of step 6
+    under owner (`a`, `u`), a function over a `Reference<M::Order>`
+    parameter with `acme/orders` admitted (FR-094-AC-1), and the clause
+    functions of FR-094-AC-5. For every emitted node, read its `owner` and
+    its `identity_projection` entry's `owner`, and compare them with the
+    owner of the node's preimage; recompute each structural key and each
+    group label from the wire node alone with a test-side key function that
+    calls no `qsl-package` function, and read each package with IR's v2
+    reader (FR-093-AC-21).
+13. Check and emit `record Point { x: Integer; }` and
+    `record List { next?: List; }` under (`agent-ix`, `example-a`), then
+    under (`agent-ix`, `example-b`). Compare the two packages' `Point` ids,
+    `List` group labels, `List` group member ids, `Integer` ids and
+    `package_id`s, and read both with IR's v2 reader (FR-093-AC-22).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -134,6 +148,14 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   TC-160's `q` and `t`, over a `metre` unit the fixture unit's own source
   declares, give the `dimension`, `unit` and `compound_unit` rows. No node is
   omitted (FR-093-AC-19).
+- Step 12: exactly the declared structural nodes (`P`, `Tree`), M1 and the
+  clause functions carry `owner`, each equal to its preimage's owner and to
+  its projection entry's; no other node carries one; every recomputed key
+  equals its `node_id`, the `Tree` label recomputes, and IR admits each
+  package (FR-093-AC-21).
+- Step 13: the `Point` ids differ, the `List` labels and member ids differ,
+  the `Integer` id is equal, the `package_id`s differ, and IR admits both
+  (FR-093-AC-22).
 
 ## Status
 
@@ -157,3 +179,6 @@ compared, and IR's v2 reader admits each emitted package. It compares every
 member including `mode` (`float64.add` under `toward-zero` and `nearest-even`)
 and skips, by name, the fixture identities no row lowers in a
 function body.
+
+Steps 12 and 13 are not implemented yet (QSL-638): the emitter writes no
+`owner` member.

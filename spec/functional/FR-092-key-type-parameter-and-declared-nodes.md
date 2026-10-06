@@ -217,7 +217,10 @@ group's nodes in the v2 graph's node order, which the package's writer
 chooses. QSL's v2 emission writes each group's members in ordinal order
 ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md), Who
 builds the lowering), so a reader that derives the ordinal from graph order,
-as IR-242's does, recomputes the keys `check` minted.
+as IR-242's does, recomputes the keys `check` minted. A reader reads a node's
+`owner` from the node's wire `owner` member, which QSL's v2 emission writes
+on every node whose preimage carries one (FR-093, QSpec FR-322 `owner`), so
+it recomputes an in-group key and its group digest from the package alone.
 
 A pass computes at most `n` signatures per round for `n` rounds, so at most
 `n²` signatures for a group of `n` members, and a group holds no more nodes
