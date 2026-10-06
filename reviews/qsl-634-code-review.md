@@ -69,3 +69,9 @@ Round 1, reviewed at b2c7911504123cbd65bb139209b9736f9cddf675 (fix commits 9869a
 | FND-002 | fixed | 9869ac332 |
 | FND-003 | fixed | 9869ac332 |
 | FND-004 | fixed | 9869ac332 |
+
+Round 2, reviewed at c392645b519036b1029d710b9d2a8ceffbfa2b63 (fix commit c392645b5).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | c392645b5 |
