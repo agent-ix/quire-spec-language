@@ -358,7 +358,9 @@ undeclared node that is not model-owned carry no `owner`. The node's
 keys and group digests included, from the emitted package alone, and reads
 no owner from the source map. The lock's `sources` holds each emitted
 `SourceOwner`'s (`authority`, `identity`) and its `model_selections` each
-emitted `ModelOwner`'s `identity`, the joins FR-322 checks. A recursion group's members carry one `recursion_group`
+emitted `ModelOwner`'s `identity`, the joins FR-322 checks.
+
+A recursion group's members carry one `recursion_group`
 label, the group digest as a lowercase hex string (FR-092), and the emission
 writes them in ordinal order, so FR-322's ordinal, which a reader derives
 from graph order, equals the ordinal each member's key hashes.
@@ -727,8 +729,8 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
 | FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, at its emitted `package_id`. | Test (TC-416) |
 | FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the lock's `edition` and each `definition_selections` row as the `DefinitionLock` catalog's row of that role, exactly `{authority, identity}` with no revision and no digest. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row, and the lock's `definition_selections` holds it. IR's v2 reader admits both packages. | Test (TC-416) |
-| FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and on their `identity_projection` entries: `record P { x: Int[0, 9]; }` and the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` checked under owner (`a`, `u`) give `P` and `Tree` the `SourceOwner` (`a`, `u`); a parameter typed `Reference<M::Order>` (FR-094-AC-1) gives the model declaration node M1 the `ModelOwner` (`acme/orders`, `ix://acme/orders/Order`); the clause functions of FR-094-AC-5 carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter, expression and enum nodes carry none. The key of every emitted structural node recomputed from the wire node alone, its `owner` included, equals its `node_id`, and each `Tree` group's label recomputes from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
-| FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; their `package_id`s differ, and IR's v2 reader admits both. These are the nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
+| FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and on their `identity_projection` entries: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The key of every emitted structural node recomputed from the wire node alone, its `owner` included, equals its `node_id`, and each `Tree` group's label recomputes from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
+| FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; their `package_id`s differ, and IR's v2 reader admits both. QSL writes the declarations with the qualified names `["Point"]` and `["List"]` (FR-092 D1), so these `Point`, `List` and `Integer` nodes are the corresponding nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
 
 ## Dependencies
 
@@ -758,7 +760,9 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
   node `cccc…`; QSL asks QSpec to correct them.
 - QSpec FR-322 `owner` (QSL-638): the node member the emission writes and
   the lock joins a reader checks it against (FR-322-AC-51 to AC-53). IR's
-  v2 node type carries it once IR adopts that member.
+  v2 node type carries it once IR-646 adds `owner` to
+  `CheckedSemanticNodeV2`; AC-21 and AC-22 ("IR's v2 reader admits") cannot
+  pass before that lands.
 - IR-242: the IR reader's recursion preimage. It derives an in-group
   ordinal from graph order, which the emission sets to FR-092's group
   order.
@@ -815,8 +819,10 @@ the lowering and the keys; the M-4 emitter serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218, and the `owner`
 member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet:
-IR adds `owner` to its `CheckedSemanticNodeV2` first, and the emitter then
-writes it.
+IR adds `owner` to its `CheckedSemanticNodeV2` first (IR-646), and the
+emitter then writes it. Until then AC-7 is unmet as worded: its test
+(`every_written_node_recomputes_to_its_node_id`) supplies the owner (`a`,
+`u`) itself instead of reading it from the node's `owner` member.
 
 The emitter writes `diagnostics.catalog`, each lock definition and each law
 `definition` as the identity-only `DefinitionRef`: AC-17 states it for
