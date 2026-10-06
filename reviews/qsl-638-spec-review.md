@@ -78,3 +78,17 @@ testability and traceability gaps.
 | FND-005 | medium | FR-093-AC-7 now says the structural key is recomputed "with the owner read from the node's own `owner` member". Its existing tests (qsl-package/src/emit/tests.rs `every_written_node_recomputes_to_its_node_id`, with the owner hardcoded as (`a`, `u`) at tests.rs:465) do not do that, and cannot until the emitter writes `owner`. TC-416 Status still says only steps 12 and 13 are unimplemented, so AC-7's trace tags claim a criterion the code does not meet. AC-21 already states the from-the-wire recompute. Fix: revert the AC-7 wording, or list AC-7 as unmet in TC-416 Status and the FR-093 Status note. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:716; spec/test-cases/TC-416-emission-writes-the-nodes-check-lowered.md:183-184 |
 | FND-006 | low | The Dependencies bullet ("IR's v2 node type carries it once IR adopts that member") and the new Status sentence describe the IR-first order but do not name its ticket. IR-627 is the IR side that QSL-638's ruling names. AC-21 and AC-22 ("IR's v2 reader admits") cannot pass before it lands. Fix: cite IR-627 in both places. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:759-761, 816-819 |
 | FND-007 | low | In "Who builds the lowering", the existing sentence "A recursion group's members carry one `recursion_group` label …" is now attached to the end of the new owner paragraph (line 361), so the recursion-group rule reads as part of the owner rule. Fix: start a new paragraph at "A recursion group's members". | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:361 |
+
+## Dispositions
+
+Round 1, reviewed at b479547c9651d343a7431e9688a3c64e60d7eda7 (`git diff aabccf9cb..b479547c9`), spec text only, no build run. FND-002's QSpec side is quire-specification#190 caa6b38: FR-322-AC-53 now uses the qualified names `["Point"]`/`["List"]` that QSL emits. FND-006 cites IR-646, the IR ticket that adds `owner` to `CheckedSemanticNodeV2`. That ticket is in Backlog, so AC-21 and AC-22 stay unimplementable until it lands, and the FR-093 Status note now says so.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b479547c9 |
+| FND-002 | fixed | b479547c9 |
+| FND-003 | fixed | b479547c9 |
+| FND-004 | fixed | b479547c9 |
+| FND-005 | fixed | b479547c9 |
+| FND-006 | fixed | b479547c9 |
+| FND-007 | fixed | b479547c9 |
