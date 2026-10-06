@@ -57,3 +57,16 @@ Examined:
 ## Verdict
 
 Not mergeable as written: one high, three medium and two low findings. The overall design is sound. Values stay strings, counters switch at 2^53, the check-time refusal names site, value and limit and nothing reaches IR, ScalarLimits stay budgets, and the IR dependency is named. The vectors reproduce and validation matches main. FND-001 (the i128::MIN literal has no stated checked, keyed or lowered form) must be fixed. Fix FND-002 to FND-004 in the same round, and the lows with them.
+
+## Dispositions
+
+Round 1, reviewed at 15d426853e1dbc3a3f89b4b94312c4a558e50c0f. Recomputed: T16 `811c7208...` and L7 `c3aa30b2...` reproduce from their preimages (RFC 8785 bytes, python hashlib), and L7 has L2's shape with only `value` changed. `quire validate` output is identical to origin/main.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 15d426853 |
+| FND-002 | fixed | 15d426853 |
+| FND-003 | fixed | 15d426853 |
+| FND-004 | fixed | 15d426853 |
+| FND-005 | fixed | 15d426853 |
+| FND-006 | fixed | 15d426853 |
