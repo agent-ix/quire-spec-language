@@ -196,7 +196,7 @@ fn source_declared_nodes_carry_their_source_owner() {
             types: p_and_tree_types(),
             enums: vec![status],
             functions: vec![keep],
-            ..PackageDeclarations::new(source())
+            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the package checks"),
@@ -396,6 +396,7 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             &clauses(order, sub),
             source(),
             &mut meter,
+            qsl_foundation::IdentityLimits::default(),
         )
         .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
         declarations.types = types.clone();
@@ -481,7 +482,7 @@ fn point_and_list_package(owner: &RawSourceRef) -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(owner.clone())
+            ..PackageDeclarations::new(owner.clone(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("Point and List check"),
