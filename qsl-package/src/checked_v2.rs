@@ -152,7 +152,7 @@ pub(crate) fn read_v2(
     }
 }
 
-/// Every ceiling of one [`read_checked_package_v2`] call (see the module
+/// Every ceiling of one `read_checked_package_v2` call (see the module
 /// doc's "Ceilings" section). Each field is used exactly as the caller
 /// supplies it, above or below [`Self::default`]: an implementation ceiling
 /// is not a domain bound (NFR-001). There is no depth ceiling (FR-264). Each
