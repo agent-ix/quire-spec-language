@@ -11,17 +11,17 @@ pub const EDITION: &str = "0-draft";
 /// Exact admitted profile label; parsing alone does not establish executable support.
 pub const PROFILE: &str = "state-finite/0-draft";
 
-/// Caller limits may lower the implementation ceilings, never disable them.
-/// Equality compares the requested capacities, so a resource-only configuration
-/// change remains visible in retained build provenance.
+/// Caller limits, each used as given, above or below its default (FR-256,
+/// NFR-001). Equality compares the requested capacities, so a resource-only
+/// configuration change remains visible in retained build provenance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    /// Inclusive input-content ceiling, clamped to 1 MiB.
+    /// Inclusive input-content ceiling. Defaults to 1 MiB.
     pub source_bytes: usize,
     /// Historical parsing: maximum non-comment tokens. Complete parsing:
-    /// maximum retained CST leaves. Clamped to 100,000.
+    /// maximum retained CST leaves. Defaults to 100,000.
     pub tokens: usize,
-    /// Maximum syntax nodes, clamped to 50,000. The historical path counts
+    /// Maximum syntax nodes. Defaults to 50,000. The historical path counts
     /// expressions; the composed path also counts declarations, parameters,
     /// captures, activation/interval records and protocol binding/control records.
     pub nodes: usize,
@@ -33,17 +33,6 @@ impl Default for Limits {
             source_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
             tokens: 100_000,
             nodes: 50_000,
-        }
-    }
-}
-
-impl Limits {
-    pub(crate) fn bounded(self) -> Self {
-        let hard = Self::default();
-        Self {
-            source_bytes: self.source_bytes.min(hard.source_bytes),
-            tokens: self.tokens.min(hard.tokens),
-            nodes: self.nodes.min(hard.nodes),
         }
     }
 }

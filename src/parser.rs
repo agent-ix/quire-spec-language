@@ -17,14 +17,12 @@ pub fn parse(
     bytes: &[u8],
     limits: Limits,
 ) -> Result<ParsedUnit, Box<Diagnostic>> {
-    let limits = limits.bounded();
     let source = Source::read(identity, path, bytes, limits.source_bytes)?;
     parse_source(source, limits)
 }
 
 /// Parse a historical source already loaded (and optionally digest-verified).
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
-    let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
         return Err(qsl_foundation::diagnostic::resource_exhausted(
             &source,
@@ -62,7 +60,6 @@ pub fn parse_native(
     bytes: &[u8],
     limits: Limits,
 ) -> Result<c::NativeUnit, Box<Diagnostic>> {
-    let limits = limits.bounded();
     let source = Source::read(identity, path, bytes, limits.source_bytes)?;
     parse_native_source(source, limits)
 }
@@ -72,7 +69,6 @@ pub fn parse_native_source(
     source: Source,
     limits: Limits,
 ) -> Result<c::NativeUnit, Box<Diagnostic>> {
-    let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
         return Err(qsl_foundation::diagnostic::resource_exhausted(
             &source,
