@@ -535,6 +535,7 @@ pub(crate) struct UnitProvenance {
 /// `check::CheckedStateClause` here, into model-level
 /// `ClauseFacts`/`OperationFacts`, rather than that module importing
 /// `check` itself.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn admit_clause_observations(
     graph: &CheckedGraph,
     clause: &CheckedStateClause,
