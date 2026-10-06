@@ -2213,6 +2213,16 @@ fn model_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -
     })
 }
 
+/// [`graph_node`] with the empty `aggregate` body QSpec's own self-typed
+/// scalar types carry: the usual literal body names the node's own id, so the
+/// node's derived key would depend on itself and never settle.
+fn keyable_type_node(label: &str, export: &str) -> Value {
+    let mut node = graph_node(label, export);
+    node["semantic_form"] = json!("text");
+    node["body"] = json!({"term": "aggregate", "members": []});
+    node
+}
+
 fn model_graph_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -> Value {
     let mut node = model_node(label, form, qualified_name, type_ref);
     node["occurrences"] = json!([{"role": "declaration", "ordinal": 0}]);
@@ -2333,7 +2343,7 @@ fn frame_fixture(
     let type_ref = node_ref("pkg::T");
     let object_ref = node_ref("pkg::O");
     let (modifies, creates, deletes) = frame_body(&object_ref);
-    let type_node = graph_node("pkg::T", "T");
+    let type_node = keyable_type_node("pkg::T", "T");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     let frame = frame_node(
         "pkg::Frame",
@@ -2389,7 +2399,7 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
     let field_digest = hex("pkg::F");
     let type_ref = node_ref("pkg::T");
     let object_ref = node_ref("pkg::O");
-    let type_node = graph_node("pkg::T", "T");
+    let type_node = keyable_type_node("pkg::T", "T");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     // `F` is never declared as a dependency of this frame, only named in
     // `modifies`.
