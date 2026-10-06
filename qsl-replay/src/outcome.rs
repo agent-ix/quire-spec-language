@@ -770,6 +770,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::NotAPredicate { .. }
         | ReplayRefusal::NotAValueFunction { .. }
         | ReplayRefusal::ScalarIdentity(_)
+        | ReplayRefusal::ParityBound(_)
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }

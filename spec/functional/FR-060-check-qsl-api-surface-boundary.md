@@ -205,10 +205,10 @@ review, MEDIUM-5).
 
 The layer-6 `qsl-replay` facade that T12-A protects SHALL carry a compile
 entry beside `replay`: `qsl_replay::compile_package(source, path, bytes,
-packages, dependencies, limits)`, with `source` a `SourceIdentity`, `path` the
+packages, dependencies, limits, replay_limits)`, with `source` a `SourceIdentity`, `path` the
 display path, `bytes` the source, `packages` the domain package documents
 (the same input, in the same position, as `call_site` takes), `dependencies` a
-`DependencyInput` and `limits` the `StageLimits` a replay request carries. It returns a `CompiledPackage` whose
+`DependencyInput` and `limits` the `StageLimits` a replay request carries and `replay_limits` the `ReplayLimits` (`replay.input_bytes`) as `replay` takes it. It returns a `CompiledPackage` whose
 `bytes()` are the emitted `quire.checked-package/v2` bytes and whose
 `package_id()` is the `package_id` they declare, or a `ReplayRefusal`. It
 runs the one S1-to-E4 spine run that `replay`'s recompile runs, under the

@@ -13,6 +13,7 @@ use qsl_foundation::digest::WireNodeId;
 use super::operator_parity::ScalarIdentityMismatch;
 use super::ReplayRefusal;
 use crate::scalar::{OperandIdentity, ScalarOperand, ScalarOperation, ScalarOperator};
+use quire_semantic_value::declaration::EqualityOperator;
 
 /// Whether `target` is `function`'s node or one its body reaches. The walk
 /// follows every node reference of a node's preimage, and stops at another
@@ -162,4 +163,66 @@ pub(super) fn check_operands(
         }
     }
     Ok(())
+}
+
+/// The equality operator `node` applies, when its body's operation is a
+/// catalog `quire.op.<family>.eq` or `quire.op.<family>.ne` (QSpec FR-149's
+/// `=` and `!=`).
+#[qsl_attrs::string_edge]
+pub(super) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator> {
+    let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).ok()?;
+    let identity = preimage["body"]["operation"]["identity"].as_str()?;
+    let (_, suffix) = identity.strip_prefix("quire.op.")?.rsplit_once('.')?;
+    match suffix {
+        "eq" => Some(EqualityOperator::Equal),
+        "ne" => Some(EqualityOperator::NotEqual),
+        _ => None,
+    }
+}
+
+/// FR-358: the identity of each argument of the application `node`, in
+/// position order: a reference is a `GraphChild`, an inline integer literal
+/// an `InlineLiteral`. The composite arm names exactly two operands.
+#[qsl_attrs::string_edge]
+pub(super) fn operand_identities(
+    node: &SemanticNode,
+    application: WireNodeId,
+) -> Result<Vec<OperandIdentity>, ScalarIdentityMismatch> {
+    let fault = || ScalarIdentityMismatch::OperandCount {
+        node: application,
+        claimed: 2,
+        found: 0,
+    };
+    let preimage =
+        serde_json::from_slice::<serde_json::Value>(node.preimage()).map_err(|_| fault())?;
+    let arguments = preimage["body"]["arguments"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
+    if arguments.len() != 2 {
+        return Err(ScalarIdentityMismatch::OperandCount {
+            node: application,
+            claimed: 2,
+            found: arguments.len(),
+        });
+    }
+    arguments
+        .iter()
+        .enumerate()
+        .map(|(position, argument)| {
+            if argument["term"] == "reference" {
+                argument["target"]["digest"]
+                    .as_str()
+                    .and_then(WireNodeId::from_hex)
+                    .map(OperandIdentity::GraphChild)
+                    .ok_or_else(fault)
+            } else if argument["term"] == "literal" && argument["value_kind"] == "integer" {
+                Ok(OperandIdentity::InlineLiteral)
+            } else {
+                Err(ScalarIdentityMismatch::NotInlineLiteral {
+                    node: application,
+                    position,
+                })
+            }
+        })
+        .collect()
 }

@@ -89,6 +89,10 @@ pub enum FiniteBoundKind {
     IntegerRange,
     /// A recursive value type's depth maximum.
     Depth,
+    /// The variants of an enum a harness drew (FR-358): a harness-bound
+    /// kind only, never a B-4 substitution kind, since an enum always has
+    /// an authored domain.
+    Variants,
 }
 
 /// A finite domain for one unbounded domain (ADR-014 B-4, §4).
@@ -111,6 +115,13 @@ pub enum FiniteBound {
         /// The inclusive maximum depth.
         maximum: NonZeroU64,
     },
+    /// The variants of an enum a harness drew, as member identifiers
+    /// ascending by UTF-8 bytes with no duplicate (FR-358). Non-empty by
+    /// construction ([`FiniteBound::variants`]).
+    Variants {
+        /// The drawn variants' member identifiers.
+        members: Vec<String>,
+    },
 }
 
 /// A [`FiniteBound`] constructor was given an empty or inverted range.
@@ -122,6 +133,12 @@ pub enum EmptyFiniteBound {
     /// A depth maximum of zero admits no value.
     #[error("depth maximum zero admits no value")]
     ZeroDepth,
+    /// A variant set with no variant admits no value.
+    #[error("a variant set with no variant admits no value")]
+    NoVariants,
+    /// A variant set names one member twice.
+    #[error("a variant set names member {0:?} twice")]
+    DuplicateVariant(String),
 }
 
 impl From<EmptyInterval> for EmptyFiniteBound {
@@ -148,12 +165,31 @@ impl FiniteBound {
             .ok_or(EmptyFiniteBound::ZeroDepth)
     }
 
+    /// `Variants` over `members`, in ascending UTF-8 byte order whatever
+    /// order they arrive in, refusing an empty set and a duplicate.
+    pub fn variants(members: impl IntoIterator<Item = String>) -> Result<Self, EmptyFiniteBound> {
+        let mut members: Vec<String> = members.into_iter().collect();
+        members.sort_unstable();
+        if members.is_empty() {
+            return Err(EmptyFiniteBound::NoVariants);
+        }
+        for pair in members.windows(2) {
+            if let [first, second] = pair {
+                if first == second {
+                    return Err(EmptyFiniteBound::DuplicateVariant(first.clone()));
+                }
+            }
+        }
+        Ok(Self::Variants { members })
+    }
+
     /// Which variant this is.
     pub fn kind(&self) -> FiniteBoundKind {
         match self {
             Self::Cardinality { .. } => FiniteBoundKind::Cardinality,
             Self::IntegerRange(_) => FiniteBoundKind::IntegerRange,
             Self::Depth { .. } => FiniteBoundKind::Depth,
+            Self::Variants { .. } => FiniteBoundKind::Variants,
         }
     }
 }

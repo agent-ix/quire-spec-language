@@ -59,7 +59,8 @@ Claim identity, at both levels:
     compare with a digest of the preimage's canonical text written out by
     hand.
 15. Replay a claim whose request identity was minted over another range,
-    operand identity, occurrence key, obligation kind or native outcome.
+    operand identity, occurrence key or obligation kind. A differing native
+    outcome alone leaves the identity unchanged (it shows as `claim()`).
 16. Replay claims with a node or operator the package lacks, an occurrence
     key the node does not have, a graph child that is not the node's argument,
     and an inline literal the node does not have; check an application with
