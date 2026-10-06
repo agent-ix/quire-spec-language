@@ -310,7 +310,7 @@ fn acme_document() -> Vec<u8> {
 fn clauses(order: EffectiveId, sub: EffectiveId) -> OperationClauses {
     let mut clauses = OperationClauses::default();
     for (operation, member, receiver, precondition, body) in [
-        ("Order/size", "size", order, true, 7),
+        ("Order/size", "size", order, true, 7_i64),
         ("Order/count", "count", order, true, 1),
         ("Sub/size", "size", sub, false, 8),
     ] {
@@ -413,7 +413,7 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             let digest = wire["lock"]["model_selections"][0]["digest"]
                 .as_str()
                 .unwrap();
-            evidence.insert_domain_package_document(digest, &document);
+            evidence.insert_domain_package_document(digest, &document[..]);
             assert!(
                 matches!(read_with(emission, &evidence), Read::Verified { .. }),
                 "{root}: IR's v2 reader admits the package"
