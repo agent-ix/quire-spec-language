@@ -151,3 +151,36 @@ Per finding:
 | FND-002 | fixed | 21f63b513 |
 | FND-003 | fixed | 21f63b513 |
 | FND-004 | fixed | 21f63b513 |
+
+Round 2, reviewed at f75b7c36e035fa25e5a8e07b5efbce151b28447a (fix commits
+cf6dff34e and f75b7c36e on 43053adeb; `git range-diff` shows commits 1 to 16
+unchanged). The qsv pin is now rev e0ada80, the merged qsv #4. No build was
+run; the coordinator reports focused tests and clippy green at the pin.
+
+- **FND-005:** `encode_refusal` maps an encoder error to
+  `NodeKeyRefusal::Identity` for `InputBytes` and `Allocation`, and keeps
+  `Encode` only for `NonCanonical`. `canonical_bytes` and `canonical_sha256`
+  both route through it, and so does `shape.rs`'s `canonical_bytes` caller
+  (through `?`). Lowering's `preimage_refusal` turns `Identity` into
+  `CheckCause::Identity`: `stage_limit_exceeded`/`input-bytes-exceeded`, or
+  `resource_exhausted`/`allocation-failed`. The round-1 `limit_of` arm names
+  `identity.input_bytes`.
+  `a_node_preimage_over_the_identity_byte_limit_is_the_identity_limit` covers
+  both encoders and the allocation mapping. One path is left: a type handle
+  (`AssemblyCause::Handle`) still reports `Identity` as a runtime invariant.
+  A handle preimage is a declared name and owner, far below any byte limit,
+  so that is acceptable.
+- **FND-006:** `NominalRefusal::Allocation { requested }` maps to
+  `AssemblyCause::IdentityAllocation` (`resource_exhausted`/`allocation-failed`)
+  and is tested.
+- **FND-007:** the doc now names the charged preimages and the uncharged
+  population-id preimage, and says what bounds it. One small inaccuracy
+  remains and is not raised: the effective type preimage is hashed just
+  before its phase-5 charge, not after it (normalize.rs:1523-1529), and the
+  cycle-check charges bound it.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | cf6dff34e |
+| FND-006 | fixed | cf6dff34e |
+| FND-007 | fixed | cf6dff34e |

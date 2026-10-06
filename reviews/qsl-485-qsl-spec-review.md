@@ -97,3 +97,14 @@ Round 1, reviewed at 43053adeb4dcd40c4d7956f17a4135b75a73cfee (spec edits in
 | FND-004 | fixed | 21f63b513 |
 | FND-005 | fixed | 21f63b513 |
 | FND-006 | fixed | 21f63b513 |
+
+Round 2, reviewed at f75b7c36e035fa25e5a8e07b5efbce151b28447a.
+
+- **FND-007:** FR-099 Behavior now says the compile "SHALL likewise report a
+  reached limit unwrapped, as a `LimitExceeded` (FR-277) located at the
+  import that charged it, with no library path". That matches the code and
+  the AC-7 tests.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | cf6dff34e |
