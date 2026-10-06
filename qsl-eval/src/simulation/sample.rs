@@ -17,6 +17,7 @@ use crate::simulation::key::{plain_digest, EncodingRefusal};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
+use qsl_foundation::IdentityLimits;
 
 /// The one generator `sample_request` runs (FR-101).
 const SAMPLER_IDENTITY: &str = "quire.simulation.sampler/v1";
@@ -208,8 +209,9 @@ pub(crate) fn sample<S: TransitionSystem>(
     seed: u64,
     trace_index: u64,
     max_steps: usize,
+    identity: IdentityLimits,
 ) -> SampleResult<S::TransitionId, S::Finding> {
-    let mut initial = sorted_initial(system)?;
+    let mut initial = sorted_initial(system, identity)?;
     if initial.is_empty() {
         return Ok(None);
     }
@@ -225,7 +227,7 @@ pub(crate) fn sample<S: TransitionSystem>(
     let mut steps = Vec::new();
     let mut findings = Vec::new();
     let stopped = loop {
-        let (mut successors, state_findings) = match expand(system, &current)? {
+        let (mut successors, state_findings) = match expand(system, &current, identity)? {
             Expanded::Successors {
                 successors,
                 findings,
@@ -308,6 +310,7 @@ pub fn sample_request<S: TransitionSystem>(
     seed: u64,
     trace: u64,
     max_steps: usize,
+    identity: IdentityLimits,
 ) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
     if !is_pinned_sampler(sampler) {
         return Err(NotSimulated::GeneratorMismatch {
@@ -315,7 +318,8 @@ pub fn sample_request<S: TransitionSystem>(
         });
     }
     check_requires_bound(domains, types, position_limit)?;
-    sample(system, sampler.clone(), seed, trace, max_steps)?.ok_or(NotSimulated::EmptyInitial)
+    sample(system, sampler.clone(), seed, trace, max_steps, identity)?
+        .ok_or(NotSimulated::EmptyInitial)
 }
 
 #[cfg(test)]

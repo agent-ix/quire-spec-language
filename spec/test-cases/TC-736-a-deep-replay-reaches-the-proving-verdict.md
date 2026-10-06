@@ -33,4 +33,4 @@ Tag the tests `#[trace("TC-736", "FR-263-AC-1")]`.
 
 ## Status
 
-Planned.
+Moved to QSL-640 (composite `WitnessValue`), with FR-263-AC-1.

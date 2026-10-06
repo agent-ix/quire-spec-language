@@ -140,7 +140,7 @@ fn equality_package(
         types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),
         functions: vec![eq],
         lock_evidence: LockEvidence::default().with_text_profile(text_profile()),
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
 }
 

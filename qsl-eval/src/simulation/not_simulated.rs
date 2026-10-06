@@ -74,10 +74,16 @@ impl NotSimulated {
     pub fn catalog_code(&self) -> Option<CatalogCode> {
         match self {
             Self::RequiresBound(_) => None,
-            Self::EmptyInitial | Self::KeyEncoding(_) | Self::GeneratorMismatch { .. } => {
+            Self::EmptyInitial
+            | Self::KeyEncoding(EncodingRefusal::NoEncoding(_))
+            | Self::GeneratorMismatch { .. } => {
                 Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
             }
-            Self::Extent(ClassifyFailure::Limit(exceeded)) => Some(exceeded.catalog_code()),
+            Self::KeyEncoding(EncodingRefusal::Allocation { .. }) => {
+                Some(CatalogCode::new("resource_exhausted", "allocation-failed"))
+            }
+            Self::Extent(ClassifyFailure::Limit(exceeded))
+            | Self::KeyEncoding(EncodingRefusal::Limit(exceeded)) => Some(exceeded.catalog_code()),
             Self::Extent(ClassifyFailure::Fault(fault)) => Some(fault.catalog_code()),
         }
     }
@@ -92,10 +98,13 @@ impl NotSimulated {
     /// request.rs:179`).
     pub fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
         match self {
-            Self::Extent(ClassifyFailure::Limit(exceeded)) => exceeded.catalog_fields(),
+            Self::Extent(ClassifyFailure::Limit(exceeded))
+            | Self::KeyEncoding(EncodingRefusal::Limit(exceeded)) => exceeded.catalog_fields(),
             Self::RequiresBound(_)
             | Self::EmptyInitial
-            | Self::KeyEncoding(_)
+            | Self::KeyEncoding(
+                EncodingRefusal::NoEncoding(_) | EncodingRefusal::Allocation { .. },
+            )
             | Self::Extent(ClassifyFailure::Fault(_))
             | Self::GeneratorMismatch { .. } => None,
         }

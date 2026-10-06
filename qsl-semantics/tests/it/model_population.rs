@@ -1565,6 +1565,8 @@ fn admission_refuses_a_population_key_from_another_domain_package() {
 /// assertion went red as expected, reverted.
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
+#[trace("TC-720", "FR-255-AC-1")]
+#[trace("TC-721", "FR-255-AC-4")]
 fn l02_population_members_limit_denies_the_third_member_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1584,6 +1586,10 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
     match outcome {
         AdmissionOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, AdmissionLimitKind::PopulationMembers);
+            assert_eq!(
+                incomplete.limit_exceeded().setting(),
+                qsl_foundation::Setting::AdmissionPopulationMembers
+            );
             assert_eq!(incomplete.limit, 2);
             assert_eq!(incomplete.consumed, 2);
             assert_eq!(incomplete.next_charge, 3);
@@ -1601,6 +1607,22 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
             .count(),
         2
     );
+    // Raised to the size the denied charge asked for, the same input admits.
+    let raised = PopulationAdmissionLimits {
+        population_members: 3,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    assert!(matches!(
+        admit_binding(
+            &view,
+            &p1("test/orders"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(raised),
+        ),
+        AdmissionOutcome::Admitted(_)
+    ));
 }
 
 /// TC-198 AC-3's "a denied charge is incomplete", `work_units` dimension:
@@ -1617,6 +1639,8 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
 /// assertion went red as expected, reverted.
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
+#[trace("TC-720", "FR-255-AC-1")]
+#[trace("TC-721", "FR-255-AC-4")]
 fn l02_work_units_limit_denies_the_third_member_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1636,6 +1660,10 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     match outcome {
         AdmissionOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, AdmissionLimitKind::WorkUnits);
+            assert_eq!(
+                incomplete.limit_exceeded().setting(),
+                qsl_foundation::Setting::AdmissionWorkUnits
+            );
             assert_eq!(incomplete.limit, 2);
             assert_eq!(incomplete.consumed, 2);
             assert_eq!(incomplete.next_charge, 1);
@@ -1653,6 +1681,22 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
             .count(),
         2
     );
+    // Raised, the same input admits.
+    let raised = PopulationAdmissionLimits {
+        work_units: 1_000,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    assert!(matches!(
+        admit_binding(
+            &view,
+            &p1("test/orders"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(raised),
+        ),
+        AdmissionOutcome::Admitted(_)
+    ));
 }
 
 /// Review finding (PR #148): every other `Completed` test in this file admits
@@ -3084,6 +3128,7 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
 /// `model.B`, one generalization step below `model.A`) at
 /// `ancestor_steps: 1`, and refuses it at `ancestor_steps: 0` with
 /// `resource_exhausted` naming that bound.
+#[trace("TC-720", "FR-255-AC-1")]
 #[test]
 #[trace("TC-220", "FR-082-AC-3")]
 fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
@@ -3119,10 +3164,27 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::AncestorSteps {
-                    from: DeclarationKey::fixture("model.B"),
-                    limit: 0,
-                }
+                ModelRefusalCause::ancestor_steps(
+                    DeclarationKey::fixture("model.B"),
+                    0,
+                    qsl_foundation::Setting::AdmissionAncestorSteps,
+                )
+            );
+            let exceeded = refusal
+                .cause
+                .limit_exceeded()
+                .expect("a step ceiling is a stage limit");
+            assert_eq!(
+                exceeded.setting(),
+                qsl_foundation::Setting::AdmissionAncestorSteps
+            );
+            assert_eq!(
+                exceeded.actual(),
+                u128::from(match &refusal.cause {
+                    ModelRefusalCause::AncestorSteps { limit, .. }
+                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
+                    other => panic!("unexpected {other:?}"),
+                }) + 1
             );
         }
         other => panic!("expected Refused(AncestorSteps, limit 0), got {other:?}"),
@@ -3227,6 +3289,7 @@ fn fixture_diamond() -> DomainPackage {
 ///
 /// What each bound rules out: counting per path (8 edges) refuses at 6;
 /// counting types (5) admits at 5; a chain depth (3) admits at 5.
+#[trace("TC-720", "FR-255-AC-1")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
@@ -3254,10 +3317,27 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::AncestorSteps {
-                    from: DeclarationKey::fixture("model.D"),
-                    limit: 5,
-                }
+                ModelRefusalCause::ancestor_steps(
+                    DeclarationKey::fixture("model.D"),
+                    5,
+                    qsl_foundation::Setting::ModelAncestorSteps,
+                )
+            );
+            let exceeded = refusal
+                .cause
+                .limit_exceeded()
+                .expect("a step ceiling is a stage limit");
+            assert_eq!(
+                exceeded.setting(),
+                qsl_foundation::Setting::ModelAncestorSteps
+            );
+            assert_eq!(
+                exceeded.actual(),
+                u128::from(match &refusal.cause {
+                    ModelRefusalCause::AncestorSteps { limit, .. }
+                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
+                    other => panic!("unexpected {other:?}"),
+                }) + 1
             );
         }
         other => panic!("expected an ancestor-steps refusal, got {other:?}"),

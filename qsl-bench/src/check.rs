@@ -95,7 +95,7 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
 }
 
@@ -117,7 +117,7 @@ pub fn independent(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
 }
 
@@ -146,9 +146,18 @@ pub fn enum_binding(members: usize) -> EnumBinding {
         "members": cases,
     }))
     .expect("a well-formed enum declaration preimage");
-    let key = NodeKey::from_digest(preimage.digest().expect("the preimage encodes"));
-    let declaration =
-        AdmittedEnumDeclaration::admit(preimage, key, &owners).expect("the declaration admits");
+    let key = NodeKey::from_digest(
+        preimage
+            .digest(qsl_foundation::IdentityLimits::default())
+            .expect("the preimage encodes"),
+    );
+    let declaration = AdmittedEnumDeclaration::admit(
+        preimage,
+        key,
+        &owners,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .expect("the declaration admits");
     let members = cases
         .iter()
         .map(|case| {
@@ -161,9 +170,13 @@ pub fn enum_binding(members: usize) -> EnumBinding {
                 "case": case,
             }))
             .expect("a well-formed enum member preimage");
-            let key = NodeKey::from_digest(member.digest().expect("the preimage encodes"));
+            let key = NodeKey::from_digest(
+                member
+                    .digest(qsl_foundation::IdentityLimits::default())
+                    .expect("the preimage encodes"),
+            );
             declaration
-                .admit_member(&member, key)
+                .admit_member(&member, key, qsl_foundation::IdentityLimits::default())
                 .expect("the member admits")
         })
         .collect();
@@ -202,7 +215,7 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
     PackageDeclarations {
         functions: declarations,
         enums: vec![binding.clone()],
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
 }
 

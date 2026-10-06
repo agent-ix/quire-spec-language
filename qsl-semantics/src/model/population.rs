@@ -206,6 +206,52 @@ impl Default for PopulationAdmissionLimits {
 }
 
 impl PopulationAdmissionLimits {
+    /// These limits with `population_members` set (`admission.population_members`).
+    #[must_use]
+    pub const fn with_population_members(mut self, bound: u64) -> Self {
+        self.population_members = bound;
+        self
+    }
+
+    /// These limits with `work_units` set (`admission.work_units`).
+    #[must_use]
+    pub const fn with_work_units(mut self, bound: u64) -> Self {
+        self.work_units = bound;
+        self
+    }
+
+    /// These limits with `ancestor_steps` set (`admission.ancestor_steps`).
+    #[must_use]
+    pub const fn with_ancestor_steps(mut self, bound: u64) -> Self {
+        self.ancestor_steps = bound;
+        self
+    }
+}
+
+/// FR-255: the one mapping from each field to its setting.
+impl qsl_foundation::SettingLimits for PopulationAdmissionLimits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        use qsl_foundation::Setting;
+        vec![
+            (Setting::AdmissionPopulationMembers, self.population_members),
+            (Setting::AdmissionWorkUnits, self.work_units),
+            (Setting::AdmissionAncestorSteps, self.ancestor_steps),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        use qsl_foundation::Setting;
+        match setting {
+            Setting::AdmissionPopulationMembers => self.population_members = bound,
+            Setting::AdmissionWorkUnits => self.work_units = bound,
+            Setting::AdmissionAncestorSteps => self.ancestor_steps = bound,
+            _ => return false,
+        }
+        true
+    }
+}
+
+impl PopulationAdmissionLimits {
     /// A limit set large enough that no charge in this module is denied.
     /// Test-only: production callers start from [`Self::default`].
     #[cfg(any(test, feature = "test-support"))]
@@ -234,6 +280,14 @@ impl AdmissionLimitKind {
         match self {
             Self::PopulationMembers => "population_members",
             Self::WorkUnits => "work_units",
+        }
+    }
+
+    /// The setting that raises this counter (FR-255).
+    pub const fn setting(self) -> qsl_foundation::Setting {
+        match self {
+            Self::PopulationMembers => qsl_foundation::Setting::AdmissionPopulationMembers,
+            Self::WorkUnits => qsl_foundation::Setting::AdmissionWorkUnits,
         }
     }
 
@@ -288,6 +342,19 @@ pub struct AdmissionIncomplete {
     pub next_charge: u64,
     /// The named point whose charge was denied.
     pub charge_point: AdmissionChargePoint,
+}
+
+impl AdmissionIncomplete {
+    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
+    /// counter's setting, its bound and the total the denied charge would
+    /// have reached.
+    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
+        qsl_foundation::diagnostic::LimitExceeded::new(
+            self.limit_kind.setting(),
+            self.limit,
+            u128::from(self.consumed) + u128::from(self.next_charge),
+        )
+    }
 }
 
 struct AdmissionCharge {
@@ -957,7 +1024,12 @@ fn admit_binding_as(
         // type conforming to a declared member type.
         let mut covered = false;
         for declared in &population.member_types {
-            match index.conforms(&member.type_identity, declared, ancestor_steps) {
+            match index.conforms(
+                &member.type_identity,
+                declared,
+                ancestor_steps,
+                qsl_foundation::Setting::AdmissionAncestorSteps,
+            ) {
                 Ok(true) => {
                     covered = true;
                     break;
@@ -1096,7 +1168,12 @@ fn admit_binding_as(
             }
             let mut applicable: Vec<&SubsettingEdge<'_>> = Vec::new();
             for edge in &subsetting_edges {
-                match index.conforms(original_type, edge.owner, ancestor_steps) {
+                match index.conforms(
+                    original_type,
+                    edge.owner,
+                    ancestor_steps,
+                    qsl_foundation::Setting::AdmissionAncestorSteps,
+                ) {
                     Ok(true) => applicable.push(edge),
                     Ok(false) => {}
                     Err(refusal) => return AdmissionOutcome::Refused(refusal),
@@ -1401,10 +1478,12 @@ fn granted(
     type_identity: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {
     for grant in grants {
-        if frame
-            .index
-            .conforms(type_identity, grant, frame.ancestor_steps)?
-        {
+        if frame.index.conforms(
+            type_identity,
+            grant,
+            frame.ancestor_steps,
+            qsl_foundation::Setting::AdmissionAncestorSteps,
+        )? {
             return Ok(true);
         }
     }
@@ -1738,10 +1817,12 @@ pub fn all_instances(
         {
             return AllInstancesOutcome::Incomplete(incomplete);
         }
-        match binding
-            .index
-            .conforms(original_type, t, binding.ancestor_steps)
-        {
+        match binding.index.conforms(
+            original_type,
+            t,
+            binding.ancestor_steps,
+            qsl_foundation::Setting::AdmissionAncestorSteps,
+        ) {
             Ok(true) => {
                 selected.insert(key.clone());
             }
@@ -1893,10 +1974,12 @@ pub fn lookup(
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
-    match binding
-        .index
-        .conforms(&r.static_type, t, binding.ancestor_steps)
-    {
+    match binding.index.conforms(
+        &r.static_type,
+        t,
+        binding.ancestor_steps,
+        qsl_foundation::Setting::AdmissionAncestorSteps,
+    ) {
         Ok(true) => {}
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {

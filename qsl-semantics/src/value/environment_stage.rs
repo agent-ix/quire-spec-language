@@ -9,21 +9,22 @@
 //!
 //! [`TypeEnvironmentLimits`]: quire_semantic_value::declaration::TypeEnvironmentLimits
 
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, StageFailure};
+use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
+use qsl_foundation::Setting;
 
 use quire_semantic_value::declaration::{
     EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, InvalidDeclaration,
 };
 
 /// `limit` as the stage limit it is: `ancestor_steps` is an edge count, the
-/// `supertypes` edges one conformance walk follows, and `work_units` is the
-/// work budget.
+/// types one conformance walk expands (`environment.ancestor_steps`), and
+/// `work_units` is the work budget (`environment.work_units`).
 pub fn stage_limit(limit: EnvironmentLimit) -> LimitExceeded {
-    let kind = match limit.kind() {
-        EnvironmentLimitKind::AncestorSteps => LimitKind::EdgeCount,
-        EnvironmentLimitKind::WorkUnits => LimitKind::WorkBudget,
+    let setting = match limit.kind() {
+        EnvironmentLimitKind::AncestorSteps => Setting::EnvironmentAncestorSteps,
+        EnvironmentLimitKind::WorkUnits => Setting::EnvironmentWorkUnits,
     };
-    LimitExceeded::new(kind, limit.configured_bound(), limit.actual())
+    LimitExceeded::new(setting, limit.configured_bound(), limit.actual())
 }
 
 /// `failure` as the admitting stage's failure: a refusal stays the
@@ -49,11 +50,11 @@ mod tests {
                 5,
                 6
             )),
-            LimitExceeded::new(LimitKind::EdgeCount, 5, 6)
+            LimitExceeded::new(Setting::EnvironmentAncestorSteps, 5, 6)
         );
         assert_eq!(
             stage_limit(EnvironmentLimit::new(EnvironmentLimitKind::WorkUnits, 4, 5)),
-            LimitExceeded::new(LimitKind::WorkBudget, 4, 5)
+            LimitExceeded::new(Setting::EnvironmentWorkUnits, 4, 5)
         );
     }
 }

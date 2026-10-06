@@ -347,7 +347,10 @@ fn package(scenario: &Scenario) -> CheckedPackage {
     let graph = PackageDeclarations {
         types: types(scenario),
         models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -384,7 +387,10 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
             None,
             Expression::size(all_instances(target)),
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -417,7 +423,10 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
             None,
             Expression::size(Expression::name("elements".to_owned())),
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1092,7 +1101,10 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
     let graph = PackageDeclarations {
         types,
         models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1209,7 +1221,10 @@ fn attribute_world_of(
     let graph = PackageDeclarations {
         types,
         models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1687,7 +1702,10 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
     .unwrap();
     let graph = PackageDeclarations {
         types,
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -3532,7 +3550,7 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
             types: types(&scenario),
             models: vec![scenario.model.clone()],
             functions: vec![function],
-            ..PackageDeclarations::new(source.clone())
+            ..PackageDeclarations::new(source.clone(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the unit checks"),

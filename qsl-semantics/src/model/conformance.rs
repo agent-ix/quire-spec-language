@@ -219,6 +219,7 @@ pub fn check_field_redefinition(
         &redefining.value_type,
         &redefined.value_type,
         meter.limits().ancestor_steps,
+        qsl_foundation::Setting::ModelAncestorSteps,
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -297,6 +298,7 @@ pub fn check_subsetting(
         &subsetting.value_type,
         &subsetted.value_type,
         meter.limits().ancestor_steps,
+        qsl_foundation::Setting::ModelAncestorSteps,
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -401,6 +403,7 @@ pub fn check_operation_redefinition(
                 &dp.value_type,
                 &rp.value_type,
                 meter.limits().ancestor_steps,
+                qsl_foundation::Setting::ModelAncestorSteps,
             ) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
@@ -449,6 +452,7 @@ pub fn check_operation_redefinition(
                 &rr.value_type,
                 &dr.value_type,
                 meter.limits().ancestor_steps,
+                qsl_foundation::Setting::ModelAncestorSteps,
             ) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
@@ -523,7 +527,12 @@ pub fn check_operation_redefinition(
         for entry in create {
             let mut covered = false;
             for grant in grants {
-                match index.conforms(entry, grant, meter.limits().ancestor_steps) {
+                match index.conforms(
+                    entry,
+                    grant,
+                    meter.limits().ancestor_steps,
+                    qsl_foundation::Setting::ModelAncestorSteps,
+                ) {
                     Ok(true) => {
                         covered = true;
                         break;
@@ -613,7 +622,14 @@ pub fn resolve_redefinition_target(
         "redefining names a declared field or operation member, indexed by ModelIndex::build under its own owner",
     );
     if let Some(target_owner) = index.member_owner(&target) {
-        if target_owner != owner && index.conforms(owner, target_owner, max_ancestor_steps)? {
+        if target_owner != owner
+            && index.conforms(
+                owner,
+                target_owner,
+                max_ancestor_steps,
+                qsl_foundation::Setting::ModelAncestorSteps,
+            )?
+        {
             return Ok(RedefinitionTargetOutcome::Resolved(target));
         }
     }

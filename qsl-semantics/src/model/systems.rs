@@ -597,6 +597,7 @@ pub fn check_connection(
             &flow_source.value_type,
             &flow_target.value_type,
             meter.limits().ancestor_steps,
+            qsl_foundation::Setting::ModelAncestorSteps,
         ) {
             Ok(conforms) => conforms,
             Err(refusal) => return ConnectionCheckOutcome::Refused(refusal),

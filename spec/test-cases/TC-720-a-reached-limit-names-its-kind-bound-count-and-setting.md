@@ -45,4 +45,4 @@ Tag the tests `#[trace("TC-720", "FR-255-AC-1")]`, `#[trace("TC-720", "FR-255-AC
 
 ## Status
 
-Planned.
+Implemented. Step 1 is stage-driven for every setting row but the pending `intake.input_bytes` (FR-255 Status); steps 2 and 3 are implemented.

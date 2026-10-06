@@ -75,6 +75,13 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) names
   each setting.
 
+## Status
+
+- FR-261-AC-3: moved to QSL-639. `quire-exact` stores each payload type by
+  value, so a value nested 100,000 deep needs quadratic memory to build and
+  admit. The reader and the `observation.values` count at that depth are
+  backed (TC-733); admission of the 100,000-deep value waits on QSL-639.
+
 ## References
 
 - QSpec FR-460, the ecosystem depth rule (Linear STD-143, which supersedes

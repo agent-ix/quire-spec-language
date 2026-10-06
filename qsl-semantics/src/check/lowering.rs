@@ -48,6 +48,7 @@ fn content_hash(content: &NodeContent) -> u64 {
 }
 
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::IdentityLimits;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
@@ -531,6 +532,9 @@ pub(crate) struct Lowering<'a> {
     /// The checking stage's work meter (`CheckingLimits::work_budget`):
     /// each node built and each group keyed charges it.
     meter: &'a mut Meter,
+    /// The byte limit every node identity encodes under
+    /// (`identity.input_bytes`).
+    pub(super) identity: IdentityLimits,
     /// The check stage's node limit (`CheckingLimits::nodes`), and the
     /// units typing left of it: each text or recursion leaf costs one
     /// (FR-093 "Text leaves").
@@ -1328,6 +1332,7 @@ impl<'a> Lowering<'a> {
         function_count: usize,
         occurrences: &'a mut OccurrenceMap<Location>,
         meter: &'a mut Meter,
+        identity: IdentityLimits,
     ) -> Self {
         Self {
             scope,
@@ -1357,6 +1362,7 @@ impl<'a> Lowering<'a> {
             group_of: BTreeMap::new(),
             group_regions: BTreeMap::new(),
             meter,
+            identity,
             node_limit: u64::MAX,
             node_budget: u64::MAX,
             text_reach: BTreeMap::new(),
@@ -1544,7 +1550,7 @@ impl<'a> Lowering<'a> {
         let (key, preimage) = match known {
             Some(key) => (key, None),
             None => {
-                let keyed = node_key(&content.input())
+                let keyed = node_key(&content.input(), self.identity)
                     .map_err(|refusal| preimage_refusal(location, refusal))?;
                 self.keys.insert(hash, keyed.key);
                 (keyed.key, Some(keyed.preimage))
@@ -1572,7 +1578,7 @@ impl<'a> Lowering<'a> {
             let preimage = match preimage {
                 Some(preimage) => preimage,
                 None => {
-                    node_key(&content.input())
+                    node_key(&content.input(), self.identity)
                         .map_err(|refusal| preimage_refusal(location, refusal))?
                         .preimage
                 }
@@ -2051,7 +2057,7 @@ impl<'a> Lowering<'a> {
         )?;
         let bytes = binding
             .declaration
-            .preimage_bytes()
+            .preimage_bytes(self.identity)
             .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(declaration)))?;
         let inserted = self.insert_nominal(
             &site,
@@ -2074,7 +2080,7 @@ impl<'a> Lowering<'a> {
         }
         for member in &binding.members {
             let key = member.member();
-            let bytes = member_preimage_bytes(declaration, member.case())
+            let bytes = member_preimage_bytes(declaration, member.case(), self.identity)
                 .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(key)))?;
             self.insert_nominal(
                 &site,
@@ -2481,8 +2487,10 @@ impl<'a> Lowering<'a> {
             })
             .collect();
         let meter = &mut *self.meter;
-        let keys = group_keys(&inputs, handles, &mut |work| charge_work(meter, work))
-            .map_err(|refusal| preimage_refusal(&first.location, refusal))?;
+        let keys = group_keys(&inputs, handles, self.identity, &mut |work| {
+            charge_work(meter, work)
+        })
+        .map_err(|refusal| preimage_refusal(&first.location, refusal))?;
         let regions: Vec<Location> = members
             .iter()
             .filter(|draft| draft.content.declaration.is_some())
@@ -2514,14 +2522,17 @@ impl<'a> Lowering<'a> {
             // the same type or node would write it.
             let body = bodies[at].map_keys(&mut to_key);
             let semantic_type = types[at].map(&mut to_key);
-            let rebuilt = node_key(&NodeInput {
-                owner: draft.content.owner.as_ref(),
-                node_tag: draft.content.node_tag,
-                semantic_form: draft.content.semantic_form,
-                semantic_type,
-                declaration: draft.content.declaration.as_deref(),
-                body: &body,
-            })
+            let rebuilt = node_key(
+                &NodeInput {
+                    owner: draft.content.owner.as_ref(),
+                    node_tag: draft.content.node_tag,
+                    semantic_form: draft.content.semantic_form,
+                    semantic_type,
+                    declaration: draft.content.declaration.as_deref(),
+                    body: &body,
+                },
+                self.identity,
+            )
             .map_err(|refusal| preimage_refusal(&draft.location, refusal))?;
             self.rebuilt_members.insert(rebuilt.key, keyed.key);
             self.graph

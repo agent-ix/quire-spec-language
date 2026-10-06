@@ -745,6 +745,7 @@ mod checked {
             EnumDeclarationPreimage::from_json(preimage.clone()).unwrap(),
             preimage_key(&preimage),
             &owners(),
+            qsl_foundation::IdentityLimits::default(),
         )
         .unwrap();
         let members = members
@@ -762,6 +763,7 @@ mod checked {
                     .admit_member(
                         &EnumMemberPreimage::from_json(member.clone()).unwrap(),
                         preimage_key(&member),
+                        qsl_foundation::IdentityLimits::default(),
                     )
                     .unwrap()
             })
@@ -806,7 +808,10 @@ mod checked {
         let levels = collection_type(CollectionKind::Set, ValueType::Enum(level.shape()), 0, 2);
         let package = package(PackageDeclarations {
             enums: vec![color.clone(), level.clone()],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         });
         let c = formed(
             &colors,
@@ -845,8 +850,7 @@ mod checked {
             AdmittedEnumDeclaration::admit(
                 EnumDeclarationPreimage::from_json(reordered.clone()).unwrap(),
                 preimage_key(&reordered),
-                &owners(),
-            )
+                &owners(), qsl_foundation::IdentityLimits::default())
             .unwrap_err(),
             qsl_semantics::value::NominalRefusal::Graph(invalid)
                 if invalid.cause == SemanticGraphCause::UnsortedUnorderedMembers
@@ -877,7 +881,10 @@ mod checked {
                 "M::Obj",
                 object_type("M::Obj"),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         });
         let holder_type = ValueType::Composite(key("Holder"));
         let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);
@@ -964,7 +971,10 @@ mod checked {
                 "M::Obj",
                 object_type("M::Obj"),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         });
         let holder_type = ValueType::Composite(key("Holder"));
         let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);
@@ -1019,6 +1029,7 @@ mod checked {
     fn c11_converting_to_the_other_bound_admits_equality_without_loss() {
         let package = package(PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
         ));
         let x_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 2);
         let s_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 3);
@@ -1060,6 +1071,7 @@ mod checked {
     fn c12_collection_literals_take_their_unique_expected_type() {
         let package = package(PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
         ));
         let set = || literal_collection(CollectionKind::Set, &[2, 1]);
         assert_eq!(

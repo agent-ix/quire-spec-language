@@ -10,11 +10,11 @@ use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
 use qsl_foundation::diagnostic::Code;
 
 use super::helpers::{admission_record, object_reference};
-use super::ordered_json::{OrderedJson, OrderedObject};
+use super::tree::{read_raw_value, Json, Object};
 use super::{
-    check_document_digest, fault, incomplete, population_universe, read_raw_value, refuse,
-    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange,
-    PostStateRange, SelectedObject, SnapshotValue,
+    check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
+    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PostStateRange,
+    RawForm, RawValue, ReadMeter, SelectedObject, SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
@@ -213,25 +213,20 @@ pub(super) fn read_document(
         ))
     })?;
     // 1.2: input bytes.
-    if bytes.len() as u64 > limits.document_bytes {
-        return Err(refuse(admission_record(
-            Code::StageLimitExceeded,
-            "input-bytes-exceeded",
-        )));
+    let document_bytes = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    if document_bytes > limits.document_bytes {
+        return Err(super::input_bytes_exceeded(
+            limits.document_bytes,
+            u128::from(document_bytes),
+        ));
     }
-    let document_bytes = bytes.len() as u64;
-    let parsed: Option<OrderedJson> = serde_json::from_slice(bytes).ok();
-    // 1.2: nesting depth (only meaningful once parsed).
-    let nesting_depth = parsed.as_ref().map_or(0, OrderedJson::depth);
-    if nesting_depth > limits.nesting_depth {
-        return Err(refuse(admission_record(
-            Code::StageLimitExceeded,
-            "nesting-depth-exceeded",
-        )));
-    }
-    // 1.3: digest, before any member is read. Bytes that do not parse are
+    // The one read of the document, through the shared reader at any depth
+    // (FR-261): check 1.3 digests this tree, and every later check reads
+    // members from it.
+    let read = quire_canonical::read(bytes, limits.document_bytes);
+    // 1.3: digest, before any member is read. Bytes the reader refuses are
     // digested raw, and so refuse here.
-    check_document_digest(bytes, selected.digest)?;
+    check_document_digest(bytes, &read, selected.digest, limits)?;
     let digest = selected.digest;
     // Bytes that matched the expected digest raw (never parsed as JSON at
     // all) or that parsed but are not a JSON object trivially hold no
@@ -242,10 +237,13 @@ pub(super) fn read_document(
     // FND-004): FR-106 settles every input defect at admission, and this
     // input is untrusted, not an internal invariant.
     let unsupported_wire = || refuse(admission_record(Code::UnknownWire, "unsupported-wire"));
-    let Some(value) = parsed else {
+    let Ok(document) = read else {
         return Err(unsupported_wire());
     };
-    let object = value.as_object().ok_or_else(unsupported_wire)?;
+    let object = Json::of(document.root())
+        .as_object()
+        .ok_or_else(unsupported_wire)?;
+    let mut meter = ReadMeter::new(limits);
 
     // 1.4: format.
     let expected_format = match kind {
@@ -311,10 +309,10 @@ pub(super) fn read_document(
         }
     }
     for key in object.keys() {
-        if !allowed.contains(&key.as_str()) {
+        if !allowed.contains(&key) {
             return Err(refuse(
                 admission_record(Code::InvalidRuntimeInput, "unknown-member")
-                    .with("field", key.clone()),
+                    .with("field", key.to_owned()),
             ));
         }
     }
@@ -357,21 +355,20 @@ pub(super) fn read_document(
     let model = read_model(object)?;
 
     let body = match kind {
-        DocumentKind::Snapshot => Body::Snapshot(read_snapshot_body(object, model)?),
+        DocumentKind::Snapshot => Body::Snapshot(read_snapshot_body(object, model, &mut meter)?),
         DocumentKind::Invocation => {
-            Body::Invocation(Box::new(read_invocation_body(object, model)?))
+            Body::Invocation(Box::new(read_invocation_body(object, model, &mut meter)?))
         }
         DocumentKind::InvocationCall => {
-            Body::InvocationCall(Box::new(read_invocation_call(object, model)?))
+            Body::InvocationCall(Box::new(read_invocation_call(object, model, &mut meter)?))
         }
     };
     Ok(ReadDocument {
         identity: document_identity,
         usage: super::AdmissionUsage {
             document_bytes,
-            nesting_depth,
-            objects: 0,
-            values: 0,
+            objects: meter.objects,
+            values: meter.values,
         },
         body,
     })
@@ -392,7 +389,7 @@ pub(super) fn read_document(
 /// model selection, misreporting `wrong-model-selection` for what is
 /// actually a missing- or malformed-member document defect.
 #[qsl_attrs::string_edge]
-fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, AdmissionFailure> {
+fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
         .member("model")
         .ok_or_else(|| missing_member("model"))?
@@ -443,7 +440,7 @@ fn missing_member(field: impl Into<String>) -> AdmissionFailure {
 /// defect (a missing or wrong-kind member) is `invalid_runtime_input`,
 /// never `AdmissionFailure::Fault` (SR-750 FND-004).
 fn read_object_ref(
-    value: &OrderedJson,
+    value: Json<'_>,
     field: &'static str,
 ) -> Result<SelectedObject, AdmissionFailure> {
     let object = value.as_object().ok_or_else(|| wrong_kind(field))?;
@@ -467,7 +464,7 @@ fn read_object_ref(
 /// refuses rather than being silently accepted or kept whole.
 #[qsl_attrs::string_edge]
 fn read_document_ref(
-    value: &OrderedJson,
+    value: Json<'_>,
     field: &'static str,
 ) -> Result<DocumentRef, AdmissionFailure> {
     let object = value.as_object().ok_or_else(|| wrong_kind(field))?;
@@ -535,8 +532,9 @@ fn hex_bytes(text: &str) -> Option<Vec<u8>> {
 /// since an unrecognized spelling is exactly that, one level earlier.
 #[qsl_attrs::string_edge]
 fn read_snapshot_body(
-    object: &[(String, OrderedJson)],
+    object: Object<'_>,
     model: ModelHeader,
+    meter: &mut ReadMeter,
 ) -> Result<SnapshotDocument, AdmissionFailure> {
     let observation = match object
         .member("observation")
@@ -569,7 +567,7 @@ fn read_snapshot_body(
         }
         None => None,
     };
-    let populations = read_populations(object)?;
+    let populations = read_populations(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
@@ -579,7 +577,8 @@ fn read_snapshot_body(
 }
 
 fn read_populations(
-    object: &[(String, OrderedJson)],
+    object: Object<'_>,
+    meter: &mut ReadMeter,
 ) -> Result<Vec<RawPopulation>, AdmissionFailure> {
     let items = object
         .member("populations")
@@ -603,6 +602,7 @@ fn read_populations(
             .ok_or_else(|| wrong_kind("objects"))?;
         let mut objects = Vec::with_capacity(object_items.len());
         for object_item in object_items {
+            meter.object()?;
             let object_entry = object_item
                 .as_object()
                 .ok_or_else(|| wrong_kind("objects"))?;
@@ -622,11 +622,11 @@ fn read_populations(
                 .member("fields")
                 .and_then(|value| value.as_object())
                 .ok_or_else(|| wrong_kind("fields"))?;
-            let mut fields = Vec::with_capacity(field_items.len());
-            for (name, value) in field_items {
-                let raw = read_raw_value(&value.clone().into_value())
-                    .ok_or_else(|| wrong_kind(name.clone()))?;
-                fields.push((name.clone(), raw));
+            let mut fields = Vec::new();
+            for (name, value) in field_items.iter() {
+                let raw = read_raw_value(value, &mut || meter.value())?
+                    .ok_or_else(|| wrong_kind(name))?;
+                fields.push((name.to_owned(), raw));
             }
             objects.push(RawObject {
                 key,
@@ -646,8 +646,9 @@ fn read_populations(
 /// Reads an invocation's call half: `context`, `operation`, `self`, `pre`
 /// and `parameters`, and nothing of its post side.
 fn read_invocation_call(
-    object: &[(String, OrderedJson)],
+    object: Object<'_>,
     model: ModelHeader,
+    meter: &mut ReadMeter,
 ) -> Result<InvocationCall, AdmissionFailure> {
     let context = object
         .member("context")
@@ -671,11 +672,10 @@ fn read_invocation_call(
         .member("parameters")
         .and_then(|value| value.as_object())
         .ok_or_else(|| wrong_kind("parameters"))?;
-    let mut parameters = Vec::with_capacity(parameter_items.len());
-    for (name, value) in parameter_items {
-        let raw =
-            read_raw_value(&value.clone().into_value()).ok_or_else(|| wrong_kind(name.clone()))?;
-        parameters.push((name.clone(), raw));
+    let mut parameters = Vec::new();
+    for (name, value) in parameter_items.iter() {
+        let raw = read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind(name))?;
+        parameters.push((name.to_owned(), raw));
     }
     Ok(InvocationCall {
         model,
@@ -690,18 +690,19 @@ fn read_invocation_call(
 /// Reads a whole invocation: its call half, then `post`, `result`,
 /// `created` and `deleted`.
 fn read_invocation_body(
-    object: &[(String, OrderedJson)],
+    object: Object<'_>,
     model: ModelHeader,
+    meter: &mut ReadMeter,
 ) -> Result<InvocationDocument, AdmissionFailure> {
-    let call = read_invocation_call(object, model)?;
+    let call = read_invocation_call(object, model, meter)?;
     let post = object
         .member("post")
         .ok_or_else(|| missing_member("post"))
         .and_then(|value| read_document_ref(value, "post"))?;
     let result = match object.member("result") {
-        Some(OrderedJson::Null) => ResultValue::Null,
+        Some(value) if value.is_null() => ResultValue::Null,
         Some(value) => ResultValue::Value(
-            read_raw_value(&value.clone().into_value()).ok_or_else(|| wrong_kind("result"))?,
+            read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind("result"))?,
         ),
         None => return Err(missing_member("result")),
     };
@@ -709,14 +710,12 @@ fn read_invocation_body(
         .member("created")
         .and_then(|value| value.as_array())
         .ok_or_else(|| wrong_kind("created"))?
-        .iter()
         .map(|item| read_object_ref(item, "created"))
         .collect::<Result<Vec<_>, _>>()?;
     let deleted = object
         .member("deleted")
         .and_then(|value| value.as_array())
         .ok_or_else(|| wrong_kind("deleted"))?
-        .iter()
         .map(|item| read_object_ref(item, "deleted"))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(InvocationDocument {
@@ -783,11 +782,6 @@ fn find_population<'v>(
 pub(super) struct AdmittedEnvironment {
     pub(super) environment: ObjectEnvironment,
     pub(super) completeness: BTreeMap<String, bool>,
-    /// FR-109 Outputs' admission usage: this document's own admitted
-    /// object and field-value counts (SR-751 FND-002 round 2); the
-    /// caller merges in `ReadDocument::usage`'s byte length and nesting
-    /// depth, which this check-6-to-8 pass never sees.
-    pub(super) usage: super::AdmissionUsage,
     /// Each integer admitted outside its declared range, in walk order
     /// (always empty for a document admitted under
     /// [`PostStateRange::Refuse`]).
@@ -812,24 +806,18 @@ pub(super) fn raw_field<'a>(
 
 fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) -> bool {
     matches!(
-        (raw, value_type),
-        (SnapshotValue::Boolean(_), quire_exact::ValueType::Boolean)
+        (raw.form(), value_type),
+        (RawForm::Boolean(_), quire_exact::ValueType::Boolean)
             | (
-                SnapshotValue::Integer(_),
+                RawForm::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
+            | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (
-                SnapshotValue::Reference(_),
-                quire_exact::ValueType::Reference(_)
-            )
-            | (
-                SnapshotValue::Absent | SnapshotValue::Present(_),
+                RawForm::Absent | RawForm::Present(_),
                 quire_exact::ValueType::Option(_)
             )
-            | (
-                SnapshotValue::Sequence(_),
-                quire_exact::ValueType::Collection(_)
-            )
+            | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
     )
 }
 
@@ -849,23 +837,17 @@ fn object_field_kind_matches(
     presence: quire_exact::Presence,
 ) -> bool {
     if presence == quire_exact::Presence::Optional {
-        return matches!(raw, SnapshotValue::Absent | SnapshotValue::Present(_));
+        return matches!(raw.form(), RawForm::Absent | RawForm::Present(_));
     }
     matches!(
-        (raw, value_type),
-        (SnapshotValue::Boolean(_), quire_exact::ValueType::Boolean)
+        (raw.form(), value_type),
+        (RawForm::Boolean(_), quire_exact::ValueType::Boolean)
             | (
-                SnapshotValue::Integer(_),
+                RawForm::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
-            | (
-                SnapshotValue::Reference(_),
-                quire_exact::ValueType::Reference(_)
-            )
-            | (
-                SnapshotValue::Sequence(_),
-                quire_exact::ValueType::Collection(_)
-            )
+            | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
+            | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
     )
 }
 
@@ -999,52 +981,18 @@ struct RangeBreach {
     index: Option<usize>,
 }
 
+/// A value inside a sequence admitted as a value of `value_type`: scalars
+/// only, since no declared element type nests a collection or an option.
 /// `witness` is `Some` for a post-state field (FR-106 check 6.5's
 /// post-state rule): an integer outside its declared range is admitted
 /// exactly and recorded there instead of refused. `None` refuses it.
 fn admit_scalar(
     references: &mut References<'_>,
-    raw: &SnapshotValue,
+    raw: RawValue<'_>,
     value_type: &quire_exact::ValueType,
     witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<Value, AdmissionRecord> {
-    match (raw, value_type) {
-        (SnapshotValue::Boolean(value), quire_exact::ValueType::Boolean) => {
-            Ok(Value::Boolean(*value))
-        }
-        (SnapshotValue::Integer(spelling), quire_exact::ValueType::Integer) => spelling
-            .parse::<Integer>()
-            .map(Value::Integer)
-            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value")),
-        (SnapshotValue::Integer(spelling), quire_exact::ValueType::Int(interval)) => {
-            let value = spelling
-                .parse::<Integer>()
-                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?;
-            if interval.contains(&value) {
-                return Ok(Value::Integer(value));
-            }
-            match witness {
-                Some(found) => {
-                    found.push(RangeBreach {
-                        range: interval.clone(),
-                        observed: value.clone(),
-                        index: None,
-                    });
-                    Ok(Value::Integer(value))
-                }
-                None => Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")),
-            }
-        }
-        (SnapshotValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
-            references
-                .resolve(reference, *type_identity)
-                .map(Value::Reference)
-        }
-        _ => Err(admission_record(
-            Code::InvalidRuntimeInput,
-            "wrong-value-kind",
-        )),
-    }
+    admit_form(references, raw.form(), value_type, witness)
 }
 
 /// An object type's own field's admission: `presence`, not `value_type`,
@@ -1060,39 +1008,36 @@ fn admit_object_field(
     presence: quire_exact::Presence,
     mut witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<FieldValue, AdmissionRecord> {
+    let mut raw = raw.form();
     if presence == quire_exact::Presence::Optional {
-        return match raw {
-            SnapshotValue::Absent => Ok(FieldValue::Absent),
+        raw = match raw {
+            RawForm::Absent => return Ok(FieldValue::Absent),
             // A present value is admitted as a required one of the same
             // type, so an optional collection-typed member admits its
             // sequence.
-            SnapshotValue::Present(inner) => admit_object_field(
-                references,
-                inner,
-                value_type,
-                quire_exact::Presence::Required,
-                witness,
-            ),
+            RawForm::Present(inner) => inner.form(),
             // `object_field_kind_matches` already refused every other raw
             // form for an optional field before this is called.
-            SnapshotValue::Boolean(_)
-            | SnapshotValue::Integer(_)
-            | SnapshotValue::Reference(_)
-            | SnapshotValue::Sequence(_) => Err(admission_record(
-                Code::InvalidRuntimeInput,
-                "wrong-value-kind",
-            )),
+            RawForm::Boolean(_)
+            | RawForm::Integer(_)
+            | RawForm::Reference(_)
+            | RawForm::Sequence(_) => {
+                return Err(admission_record(
+                    Code::InvalidRuntimeInput,
+                    "wrong-value-kind",
+                ))
+            }
         };
     }
     match (raw, value_type) {
-        (SnapshotValue::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
+        (RawForm::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
             if collection.kind() != CollectionKind::Sequence {
                 return Err(admission_record(
                     Code::UnknownRequiredFeature,
                     "unsupported-feature",
                 ));
             }
-            let mut elements = Vec::with_capacity(items.len());
+            let mut elements = Vec::with_capacity(items.iter().len());
             for (index, item) in items.iter().enumerate() {
                 let first = witness.as_deref().map_or(0, Vec::len);
                 elements.push(admit_scalar(
@@ -1113,27 +1058,76 @@ fn admit_object_field(
                 elements,
             )))
         }
-        (raw, value_type) => {
-            admit_scalar(references, raw, value_type, witness).map(FieldValue::Present)
+        (form, value_type) => {
+            admit_form(references, form, value_type, witness).map(FieldValue::Present)
         }
     }
 }
 
-/// Every `(population, key)` a reference value inside `raw` names,
-/// recursively (a reference can sit under `present` or inside a
-/// `sequence`), appended to `into` in the value's own walk order.
-fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
-    match raw {
-        SnapshotValue::Reference(reference) => {
-            into.push((reference.population.clone(), reference.key.clone()))
-        }
-        SnapshotValue::Present(inner) => collect_references(inner, into),
-        SnapshotValue::Sequence(items) => {
-            for item in items {
-                collect_references(item, into);
+/// A scalar form admitted as a value of `value_type`: a boolean, an integer
+/// in its declared interval, or a reference to an object of a conforming
+/// type; any other pairing is `wrong-value-kind`.
+fn admit_form(
+    references: &mut References<'_>,
+    form: RawForm<'_>,
+    value_type: &quire_exact::ValueType,
+    witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<Value, AdmissionRecord> {
+    match (form, value_type) {
+        (RawForm::Boolean(value), quire_exact::ValueType::Boolean) => Ok(Value::Boolean(value)),
+        (RawForm::Integer(spelling), quire_exact::ValueType::Integer) => spelling
+            .parse::<Integer>()
+            .map(Value::Integer)
+            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value")),
+        (RawForm::Integer(spelling), quire_exact::ValueType::Int(interval)) => {
+            let value = spelling
+                .parse::<Integer>()
+                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?;
+            if interval.contains(&value) {
+                return Ok(Value::Integer(value));
+            }
+            match witness {
+                Some(found) => {
+                    found.push(RangeBreach {
+                        range: interval.clone(),
+                        observed: value.clone(),
+                        index: None,
+                    });
+                    Ok(Value::Integer(value))
+                }
+                None => Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")),
             }
         }
-        SnapshotValue::Boolean(_) | SnapshotValue::Integer(_) | SnapshotValue::Absent => {}
+        (RawForm::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
+            references
+                .resolve(reference, *type_identity)
+                .map(Value::Reference)
+        }
+        _ => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )),
+    }
+}
+
+/// Every `(population, key)` a reference value inside `raw` names (a
+/// reference can sit under `present` or inside a `sequence`), appended to
+/// `into` in the value's own walk order. The walk keeps its own heap stack,
+/// so a value of any depth walks in constant native stack.
+fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
+    let mut pending = vec![raw.form()];
+    while let Some(form) = pending.pop() {
+        match form {
+            RawForm::Reference(reference) => {
+                into.push((reference.population.clone(), reference.key.clone()));
+            }
+            RawForm::Present(inner) => pending.push(inner.form()),
+            // Pushed last-first, so the first item walks first.
+            RawForm::Sequence(items) => {
+                pending.extend(items.iter().rev().map(RawValue::form));
+            }
+            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent => {}
+        }
     }
 }
 
@@ -1150,10 +1144,6 @@ pub(super) struct PopulationValues<'t> {
     /// Each reference that named no object of this snapshot, with the wire
     /// population it named ([`References`]).
     unresolved: Vec<(String, ObjectReference)>,
-    /// FR-109 Outputs' admission usage: this document's own admitted
-    /// object and field-value counts (SR-751 FND-002 round 2).
-    pub(super) objects_admitted: u64,
-    pub(super) values_admitted: u64,
     /// Each post-state integer admitted outside its declared range, in
     /// walk order.
     out_of_range: Vec<OutOfRange>,
@@ -1163,25 +1153,19 @@ pub(super) struct PopulationValues<'t> {
 /// document order. `types` is the checked package's own effective attribute
 /// set (`CheckedGraph::scope().types()`); `views` are the re-derived domain
 /// package views (population declarations and identity strings, `EffectiveId`
-/// conformance). `limits`' `objects_per_document`/`values_per_document`
-/// ceilings (FR-106 Inputs, `FR-106-admit-snapshots-and-invocations.md:52-54`)
-/// are enforced here, walk order, alongside check 1.2's own bytes/depth
-/// ceilings: `stage_limit_exceeded`/`objects-exceeded` once this document's
-/// object count would exceed `objects_per_document`, `values-exceeded` once
-/// its admitted field-value count would exceed `values_per_document` (SR-750
-/// FND-011: previously declared but never read).
+/// conformance). The object and value ceilings (FR-106 Inputs) are not
+/// charged here: the read charged them as it walked the document
+/// (FR-261 B4).
 pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
     populations: &[RawPopulation],
-    limits: ObservationLimits,
     range: PostStateRange,
+    ancestor_steps: u64,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut object_count: u64 = 0;
-    let mut value_count: u64 = 0;
     let mut references = References::over(views, types, populations);
     let mut out_of_range: Vec<OutOfRange> = Vec::new();
 
@@ -1198,13 +1182,6 @@ pub(super) fn admit_population_values<'t>(
             .entry(entry.population.clone())
             .or_default();
         for object in &entry.objects {
-            object_count += 1;
-            if object_count > limits.objects_per_document {
-                return Err(refuse(admission_record(
-                    Code::StageLimitExceeded,
-                    "objects-exceeded",
-                )));
-            }
             // 6.1: type/population membership, before anything else in this
             // check (SR-750 FND-005 round 2's own numbered order).
             let Some((_, object_key)) = find_declaration(views, object.type_identity.as_str())
@@ -1214,13 +1191,29 @@ pub(super) fn admit_population_values<'t>(
                         .with("object", object.key.clone()),
                 ));
             };
-            let covered = population_info.member_types.iter().any(|member| {
-                population_view
-                    .view
-                    .model_index()
-                    .conforms(&object_key, member, 64)
-                    .unwrap_or(false)
-            });
+            // A reached `ancestor_steps` ceiling is the stage's limit
+            // outcome, never a "does not conform" verdict.
+            let mut covered = false;
+            for member in &population_info.member_types {
+                match population_view.view.model_index().conforms(
+                    &object_key,
+                    member,
+                    ancestor_steps,
+                    qsl_foundation::Setting::ModelAncestorSteps,
+                ) {
+                    Ok(true) => {
+                        covered = true;
+                        break;
+                    }
+                    Ok(false) => {}
+                    Err(refusal) => {
+                        return Err(match refusal.cause.limit_exceeded() {
+                            Some(limit) => super::limit_refusal(&limit),
+                            None => fault("conformance-walk-refused"),
+                        });
+                    }
+                }
+            }
             if !covered {
                 return Err(refuse(
                     admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
@@ -1326,13 +1319,6 @@ pub(super) fn admit_population_values<'t>(
                         .into_iter()
                         .map(|breach| (attribute.identity(), breach)),
                 );
-                value_count += 1;
-                if value_count > limits.values_per_document {
-                    return Err(refuse(admission_record(
-                        Code::StageLimitExceeded,
-                        "values-exceeded",
-                    )));
-                }
                 attributes.push((name, field_value));
             }
 
@@ -1356,8 +1342,6 @@ pub(super) fn admit_population_values<'t>(
         completeness,
         keys_by_population,
         unresolved: references.unresolved,
-        objects_admitted: object_count,
-        values_admitted: value_count,
         out_of_range,
     })
 }
@@ -1557,12 +1541,6 @@ pub(super) fn finish_populations(
         .filter(|(population, _)| values.completeness.get(population).copied() == Some(false))
         .map(|(_, reference)| reference)
         .collect();
-    let usage = super::AdmissionUsage {
-        document_bytes: 0,
-        nesting_depth: 0,
-        objects: values.objects_admitted,
-        values: values.values_admitted,
-    };
     let out_of_range = values.out_of_range;
     // The closure admits each slot against its declared type, which an
     // out-of-range post-state integer breaks by definition. Such a closure
@@ -1584,7 +1562,6 @@ pub(super) fn finish_populations(
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
-        usage,
         out_of_range,
     })
 }
@@ -1631,10 +1608,15 @@ pub(super) fn admit_populations(
     types: &TypeEnvironment,
     populations: &[RawPopulation],
     self_population: Option<&str>,
-    limits: ObservationLimits,
+    ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
-    let values =
-        admit_population_values(views, types, populations, limits, PostStateRange::Refuse)?;
+    let values = admit_population_values(
+        views,
+        types,
+        populations,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
     check_population_completeness(populations, &values.completeness, self_population, &[])?;
     check_population_closure(
         populations,
@@ -1732,7 +1714,7 @@ pub(super) fn admit_parameters(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_scalar(references, raw, value_type, None)
+        let value = admit_form(references, raw.form(), value_type, None)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         references.check_closure(raw).map_err(refuse)?;
         admitted.push((name.clone(), value));
@@ -1778,7 +1760,7 @@ pub(super) fn admit_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_scalar(references, raw, value_type, None).map_err(refuse)?;
+            let value = admit_form(references, raw.form(), value_type, None).map_err(refuse)?;
             references.check_closure(raw).map_err(refuse)?;
             Ok(Some(value))
         }
@@ -1790,13 +1772,22 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
+    /// The value form `text` spells, read as the admission reads it.
+    fn snapshot(text: &str) -> SnapshotValue {
+        let document =
+            quire_canonical::read(text.as_bytes(), u64::MAX).expect("test fixture is JSON");
+        read_raw_value(Json::of(document.root()), &mut || Ok::<(), ()>(()))
+            .expect("an uncharged read does not fail")
+            .expect("test fixture is a value form")
+    }
+
     /// SR-750 FND-002: a non-ASCII digest string must refuse, never panic
     /// on a byte-index char-boundary slice. `read_document_ref` is
     /// `hex_bytes`'s one caller reachable with untrusted input (a `pre`/
     /// `post` document reference's own digest).
     #[test]
     fn a_non_ascii_digest_refuses_rather_than_panics() {
-        let value: OrderedJson = serde_json::from_value(serde_json::json!({
+        let text = serde_json::json!({
             "identity": {
                 "authority": "a",
                 "identity": "b",
@@ -1804,9 +1795,11 @@ mod tests {
                 "revision": "d",
             },
             "digest": "sha256-jcs:aé00000000000000000000000000000000000000000000000000000000000",
-        }))
-        .expect("test fixture is JSON");
-        let result = read_document_ref(&value, "pre");
+        })
+        .to_string();
+        let document =
+            quire_canonical::read(text.as_bytes(), u64::MAX).expect("test fixture is JSON");
+        let result = read_document_ref(Json::of(document.root()), "pre");
         assert!(
             matches!(result, Err(AdmissionFailure::Refused(_))),
             "expected Err(Refused(..)), got {result:?}"
@@ -1831,15 +1824,9 @@ mod tests {
     /// inside a `sequence`, in walk order.
     #[test]
     fn collect_references_walks_present_and_sequence() {
-        let raw = SnapshotValue::Sequence(vec![
-            SnapshotValue::Present(Box::new(SnapshotValue::Reference(SelectedObject {
-                population: "p1".to_owned(),
-                key: "k1".to_owned(),
-            }))),
-            SnapshotValue::Reference(SelectedObject {
-                population: "p2".to_owned(),
-                key: "k2".to_owned(),
-            }),
+        let raw = SnapshotValue::sequence(vec![
+            SnapshotValue::present(reference("p1", "k1")),
+            reference("p2", "k2"),
         ]);
         let mut found = Vec::new();
         collect_references(&raw, &mut found);
@@ -1856,14 +1843,14 @@ mod tests {
     #[test]
     fn collect_references_finds_nothing_in_a_scalar() {
         let mut found = Vec::new();
-        collect_references(&SnapshotValue::Boolean(true), &mut found);
-        collect_references(&SnapshotValue::Absent, &mut found);
-        collect_references(&SnapshotValue::Integer("1".to_owned()), &mut found);
+        collect_references(&SnapshotValue::boolean(true), &mut found);
+        collect_references(&SnapshotValue::absent(), &mut found);
+        collect_references(&SnapshotValue::integer("1"), &mut found);
         assert!(found.is_empty());
     }
 
     fn reference(population: &str, key: &str) -> SnapshotValue {
-        SnapshotValue::Reference(SelectedObject {
+        SnapshotValue::reference(SelectedObject {
             population: population.to_owned(),
             key: key.to_owned(),
         })
@@ -1894,9 +1881,7 @@ mod tests {
         let references = References::over(&[], &types, &populations);
 
         let record = references
-            .check_closure(&SnapshotValue::Present(Box::new(reference(
-                "complete", "k",
-            ))))
+            .check_closure(&SnapshotValue::present(reference("complete", "k")))
             .expect_err("a key absent from a complete population refuses");
         assert_eq!(record.code, Code::DanglingReference);
         assert_eq!(record.cause, "absent-target-in-complete-population");
@@ -1912,11 +1897,11 @@ mod tests {
         assert_eq!(record.code, Code::DanglingReference);
 
         assert_eq!(
-            references.check_closure(&SnapshotValue::Sequence(vec![reference("partial", "k")])),
+            references.check_closure(&SnapshotValue::sequence(vec![reference("partial", "k")])),
             Ok(())
         );
         assert_eq!(
-            references.check_closure(&SnapshotValue::Boolean(true)),
+            references.check_closure(&SnapshotValue::boolean(true)),
             Ok(())
         );
     }
@@ -1943,18 +1928,18 @@ mod tests {
     fn an_out_of_range_integer_with_no_witness_sink_refuses() {
         let types = TypeEnvironment::new([], []).expect("an empty environment admits");
         let mut references = References::over(&[], &types, &[]);
-        let record = admit_scalar(
+        let record = admit_form(
             &mut references,
-            &SnapshotValue::Integer("-1".to_owned()),
+            snapshot(r#"{"integer":"-1"}"#).form(),
             &range_0_1000(),
             None,
         )
         .expect_err("-1 is outside [0, 1000]");
         assert_eq!(record.code, Code::InvalidRuntimeInput);
         assert_eq!(record.cause, "invalid-value");
-        let admitted = admit_scalar(
+        let admitted = admit_form(
             &mut references,
-            &SnapshotValue::Integer("1000".to_owned()),
+            snapshot(r#"{"integer":"1000"}"#).form(),
             &range_0_1000(),
             None,
         );
@@ -1970,9 +1955,9 @@ mod tests {
         let types = TypeEnvironment::new([], []).expect("an empty environment admits");
         let mut references = References::over(&[], &types, &[]);
         let mut found = Vec::new();
-        let admitted = admit_scalar(
+        let admitted = admit_form(
             &mut references,
-            &SnapshotValue::Integer("1001".to_owned()),
+            snapshot(r#"{"integer":"1001"}"#).form(),
             &range_0_1000(),
             Some(&mut found),
         );
@@ -1983,9 +1968,9 @@ mod tests {
         assert_eq!(breach.range.upper(), &Integer::from(1000_i64));
         assert_eq!(breach.observed, Integer::from(1001_i64));
         assert_eq!(breach.index, None);
-        let in_range = admit_scalar(
+        let in_range = admit_form(
             &mut references,
-            &SnapshotValue::Integer("7".to_owned()),
+            snapshot(r#"{"integer":"7"}"#).form(),
             &range_0_1000(),
             Some(&mut found),
         );
@@ -2005,10 +1990,7 @@ mod tests {
             range_0_1000(),
             None,
         ));
-        let raw = SnapshotValue::Sequence(vec![
-            SnapshotValue::Integer("5".to_owned()),
-            SnapshotValue::Integer("1001".to_owned()),
-        ]);
+        let raw = snapshot(r#"{"sequence":[{"integer":"5"},{"integer":"1001"}]}"#);
         let mut found = Vec::new();
         admit_object_field(
             &mut references,

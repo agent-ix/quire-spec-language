@@ -1710,10 +1710,6 @@ fn tc464_admission_usage_reports_the_real_documents_consumed() {
         "the sum of every admitted document's byte length is nonzero"
     );
     assert!(
-        usage.nesting_depth > 0,
-        "a real document has some nesting depth"
-    );
-    assert!(
         usage.objects > 0,
         "pre and post each admit at least one object"
     );
@@ -1818,7 +1814,7 @@ fn tc464_reference(
     population: &str,
     key: &str,
 ) -> qsl_semantics::model::observation::SnapshotValue {
-    qsl_semantics::model::observation::SnapshotValue::Reference(
+    qsl_semantics::model::observation::SnapshotValue::reference(
         qsl_semantics::model::observation::SelectedObject {
             population: population.to_owned(),
             key: key.to_owned(),
@@ -2962,6 +2958,35 @@ fn run_tc465_with_clauses(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_with_clauses_under(
+        document,
+        clauses,
+        clause_name,
+        selection,
+        snapshots,
+        invocations,
+        limits,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+}
+
+/// [`run_tc465_with_clauses`] under the model normalization limits
+/// `model_limits`, which also bound observation admission's conformance
+/// walks.
+#[allow(clippy::too_many_arguments)]
+fn run_tc465_with_clauses_under(
+    document: &[u8],
+    clauses: &str,
+    clause_name: &str,
+    selection: qsl_semantics::model::observation::ClauseSelectionInput,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+    model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let packages = qsl_semantics::model::intake::package_input([document]);
     let declarations = admit_and_assemble_with_body(document, clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
@@ -2988,16 +3013,27 @@ fn run_tc465_with_clauses(
         name: clause_name.to_owned(),
         input: selection,
     };
-    qsl_semantics::model::observation::admit_observations(
-        graph.model_selections(),
-        graph.scope().types(),
-        &clause_facts,
-        &packages,
-        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
-        &provisions,
-        &selection,
-        limits,
-    )
+    // Admission runs on a 512 KiB stack: reading a document never uses the
+    // host stack in proportion to its depth (FR-261).
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn_scoped(scope, || {
+                qsl_semantics::model::observation::admit_observations(
+                    graph.model_selections(),
+                    graph.scope().types(),
+                    &clause_facts,
+                    &packages,
+                    model_limits,
+                    &provisions,
+                    &selection,
+                    limits,
+                )
+            })
+            .expect("spawn the admission thread")
+            .join()
+            .expect("admission does not panic")
+    })
 }
 
 /// Runs `ParentOrder` (invariant, `Current`) over `document`, with the
@@ -3345,6 +3381,7 @@ fn tc465_row1_missing_document_is_incomplete() {
 
 /// Row 2 (check 1.2): a snapshot of 1 MiB + 1 byte.
 #[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-720", "FR-255-AC-1")]
 #[test]
 fn tc465_row2_oversized_document_refuses_input_bytes_exceeded() {
     let document = tc465_document();
@@ -3355,56 +3392,172 @@ fn tc465_row2_oversized_document_refuses_input_bytes_exceeded() {
         },
         None,
     );
-    assert_tc465_refused(result, "stage_limit_exceeded", "input-bytes-exceeded");
-}
-
-/// SR-750 FND-011: `objects_per_document` (FR-106 Inputs,
-/// `FR-106-admit-snapshots-and-invocations.md:52-54`) is enforced: the
-/// healthy-parent snapshot's two objects (`root`, `child`) exceed a
-/// ceiling of 1.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn objects_per_document_limit_refuses_objects_exceeded() {
-    let document = tc465_document();
-    let limits = qsl_semantics::model::observation::ObservationLimits {
-        objects_per_document: 1,
-        ..qsl_semantics::model::observation::ObservationLimits::default()
-    };
-    let result = run_tc465_current_with_limits(&document, |_| {}, limits);
-    assert_tc465_refused(result, "stage_limit_exceeded", "objects-exceeded");
-}
-
-/// SR-750 FND-011: `values_per_document` is enforced: the healthy-parent
-/// snapshot's field values exceed a ceiling of 0.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn values_per_document_limit_refuses_values_exceeded() {
-    let document = tc465_document();
-    let limits = qsl_semantics::model::observation::ObservationLimits {
-        values_per_document: 0,
-        ..qsl_semantics::model::observation::ObservationLimits::default()
-    };
-    let result = run_tc465_current_with_limits(&document, |_| {}, limits);
-    assert_tc465_refused(result, "stage_limit_exceeded", "values-exceeded");
-}
-
-/// Row 3 (check 1.2): a field value nested 65 `present` levels deep.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn tc465_row3_deeply_nested_value_refuses_nesting_depth_exceeded() {
-    let document = tc465_document();
-    let result = run_tc465_current(
-        &document,
-        |value| {
-            let mut nested = json!({"absent": {}});
-            for _ in 0..65 {
-                nested = json!({"present": nested});
-            }
-            value["populations"][0]["objects"][1]["fields"]["parent"] = nested;
-        },
-        None,
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "input-bytes-exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("observation.input_bytes")
     );
-    assert_tc465_refused(result, "stage_limit_exceeded", "nesting-depth-exceeded");
+    assert_eq!(
+        record.fields.get("bound").map(String::as_str),
+        Some("1048576")
+    );
+}
+
+/// FR-261 B4, FR-255: `objects_per_document` is charged as the reader walks
+/// the document: the healthy-parent snapshot's two objects (`root`, `child`)
+/// exceed a ceiling of 1 at the second, naming `observation.objects`, the
+/// bound and the count reached; the builder raises it.
+#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-720", "FR-255-AC-1")]
+#[trace("TC-721", "FR-255-AC-4")]
+#[test]
+fn objects_per_document_limit_refuses_naming_observation_objects() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_objects_per_document(1);
+    let result = run_tc465_current_with_limits(&document, |_| {}, limits);
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("observation.objects")
+    );
+    assert_eq!(record.fields.get("bound").map(String::as_str), Some("1"));
+    assert_eq!(record.fields.get("actual").map(String::as_str), Some("2"));
+    let raised = limits.with_objects_per_document(2);
+    assert!(run_tc465_current_with_limits(&document, |_| {}, raised).is_ok());
+}
+
+/// FR-261 B4, FR-255: `values_per_document` counts every value form of the
+/// document as the reader walks it: a ceiling of 0 refuses at the first,
+/// naming `observation.values`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-720", "FR-255-AC-1")]
+#[test]
+fn values_per_document_limit_refuses_naming_observation_values() {
+    let document = tc465_document();
+    let limits =
+        qsl_semantics::model::observation::ObservationLimits::default().with_values_per_document(0);
+    let result = run_tc465_current_with_limits(&document, |_| {}, limits);
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("observation.values")
+    );
+    assert_eq!(record.fields.get("bound").map(String::as_str), Some("0"));
+    assert_eq!(record.fields.get("actual").map(String::as_str), Some("1"));
+}
+
+/// `run_tc465_current_with_limits` over snapshot text built by `build`
+/// (which may nest to any depth, as `serde_json::Value` cannot), digested
+/// under its own digest unless `selected` gives another.
+fn run_tc465_current_text(
+    document: &[u8],
+    build: impl FnOnce(&str) -> String,
+    selected: Option<[u8; 32]>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let model_digest_hex = tc465_model_digest_hex(document);
+    let label = frame_label("current-snap");
+    let mut value = tc465_healthy_parent(&label, &model_digest_hex);
+    value["populations"][0]["objects"][1]["fields"]["parent"] = json!("DEEP");
+    let bytes = build(&value.to_string()).into_bytes();
+    let selected = qsl_semantics::model::observation::DocumentRef {
+        digest: selected.unwrap_or_else(|| frame_document_digest(&bytes)),
+        ..label
+    };
+    let mut snapshots = BTreeMap::new();
+    snapshots.insert(selected.digest, bytes);
+    run_tc465_with_limits(
+        document,
+        "ParentOrder",
+        qsl_semantics::model::observation::ClauseSelectionInput::Current {
+            snapshot: selected,
+            anchor: qsl_semantics::model::observation::SelectedAnchor {
+                kind: qsl_semantics::model::observation::AnchorKind::Handler,
+                name: "validate".to_owned(),
+            },
+            self_object: qsl_semantics::model::observation::SelectedObject {
+                population: "ix://example/config-version/config_history".to_owned(),
+                key: "child".to_owned(),
+            },
+        },
+        snapshots,
+        BTreeMap::new(),
+        limits,
+    )
+}
+
+/// `"DEEP"` replaced by a `present` value nested `depth` levels.
+fn nest_present(text: &str, depth: usize) -> String {
+    let nested = format!(
+        "{}{{\"absent\":{{}}}}{}",
+        "{\"present\":".repeat(depth),
+        "}".repeat(depth)
+    );
+    text.replacen("\"DEEP\"", &nested, 1)
+}
+
+/// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack (the harness admits on
+/// one), digest admission over a snapshot holding a field value nested
+/// 100,000 deep, within `observation.input_bytes`, reads the document's
+/// digest and proceeds to FR-106's later checks -- here check 6's kind
+/// judgement of the field -- and under another digest refuses
+/// `stale_dependency`/`content-mismatch`.
+#[trace("TC-733", "FR-261-AC-2")]
+#[test]
+fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_document_bytes(4_000_000)
+        .with_values_per_document(1_000_000);
+    let own = run_tc465_current_text(&document, |text| nest_present(text, 100_000), None, limits);
+    // The digest matched: admission went on to the field's own content
+    // check, which refuses the nested value against the declared type.
+    assert_tc465_refused(own, "invalid_runtime_input", "wrong-value-kind");
+    let other = run_tc465_current_text(
+        &document,
+        |text| nest_present(text, 100_000),
+        Some([7; 32]),
+        limits,
+    );
+    assert_tc465_refused(other, "stale_dependency", "content-mismatch");
+}
+
+/// FR-261-AC-3 (TC-733 step 3), the reader's part: a field value nested
+/// 100,000 levels deep is read on a 512 KiB stack and counted as
+/// `observation.values` as it is walked. One below the document's value
+/// count refuses naming `observation.values`, its bound and the count
+/// reached; raising the setting through `ObservationLimits`' builder lets
+/// admission through to the field's own content check.
+#[trace("TC-733", "FR-261-AC-3")]
+#[test]
+fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
+    let document = tc465_document();
+    let raised = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_document_bytes(4_000_000)
+        .with_values_per_document(1_000_000);
+    let counted = |limits| {
+        run_tc465_current_text(&document, |text| nest_present(text, 100_000), None, limits)
+    };
+    // A bound of 50,000 is crossed by the nested value alone, at count 50,001.
+    let refused = counted(raised.with_values_per_document(50_000));
+    let record = assert_tc465_refused(refused, "stage_limit_exceeded", "node-count-exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("observation.values")
+    );
+    assert_eq!(
+        record.fields.get("bound").map(String::as_str),
+        Some("50000")
+    );
+    assert_eq!(
+        record.fields.get("actual").map(String::as_str),
+        Some("50001")
+    );
+    assert_tc465_refused(counted(raised), "invalid_runtime_input", "wrong-value-kind");
 }
 
 /// Row 4 (check 1.3): the snapshot's bytes edited, kept under the original
@@ -4367,6 +4520,97 @@ fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping
     assert_eq!(record.fields.get("object").map(String::as_str), Some("n1"));
 }
 
+/// FR-106 check 6.1 and the model views admission re-derives bound their
+/// conformance walks by the caller's `ancestor_steps`, with no fixed ceiling
+/// of their own. An object whose type sits 70 edges below its population's
+/// member type is admitted under the default `model.ancestor_steps` (a fixed
+/// 64 refused it as `wrong-role-mapping`), and under `ancestor_steps` 60 the
+/// same document stops with `stage_limit_exceeded` naming
+/// `model.ancestor_steps` and its bound, never `wrong-role-mapping`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-720", "FR-255-AC-1")]
+#[test]
+fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling() {
+    const DEPTH: usize = 70;
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let type_name = |level: usize| format!("ix://example/config-version/Deep{level}");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&tc465_document()).expect("valid JSON");
+    for level in 1..=DEPTH {
+        let identity = type_name(level);
+        let parent = if level == 1 {
+            config_version.to_owned()
+        } else {
+            type_name(level - 1)
+        };
+        envelope["types"].as_array_mut().unwrap().push(json!({
+            "identity": identity,
+            "displayName": identity,
+            "kind": {"module": "example/config-version", "name": "object_type"},
+            "roles": [],
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [parent],
+            "fields": [],
+            "operations": [],
+        }));
+    }
+    let document = serde_json::to_vec(&envelope).expect("valid JSON");
+    let run = |model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits| {
+        let model_digest_hex = tc465_model_digest_hex(&document);
+        let label = frame_label("current-snap");
+        let mut value = tc465_healthy_parent(&label, &model_digest_hex);
+        value["populations"][0]["objects"][1]["type"] = json!(type_name(DEPTH));
+        let bytes = value.to_string().into_bytes();
+        let selected = qsl_semantics::model::observation::DocumentRef {
+            digest: frame_document_digest(&bytes),
+            ..label
+        };
+        let mut snapshots = BTreeMap::new();
+        snapshots.insert(selected.digest, bytes);
+        run_tc465_with_clauses_under(
+            &document,
+            TC465_CLAUSES,
+            "ParentOrder",
+            qsl_semantics::model::observation::ClauseSelectionInput::Current {
+                snapshot: selected,
+                anchor: qsl_semantics::model::observation::SelectedAnchor {
+                    kind: qsl_semantics::model::observation::AnchorKind::Handler,
+                    name: "validate".to_owned(),
+                },
+                self_object: qsl_semantics::model::observation::SelectedObject {
+                    population: "ix://example/config-version/config_history".to_owned(),
+                    key: "child".to_owned(),
+                },
+            },
+            snapshots,
+            BTreeMap::new(),
+            qsl_semantics::model::observation::ObservationLimits::default(),
+            model_limits,
+        )
+    };
+    run(qsl_semantics::model::accounting::ModelNormalizationLimits::default())
+        .expect("a 70-edge hierarchy is admitted under the default ancestor_steps");
+    let tight = qsl_semantics::model::accounting::ModelNormalizationLimits {
+        ancestor_steps: 60,
+        ..qsl_semantics::model::accounting::ModelNormalizationLimits::default()
+    };
+    let record = assert_tc465_refused(run(tight), "stage_limit_exceeded", "edge-count-exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("model.ancestor_steps")
+    );
+    assert_eq!(record.fields.get("bound").map(String::as_str), Some("60"));
+}
+
 /// Row 39 (check 11.1 over 11.2): `Sub` specializes `ConfigVersion` and is
 /// a member type of `config_history`; post changes `child`'s type to `Sub`,
 /// sets `child.parent` absent (already true of the default post) and
@@ -4990,7 +5234,7 @@ fn an_out_of_range_argument_refuses_whatever_the_limits() {
                 },
                 parameters: BTreeMap::from([(
                     quire_exact::Identifier::new("amount").unwrap(),
-                    qsl_semantics::model::observation::SnapshotValue::Integer(amount.to_owned()),
+                    qsl_semantics::model::observation::SnapshotValue::integer(amount),
                 )]),
             },
             BTreeMap::from([(snapshot.digest, snapshot_bytes.clone())]),

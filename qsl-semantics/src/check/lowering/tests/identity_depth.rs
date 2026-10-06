@@ -83,7 +83,7 @@ fn a_nested_option_types_identity_preimages_have_a_fixed_depth() {
                 None,
                 Expression::boolean(true),
             )],
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{levels} nested options check: {refusals:?}"))

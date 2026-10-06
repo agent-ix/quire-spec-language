@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use quire_exact::ScalarLimits;
 
-use crate::bounds::BoundExceeded;
+use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
     Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef, SourceDigestWire,
 };
@@ -22,6 +22,7 @@ use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::Code;
+use qsl_foundation::Setting;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
@@ -46,20 +47,54 @@ impl StateEnvironment {
     }
 }
 
-/// The S1-to-S4 stage limits copied from the proving run (ADR-013 O-26,
-/// QC-8): one `quire.value.accounting/v1` [`ScalarLimits`] per compile
-/// stage, kept distinct so a request never silently substitutes QSL's own
-/// compiled-in defaults for the proving run's actual limits (TC-185).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StageLimits {
-    /// The S1 compile stage's scalar limits.
-    pub s1: ScalarLimits,
-    /// The S2 compile stage's scalar limits.
-    pub s2: ScalarLimits,
-    /// The S3 compile stage's scalar limits.
-    pub s3: ScalarLimits,
-    /// The S4 compile stage's scalar limits.
-    pub s4: ScalarLimits,
+/// The proving run's stage limits (ADR-013 O-26, FR-263): a map from setting
+/// name (FR-255) to the bound the proving run configured, so a request never
+/// silently substitutes QSL's own compiled-in defaults for the proving run's
+/// actual limits (TC-185). A setting with no entry runs at its published
+/// default. Decode admits only settings of FR-255's table other than
+/// `replay.input_bytes`.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StageLimits(BTreeMap<Setting, u64>);
+
+impl StageLimits {
+    /// The entries as `(setting, bound)`, in setting order.
+    pub fn iter(&self) -> impl Iterator<Item = (Setting, u64)> + '_ {
+        self.0.iter().map(|(setting, bound)| (*setting, *bound))
+    }
+
+    /// The bound the request gives `setting`, if it carries an entry.
+    pub fn bound(&self, setting: Setting) -> Option<u64> {
+        self.0.get(&setting).copied()
+    }
+
+    /// Reads the wire entries, refusing the first whose name is no setting
+    /// of FR-255's table or is `replay.input_bytes`.
+    fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
+        let mut limits = BTreeMap::new();
+        for (name, bound) in entries {
+            match Setting::from_name(&name) {
+                Some(setting) if setting != Setting::ReplayInputBytes => {
+                    limits.insert(setting, bound);
+                }
+                _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
+            }
+        }
+        Ok(Self(limits))
+    }
+
+    /// The entries as wire `name -> bound`.
+    fn to_wire(&self) -> BTreeMap<String, u64> {
+        self.0
+            .iter()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound))
+            .collect()
+    }
+}
+
+impl FromIterator<(Setting, u64)> for StageLimits {
+    fn from_iter<T: IntoIterator<Item = (Setting, u64)>>(entries: T) -> Self {
+        Self(entries.into_iter().collect())
+    }
 }
 
 /// The request's byte provision: every recompilation input the package
@@ -204,9 +239,9 @@ impl ReplayRequest {
     pub fn accounting_limits(&self) -> ScalarLimits {
         self.accounting_limits
     }
-    /// The S1-to-S4 stage limits copied from the proving run.
-    pub fn stage_limits(&self) -> StageLimits {
-        self.stage_limits
+    /// The stage limits copied from the proving run, by setting.
+    pub fn stage_limits(&self) -> &StageLimits {
+        &self.stage_limits
     }
     /// The digest-addressed byte provision. The only way to reach a
     /// recompilation input's bytes (FR-071-AC-2).
@@ -246,8 +281,10 @@ pub struct ReplayRequestWire {
     pub state_environment: StateEnvironment,
     /// The accounting limits the replay run itself is charged against.
     pub accounting_limits: ScalarLimits,
-    /// The S1-to-S4 stage limits copied from the proving run.
-    pub stage_limits: StageLimits,
+    /// The stage limits copied from the proving run: setting name (FR-255)
+    /// to bound. Decode refuses a name that is no setting of the table, and
+    /// `replay.input_bytes`.
+    pub stage_limits: BTreeMap<String, u64>,
     /// `(digest domain, digest hex, raw bytes)` per entry.
     pub byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
 }
@@ -377,6 +414,14 @@ pub enum ReplayRequestRefusal {
         /// The entry's position in `dependencies`.
         index: usize,
     },
+    /// A `stage_limits` entry names no setting of FR-255's table, or names
+    /// `replay.input_bytes`, which a request does not carry
+    /// (`invalid_runtime_input`/`unknown-member`, FR-263 B2).
+    #[error("invalid_runtime_input/unknown-member: stage_limits entry `{name}` is not a setting a request carries")]
+    StageLimitEntry {
+        /// The entry's name as the request wrote it.
+        name: String,
+    },
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
@@ -453,6 +498,7 @@ impl ReplayRequestRefusal {
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
                 Code::InvalidIdentifier
             }
+            Self::StageLimitEntry { .. } => Code::InvalidRuntimeInput,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
         }
     }
@@ -480,6 +526,11 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
         .map(|p| p.profile().len() + p.value().len())
         .sum::<usize>()
         + wire.package_id.1.len()
+        + wire
+            .stage_limits
+            .keys()
+            .map(|name| name.len() + std::mem::size_of::<u64>())
+            .sum::<usize>()
         + wire
             .source_digests
             .iter()
@@ -526,8 +577,11 @@ impl ReplayRequest {
     /// at all: no package lookup or byte-provision access is observed
     /// before either refusal.
     #[qsl_attrs::string_edge]
-    pub fn decode(wire: ReplayRequestWire) -> Result<Self, ReplayRequestRefusal> {
-        BoundExceeded::check(measured_encoded_bytes(&wire))?;
+    pub fn decode(
+        wire: ReplayRequestWire,
+        limits: ReplayLimits,
+    ) -> Result<Self, ReplayRequestRefusal> {
+        BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
                 return Err(ReplayRequestRefusal::UnknownSemanticProfile {
@@ -540,6 +594,7 @@ impl ReplayRequest {
         if wire.backend.is_empty() {
             return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
+        let stage_limits = StageLimits::decode(wire.stage_limits)?;
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
@@ -647,7 +702,7 @@ impl ReplayRequest {
             backend: Backend::new(wire.backend),
             state_environment: wire.state_environment,
             accounting_limits: wire.accounting_limits,
-            stage_limits: wire.stage_limits,
+            stage_limits,
             byte_provision,
         })
     }
@@ -685,7 +740,7 @@ impl ReplayRequest {
             backend: self.backend.identity().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
-            stage_limits: self.stage_limits,
+            stage_limits: self.stage_limits.to_wire(),
             byte_provision: self
                 .byte_provision
                 .0
@@ -705,7 +760,7 @@ impl ReplayRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bounds::MAX_ENCODED_BYTES;
+    use crate::bounds::DEFAULT_INPUT_BYTES;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
     use quire_exact::Identifier;
@@ -725,13 +780,11 @@ mod tests {
         }
     }
 
-    fn stage_limits(seed: u64) -> StageLimits {
-        StageLimits {
-            s1: scalar_limits(seed),
-            s2: scalar_limits(seed),
-            s3: scalar_limits(seed),
-            s4: scalar_limits(seed),
-        }
+    fn stage_limits(seed: u64) -> BTreeMap<String, u64> {
+        BTreeMap::from([
+            ("s1.tokens".to_owned(), seed),
+            ("s3.nodes".to_owned(), seed),
+        ])
     }
 
     fn source_bytes(fill: u8, len: usize) -> Vec<u8> {
@@ -792,8 +845,8 @@ mod tests {
     #[trace("TC-185", "FR-071-AC-1")]
     #[test]
     fn tc_185_carries_exactly_o26_members_and_round_trips() {
-        let request = ReplayRequest::decode(wire(999)).unwrap();
-        assert_eq!(request.stage_limits().s1.integer_bits, 999);
+        let request = ReplayRequest::decode(wire(999), crate::ReplayLimits::default()).unwrap();
+        assert_eq!(request.stage_limits().bound(Setting::S1Tokens), Some(999));
         assert_eq!(
             request.profile_selections(),
             &[ProfileSelection::new(
@@ -802,14 +855,15 @@ mod tests {
             )]
         );
 
-        let round_tripped = ReplayRequest::decode(request.to_wire()).unwrap();
+        let round_tripped =
+            ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
         assert_eq!(request, round_tripped);
         assert_eq!(
             round_tripped.profile_selections(),
             request.profile_selections()
         );
 
-        let other = ReplayRequest::decode(wire(1000)).unwrap();
+        let other = ReplayRequest::decode(wire(1000), crate::ReplayLimits::default()).unwrap();
         assert_ne!(request, other);
     }
 
@@ -860,7 +914,11 @@ mod tests {
     #[test]
     fn tc_186_dependencies_round_trip_and_refuse_at_decode() {
         let entries = vec![dependency("test/b", 0x0B), dependency("test/a", 0x0A)];
-        let request = ReplayRequest::decode(with_dependencies(entries.clone())).unwrap();
+        let request = ReplayRequest::decode(
+            with_dependencies(entries.clone()),
+            crate::ReplayLimits::default(),
+        )
+        .unwrap();
         let identities: Vec<&str> = request
             .dependencies()
             .iter()
@@ -875,13 +933,17 @@ mod tests {
                 .map(|(entry, _)| entry.clone())
                 .collect::<Vec<_>>()
         );
-        assert_eq!(ReplayRequest::decode(wire).unwrap(), request);
+        assert_eq!(
+            ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap(),
+            request
+        );
 
         // An entry's source absent from the byte provision.
         let mut incomplete = with_dependencies(vec![dependency("test/a", 0x0A)]);
         incomplete.byte_provision.pop();
         let (omitted, _) = dependency("test/a", 0x0A);
-        let refused = ReplayRequest::decode(incomplete).unwrap_err();
+        let refused =
+            ReplayRequest::decode(incomplete, crate::ReplayLimits::default()).unwrap_err();
         assert_eq!(refused.code(), Code::MissingImport);
         assert_eq!(
             refused,
@@ -899,8 +961,11 @@ mod tests {
             .starts_with("missing_import/missing-selection:"));
 
         // An empty identity.
-        let refused =
-            ReplayRequest::decode(with_dependencies(vec![dependency("", 0x0A)])).unwrap_err();
+        let refused = ReplayRequest::decode(
+            with_dependencies(vec![dependency("", 0x0A)]),
+            crate::ReplayLimits::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             refused,
             ReplayRequestRefusal::EmptyDependencySelection { index: 0 }
@@ -911,7 +976,10 @@ mod tests {
         let (mut entry, bytes) = dependency("test/a", 0x0A);
         entry.package_id.0 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
         assert!(matches!(
-            ReplayRequest::decode(with_dependencies(vec![(entry, bytes)])),
+            ReplayRequest::decode(
+                with_dependencies(vec![(entry, bytes)]),
+                crate::ReplayLimits::default()
+            ),
             Err(ReplayRequestRefusal::DigestDomainMismatch(_))
         ));
     }
@@ -925,7 +993,7 @@ mod tests {
     #[test]
     fn tc_186_byte_provision_is_digest_only_complete_and_bounded() {
         // Well-formed request: lookup succeeds by digest alone.
-        let request = ReplayRequest::decode(wire(1)).unwrap();
+        let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
         let source_digest = request.source_digests()[0].digest();
         assert!(request.byte_provision().get(source_digest).is_some());
 
@@ -933,7 +1001,7 @@ mod tests {
         let mut bad_domain = wire(1);
         bad_domain.byte_provision[0].0 = Some("quire.not-a-real-domain/v1".to_owned());
         assert!(matches!(
-            ReplayRequest::decode(bad_domain),
+            ReplayRequest::decode(bad_domain, crate::ReplayLimits::default()),
             Err(ReplayRequestRefusal::DigestDomainMismatch(_))
         ));
 
@@ -944,7 +1012,7 @@ mod tests {
         let mut malformed_hex = wire(1);
         malformed_hex.byte_provision[0].1 = "ab".repeat(31); // 62 chars, not 64
         assert!(matches!(
-            ReplayRequest::decode(malformed_hex),
+            ReplayRequest::decode(malformed_hex, crate::ReplayLimits::default()),
             Err(ReplayRequestRefusal::MalformedDigest(_))
         ));
 
@@ -958,7 +1026,7 @@ mod tests {
         ineligible_domain.byte_provision[0].1 =
             DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, [0xAB; 32]).hex();
         assert!(matches!(
-            ReplayRequest::decode(ineligible_domain),
+            ReplayRequest::decode(ineligible_domain, crate::ReplayLimits::default()),
             Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(
                 DigestDomain::CheckedSemanticNodeV1
             ))
@@ -977,7 +1045,8 @@ mod tests {
             DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
             document,
         ));
-        let admitted = ReplayRequest::decode(domain_package).unwrap();
+        let admitted =
+            ReplayRequest::decode(domain_package, crate::ReplayLimits::default()).unwrap();
         assert!(admitted
             .byte_provision()
             .get(DigestRecord::mint(DigestDomain::Sha256Jcs, jcs))
@@ -993,7 +1062,7 @@ mod tests {
             .jcs_digest();
         assert_ne!(stale_jcs, jcs);
         assert_eq!(
-            ReplayRequest::decode(stale_package).unwrap_err(),
+            ReplayRequest::decode(stale_package, crate::ReplayLimits::default()).unwrap_err(),
             ReplayRequestRefusal::ContentMismatch {
                 selected: format!("{:?}", DigestRecord::mint(DigestDomain::Sha256Jcs, jcs)),
                 recomputed: format!(
@@ -1008,7 +1077,8 @@ mod tests {
             DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
             b"not json".to_vec(),
         ));
-        let refused = ReplayRequest::decode(not_a_document).unwrap_err();
+        let refused =
+            ReplayRequest::decode(not_a_document, crate::ReplayLimits::default()).unwrap_err();
         assert!(matches!(
             refused,
             ReplayRequestRefusal::NotAPackageDocument(_)
@@ -1027,7 +1097,7 @@ mod tests {
             ByteDigest::of(&source_bytes(0xCD, 64)).as_bytes(),
         );
         assert_eq!(
-            ReplayRequest::decode(mismatched).unwrap_err(),
+            ReplayRequest::decode(mismatched, crate::ReplayLimits::default()).unwrap_err(),
             ReplayRequestRefusal::ByteDigestMismatch {
                 declared: format!("{declared:?}"),
                 actual: format!("{actual:?}"),
@@ -1037,7 +1107,8 @@ mod tests {
         // Incomplete byte provision: omit the one entry.
         let mut incomplete = wire(1);
         incomplete.byte_provision.clear();
-        let refused = ReplayRequest::decode(incomplete).unwrap_err();
+        let refused =
+            ReplayRequest::decode(incomplete, crate::ReplayLimits::default()).unwrap_err();
         assert_eq!(refused.code(), Code::MissingImport);
         assert_eq!(
             refused,
@@ -1064,16 +1135,19 @@ mod tests {
         // oversized content.
         let mut oversized = wire(1);
         oversized.state_environment =
-            StateEnvironment::new(vec![("x".repeat(MAX_ENCODED_BYTES + 1), String::new())]);
+            StateEnvironment::new(vec![("x".repeat(DEFAULT_INPUT_BYTES + 1), String::new())]);
         assert!(matches!(
-            ReplayRequest::decode(oversized),
+            ReplayRequest::decode(oversized, crate::ReplayLimits::default()),
             Err(ReplayRequestRefusal::BoundExceeded(_))
         ));
         // The bound measures the `dependencies` entries too.
         let (mut entry, bytes) = dependency("test/a", 0x0A);
-        entry.identity = "x".repeat(MAX_ENCODED_BYTES + 1);
+        entry.identity = "x".repeat(DEFAULT_INPUT_BYTES + 1);
         assert!(matches!(
-            ReplayRequest::decode(with_dependencies(vec![(entry, bytes)])),
+            ReplayRequest::decode(
+                with_dependencies(vec![(entry, bytes)]),
+                crate::ReplayLimits::default()
+            ),
             Err(ReplayRequestRefusal::BoundExceeded(_))
         ));
     }
@@ -1085,7 +1159,7 @@ mod tests {
         let mut empty = wire(1);
         empty.backend = String::new();
         assert_eq!(
-            ReplayRequest::decode(empty),
+            ReplayRequest::decode(empty, crate::ReplayLimits::default()),
             Err(ReplayRequestRefusal::EmptyBackendIdentity)
         );
         assert_eq!(
@@ -1095,7 +1169,7 @@ mod tests {
 
         let mut spaced = wire(1);
         spaced.backend = " kani ".to_owned();
-        let request = ReplayRequest::decode(spaced).unwrap();
+        let request = ReplayRequest::decode(spaced, crate::ReplayLimits::default()).unwrap();
         assert_eq!(request.backend().identity(), " kani ");
     }
 
@@ -1112,9 +1186,10 @@ mod tests {
     /// the positive round-trip half; `spec/tests.md` keeps the row `Planned`.
     #[test]
     fn tc_187_selection_is_always_a_typed_qualified_name() {
-        let request = ReplayRequest::decode(wire(1)).unwrap();
+        let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
         assert_eq!(request.selected_function().segments().len(), 2);
-        let round_tripped = ReplayRequest::decode(request.to_wire()).unwrap();
+        let round_tripped =
+            ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
         assert_eq!(
             round_tripped.selected_function().segments(),
             request.selected_function().segments()
@@ -1141,7 +1216,7 @@ mod tests {
                 digest.hex(),
                 bytes,
             ));
-            ReplayRequest::decode(request).unwrap_err()
+            ReplayRequest::decode(request, crate::ReplayLimits::default()).unwrap_err()
         };
 
         let malformed = decode(br#"{"a":1,"a":2}"#.to_vec());
@@ -1235,7 +1310,9 @@ mod tests {
         bad_profile.byte_provision[0].2 = source_bytes(0xFF, 4);
         // The refusal reports the catalog's profile-selection code and
         // cause, and retains the supplied selection and its required role.
-        let refused = ReplayRequest::decode(bad_profile).map(|_| ()).unwrap_err();
+        let refused = ReplayRequest::decode(bad_profile, crate::ReplayLimits::default())
+            .map(|_| ())
+            .unwrap_err();
         let ReplayRequestRefusal::UnknownSemanticProfile {
             selection,
             required_role,
@@ -1284,7 +1361,7 @@ mod tests {
             parameter: WireNodeId::from_digest([42; 32]),
             value: crate::witness::WitnessValue::Integer(distinctive_value),
         }]);
-        let request = ReplayRequest::decode(request_wire).unwrap();
+        let request = ReplayRequest::decode(request_wire, crate::ReplayLimits::default()).unwrap();
 
         let debug = format!("{request:?}");
         // A long contiguous run of the raw bytes, rendered as decimal

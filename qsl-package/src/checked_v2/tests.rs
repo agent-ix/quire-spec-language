@@ -24,6 +24,7 @@ use qsl_foundation::diagnostic::{
 };
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::Setting;
 use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
@@ -217,7 +218,7 @@ fn no_pins() -> PinnedRequest {
 /// offered bytes: no locus (FR-096).
 fn input_bytes(limit: usize, actual: usize) -> LimitExceeded {
     LimitExceeded::new(
-        LimitKind::InputBytes,
+        Setting::I2InputBytes,
         u64::try_from(limit).unwrap(),
         u128::try_from(actual).unwrap(),
     )
@@ -1763,6 +1764,9 @@ fn a_refusal_at_a_value_is_located_at_its_pointer() {
 /// reports. The reader's own artifact byte ceiling reports input bytes with
 /// no locus.
 #[trace("TC-429", "FR-096-AC-10")]
+#[trace("TC-720", "FR-255-AC-1")]
+#[trace("TC-721", "FR-255-AC-4")]
+#[trace("TC-739", "FR-264-AC-4")]
 #[test]
 fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
     let defaults = V2ReadLimits::default();
@@ -1790,7 +1794,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
                 nodes: 1,
                 ..defaults
             },
-            LimitKind::NodeCount,
+            Setting::I2Nodes,
             1,
             2,
             "/semantic_graph/nodes/1",
@@ -1802,7 +1806,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
                 edges: 0,
                 ..defaults
             },
-            LimitKind::EdgeCount,
+            Setting::I2Edges,
             0,
             1,
             "/semantic_graph/nodes/0/dependencies/0",
@@ -1814,7 +1818,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
                 occurrences: 0,
                 ..defaults
             },
-            LimitKind::OccurrenceCount,
+            Setting::I2Occurrences,
             0,
             1,
             "/source_map/0",
@@ -1826,7 +1830,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
                 diagnostics: 0,
                 ..defaults
             },
-            LimitKind::DiagnosticCount,
+            Setting::I2Diagnostics,
             0,
             1,
             "/diagnostics/entries/0",
@@ -1838,13 +1842,13 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
                 work: 0,
                 ..defaults
             },
-            LimitKind::WorkBudget,
+            Setting::I2WorkUnits,
             0,
             1,
             "/semantic_graph/nodes/0/body",
         ),
     ];
-    for (envelope, preimage, limits, kind, bound, actual, pointer) in cases {
+    for (envelope, preimage, limits, setting, bound, actual, pointer) in cases {
         let bytes = jcs(envelope);
         let outcome = read_v2(
             &bytes,
@@ -1854,12 +1858,28 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             &pinned_for(preimage),
         );
         let expected =
-            LimitExceeded::new(kind, bound, actual).at(Some(artifact_locus(&bytes, pointer)));
-        assert_eq!(outcome, Read::Limit(expected.clone()), "{kind:?}");
+            LimitExceeded::new(setting, bound, actual).at(Some(artifact_locus(&bytes, pointer)));
+        assert_eq!(outcome, Read::Limit(expected.clone()), "{setting}");
+        assert_eq!(expected.setting(), setting);
         assert_eq!(
             expected.catalog_code(),
-            CatalogCode::new("stage_limit_exceeded", kind.catalog_cause())
+            CatalogCode::new("stage_limit_exceeded", setting.kind().catalog_cause())
         );
+        // The setting named in the outcome raises that limit, by name.
+        let mut raised = limits;
+        assert!(qsl_foundation::SettingLimits::set_bound(
+            &mut raised,
+            setting,
+            bound + 1_000_000
+        ));
+        let rerun = read_v2(
+            &bytes,
+            identity("pkg"),
+            raised,
+            &CheckedPackageEvidence::new(),
+            &pinned_for(preimage),
+        );
+        assert!(!matches!(rerun, Read::Limit(_)), "{setting}: {rerun:?}");
     }
 
     let bytes = jcs(&base);

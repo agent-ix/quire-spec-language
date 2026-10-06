@@ -156,7 +156,10 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
             "M::Obj",
             object_type("M::Obj"),
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -510,7 +513,10 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             None,
             reduce,
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap_err();

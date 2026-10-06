@@ -37,8 +37,7 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
 # `package_id` preimage encodes through it.
 quire-canonical = { workspace = true }
-# ADR-011 §6.1 layer SV: `IDENTITY_LIMITS`, the limits every identity
-# preimage encodes under, the expression `Location` and the `CheckingLimits`
+# ADR-011 §6.1 layer SV: the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
 # The emitter writes its wire envelope as a `Serialize` struct over IR's

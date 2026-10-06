@@ -20,8 +20,8 @@
 //! the stage types do not carry.
 //!
 //! A stage refusal is the refusing stage's [`CompileRefusal`], boxed. A
-//! reached limit is [`StageFailure::Limit`] naming the caller's limits field
-//! (FR-277), and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
+//! reached limit is [`StageFailure::Limit`] naming its setting
+//! (FR-255), and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
 //! output carries the work each stage did ([`Staged::work`], FR-275-AC-5). The
 //! composition `parse`, `select`, `check`, `package` over a source returns
 //! the same bytes, stage and cause code the CLI's `compile` writes for it.
@@ -86,26 +86,26 @@ use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
 use qsl_forms::{build_unit, ParsedUnit};
 use qsl_foundation::diagnostic::{
-    InternalFault, LimitExceeded, LimitKind as FoundationKind, LimitsField, Locus, StageFailure,
-    StageWork, Staged,
+    InternalFault, LimitExceeded, Locus, StageFailure, StageWork, Staged,
 };
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source::Source;
+use qsl_foundation::Setting;
 use qsl_foundation::SourceIdentity;
 use qsl_foundation::SyntaxLimit;
 use qsl_package as pkg;
-use qsl_package::{emit_checked_with_cancel, read_import_view, AdmittedPackages, Emission, Import};
+use qsl_package::{
+    emit_checked_with_cancel, read_import_view, AdmittedPackages, Emission, Import,
+    ImportViewRefusal,
+};
 use qsl_semantics::check::{
-    resolve_profiles, AdmittedImport, AssemblyCause, AssemblyLimits, CheckCause, CheckingLimitKind,
-    LockEvidence, PackageDeclarations,
+    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, LockEvidence, PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
-use qsl_semantics::model::accounting::LimitKind as ModelKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::model::refusal::ModelRefusalCause;
 use qsl_semantics::value::identity_limit;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 use quire_semantic_value::semantic_node::IdentityRefusal;
@@ -130,8 +130,8 @@ fn charged<T>(cancel: &Cancel, counter: &mut u64, run: impl FnOnce() -> T) -> T 
 /// saw the cancellation makes `run` stop early, and its result, whatever
 /// the denial became on its way up, is replaced by the cancellation: an
 /// operation that was cancelled returns no output. A refusal that is a
-/// reached limit is returned as the limit, naming the caller's limits field
-/// (FR-277), and one that is a broken invariant as the fault (FR-275).
+/// reached limit is returned as the limit, naming its setting
+/// (FR-255), and one that is a broken invariant as the fault (FR-275).
 fn stage<T>(
     cancel: &Cancel,
     source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
@@ -170,8 +170,8 @@ fn failure_of(
     StageFailure::Refused(refusal)
 }
 
-/// The reached limit `refusal` reports, with the caller's limits field that
-/// raises it (FR-277), or `None` for a refusal that is not a limit.
+/// The reached limit `refusal` reports, with the setting that raises it
+/// (FR-255), or `None` for a refusal that is not a limit.
 fn limit_of(
     refusal: &CompileRefusal,
     source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
@@ -184,40 +184,23 @@ fn limit_of(
             // The counter at the failed charge: the source's real length for
             // the byte ceiling, and the first value past the bound for the
             // charges that stop at it (a token, a node, a parser step).
-            let (kind, configured, actual, field) = match diagnostic.limit()? {
+            let (setting, configured, actual) = match diagnostic.limit()? {
                 SyntaxLimit::SourceBytes { bound } => (
-                    FoundationKind::InputBytes,
+                    Setting::S1InputBytes,
                     bound,
                     source_len(&diagnostic.source).unwrap_or(bound + 1),
-                    LimitsField::SourceBytes,
                 ),
-                SyntaxLimit::Tokens { bound } => (
-                    FoundationKind::TokenCount,
-                    bound,
-                    bound + 1,
-                    LimitsField::SourceTokens,
-                ),
-                SyntaxLimit::Nodes { bound } => (
-                    FoundationKind::NodeCount,
-                    bound,
-                    bound + 1,
-                    LimitsField::SourceNodes,
-                ),
+                SyntaxLimit::Tokens { bound } => (Setting::S1Tokens, bound, bound + 1),
+                SyntaxLimit::Nodes { bound } => (Setting::S1Nodes, bound, bound + 1),
                 // Bound and counter are both in parser steps: the unit's total
-                // step budget, which `source.work_units` sets per token.
-                SyntaxLimit::Work { bound } => (
-                    FoundationKind::WorkBudget,
-                    bound,
-                    bound + 1,
-                    LimitsField::SourceWorkUnits,
-                ),
+                // step budget, which `s1.work_units` sets per token.
+                SyntaxLimit::Work { bound } => (Setting::S1WorkUnits, bound, bound + 1),
             };
             let limit = LimitExceeded::new(
-                kind,
+                setting,
                 u64::try_from(configured).unwrap_or(u64::MAX),
                 u128::try_from(actual).unwrap_or(u128::MAX),
-            )
-            .named(field);
+            );
             Some(at(limit, diagnostic.region.as_ref()))
         }
         CompileRefusal::Intake { refusal, region } => {
@@ -227,53 +210,14 @@ fn limit_of(
                 // counter is the edge count the denied charge would have
                 // reached, the first value past the bound.
                 UnitIntakeCause::Refused(refusals) => {
-                    let (kind, bound, field) =
-                        refusals.iter().find_map(|refusal| match refusal.cause {
-                            ModelRefusalCause::AncestorSteps { limit, .. } => Some((
-                                FoundationKind::EdgeCount,
-                                limit,
-                                LimitsField::ModelAncestorSteps,
-                            )),
-                            ModelRefusalCause::FamilySteps { limit, .. } => Some((
-                                FoundationKind::EdgeCount,
-                                limit,
-                                LimitsField::ModelFamilySteps,
-                            )),
-                            _ => None,
-                        })?;
-                    let limit = LimitExceeded::new(kind, bound, u128::from(bound) + 1).named(field);
+                    let limit = refusals
+                        .iter()
+                        .find_map(|refusal| refusal.cause.limit_exceeded())?;
                     return Some(at(limit, region.as_ref()));
                 }
                 _ => return None,
             };
-            let (kind, field) = match incomplete.limit_kind {
-                ModelKind::DeclarationRecords => (
-                    FoundationKind::OccurrenceCount,
-                    LimitsField::ModelDeclarationRecords,
-                ),
-                ModelKind::DerivationFacts => {
-                    (FoundationKind::EdgeCount, LimitsField::ModelDerivationFacts)
-                }
-                ModelKind::EffectiveDeclarations => (
-                    FoundationKind::NodeCount,
-                    LimitsField::ModelEffectiveDeclarations,
-                ),
-                ModelKind::DispatchCandidates => (
-                    FoundationKind::EdgeCount,
-                    LimitsField::ModelDispatchCandidates,
-                ),
-                ModelKind::HashedBytes => {
-                    (FoundationKind::InputBytes, LimitsField::ModelHashedBytes)
-                }
-                ModelKind::WorkUnits => (FoundationKind::WorkBudget, LimitsField::ModelWorkUnits),
-            };
-            let limit = LimitExceeded::new(
-                kind,
-                incomplete.limit,
-                u128::from(incomplete.consumed).saturating_add(u128::from(incomplete.next_charge)),
-            )
-            .named(field);
-            Some(at(limit, region.as_ref()))
+            Some(at(incomplete.limit_exceeded(), region.as_ref()))
         }
         CompileRefusal::Check { refusals, region } => {
             if let Some((bound, required)) =
@@ -290,30 +234,17 @@ fn limit_of(
                 CheckCause::ResourceExhausted(cause) => Some(cause),
                 _ => None,
             })?;
-            let (kind, field) = match cause.kind {
-                CheckingLimitKind::Nodes => (FoundationKind::NodeCount, LimitsField::CheckingNodes),
-                CheckingLimitKind::InputBytes => {
-                    (FoundationKind::InputBytes, LimitsField::CheckingInputBytes)
-                }
-                CheckingLimitKind::WorkBudget => {
-                    (FoundationKind::WorkBudget, LimitsField::CheckingWorkBudget)
-                }
-            };
             let locus = cause.region.as_ref().or(region.as_ref());
             Some(at(
-                LimitExceeded::new(kind, cause.limit, cause.actual).named(field),
+                LimitExceeded::new(cause.kind.setting(), cause.limit, cause.actual),
                 locus,
             ))
         }
         CompileRefusal::Assembly { refusal, .. } => {
             refusal.errors.iter().find_map(|error| match &error.cause {
-                AssemblyCause::TypeLimit(limit) => Some(match limit.kind() {
-                    FoundationKind::EdgeCount => {
-                        limit.clone().named(LimitsField::EnvironmentAncestorSteps)
-                    }
-                    _ => limit.clone().named(LimitsField::EnvironmentWorkUnits),
-                }),
-                AssemblyCause::IdentityLimit(limit) => Some(limit.clone()),
+                AssemblyCause::TypeLimit(limit)
+                | AssemblyCause::DecimalScaleLimit(limit)
+                | AssemblyCause::IdentityLimit(limit) => Some(limit.clone()),
                 _ => None,
             })
         }
@@ -322,6 +253,16 @@ fn limit_of(
             region,
         } => Some(at(limit.clone(), region.as_ref())),
         CompileRefusal::Dependency { refusal, .. } => limit_of(refusal, source_len),
+        CompileRefusal::Import {
+            refusal: ImportRefusal::View { refusal, .. },
+            ..
+        } => match &**refusal {
+            ImportViewRefusal::Read {
+                refusal: StageFailure::Limit(limit),
+                ..
+            } => Some(limit.clone()),
+            _ => None,
+        },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
         | CompileRefusal::Profile { .. }
@@ -941,10 +882,7 @@ impl<'a> Resolution<'a> {
                 unit,
                 models,
                 admitted,
-                AssemblyLimits {
-                    environment: limits.environment,
-                    ..AssemblyLimits::default()
-                },
+                limits.assembly,
                 cancel,
             )
         })
@@ -955,7 +893,12 @@ impl<'a> Resolution<'a> {
                 region: refusal
                     .errors
                     .first()
-                    .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
+                    .filter(|error| {
+                        !matches!(
+                            error.cause,
+                            AssemblyCause::TypeLimit(_) | AssemblyCause::DecimalScaleLimit(_)
+                        )
+                    })
                     .and_then(|error| region(&raw, error.span)),
                 refusal,
             })
@@ -1040,6 +983,7 @@ impl<'a> Resolution<'a> {
                 done.identity.clone(),
                 self.packages,
                 &mut self.admitted,
+                self.limits.imports,
             )
             .map_err(|refusal| {
                 unwind(
@@ -1074,16 +1018,13 @@ impl<'a> Resolution<'a> {
         let at_identity = || region(raw, import.identity_span);
         let refuse = |refusal, region| Box::new(CompileRefusal::Import { refusal, region });
         let limits = self.limits.dependencies;
-        let reached = |kind, bound: usize, actual: usize, field| {
+        let reached = |setting, bound: usize, actual: usize| {
             refuse(
-                ImportRefusal::Limit(
-                    LimitExceeded::new(
-                        kind,
-                        u64::try_from(bound).unwrap_or(u64::MAX),
-                        u128::try_from(actual).unwrap_or(u128::MAX),
-                    )
-                    .named(field),
-                ),
+                ImportRefusal::Limit(LimitExceeded::new(
+                    setting,
+                    u64::try_from(bound).unwrap_or(u64::MAX),
+                    u128::try_from(actual).unwrap_or(u128::MAX),
+                )),
                 at_identity(),
             )
         };
@@ -1092,10 +1033,9 @@ impl<'a> Resolution<'a> {
         self.import_edges = self.import_edges.saturating_add(1);
         if self.import_edges > limits.import_edges {
             return Err(reached(
-                FoundationKind::EdgeCount,
+                Setting::DependencyImportEdges,
                 limits.import_edges,
                 self.import_edges,
-                LimitsField::DependencyImportEdges,
             ));
         }
         // The parser admits no empty identity.
@@ -1130,19 +1070,17 @@ impl<'a> Resolution<'a> {
             .saturating_add(1);
         if libraries > limits.libraries {
             return Err(reached(
-                FoundationKind::NodeCount,
+                Setting::DependencyLibraries,
                 limits.libraries,
                 libraries,
-                LimitsField::DependencyLibraries,
             ));
         }
         let source_bytes = self.source_bytes.saturating_add(supplied.bytes.len());
         if source_bytes > limits.source_bytes {
             return Err(reached(
-                FoundationKind::InputBytes,
+                Setting::DependencySourceBytes,
                 limits.source_bytes,
                 source_bytes,
-                LimitsField::DependencySourceBytes,
             ));
         }
         self.source_bytes = source_bytes;

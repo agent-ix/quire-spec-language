@@ -81,6 +81,33 @@ impl Limits {
     }
 }
 
+/// FR-255: S1's four limits and the settings that raise them.
+impl qsl_foundation::SettingLimits for Limits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        use qsl_foundation::Setting;
+        let widen = |bound: usize| u64::try_from(bound).unwrap_or(u64::MAX);
+        vec![
+            (Setting::S1InputBytes, widen(self.source_bytes)),
+            (Setting::S1Tokens, widen(self.tokens)),
+            (Setting::S1Nodes, widen(self.nodes)),
+            (Setting::S1WorkUnits, widen(self.work_units)),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        use qsl_foundation::Setting;
+        let bound = usize::try_from(bound).unwrap_or(usize::MAX);
+        match setting {
+            Setting::S1InputBytes => self.source_bytes = bound,
+            Setting::S1Tokens => self.tokens = bound,
+            Setting::S1Nodes => self.nodes = bound,
+            Setting::S1WorkUnits => self.work_units = bound,
+            _ => return false,
+        }
+        true
+    }
+}
+
 // `Token` and `lex`/`recognize` are widened to `pub`: the root crate's own
 // base-grammar `parser` calls all three across the crate boundary
 // (ADR-011 §7.3 X-3).

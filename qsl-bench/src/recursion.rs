@@ -32,7 +32,7 @@ pub fn self_recursive(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
 }
 

@@ -187,6 +187,7 @@ fn units() -> Units {
             (UnitPreimage::from_json(preimage).unwrap(), key)
         }),
         &owners(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap();
     let declared = |key| graph.declared_unit_id(key).unwrap();
@@ -211,6 +212,7 @@ fn enum_declaration(name: &str) -> AdmittedEnumDeclaration {
         EnumDeclarationPreimage::from_json(preimage).unwrap(),
         key,
         &owners(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap()
 }
@@ -226,7 +228,11 @@ fn enum_value(
     });
     let key = fixture_key(&preimage);
     declaration
-        .admit_member(&EnumMemberPreimage::from_json(preimage).unwrap(), key)
+        .admit_member(
+            &EnumMemberPreimage::from_json(preimage).unwrap(),
+            key,
+            qsl_foundation::IdentityLimits::default(),
+        )
         .unwrap()
 }
 
@@ -1877,7 +1883,10 @@ fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
     let graph = PackageDeclarations {
         types,
         ieee_profile: ieee.then(|| profile().clone()),
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -2492,7 +2501,10 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
             None,
             operand("n"),
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();

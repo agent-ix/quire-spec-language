@@ -46,4 +46,4 @@ Tag the tests `#[trace("TC-733", "FR-261-AC-1")]`, `#[trace("TC-733", "FR-261-AC
 
 ## Status
 
-Planned.
+Steps 1 and 2, and step 3's count and builder refusal, are backed. Step 3's admission of the 100,000-deep value moved to QSL-639 with FR-261-AC-3.

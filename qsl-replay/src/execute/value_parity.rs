@@ -19,8 +19,10 @@ use quire_exact::{Incomplete, Meter, ScalarLimits};
 use quire_semantic_value::call::InputRefusal;
 
 use super::{
-    arguments, call_failure_to_replay_refusal, consumed, recompile, select, Claim, ReplayRefusal,
+    arguments, call_failure_to_replay_refusal, consumed, recompile, request_limits, select, Claim,
+    ReplayRefusal,
 };
+use crate::bounds::ReplayLimits;
 use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome};
@@ -102,8 +104,9 @@ fn settle(
     wire: ReplayRequestWire,
     generated: ScalarOutcome,
 ) -> Result<ValueParityResult, ReplayRefusal> {
-    let request = ReplayRequest::decode(wire)?;
-    let compiled = recompile(&request)?;
+    let request = ReplayRequest::decode(wire, ReplayLimits::default())?;
+    let limits = request_limits(request.stage_limits(), ReplayLimits::default())?;
+    let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::ValueParity)?;
     let arguments = arguments(

@@ -273,8 +273,9 @@ impl ModelIndex {
         s: &DeclarationKey,
         t: &DeclarationKey,
         max_steps: u64,
+        setting: qsl_foundation::Setting,
     ) -> Result<bool, ModelRefusal> {
-        self.records.conforms(s, t, max_steps)
+        self.records.conforms(s, t, max_steps, setting)
     }
 
     /// See [`RecordIndex::value_type_conforms`].
@@ -283,8 +284,9 @@ impl ModelIndex {
         s: &ValueTypeRef,
         t: &ValueTypeRef,
         max_steps: u64,
+        setting: qsl_foundation::Setting,
     ) -> Result<bool, ModelRefusal> {
-        self.records.value_type_conforms(s, t, max_steps)
+        self.records.value_type_conforms(s, t, max_steps, setting)
     }
 }
 
@@ -675,16 +677,14 @@ impl RecordIndex {
         s: &DeclarationKey,
         t: &DeclarationKey,
         max_steps: u64,
+        setting: qsl_foundation::Setting,
     ) -> Result<bool, ModelRefusal> {
         if s == t {
             return Ok(true);
         }
         let exceeded = || ModelRefusal {
             code: Code::ResourceExhausted,
-            cause: ModelRefusalCause::AncestorSteps {
-                from: s.clone(),
-                limit: max_steps,
-            },
+            cause: ModelRefusalCause::ancestor_steps(s.clone(), max_steps, setting),
             detail: format!(
                 "conformance check from {} exceeded the ancestor_steps limit of {max_steps}",
                 s.node
@@ -719,11 +719,12 @@ impl RecordIndex {
         s: &ValueTypeRef,
         t: &ValueTypeRef,
         max_steps: u64,
+        setting: qsl_foundation::Setting,
     ) -> Result<bool, ModelRefusal> {
         match (s, t) {
             (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
             (ValueTypeRef::Package(s_key), ValueTypeRef::Package(t_key)) => {
-                self.conforms(s_key, t_key, max_steps)
+                self.conforms(s_key, t_key, max_steps, setting)
             }
             _ => Ok(false),
         }
@@ -796,10 +797,11 @@ mod tests {
                     if steps >= max_steps {
                         return Err(ModelRefusal {
                             code: Code::ResourceExhausted,
-                            cause: ModelRefusalCause::AncestorSteps {
-                                from: s.clone(),
-                                limit: max_steps,
-                            },
+                            cause: ModelRefusalCause::ancestor_steps(
+                                s.clone(),
+                                max_steps,
+                                qsl_foundation::Setting::ModelAncestorSteps,
+                            ),
                             detail: format!(
                                 "conformance check from {} exceeded the ancestor_steps limit of {max_steps}",
                                 s.node
@@ -906,7 +908,12 @@ mod tests {
                 for t in &names {
                     for max_steps in 0..=6 {
                         assert_eq!(
-                            index.conforms(s, t, max_steps),
+                            index.conforms(
+                                s,
+                                t,
+                                max_steps,
+                                qsl_foundation::Setting::ModelAncestorSteps
+                            ),
                             walked(domain_package, s, t, max_steps),
                             "{} conforms to {} under ancestor_steps {max_steps}",
                             s.node,

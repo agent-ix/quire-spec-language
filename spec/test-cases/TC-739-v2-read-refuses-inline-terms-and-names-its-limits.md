@@ -27,10 +27,9 @@ Scope: FR-264-AC-3, FR-264-AC-4, FR-264-AC-5.
 
 Tag the tests `#[trace("TC-739", "FR-264-AC-3")]`, `#[trace("TC-739", "FR-264-AC-4")]`, `#[trace("TC-739", "FR-264-AC-5")]`.
 
-Verification status: step 2's limit kind, bound, count, `Locus::Artifact` and
-raise through the v2 read limits are tested here. The setting name `i2.nodes`,
-FR-255's settings operation and the CLI `--limit` are verified by TC-721
-(FR-255, Planned); FR-264-AC-4 is partial until then.
+Verification status: step 2's limit kind, bound, count, setting `i2.nodes`,
+`Locus::Artifact` and raise through the v2 read limits are tested here, and
+the raise through FR-255's settings operation by TC-721.
 
 ## Expected Results
 

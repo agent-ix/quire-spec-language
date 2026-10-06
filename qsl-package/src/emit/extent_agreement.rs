@@ -160,7 +160,7 @@ pub(super) fn package_declaring(types: TypeEnvironment) -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(source())
+            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the fixture records check"),
@@ -415,7 +415,11 @@ fn velocity_units() -> (
             "terms": terms,
         }))
         .expect("a dimension");
-        let key = NodeKey::from_digest(preimage.digest().expect("the dimension digests"));
+        let key = NodeKey::from_digest(
+            preimage
+                .digest(qsl_foundation::IdentityLimits::default())
+                .expect("the dimension digests"),
+        );
         (preimage, key)
     };
     let length = dimension("Length", json!([]));
@@ -437,7 +441,11 @@ fn velocity_units() -> (
             "offset": {"numerator": "0", "denominator": "1"},
         }))
         .expect("a unit");
-        let key = NodeKey::from_digest(preimage.digest().expect("the unit digests"));
+        let key = NodeKey::from_digest(
+            preimage
+                .digest(qsl_foundation::IdentityLimits::default())
+                .expect("the unit digests"),
+        );
         (preimage, key)
     };
     let metre = unit("metre", length.1, None, "1");
@@ -460,6 +468,7 @@ fn velocity_units() -> (
         [length, time, velocity],
         [metre, km, second, mps],
         &OwnerSelection::new([selection]),
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (

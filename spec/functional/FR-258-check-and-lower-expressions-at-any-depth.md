@@ -104,10 +104,9 @@ for checking; this requirement carries that rule through QSL's checker.
 ## Status
 
 - FR-258-AC-1, AC-2, AC-3, AC-5 and AC-6: backed (TC-725, TC-726, TC-727).
-- FR-258-AC-4: the node stop and the work stop through package checking and
-  the library builder are backed (TC-727). Remainder: B5 (the setting names
-  `s3.nodes` and `s3.work_units` in an outcome, the replay request's
-  `stage_limits` entry and FR-255's settings operation).
+- FR-258-AC-4: backed (TC-727): the node stop and the work stop through
+  package checking and the library builder, with their setting names, the
+  replay request's `stage_limits` entry and FR-255's settings operation.
 
 ## References
 

@@ -51,8 +51,7 @@ QSL relies on these capabilities, which are a `quire-canonical` follow-up
    the tree encoder, driven from an explicit heap stack.
 3. **Identity byte limit.** QSL SHALL encode each identity under the
    caller's `identity.input_bytes` limit (FR-255), a byte limit only, used
-   as given with no ceiling. `IDENTITY_LIMITS` is its published default,
-   16777216 bytes. A site whose stage applies its own byte budget SHALL pass
+   as given with no ceiling. Its published default is 16777216 bytes. A site whose stage applies its own byte budget SHALL pass
    that budget instead.
 4. **Byte error mapping.** When `quire-canonical` returns its byte error for
    an encoding or a read, QSL SHALL report the calling stage's input-bytes

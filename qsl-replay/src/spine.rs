@@ -25,10 +25,12 @@ use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{FormsCause, FormsRefusal};
-use qsl_foundation::diagnostic::{LimitExceeded, LimitsField, Locus};
+use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
+use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProfileRefusal, ProtocolAnchorCause,
     ShadowedDeclaration,
@@ -37,7 +39,6 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
 pub use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::TypeEnvironmentLimits;
 
 mod lifecycle;
 pub use lifecycle::{
@@ -151,9 +152,9 @@ pub enum CompileRefusal {
     #[error("{0}")]
     Emit(EmitRefusal),
     /// A stage limit the front end reached (FR-277): the limit kind, the
-    /// configured value, the counter reached and the caller's limits field
-    /// that raises it.
-    #[error("{}", limit_message(.0))]
+    /// configured value, the counter reached and the setting that raises it
+    /// (FR-255), rendered as FR-255 Behavior 3 states.
+    #[error("{0}")]
     Limit(LimitExceeded),
     /// E4: the v2 emitter would omit these nodes. A package missing part of
     /// the checked graph is partial output, which E4 never writes
@@ -222,37 +223,50 @@ impl CompileRefusal {
             Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
-            Self::Limit(limit) => match limit.limits_field() {
-                Some(
-                    LimitsField::SourceBytes
-                    | LimitsField::SourceTokens
-                    | LimitsField::SourceNodes
-                    | LimitsField::SourceWorkUnits,
-                ) => SpineStage::Source,
-                Some(
-                    LimitsField::CheckingNodes
-                    | LimitsField::CheckingInputBytes
-                    | LimitsField::CheckingWorkBudget,
-                ) => SpineStage::Check,
-                Some(
-                    LimitsField::EnvironmentAncestorSteps
-                    | LimitsField::EnvironmentWorkUnits
-                    | LimitsField::IdentityInputBytes,
-                )
-                | None => SpineStage::Assembly,
-                Some(
-                    LimitsField::ModelDeclarationRecords
-                    | LimitsField::ModelDerivationFacts
-                    | LimitsField::ModelEffectiveDeclarations
-                    | LimitsField::ModelDispatchCandidates
-                    | LimitsField::ModelHashedBytes
-                    | LimitsField::ModelWorkUnits
-                    | LimitsField::ModelAncestorSteps
-                    | LimitsField::ModelFamilySteps
-                    | LimitsField::DependencyLibraries
-                    | LimitsField::DependencyImportEdges
-                    | LimitsField::DependencySourceBytes,
-                ) => SpineStage::Intake,
+            Self::Limit(limit) => match limit.setting() {
+                Setting::S1InputBytes
+                | Setting::S1Tokens
+                | Setting::S1Nodes
+                | Setting::S1WorkUnits => SpineStage::Source,
+                Setting::S3Nodes | Setting::S3InputBytes | Setting::S3WorkUnits => {
+                    SpineStage::Check
+                }
+                Setting::S3DecimalScale
+                | Setting::EnvironmentAncestorSteps
+                | Setting::EnvironmentWorkUnits
+                | Setting::IdentityInputBytes => SpineStage::Assembly,
+                Setting::ModelDeclarationRecords
+                | Setting::ModelDerivationFacts
+                | Setting::ModelEffectiveDeclarations
+                | Setting::ModelDispatchCandidates
+                | Setting::ModelHashedBytes
+                | Setting::ModelWorkUnits
+                | Setting::ModelAncestorSteps
+                | Setting::ModelFamilySteps
+                | Setting::DependencyLibraries
+                | Setting::DependencyImportEdges
+                | Setting::DependencySourceBytes
+                | Setting::LibraryDefinitions
+                | Setting::LibraryDependencyEdges
+                | Setting::LibraryArtifactBytes
+                | Setting::LibrarySingleArtifactBytes
+                | Setting::I2InputBytes
+                | Setting::I2Nodes
+                | Setting::I2Edges
+                | Setting::I2Occurrences
+                | Setting::I2Diagnostics
+                | Setting::I2WorkUnits => SpineStage::Intake,
+                // Limits of operations after the compile: no front-end
+                // refusal carries one, so they name no stage of it.
+                Setting::AdmissionPopulationMembers
+                | Setting::AdmissionWorkUnits
+                | Setting::AdmissionAncestorSteps
+                | Setting::ObservationInputBytes
+                | Setting::ObservationObjects
+                | Setting::ObservationValues
+                | Setting::ReplayInputBytes
+                | Setting::ExploreStates
+                | Setting::ExploreTransitions => SpineStage::Emit,
             },
         }
     }
@@ -368,19 +382,6 @@ pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
     }
 }
 
-/// A readable account of a reached stage limit and the field that raises it.
-fn limit_message(limit: &LimitExceeded) -> String {
-    let field = limit.limits_field().map_or_else(String::new, |field| {
-        format!(", raised by `{}`", field.as_str())
-    });
-    format!(
-        "stage_limit_exceeded/{} (bound {}, reached {}{field})",
-        limit.kind().catalog_cause(),
-        limit.configured_bound(),
-        limit.actual()
-    )
-}
-
 /// A readable account of the assembler's first error, and how many more.
 fn assembly_message(refusal: &AssemblyRefusal) -> String {
     let Some(first) = refusal.errors.first() else {
@@ -431,9 +432,10 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::QuantityCycle { .. } => "a dimension or unit reaches itself".to_owned(),
         AssemblyCause::ZeroDenominator => "an exact number has a zero denominator".to_owned(),
         AssemblyCause::DecimalScaleLimit(limit) => format!(
-            "a decimal scale is above the bound {} (reached {})",
+            "a decimal scale is above the bound {} (reached {}); raise `{}`",
             limit.configured_bound(),
-            limit.actual()
+            limit.actual(),
+            limit.setting()
         ),
         AssemblyCause::UnitGraphTopology { declarations, .. } => {
             format!(
@@ -801,7 +803,7 @@ pub enum ImportRefusal {
     /// Step 4: charging the import graph reached a [`DependencyLimits`]
     /// ceiling, naming the limit kind, bound, counter and setting
     /// (`stage_limit_exceeded`, FR-099).
-    #[error("{}", limit_message(.0))]
+    #[error("{0}")]
     Limit(LimitExceeded),
     /// An import names the empty identity, which the parser never admits:
     /// a broken invariant (`runtime_invariant`).
@@ -842,8 +844,8 @@ impl ImportRefusal {
     }
 }
 
-/// The stage limits one spine compile runs under: S1's, I1's and S3's own
-/// limits types, each defaulting to that stage's published default. S2
+/// The stage limits one spine compile runs under: S1's, I1's, S3's and the
+/// import read's own limits types, each defaulting to that stage's published default. S2
 /// and the v2 emitter take none: S1's limits bound what S2 builds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SpineLimits {
@@ -855,9 +857,34 @@ pub struct SpineLimits {
     pub checking: CheckingLimits,
     /// The S4 source resolution's ceilings (FR-099).
     pub dependencies: DependencyLimits,
-    /// The type-environment ceilings the assembler admits records, tuples
-    /// and object types under (FR-082).
-    pub environment: TypeEnvironmentLimits,
+    /// The assembler's ceilings: decimal scale and the type-environment
+    /// ceilings records, tuples and object types are admitted under (FR-082).
+    pub assembly: AssemblyLimits,
+    /// The I2 reader's ceilings for each library's emitted package the
+    /// compile imports (`i2.*`).
+    pub imports: qsl_package::V2ReadLimits,
+}
+
+/// FR-255: every compile stage's settings, each owned by one part.
+impl qsl_foundation::SettingLimits for SpineLimits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        let mut bounds = self.source.bounds();
+        bounds.extend(self.model.bounds());
+        bounds.extend(qsl_semantics::check::checking_bounds(&self.checking));
+        bounds.extend(self.dependencies.bounds());
+        bounds.extend(self.assembly.bounds());
+        bounds.extend(self.imports.bounds());
+        bounds
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        self.source.set_bound(setting, bound)
+            || self.model.set_bound(setting, bound)
+            || qsl_semantics::check::set_checking_bound(&mut self.checking, setting, bound)
+            || self.dependencies.set_bound(setting, bound)
+            || self.assembly.set_bound(setting, bound)
+            || self.imports.set_bound(setting, bound)
+    }
 }
 
 /// The S4 source resolution's ceilings (FR-099): caller-configurable
@@ -874,6 +901,29 @@ pub struct DependencyLimits {
     /// The summed input bytes of the library sources compiled, set by
     /// `dependency.source_bytes`. Defaults to 16777216.
     pub source_bytes: usize,
+}
+
+/// FR-255: the `dependency.*` settings.
+impl qsl_foundation::SettingLimits for DependencyLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        let wide = |bound: usize| u64::try_from(bound).unwrap_or(u64::MAX);
+        vec![
+            (Setting::DependencyLibraries, wide(self.libraries)),
+            (Setting::DependencyImportEdges, wide(self.import_edges)),
+            (Setting::DependencySourceBytes, wide(self.source_bytes)),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        let bound = usize::try_from(bound).unwrap_or(usize::MAX);
+        match setting {
+            Setting::DependencyLibraries => self.libraries = bound,
+            Setting::DependencyImportEdges => self.import_edges = bound,
+            Setting::DependencySourceBytes => self.source_bytes = bound,
+            _ => return false,
+        }
+        true
+    }
 }
 
 impl Default for DependencyLimits {

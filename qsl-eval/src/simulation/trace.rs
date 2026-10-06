@@ -10,6 +10,7 @@ use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use qsl_foundation::IdentityLimits;
 
 /// One executed transition and the state-key digest of the state it
 /// produced.
@@ -152,8 +153,9 @@ pub enum ReplayError<T: std::fmt::Debug> {
 pub fn replay<S: TransitionSystem>(
     system: &S,
     trace: &Trace<S::TransitionId, S::Finding>,
+    identity: IdentityLimits,
 ) -> Result<(), ReplayError<S::TransitionId>> {
-    let mut current = sorted_initial(system)?
+    let mut current = sorted_initial(system, identity)?
         .into_iter()
         .find(|item| item.digest == trace.initial)
         .map(|item| item.state)
@@ -170,7 +172,7 @@ pub fn replay<S: TransitionSystem>(
 
     for index in 0..=last {
         let recorded = if index == last { recorded_stop } else { None };
-        let (successors, findings) = match expand(system, &current)? {
+        let (successors, findings) = match expand(system, &current, identity)? {
             Expanded::Successors {
                 successors,
                 findings,

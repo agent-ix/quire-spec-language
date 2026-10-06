@@ -19,7 +19,7 @@ use std::fmt;
 use quire_exact::Origin;
 use quire_exact::ScalarLimits;
 
-use crate::bounds::BoundExceeded;
+use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
     Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire, TracePosition,
@@ -896,8 +896,11 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// partially-built envelope returned) if the encoded size is over the
     /// configured bound, if any O-25 member is absent, or if a digest names a domain outside the closed FR-201 set.
     #[qsl_attrs::string_edge]
-    pub fn reconstruct(packet: WitnessPacket<P>) -> Result<Self, WitnessRefusal> {
-        BoundExceeded::check(measured_encoded_bytes(&packet))?;
+    pub fn reconstruct(
+        packet: WitnessPacket<P>,
+        limits: ReplayLimits,
+    ) -> Result<Self, WitnessRefusal> {
+        BoundExceeded::check(measured_encoded_bytes(&packet), limits)?;
 
         let obligation_identity = packet
             .obligation_identity
@@ -1015,7 +1018,7 @@ pub(crate) fn origin(role: &str, ordinal: u64) -> Origin {
 #[cfg(test)]
 mod envelope_tests {
     use super::*;
-    use crate::bounds::MAX_ENCODED_BYTES;
+    use crate::bounds::DEFAULT_INPUT_BYTES;
     use ix_trace_rs::trace;
     use qsl_foundation::bound::ProofBound;
     use quire_exact::Identifier;
@@ -1095,12 +1098,18 @@ mod envelope_tests {
     #[trace("TC-182", "FR-070-AC-3")]
     #[test]
     fn tc_182_round_trip_preserves_every_o25_member_and_the_transcript() {
-        let envelope_a = WitnessEnvelope::reconstruct(full_packet(0)).unwrap();
-        let envelope_b = WitnessEnvelope::reconstruct(full_packet(1)).unwrap();
+        let envelope_a =
+            WitnessEnvelope::reconstruct(full_packet(0), crate::ReplayLimits::default()).unwrap();
+        let envelope_b =
+            WitnessEnvelope::reconstruct(full_packet(1), crate::ReplayLimits::default()).unwrap();
 
-        let round_tripped_a = WitnessEnvelope::reconstruct(envelope_a.to_packet()).unwrap();
+        let round_tripped_a =
+            WitnessEnvelope::reconstruct(envelope_a.to_packet(), crate::ReplayLimits::default())
+                .unwrap();
         assert_eq!(envelope_a, round_tripped_a);
-        let round_tripped_b = WitnessEnvelope::reconstruct(envelope_b.to_packet()).unwrap();
+        let round_tripped_b =
+            WitnessEnvelope::reconstruct(envelope_b.to_packet(), crate::ReplayLimits::default())
+                .unwrap();
         assert_eq!(envelope_b, round_tripped_b);
 
         // Same node id, distinguishable by role/ordinal, after round trip.
@@ -1123,8 +1132,13 @@ mod envelope_tests {
             parameter: WireNodeId::from_digest(digest(9)),
             value: WitnessValue::Integer(42),
         }]));
-        let input_envelope = WitnessEnvelope::reconstruct(input_packet).unwrap();
-        let input_round_tripped = WitnessEnvelope::reconstruct(input_envelope.to_packet()).unwrap();
+        let input_envelope =
+            WitnessEnvelope::reconstruct(input_packet, crate::ReplayLimits::default()).unwrap();
+        let input_round_tripped = WitnessEnvelope::reconstruct(
+            input_envelope.to_packet(),
+            crate::ReplayLimits::default(),
+        )
+        .unwrap();
         assert_eq!(input_envelope, input_round_tripped);
     }
 
@@ -1157,7 +1171,8 @@ mod envelope_tests {
                 bound: FiniteBound::depth(3).unwrap(),
             }),
         ]);
-        let envelope = WitnessEnvelope::reconstruct(packet).unwrap();
+        let envelope =
+            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
         assert_eq!(envelope.run_limits(), scalar_limits(64));
         assert_eq!(
             envelope
@@ -1174,13 +1189,15 @@ mod envelope_tests {
             declared.domain(),
             DomainKey::Node { node, .. } if *node == parameter
         )));
-        let round_tripped = WitnessEnvelope::reconstruct(envelope.to_packet()).unwrap();
+        let round_tripped =
+            WitnessEnvelope::reconstruct(envelope.to_packet(), crate::ReplayLimits::default())
+                .unwrap();
         assert_eq!(round_tripped, envelope);
 
         let mut missing = full_packet(0);
         missing.run_limits = None;
         assert!(matches!(
-            WitnessEnvelope::reconstruct(missing),
+            WitnessEnvelope::reconstruct(missing, crate::ReplayLimits::default()),
             Err(WitnessRefusal::MissingMember("run_limits"))
         ));
     }
@@ -1193,28 +1210,28 @@ mod envelope_tests {
         let mut missing_backend = full_packet(0);
         missing_backend.backend = None;
         assert!(matches!(
-            WitnessEnvelope::reconstruct(missing_backend),
+            WitnessEnvelope::reconstruct(missing_backend, crate::ReplayLimits::default()),
             Err(WitnessRefusal::MissingMember("backend"))
         ));
 
         let mut missing_trace_position = full_packet(0);
         missing_trace_position.trace_position = None;
         assert!(matches!(
-            WitnessEnvelope::reconstruct(missing_trace_position),
+            WitnessEnvelope::reconstruct(missing_trace_position, crate::ReplayLimits::default()),
             Err(WitnessRefusal::MissingMember("trace_position"))
         ));
 
         let mut missing_source_digest = full_packet(0);
         missing_source_digest.source_digests = None;
         assert!(matches!(
-            WitnessEnvelope::reconstruct(missing_source_digest),
+            WitnessEnvelope::reconstruct(missing_source_digest, crate::ReplayLimits::default()),
             Err(WitnessRefusal::MissingMember("source_digests"))
         ));
 
         let mut missing_obligation = full_packet(0);
         missing_obligation.obligation_identity = None;
         assert!(matches!(
-            WitnessEnvelope::reconstruct(missing_obligation),
+            WitnessEnvelope::reconstruct(missing_obligation, crate::ReplayLimits::default()),
             Err(WitnessRefusal::MissingMember("obligation_identity"))
         ));
     }
@@ -1234,9 +1251,12 @@ mod envelope_tests {
 
         let mut packet = full_packet(0).into_generic();
         packet.family_payload = Some(StateForallPayload { bound_index: 3 });
-        let envelope = WitnessEnvelope::reconstruct(packet).unwrap();
+        let envelope =
+            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
         assert_eq!(envelope.family_payload().bound_index, 3);
-        let round_tripped = WitnessEnvelope::reconstruct(envelope.to_packet()).unwrap();
+        let round_tripped =
+            WitnessEnvelope::reconstruct(envelope.to_packet(), crate::ReplayLimits::default())
+                .unwrap();
         assert_eq!(envelope, round_tripped);
 
         // The extension point is a generic type parameter, not a
@@ -1261,7 +1281,7 @@ mod envelope_tests {
             "ab".repeat(32),
         )]);
         assert!(matches!(
-            WitnessEnvelope::reconstruct(packet),
+            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()),
             Err(WitnessRefusal::DigestDomainMismatch("source_digests", _))
         ));
     }
@@ -1282,7 +1302,7 @@ mod envelope_tests {
             "ab".repeat(31), // 62 hex chars, not 64
         )]);
         assert!(matches!(
-            WitnessEnvelope::reconstruct(packet),
+            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()),
             Err(WitnessRefusal::MalformedDigest("source_digests", _))
         ));
     }
@@ -1293,7 +1313,7 @@ mod envelope_tests {
         let mut packet = full_packet(0);
         packet.backend = Some(String::new());
         assert_eq!(
-            WitnessEnvelope::reconstruct(packet),
+            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()),
             Err(WitnessRefusal::EmptyBackendIdentity)
         );
     }
@@ -1308,12 +1328,12 @@ mod envelope_tests {
         // oversized packet has to actually carry oversized content.
         let mut packet = full_packet(0);
         if let Some(identity) = packet.backend.as_mut() {
-            *identity = "x".repeat(MAX_ENCODED_BYTES + 1);
+            *identity = "x".repeat(DEFAULT_INPUT_BYTES + 1);
         } else {
             panic!("full_packet carries a backend");
         }
         assert!(matches!(
-            WitnessEnvelope::reconstruct(packet),
+            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()),
             Err(WitnessRefusal::BoundExceeded(_))
         ));
     }
@@ -1335,13 +1355,13 @@ mod envelope_tests {
         };
         let mut short = full_packet(0);
         short.declared_domains = Some(vec![domain(vec![0])]);
-        assert!(WitnessEnvelope::reconstruct(short).is_ok());
+        assert!(WitnessEnvelope::reconstruct(short, crate::ReplayLimits::default()).is_ok());
 
-        let entries = MAX_ENCODED_BYTES / std::mem::size_of::<u32>() + 1;
+        let entries = DEFAULT_INPUT_BYTES / std::mem::size_of::<u32>() + 1;
         let mut long = full_packet(0);
         long.declared_domains = Some(vec![domain(vec![0; entries])]);
         assert!(matches!(
-            WitnessEnvelope::reconstruct(long),
+            WitnessEnvelope::reconstruct(long, crate::ReplayLimits::default()),
             Err(WitnessRefusal::BoundExceeded(_))
         ));
     }

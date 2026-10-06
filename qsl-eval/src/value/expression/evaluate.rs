@@ -2558,7 +2558,10 @@ mod tests {
                     Expression::name("p".to_owned()),
                 )),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");
@@ -2838,7 +2841,10 @@ mod tests {
         let graph = PackageDeclarations {
             types,
             models: vec![model],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one type with one field checks cleanly");
@@ -2944,7 +2950,10 @@ mod tests {
         let graph = PackageDeclarations {
             types,
             models: vec![model],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one type with one field checks cleanly");
@@ -3050,7 +3059,10 @@ mod tests {
         );
         let graph = PackageDeclarations {
             types: TypeEnvironment::new([record], []).expect("one record admits"),
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("the record checks");

@@ -1608,6 +1608,7 @@ fn dimensions_and_units_are_admitted_with_the_vector_keys() {
 }
 
 #[trace("FR-091-AC-32", "TC-483")]
+#[trace("TC-720", "FR-255-AC-1")]
 #[test]
 fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
     let assemble_with = |scale: u64| {
@@ -1648,6 +1649,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
     };
     assert_eq!(limit.configured_bound(), 4);
     assert_eq!(limit.actual(), 5);
+    assert_eq!(limit.setting(), qsl_foundation::Setting::S3DecimalScale);
     assert_eq!(error.span, last(&text, "decimal(1, 5)"));
     assert_eq!(
         error.cause.catalog_code().to_string(),
@@ -1815,19 +1817,15 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
             "invalid_package/unit-graph-topology",
         ),
         (
-            AssemblyCause::DecimalScaleLimit(quire_exact_limit()),
+            AssemblyCause::DecimalScaleLimit(qsl_foundation::diagnostic::LimitExceeded::new(
+                qsl_foundation::Setting::S3DecimalScale,
+                4,
+                5,
+            )),
             "stage_limit_exceeded/work-budget-exceeded",
         ),
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
-}
-
-fn quire_exact_limit() -> qsl_foundation::diagnostic::LimitExceeded {
-    qsl_foundation::diagnostic::LimitExceeded::new(
-        qsl_foundation::diagnostic::LimitKind::WorkBudget,
-        4,
-        5,
-    )
 }

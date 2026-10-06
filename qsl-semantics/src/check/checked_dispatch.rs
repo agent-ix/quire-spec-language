@@ -857,6 +857,7 @@ pub fn checked_dispatch_operation(
     clauses: &OperationClauses,
     source: qsl_foundation::source::provenance::RawSourceRef,
     meter: &mut Meter,
+    identity: qsl_foundation::IdentityLimits,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let mut steps = FamilySteps::new(&root.key, meter.limits().family_steps);
     let domain_package = view.domain_package();
@@ -1162,7 +1163,7 @@ pub fn checked_dispatch_operation(
         resolved_signatures,
         models: vec![model],
         model_clauses,
-        ..PackageDeclarations::new(source)
+        ..PackageDeclarations::new(source, identity)
     })
 }
 
@@ -1305,10 +1306,7 @@ mod tests {
         match refusal {
             DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => assert_eq!(
                 model_refusal.cause,
-                ModelRefusalCause::FamilySteps {
-                    original: original.clone(),
-                    limit,
-                }
+                ModelRefusalCause::family_steps(original.clone(), limit)
             ),
             other => panic!("expected FamilyStepsExceeded, got {other:?}"),
         }

@@ -16,6 +16,7 @@ use crate::simulation::frontier::{Frontier, Limit};
 use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use qsl_foundation::{IdentityLimits, Setting, SettingLimits};
 
 /// A finite-branching transition system the engine explores.
 ///
@@ -88,6 +89,43 @@ impl Default for Limits {
             max_states: 10_000_000,
             max_transitions: 100_000_000,
         }
+    }
+}
+
+impl Limits {
+    /// These limits with `explore.states` set to `bound`.
+    #[must_use]
+    pub const fn with_max_states(mut self, bound: usize) -> Self {
+        self.max_states = bound;
+        self
+    }
+
+    /// These limits with `explore.transitions` set to `bound`.
+    #[must_use]
+    pub const fn with_max_transitions(mut self, bound: usize) -> Self {
+        self.max_transitions = bound;
+        self
+    }
+}
+
+/// FR-255: the one mapping from each field to its setting.
+impl SettingLimits for Limits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        let widen = |bound: usize| u64::try_from(bound).unwrap_or(u64::MAX);
+        vec![
+            (Setting::ExploreStates, widen(self.max_states)),
+            (Setting::ExploreTransitions, widen(self.max_transitions)),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        let bound = usize::try_from(bound).unwrap_or(usize::MAX);
+        match setting {
+            Setting::ExploreStates => self.max_states = bound,
+            Setting::ExploreTransitions => self.max_transitions = bound,
+            _ => return false,
+        }
+        true
     }
 }
 
@@ -224,11 +262,12 @@ fn frontier_of<S>(head: DigestRecord, queue: &VecDeque<Queued<S>>) -> Frontier {
 pub(crate) fn explore<S: TransitionSystem>(
     system: &S,
     limits: Limits,
+    identity: IdentityLimits,
     max_depth: Option<usize>,
     mut poll: impl FnMut() -> bool,
 ) -> Result<Exploration<S::Finding>, EncodingRefusal> {
     let mut findings = Vec::new();
-    let initial = sorted_initial(system)?;
+    let initial = sorted_initial(system, identity)?;
     if initial.len() > limits.max_states {
         let frontier: Frontier = initial.iter().map(|item| item.digest).collect();
         return Ok(Exploration {
@@ -297,7 +336,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                 cause: CANCELLED_CAUSE,
             };
         }
-        let (successors, state_findings) = match expand(system, &state)? {
+        let (successors, state_findings) = match expand(system, &state, identity)? {
             Expanded::Successors {
                 successors,
                 findings,
@@ -386,17 +425,22 @@ pub(crate) fn explore<S: TransitionSystem>(
 /// [`NotSimulated::KeyEncoding`] when a state or transition identity reached
 /// during the walk has no RFC 8785 encoding. Never
 /// [`NotSimulated::GeneratorMismatch`] or [`NotSimulated::EmptyInitial`].
+#[allow(
+    clippy::too_many_arguments,
+    reason = "FR-101 pins this exact signature; the parameters are the request's own fields, not an accretion of unrelated flags"
+)]
 pub fn explore_request<S: TransitionSystem>(
     system: &S,
     domains: &[(WireNodeId, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,
+    identity: IdentityLimits,
     max_depth: Option<usize>,
     poll: impl FnMut() -> bool,
 ) -> Result<Exploration<S::Finding>, NotSimulated> {
     check_requires_bound(domains, types, position_limit)?;
-    explore(system, limits, max_depth, poll).map_err(NotSimulated::from)
+    explore(system, limits, identity, max_depth, poll).map_err(NotSimulated::from)
 }
 
 #[cfg(test)]

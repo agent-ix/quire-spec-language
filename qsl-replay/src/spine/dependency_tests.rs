@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_cst::HostCause;
-use qsl_foundation::diagnostic::{LimitKind, LimitsField};
+use qsl_foundation::diagnostic::LimitKind;
+use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view};
 use qsl_semantics::library::{LibraryName, PackageId};
@@ -47,6 +48,7 @@ fn view_of(
         lib(identity),
         &BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
+        qsl_package::V2ReadLimits::default(),
     )
 }
 
@@ -570,11 +572,8 @@ fn the_libraries_limit_refuses_the_import_that_would_exceed_it() {
     assert_eq!(limit.kind(), LimitKind::NodeCount);
     assert_eq!(limit.configured_bound(), 2);
     assert_eq!(limit.actual(), 3);
-    assert_eq!(limit.limits_field(), Some(LimitsField::DependencyLibraries));
-    assert_eq!(
-        limit.limits_field().map(LimitsField::as_str),
-        Some("dependency.libraries")
-    );
+    assert_eq!(limit.setting(), Setting::DependencyLibraries);
+    assert_eq!(limit.setting().name(), "dependency.libraries");
     assert!(compile_under(&source, chain, limits(3)).is_ok());
 }
 
@@ -596,14 +595,8 @@ fn the_import_edges_limit_refuses_the_import_that_would_exceed_it() {
     assert_eq!(limit.kind(), LimitKind::EdgeCount);
     assert_eq!(limit.configured_bound(), 2);
     assert_eq!(limit.actual(), 3);
-    assert_eq!(
-        limit.limits_field(),
-        Some(LimitsField::DependencyImportEdges)
-    );
-    assert_eq!(
-        limit.limits_field().map(LimitsField::as_str),
-        Some("dependency.import_edges")
-    );
+    assert_eq!(limit.setting(), Setting::DependencyImportEdges);
+    assert_eq!(limit.setting().name(), "dependency.import_edges");
     assert!(compile_under(&source, chain, limits(3)).is_ok());
 }
 
@@ -626,14 +619,8 @@ fn the_source_bytes_limit_refuses_the_library_that_would_exceed_it() {
     assert_eq!(limit.kind(), LimitKind::InputBytes);
     assert_eq!(limit.configured_bound(), u64::try_from(total - 1).unwrap());
     assert_eq!(limit.actual(), u128::try_from(total).unwrap());
-    assert_eq!(
-        limit.limits_field(),
-        Some(LimitsField::DependencySourceBytes)
-    );
-    assert_eq!(
-        limit.limits_field().map(LimitsField::as_str),
-        Some("dependency.source_bytes")
-    );
+    assert_eq!(limit.setting(), Setting::DependencySourceBytes);
+    assert_eq!(limit.setting().name(), "dependency.source_bytes");
     assert!(compile_under(&source, chain, limits(total)).is_ok());
 }
 

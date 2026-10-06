@@ -419,7 +419,7 @@ mod tests {
         let source = admitted_source(SourceIdentity::new("a", "u", "git", "1"), UNIT.as_bytes());
         PackageDeclarations {
             functions: vec![function_f()],
-            ..PackageDeclarations::new(source)
+            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
         }
     }
 
@@ -990,7 +990,7 @@ mod tests {
         );
         let declarations = PackageDeclarations {
             functions: vec![not_not_a("g1", 0), not_not_a("g2", g2_from)],
-            ..PackageDeclarations::new(source)
+            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
         };
         let regions = declarations.regions();
         // One past g1's own count: g1 fully types (3 <= 4); g2 is under 4 in

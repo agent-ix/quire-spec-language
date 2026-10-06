@@ -19,9 +19,7 @@ use std::sync::Arc;
 use qsl_foundation::selection::{
     DefinitionRef, InvalidDefinitionComponent, MAX_SELECTED_DEFINITIONS,
 };
-use qsl_foundation::{ByteDigest, Code};
-
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
+use qsl_foundation::{ByteDigest, Code, IdentityLimits, Setting, SettingLimits};
 
 /// Unforgeable crate-issued proof that typed definition parts came from
 /// the owning reader boundary.
@@ -133,6 +131,19 @@ pub enum PackageLimitKind {
     SingleArtifactBytes,
 }
 
+impl PackageLimitKind {
+    /// The setting that raises this ceiling (FR-255).
+    #[must_use]
+    pub const fn setting(self) -> Setting {
+        match self {
+            Self::Definitions => Setting::LibraryDefinitions,
+            Self::DependencyEdges => Setting::LibraryDependencyEdges,
+            Self::ArtifactBytes => Setting::LibraryArtifactBytes,
+            Self::SingleArtifactBytes => Setting::LibrarySingleArtifactBytes,
+        }
+    }
+}
+
 impl std::fmt::Display for PackageLimitKind {
     /// The [`PackageLimits`] field name this kind bounds.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -166,6 +177,34 @@ pub struct PackageLimits {
 }
 
 impl PackageLimits {
+    /// Sets [`Self::definitions`] and nothing else.
+    #[must_use]
+    pub fn with_definitions(mut self, definitions: usize) -> Self {
+        self.definitions = definitions;
+        self
+    }
+
+    /// Sets [`Self::dependency_edges`] and nothing else.
+    #[must_use]
+    pub fn with_dependency_edges(mut self, dependency_edges: usize) -> Self {
+        self.dependency_edges = dependency_edges;
+        self
+    }
+
+    /// Sets [`Self::artifact_bytes`] and nothing else.
+    #[must_use]
+    pub fn with_artifact_bytes(mut self, artifact_bytes: usize) -> Self {
+        self.artifact_bytes = artifact_bytes;
+        self
+    }
+
+    /// Sets [`Self::single_artifact_bytes`] and nothing else.
+    #[must_use]
+    pub fn with_single_artifact_bytes(mut self, single_artifact_bytes: usize) -> Self {
+        self.single_artifact_bytes = single_artifact_bytes;
+        self
+    }
+
     /// Refuses one artifact of `len` bytes past
     /// [`Self::single_artifact_bytes`].
     fn check_single_artifact(&self, len: usize) -> Result<(), PackageError> {
@@ -173,9 +212,42 @@ impl PackageLimits {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::SingleArtifactBytes,
                 limit: self.single_artifact_bytes,
+                actual: len,
             });
         }
         Ok(())
+    }
+}
+
+/// A bound as a field's `usize`, saturating on a target narrower than 64 bits.
+fn field_bound(bound: u64) -> usize {
+    usize::try_from(bound).unwrap_or(usize::MAX)
+}
+
+impl SettingLimits for PackageLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        let wide = |bound: usize| u64::try_from(bound).unwrap_or(u64::MAX);
+        vec![
+            (Setting::LibraryDefinitions, wide(self.definitions)),
+            (Setting::LibraryDependencyEdges, wide(self.dependency_edges)),
+            (Setting::LibraryArtifactBytes, wide(self.artifact_bytes)),
+            (
+                Setting::LibrarySingleArtifactBytes,
+                wide(self.single_artifact_bytes),
+            ),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        let bound = field_bound(bound);
+        match setting {
+            Setting::LibraryDefinitions => self.definitions = bound,
+            Setting::LibraryDependencyEdges => self.dependency_edges = bound,
+            Setting::LibraryArtifactBytes => self.artifact_bytes = bound,
+            Setting::LibrarySingleArtifactBytes => self.single_artifact_bytes = bound,
+            _ => return false,
+        }
+        true
     }
 }
 
@@ -249,6 +321,7 @@ impl DefinitionCatalog {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
+                actual: definitions.len(),
             });
         }
         let mut edges = 0_usize;
@@ -256,28 +329,20 @@ impl DefinitionCatalog {
         let mut catalog = Self::default();
         for definition in definitions {
             limits.check_single_artifact(definition.exact_bytes.len())?;
-            edges = edges.checked_add(definition.dependencies.len()).ok_or(
-                PackageError::ResourceLimit {
-                    kind: PackageLimitKind::DependencyEdges,
-                    limit: limits.dependency_edges,
-                },
-            )?;
-            bytes = bytes.checked_add(definition.exact_bytes.len()).ok_or(
-                PackageError::ResourceLimit {
-                    kind: PackageLimitKind::ArtifactBytes,
-                    limit: limits.artifact_bytes,
-                },
-            )?;
+            edges = edges.saturating_add(definition.dependencies.len());
+            bytes = bytes.saturating_add(definition.exact_bytes.len());
             if edges > limits.dependency_edges {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
                     limit: limits.dependency_edges,
+                    actual: edges,
                 });
             }
             if bytes > limits.artifact_bytes {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
+                    actual: bytes,
                 });
             }
             if catalog
@@ -577,6 +642,7 @@ pub fn link_bundle(
     roots: &[DefinitionRef],
     catalog: &DefinitionCatalog,
     limits: PackageLimits,
+    identity: IdentityLimits,
 ) -> Result<LinkedBundle, BundleRefusal> {
     if roots.len() > limits.definitions {
         return Err(refusal(
@@ -585,6 +651,7 @@ pub fn link_bundle(
             PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
+                actual: roots.len(),
             },
         ));
     }
@@ -651,6 +718,7 @@ pub fn link_bundle(
                         PackageError::ResourceLimit {
                             kind: PackageLimitKind::Definitions,
                             limit: limits.definitions,
+                            actual: resolved.len().saturating_add(1),
                         },
                     ));
                 }
@@ -666,21 +734,17 @@ pub fn link_bundle(
                     ),
                 ));
             }
-            let edge_limit = || {
-                refusal(
+            traversed_edges = traversed_edges.saturating_add(definition.dependencies.len());
+            if traversed_edges > limits.dependency_edges {
+                return Err(refusal(
                     Code::ResourceExhausted,
                     root_index,
                     PackageError::ResourceLimit {
                         kind: PackageLimitKind::DependencyEdges,
                         limit: limits.dependency_edges,
+                        actual: traversed_edges,
                     },
-                )
-            };
-            traversed_edges = traversed_edges
-                .checked_add(definition.dependencies.len())
-                .ok_or_else(edge_limit)?;
-            if traversed_edges > limits.dependency_edges {
-                return Err(edge_limit());
+                ));
             }
             active.push(selected.clone());
             work.push((selected, true));
@@ -698,16 +762,17 @@ pub fn link_bundle(
             .check_single_artifact(len)
             .map_err(|cause| refusal(Code::ResourceExhausted, None, cause))?;
     }
-    let resolved_artifact_bytes = resolved.values().try_fold(0_usize, |total, definition| {
-        total.checked_add(definition.exact_bytes.len())
+    let resolved_artifact_bytes = resolved.values().fold(0_usize, |total, definition| {
+        total.saturating_add(definition.exact_bytes.len())
     });
-    if resolved_artifact_bytes.is_none_or(|bytes| bytes > limits.artifact_bytes) {
+    if resolved_artifact_bytes > limits.artifact_bytes {
         return Err(refusal(
             Code::ResourceExhausted,
             None,
             PackageError::ResourceLimit {
                 kind: PackageLimitKind::ArtifactBytes,
                 limit: limits.artifact_bytes,
+                actual: resolved_artifact_bytes,
             },
         ));
     }
@@ -735,15 +800,16 @@ pub fn link_bundle(
             PackageError::MissingFacet(*missing),
         ));
     }
-    let identity = resolved_graph_identity(&resolved, &capabilities).map_err(|cause| {
-        let code = match &cause {
-            PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
-                Code::ResourceExhausted
-            }
-            _ => Code::InvalidPackage,
-        };
-        refusal(code, None, cause)
-    })?;
+    let identity =
+        resolved_graph_identity(&resolved, &capabilities, identity).map_err(|cause| {
+            let code = match &cause {
+                PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
+                    Code::ResourceExhausted
+                }
+                _ => Code::InvalidPackage,
+            };
+            refusal(code, None, cause)
+        })?;
     Ok(LinkedBundle {
         bundle: CompleteBundle {
             facets,
@@ -852,12 +918,13 @@ impl<'a> From<&'a DefinitionRef> for ExactRefPreimage<'a> {
 /// digest (ADR-013 §2, ADR-013:113: the one RFC 8785 implementation).
 ///
 /// A refusal of the encoder (for a preimage of strings, its bytes reaching
-/// [`LIMITS`] or a failed heap reservation) is
+/// `identity`'s byte limit or a failed heap reservation) is
 /// [`PackageError::CanonicalSize`]: the graph's canonical form cannot be
 /// produced at its size.
 fn resolved_graph_identity(
     definitions: &BTreeMap<DefinitionRef, Arc<Definition>>,
     capabilities: &BTreeSet<CapabilityId>,
+    identity: IdentityLimits,
 ) -> Result<SemanticDigest, PackageError> {
     let preimage = ResolvedGraphPreimage {
         definitions: definitions
@@ -881,8 +948,12 @@ fn resolved_graph_identity(
         models: [],
         capabilities: capabilities.iter().map(CapabilityId::as_str).collect(),
     };
-    let digest = quire_canonical::sha256_with_domain(RESOLVED_GRAPH_DOMAIN, &preimage, LIMITS)
-        .map_err(|_| PackageError::CanonicalSize)?;
+    let digest = quire_canonical::sha256_with_domain(
+        RESOLVED_GRAPH_DOMAIN,
+        &preimage,
+        quire_canonical::Limits::new(identity.input_bytes),
+    )
+    .map_err(|_| PackageError::CanonicalSize)?;
     ByteDigest::from_hex(&digest.to_string())
         .map(SemanticDigest)
         .map_err(|_| PackageError::CanonicalSize)
@@ -921,12 +992,14 @@ pub enum PackageError {
     #[error("canonical field exceeds the u64 wire length domain")]
     CanonicalSize,
     /// Package input reached a configured [`PackageLimits`] ceiling.
-    #[error("package resource limit exceeded: {kind} (limit {limit})")]
+    #[error("package resource limit exceeded: {kind} (limit {limit}, reached {actual}); raise it with `--limit {setting}=<n>`", setting = .kind.setting())]
     ResourceLimit {
         /// Which ceiling was reached.
         kind: PackageLimitKind,
         /// The configured bound in force when the ceiling was reached.
         limit: usize,
+        /// The count the refused charge would have reached.
+        actual: usize,
     },
     /// One required complete facet was omitted.
     #[error("complete V1 is missing facet {0:?}")]
@@ -979,7 +1052,9 @@ mod tests {
             .into_iter()
             .map(|id| CapabilityId::complete(id).unwrap())
             .collect();
-        let identity = resolved_graph_identity(&BTreeMap::new(), &capabilities).unwrap();
+        let identity =
+            resolved_graph_identity(&BTreeMap::new(), &capabilities, IdentityLimits::default())
+                .unwrap();
         assert_eq!(format!("{:x}", identity.digest()), DIGEST);
     }
 }

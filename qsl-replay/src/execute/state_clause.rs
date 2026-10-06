@@ -20,14 +20,14 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::ByteDigest;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
-    ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, ObservationLimits,
-    OutOfRange, PostStateRange, Provisions,
+    ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, OutOfRange,
+    PostStateRange, Provisions,
 };
 use quire_exact::Identifier;
 
 use super::{consumed, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
+use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
@@ -160,15 +160,17 @@ impl StateClauseReplayResult {
 /// value (its boolean, a refusal, an exhausted budget or a fault), and
 /// [`StateClauseReplayResult::range_violations`] names each one.
 ///
-/// Admission and the domain package re-normalization run under their
-/// published defaults: no `quire.value.accounting/v1` counter names either.
+/// Admission and the domain package re-normalization run under the request's
+/// `stage_limits` entries for their settings, or their published defaults.
 /// The request's accounting limits build the evaluation meter.
 pub fn replay_state_clause(
     wire: ReplayRequestWire,
     envelope: &WitnessEnvelope<StateClauseCounterexample>,
+    replay_limits: ReplayLimits,
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
-    let request = ReplayRequest::decode(wire)?;
-    let compiled = recompile(&request)?;
+    let request = ReplayRequest::decode(wire, replay_limits)?;
+    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
+    let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
         return Err(ReplayRefusal::PackageIdMismatch {
@@ -227,14 +229,14 @@ pub fn replay_state_clause(
     };
     let run = CompiledRun {
         packages: &packages,
-        model_limits: ModelNormalizationLimits::default(),
+        model_limits: limits.spine.model,
         provisions: Provisions {
             snapshots: &documents,
             invocations: &documents,
         },
-        observation_limits: ObservationLimits {
+        observation_limits: qsl_semantics::model::observation::ObservationLimits {
             post_state: PostStateRange::Witness,
-            ..ObservationLimits::default()
+            ..limits.observation
         },
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),

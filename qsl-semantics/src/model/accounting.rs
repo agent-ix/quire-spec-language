@@ -81,6 +81,117 @@ impl ModelNormalizationLimits {
     };
 }
 
+impl ModelNormalizationLimits {
+    /// These limits with `declaration_records` set (`model.declaration_records`).
+    #[must_use]
+    pub const fn with_declaration_records(mut self, bound: u64) -> Self {
+        self.declaration_records = bound;
+        self
+    }
+
+    /// These limits with `derivation_facts` set (`model.derivation_facts`).
+    #[must_use]
+    pub const fn with_derivation_facts(mut self, bound: u64) -> Self {
+        self.derivation_facts = bound;
+        self
+    }
+
+    /// These limits with `effective_declarations` set
+    /// (`model.effective_declarations`).
+    #[must_use]
+    pub const fn with_effective_declarations(mut self, bound: u64) -> Self {
+        self.effective_declarations = bound;
+        self
+    }
+
+    /// These limits with `dispatch_candidates` set
+    /// (`model.dispatch_candidates`).
+    #[must_use]
+    pub const fn with_dispatch_candidates(mut self, bound: u64) -> Self {
+        self.dispatch_candidates = bound;
+        self
+    }
+
+    /// These limits with `hashed_bytes` set (`model.hashed_bytes`).
+    #[must_use]
+    pub const fn with_hashed_bytes(mut self, bound: u64) -> Self {
+        self.hashed_bytes = bound;
+        self
+    }
+
+    /// These limits with `work_units` set (`model.work_units`).
+    #[must_use]
+    pub const fn with_work_units(mut self, bound: u64) -> Self {
+        self.work_units = bound;
+        self
+    }
+
+    /// These limits with `ancestor_steps` set (`model.ancestor_steps`).
+    #[must_use]
+    pub const fn with_ancestor_steps(mut self, bound: u64) -> Self {
+        self.ancestor_steps = bound;
+        self
+    }
+
+    /// These limits with `family_steps` set (`model.family_steps`).
+    #[must_use]
+    pub const fn with_family_steps(mut self, bound: u64) -> Self {
+        self.family_steps = bound;
+        self
+    }
+}
+
+impl LimitKind {
+    /// The setting that raises this counter (FR-255).
+    pub const fn setting(self) -> qsl_foundation::Setting {
+        use qsl_foundation::Setting;
+        match self {
+            Self::DeclarationRecords => Setting::ModelDeclarationRecords,
+            Self::DerivationFacts => Setting::ModelDerivationFacts,
+            Self::EffectiveDeclarations => Setting::ModelEffectiveDeclarations,
+            Self::DispatchCandidates => Setting::ModelDispatchCandidates,
+            Self::HashedBytes => Setting::ModelHashedBytes,
+            Self::WorkUnits => Setting::ModelWorkUnits,
+        }
+    }
+}
+
+/// FR-255: the one mapping from each field to its setting.
+impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        use qsl_foundation::Setting;
+        vec![
+            (Setting::ModelDeclarationRecords, self.declaration_records),
+            (Setting::ModelDerivationFacts, self.derivation_facts),
+            (
+                Setting::ModelEffectiveDeclarations,
+                self.effective_declarations,
+            ),
+            (Setting::ModelDispatchCandidates, self.dispatch_candidates),
+            (Setting::ModelHashedBytes, self.hashed_bytes),
+            (Setting::ModelWorkUnits, self.work_units),
+            (Setting::ModelAncestorSteps, self.ancestor_steps),
+            (Setting::ModelFamilySteps, self.family_steps),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        use qsl_foundation::Setting;
+        match setting {
+            Setting::ModelDeclarationRecords => self.declaration_records = bound,
+            Setting::ModelDerivationFacts => self.derivation_facts = bound,
+            Setting::ModelEffectiveDeclarations => self.effective_declarations = bound,
+            Setting::ModelDispatchCandidates => self.dispatch_candidates = bound,
+            Setting::ModelHashedBytes => self.hashed_bytes = bound,
+            Setting::ModelWorkUnits => self.work_units = bound,
+            Setting::ModelAncestorSteps => self.ancestor_steps = bound,
+            Setting::ModelFamilySteps => self.family_steps = bound,
+            _ => return false,
+        }
+        true
+    }
+}
+
 /// One counter of [`ModelNormalizationLimits`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LimitKind {
@@ -252,6 +363,19 @@ pub struct Incomplete {
     pub next_charge: u64,
     /// The named point whose charge was denied.
     pub charge_point: ChargePoint,
+}
+
+impl Incomplete {
+    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
+    /// counter's setting, its bound and the total the denied charge would
+    /// have reached.
+    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
+        qsl_foundation::diagnostic::LimitExceeded::new(
+            self.limit_kind.setting(),
+            self.limit,
+            u128::from(self.consumed) + u128::from(self.next_charge),
+        )
+    }
 }
 
 /// One exact `{ counter: amount }` charge vector: `work_units` plus at most

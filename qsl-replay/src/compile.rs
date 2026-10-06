@@ -6,7 +6,8 @@
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::intake::package_input;
 
-use crate::execute::{run_spine, spine_limits, ReplayRefusal};
+use crate::bounds::ReplayLimits;
+use crate::execute::{request_limits, run_spine, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
 use crate::DigestRecord;
@@ -37,9 +38,9 @@ impl CompiledPackage {
 /// stages that [`crate::replay`] recompiles through, and return the emitted
 /// package.
 ///
-/// `limits` are read as a replay request's stage limits are: S1's
-/// `text_input_bytes` bounds the source bytes and S3's `work_units` bounds
-/// the checker's work; the other stages run under their published defaults.
+/// `limits` are read as a replay request's stage limits are: each setting
+/// at its entry or its published default, with the default reader limit
+/// bounding the source bytes.
 /// The refusals are the replay recompile's: [`ReplayRefusal::Recompile`]
 /// with the stage's catalog code for a source that does not compile,
 /// [`ReplayRefusal::DependencyInput`] for a library that shares the unit's
@@ -53,7 +54,7 @@ pub fn compile_package<'a>(
     dependencies: &DependencyInput,
     limits: StageLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
-    let limits = spine_limits(limits)?;
+    let limits = request_limits(&limits, ReplayLimits::default())?;
     dependencies
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;
@@ -63,7 +64,7 @@ pub fn compile_package<'a>(
         bytes,
         &package_input(packages),
         dependencies,
-        limits,
+        limits.spine,
     )?;
     Ok(CompiledPackage {
         emitted: compiled.emitted,

@@ -98,6 +98,7 @@ mod profile;
 mod protocol_clause;
 mod refusal;
 mod region;
+mod settings;
 mod state_clause;
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
@@ -180,6 +181,9 @@ pub use field_refinement::check_field_refinement_obligation;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 pub use region::DeclarationRegions;
+pub use settings::{
+    checking_bounds, environment_bounds, set_checking_bound, set_environment_bound,
+};
 pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, ProtocolClauseFamily, StateClauseDeclaration,
@@ -473,11 +477,11 @@ pub struct CallableFunction<'a> {
     pub result: &'a ValueType,
 }
 
-/// A family `check`'s stage limit as a checking refusal's cause (L6): `CheckingLimitKind::try_from(LimitKind)` is the named reverse of
-/// `foundation_kind`, and a kind no checking limit names is a fault in the
-/// family, not in the input.
+/// A family `check`'s stage limit as a checking refusal's cause (L6): `CheckingLimitKind::try_from(Setting)` is the named reverse of
+/// `CheckingLimitKind::setting`, and a setting no checking limit has is a
+/// fault in the family, not in the input.
 fn limit_cause(limit: &qsl_foundation::diagnostic::LimitExceeded) -> CheckCause {
-    match CheckingLimitKind::try_from(limit.kind()) {
+    match CheckingLimitKind::try_from(limit.setting()) {
         Ok(kind) => CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
             kind,
@@ -488,7 +492,7 @@ fn limit_cause(limit: &qsl_foundation::diagnostic::LimitExceeded) -> CheckCause 
                 Some(Locus::Occurrence(_) | Locus::Artifact { .. }) | None => None,
             },
         })),
-        Err(kind) => CheckCause::InternalFault(Box::new(KeyFault::UncheckedLimitKind(kind))),
+        Err(setting) => CheckCause::InternalFault(Box::new(KeyFault::UncheckedLimit(setting))),
     }
 }
 
@@ -830,7 +834,7 @@ impl PackageDeclarations {
             .filter_map(|declaration| {
                 models
                     .iter()
-                    .find_map(|model| model.model_node_key(declaration))
+                    .find_map(|model| model.model_node_key(declaration, self.identity))
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
@@ -1227,6 +1231,7 @@ impl PackageDeclarations {
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
+            self.identity,
         )
         .with_node_limit(limits.nodes(), nodes_used);
         for group in &order {
@@ -2216,7 +2221,10 @@ mod tests {
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(family::fixtures::fixture_source())
+            ..PackageDeclarations::new(
+                family::fixtures::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
     }
 
@@ -2244,7 +2252,10 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(family::fixtures::fixture_source())
+            ..PackageDeclarations::new(
+                family::fixtures::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one record declaration checks cleanly");
@@ -2293,7 +2304,10 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(family::fixtures::fixture_source())
+            ..PackageDeclarations::new(
+                family::fixtures::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("a package-qualified declared name checks cleanly");
@@ -2352,9 +2366,18 @@ mod tests {
             "members": ["Active", "Closed"],
         });
         let declaration_preimage = EnumDeclarationPreimage::from_json(declaration_json).unwrap();
-        let declaration_key = NodeKey::from_digest(declaration_preimage.digest().unwrap());
-        let declaration =
-            AdmittedEnumDeclaration::admit(declaration_preimage, declaration_key, &owners).unwrap();
+        let declaration_key = NodeKey::from_digest(
+            declaration_preimage
+                .digest(qsl_foundation::IdentityLimits::default())
+                .unwrap(),
+        );
+        let declaration = AdmittedEnumDeclaration::admit(
+            declaration_preimage,
+            declaration_key,
+            &owners,
+            qsl_foundation::IdentityLimits::default(),
+        )
+        .unwrap();
 
         let members = ["Active", "Closed"]
             .into_iter()
@@ -2368,9 +2391,17 @@ mod tests {
                     "case": case,
                 });
                 let member_preimage = EnumMemberPreimage::from_json(member_json).unwrap();
-                let member_key = NodeKey::from_digest(member_preimage.digest().unwrap());
+                let member_key = NodeKey::from_digest(
+                    member_preimage
+                        .digest(qsl_foundation::IdentityLimits::default())
+                        .unwrap(),
+                );
                 declaration
-                    .admit_member(&member_preimage, member_key)
+                    .admit_member(
+                        &member_preimage,
+                        member_key,
+                        qsl_foundation::IdentityLimits::default(),
+                    )
                     .unwrap()
             })
             .collect();
@@ -2382,7 +2413,10 @@ mod tests {
         }];
         let graph = PackageDeclarations {
             enums,
-            ..PackageDeclarations::new(family::fixtures::fixture_source())
+            ..PackageDeclarations::new(
+                family::fixtures::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
@@ -2571,7 +2605,10 @@ mod tests {
         resolved_signatures.insert(0, (Vec::new(), ValueType::Boolean));
         let refusals = PackageDeclarations {
             resolved_signatures,
-            ..PackageDeclarations::new(family::fixtures::fixture_source())
+            ..PackageDeclarations::new(
+                family::fixtures::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect_err("index 0 names no function");

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
-use qsl_foundation::diagnostic::{Code, LimitKind};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
+use qsl_foundation::Setting;
 use qsl_foundation::Span;
 use quire_exact::EffectiveId;
 use quire_exact::Integer;
@@ -353,38 +354,67 @@ pub enum CheckingLimitKind {
 }
 
 impl CheckingLimitKind {
-    /// The T-4 [`LimitKind`] this crate-local kind names: the one
-    /// bijection every construction site in this crate already assumed
-    /// (`check::mod`'s own reverse mapping), now named once.
-    pub(crate) const fn foundation_kind(self) -> LimitKind {
+    /// The setting that raises this limit (FR-255): the one mapping from a
+    /// checking limit to its name, and through the setting to its limit kind.
+    pub const fn setting(self) -> Setting {
         match self {
-            Self::Nodes => LimitKind::NodeCount,
-            Self::InputBytes => LimitKind::InputBytes,
-            Self::WorkBudget => LimitKind::WorkBudget,
+            Self::Nodes => Setting::S3Nodes,
+            Self::InputBytes => Setting::S3InputBytes,
+            Self::WorkBudget => Setting::S3WorkUnits,
         }
     }
 }
 
-impl TryFrom<LimitKind> for CheckingLimitKind {
-    type Error = LimitKind;
+impl TryFrom<Setting> for CheckingLimitKind {
+    type Error = Setting;
 
-    /// The reverse of `CheckingLimitKind::foundation_kind` (L6),
-    /// for `check::mod`'s `StageFailure::Limit` arm. Matched exhaustively
-    /// rather than with a `_` catch-all (PR #262 review, coordinator round
-    /// 3, finding 4), so a new `LimitKind` forces a decision here.
-    /// `NodeCount` maps onto the pre-existing `Self::Nodes` (both name "how
-    /// many expression nodes"). The token, edge, occurrence and diagnostic
-    /// counts name S1, I2 and library ceilings no checking limit has, and
-    /// refuse.
-    fn try_from(kind: LimitKind) -> Result<Self, LimitKind> {
-        match kind {
-            LimitKind::NodeCount => Ok(Self::Nodes),
-            LimitKind::InputBytes => Ok(Self::InputBytes),
-            LimitKind::WorkBudget => Ok(Self::WorkBudget),
-            LimitKind::TokenCount
-            | LimitKind::EdgeCount
-            | LimitKind::OccurrenceCount
-            | LimitKind::DiagnosticCount => Err(kind),
+    /// The reverse of [`CheckingLimitKind::setting`], for `check::mod`'s
+    /// `StageFailure::Limit` arm. Matched exhaustively rather than with a
+    /// `_` catch-all, so a new setting forces a decision here. Every other
+    /// setting names a limit of a stage other than checking, and refuses.
+    fn try_from(setting: Setting) -> Result<Self, Setting> {
+        match setting {
+            Setting::S3Nodes => Ok(Self::Nodes),
+            Setting::S3InputBytes => Ok(Self::InputBytes),
+            Setting::S3WorkUnits => Ok(Self::WorkBudget),
+            Setting::S1InputBytes
+            | Setting::S1Tokens
+            | Setting::S1Nodes
+            | Setting::S1WorkUnits
+            | Setting::S3DecimalScale
+            | Setting::DependencyLibraries
+            | Setting::DependencyImportEdges
+            | Setting::DependencySourceBytes
+            | Setting::EnvironmentAncestorSteps
+            | Setting::EnvironmentWorkUnits
+            | Setting::ModelDeclarationRecords
+            | Setting::ModelDerivationFacts
+            | Setting::ModelEffectiveDeclarations
+            | Setting::ModelDispatchCandidates
+            | Setting::ModelHashedBytes
+            | Setting::ModelWorkUnits
+            | Setting::ModelAncestorSteps
+            | Setting::ModelFamilySteps
+            | Setting::AdmissionPopulationMembers
+            | Setting::AdmissionWorkUnits
+            | Setting::AdmissionAncestorSteps
+            | Setting::ObservationInputBytes
+            | Setting::ObservationObjects
+            | Setting::ObservationValues
+            | Setting::LibraryDefinitions
+            | Setting::LibraryDependencyEdges
+            | Setting::LibraryArtifactBytes
+            | Setting::LibrarySingleArtifactBytes
+            | Setting::IdentityInputBytes
+            | Setting::ReplayInputBytes
+            | Setting::I2InputBytes
+            | Setting::I2Nodes
+            | Setting::I2Edges
+            | Setting::I2Occurrences
+            | Setting::I2Diagnostics
+            | Setting::I2WorkUnits
+            | Setting::ExploreStates
+            | Setting::ExploreTransitions => Err(setting),
         }
     }
 }
@@ -647,9 +677,9 @@ pub enum KeyFault {
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),
-    /// A family `check` reported a stage limit of a kind no checking limit
-    /// names (a token, edge, occurrence or diagnostic count).
-    UncheckedLimitKind(LimitKind),
+    /// A family `check` reported a stage limit whose setting no checking
+    /// limit has.
+    UncheckedLimit(Setting),
     /// A claim (ADR-012 §13.5) could not be keyed by occurrence: its site
     /// has no one scalar application `expression` occurrence at its
     /// location, a guard, root or result bound names no lowered node, or a
@@ -689,7 +719,7 @@ impl KeyFault {
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
-            Self::UncheckedLimitKind(_) => "family-limit-is-a-checking-limit",
+            Self::UncheckedLimit(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),
             Self::CorrespondenceConflict(_) => "model-correspondence-one-to-one",
@@ -857,7 +887,7 @@ impl CheckCause {
                 | Obligation::NonemptyReduction { .. },
             ) => Some("unproved-range"),
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
-            Self::ResourceExhausted(cause) => Some(cause.kind.foundation_kind().catalog_cause()),
+            Self::ResourceExhausted(cause) => Some(cause.kind.setting().kind().catalog_cause()),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
@@ -866,7 +896,7 @@ impl CheckCause {
                 Some("established-invariant-broken")
             }
             Self::Identity(IdentityRefusal::InputBytes { .. }) => {
-                Some(LimitKind::InputBytes.catalog_cause())
+                Some(Setting::IdentityInputBytes.kind().catalog_cause())
             }
             Self::Identity(IdentityRefusal::Allocation { .. }) => Some("allocation-failed"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
@@ -928,8 +958,8 @@ impl CheckRefusal {
 
 #[cfg(test)]
 mod tests {
-    use super::{CheckCause, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause};
-    use qsl_foundation::diagnostic::{Code, LimitKind};
+    use super::{CheckCause, CheckingLimitKind, CheckingStage, KeyFault, Setting, StageLimitCause};
+    use qsl_foundation::diagnostic::Code;
 
     /// Every `CheckingLimitKind` reports `stage_limit_exceeded`
     /// with its own `<kind>-exceeded` cause, and carries the bound and
@@ -959,24 +989,22 @@ mod tests {
         }
     }
 
-    /// The three kinds a checking limit names convert back from
-    /// `LimitKind`; the S1 and I2 kinds no checking limit names refuse,
-    /// and name the `KeyFault` `check::mod` raises for them.
+    /// The three settings a checking limit names convert back; every other
+    /// setting names a limit of another stage, refuses, and names the
+    /// `KeyFault` `check::mod` raises for it.
     #[test]
-    fn only_checking_kinds_convert_from_a_limit_kind() {
-        for (kind, expected) in [
-            (LimitKind::NodeCount, Ok(CheckingLimitKind::Nodes)),
-            (LimitKind::InputBytes, Ok(CheckingLimitKind::InputBytes)),
-            (LimitKind::WorkBudget, Ok(CheckingLimitKind::WorkBudget)),
-            (LimitKind::TokenCount, Err(LimitKind::TokenCount)),
-            (LimitKind::EdgeCount, Err(LimitKind::EdgeCount)),
-            (LimitKind::OccurrenceCount, Err(LimitKind::OccurrenceCount)),
-            (LimitKind::DiagnosticCount, Err(LimitKind::DiagnosticCount)),
-        ] {
-            assert_eq!(CheckingLimitKind::try_from(kind), expected, "{kind:?}");
+    fn only_checking_settings_convert_from_a_setting() {
+        for setting in Setting::ALL.iter().copied() {
+            let expected = match setting {
+                Setting::S3Nodes => Ok(CheckingLimitKind::Nodes),
+                Setting::S3InputBytes => Ok(CheckingLimitKind::InputBytes),
+                Setting::S3WorkUnits => Ok(CheckingLimitKind::WorkBudget),
+                other => Err(other),
+            };
+            assert_eq!(CheckingLimitKind::try_from(setting), expected, "{setting}");
         }
         assert_eq!(
-            KeyFault::UncheckedLimitKind(LimitKind::TokenCount).invariant(),
+            KeyFault::UncheckedLimit(Setting::S1Tokens).invariant(),
             "family-limit-is-a-checking-limit"
         );
     }

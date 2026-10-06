@@ -2063,6 +2063,7 @@ fn a_ten_thousand_long_chain_conforms_on_a_small_stack_at_the_default_limits() {
 /// the distinct `resource_exhausted` outcome naming the configured bound --
 /// never a `Completed` verdict of either polarity, which is what a walk
 /// truncated at the bound would report.
+#[trace("TC-720", "FR-255-AC-1")]
 #[trace("TC-220", "FR-082-AC-3")]
 #[test]
 fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses() {
@@ -2083,10 +2084,27 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::AncestorSteps {
-                    from: DeclarationKey::fixture("model.chain.0"),
-                    limit: BOUND,
-                }
+                ModelRefusalCause::ancestor_steps(
+                    DeclarationKey::fixture("model.chain.0"),
+                    BOUND,
+                    qsl_foundation::Setting::ModelAncestorSteps,
+                )
+            );
+            let exceeded = refusal
+                .cause
+                .limit_exceeded()
+                .expect("a step ceiling is a stage limit");
+            assert_eq!(
+                exceeded.setting(),
+                qsl_foundation::Setting::ModelAncestorSteps
+            );
+            assert_eq!(
+                exceeded.actual(),
+                u128::from(match &refusal.cause {
+                    ModelRefusalCause::AncestorSteps { limit, .. }
+                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
+                    other => panic!("unexpected {other:?}"),
+                }) + 1
             );
             assert_eq!(refusal.cause.as_str(), "ancestor-steps");
             assert!(
@@ -2121,6 +2139,7 @@ fn a_type_with_more_than_128_ancestors_normalizes_and_conforms_at_default_limits
 /// TC-220 at normalization: an ancestor path of exactly `ancestor_steps`
 /// generalization steps normalizes, and one step longer refuses with
 /// `resource_exhausted` naming the configured bound.
+#[trace("TC-720", "FR-255-AC-1")]
 #[trace("TC-220", "FR-082-AC-3")]
 #[test]
 fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
@@ -2140,10 +2159,27 @@ fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::AncestorSteps {
-                    from: DeclarationKey::fixture("model.chain.0"),
-                    limit: BOUND,
-                }
+                ModelRefusalCause::ancestor_steps(
+                    DeclarationKey::fixture("model.chain.0"),
+                    BOUND,
+                    qsl_foundation::Setting::ModelAncestorSteps,
+                )
+            );
+            let exceeded = refusal
+                .cause
+                .limit_exceeded()
+                .expect("a step ceiling is a stage limit");
+            assert_eq!(
+                exceeded.setting(),
+                qsl_foundation::Setting::ModelAncestorSteps
+            );
+            assert_eq!(
+                exceeded.actual(),
+                u128::from(match &refusal.cause {
+                    ModelRefusalCause::AncestorSteps { limit, .. }
+                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
+                    other => panic!("unexpected {other:?}"),
+                }) + 1
             );
         }
         other => panic!("expected Refused(AncestorSteps), got {other:?}"),

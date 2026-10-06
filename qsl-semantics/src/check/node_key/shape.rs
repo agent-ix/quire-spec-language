@@ -15,6 +15,7 @@
 use quire_canonical::{Document, Encode, Node, NodeRef, Sink, Writer};
 
 use super::{canonical_bytes, NodeKeyRefusal};
+use qsl_foundation::IdentityLimits;
 
 /// One member's shapes, as RFC 8785 text, and its targets.
 pub(super) struct MemberShapes {
@@ -31,6 +32,7 @@ pub(super) struct MemberShapes {
 pub(super) fn member_shapes(
     canonical: &[u8],
     count: usize,
+    identity: IdentityLimits,
 ) -> Result<MemberShapes, NodeKeyRefusal> {
     // These are this module's own canonical bytes, already in memory and
     // bounded by the encoder that wrote them, so the read sets no byte
@@ -40,14 +42,20 @@ pub(super) fn member_shapes(
             reason: error.to_string(),
         })?;
     let targets = targets(&document, count)?;
-    let full = canonical_text(&Shape {
-        document: &document,
-        anonymous: false,
-    })?;
-    let anonymous = canonical_text(&Shape {
-        document: &document,
-        anonymous: true,
-    })?;
+    let full = canonical_text(
+        &Shape {
+            document: &document,
+            anonymous: false,
+        },
+        identity,
+    )?;
+    let anonymous = canonical_text(
+        &Shape {
+            document: &document,
+            anonymous: true,
+        },
+        identity,
+    )?;
     Ok(MemberShapes {
         full,
         anonymous,
@@ -167,8 +175,8 @@ impl Encode for Shape<'_> {
 }
 
 /// `value`'s RFC 8785 text: [`canonical_bytes`], which are UTF-8.
-fn canonical_text(value: &impl Encode) -> Result<String, NodeKeyRefusal> {
-    String::from_utf8(canonical_bytes(value)?).map_err(|error| NodeKeyRefusal::Encode {
+fn canonical_text(value: &impl Encode, identity: IdentityLimits) -> Result<String, NodeKeyRefusal> {
+    String::from_utf8(canonical_bytes(value, identity)?).map_err(|error| NodeKeyRefusal::Encode {
         reason: error.to_string(),
     })
 }

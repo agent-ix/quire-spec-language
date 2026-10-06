@@ -19,7 +19,7 @@ use qsl_eval::simulation::{
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, CatalogCoded, InternalFault};
+use qsl_foundation::{CatalogCode, CatalogCoded, IdentityLimits, InternalFault};
 use qsl_semantics::family::{ClassifyFailure, DomainKind};
 use quire_canonical::{Document, FixedShape};
 use quire_exact::{Integer, IntegerInterval, ValueType};
@@ -305,8 +305,17 @@ fn explore_outcome<S: TransitionSystem>(
     limits: Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<Outcome, NotSimulated> {
-    explore_request(system, domains, types, position_limit, limits, None, poll)
-        .map(|exploration| exploration.outcome)
+    explore_request(
+        system,
+        domains,
+        types,
+        position_limit,
+        limits,
+        IdentityLimits::default(),
+        None,
+        poll,
+    )
+    .map(|exploration| exploration.outcome)
 }
 
 /// `explore_request` over no domains with horizon `max_depth`, keeping only
@@ -322,6 +331,7 @@ fn explore_to_horizon<S: TransitionSystem>(
         &empty_types(),
         1000,
         limits,
+        IdentityLimits::default(),
         Some(max_depth),
         never_cancels,
     )
@@ -623,6 +633,7 @@ fn a_key_with_no_rfc_8785_encoding_refuses_instead_of_panicking() {
         0,
         0,
         1,
+        IdentityLimits::default(),
     )
     .expect_err("an unencodable key refuses");
     assert!(matches!(sample_error, NotSimulated::KeyEncoding(_)));
@@ -633,7 +644,8 @@ fn a_key_with_no_rfc_8785_encoding_refuses_instead_of_panicking() {
         findings: vec![],
         provenance: None,
     };
-    let replay_error = replay(&system, &trace).expect_err("an unencodable key refuses");
+    let replay_error =
+        replay(&system, &trace, IdentityLimits::default()).expect_err("an unencodable key refuses");
     assert!(matches!(replay_error, ReplayError::KeyEncoding(_)));
 }
 
@@ -852,6 +864,10 @@ fn state_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
         never_cancels,
     )
     .expect("bounded domains explore");
+    let Outcome::Bounded { limit, .. } = &stopped else {
+        panic!("expected Bounded, got {stopped:?}");
+    };
+    assert_eq!(limit.setting().name(), "explore.states");
     assert_eq!(
         stopped,
         Outcome::Bounded {
@@ -890,6 +906,7 @@ fn state_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
 /// TC-455 step 2, FR-101-AC-7: the same chain, bounded on explored
 /// transitions.
 #[trace("TC-455", "FR-101-AC-7")]
+#[trace("TC-720", "FR-255-AC-1")]
 #[test]
 fn transition_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
@@ -906,6 +923,10 @@ fn transition_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
         never_cancels,
     )
     .expect("bounded domains explore");
+    let Outcome::Bounded { limit, .. } = &stopped else {
+        panic!("expected Bounded, got {stopped:?}");
+    };
+    assert_eq!(limit.setting().name(), "explore.transitions");
     assert_eq!(
         stopped,
         Outcome::Bounded {
@@ -1034,6 +1055,7 @@ fn requires_bound_refuses_before_any_transition_system_call() {
             0,
             0,
             10,
+            IdentityLimits::default(),
         )
         .expect_err("an unbounded Integer domain requires a bound");
         assert!(matches!(sample_error, NotSimulated::RequiresBound(_)));
@@ -1236,6 +1258,7 @@ fn pinned_sampler_reproduces_tc_210_five_way_vector() {
         424_242,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     let indices: Vec<usize> = trace
@@ -1262,6 +1285,7 @@ fn pinned_sampler_reproduces_tc_210_further_vectors() {
         424_242,
         1,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     let indices: Vec<usize> = trace_one
@@ -1281,6 +1305,7 @@ fn pinned_sampler_reproduces_tc_210_further_vectors() {
         424_242,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     let indices: Vec<usize> = trace_three
@@ -1316,6 +1341,7 @@ fn pinned_sampler_advances_the_step_counter_across_no_digest_steps() {
         424_242,
         0,
         3,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     for step in &trace.steps {
@@ -1343,6 +1369,7 @@ fn pinned_sampler_advances_the_step_counter_across_no_digest_steps() {
         424_242,
         0,
         3,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(selected_index(&mixed_trace.steps[2].transition), 3);
@@ -1363,6 +1390,7 @@ fn sample_on_a_state_with_no_successors_ends_immediately() {
         1,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert!(trace.steps.is_empty());
@@ -1396,6 +1424,7 @@ fn seeded_sampling_reproduces_the_same_trace() {
         42,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     let second = sample_request(
@@ -1407,6 +1436,7 @@ fn seeded_sampling_reproduces_the_same_trace() {
         42,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(first, second);
@@ -1414,7 +1444,7 @@ fn seeded_sampling_reproduces_the_same_trace() {
     assert_eq!(first_provenance.seed, 42);
     assert_eq!(first_provenance.trace, 0);
     assert_eq!(first_provenance.sampler, sampler_ref());
-    assert_eq!(replay(&system, &first), Ok(()));
+    assert_eq!(replay(&system, &first, IdentityLimits::default()), Ok(()));
 
     let different_seed = sample_request(
         &system,
@@ -1425,6 +1455,7 @@ fn seeded_sampling_reproduces_the_same_trace() {
         43,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert_ne!(first.provenance, different_seed.provenance);
@@ -1438,6 +1469,7 @@ fn seeded_sampling_reproduces_the_same_trace() {
         42,
         1,
         5,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert_ne!(first.provenance, different_trace.provenance);
@@ -1461,6 +1493,7 @@ fn multi_initial_sample_starts_at_trace_index_mod_m() {
             0,
             trace_index,
             5,
+            IdentityLimits::default(),
         )
         .expect("a bounded, generator-matched sample");
         let expected = canonical[(trace_index % 3) as usize];
@@ -1492,10 +1525,14 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         2,
         0,
         1,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(sampled.steps[0].key, key("2"));
-    assert_eq!(replay(&duplicate_ids, &sampled), Ok(()));
+    assert_eq!(
+        replay(&duplicate_ids, &sampled, IdentityLimits::default()),
+        Ok(())
+    );
 
     let multi_initial = EdgeGraph::new(vec!["a", "b"], vec![("b", op("from_b"), "z")]);
     let trace: Trace<Transition, String> = Trace {
@@ -1507,7 +1544,10 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         findings: vec![],
         provenance: None,
     };
-    assert_eq!(replay(&multi_initial, &trace), Ok(()));
+    assert_eq!(
+        replay(&multi_initial, &trace, IdentityLimits::default()),
+        Ok(())
+    );
 
     let chain = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
     let good: Trace<Transition, String> = Trace {
@@ -1525,12 +1565,12 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         findings: vec![],
         provenance: None,
     };
-    assert_eq!(replay(&chain, &good), Ok(()));
+    assert_eq!(replay(&chain, &good, IdentityLimits::default()), Ok(()));
 
     let mut wrong_initial = good.clone();
     wrong_initial.initial = key("999");
     assert_eq!(
-        replay(&chain, &wrong_initial),
+        replay(&chain, &wrong_initial, IdentityLimits::default()),
         Err(ReplayError::UnknownInitial {
             expected: key("999")
         })
@@ -1539,7 +1579,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
     let mut wrong_transition = good.clone();
     wrong_transition.steps[0].transition = op("bogus");
     assert_eq!(
-        replay(&chain, &wrong_transition),
+        replay(&chain, &wrong_transition, IdentityLimits::default()),
         Err(ReplayError::MissingTransition {
             step: 0,
             transition: op("bogus"),
@@ -1549,7 +1589,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
     let mut wrong_key = good.clone();
     wrong_key.steps[1].key = key("999");
     assert_eq!(
-        replay(&chain, &wrong_key),
+        replay(&chain, &wrong_key, IdentityLimits::default()),
         Err(ReplayError::KeyMismatch {
             step: 1,
             transition: op("t2"),
@@ -1578,6 +1618,7 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
         0,
         0,
         5,
+        IdentityLimits::default(),
     )
     .expect_err("a different identity refuses");
     assert_eq!(
@@ -1617,7 +1658,7 @@ fn not_simulated_catalog_code_and_fields_cover_every_variant() {
     assert_eq!(requires_bound.catalog_code(), None);
     assert_eq!(requires_bound.catalog_fields(), None);
 
-    let exceeded = LimitExceeded::new(LimitKind::NodeCount, 0, 1);
+    let exceeded = LimitExceeded::new(qsl_foundation::Setting::ExploreStates, 0, 1);
     let extent_limit = NotSimulated::Extent(ClassifyFailure::Limit(exceeded.clone()));
     assert_eq!(extent_limit.catalog_code(), Some(exceeded.catalog_code()));
     assert_eq!(extent_limit.catalog_fields(), exceeded.catalog_fields());
@@ -1627,6 +1668,7 @@ fn not_simulated_catalog_code_and_fields_cover_every_variant() {
             ("kind", "node-count-exceeded".to_owned()),
             ("bound", "0".to_owned()),
             ("actual", "1".to_owned()),
+            ("setting", "explore.states".to_owned()),
         ]))
     );
 
@@ -1687,6 +1729,7 @@ fn sample_request_reports_empty_initial_and_the_step_limit() {
         0,
         0,
         3,
+        IdentityLimits::default(),
     )
     .expect_err("no initial state to sample from");
     assert_eq!(error, NotSimulated::EmptyInitial);
@@ -1701,6 +1744,7 @@ fn sample_request_reports_empty_initial_and_the_step_limit() {
         0,
         0,
         1,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(trace.steps.len(), 1);
@@ -1758,6 +1802,7 @@ fn explore_474(
         &empty_types(),
         1000,
         limits,
+        IdentityLimits::default(),
         max_depth,
         never_cancels,
     )
@@ -1775,6 +1820,7 @@ fn sample_474(system: &EdgeGraph, seed: u64, max_steps: usize) -> Trace<Transiti
         seed,
         0,
         max_steps,
+        IdentityLimits::default(),
     )
     .expect("a bounded, generator-matched sample")
 }
@@ -1923,10 +1969,10 @@ fn tc_474_a_stopped_trace_replays_and_a_differing_stop_refuses() {
         trace.provenance.as_ref().expect("sampled trace").stopped,
         StopReason::Stopped(EXHAUSTED)
     );
-    assert_eq!(replay(&stopping, &trace), Ok(()));
+    assert_eq!(replay(&stopping, &trace, IdentityLimits::default()), Ok(()));
 
     assert_eq!(
-        replay(&short_chain(), &trace),
+        replay(&short_chain(), &trace, IdentityLimits::default()),
         Err(ReplayError::Stopped {
             step: 1,
             recorded: Some(EXHAUSTED),
@@ -1934,7 +1980,11 @@ fn tc_474_a_stopped_trace_replays_and_a_differing_stop_refuses() {
         })
     );
     assert_eq!(
-        replay(&short_chain().with_stop("1", BROKEN), &trace),
+        replay(
+            &short_chain().with_stop("1", BROKEN),
+            &trace,
+            IdentityLimits::default()
+        ),
         Err(ReplayError::Stopped {
             step: 1,
             recorded: Some(EXHAUSTED),
@@ -1953,7 +2003,7 @@ fn tc_474_a_stopped_trace_replays_and_a_differing_stop_refuses() {
         StopReason::StepLimit
     );
     assert_eq!(
-        replay(&stopping, &unstopped),
+        replay(&stopping, &unstopped, IdentityLimits::default()),
         Err(ReplayError::Stopped {
             step: 1,
             recorded: None,
@@ -1986,12 +2036,12 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
             findings: vec!["f".to_owned()],
         }]
     );
-    assert_eq!(replay(&system, &trace), Ok(()));
+    assert_eq!(replay(&system, &trace, IdentityLimits::default()), Ok(()));
 
     let mut edited = trace.clone();
     edited.findings[0].findings.clear();
     assert_eq!(
-        replay(&system, &edited),
+        replay(&system, &edited, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 1 })
     );
 
@@ -2005,7 +2055,7 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
             findings: vec!["f".to_owned()],
         });
     assert_eq!(
-        replay(&system, &past_the_end),
+        replay(&system, &past_the_end, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 2 })
     );
 
@@ -2013,7 +2063,7 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
     let mut duplicate = trace.clone();
     duplicate.findings.push(trace.findings[0].clone());
     assert_eq!(
-        replay(&system, &duplicate),
+        replay(&system, &duplicate, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 1 })
     );
 
@@ -2021,7 +2071,7 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
     let mut wrong_digest = trace.clone();
     wrong_digest.findings[0].state = key("1");
     assert_eq!(
-        replay(&system, &wrong_digest),
+        replay(&system, &wrong_digest, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 1 })
     );
 
@@ -2036,7 +2086,7 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
         },
     );
     assert_eq!(
-        replay(&system, &extra),
+        replay(&system, &extra, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 0 })
     );
 }
@@ -2089,6 +2139,9 @@ fn tc_536_exploration_limits_publish_their_defaults() {
     };
     assert_eq!(limit, Limit::States(2));
     assert_eq!(limit.value(), 2);
-    assert_eq!(limit.setting(), "explore.states");
-    assert_eq!(Limit::Transitions(5).setting(), "explore.transitions");
+    assert_eq!(limit.setting().name(), "explore.states");
+    assert_eq!(
+        Limit::Transitions(5).setting().name(),
+        "explore.transitions"
+    );
 }

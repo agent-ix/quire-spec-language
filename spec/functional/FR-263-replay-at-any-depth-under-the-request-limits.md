@@ -75,6 +75,11 @@ request (ADR-030 D-4.8, D-3).
   and [FR-262](FR-262-evaluate-values-and-calls-at-any-depth.md) define the
   recompile, identity and value behaviour replay inherits.
 
+## Status
+
+- FR-263-AC-1: moved to QSL-640 (composite `WitnessValue`): a 100,000-long
+  recursive list value cannot be carried by the scalar `WitnessValue`.
+
 ## References
 
 - QSpec FR-460, the ecosystem depth rule, and FR-323 `stage_limits`, the
