@@ -12,6 +12,7 @@ use crate::call_site::CallSiteRefusal;
 use crate::execute::ReplayRefusal;
 use crate::identity::Backend;
 use crate::result::DisagreementCause;
+use crate::scalar::ScalarAgreement;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -152,6 +153,12 @@ pub enum InconclusiveCause {
     /// ([`ReplayRefusal::code`]). A fault is never this cause: it settles
     /// [`TerminalValue::Failed`].
     ReplayRefused(Code),
+    /// `scalar_agrees`: a scalar-parity counterexample (FR-357), operator-
+    /// or function-level, did not reproduce, because the exact outcome
+    /// equals the generated one. The harness reported a divergence there is
+    /// none of: a harness defect. The agreement names the claim and the
+    /// outcome, and no predicate verdict.
+    ScalarAgrees(ScalarAgreement),
 }
 
 impl InconclusiveCause {
@@ -160,6 +167,7 @@ impl InconclusiveCause {
         match self {
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
+            Self::ScalarAgrees(_) => "scalar-agrees",
         }
     }
 
@@ -169,6 +177,7 @@ impl InconclusiveCause {
         match self {
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
+            Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
         }
     }
 }
@@ -518,6 +527,7 @@ pub struct EmptyEnvelopeSet;
 mod tests {
     use super::*;
     use crate::result::Verdict;
+    use crate::scalar::{ScalarClaim, ScalarOutcome};
     use ix_trace_rs::trace;
     use qsl_foundation::digest::WireNodeId;
     use quire_contract_model::std001_code;
@@ -527,6 +537,22 @@ mod tests {
             backend_identity: "kani-backend-1".to_owned(),
             items,
         }
+    }
+
+    fn agreement() -> ScalarAgreement {
+        ScalarAgreement::new(
+            ScalarClaim::Function {
+                obligation: crate::ObligationIdentity::from_digest([1; 32]),
+                function: crate::QualifiedName::new(vec![
+                    quire_exact::Identifier::new("f").unwrap()
+                ])
+                .unwrap(),
+                bindings: vec![quire_exact::Value::Integer(quire_exact::Integer::from(
+                    3_i64,
+                ))],
+            },
+            ScalarOutcome::OutOfRange,
+        )
     }
 
     fn parity_cause() -> DisagreementCause {
@@ -604,6 +630,13 @@ mod tests {
                 Category::Inconclusive,
                 Some(ReportedInconclusiveCause::Cause(
                     InconclusiveCause::ReplayRefused(Code::StaleDependency),
+                )),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(agreement())),
+                Category::Inconclusive,
+                Some(ReportedInconclusiveCause::Cause(
+                    InconclusiveCause::ScalarAgrees(agreement()),
                 )),
             ),
             (TerminalValue::Failed, Category::InternalFailure, None),
@@ -831,6 +864,35 @@ mod tests {
         ));
     }
 
+    /// FR-069-AC-4 (TC-178), FR-357-AC-10: a scalar-agreement cause is
+    /// measured by its bindings, so an oversized one refuses.
+    #[trace("TC-178", "FR-069-AC-4", "FR-357-AC-10")]
+    #[test]
+    fn tc_178_refuses_an_oversized_scalar_agreement_cause() {
+        let oversized = ScalarAgreement::new(
+            ScalarClaim::Function {
+                obligation: crate::ObligationIdentity::from_digest([1; 32]),
+                function: crate::QualifiedName::new(vec![
+                    quire_exact::Identifier::new("f").unwrap()
+                ])
+                .unwrap(),
+                bindings: vec![
+                    quire_exact::Value::Integer(quire_exact::Integer::from(0_i64));
+                    MAX_ENCODED_BYTES + 1
+                ],
+            },
+            ScalarOutcome::OtherRefusal,
+        );
+        let source = source(vec![TerminalRecord::new(
+            RequestIndex::new(0),
+            TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(oversized)),
+        )]);
+        assert!(matches!(
+            read_backend_provider_envelope(&source),
+            Err(ProofResultRefusal::BoundExceeded(_))
+        ));
+    }
+
     /// FR-069-AC-3 (TC-179): a positive envelope's construct -> serialize ->
     /// read round trip -- construct via [`read_backend_provider_envelope`],
     /// serialize via [`ProofResultEnvelope::to_source`] (#231 builds no
@@ -855,6 +917,10 @@ mod tests {
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
                     Code::StaleDependency,
                 )),
+            ),
+            TerminalRecord::new(
+                RequestIndex::new(3),
+                TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(agreement())),
             ),
         ];
         let original = source(items);

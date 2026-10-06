@@ -13,8 +13,10 @@ use qsl_semantics::model::intake::{package_input, PackageDocument};
 use quire_exact::{Identifier, ScalarLimits};
 
 use super::*;
+use crate::proof_result::{InconclusiveCause, TerminalValue};
 use crate::request::StateEnvironment;
 use crate::result::{InputSettlement, WitnessSettlement};
+use crate::scalar::ScalarOutcome;
 use crate::spine::{compose, ComposedUnit, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
@@ -1553,5 +1555,623 @@ fn a_call_fault_settles_as_a_replay_fault_not_a_refusal() {
             assert_eq!(fault.invariant(), "checked-program-invariant");
         }
         other => panic!("expected ReplayRefusal::Fault, got {other:?}"),
+    }
+}
+
+/// The unit FR-357's tests replay: `inc`, `dec`, `dbl` and `neg` are
+/// unbounded-integer functions over one `+`, `-`, `*` and unary `-`, `inv` is
+/// `Rational`-valued, and `small` is a predicate.
+fn parity_unit() -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+         function inc using v(x: Int[0, 9]): Integer pure {{ x + 1 }}\n\
+         function inv using v(x: Int[1, 9]): Rational[0, 1; 1, 9] pure {{ 1 / x }}\n\
+         function dec using v(x: Int[0, 9]): Integer pure {{ x - 1 }}\n\
+         function dbl using v(x: Int[0, 9]): Integer pure {{ x * 2 }}\n\
+         function neg using v(x: Int[0, 9]): Integer pure {{ -x }}\n\
+         function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    )
+}
+
+/// A request replaying `function` of [`parity_unit`] with `source`, built
+/// from its parameter 0's node id.
+fn parity_request(
+    function: &str,
+    bind: impl FnOnce(WireNodeId) -> ReplaySource,
+) -> ReplayRequestWire {
+    let source = parity_unit();
+    let compiled = spine(&source, &BTreeMap::new());
+    request(
+        source.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&[function]),
+        bind(parameter(&compiled, function, 0)),
+    )
+}
+
+fn parity(function: &str, x: i64) -> ReplayRequestWire {
+    parity_request(function, |parameter| input(parameter, x))
+}
+
+fn integer(value: i64) -> ScalarOutcome {
+    ScalarOutcome::Value(Value::Integer(Integer::from(value)))
+}
+
+fn one_over(denominator: i64) -> ScalarOutcome {
+    ScalarOutcome::Value(Value::Rational(
+        quire_exact::Rational::new(Integer::from(1_i64), Integer::from(denominator)).unwrap(),
+    ))
+}
+
+/// FR-357-AC-1: an integer function whose generated value differs from
+/// QSL's `f(b)`, and one whose generated value stands where QSL's outcome is
+/// out of range, each settle `Diverged` with both outcomes and the
+/// evaluation's charges.
+#[trace("TC-904", "FR-357-AC-1")]
+#[test]
+fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
+    let ValueParityResult::Diverged {
+        qsl,
+        generated,
+        charges,
+    } = replay_value_parity(parity("inc", 3), integer(5)).expect("the replay runs")
+    else {
+        panic!("inc(3) is 4, not 5");
+    };
+    assert!(qsl.same_as(&integer(4)), "{qsl:?}");
+    assert!(generated.same_as(&integer(5)), "{generated:?}");
+    assert!(charges.work_units > 0);
+
+    let ValueParityResult::Diverged { qsl, .. } =
+        replay_value_parity(parity("inc", 3), ScalarOutcome::OutOfRange).expect("the replay runs")
+    else {
+        panic!("inc(3) is a value, not out of range");
+    };
+    assert!(qsl.same_as(&integer(4)), "{qsl:?}");
+}
+
+/// FR-357-AC-1: a `Rational`-valued function's generated value differs from
+/// QSL's.
+#[trace("TC-904", "FR-357-AC-1")]
+#[test]
+fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
+    let ValueParityResult::Diverged { qsl, generated, .. } =
+        replay_value_parity(parity("inv", 2), one_over(3)).expect("the replay runs")
+    else {
+        panic!("inv(2) is 1/2, not 1/3");
+    };
+    assert!(qsl.same_as(&one_over(2)), "{qsl:?}");
+    assert!(generated.same_as(&one_over(3)), "{generated:?}");
+}
+
+/// FR-357-AC-2: a generated outcome equal to QSL's settles `Agrees`: the counterexample does not reproduce.
+#[trace("TC-904", "FR-357-AC-2")]
+#[test]
+fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
+    let ValueParityResult::Agrees { agreement, .. } =
+        replay_value_parity(parity("inc", 3), integer(4)).expect("the replay runs")
+    else {
+        panic!("inc(3) is 4");
+    };
+    let outcome = agreement.outcome();
+    assert!(outcome.same_as(&integer(4)), "{outcome:?}");
+}
+
+/// FR-357-AC-2: the same for a `Rational`-valued function.
+#[trace("TC-904", "FR-357-AC-2")]
+#[test]
+fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
+    let ValueParityResult::Agrees { agreement, .. } =
+        replay_value_parity(parity("inv", 2), one_over(2)).expect("the replay runs")
+    else {
+        panic!("inv(2) is 1/2");
+    };
+    let outcome = agreement.outcome();
+    assert!(outcome.same_as(&one_over(2)), "{outcome:?}");
+}
+
+/// FR-357-AC-3: bindings that fail S6a admission -- a value outside a
+/// parameter's declared domain, or a Boolean for an integer parameter --
+/// settle `RefusedInput` for each function, with no outcome compared.
+#[trace("TC-904", "FR-357-AC-3")]
+#[test]
+fn tc_904_bindings_that_fail_admission_are_refused_input() {
+    for (function, outcome) in [("inc", integer(13)), ("inv", one_over(12))] {
+        let result =
+            replay_value_parity(parity(function, 12), outcome).expect("the replay settles");
+        assert!(
+            matches!(
+                result,
+                ValueParityResult::RefusedInput(InputRefusal::WrongValueKind { parameter: 0 })
+            ),
+            "{function}: {result:?}"
+        );
+        let result = replay_value_parity(
+            parity_request(function, |parameter| {
+                typed_input(parameter, WitnessValue::Boolean(true))
+            }),
+            integer(0),
+        )
+        .expect("the replay settles");
+        assert!(
+            matches!(
+                result,
+                ValueParityResult::RefusedInput(InputRefusal::WrongValueKind { parameter: 0 })
+            ),
+            "{function}: {result:?}"
+        );
+    }
+}
+
+/// FR-357-AC-4: the bindings are the function's declared parameters and
+/// nothing else: a binding naming a node that is no parameter, and a
+/// parameter left unbound, each refuse, with no result.
+#[trace("TC-904", "FR-357-AC-4")]
+#[test]
+fn tc_904_only_the_declared_parameters_are_bound() {
+    let source = parity_unit();
+    let compiled = spine(&source, &BTreeMap::new());
+    let other = parameter(&compiled, "inv", 0);
+    let stray =
+        replay_value_parity(parity_request("inc", |_| input(other, 3)), integer(4)).unwrap_err();
+    assert!(
+        matches!(&stray, ReplayRefusal::UnknownParameter(node) if *node == other),
+        "{stray:?}"
+    );
+    let unbound = replay_value_parity(
+        parity_request("inc", |_| ReplaySource::Input(Vec::new())),
+        integer(4),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(unbound, ReplayRefusal::UnboundParameter(_)),
+        "{unbound:?}"
+    );
+}
+
+/// FR-357-AC-5: a value-parity replay of a function declared `Boolean`
+/// refuses before any call: its claim is a predicate's.
+#[trace("TC-904", "FR-357-AC-5")]
+#[test]
+fn tc_904_a_boolean_function_has_no_value_parity_replay() {
+    let refused = replay_value_parity(
+        parity("small", 3),
+        ScalarOutcome::Value(Value::Boolean(true)),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&refused, ReplayRefusal::NotAValueFunction { selection, .. } if selection == &name(&["small"])),
+        "{refused:?}"
+    );
+}
+
+/// FR-357-AC-6: predicate replay of a non-`Boolean` function still refuses
+/// `NotAPredicate`, and a Boolean predicate replays as before.
+#[trace("TC-904", "FR-357-AC-6")]
+#[test]
+fn tc_904_predicate_replay_still_refuses_a_non_boolean_function() {
+    let refused = replay(parity("inc", 3)).unwrap_err();
+    assert!(
+        matches!(&refused, ReplayRefusal::NotAPredicate { selection, .. } if selection == &name(&["inc"])),
+        "{refused:?}"
+    );
+    let ReplayResult::Input(result) = replay(parity("small", 7)).expect("the replay runs") else {
+        panic!("an Input-sourced request settles on the Input arm");
+    };
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+}
+
+/// Starved limits: the function arm's exact evaluation stops at a limit.
+#[trace("TC-904", "FR-357-AC-10")]
+#[test]
+fn tc_904_a_starved_function_evaluation_is_incomplete() {
+    let mut starved = parity("inc", 3);
+    starved.accounting_limits = ScalarLimits {
+        work_units: 0,
+        ..UNLIMITED
+    };
+    let result = replay_value_parity(starved, integer(4)).expect("the replay settles");
+    assert!(
+        matches!(result, ValueParityResult::Incomplete(_)),
+        "{result:?}"
+    );
+    assert_eq!(
+        result.terminal_value(),
+        TerminalValue::Incomplete(crate::IncompleteCause::ResourceExhausted)
+    );
+}
+
+mod operator_arm {
+    use super::*;
+    use crate::{
+        GeneratedFault, NativeOutcome, OperandRefusal, OperatorClaim, OperatorIdentity,
+        OperatorParityResult, ScalarClaim, ScalarOperand, ScalarOperation,
+    };
+
+    fn int(value: i64) -> Integer {
+        Integer::from(value)
+    }
+
+    fn range(lower: i64, upper: i64) -> quire_exact::IntegerInterval {
+        quire_exact::IntegerInterval::new(int(lower), int(upper)).unwrap()
+    }
+
+    /// An operand drawn from `[0, 100]`.
+    fn operand(value: i64) -> ScalarOperand {
+        ScalarOperand {
+            value,
+            range: range(0, 100),
+        }
+    }
+
+    /// The node of `parity_unit` whose operation identity is `identity`.
+    fn node_of(identity: &str) -> WireNodeId {
+        let compiled = spine(&parity_unit(), &BTreeMap::new());
+        let node = compiled
+            .package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .find(|node| {
+                serde_json::from_slice::<serde_json::Value>(node.preimage())
+                    .map(|json| json["body"]["operation"]["identity"] == identity)
+                    .unwrap_or(false)
+            })
+            .expect("the unit has the application");
+        WireNodeId::from_digest(*node.key().as_bytes())
+    }
+
+    /// The identity and enclosing function of each operator's node.
+    fn site(operation: &ScalarOperation) -> (&'static str, &'static str) {
+        match operation {
+            ScalarOperation::Add { .. } => ("quire.op.integer.add", "inc"),
+            ScalarOperation::Subtract { .. } => ("quire.op.integer.sub", "dec"),
+            ScalarOperation::Multiply { .. } => ("quire.op.integer.mul", "dbl"),
+            ScalarOperation::Negate { .. } => ("quire.op.integer.negate", "neg"),
+        }
+    }
+
+    /// A claim over `operation` at its own node, result range `[-200, 200]`.
+    fn claim(operation: ScalarOperation, generated: NativeOutcome) -> OperatorClaim {
+        let (identity, _) = site(&operation);
+        OperatorClaim {
+            node: node_of(identity),
+            operation,
+            result_range: range(-200, 200),
+            limits: UNLIMITED,
+            generated,
+            identity: DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32]),
+        }
+    }
+
+    /// Replay `claim` through the public entry, in its own function.
+    fn replayed(claim: OperatorClaim) -> crate::OperatorParityReport {
+        let (_, function) = site(&claim.operation);
+        let report = crate::replay_operator_parity(parity(function, 3), claim);
+        assert_eq!(report.obligation(), obligation());
+        report
+    }
+
+    fn add(left: i64, right: i64) -> ScalarOperation {
+        ScalarOperation::Add {
+            left: operand(left),
+            right: operand(right),
+        }
+    }
+
+    fn sub(left: i64, right: i64) -> ScalarOperation {
+        ScalarOperation::Subtract {
+            left: operand(left),
+            right: operand(right),
+        }
+    }
+
+    fn mul(left: i64, right: i64) -> ScalarOperation {
+        ScalarOperation::Multiply {
+            left: operand(left),
+            right: operand(right),
+        }
+    }
+
+    fn negate(value: i64) -> ScalarOperation {
+        ScalarOperation::Negate {
+            operand: operand(value),
+        }
+    }
+
+    fn completed(value: i64) -> NativeOutcome {
+        NativeOutcome::Completed(int(value))
+    }
+
+    fn obligation() -> crate::ObligationIdentity {
+        crate::ObligationIdentity::from_digest([2; 32])
+    }
+
+    fn exact_value(value: i64) -> ScalarOutcome {
+        ScalarOutcome::Value(Value::Integer(int(value)))
+    }
+
+    fn agreed(report: &crate::OperatorParityReport) -> &ScalarOutcome {
+        match report.result() {
+            OperatorParityResult::Agrees { agreement, .. } => agreement.outcome(),
+            other => panic!("expected an agreement, got {other:?}"),
+        }
+    }
+
+    /// FR-357-AC-7: `Completed(v)` agrees when the exact result equals `v`,
+    /// for add, subtract, multiply and negate through the public entry; the
+    /// agreement names the claim, the node and the obligation.
+    #[trace("TC-904", "FR-357-AC-7")]
+    #[test]
+    fn tc_904_a_completed_native_value_agrees_with_the_exact_result() {
+        for (operation, value) in [
+            (add(40, 2), 42),
+            (sub(40, 2), 38),
+            (mul(6, 7), 42),
+            (negate(7), -7),
+        ] {
+            let report = replayed(claim(operation.clone(), completed(value)));
+            assert!(agreed(&report).same_as(&exact_value(value)));
+            let OperatorParityResult::Agrees { agreement, charges } = report.result() else {
+                unreachable!()
+            };
+            assert!(charges.work_units > 0);
+            let ScalarClaim::Operator(found) = agreement.claim() else {
+                panic!("an operator claim");
+            };
+            let OperatorIdentity {
+                obligation: carried,
+                node,
+                identity,
+                operation: named,
+                ..
+            } = &**found;
+            assert_eq!(*carried, obligation());
+            assert_eq!(*node, node_of(site(&operation).0));
+            assert_eq!(
+                *identity,
+                DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32])
+            );
+            assert_eq!(named, &operation);
+        }
+    }
+
+    /// FR-357-AC-7: `Completed(v)` with a `v` that differs, or where the exact
+    /// result is out of range, diverges.
+    #[trace("TC-904", "FR-357-AC-7")]
+    #[test]
+    fn tc_904_a_completed_native_value_that_differs_diverges() {
+        for (operation, generated, exact) in [
+            (add(40, 2), completed(43), exact_value(42)),
+            (mul(6, 7), completed(41), exact_value(42)),
+            (mul(100, 100), completed(10_000), ScalarOutcome::OutOfRange),
+        ] {
+            let report = replayed(claim(operation, generated));
+            let OperatorParityResult::Diverged { exact: found, .. } = report.result() else {
+                panic!("expected a divergence: {:?}", report.result());
+            };
+            assert!(found.same_as(&exact), "{found:?}");
+            assert_eq!(report.terminal_value(), TerminalValue::Failed);
+        }
+    }
+
+    /// FR-357-AC-7: `RefusedOutOfRange` agrees iff the exact result is outside
+    /// the result range, and diverges when it is in range.
+    #[trace("TC-904", "FR-357-AC-7")]
+    #[test]
+    fn tc_904_a_native_refusal_agrees_iff_the_exact_result_is_out_of_range() {
+        let report = replayed(claim(mul(100, 100), NativeOutcome::RefusedOutOfRange));
+        assert!(agreed(&report).same_as(&ScalarOutcome::OutOfRange));
+        let report = replayed(claim(add(1, 2), NativeOutcome::RefusedOutOfRange));
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Diverged { .. }
+        ));
+    }
+
+    /// FR-357-AC-7: no operator QSL lowers is undefined, so a native
+    /// `Undefined` diverges from the exact value.
+    #[trace("TC-904", "FR-357-AC-7")]
+    #[test]
+    fn tc_904_a_native_undefined_diverges_from_a_defined_operator() {
+        let report = replayed(claim(add(1, 2), NativeOutcome::Undefined));
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Diverged { .. }
+        ));
+    }
+
+    /// FR-357-AC-8: a native run that stopped at a limit or failed is a
+    /// generated-artifact fault, settled `Failed` with no comparison, even
+    /// under starved exact limits.
+    #[trace("TC-904", "FR-357-AC-8")]
+    #[test]
+    fn tc_904_an_incomplete_or_failed_native_run_is_a_generated_fault() {
+        for (native, fault) in [
+            (NativeOutcome::Incomplete, GeneratedFault::Incomplete),
+            (
+                NativeOutcome::ExecutionFault,
+                GeneratedFault::ExecutionFault,
+            ),
+        ] {
+            let mut starved = claim(add(1, 2), native);
+            starved.limits = ScalarLimits {
+                work_units: 0,
+                ..UNLIMITED
+            };
+            let report = replayed(starved);
+            assert!(
+                matches!(report.result(), OperatorParityResult::GeneratedFault(found) if *found == fault)
+            );
+            assert_eq!(report.terminal_value(), TerminalValue::Failed);
+        }
+    }
+
+    /// FR-357-AC-9: an operand outside its own range refuses
+    /// `invalid_runtime_input` before any evaluation; a literal's range is the
+    /// singleton `(value, value)`.
+    #[trace("TC-904", "FR-357-AC-9")]
+    #[test]
+    fn tc_904_an_operand_outside_its_range_is_refused() {
+        let report = replayed(claim(add(1, 101), completed(102)));
+        assert!(
+            matches!(
+                report.result(),
+                OperatorParityResult::RefusedInput(OperandRefusal { index: 1 })
+            ),
+            "{:?}",
+            report.result()
+        );
+        assert_eq!(
+            report.terminal_value(),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                Code::InvalidRuntimeInput
+            ))
+        );
+        let literal = ScalarOperand::literal(7);
+        assert_eq!(literal.range, range(7, 7));
+        let with_literal = |value: i64| ScalarOperation::Add {
+            left: operand(1),
+            right: ScalarOperand {
+                value,
+                ..literal.clone()
+            },
+        };
+        assert!(matches!(
+            replayed(claim(with_literal(7), completed(8))).result(),
+            OperatorParityResult::Agrees { .. }
+        ));
+        assert!(matches!(
+            replayed(claim(with_literal(8), completed(9))).result(),
+            OperatorParityResult::RefusedInput(OperandRefusal { index: 1 })
+        ));
+    }
+
+    /// FR-357-AC-10: an agreement settles `Inconclusive(ScalarAgrees)` and a
+    /// divergence `Failed`; neither is `Refuted`.
+    #[trace("TC-904", "FR-357-AC-10")]
+    #[test]
+    fn tc_904_an_agreement_is_inconclusive_and_nothing_is_refuted() {
+        let agrees = replayed(claim(add(40, 2), completed(42)));
+        let TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(agreement)) =
+            agrees.terminal_value()
+        else {
+            panic!("an agreement is inconclusive with ScalarAgrees");
+        };
+        assert!(agreement.outcome().same_as(&exact_value(42)));
+        let diverged = replayed(claim(add(40, 2), completed(43)));
+        assert_eq!(diverged.terminal_value(), TerminalValue::Failed);
+        assert_ne!(agrees.terminal_value(), TerminalValue::Refuted);
+        assert_ne!(diverged.terminal_value(), TerminalValue::Refuted);
+    }
+
+    /// FR-357-AC-10: an exact evaluation starved of its limits has no outcome.
+    #[trace("TC-904", "FR-357-AC-10")]
+    #[test]
+    fn tc_904_a_starved_exact_evaluation_is_incomplete() {
+        let mut starved = claim(add(1, 2), completed(3));
+        starved.limits = ScalarLimits {
+            work_units: 0,
+            ..UNLIMITED
+        };
+        let report = replayed(starved);
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Incomplete(_)
+        ));
+        assert_eq!(
+            report.terminal_value(),
+            TerminalValue::Incomplete(crate::IncompleteCause::ResourceExhausted)
+        );
+    }
+
+    /// FR-357-AC-11: the request's obligation identity is carried unchanged
+    /// into the agreement's claim identity (checked in the AC-7 test) and onto
+    /// every settlement (`replayed` asserts it for each report above).
+    ///
+    /// FR-357-AC-11: a stale `package_id` refuses
+    /// `PackageIdMismatch` (`stale_dependency/content-mismatch`); a node the
+    /// package does not hold, a node that is not in the selected function's
+    /// body and an operator the node is not an application of each refuse
+    /// `ScalarIdentity` (`stale_dependency/revision-mismatch`) with their own
+    /// cause; an enclosing function the package does not declare refuses
+    /// `UnknownFunction` (`missing_declaration/missing-name`).
+    #[trace("TC-904", "FR-357-AC-11")]
+    #[test]
+    fn tc_904_an_operator_claim_against_another_identity_is_refused() {
+        use crate::ScalarIdentityMismatch as Mismatch;
+        let add_claim = || claim(add(1, 2), completed(3));
+        let refusal_of = |wire: ReplayRequestWire, claim: OperatorClaim| {
+            let report = crate::replay_operator_parity(wire, claim);
+            assert_eq!(report.obligation(), obligation());
+            let OperatorParityResult::Refused(refusal) = report.result() else {
+                panic!("{:?}", report.result());
+            };
+            let code = refusal.code();
+            let settled = report.terminal_value();
+            (refusal.to_string(), code, settled, report)
+        };
+        let stale_code =
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency));
+
+        let mut stale = parity("inc", 3);
+        stale.package_id = (
+            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+            DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
+        );
+        let (text, code, settled, report) = refusal_of(stale, add_claim());
+        assert!(text.contains("content-mismatch"), "{text}");
+        assert_eq!(code, Code::StaleDependency);
+        assert_eq!(settled, stale_code);
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Refused(refusal)
+                if matches!(**refusal, ReplayRefusal::PackageIdMismatch { .. })
+        ));
+
+        let mut missing_node = add_claim();
+        missing_node.node = WireNodeId::from_digest([1; 32]);
+        let mut wrong_function = add_claim();
+        wrong_function.node = node_of("quire.op.integer.mul");
+        wrong_function.operation = mul(1, 2);
+        let mut wrong_operator = add_claim();
+        wrong_operator.operation = mul(1, 2);
+        for (wire, claim, expected) in [
+            (parity("inc", 3), missing_node, "Node"),
+            (parity("inc", 3), wrong_function, "Function"),
+            (parity("inc", 3), wrong_operator, "Operator"),
+        ] {
+            let (text, code, settled, report) = refusal_of(wire, claim);
+            assert!(text.contains("revision-mismatch"), "{text}");
+            assert_eq!(code, Code::StaleDependency);
+            assert_eq!(settled, stale_code);
+            let OperatorParityResult::Refused(refusal) = report.result() else {
+                unreachable!()
+            };
+            let ReplayRefusal::ScalarIdentity(cause) = &**refusal else {
+                panic!("{refusal:?}");
+            };
+            let found = match &**cause {
+                Mismatch::Node { .. } => "Node",
+                Mismatch::Function { .. } => "Function",
+                Mismatch::Operator { .. } => "Operator",
+            };
+            assert_eq!(found, expected);
+        }
+
+        let mut unknown = parity("inc", 3);
+        unknown.selected_function = name(&["nope"]);
+        let (text, code, settled, report) = refusal_of(unknown, add_claim());
+        assert!(text.contains("missing-name"), "{text}");
+        assert_eq!(code, Code::MissingDeclaration);
+        assert_eq!(
+            settled,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::MissingDeclaration))
+        );
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Refused(refusal)
+                if matches!(**refusal, ReplayRefusal::UnknownFunction { .. })
+        ));
     }
 }

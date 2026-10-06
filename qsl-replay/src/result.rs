@@ -349,7 +349,7 @@ impl Eq for SeparatingWitnessRecord {}
 /// equality. A value holding a float has no canonical key (O-13 excludes
 /// floats from `=`), so two such values are the same exactly when they
 /// encode identically, bit pattern for bit pattern.
-fn same_element(left: &Value, right: &Value) -> bool {
+pub(crate) fn same_element(left: &Value, right: &Value) -> bool {
     match compare_keys(left, right) {
         Some(order) => order == std::cmp::Ordering::Equal,
         None => wire::same_encoding(left, right),
@@ -411,7 +411,7 @@ impl SeparatingWitnessRecord {
 /// occurrence: each variable-length member (integer digits, text, object
 /// identity) by its byte length, each digest by its 32 bytes and each other
 /// fixed-width member by its width.
-fn value_bytes(value: &Value) -> usize {
+pub(crate) fn value_bytes(value: &Value) -> usize {
     let digits = |integer: &quire_exact::Integer| integer.to_string().len();
     let mut total = 0usize;
     let mut pending = vec![value];

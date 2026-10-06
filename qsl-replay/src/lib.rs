@@ -43,6 +43,7 @@ mod outcome;
 mod proof_result;
 mod request;
 mod result;
+mod scalar;
 pub mod spine;
 mod witness;
 
@@ -52,8 +53,9 @@ pub use call_site::{
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
 pub use execute::{
-    replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,
-    LimitAboveReader, ReplayRefusal,
+    replay, replay_frame, replay_operator_parity, replay_value_parity, DependencySelectionsCause,
+    FrameIdentityMismatch, FrameReplayResult, LimitAboveReader, ReplayRefusal,
+    ScalarIdentityMismatch, ValueParityResult,
 };
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
@@ -107,7 +109,10 @@ pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNod
 // so CG names `Category::Success` and `Category::Violation` through this crate.
 pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
-pub use quire_exact::{Identifier, Origin, Role, ScalarLimits};
+pub use quire_exact::{Identifier, Origin, Role, ScalarLimits, Value};
+// The input refusal a `ReplayRefusal::Input` and a value-parity
+// `ValueParityResult::RefusedInput` carry.
+pub use quire_semantic_value::call::InputRefusal;
 // The ADR-014 B-4 proof bound a `DeclaredDomain` wraps, its domain key and
 // finite domain, and the kernel integer and interval an integer range is
 // built from, re-exported so CG, which reaches QSL only through this crate
@@ -135,6 +140,11 @@ pub use result::{
 // through this crate (ADR-011 FB-05).
 pub use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
+pub use scalar::{
+    GeneratedFault, NativeOutcome, OperandRefusal, OperatorClaim, OperatorIdentity,
+    OperatorParityReport, OperatorParityResult, ScalarAgreement, ScalarClaim, ScalarOperand,
+    ScalarOperation, ScalarOperator, ScalarOutcome,
 };
 pub use witness::{
     CanonicalAssignment, ClaimedChange, DecodeRefusal, FamilyPayload, FrameCounterexample,

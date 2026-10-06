@@ -203,6 +203,9 @@ impl ItemCause {
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayRefused(code)) => {
                 item.code = Some(code.as_str().to_owned());
             }
+            // The kind alone: the claim identity and outcome stay on the
+            // typed cause, which holds them for the caller.
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
         }
         item
     }
@@ -765,6 +768,8 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::UnboundParameter(_)
         | ReplayRefusal::Witness { .. }
         | ReplayRefusal::NotAPredicate { .. }
+        | ReplayRefusal::NotAValueFunction { .. }
+        | ReplayRefusal::ScalarIdentity(_)
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }
@@ -979,7 +984,7 @@ mod tests {
 
     /// Each terminal cause is written in its FR-331 spelling, with its
     /// payload.
-    #[trace("TC-770", "FR-286-AC-3")]
+    #[trace("TC-770", "FR-286-AC-3", "FR-357-AC-12")]
     #[test]
     fn terminal_causes_use_their_own_spellings() {
         let parity = DisagreementCause::Verdicts {
@@ -1007,6 +1012,20 @@ mod tests {
                     Code::StaleDependency,
                 )),
                 json!({"result": "inconclusive", "cause": {"kind": "replay-refused", "code": "stale_dependency"}, "category": "inconclusive"}),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(
+                    crate::scalar::ScalarAgreement::new(
+                        crate::scalar::ScalarClaim::Function {
+                            obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
+                            function: QualifiedName::new(vec![Identifier::new("f").unwrap()])
+                                .unwrap(),
+                            bindings: Vec::new(),
+                        },
+                        crate::scalar::ScalarOutcome::OutOfRange,
+                    ),
+                )),
+                json!({"result": "inconclusive", "cause": {"kind": "scalar-agrees"}, "category": "inconclusive"}),
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity)),

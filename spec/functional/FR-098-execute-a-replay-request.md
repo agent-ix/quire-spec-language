@@ -104,7 +104,8 @@ through it, or a crate alias or glob import that reaches it.
   `CheckedPackage` is built from wire bytes.
 - The executor SHALL resolve the selection by name lookup in the recompiled
   package's declarations (OQ-5), and SHALL refuse a function whose declared
-  result is not `Boolean` before any call. It SHALL convert each argument's
+  result is not `Boolean` before any call (predicate replay; FR-357's
+  value-parity entry replays a non-`Boolean` function). It SHALL convert each argument's
   `WireNodeId` to a `NodeKey` only by lookup in the recompiled package, and
   order the arguments by the function's declared parameter positions,
   whatever order they arrive in.

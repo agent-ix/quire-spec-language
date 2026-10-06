@@ -55,6 +55,13 @@ use quire_exact::Identifier;
 mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
+mod operator_parity;
+mod scalar_site;
+pub use operator_parity::{replay_operator_parity, ScalarIdentityMismatch};
+
+mod value_parity;
+pub use value_parity::{replay_value_parity, ValueParityResult};
+
 mod state_clause;
 pub use state_clause::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
 #[cfg(test)]
@@ -184,6 +191,20 @@ pub enum ReplayRefusal {
         /// The recompiled package that declares it.
         package: PackageId,
     },
+    /// FR-357: the selected function's declared result is `Boolean`, so its
+    /// claim is a predicate's, replayed by [`replay`], not a value-parity
+    /// claim. Refused before the call, from the declaration alone.
+    #[error("the selected function {selection} of package {} is a predicate: its declared result is Boolean, so it has no value-parity replay", .package.hex())]
+    NotAValueFunction {
+        /// The request's selection.
+        selection: QualifiedName,
+        /// The recompiled package that declares it.
+        package: PackageId,
+    },
+    /// FR-357: an operator-level claim's scalar node, enclosing function or
+    /// operator is not the recompiled package's.
+    #[error("stale_dependency/revision-mismatch: {0}")]
+    ScalarIdentity(Box<ScalarIdentityMismatch>),
     /// FR-116: a frame counterexample's operation names no operation
     /// frame of the recompiled package.
     #[error("missing_declaration/missing-name: package {} holds no operation frame {operation}", .package.hex())]
@@ -249,7 +270,9 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. } | Self::UnknownOperation { .. } => {
                 Code::MissingDeclaration
             }
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) => Code::StaleDependency,
+            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
+                Code::StaleDependency
+            }
             Self::UnknownClause { .. } => Code::MissingDeclaration,
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::Admission(
@@ -260,7 +283,8 @@ impl ReplayRefusal {
             | Self::DuplicateArgument(_)
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
-            | Self::NotAPredicate { .. } => Code::InvalidRuntimeInput,
+            | Self::NotAPredicate { .. }
+            | Self::NotAValueFunction { .. } => Code::InvalidRuntimeInput,
             Self::Input(refusal) => input_refusal_code(refusal),
             Self::Fault(_) => Code::RuntimeInvariant,
         }
@@ -279,7 +303,9 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) => Some("revision-mismatch"),
+            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
+                Some("revision-mismatch")
+            }
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::Input(refusal) => Some(refusal.cause()),
             Self::Admission(
@@ -295,6 +321,7 @@ impl ReplayRefusal {
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
             | Self::NotAPredicate { .. }
+            | Self::NotAValueFunction { .. }
             | Self::Fault(_) => None,
         }
     }
@@ -488,7 +515,7 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
     let compiled = recompile(&request)?;
     let package = compiled.checked.package();
-    let call = select(&compiled, request.selected_function())?;
+    let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
     let arguments = arguments(
         package,
         &call,
@@ -804,6 +831,16 @@ fn labels(reference: &RawSourceRef) -> SourceIdentity {
     )
 }
 
+/// What a replay claims of the function it selects.
+#[derive(Clone, Copy)]
+enum Claim {
+    /// A Boolean predicate is false at the bindings ([`replay`]).
+    Predicate,
+    /// The generated code's outcome equals QSL's `f(b)`
+    /// ([`replay_value_parity`]).
+    ValueParity,
+}
+
 /// The selected function: its S6a name, and its parameter nodes and
 /// declared types in declared order.
 struct Selected {
@@ -836,13 +873,13 @@ pub(crate) fn callable_parameter_keys(
     Ok(parameters)
 }
 
-/// OQ-5: resolve `name` by name lookup in the recompiled package's
-/// declarations -- the one name lookup after the check stage (R-06).
-/// Complete-V1 declares no qualified names, so only a one-segment name
-/// can resolve. A function whose declared result is not `Boolean` states
-/// no property, and refuses here, before any call or charge.
-fn select(compiled: &Recompiled, name: &QualifiedName) -> Result<Selected, ReplayRefusal> {
-    let package = compiled.checked.package();
+/// The function `name` selects in the recompiled package, by name lookup in
+/// its declarations (OQ-5): its one segment and its callable. A name that
+/// resolves to none refuses [`ReplayRefusal::UnknownFunction`].
+pub(crate) fn lookup<'a>(
+    compiled: &'a Recompiled,
+    name: &'a QualifiedName,
+) -> Result<(&'a Identifier, qsl_semantics::check::CallableFunction<'a>), ReplayRefusal> {
     let unknown = || ReplayRefusal::UnknownFunction {
         selection: name.clone(),
         package: compiled.emitted.package().package_id(),
@@ -850,15 +887,43 @@ fn select(compiled: &Recompiled, name: &QualifiedName) -> Result<Selected, Repla
     let [segment] = name.segments() else {
         return Err(unknown());
     };
-    let callable = package
+    let callable = compiled
+        .checked
+        .package()
         .graph()
         .callable(segment.as_str())
         .ok_or_else(unknown)?;
-    if *callable.result != ValueType::Boolean {
-        return Err(ReplayRefusal::NotAPredicate {
-            selection: name.clone(),
-            package: compiled.emitted.package().package_id(),
-        });
+    Ok((segment, callable))
+}
+
+/// OQ-5: resolve `name` by name lookup in the recompiled package's
+/// declarations -- the one name lookup after the check stage (R-06).
+/// Complete-V1 declares no qualified names, so only a one-segment name
+/// can resolve. A predicate replay of a function whose declared result is
+/// not `Boolean` states no property, and a value-parity replay of one whose
+/// result is `Boolean` is a predicate's; each refuses here, before any call
+/// or charge.
+fn select(
+    compiled: &Recompiled,
+    name: &QualifiedName,
+    claim: Claim,
+) -> Result<Selected, ReplayRefusal> {
+    let package = compiled.checked.package();
+    let (segment, callable) = lookup(compiled, name)?;
+    match (claim, *callable.result == ValueType::Boolean) {
+        (Claim::Predicate, true) | (Claim::ValueParity, false) => {}
+        (Claim::Predicate, false) => {
+            return Err(ReplayRefusal::NotAPredicate {
+                selection: name.clone(),
+                package: compiled.emitted.package().package_id(),
+            });
+        }
+        (Claim::ValueParity, true) => {
+            return Err(ReplayRefusal::NotAValueFunction {
+                selection: name.clone(),
+                package: compiled.emitted.package().package_id(),
+            });
+        }
     }
     let types: Vec<ValueType> = callable
         .parameters
@@ -866,8 +931,12 @@ fn select(compiled: &Recompiled, name: &QualifiedName) -> Result<Selected, Repla
         .map(|(_, value_type)| value_type.clone())
         .collect();
     let parameters = callable_parameter_keys(package, &callable).map_err(ReplayRefusal::Fault)?;
-    let name =
-        qsl_eval::value::QualifiedName::unqualified(segment.as_str()).map_err(|_| unknown())?;
+    let name = qsl_eval::value::QualifiedName::unqualified(segment.as_str()).map_err(|_| {
+        ReplayRefusal::UnknownFunction {
+            selection: name.clone(),
+            package: compiled.emitted.package().package_id(),
+        }
+    })?;
     Ok(Selected {
         name,
         parameters,
@@ -995,7 +1064,7 @@ fn wire_id(key: NodeKey) -> WireNodeId {
 }
 
 /// The replay's charges: what `meter` consumed of each counter.
-fn consumed(meter: &Meter) -> ScalarLimits {
+pub(crate) fn consumed(meter: &Meter) -> ScalarLimits {
     charges(
         LimitKind::ALL
             .iter()
