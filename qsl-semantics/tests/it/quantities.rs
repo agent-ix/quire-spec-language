@@ -171,7 +171,9 @@ impl Nodes {
             .collect();
         admit_unit_graph(dimensions?, units?, &owners()).map_err(|refusal| match refusal {
             NominalRefusal::Graph(invalid) => invalid,
-            NominalRefusal::Limit(limit) => panic!("a fixture preimage is small: {limit:?}"),
+            other @ (NominalRefusal::Limit(_) | NominalRefusal::Allocation { .. }) => {
+                panic!("a fixture preimage encodes: {other:?}")
+            }
         })
     }
 }
