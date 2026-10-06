@@ -392,8 +392,8 @@ fn rational_sum_domain_contains_all_prefixes(
         return false;
     };
     let count = i128::from(maximum);
-    let minimum = i128::from(projection.numerator_minimum()).min(0);
-    let maximum_value = i128::from(projection.numerator_maximum()).max(0);
+    let minimum = projection.numerator_minimum().min(0);
+    let maximum_value = projection.numerator_maximum().max(0);
     let Some(minimum) = minimum
         .checked_mul(scale)
         .and_then(|value| value.checked_mul(count))
@@ -407,8 +407,7 @@ fn rational_sum_domain_contains_all_prefixes(
         return false;
     };
 
-    minimum >= i128::from(total.numerator_minimum())
-        && maximum_value <= i128::from(total.numerator_maximum())
+    minimum >= total.numerator_minimum() && maximum_value <= total.numerator_maximum()
 }
 
 fn gcd(mut left: u128, mut right: u128) -> u128 {
