@@ -412,7 +412,7 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
 /// FR-322's `application_node_preimage` of a wire node, or FR-092's
 /// structural preimage under owner (`a`, `u`), rebuilt by the test from the
 /// wire alone. `group` is the node's recursion group in graph order.
-fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
+pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
     sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
 }
 
