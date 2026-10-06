@@ -101,7 +101,7 @@ fn boolean_expression(stream: &mut Stream, depth: u32, callees: &[String]) -> Ex
 /// Package `seed`: 1 to 8 functions `g0 … gN(x: Int[0, 9], b: Boolean):
 /// Boolean decreases(x)`. Each may call any function, itself included, so
 /// the package has chains, self recursion and mutual recursion. Every third
-/// package also declares `record List { next?: List; }` and compares two
+/// package also declares `record List { next: List?; }` and compares two
 /// `List`s in two functions.
 fn package(seed: u64) -> PackageDeclarations {
     let mut stream = Stream(0x9e37_79b9_7f4a_7c15 ^ (seed + 1).wrapping_mul(0x2545_f491_4f6c_dd1d));

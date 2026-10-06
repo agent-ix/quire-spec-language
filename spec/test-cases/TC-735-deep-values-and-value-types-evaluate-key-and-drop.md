@@ -19,7 +19,7 @@ Scope: FR-262-AC-2.
 
 Run every step on a thread spawned with a 512 KiB stack unless the step says otherwise.
 
-1. Build a 100,000-long `List` (`record List { head: Int[0, 9]; tail?: List;
+1. Build a 100,000-long `List` (`record List { head: Int[0, 9]; tail: List?;
    }`) with a recursive function, under a budget sized for it.
 2. Key it as simulation state, and compare the key bytes with the RFC 8785
    text of its canonical JSON form.

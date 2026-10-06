@@ -280,5 +280,8 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
   outside `model`, `qsl-eval/src/value/expression/evaluate.rs`, is a test literal
   inside `#[cfg(test)]`.
 
+The facade's compile entry, `qsl_replay::compile_package` (FR-060-AC-5 to
+AC-7, TC-908), is implemented.
+
 Remediating the debt-list sites is #211/#213's work, not this requirement's.
 Remaining work: #211.

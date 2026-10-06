@@ -60,7 +60,7 @@ fn optional(name: &str, value_type: ValueType) -> FieldDeclaration {
     FieldDeclaration::new(name, value_type, Presence::Optional)
 }
 
-/// `record Node { label: Text[0, 8; binary-utf8]; next?: Node; }`.
+/// `record Node { label: Text[0, 8; binary-utf8]; next: Node?; }`.
 fn node_record() -> CompositeDeclaration {
     record(
         "Node",

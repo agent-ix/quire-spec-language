@@ -256,7 +256,7 @@ walk entered it. At a type `U` and a path `p`:
    again.
 4. A declared record `C` that is not open: open `C` at the length of `p`;
    for each field in declaration order, walk a required field `f: V`'s `V`
-   at `p` + `field:f` and an optional field `f?: V`'s `V` at `p` + `field:f`
+   at `p` + `field:f` and an optional field `f: V?`'s `V` at `p` + `field:f`
    + `inner`; then close `C`. A record or tuple `C` from which no `Text`
    type is reachable is not entered, here or in step 5, and appends nothing.
 5. A declared tuple `C` that is not open: open `C` at the length of `p`;
@@ -272,7 +272,7 @@ written as its canonical decimal string, as FR-322 writes `position:n`.
 An optional field's path passes through `inner` because the field's slot
 holds a value of its `Option<V>` node: FR-092 types the field by that node,
 and an omitted or `null` slot is a literal of it (Non-application nodes).
-So `f?: V` and `f: Option<V>`, which hold one set of values, have one leaf
+So `f: V?` and `f: Option<V>`, which hold one set of values, have one leaf
 path.
 
 A recursion leaf stands for every text leaf below its path. For a
@@ -446,8 +446,8 @@ for the named node, under owner (`a`, `u`), from these declarations:
 
 - `record Node { label: Text[0, 8; binary-utf8]; next: Node?; }`, a group
   of two (G16, G17);
-- `record A { name: Text[0, 8; binary-utf8]; b?: B; }` and
-  `record B { tag: Text[0, 4; nfc]; a?: A; }`, a mutually recursive pair, a
+- `record A { name: Text[0, 8; binary-utf8]; b: B?; }` and
+  `record B { tag: Text[0, 4; nfc]; a: A?; }`, a mutually recursive pair, a
   group of four (G18 to G21);
 - `function eq using v(a: Node, b: Node): Boolean pure { a = b }` (E14);
 - `function has using v(s: Sequence<Node>[0, 3], b: Node): Boolean pure { contains(s, b) }`
@@ -701,7 +701,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-8 | In functions over a `Population<M::Order>[3]` parameter `p` and a `Reference<M::Order>` parameter `r` (FR-094 vectors E4 to E9), and in a clause function (FR-094) that holds a dispatched call (QSpec FR-151, QSpec TC-196 D06), a checked `Attribute`, `AllInstances`, `Lookup` and `Dispatch` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
 | FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `expression` occurrence over `a: Boolean` (QSpec FR-341-AC-10) and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
 | FR-093-AC-10 | With lock evidence that selects the text definition the Recursive text-leaf vectors name, `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
-| FR-093-AC-11 | Structural equality over `record R { t?: Text[0, 64; nfc]; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
+| FR-093-AC-11 | Structural equality over `record R { t: Text[0, 64; nfc]?; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
 | FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending digest order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, E11 and G6, and G6 lists G4 and E13. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |
 | FR-093-AC-13 | For each application node of QSpec's `positive-operation-identities.json` and `positive-control-operations.json` whose `operation.identity` a row of the application table lowers, the node emitted for a function whose body holds that operation equals the fixture node in `node_tag`, `semantic_form`, `operator`, `operation.identity`, law roles in order, `mode`, member `kind` and `name`, leaf `path`s and modes, and argument term kinds and binding names, and IR's v2 reader admits the emitted package. The comparison reads none of the members Comparison with QSpec's v2 positive fixtures places outside it. The rows AC-3 excludes (`Attribute`, `AllInstances`, `Lookup`, `Dispatch`, `Pre`) are outside the comparison. | Test (TC-416) |
 | FR-093-AC-14 | On a thread with a 512 KiB stack, at the default limits, a function body of the longest nested `a and (…)` chain the default S1 limits admit checks with no outcome naming a depth. Each nested form TC-415 step 10 lists, nested 1,000 deep with S1 and S3 limits raised to fit it, checks or refuses on its own unproved obligation, the same way it does nested 2 deep. A postcondition `pre(…)` over 1,000 nested `a and (…)` refuses as a forbidden pre-read. | Test (TC-415) |

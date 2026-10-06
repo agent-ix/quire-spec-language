@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-908 (FR-060-AC-5, FR-060-AC-6): `compile_package` emits the bytes and
+//! TC-908 (FR-060-AC-5, FR-060-AC-6, FR-060-AC-7): `compile_package` emits the bytes and
 //! `package_id` the spine emits, and refuses as the spine does. As an
 //! integration test it reaches only the crate's public API.
 
@@ -212,5 +212,6 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
         panic!("the facade refuses the unit at the recompile");
     };
     assert_eq!(refusal.code(), expected.code());
+    assert_eq!(refusal.stage(), expected.stage());
     assert_eq!(refusal.code(), Code::MissingImport);
 }

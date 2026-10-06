@@ -683,7 +683,7 @@ fn recursive_records_key_to_g2_g3_and_g7_to_g9() {
     }
 }
 
-/// `record List { next?: List; }`, with no text field.
+/// `record List { next: List?; }`, with no text field.
 fn list_types() -> TypeEnvironment {
     let list = NodeKey::from_digest([5; 32]);
     TypeEnvironment::new(

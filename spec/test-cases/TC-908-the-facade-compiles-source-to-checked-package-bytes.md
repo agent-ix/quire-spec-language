@@ -17,7 +17,9 @@ Scope: FR-060-AC-5 to FR-060-AC-7.
 
 ## Test Procedure
 
-From an integration test that reaches only the `qsl_replay` root:
+From an integration test. The facade calls reach only the `qsl_replay` root;
+the oracle that produces the expected bytes, `package_id` and refusals runs
+the spine (`qsl_replay::spine`, `qsl_semantics`, `quire_exact`) directly:
 
 1. Compile `record List { next: List?; }` and `record Tree { kids:
    Sequence<Tree>[0, 3]; }` through `compile_package`. Run the spine's
