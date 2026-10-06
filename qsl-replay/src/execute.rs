@@ -1023,7 +1023,7 @@ fn arguments(
 }
 
 /// The witness type a parameter of `value_type` is read as: `Boolean` for
-/// `Boolean`, `I64` for an integer type. A type no witness value is a value
+/// `Boolean`, `I128` for an integer type. A type no witness value is a value
 /// of refuses `WrongValueKind` before the call.
 fn witness_type(
     parameter: usize,
@@ -1031,7 +1031,7 @@ fn witness_type(
 ) -> Result<WitnessValueType, ReplayRefusal> {
     match value_type {
         ValueType::Boolean => Ok(WitnessValueType::Boolean),
-        ValueType::Integer | ValueType::Int(_) => Ok(WitnessValueType::I64),
+        ValueType::Integer | ValueType::Int(_) => Ok(WitnessValueType::I128),
         ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Float(_)
@@ -1059,11 +1059,11 @@ fn argument(
 ) -> Result<Value, ReplayRefusal> {
     match (witness_type(parameter, value_type)?, value) {
         (WitnessValueType::Boolean, WitnessValue::Boolean(value)) => Ok(Value::Boolean(value)),
-        (WitnessValueType::I64, WitnessValue::Integer(value)) => {
+        (WitnessValueType::I128, WitnessValue::Integer(value)) => {
             Ok(Value::Integer(Integer::from(value)))
         }
         (WitnessValueType::Boolean, WitnessValue::Integer(_))
-        | (WitnessValueType::I64, WitnessValue::Boolean(_)) => {
+        | (WitnessValueType::I128, WitnessValue::Boolean(_)) => {
             Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
                 parameter,
             }))

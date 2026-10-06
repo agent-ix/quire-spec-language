@@ -138,7 +138,7 @@ impl Witness {
     /// integer, is skipped here, where
     /// [`Self::decode`] reads each entry as its binding's declared type and
     /// refuses a malformed one.
-    pub fn concrete_values(&self) -> Vec<(String, i64)> {
+    pub fn concrete_values(&self) -> Vec<(String, i128)> {
         self.raw_bindings()
             .into_iter()
             .filter_map(|entry| {
@@ -205,8 +205,9 @@ pub enum WitnessValueType {
     /// A Boolean, written `0` (`false`) or `1` (`true`) in a transcript, as
     /// a backend's one-byte encoding carries it.
     Boolean,
-    /// A signed 64-bit integer, written in decimal in a transcript.
-    I64,
+    /// A signed 128-bit integer (FR-091's i128 ceiling), written in decimal
+    /// in a transcript.
+    I128,
 }
 
 impl WitnessValueType {
@@ -219,7 +220,7 @@ impl WitnessValueType {
                 "1" => Some(WitnessValue::Boolean(true)),
                 _ => None,
             },
-            Self::I64 => text.parse().ok().map(WitnessValue::Integer),
+            Self::I128 => text.parse().ok().map(WitnessValue::Integer),
         }
     }
 }
@@ -241,8 +242,8 @@ pub struct WitnessBinding {
 pub enum WitnessValue {
     /// A Boolean value.
     Boolean(bool),
-    /// A signed 64-bit integer value.
-    Integer(i64),
+    /// A signed 128-bit integer value.
+    Integer(i128),
 }
 
 /// [`Witness::decode`]'s structured refusal. Each join failure is its own
@@ -379,7 +380,7 @@ impl ReplaySource {
     pub(crate) fn measured_bytes(&self) -> usize {
         match self {
             Self::Witness(witness) => witness.transcript().len(),
-            Self::Input(assignments) => assignments.len() * (32 + 8),
+            Self::Input(assignments) => assignments.len() * (32 + 16),
         }
     }
 }
@@ -550,7 +551,7 @@ mod witness_tests {
     fn integer(parameter: WireNodeId) -> WitnessBinding {
         WitnessBinding {
             parameter,
-            value_type: WitnessValueType::I64,
+            value_type: WitnessValueType::I128,
         }
     }
 
@@ -652,22 +653,22 @@ mod witness_tests {
     /// FR-098-AC-2: `decode` reads one typed value per binding, in binding
     /// order whatever order the transcript lists its entries in, joined by
     /// parameter node id: `0`/`1` as a Boolean binding's `false`/`true`, and
-    /// decimal text as an integer binding's value, `i64::MIN` and
-    /// `i64::MAX` included.
+    /// decimal text as an integer binding's value, `i128::MIN` and
+    /// `i128::MAX` included.
     #[trace("TC-444", "FR-098-AC-2")]
     #[test]
     fn tc_444_decode_reads_typed_values_by_parameter_node_id() {
         let flag = WireNodeId::from_digest([1; 32]);
         let low = WireNodeId::from_digest([2; 32]);
         let high = WireNodeId::from_digest([3; 32]);
-        let values = format!("{high}={};{flag}=1;{low}={}", i64::MAX, i64::MIN);
+        let values = format!("{high}={};{flag}=1;{low}={}", i128::MAX, i128::MIN);
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
             witness.decode(&[boolean(flag), integer(low), integer(high)]),
             Ok(vec![
                 WitnessValue::Boolean(true),
-                WitnessValue::Integer(i64::MIN),
-                WitnessValue::Integer(i64::MAX),
+                WitnessValue::Integer(i128::MIN),
+                WitnessValue::Integer(i128::MAX),
             ])
         );
         let off = Witness::parse(assertion("h", "c", &format!("{flag}=0"))).unwrap();
@@ -682,7 +683,7 @@ mod witness_tests {
     /// bound parameter, an entry that is not a `name=value` pair, and an
     /// entry whose text is not a value of its
     /// binding's type (`2` for a Boolean, non-decimal text and a value past
-    /// `i64::MAX` for an integer).
+    /// `i128::MAX` for an integer).
     #[trace("TC-444", "FR-098-AC-4")]
     #[test]
     fn tc_444_decode_refuses_each_join_failure_with_its_own_variant() {
@@ -718,13 +719,13 @@ mod witness_tests {
                 text: "2".to_owned(),
             })
         );
-        let past_max = format!("{}0", i64::MAX);
+        let past_max = format!("{}0", i128::MAX);
         for text in ["not-a-number", past_max.as_str()] {
             assert_eq!(
                 decode(format!("{x}={text}"), &[integer(x)]),
                 Err(DecodeRefusal::Malformed {
                     parameter: x,
-                    value_type: WitnessValueType::I64,
+                    value_type: WitnessValueType::I128,
                     text: text.to_owned(),
                 })
             );
