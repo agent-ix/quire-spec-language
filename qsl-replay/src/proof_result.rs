@@ -167,6 +167,7 @@ impl InconclusiveCause {
         match self {
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
+            Self::ScalarAgrees(_) => "scalar-agrees",
         }
     }
 

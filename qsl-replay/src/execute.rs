@@ -302,7 +302,9 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) => Some("revision-mismatch"),
+            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
+                Some("revision-mismatch")
+            }
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::Input(refusal) => Some(refusal.cause()),
             Self::Admission(
@@ -318,6 +320,7 @@ impl ReplayRefusal {
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
             | Self::NotAPredicate { .. }
+            | Self::NotAValueFunction { .. }
             | Self::Fault(_) => None,
         }
     }
