@@ -15,7 +15,7 @@ use quire_exact::Cancel;
 
 const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
-const LIST: &str = "record List { next?: List; }\n";
+const LIST: &str = "record List { next: List?; }\n";
 const TREE: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n";
 
 fn identity() -> SourceIdentity {
