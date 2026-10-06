@@ -44,10 +44,6 @@ fn int(lower: impl Into<Integer>, upper: impl Into<Integer>) -> ValueType {
     ValueType::Int(IntegerInterval::new(lower.into(), upper.into()).expect("a nonempty interval"))
 }
 
-fn big(text: &str) -> Integer {
-    text.parse().expect("a canonical integer")
-}
-
 /// The type of `u`'s parameter `x` in `compiled`.
 fn parameter_type(compiled: &ComposedUnit) -> ValueType {
     compiled
@@ -76,8 +72,8 @@ fn assembly_error<'a>(source: &'a str, refusal: &CompileRefusal) -> (AssemblyCau
     let [error] = refusal.errors.as_slice() else {
         panic!("not one assembler error: {:?}", refusal.errors);
     };
-    let start = usize::try_from(error.span.start).unwrap();
-    let end = usize::try_from(error.span.end).unwrap();
+    let start = error.span.start;
+    let end = error.span.end;
     (error.cause.clone(), &source[start..end])
 }
 
