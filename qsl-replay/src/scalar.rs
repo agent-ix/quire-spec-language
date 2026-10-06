@@ -13,7 +13,7 @@
 use qsl_foundation::diagnostic::{Code, InternalFault};
 use quire_exact::{
     evaluate_integer_arithmetic, Incomplete, Integer, IntegerArithmetic, IntegerInterval, Meter,
-    Outcome, Refusal, ScalarLimits, Value,
+    Origin, Outcome, Refusal, ScalarLimits, Value,
 };
 
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
@@ -21,7 +21,9 @@ use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use crate::execute::ReplayRefusal;
 use crate::identity::{ObligationIdentity, QualifiedName};
 use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
+use crate::request::ReplayRequestWire;
 use crate::result::{same_element, value_bytes};
+use crate::witness::ReplaySource;
 
 /// The outcome of one scalar evaluation, QSL's exact one or the generated
 /// code's: a value, a result outside the declared result range, or an
@@ -77,6 +79,18 @@ impl PartialEq for ScalarOutcome {
 
 impl Eq for ScalarOutcome {}
 
+/// How an operand is named in the obligation identity (ADR-013 O-09's
+/// operator-parity preimage).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperandIdentity {
+    /// The operand is a graph node: its node id.
+    GraphChild(WireNodeId),
+    /// The operand is an IR v2 inline literal, which has no node id: it is
+    /// named by the application's node id and occurrence key and by its own
+    /// position, all of which the claim already holds.
+    InlineLiteral,
+}
+
 /// One recorded operand and the range the harness drew it from.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarOperand {
@@ -84,15 +98,28 @@ pub struct ScalarOperand {
     pub value: i64,
     /// The inclusive range the operand must lie in.
     pub range: IntegerInterval,
+    /// How the obligation identity names the operand.
+    pub identity: OperandIdentity,
 }
 
 impl ScalarOperand {
-    /// A literal operand: its range is the singleton `(value, value)`.
+    /// A graph-node operand named by `node`, drawn from `range`.
+    pub fn graph_child(value: i64, range: IntegerInterval, node: WireNodeId) -> Self {
+        Self {
+            value,
+            range,
+            identity: OperandIdentity::GraphChild(node),
+        }
+    }
+
+    /// An inline literal operand: its range is the singleton
+    /// `(value, value)`.
     pub fn literal(value: i64) -> Self {
         let exact = Integer::from(value);
         Self {
             value,
             range: IntegerInterval::spanning(exact.clone(), exact),
+            identity: OperandIdentity::InlineLiteral,
         }
     }
 
@@ -106,6 +133,7 @@ impl ScalarOperand {
 
     fn measured_bytes(&self) -> usize {
         std::mem::size_of::<i64>()
+            + 32
             + self.range.lower().to_string().len()
             + self.range.upper().to_string().len()
     }
@@ -182,7 +210,7 @@ impl ScalarOperation {
     }
 
     /// The first operand and the second, where the operator takes one.
-    fn operands(&self) -> (&ScalarOperand, Option<&ScalarOperand>) {
+    pub(crate) fn operands(&self) -> (&ScalarOperand, Option<&ScalarOperand>) {
         match self {
             Self::Negate { operand } => (operand, None),
             Self::Add { left, right }
@@ -214,6 +242,17 @@ pub enum NativeOutcome {
     ExecutionFault,
 }
 
+impl NativeOutcome {
+    fn measured_bytes(&self) -> usize {
+        match self {
+            Self::Completed(value) => value.to_string().len(),
+            Self::RefusedOutOfRange | Self::Undefined | Self::Incomplete | Self::ExecutionFault => {
+                0
+            }
+        }
+    }
+}
+
 /// An operator-level claim (FR-357): the generated artifact's native outcome
 /// for one catalog operator at recorded operands equals the exact one,
 /// compared on the proof projection only: `Completed(v)` agrees iff the exact
@@ -226,6 +265,12 @@ pub struct OperatorClaim {
     pub node: WireNodeId,
     /// The catalog operator and its recorded operands, each with its range.
     pub operation: ScalarOperation,
+    /// The application node's occurrence key within the package (its role
+    /// and ordinal), a member of the obligation's preimage.
+    pub occurrence: Origin,
+    /// The CG `ObligationKind` wire string, a member of the obligation's
+    /// preimage and opaque to QSL.
+    pub obligation_kind: String,
     /// The proving package's range the result must lie in.
     pub result_range: IntegerInterval,
     /// The accounting limits the exact evaluation runs under.
@@ -239,7 +284,28 @@ pub struct OperatorClaim {
     pub identity: DigestRecord,
 }
 
-/// The identity of an operator-level claim.
+impl OperatorClaim {
+    /// The claim's identity under `obligation`: what every outcome of the
+    /// replay carries as `claim()`, and what a consumer builds to compare
+    /// with it.
+    pub fn identity(&self, obligation: ObligationIdentity) -> OperatorIdentity {
+        OperatorIdentity {
+            obligation,
+            node: self.node,
+            identity: self.identity,
+            operation: self.operation.clone(),
+            occurrence: self.occurrence.clone(),
+            obligation_kind: self.obligation_kind.clone(),
+            result_range: self.result_range.clone(),
+            limits: self.limits,
+            generated: self.generated.clone(),
+        }
+    }
+}
+
+/// The identity of an operator-level claim. `identity` is the observation
+/// digest: QSL carries it unchanged and binds it into this identity, and
+/// never authenticates it against the generated artifact (the driver does).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperatorIdentity {
     /// The obligation the claim replays, as the request carried it.
@@ -250,61 +316,80 @@ pub struct OperatorIdentity {
     pub identity: DigestRecord,
     /// The operator and its operands.
     pub operation: ScalarOperation,
+    /// The application node's occurrence key.
+    pub occurrence: Origin,
+    /// The CG `ObligationKind` wire string.
+    pub obligation_kind: String,
     /// The result range.
     pub result_range: IntegerInterval,
     /// The limits the exact evaluation ran under.
     pub limits: ScalarLimits,
+    /// The native outcome the claim says the exact one equals.
+    pub generated: NativeOutcome,
 }
 
-/// The identity of the claim a [`ScalarAgreement`] settles.
-#[derive(Clone, Debug)]
-pub enum ScalarClaim {
-    /// An operator-level claim: its operator, operands with their ranges,
-    /// result range and limits.
-    Operator(Box<OperatorIdentity>),
-    /// A function-level claim: the function and its parameter bindings in
-    /// declared parameter order.
-    Function {
-        /// The obligation the claim replays, as the request carried it.
-        obligation: ObligationIdentity,
-        /// The selected function.
-        function: QualifiedName,
-        /// The admitted value of each declared parameter.
-        bindings: Vec<Value>,
-    },
+/// The identity of a function-level value-parity claim: everything the
+/// request and the generated observation fixed, so two claims are equal
+/// exactly when they replay the same obligation against the same package,
+/// function, bindings, limits and generated outcome. It is built from the
+/// request before anything is decoded, so every outcome of the replay
+/// carries it, a refusal included.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueIdentity {
+    /// The obligation the claim replays, as the request carried it.
+    pub obligation: ObligationIdentity,
+    /// The request's `package_id` as supplied: its digest domain and hex.
+    /// Carried as given and never checked here.
+    pub package_id: (Option<String>, String),
+    /// The selected function.
+    pub function: QualifiedName,
+    /// The request's `source`: the bindings of the function's declared
+    /// parameters, as supplied.
+    pub source: ReplaySource,
+    /// The accounting limits the exact evaluation runs under.
+    pub limits: ScalarLimits,
+    /// The generated outcome the claim says QSL's exact one equals.
+    pub generated: ScalarOutcome,
 }
 
-impl PartialEq for ScalarClaim {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Operator(left), Self::Operator(right)) => left == right,
-            (
-                Self::Function {
-                    obligation,
-                    function,
-                    bindings,
-                },
-                Self::Function {
-                    obligation: other_obligation,
-                    function: other_function,
-                    bindings: other_bindings,
-                },
-            ) => {
-                obligation == other_obligation
-                    && function == other_function
-                    && bindings.len() == other_bindings.len()
-                    && bindings
-                        .iter()
-                        .zip(other_bindings)
-                        .all(|(left, right)| same_element(left, right))
-            }
-            (Self::Operator(_), Self::Function { .. })
-            | (Self::Function { .. }, Self::Operator(_)) => false,
+impl ValueIdentity {
+    /// Bytes this identity adds to an encoded record beyond its fixed size.
+    fn measured_bytes(&self) -> usize {
+        32 + self.package_id.1.len()
+            + self
+                .function
+                .segments()
+                .iter()
+                .map(|segment| segment.as_str().len())
+                .sum::<usize>()
+            + self.source.measured_bytes()
+            + self.generated.measured_bytes()
+    }
+
+    /// The identity of the claim a consumer sent: `wire` and the generated
+    /// outcome, exactly as [`crate::replay_value_parity`] reads them.
+    pub fn sent(wire: &ReplayRequestWire, generated: &ScalarOutcome) -> Self {
+        Self {
+            obligation: ObligationIdentity::from_digest(wire.obligation_identity),
+            package_id: wire.package_id.clone(),
+            function: wire.selected_function.clone(),
+            source: wire.source.clone(),
+            limits: wire.accounting_limits,
+            generated: generated.clone(),
         }
     }
 }
 
-impl Eq for ScalarClaim {}
+/// The identity of the claim a [`ScalarAgreement`] settles: the same value
+/// the replay's report carries as its `claim()`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScalarClaim {
+    /// An operator-level claim: its operator, operands with their ranges,
+    /// result range and limits.
+    Operator(Box<OperatorIdentity>),
+    /// A function-level claim: the function and its parameter bindings.
+    Function(Box<ValueIdentity>),
+}
 
 /// The cause data of `InconclusiveCause::ScalarAgrees`: the claim, and the
 /// outcome both the exact evaluation and the generated code reached, so the
@@ -341,19 +426,13 @@ impl ScalarAgreement {
             ScalarClaim::Operator(identity) => {
                 3 * 32
                     + identity.operation.measured_bytes()
+                    + identity.generated.measured_bytes()
+                    + identity.occurrence.role().as_str().len()
+                    + identity.obligation_kind.len()
                     + identity.result_range.lower().to_string().len()
                     + identity.result_range.upper().to_string().len()
             }
-            ScalarClaim::Function {
-                function, bindings, ..
-            } => {
-                32 + function
-                    .segments()
-                    .iter()
-                    .map(|segment| segment.as_str().len())
-                    .sum::<usize>()
-                    + bindings.iter().map(value_bytes).sum::<usize>()
-            }
+            ScalarClaim::Function(identity) => identity.measured_bytes(),
         };
         claim + self.outcome.measured_bytes()
     }
@@ -421,22 +500,30 @@ pub enum OperatorParityResult {
     Refused(Box<ReplayRefusal>),
 }
 
-/// What an operator-level replay settled, with the obligation identity of the
-/// request carried through unchanged on every outcome.
+/// What an operator-level replay settled, with the full claim identity
+/// carried through unchanged on every outcome, a refusal included.
 #[derive(Debug)]
 pub struct OperatorParityReport {
-    obligation: ObligationIdentity,
+    claim: OperatorIdentity,
     result: OperatorParityResult,
 }
 
 impl OperatorParityReport {
-    pub(crate) fn new(obligation: ObligationIdentity, result: OperatorParityResult) -> Self {
-        Self { obligation, result }
+    pub(crate) fn new(claim: OperatorIdentity, result: OperatorParityResult) -> Self {
+        Self { claim, result }
+    }
+
+    /// The claim identity the request and claim carried: the obligation,
+    /// scalar node, operator, operands with their ranges, result range,
+    /// limits and observation digest. A consumer checks `claim()` equals the
+    /// claim it sent.
+    pub fn claim(&self) -> &OperatorIdentity {
+        &self.claim
     }
 
     /// The obligation identity the request carried.
     pub fn obligation(&self) -> ObligationIdentity {
-        self.obligation
+        self.claim.obligation
     }
 
     /// What the replay found.
@@ -517,10 +604,7 @@ pub(crate) fn evaluated(outcome: Outcome<Value>) -> Result<Evaluated, InternalFa
 /// the generated one on the proof projection.
 ///
 /// The only `Err` is a broken quire-exact invariant.
-pub(crate) fn compare(
-    obligation: ObligationIdentity,
-    claim: OperatorClaim,
-) -> Result<OperatorParityResult, InternalFault> {
+pub(crate) fn compare(claim: &OperatorIdentity) -> Result<OperatorParityResult, InternalFault> {
     let generated = match &claim.generated {
         NativeOutcome::Completed(value) => ScalarOutcome::Value(Value::Integer(value.clone())),
         NativeOutcome::RefusedOutOfRange => ScalarOutcome::OutOfRange,
@@ -581,17 +665,7 @@ pub(crate) fn compare(
         }
     } else {
         OperatorParityResult::Agrees {
-            agreement: ScalarAgreement::new(
-                ScalarClaim::Operator(Box::new(OperatorIdentity {
-                    obligation,
-                    node: claim.node,
-                    identity: claim.identity,
-                    operation: claim.operation,
-                    result_range: claim.result_range,
-                    limits: claim.limits,
-                })),
-                exact,
-            ),
+            agreement: ScalarAgreement::new(ScalarClaim::Operator(Box::new(claim.clone())), exact),
             charges,
         }
     })

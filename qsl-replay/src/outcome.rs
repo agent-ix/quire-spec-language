@@ -1016,12 +1016,26 @@ mod tests {
             (
                 TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(
                     crate::scalar::ScalarAgreement::new(
-                        crate::scalar::ScalarClaim::Function {
+                        crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
                             obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
+                            package_id: (None, String::new()),
                             function: QualifiedName::new(vec![Identifier::new("f").unwrap()])
                                 .unwrap(),
-                            bindings: Vec::new(),
-                        },
+                            source: crate::ReplaySource::Input(Vec::new()),
+                            limits: quire_exact::ScalarLimits {
+                                integer_bits: 1,
+                                decimal_digits: 1,
+                                scale_expansion: 1,
+                                text_input_bytes: 1,
+                                text_scalars: 1,
+                                normalized_scalars: 1,
+                                unit_edges: 1,
+                                value_occurrences: 1,
+                                work_units: 1,
+                                result_units: 1,
+                            },
+                            generated: crate::scalar::ScalarOutcome::OutOfRange,
+                        })),
                         crate::scalar::ScalarOutcome::OutOfRange,
                     ),
                 )),

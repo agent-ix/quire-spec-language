@@ -527,6 +527,7 @@ mod tests {
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;
     use crate::scalar::{ScalarClaim, ScalarOutcome};
+    use crate::witness::{CanonicalAssignment, WitnessValue};
     use ix_trace_rs::trace;
     use qsl_foundation::digest::WireNodeId;
     use quire_contract_model::std001_code;
@@ -538,20 +539,31 @@ mod tests {
         }
     }
 
-    fn agreement() -> ScalarAgreement {
-        ScalarAgreement::new(
-            ScalarClaim::Function {
-                obligation: crate::ObligationIdentity::from_digest([1; 32]),
-                function: crate::QualifiedName::new(vec![
-                    quire_exact::Identifier::new("f").unwrap()
-                ])
+    fn function_claim(assignments: Vec<CanonicalAssignment>) -> ScalarClaim {
+        ScalarClaim::Function(Box::new(crate::ValueIdentity {
+            obligation: crate::ObligationIdentity::from_digest([1; 32]),
+            package_id: (None, String::new()),
+            function: crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
                 .unwrap(),
-                bindings: vec![quire_exact::Value::Integer(quire_exact::Integer::from(
-                    3_i64,
-                ))],
+            source: crate::ReplaySource::Input(assignments),
+            limits: quire_exact::ScalarLimits {
+                integer_bits: 1,
+                decimal_digits: 1,
+                scale_expansion: 1,
+                text_input_bytes: 1,
+                text_scalars: 1,
+                normalized_scalars: 1,
+                unit_edges: 1,
+                value_occurrences: 1,
+                work_units: 1,
+                result_units: 1,
             },
-            ScalarOutcome::OutOfRange,
-        )
+            generated: ScalarOutcome::OutOfRange,
+        }))
+    }
+
+    fn agreement() -> ScalarAgreement {
+        ScalarAgreement::new(function_claim(Vec::new()), ScalarOutcome::OutOfRange)
     }
 
     fn parity_cause() -> DisagreementCause {
@@ -873,17 +885,13 @@ mod tests {
     #[test]
     fn tc_178_refuses_an_oversized_scalar_agreement_cause() {
         let oversized = ScalarAgreement::new(
-            ScalarClaim::Function {
-                obligation: crate::ObligationIdentity::from_digest([1; 32]),
-                function: crate::QualifiedName::new(vec![
-                    quire_exact::Identifier::new("f").unwrap()
-                ])
-                .unwrap(),
-                bindings: vec![
-                    quire_exact::Value::Integer(quire_exact::Integer::from(0_i64));
-                    DEFAULT_INPUT_BYTES + 1
-                ],
-            },
+            function_claim(vec![
+                CanonicalAssignment {
+                    parameter: WireNodeId::from_digest([0; 32]),
+                    value: WitnessValue::Integer(0),
+                };
+                DEFAULT_INPUT_BYTES / 40 + 1
+            ]),
             ScalarOutcome::OtherRefusal,
         );
         let source = source(vec![TerminalRecord::new(

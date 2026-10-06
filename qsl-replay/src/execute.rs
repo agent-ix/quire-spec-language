@@ -59,11 +59,15 @@ mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod operator_parity;
+mod parity_identity;
+pub use parity_identity::{
+    parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
+};
 mod scalar_site;
 pub use operator_parity::{replay_operator_parity, ScalarIdentityMismatch};
 
 mod value_parity;
-pub use value_parity::{replay_value_parity, ValueParityResult};
+pub use value_parity::{replay_value_parity, ValueParityReport, ValueParityResult};
 
 mod state_clause;
 pub use state_clause::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};

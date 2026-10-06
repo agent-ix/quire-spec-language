@@ -533,7 +533,7 @@ names different artifacts in each.
 | TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4, FR-264-AC-5 | 🚧 Planned |
 | TC-902 | Core entry points and maybe_grow sites run 100,000 deep on a small stack | Unit | P1 | FR-356-AC-5, FR-356-AC-6 | 🚧 Planned |
 | TC-903 | A deep-input fuzz target drives the parser and the checker | Property | P1 | FR-356-AC-7 | 🚧 Planned |
-| TC-904 | Scalar-parity claims replay to diverged, agrees, refused and faulted outcomes, and never to Refuted | Unit | P1 | FR-357-AC-1, FR-357-AC-2, FR-357-AC-3, FR-357-AC-4, FR-357-AC-5, FR-357-AC-6, FR-357-AC-7, FR-357-AC-8, FR-357-AC-9, FR-357-AC-10, FR-357-AC-11 | ✅ Passed locally |
+| TC-904 | Scalar-parity claims replay to diverged, agrees, refused and faulted outcomes, and never to Refuted | Unit | P1 | FR-357-AC-1, FR-357-AC-2, FR-357-AC-3, FR-357-AC-4, FR-357-AC-5, FR-357-AC-6, FR-357-AC-7, FR-357-AC-8, FR-357-AC-9, FR-357-AC-10, FR-357-AC-11, FR-357-AC-13, FR-357-AC-14, FR-357-AC-15, FR-357-AC-16, FR-357-AC-17, FR-357-AC-18, FR-357-AC-19 | ✅ Passed locally |
 | TC-908 | The replay facade compiles QSL source to the checked-package bytes the spine emits | Integration | P2 | FR-060-AC-5, FR-060-AC-6, FR-060-AC-7 | ✅ Passed locally |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 Planned |
