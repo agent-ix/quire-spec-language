@@ -246,6 +246,12 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             file: "qsl-replay/src/spine/call.rs".to_owned(),
             item: "convert_outcome".to_owned(),
         },
+        // FR-357: `replay_value_parity`'s own seam over `FamilyOutcome`,
+        // mirroring `execute::replay`'s above.
+        SeamLocation {
+            file: "qsl-replay/src/execute/value_parity.rs".to_owned(),
+            item: "settle".to_owned(),
+        },
     ]
     .into_iter()
     .collect()
