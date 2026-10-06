@@ -1221,6 +1221,29 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
+/// Supplies, as domain package evidence, the `domain_package` document of
+/// `$QSPEC_DIR`'s `model-member-type-vectors.json` for each of `envelope`'s
+/// `model_selections` rows whose digest it is (QSpec FR-322 "Model-owned
+/// members" step 1): the document the published model-owned nodes' owners
+/// join.
+fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        return;
+    };
+    let vectors = read_fixture(
+        &std::path::Path::new(&qspec)
+            .join("proposals/checked-package-v2/model-member-type-vectors.json"),
+    );
+    let document = jcs(&vectors["domain_package"]);
+    let digest = format!("{:x}", Sha256::digest(&document));
+    let selected = envelope["lock"]["model_selections"]
+        .as_array()
+        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
+    if selected {
+        evidence.insert_domain_package_document(&digest, &document[..]);
+    }
+}
+
 /// QSL's whole I2 read of the fixture `envelope`, pinned at the
 /// `package_id` its own identity preimage recomputes to. Evidence treats
 /// the fixture's required features as supported. The published fixture is
@@ -1230,6 +1253,7 @@ fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
+    supply_qspec_domain_package(&mut evidence, envelope);
     let package_id = PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
     let outcome = read_v2(
         &jcs(envelope),
