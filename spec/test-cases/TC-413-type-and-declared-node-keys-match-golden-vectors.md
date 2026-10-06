@@ -52,7 +52,7 @@ selection whose alias is `v`.
    FR-092 vectors G4 to G6 and the same declaration named `g`, calling `g`,
    in one unit.
    On a spawned thread with a 512 KiB stack, at the default limits, check a
-   chain of 30 records, each `record Ci { next?: C{i+1}; }`, the last into
+   chain of 30 records, each `record Ci { next: C{i+1}?; }`, the last into
    `record Leaf { label: Text[0, 8; nfc]; }`, alone and with an equality
    over `C0`; check the same chain 1,000 records long, alone and with the
    equality, with S1 and S3 limits raised to fit it.
@@ -67,7 +67,7 @@ selection whose alias is `v`.
 8. Scan the preimage-selection and type-node `match` expressions for a `_`
    arm.
 9. Check, each in its own unit under (`a`, `u`), the recursion groups of
-   FR-092's Recursion-group vectors: `f`, `record List { next?: List; }`,
+   FR-092's Recursion-group vectors: `f`, `record List { next: List?; }`,
    `record Tree { kids: Sequence<Tree>[0, 3]; }`, and `ping` with `pong`.
    Check `ping` and `pong` again with `pong` declared first. Key G1's node
    through the key function. Read each member's preimage bytes and key and

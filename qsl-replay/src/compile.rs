@@ -4,6 +4,7 @@
 //! compiles through [`compile_package`] and never names [`crate::spine`].
 
 use qsl_foundation::SourceIdentity;
+use qsl_semantics::model::intake::package_input;
 
 use crate::execute::{run_spine, spine_limits, ReplayRefusal};
 use crate::request::StageLimits;
@@ -29,8 +30,10 @@ impl CompiledPackage {
     }
 }
 
-/// Compile `bytes`, displayed as `path` and labelled `source`, against
-/// `dependencies`, through the spine's parse, select, check and emit
+/// Compile `bytes`, displayed as `path` and labelled `source`, with
+/// `packages` -- each a domain package document, keyed by its own
+/// `sha256-jcs` digest as [`crate::call_site`] and `replay` key theirs -- as
+/// I1's package input and `dependencies` as the dependency input, through the spine's parse, select, check and emit
 /// stages that [`crate::replay`] recompiles through, and return the emitted
 /// package.
 ///
@@ -42,22 +45,23 @@ impl CompiledPackage {
 /// [`ReplayRefusal::DependencyInput`] for a library that shares the unit's
 /// owner, and [`ReplayRefusal::LimitAboveReader`] for an S1 limit above the
 /// reader limit.
-pub fn compile_package(
-    source: &SourceIdentity,
+pub fn compile_package<'a>(
+    source: SourceIdentity,
     path: &str,
     bytes: &[u8],
+    packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
     let limits = spine_limits(limits)?;
     dependencies
-        .check_unit_owner(source)
+        .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;
     let compiled = run_spine(
-        source,
+        &source,
         path,
         bytes,
-        &std::collections::BTreeMap::new(),
+        &package_input(packages),
         dependencies,
         limits,
     )?;

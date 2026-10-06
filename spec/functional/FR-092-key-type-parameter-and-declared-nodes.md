@@ -426,7 +426,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | E12 | `x - 1` | `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a` |
 | E13 | `x - 1` narrowed into `Int[0, 9]` | `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e` |
 | G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
-| G2 | `record List { next?: List; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
+| G2 | `record List { next: List?; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
 | G3 | `Option<List>`, ordinal 0 | `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b` |
 | G4 | function `f`, ordinal 1 | `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d` |
 | G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc` |
@@ -694,7 +694,7 @@ declared member is under owner (`a`, `u`):
   that FR-143 refuses, since it passes no optional field, `Option` or
   minimum-zero collection. TC-413 keys G1
   through the key function directly.
-- G2 and G3: `record List { next?: List; }`, a group of two.
+- G2 and G3: `record List { next: List?; }`, a group of two.
 - G4 to G6: `function f using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then f(x - 1) else true }`,
   a self-recursive function, a group of three. `x - 1` is `Integer` (E12),
   and the call narrows it into the parameter's `Int[0, 9]` (E13).
@@ -761,7 +761,7 @@ Key: `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e`
 
 Key: `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31`
 
-**G2**: `record List { next?: List; }`, ordinal 1
+**G2**: `record List { next: List?; }`, ordinal 1
 
 ```json
 {"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}

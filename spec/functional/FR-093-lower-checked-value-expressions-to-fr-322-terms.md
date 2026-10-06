@@ -327,7 +327,7 @@ pass the limit stops with a stage limit of kind node count, reported as
 stops on a limit, before it reads any leaf's law, so a stage limit comes
 before `missing-selection`.
 
-For `record Node { label: Text[0, 8; binary-utf8]; next?: Node; }`, the list
+For `record Node { label: Text[0, 8; binary-utf8]; next: Node?; }`, the list
 is `field:label`, a text leaf with mode `binary-utf8`, then
 `field:next`, `inner`, `recursion:0`. The expanded leaf set holds
 `field:label`, `field:next`/`inner`/`field:label`, and so on down every
@@ -444,7 +444,7 @@ package. The test reads the fixtures from the `QSPEC_DIR` checkout under
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
 for the named node, under owner (`a`, `u`), from these declarations:
 
-- `record Node { label: Text[0, 8; binary-utf8]; next?: Node; }`, a group
+- `record Node { label: Text[0, 8; binary-utf8]; next: Node?; }`, a group
   of two (G16, G17);
 - `record A { name: Text[0, 8; binary-utf8]; b?: B; }` and
   `record B { tag: Text[0, 4; nfc]; a?: A; }`, a mutually recursive pair, a

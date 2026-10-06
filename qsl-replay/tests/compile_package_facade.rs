@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-905 (FR-060-AC-5, FR-060-AC-6): `compile_package` emits the bytes and
+//! TC-908 (FR-060-AC-5, FR-060-AC-6): `compile_package` emits the bytes and
 //! `package_id` the spine emits, and refuses as the spine does. As an
 //! integration test it reaches only the crate's public API.
 
@@ -11,6 +11,7 @@ use qsl_replay::{
     compile_package, Code, DependencyInput, ReplayRefusal, ScalarLimits, SourceIdentity,
     StageLimits, SuppliedLibrary,
 };
+use qsl_semantics::model::intake::package_input;
 use quire_exact::Cancel;
 
 const HEADER: &str =
@@ -48,7 +49,10 @@ fn limits(source_bytes: u64) -> StageLimits {
 
 /// The spine's own run over `text`: its package bytes and `package_id`, or
 /// its refusal.
-fn spine_run(text: &str) -> Result<(Vec<u8>, String), Box<CompileRefusal>> {
+fn spine_run(
+    text: &str,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<(Vec<u8>, String), Box<CompileRefusal>> {
     let source = identity();
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -66,7 +70,7 @@ fn spine_run(text: &str) -> Result<(Vec<u8>, String), Box<CompileRefusal>> {
     )
     .map_err(refusal)?
     .into_value();
-    let models = spine::select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+    let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = spine::check(
@@ -90,9 +94,10 @@ fn spine_run(text: &str) -> Result<(Vec<u8>, String), Box<CompileRefusal>> {
 
 fn compile(text: &str, stages: StageLimits) -> Result<qsl_replay::CompiledPackage, ReplayRefusal> {
     compile_package(
-        &identity(),
+        identity(),
         "unit.native",
         text.as_bytes(),
+        [],
         &DependencyInput::default(),
         stages,
     )
@@ -100,12 +105,13 @@ fn compile(text: &str, stages: StageLimits) -> Result<qsl_replay::CompiledPackag
 
 /// FR-092's recursive `List` and `Tree` compile through the facade to the
 /// spine's bytes and `package_id`.
-#[trace("TC-905", "FR-060-AC-5")]
+#[trace("TC-908", "FR-060-AC-5")]
 #[test]
 fn recursive_records_compile_to_the_spine_bytes_and_package_id() {
     for record in [LIST, TREE] {
         let text = format!("{HEADER}{record}");
-        let (bytes, package_id) = spine_run(&text).expect("the spine compiles the record");
+        let (bytes, package_id) =
+            spine_run(&text, &BTreeMap::new()).expect("the spine compiles the record");
         let compiled = compile(&text, limits(1 << 20)).expect("the facade compiles the record");
         assert!(!bytes.is_empty());
         assert_eq!(compiled.bytes(), bytes.as_slice());
@@ -117,11 +123,11 @@ fn recursive_records_compile_to_the_spine_bytes_and_package_id() {
 }
 
 /// A malformed source refuses with the spine refusal's code and stage.
-#[trace("TC-905", "FR-060-AC-6")]
+#[trace("TC-908", "FR-060-AC-6")]
 #[test]
 fn a_malformed_source_refuses_as_the_spine_does() {
     let text = format!("{HEADER}record {{ ");
-    let expected = spine_run(&text).expect_err("the spine refuses the source");
+    let expected = spine_run(&text, &BTreeMap::new()).expect_err("the spine refuses the source");
     let Err(ReplayRefusal::Recompile(refusal)) = compile(&text, limits(1 << 20)) else {
         panic!("the facade refuses the source at the recompile");
     };
@@ -131,7 +137,7 @@ fn a_malformed_source_refuses_as_the_spine_does() {
 }
 
 /// A library whose source has the unit's owner is no dependency input of it.
-#[trace("TC-905", "FR-060-AC-6")]
+#[trace("TC-908", "FR-060-AC-6")]
 #[test]
 fn a_library_with_the_units_owner_refuses() {
     let library = SuppliedLibrary {
@@ -142,9 +148,10 @@ fn a_library_with_the_units_owner_refuses() {
     };
     let dependencies = DependencyInput::new([library]).unwrap();
     let refusal = compile_package(
-        &identity(),
+        identity(),
         "unit.native",
         format!("{HEADER}{LIST}").as_bytes(),
+        [],
         &dependencies,
         limits(1 << 20),
     );
@@ -153,7 +160,7 @@ fn a_library_with_the_units_owner_refuses() {
 
 /// The S1 byte limit stops a source above it, and a limit above the reader
 /// limit is an invalid request.
-#[trace("TC-905", "FR-060-AC-6")]
+#[trace("TC-908", "FR-060-AC-6")]
 #[test]
 fn stage_limits_refuse_as_the_replay_recompile_does() {
     let text = format!("{HEADER}{LIST}");
@@ -165,4 +172,45 @@ fn stage_limits_refuse_as_the_replay_recompile_does() {
         compile(&text, limits(u64::MAX)),
         Err(ReplayRefusal::LimitAboveReader(_))
     ));
+}
+
+/// A unit selecting a domain package compiles through the facade to the
+/// spine's bytes and `package_id` when the package is supplied, and refuses
+/// at I1 as the spine does when it is not.
+#[trace("TC-908", "FR-060-AC-7")]
+#[test]
+fn a_domain_package_is_the_i1_input_as_in_the_spine() {
+    let document = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .unwrap();
+    let packages = package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    let text = format!(
+        "{HEADER}model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n\
+         function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    let (bytes, package_id) = spine_run(&text, &packages).expect("the spine compiles the unit");
+    let compiled = compile_package(
+        identity(),
+        "unit.native",
+        text.as_bytes(),
+        [document.as_slice()],
+        &DependencyInput::default(),
+        limits(1 << 20),
+    )
+    .expect("the facade compiles the unit");
+    assert_eq!(compiled.bytes(), bytes.as_slice());
+    assert_eq!(compiled.package_id().hex(), package_id);
+
+    let expected = spine_run(&text, &BTreeMap::new()).expect_err("the spine refuses at I1");
+    let Err(ReplayRefusal::Recompile(refusal)) = compile(&text, limits(1 << 20)) else {
+        panic!("the facade refuses the unit at the recompile");
+    };
+    assert_eq!(refusal.code(), expected.code());
+    assert_eq!(refusal.code(), Code::MissingImport);
 }
