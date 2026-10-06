@@ -70,3 +70,27 @@ node count (FND-002), and the setting string is never asserted (FND-003).
 | FND-001 | medium | `normalize::ancestor_paths` charges each distinct `(specific, ancestor)` edge once, however many paths reach it, through the `followed` set. No test fails if that dedup is removed. The only multi-path fixture is the 4-type diamond in `qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit`. Its two paths `D-B-A` and `D-C-A` share no edge, so counting per path also gives 4. Fix: add an edge above the join (`A -> Z`). That gives 5 distinct edges against 6 counted per path; assert that `ancestor_steps = 5` admits and 4 refuses. | qsl-semantics/src/model/normalize.rs:959-990; qsl-semantics/tests/it/model_population.rs:3198-3260 |
 | FND-002 | low | The diamond fixtures behind FR-082-AC-6 (`diamond_package` in type_environment_model.rs, and `fixture_diamond`) have 4 types and 4 edges, so the old node count gives the same admit and stop verdicts. They rule out a chain depth but not a node count. The chain divergence rows do discriminate (5 edges, 6 types), so the AC is still backed. Fix: add a direct `D -> A` edge to the diamond (5 edges, 4 types). | qsl-semantics/tests/it/type_environment_model.rs:404-472 |
 | FND-003 | low | FR-099-AC-7 says the refusal names "setting `dependency.libraries`" and so on. The tests assert the `LimitsField` enum value but never the spelled string (`LimitsField::as_str`) a user sees in the message. No test runs a dependency limit through lifecycle `check` to show it returns `StageFailure::Limit` (`limit_of`'s new `Import { Limit }` arm). Fix: assert `limit.limits_field().map(LimitsField::as_str) == Some("dependency.libraries")`, and add a dependency limit row to `check_names_*_limit_field_it_reached`. | qsl-replay/src/spine/dependency_tests.rs:546-627; qsl-replay/src/spine/lifecycle.rs:304-307; qsl-foundation/src/diagnostic/stage.rs:139-141 |
+
+## Dispositions
+
+Round 1, reviewed at 43053adeb4dcd40c4d7956f17a4135b75a73cfee.
+
+- **FND-001:** `fixture_diamond` is now `Z; A -> Z; B -> A; C -> A;
+  D -> B, C, A`: 6 distinct edges, 8 counted per path, 5 types, depth 3. It
+  admits at 6 and refuses at 5. Counting per path would refuse at 6, and
+  counting types or depth would admit at 5, so the test tells all three
+  apart.
+- **FND-002:** the type-environment diamond adds `model.d.d -> model.d.a`
+  (5 edges, 4 types). Check time and evaluation both admit at 5 and stop at
+  4.
+- **FND-003:** each dependency test asserts
+  `limits_field().map(LimitsField::as_str)` equals `"dependency.libraries"`,
+  `"dependency.import_edges"` or `"dependency.source_bytes"`.
+  `check_names_the_dependency_limit_field_it_reached` runs all three through
+  lifecycle `check`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 21f63b513 |
+| FND-002 | fixed | 21f63b513 |
+| FND-003 | fixed | 21f63b513 |

@@ -588,6 +588,7 @@ fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusa
             })),
         ),
         NodeKeyRefusal::InvalidGroup => fault(location, KeyFault::InvalidGroup),
+        NodeKeyRefusal::Identity(identity) => refuse(location, CheckCause::Identity(identity)),
         refusal => refuse(location, CheckCause::NodePreimage(refusal)),
     }
 }

@@ -18,11 +18,15 @@ use serde::Serialize;
 use crate::model::refusal::ModelRefusalCause;
 
 /// The model stage's identity encoding limits: no byte bound of their own.
-/// The stage applies its own byte budget instead (FR-259 Behavior 3): every
-/// preimage's canonical length is charged to `model.hashed_bytes`, which
-/// refuses as that named stage limit, and every preimage is built from a
-/// domain package intake already bounded. A bound here could only turn a
-/// preimage the stage admits into a refusal with no setting to raise.
+/// Normalization applies its own byte budget instead (FR-259 Behavior 3):
+/// each effective-declaration, object-universe and effective-view
+/// preimage's canonical length is charged to `model.hashed_bytes` before it
+/// is hashed, which refuses as that named stage limit. The population-id
+/// preimage (`population::mint_population_id`) is not charged: it holds one
+/// domain package header, one declaration key and a role name, each a field
+/// of a domain package that intake's `intake.input_bytes` already bounded.
+/// A bound here could only turn a preimage the stage admits into a refusal
+/// with no setting to raise.
 const LIMITS: Limits = Limits::new(u64::MAX);
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in

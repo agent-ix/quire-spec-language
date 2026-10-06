@@ -73,6 +73,7 @@ use quire_canonical::{Encode, FixedShape, Sink, Writer};
 use serde::Serialize;
 
 use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSubject};
+use quire_semantic_value::semantic_node::IdentityRefusal;
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 use qsl_foundation::absence::AbsenceMode;
@@ -1450,17 +1451,32 @@ pub enum NodeKeyRefusal {
     /// node's literals are typed at builtin scalars.
     #[error("a type position names a member of the node's own recursion group")]
     GroupMemberAtTypePosition,
-    /// `quire-canonical` refused to encode a preimage, a shape or a
-    /// signature round. Unreachable for these types (every member name is a
-    /// fixed string, every number is checked against RFC 8785's exact range
-    /// first, and no `Serialize` impl here errors) short of a failed heap
-    /// reservation, but encoding is fallible and this module does not panic
-    /// on an input path.
+    /// `quire-canonical` found no RFC 8785 encoding of a preimage, a shape
+    /// or a signature round. Unreachable for these types (every member name
+    /// is a fixed string, every number is checked against RFC 8785's exact
+    /// range first, and no `Serialize` impl here errors), but encoding is
+    /// fallible and this module does not panic on an input path. A byte
+    /// limit or a failed reservation is [`Self::Identity`].
     #[error("the preimage has no RFC 8785 encoding: {reason}")]
     Encode {
         /// The encoder's own message.
         reason: String,
     },
+    /// The preimage's canonical bytes would exceed `identity.input_bytes`,
+    /// or a heap reservation for them failed (FR-259 Behaviors 4 and 6):
+    /// a stage limit or an allocation failure, never a malformed preimage.
+    #[error(transparent)]
+    Identity(IdentityRefusal),
+}
+
+/// An encoder error at a node-key site: the byte limit and an allocation
+/// failure as [`NodeKeyRefusal::Identity`], anything else as no encoding.
+fn encode_refusal(error: quire_canonical::Error) -> NodeKeyRefusal {
+    let reason = error.to_string();
+    match IdentityRefusal::from(error) {
+        IdentityRefusal::NonCanonical => NodeKeyRefusal::Encode { reason },
+        identity => NodeKeyRefusal::Identity(identity),
+    }
 }
 
 /// Refuse `value` at `site` when RFC 8785 cannot render it exactly.
@@ -1758,9 +1774,7 @@ fn keyed(preimage: &Preimage<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
 /// `value`'s RFC 8785 bytes, from `quire-canonical` (ADR-013 §2,
 /// ADR-013:113: the one RFC 8785 implementation).
 pub(super) fn canonical_bytes(value: &(impl Encode + ?Sized)) -> Result<Vec<u8>, NodeKeyRefusal> {
-    quire_canonical::to_vec(value, LIMITS).map_err(|error| NodeKeyRefusal::Encode {
-        reason: error.to_string(),
-    })
+    quire_canonical::to_vec(value, LIMITS).map_err(encode_refusal)
 }
 
 /// The SHA-256 of `value`'s RFC 8785 bytes, hashed by `quire-canonical` as
@@ -1768,9 +1782,7 @@ pub(super) fn canonical_bytes(value: &(impl Encode + ?Sized)) -> Result<Vec<u8>,
 fn canonical_sha256(value: &(impl Encode + ?Sized)) -> Result<[u8; 32], NodeKeyRefusal> {
     quire_canonical::sha256(value, LIMITS)
         .map(|digest| *digest.as_bytes())
-        .map_err(|error| NodeKeyRefusal::Encode {
-            reason: error.to_string(),
-        })
+        .map_err(encode_refusal)
 }
 
 /// `node`'s typed preimage, with `walk` rewriting references to its group's

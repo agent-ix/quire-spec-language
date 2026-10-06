@@ -64,3 +64,36 @@ introduce, sits next to the new `dependency.*` names (FND-006).
 | FND-004 | low | FR-096 Status says "The seven-kind `LimitKind` and the setting field (FR-255) are not yet implemented." After this PR `LimitKind` has exactly the seven kinds of FR-096-AC-2, and `LimitExceeded` carries `LimitsField`. Fix: mark the seven-kind `LimitKind` as implemented. | spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md:424-425 |
 | FND-005 | low | tests.md marks TC-220 and TC-225 "Planned", and its notes say the depth-ceiling tests "are replaced when `ancestor_steps` becomes a charged edge-count limit" and when "`family_steps` becomes an edge-count work limit". This PR does both, and the TC-220 and TC-225 tests are rewritten. Fix: update both rows and both notes. | spec/tests.md:98,103,690,695 |
 | FND-006 | low | The settings are named two ways. FR-082 and FR-255's table name the type-environment settings `types.ancestor_steps` and `types.work_units`, and the model's `normalization.*`. FR-277's spec.md row and the code (`LimitsField::as_str`) say `environment.*` and `model.*`, so `LimitExceeded` names a setting FR-255 does not list. This PR did not cause it; it adds `dependency.*`, which matches FR-255. Fix: pick one spelling in FR-255 and FR-277 and make `LimitsField` follow it, in the FR-255 owner's change. | spec/functional/FR-082-resolve-conformance-subsetting-and-redefinition.md:146-147; spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md:61-62; qsl-foundation/src/diagnostic/stage.rs:130-138 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | FR-099 Behavior says the compile "SHALL wrap every other refusal raised while resolving or compiling a library as `CompileRefusal::Dependency { path, refusal }`". After this round a reached dependency limit is a located `CompileRefusal::Limit`: the lifecycle turns every `StageFailure::Limit` into one (FR-277), and the locus is the library's import, with no library path. The tests assert the located form, which satisfies AC-7's "at test/b's import of test/c", but the Behavior text says otherwise. Fix: add reached limits to the unwrapped list in FR-099 Behavior ("a reached limit is reported as a `LimitExceeded` located at the import that charged it"). | spec/functional/FR-099-compile-against-supplied-libraries.md (Behavior, wrapping bullet); qsl-replay/src/spine/dependency_tests.rs:509-521 |
+
+## Dispositions
+
+Round 1, reviewed at 43053adeb4dcd40c4d7956f17a4135b75a73cfee (spec edits in
+21f63b513).
+
+- **FND-001:** the FR-277 row lists `dependency.*` and drops the
+  `dependencies.depth` clause. The TC-758 row names the three dependency
+  fields.
+- **FND-002:** FR-099 Status says AC-1 to AC-7 pass and describes
+  `DependencyLimits`. TC-446 reads "Steps 1 to 8 pass locally".
+- **FND-003:** the "Remaining work: the `depth` field" item is gone.
+- **FND-004:** FR-096 Status records the seven-kind `LimitKind` and the
+  `LimitsField` setting name.
+- **FND-005:** TC-220 and TC-225 are passed, and their notes list the backing
+  tests.
+- **FND-006:** FR-255 and FR-082 now spell `environment.*` and `model.*`,
+  matching FR-277 and `LimitsField`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 21f63b513 |
+| FND-002 | fixed | 21f63b513 |
+| FND-003 | fixed | 21f63b513 |
+| FND-004 | fixed | 21f63b513 |
+| FND-005 | fixed | 21f63b513 |
+| FND-006 | fixed | 21f63b513 |

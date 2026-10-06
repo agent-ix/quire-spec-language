@@ -177,6 +177,12 @@ pub enum AssemblyCause {
     /// A nominal preimage's identity encoding reached the
     /// `identity.input_bytes` limit (FR-259 Behavior 4).
     IdentityLimit(LimitExceeded),
+    /// A heap reservation for a nominal preimage's canonical bytes failed
+    /// (FR-259 Behavior 6): `resource_exhausted`/`allocation-failed`.
+    IdentityAllocation {
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
@@ -335,6 +341,7 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => Code::RuntimeInvariant,
             },
             Self::TypeLimit(_) | Self::IdentityLimit(_) => Code::StageLimitExceeded,
+            Self::IdentityAllocation { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
         }
     }
@@ -345,6 +352,7 @@ impl AssemblyCause {
         match refusal {
             NominalRefusal::Graph(invalid) => Self::NominalAdmission(invalid),
             NominalRefusal::Limit(limit) => Self::IdentityLimit(limit),
+            NominalRefusal::Allocation { requested } => Self::IdentityAllocation { requested },
         }
     }
 
@@ -389,6 +397,7 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => "established-invariant-broken",
             },
             Self::TypeLimit(limit) | Self::IdentityLimit(limit) => limit.kind().catalog_cause(),
+            Self::IdentityAllocation { .. } => "allocation-failed",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
         };
         CatalogCode::new(self.code().as_str(), cause)

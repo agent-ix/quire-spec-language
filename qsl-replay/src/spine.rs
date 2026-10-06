@@ -389,6 +389,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::InvalidTypeDeclaration(_) => {
             "the records and tuples are not an admitted declaration set".to_owned()
         }
+        AssemblyCause::IdentityAllocation { requested } => {
+            format!("an identity preimage could not reserve {requested} bytes of memory")
+        }
         AssemblyCause::TypeLimit(limit) | AssemblyCause::IdentityLimit(limit) => format!(
             "{} (bound {}, reached {})",
             limit.kind().catalog_cause(),

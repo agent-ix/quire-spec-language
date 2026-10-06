@@ -213,6 +213,14 @@ pub enum NominalRefusal {
     /// (FR-259 Behavior 4): a stage limit, never a malformed value.
     #[error("stage_limit_exceeded: {0:?}")]
     Limit(LimitExceeded),
+    /// A heap reservation for the preimage's canonical bytes failed
+    /// (FR-259 Behavior 6): `resource_exhausted`/`allocation-failed`, no
+    /// limit and no setting.
+    #[error("resource_exhausted/allocation-failed: {requested} bytes")]
+    Allocation {
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
 }
 
 /// The `identity.input_bytes` stage limit an identity encoding reached:
@@ -223,16 +231,15 @@ pub fn identity_limit(bound: u64, required: u64) -> LimitExceeded {
 }
 
 /// A nominal preimage's encoding error: the byte error as the
-/// `identity.input_bytes` limit, and anything else as a non-canonical
-/// preimage.
+/// `identity.input_bytes` limit, a failed reservation as allocation-failed,
+/// and anything else as a non-canonical preimage.
 fn nominal_refusal(error: quire_canonical::Error) -> NominalRefusal {
     match IdentityRefusal::from(error) {
         IdentityRefusal::InputBytes { bound, required } => {
             NominalRefusal::Limit(identity_limit(bound, required))
         }
-        IdentityRefusal::Allocation { .. } | IdentityRefusal::NonCanonical => {
-            refuse(SemanticGraphCause::NonCanonicalPreimage).into()
-        }
+        IdentityRefusal::Allocation { requested } => NominalRefusal::Allocation { requested },
+        IdentityRefusal::NonCanonical => refuse(SemanticGraphCause::NonCanonicalPreimage).into(),
     }
 }
 
@@ -302,6 +309,11 @@ mod tests {
         assert!(
             preimage_digest(&"a").is_ok(),
             "a short preimage has a digest"
+        );
+        assert_eq!(
+            nominal_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
+            NominalRefusal::Allocation { requested: 4096 },
+            "a failed reservation is allocation-failed, not non-canonical"
         );
     }
 }

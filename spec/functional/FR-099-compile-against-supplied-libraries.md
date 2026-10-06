@@ -101,7 +101,9 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   limits resolves (ADR-030 D-1).
 - The top-level compile SHALL report the dependency-input and cycle
   refusals unwrapped wherever in the closure they arise, the cycle at the
-  identity string of the import that closes it.
+  identity string of the import that closes it. It SHALL likewise report a
+  reached limit unwrapped, as a `LimitExceeded` (FR-277) located at the
+  import that charged it, with no library path.
 - The compile SHALL wrap every other refusal raised while resolving or
   compiling a library as `CompileRefusal::Dependency { path, refusal }`,
   carrying the library's own stage and a region in the library's source.
