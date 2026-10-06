@@ -36,6 +36,7 @@ mod admission_corpus;
 mod deep_bodies;
 mod golden;
 mod identity_depth;
+mod owners;
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
@@ -406,6 +407,14 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
 /// structural preimage under owner (`a`, `u`), rebuilt by the test from the
 /// wire alone. `group` is the node's recursion group in graph order.
 fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
+    sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
+}
+
+/// The preimage [`rebuilt_key`] hashes. With `labelled` false, a recursion
+/// group member's preimage omits `recursion.group`: its group-local form,
+/// whose digests the group label hashes. The owner is read from the wire
+/// node's own `owner` member, never from the owner the checked unit carries.
+pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -> Value {
     let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
     let in_group = |term: &Value| -> Value {
         fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
@@ -438,7 +447,7 @@ fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
     let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
     let recursion = node.get("recursion_group").map(|label| {
         let position = ordinal(&node["node_id"]).unwrap();
-        if application {
+        if application || !labelled {
             json!({"ordinal": position, "size": group.len()})
         } else {
             json!({"group": label, "ordinal": position, "size": group.len()})
@@ -461,10 +470,12 @@ fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
         "recursion": recursion.unwrap_or(Value::Null),
         "body": body,
     });
-    if !application && !declaration.is_null() {
-        preimage["owner"] = json!({"kind": "source", "authority": "a", "identity": "u"});
+    if !application {
+        if let Some(owner) = node.get("owner") {
+            preimage["owner"] = owner.clone();
+        }
     }
-    sha256_hex(&jcs(&preimage))
+    preimage
 }
 
 /// Each node with the members of its recursion group in graph order.

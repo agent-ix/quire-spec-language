@@ -74,7 +74,7 @@ use quire_canonical::{Encode, Sink, Writer};
 use quire_contract_model::{
     CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
     CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
     CheckedRational, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
@@ -85,7 +85,9 @@ use quire_contract_model::{
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
-use qsl_semantics::check::{BodyTerm, CheckedGraph, LeafTerm, NodeTag, NominalNode, SemanticNode};
+use qsl_semantics::check::{
+    BodyTerm, CheckedGraph, LeafTerm, NodeTag, NominalNode, Owner, SemanticNode,
+};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
@@ -465,8 +467,24 @@ impl<'g> Candidate<'g> {
                     .map(|segment| segment.as_str().into())
                     .collect(),
             }),
+            owner: node.owner().map(wire_owner),
             body: node.wire_body().map_err(encoding)?,
         })
+    }
+}
+
+/// A structural node's `owner` as the v2 wire writes it (FR-093): exactly the
+/// owner its `quire.structural-node/v1` preimage carries.
+fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
+    match owner {
+        Owner::Source(subject) => CheckedNodeOwner::Source {
+            authority: subject.authority().into(),
+            identity: subject.identity().into(),
+        },
+        Owner::Model(subject) => CheckedNodeOwner::Model {
+            identity: subject.identity().into(),
+            node: subject.node().into(),
+        },
     }
 }
 
