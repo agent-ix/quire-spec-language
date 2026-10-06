@@ -1139,7 +1139,15 @@ impl<'c> Mapping<'c> {
             [Item::Token(token), Item::Node(operand)] => {
                 let shape = match token.spelling() {
                     b"not" => Shape::Not,
-                    b"-" => Shape::Negate,
+                    b"-" => {
+                        if self.is_directly_negated_two_pow_127(operand)? {
+                            // FR-091: `-170141183460469231731687303715884105728`
+                            // is the one literal `i128::MIN`, as Rust folds
+                            // `-128i8`.
+                            return self.leaf(Shape::Integer(Integer::from(i128::MIN)), &task);
+                        }
+                        Shape::Negate
+                    }
                     _ => return Err(unexpected(node)),
                 };
                 self.with_children(shape, &task, vec![*operand])
@@ -1150,6 +1158,20 @@ impl<'c> Mapping<'c> {
             }
             _ => Err(unexpected(node)),
         }
+    }
+
+    /// Whether `operand`, the operand of a unary `-`, is exactly one integer
+    /// literal token of value 2^127: nothing but layout stands between the
+    /// `-` and the literal, and no parenthesis, operator or other token
+    /// stands in it (FR-091 "directly negated").
+    fn is_directly_negated_two_pow_127(&self, operand: &CstNode) -> Result<bool, FormsRefusal> {
+        let [token] = significant_tokens(self.cst, operand).as_slice() else {
+            return Ok(false);
+        };
+        if token.kind() != TokenKind::Integer {
+            return Ok(false);
+        }
+        Ok(integer(&text(token, operand)?, operand)? == Integer::from(i128::MIN).neg())
     }
 
     /// `primary(.member)*`: a left-nested chain of `Field` nodes. Indexing

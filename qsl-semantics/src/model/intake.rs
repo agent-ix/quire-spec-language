@@ -2289,8 +2289,8 @@ fn read_value_type(
         ));
     }
     let constraints = ctx.array_field("constraints")?;
-    let mut lower: Option<i64> = None;
-    let mut upper: Option<i64> = None;
+    let mut lower: Option<i128> = None;
+    let mut upper: Option<i128> = None;
     for (position, constraint) in constraints.iter().enumerate() {
         let constraint_at = format!("{at}.constraints[{position}]");
         let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
@@ -2309,12 +2309,13 @@ fn read_value_type(
         if slot.is_some() {
             return Err(constraint_ctx.malformed(format!("keyword: {keyword:?} is declared twice")));
         }
-        let value = constraint
+        let operand = constraint
             .get("operands")
             .and_then(|operands| operands.get("value"))
-            .and_then(Value::as_i64)
             .ok_or_else(|| constraint_ctx.malformed("operands.value: missing or not an integer"))?;
-        *slot = Some(value);
+        *slot = Some(bound_operand(operand).map_err(|reason| {
+            constraint_ctx.malformed(format!("keyword {keyword:?}: operands.value {reason}"))
+        })?);
     }
     let (lower, upper) = match (lower, upper) {
         (Some(lower), Some(upper)) => (lower, upper),
@@ -2349,6 +2350,26 @@ fn read_value_type(
         lower,
         upper,
     })
+}
+
+/// A scalar bound operand: a JSON integer (the read already refuses one
+/// beyond +/-2^53 as inexact) or a canonical decimal string, either exact in
+/// `i128::MIN..=i128::MAX` (FR-056). `Err` names why it is not.
+fn bound_operand(operand: &Value) -> Result<i128, String> {
+    if let Some(number) = operand.as_i64() {
+        return Ok(i128::from(number));
+    }
+    let Some(text) = operand.as_str() else {
+        return Err("is missing or not an integer".to_owned());
+    };
+    // Canonical: no sign but `-`, no leading zero, no `-0`; so it prints
+    // back as it was written.
+    match text.parse::<i128>() {
+        Ok(value) if value.to_string() == text => Ok(value),
+        Ok(_) | Err(_) => Err(format!(
+            "{text:?} is not a canonical decimal integer in i128::MIN..=i128::MAX"
+        )),
+    }
 }
 
 fn read_component(

@@ -137,7 +137,7 @@ pub use lowering::{
 };
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameField, FrameTerm,
-    GroupMember, GroupTerm, IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole,
+    GroupMember, GroupTerm, InvalidModelOwner, InvalidSourceOwner, LawRole,
     LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag,
     Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
     SourceOwner, TupleMember, TupleTerm, WireNodeRef,
@@ -188,7 +188,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use type_form::TypeFormFault;
+pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
 // identity directly. `mint_variant_id` itself has since moved to

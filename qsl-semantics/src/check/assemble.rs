@@ -1091,6 +1091,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         },
         fault @ (TypeFormFault::Malformed
         | TypeFormFault::EmptyInterval
+        | TypeFormFault::IntegerOutsideI128(_)
         | TypeFormFault::DenominatorBelowOne
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
