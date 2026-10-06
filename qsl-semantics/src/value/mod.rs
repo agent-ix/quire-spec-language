@@ -121,6 +121,7 @@
 // `numeric` and `text` are deleted; their former items are imported from `quire_exact`
 // directly.
 
+pub(crate) mod counter;
 pub(crate) mod definition;
 mod diagnostics_catalog;
 pub mod enumeration;

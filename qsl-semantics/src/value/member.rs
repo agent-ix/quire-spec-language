@@ -18,6 +18,7 @@
 //! `quire-exact::identity` landed in S-1 ahead of the checker that will use
 //! them, with tests as their only caller until then.
 
+use super::counter::Counter;
 use quire_canonical::FixedShape;
 use serde::Serialize;
 
@@ -148,7 +149,7 @@ impl Member {
                 position,
             } => MemberWire::Position {
                 declaration: declaration_wire(declaration),
-                position: *position,
+                position: Counter::new(*position),
             },
             Self::Element { declaration } => MemberWire::Element {
                 declaration: declaration_wire(declaration),
@@ -184,7 +185,7 @@ enum MemberWire<'a> {
     },
     Position {
         declaration: DeclarationWire,
-        position: u64,
+        position: Counter,
     },
     Element {
         declaration: DeclarationWire,
