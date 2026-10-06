@@ -9,6 +9,7 @@ use qsl_foundation::{Source, SourceIdentity};
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
 };
+use quire_spec_language::syntax::composed::NativeUnit;
 use quire_spec_language::{parse, parse_native_source, Limits};
 use std::process::Command;
 
@@ -80,11 +81,18 @@ fn parses_composed(text: String, min_expressions: usize) {
                 .expect("the deep source reads");
             let unit = parse_native_source(source, raised())
                 .expect("the deep source parses under raised limits");
-            assert_eq!(unit.declarations().len(), 1, "one invariant declaration");
+            let NativeUnit::Composed(composed) = &unit else {
+                panic!("the composed edition parses to a composed unit");
+            };
+            assert_eq!(
+                composed.declarations().len(),
+                1,
+                "one invariant declaration"
+            );
             assert!(
-                unit.expressions().len() >= min_expressions,
+                composed.expressions().len() >= min_expressions,
                 "{} expressions, expected at least {min_expressions}",
-                unit.expressions().len()
+                composed.expressions().len()
             );
             drop(unit);
         })
@@ -221,7 +229,7 @@ fn cli_parse_takes_caller_limits() {
             .expect("run quire-spec")
     };
     let refused = parse(&[]);
-    assert_eq!(refused.status.code(), Some(20));
+    assert_eq!(refused.status.code(), Some(22));
     assert!(
         String::from_utf8_lossy(&refused.stderr).contains("resource_exhausted"),
         "{}",
