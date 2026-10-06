@@ -213,9 +213,7 @@ impl Solver<'_, '_, '_, '_> {
                 Some(value)
             }
         });
-        if !parsed.is_some_and(|value| {
-            value >= i128::from(domain.minimum()) && value <= i128::from(domain.maximum())
-        }) {
+        if !parsed.is_some_and(|value| value >= domain.minimum() && value <= domain.maximum()) {
             self.cause(at, CauseKind::LiteralDomain)?;
         }
         Ok(())
