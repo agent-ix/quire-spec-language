@@ -38,6 +38,7 @@ mod compile;
     reason = "the zone certificate checker is its first caller and has not landed yet"
 )]
 mod certificate;
+mod composite;
 mod execute;
 mod identity;
 mod limits;
@@ -55,17 +56,26 @@ pub use call_site::{
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
 pub use compile::{compile_package, CompiledPackage};
+pub use composite::{
+    CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
+    CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,
+    NativeParityObservation, Refinement, VerifiedShadow, VerifiedShadowReport,
+    VerifiedShadowResult,
+};
 pub use execute::{
-    parity_obligation, replay, replay_frame, replay_operator_parity, replay_value_parity,
-    BoundEntries, DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
-    IdentityEncodeError, LimitAboveReader, ParityArgument, ParityPreimage, ReplayRefusal,
-    ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
+    parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
+    replay_value_parity, settle_verified_shadow, BoundEntries, DependencySelectionsCause, Domain,
+    FrameIdentityMismatch, FrameReplayResult, IdentityEncodeError, LimitAboveReader,
+    ParityArgument, ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch,
+    ValueParityReport, ValueParityResult,
 };
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
 };
 pub use limits::CallerLimits;
+// The equality operator a composite parity claim names (FR-358).
+pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
@@ -130,7 +140,7 @@ pub use quire_semantic_value::call::InputRefusal;
 pub use qsl_foundation::bound::{
     DomainKey, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
 };
-pub use quire_exact::{EmptyInterval, Integer, IntegerInterval};
+pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
     ReplayRequestWire, StageLimits, StateEnvironment,
@@ -152,9 +162,10 @@ pub use scalar::{
     ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueIdentity,
 };
 pub use witness::{
-    CanonicalAssignment, ClaimedChange, DecodeRefusal, FamilyPayload, FrameCounterexample,
-    FrameOperation, MalformedTranscript, NoPayload, ReplaySource, Witness, WitnessBinding,
-    WitnessEnvelope, WitnessPacket, WitnessRefusal, WitnessValue, WitnessValueType,
+    CanonicalAssignment, ClaimedChange, DecodeRefusal, EntryFault, FamilyPayload,
+    FrameCounterexample, FrameOperation, MalformedTranscript, NoPayload, QuantityMagnitude,
+    ReplaySource, ValueTextError, Witness, WitnessBinding, WitnessEnvelope, WitnessField,
+    WitnessPacket, WitnessRefusal, WitnessSlot, WitnessValue, WitnessValueType,
 };
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
@@ -240,6 +251,7 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
@@ -279,6 +291,7 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),

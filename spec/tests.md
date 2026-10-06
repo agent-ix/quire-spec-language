@@ -527,13 +527,16 @@ names different artifacts in each.
 | TC-733 | Library preimage and observation reads judge deep documents on their content | Integration | P1 | FR-261-AC-1, FR-261-AC-2, FR-261-AC-3 | 🚧 Planned |
 | TC-734 | A 100,000-deep recursive call completes on work fuel | Unit | P1 | FR-262-AC-1 | 🚧 Planned |
 | TC-735 | Deep values and value types evaluate, key, compare, clone and drop | Unit | P1 | FR-262-AC-2 | 🚧 Planned |
-| TC-736 | A deep source and value replay to the proving run's verdict | Integration | P1 | FR-263-AC-1 | 🚧 Planned |
+| TC-736 | A deep source and value replay to the proving run's verdict | Integration | P1 | FR-263-AC-1, FR-070-AC-10 | ✅ Passed locally |
 | TC-737 | Replay passes every stage limit through and names the setting it reached | Integration | P1 | FR-263-AC-2, FR-263-AC-3 | 🚧 Planned |
 | TC-738 | A deep package emits, reads back and verifies, in the stratified grammar | Integration | P1 | FR-264-AC-1, FR-264-AC-2 | 🚧 Planned |
 | TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4, FR-264-AC-5 | 🚧 Planned |
 | TC-902 | Core entry points and maybe_grow sites run 100,000 deep on a small stack | Unit | P1 | FR-356-AC-5, FR-356-AC-6 | 🚧 Planned |
 | TC-903 | A deep-input fuzz target drives the parser and the checker | Property | P1 | FR-356-AC-7 | 🚧 Planned |
 | TC-904 | Scalar-parity claims replay to diverged, agrees, refused and faulted outcomes, and never to Refuted | Unit | P1 | FR-357-AC-1, FR-357-AC-2, FR-357-AC-3, FR-357-AC-4, FR-357-AC-5, FR-357-AC-6, FR-357-AC-7, FR-357-AC-8, FR-357-AC-9, FR-357-AC-10, FR-357-AC-11, FR-357-AC-13, FR-357-AC-14, FR-357-AC-15, FR-357-AC-16, FR-357-AC-17, FR-357-AC-18, FR-357-AC-19 | ✅ Passed locally |
+| TC-905 | A witness value text decodes exactly for every composite and leaf family, and each malformed form refuses | Unit | P1 | FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12 | ✅ Passed locally |
+| TC-906 | Composite and leaf-family arguments replay, and refuse by kind, by domain and at the request's limits | Unit | P1 | FR-098-AC-8, FR-098-AC-9, FR-098-AC-10 | 🚧 Passed locally except the union cases (QSL-503) and a quantity-typed parameter in source (STD-113) |
+| TC-907 | A composite equality-parity claim settles Diverged, Agrees or refused when falsified, and by rows V-1 to V-5 when verified | Unit | P1 | FR-358-AC-1, FR-358-AC-2, FR-358-AC-3, FR-358-AC-4, FR-358-AC-5, FR-358-AC-6, FR-358-AC-7, FR-358-AC-8 | 🚧 Passed locally except the `Text` leaf (QSL-646) and the source-level `k` cases (tested on the derivation seam) |
 | TC-908 | The replay facade compiles QSL source to the checked-package bytes the spine emits | Integration | P2 | FR-060-AC-5, FR-060-AC-6, FR-060-AC-7 | ✅ Passed locally |
 | TC-909 | Integer bounds and literals up to i128 check, and one beyond refuses at check | Unit | P1 | FR-091-AC-36, FR-091-AC-37, FR-091-AC-38 | ✅ Passed locally |
 | TC-910 | Wide integer ranges key to their vectors, and counters keep one exact spelling | Unit | P1 | FR-092-AC-14, FR-092-AC-15 | ✅ Passed locally; step 3 reads QSpec's `integer_encoding_vectors` under `QSPEC_DIR` (`make conformance`) |

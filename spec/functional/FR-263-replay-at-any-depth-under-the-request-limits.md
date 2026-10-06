@@ -56,7 +56,7 @@ request (ADR-030 D-4.8, D-3).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-263-AC-1 | On a thread with a 512 KiB stack, a request whose source holds a function with a 100,000-term sum over a recursive list parameter, whose assignment carries a 100,000-long recursive list value, and whose `stage_limits` carries the proving run's raised `s1.*` and `s3.*` settings, replays to the same verdict as the proving run, and its recompiled `package_id` equals the request's. | Test (TC-736) |
+| FR-263-AC-1 | On a thread with a 512 KiB stack, a request whose source holds a function with a 100,000-term sum over a recursive list parameter, whose assignment carries a 100,000-long recursive list value, whose `stage_limits` carries the proving run's raised `s1.*` and `s3.*` settings, and whose `replay.input_bytes` is raised to fit the request, replays to the same verdict as the proving run, and its recompiled `package_id` equals the request's. | Test (TC-736) |
 | FR-263-AC-2 | For each `s1.*` and `s3.*` setting of FR-255's table, a request whose source reaches that limit at the bound its `stage_limits` entry gives refuses with the recompile stage-limit refusal naming the limit, the bound, the count reached and that setting; the same request with that entry raised to fit recompiles. A request with no `stage_limits` entries recompiles at the published defaults. | Test (TC-737) |
 | FR-263-AC-3 | A request whose `stage_limits` holds an entry `s9.nodes`, or an entry `replay.input_bytes`, refuses at decode naming the entry. A request one byte longer than `replay.input_bytes` at bound `B` refuses with `BoundExceeded`, bound `B`, actual `B + 1` and setting `replay.input_bytes`, and decodes once the library replay entry's limit or FR-255's settings operation given `replay.input_bytes=<B + 1>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1) raises it. | Test (TC-737) |
 
@@ -77,8 +77,17 @@ request (ADR-030 D-4.8, D-3).
 
 ## Status
 
-- FR-263-AC-1: moved to QSL-640 (composite `WitnessValue`): a 100,000-long
-  recursive list value cannot be carried by the scalar `WitnessValue`.
+Specified. FR-263-AC-1 (TC-736) moved from B5 (QSL-486) to QSL-640: a
+recursive list assignment needs the composite `WitnessValue` of
+[FR-070](FR-070-implement-typed-counterexample-witness-envelope.md) and
+[FR-098](FR-098-execute-a-replay-request.md), and the request's accounting
+limits must fit its occurrence and node counts (FR-098-AC-9). FR-263-AC-1
+(a 100,000-term source and a 100,000-long list replayed under raised `s1.*`,
+`s3.*` and `replay.input_bytes` on a 512 KiB stack) passes locally, and
+Behaviors 1 and 2 are implemented for the S1, S3, type-environment and
+model-normalization settings, as B5 (QSL-486) implemented them
+(`StageLimits` is the setting-keyed map; an entry naming no setting, or
+`replay.input_bytes`, refuses at decode).
 
 ## References
 

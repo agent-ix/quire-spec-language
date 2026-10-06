@@ -789,6 +789,7 @@ mod tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(u64::MAX),
             stage_limits: std::collections::BTreeMap::new(),
+            declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),

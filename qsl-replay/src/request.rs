@@ -16,7 +16,8 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef, SourceDigestWire,
+    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+    SourceDigestWire,
 };
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
@@ -187,6 +188,7 @@ pub struct ReplayRequest {
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
+    declared_domains: Vec<DeclaredDomain>,
     byte_provision: ByteProvision,
 }
 
@@ -243,6 +245,11 @@ impl ReplayRequest {
     pub fn stage_limits(&self) -> &StageLimits {
         &self.stage_limits
     }
+    /// The declared domains of the proving run: the caller-substituted
+    /// ADR-014 B-4 bounds the obligation was proved over (FR-071).
+    pub fn declared_domains(&self) -> &[DeclaredDomain] {
+        &self.declared_domains
+    }
     /// The digest-addressed byte provision. The only way to reach a
     /// recompilation input's bytes (FR-071-AC-2).
     pub fn byte_provision(&self) -> &ByteProvision {
@@ -255,6 +262,7 @@ impl ReplayRequest {
 /// `replay`) plus the QC-1 byte provision. It is never read from bytes, so
 /// it carries no contract version or vocabulary member: the version check
 /// belongs to a byte reader, and none exists yet.
+#[derive(Clone)]
 pub struct ReplayRequestWire {
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
@@ -285,6 +293,9 @@ pub struct ReplayRequestWire {
     /// to bound. Decode refuses a name that is no setting of the table, and
     /// `replay.input_bytes`.
     pub stage_limits: BTreeMap<String, u64>,
+    /// The declared domains of the proving run: the caller-substituted
+    /// ADR-014 B-4 bounds the obligation was proved over.
+    pub declared_domains: Vec<DeclaredDomain>,
     /// `(digest domain, digest hex, raw bytes)` per entry.
     pub byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
 }
@@ -562,6 +573,11 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .iter()
             .map(|(_, hex, bytes)| hex.len() + bytes.len())
             .sum::<usize>()
+        + wire
+            .declared_domains
+            .iter()
+            .map(|declared| crate::witness::finite_bound_bytes(declared.bound()))
+            .sum::<usize>()
         + wire.source.measured_bytes()
 }
 
@@ -697,6 +713,7 @@ impl ReplayRequest {
             state_environment: wire.state_environment,
             accounting_limits: wire.accounting_limits,
             stage_limits,
+            declared_domains: wire.declared_domains,
             byte_provision,
         })
     }
@@ -735,6 +752,7 @@ impl ReplayRequest {
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
+            declared_domains: self.declared_domains.clone(),
             byte_provision: self
                 .byte_provision
                 .0
@@ -820,6 +838,7 @@ mod tests {
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
             stage_limits: stage_limits(stage_seed),
+            declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),

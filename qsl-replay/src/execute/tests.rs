@@ -20,6 +20,9 @@ use crate::scalar::ScalarOutcome;
 use crate::spine::{compose, ComposedUnit, SpineLimits, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
+mod composite;
+mod composite_parity;
+
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
 
 /// The proved unit: `small` is the predicate a counterexample refutes.
@@ -132,6 +135,7 @@ fn request(
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: UNLIMITED,
         stage_limits: BTreeMap::new(),
+        declared_domains: Vec::new(),
         byte_provision: vec![(
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             digest.hex(),
@@ -1658,6 +1662,26 @@ fn one_over(denominator: i64) -> ScalarOutcome {
     ))
 }
 
+/// `replay.input_bytes` is the caller's on the value entry: an S1 limit above
+/// the default refuses `LimitAboveReader` under the default and settles once
+/// the caller raises the bound.
+#[trace("TC-904", "FR-357-AC-10")]
+#[test]
+fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses_for_a_value() {
+    let mut wire = parity("inc", 3);
+    let above = crate::DEFAULT_REPLAY_INPUT_BYTES * 2;
+    wire.stage_limits.insert("s1.input_bytes".to_owned(), above);
+    let report = replay_value_parity(wire.clone(), integer(4), ReplayLimits::default());
+    assert!(matches!(
+        report.result(),
+        ValueParityResult::Refused(refusal)
+            if matches!(**refusal, ReplayRefusal::LimitAboveReader(_))
+    ));
+    let raised = ReplayLimits::default().with_input_bytes(above);
+    let report = replay_value_parity(wire, integer(4), raised);
+    assert!(matches!(report.result(), ValueParityResult::Agrees { .. }));
+}
+
 /// FR-357-AC-1: an integer function whose generated value differs from
 /// QSL's `f(b)`, and one whose generated value stands where QSL's outcome is
 /// out of range, each settle `Diverged` with both outcomes and the
@@ -1665,7 +1689,7 @@ fn one_over(denominator: i64) -> ScalarOutcome {
 #[trace("TC-904", "FR-357-AC-1")]
 #[test]
 fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
-    let report = replay_value_parity(parity("inc", 3), integer(5));
+    let report = replay_value_parity(parity("inc", 3), integer(5), ReplayLimits::default());
     let ValueParityResult::Diverged {
         qsl,
         generated,
@@ -1678,7 +1702,11 @@ fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
     assert!(generated.same_as(&integer(5)), "{generated:?}");
     assert!(charges.work_units > 0);
 
-    let report = replay_value_parity(parity("inc", 3), ScalarOutcome::OutOfRange);
+    let report = replay_value_parity(
+        parity("inc", 3),
+        ScalarOutcome::OutOfRange,
+        ReplayLimits::default(),
+    );
     let ValueParityResult::Diverged { qsl, .. } = report.result() else {
         panic!("inc(3) is a value, not out of range");
     };
@@ -1690,7 +1718,7 @@ fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-1")]
 #[test]
 fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
-    let report = replay_value_parity(parity("inv", 2), one_over(3));
+    let report = replay_value_parity(parity("inv", 2), one_over(3), ReplayLimits::default());
     let ValueParityResult::Diverged { qsl, generated, .. } = report.result() else {
         panic!("inv(2) is 1/2, not 1/3");
     };
@@ -1702,7 +1730,7 @@ fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-2")]
 #[test]
 fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
-    let report = replay_value_parity(parity("inc", 3), integer(4));
+    let report = replay_value_parity(parity("inc", 3), integer(4), ReplayLimits::default());
     let ValueParityResult::Agrees { agreement, .. } = report.result() else {
         panic!("inc(3) is 4");
     };
@@ -1714,7 +1742,7 @@ fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-2")]
 #[test]
 fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
-    let report = replay_value_parity(parity("inv", 2), one_over(2));
+    let report = replay_value_parity(parity("inv", 2), one_over(2), ReplayLimits::default());
     let ValueParityResult::Agrees { agreement, .. } = report.result() else {
         panic!("inv(2) is 1/2");
     };
@@ -1729,7 +1757,7 @@ fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
 #[test]
 fn tc_904_bindings_that_fail_admission_are_refused_input() {
     for (function, outcome) in [("inc", integer(13)), ("inv", one_over(12))] {
-        let report = replay_value_parity(parity(function, 12), outcome);
+        let report = replay_value_parity(parity(function, 12), outcome, ReplayLimits::default());
         let result = report.result();
         assert!(
             matches!(
@@ -1743,6 +1771,7 @@ fn tc_904_bindings_that_fail_admission_are_refused_input() {
                 typed_input(parameter, WitnessValue::Boolean(true))
             }),
             integer(0),
+            ReplayLimits::default(),
         );
         let result = report.result();
         assert!(
@@ -1764,7 +1793,11 @@ fn tc_904_only_the_declared_parameters_are_bound() {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
     let other = parameter(&compiled, "inv", 0);
-    let stray = replay_value_parity(parity_request("inc", |_| input(other, 3)), integer(4));
+    let stray = replay_value_parity(
+        parity_request("inc", |_| input(other, 3)),
+        integer(4),
+        ReplayLimits::default(),
+    );
     assert!(
         matches!(stray.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnknownParameter(node) if node == other)),
         "{stray:?}"
@@ -1772,6 +1805,7 @@ fn tc_904_only_the_declared_parameters_are_bound() {
     let unbound = replay_value_parity(
         parity_request("inc", |_| ReplaySource::Input(Vec::new())),
         integer(4),
+        ReplayLimits::default(),
     );
     assert!(
         matches!(unbound.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnboundParameter(_))),
@@ -1787,6 +1821,7 @@ fn tc_904_a_boolean_function_has_no_value_parity_replay() {
     let refused = replay_value_parity(
         parity("small", 3),
         ScalarOutcome::Value(Value::Boolean(true)),
+        ReplayLimits::default(),
     );
     assert!(
         matches!(refused.result(), ValueParityResult::Refused(refusal) if matches!(&**refusal, ReplayRefusal::NotAValueFunction { selection, .. } if selection == &name(&["small"]))),
@@ -1821,7 +1856,7 @@ fn tc_904_a_starved_function_evaluation_is_incomplete() {
         work_units: 0,
         ..UNLIMITED
     };
-    let report = replay_value_parity(starved, integer(4));
+    let report = replay_value_parity(starved, integer(4), ReplayLimits::default());
     assert!(
         matches!(report.result(), ValueParityResult::Incomplete(_)),
         "{report:?}"
@@ -1884,7 +1919,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
     ];
     for (wire, generated, kind) in cases {
         let sent = sent_value_claim(&wire, &generated);
-        let report = replay_value_parity(wire, generated);
+        let report = replay_value_parity(wire, generated, ReplayLimits::default());
         assert_eq!(value_kind(report.result()), kind, "{:?}", report.result());
         assert_eq!(report.claim(), &sent, "{kind}: {:?}", report.result());
     }
@@ -1896,7 +1931,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
     ] {
         assert_ne!(sent, other);
     }
-    let agrees = replay_value_parity(parity("inc", 3), integer(4));
+    let agrees = replay_value_parity(parity("inc", 3), integer(4), ReplayLimits::default());
     let ValueParityResult::Agrees { agreement, .. } = agrees.result() else {
         panic!("inc(3) is 4");
     };
@@ -2055,7 +2090,11 @@ mod operator_arm {
     fn replayed(claim: OperatorClaim) -> crate::OperatorParityReport {
         let (_, function) = site(&claim.operation);
         let expected = minted(&claim);
-        let report = crate::replay_operator_parity(wire_for(function, &claim), claim);
+        let report = crate::replay_operator_parity(
+            wire_for(function, &claim),
+            claim,
+            ReplayLimits::default(),
+        );
         assert_eq!(report.obligation(), expected);
         report
     }
@@ -2310,6 +2349,33 @@ mod operator_arm {
         );
     }
 
+    /// `replay.input_bytes` is the caller's on the operator entry: an S1
+    /// limit above the default refuses `LimitAboveReader` under the default
+    /// and passes that stage once the caller raises the bound.
+    #[trace("TC-904", "FR-357-AC-11")]
+    #[test]
+    fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses() {
+        let claim = claim_raw(WireNodeId::from_digest([7; 32]), add(1, 2), completed(3));
+        let (_, function) = site(&claim.operation);
+        let mut wire = wire_for(function, &claim);
+        let above = crate::DEFAULT_REPLAY_INPUT_BYTES * 2;
+        wire.stage_limits.insert("s1.input_bytes".to_owned(), above);
+        let report =
+            crate::replay_operator_parity(wire.clone(), claim.clone(), ReplayLimits::default());
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Refused(refusal)
+                if matches!(**refusal, ReplayRefusal::LimitAboveReader(_))
+        ));
+        let raised = ReplayLimits::default().with_input_bytes(above);
+        let report = crate::replay_operator_parity(wire, claim, raised);
+        assert!(matches!(
+            report.result(),
+            OperatorParityResult::Refused(refusal)
+                if !matches!(**refusal, ReplayRefusal::LimitAboveReader(_))
+        ));
+    }
+
     /// FR-357-AC-11: the request's obligation identity is carried unchanged
     /// into the agreement's claim identity (checked in the AC-7 test) and onto
     /// every settlement (`replayed` asserts it for each report above).
@@ -2328,7 +2394,7 @@ mod operator_arm {
         let add_claim = || claim(add(1, 2), completed(3));
         let refusal_of = |wire: ReplayRequestWire, claim: OperatorClaim| {
             let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
-            let report = crate::replay_operator_parity(wire, claim);
+            let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
             assert_eq!(report.obligation(), sent_id);
             let OperatorParityResult::Refused(refusal) = report.result() else {
                 panic!("{:?}", report.result());
@@ -2388,6 +2454,8 @@ mod operator_arm {
                 | Mismatch::OperandChild { .. }
                 | Mismatch::NotInlineLiteral { .. }
                 | Mismatch::LiteralValue { .. } => "Other",
+                Mismatch::Equality { .. } => "Other",
+                Mismatch::Operand { .. } => "Other",
             };
             assert_eq!(found, expected);
         }
@@ -2460,7 +2528,7 @@ mod operator_arm {
         for (mut wire, claim, expected_kind) in cases {
             wire.obligation_identity = *minted(&claim).as_bytes();
             let expected = sent(&claim);
-            let report = crate::replay_operator_parity(wire, claim);
+            let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
             assert_eq!(
                 kind(report.result()),
                 expected_kind,
@@ -2650,7 +2718,7 @@ mod operator_arm {
         ] {
             let wire = wire_for("inc", &minted_over);
             let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
-            let report = crate::replay_operator_parity(wire, base.clone());
+            let report = crate::replay_operator_parity(wire, base.clone(), ReplayLimits::default());
             let OperatorParityResult::Refused(refusal) = report.result() else {
                 panic!("{label}: {:?}", report.result());
             };
@@ -2688,7 +2756,7 @@ mod operator_arm {
     /// identity.
     fn refused_claim(claim: OperatorClaim) -> crate::OperatorParityReport {
         let wire = wire_for("inc", &claim);
-        crate::replay_operator_parity(wire, claim)
+        crate::replay_operator_parity(wire, claim, ReplayLimits::default())
     }
 
     /// FR-357-AC-17: the application node and its operator must be the
@@ -2860,7 +2928,7 @@ mod operator_arm {
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
         let mut wire = parity("inc", 3);
         wire.obligation_identity = [0; 32];
-        let report = crate::replay_operator_parity(wire, claim);
+        let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
         assert_eq!(kind(report.result()), "refused");
     }
 }

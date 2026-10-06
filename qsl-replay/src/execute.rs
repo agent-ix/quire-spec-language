@@ -49,21 +49,28 @@ use crate::spine::{
 use crate::witness::{
     DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
 };
+use argument::Stopped;
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::Setting;
 use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
 
+mod argument;
 mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
+mod composite_domain;
+mod composite_parity;
+mod composite_site;
 mod operator_parity;
 mod parity_identity;
 pub use parity_identity::{
     parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
 };
 mod scalar_site;
+pub use composite_domain::ParityBoundRefusal;
+pub use composite_parity::{replay_composite_parity, settle_verified_shadow};
 pub use operator_parity::{replay_operator_parity, ScalarIdentityMismatch};
 
 mod value_parity;
@@ -212,6 +219,11 @@ pub enum ReplayRefusal {
     /// operator is not the recompiled package's.
     #[error("stale_dependency/revision-mismatch: {0}")]
     ScalarIdentity(Box<ScalarIdentityMismatch>),
+    /// FR-358: a request's declared domain or a claim's harness bound does
+    /// not fit the claimed node's operands (naming the domain key), or the
+    /// operand types hold more positions than the check stage allows.
+    #[error("{0}")]
+    ParityBound(Box<ParityBoundRefusal>),
     /// FR-116: a frame counterexample's operation names no operation
     /// frame of the recompiled package.
     #[error("missing_declaration/missing-name: package {} holds no operation frame {operation}", .package.hex())]
@@ -281,6 +293,7 @@ impl ReplayRefusal {
                 Code::StaleDependency
             }
             Self::UnknownClause { .. } => Code::MissingDeclaration,
+            Self::ParityBound(refusal) => refusal.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
@@ -329,6 +342,7 @@ impl ReplayRefusal {
             | Self::Witness { .. }
             | Self::NotAPredicate { .. }
             | Self::NotAValueFunction { .. }
+            | Self::ParityBound(_)
             | Self::Fault(_) => None,
         }
     }
@@ -431,6 +445,7 @@ pub enum DependencySelectionsCause {
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
+/// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
 /// #       digest.hex(),
@@ -500,6 +515,7 @@ pub enum DependencySelectionsCause {
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
+/// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
 /// #       digest.hex(),
@@ -519,21 +535,31 @@ pub fn replay(
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
-    let arguments = arguments(
+    let joined = arguments(
         package,
         &call,
         request.source(),
         request.obligation_identity(),
     )?;
-    let mut meter = Meter::new(request.accounting_limits());
+    let limits = request.accounting_limits();
+    let converted = match argument::convert_arguments(package, &call.types, &joined, &limits) {
+        Ok(converted) => converted,
+        Err(Stopped::Refusal(refusal)) => return Err(*refusal),
+        Err(Stopped::Limit(incomplete)) => return Ok(settle_stopped(&request, *incomplete)),
+    };
+    if let Some(incomplete) = exceeded_before_call(&converted, &limits) {
+        return Ok(settle_stopped(&request, incomplete));
+    }
+    let mut meter = Meter::new(limits);
     let evaluation = package
         .call(
             &call.name,
-            arguments,
-            &ObjectEnvironment::default(),
+            converted.values,
+            &ObjectEnvironment::default().with_unresolved_references(),
             &mut meter,
         )
         .map_err(call_failure_to_replay_refusal)?;
+    let mut limit = None;
     let (replayed, value) = match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => (
             if holds {
@@ -551,7 +577,10 @@ pub fn replay(
             )));
         }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => (Category::Refusal, None),
-        FamilyOutcome::Evaluated(Outcome::Incomplete(_)) => (Category::Incomplete, None),
+        FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+            limit = Some(incomplete);
+            (Category::Incomplete, None)
+        }
         // O-16's `undefined` row is not a proof category, and a
         // family-owned result is not a kernel verdict: neither agrees.
         FamilyOutcome::Evaluated(Outcome::Undefined(_)) | FamilyOutcome::FamilyEvaluated(_) => {
@@ -569,22 +598,87 @@ pub fn replay(
             unreachable!("never constructed outside the probe build")
         }
     };
-    let proved = Verdict::from_category(Category::Violation);
     let regions = evaluation
         .location
         .as_ref()
         .and_then(|location| package.graph().region(location))
         .into_iter()
         .collect();
-    let charges = consumed(&meter);
-    Ok(match request.source() {
+    let settled = settle(&request, replayed, value, regions, consumed(&meter));
+    Ok(match limit {
+        Some(incomplete) => settled.with_limit(incomplete),
+        None => settled,
+    })
+}
+
+/// The `Incomplete` outcome of a conversion whose counts exceed a limit of
+/// the request, checked before the call (FR-098): the occurrences of each
+/// converted argument against `value_occurrences`, then the nodes converted
+/// against `work_units`, naming the counter, its configured value and the
+/// count reached. Nothing is charged to the call's meter.
+fn exceeded_before_call(
+    converted: &argument::Converted,
+    limits: &ScalarLimits,
+) -> Option<quire_exact::Incomplete> {
+    let denied = |limit_kind, limit, next_charge| quire_exact::Incomplete {
+        limit_kind,
+        limit,
+        consumed: 0,
+        next_charge,
+        charge_point: quire_exact::ChargePoint::FunctionCall,
+    };
+    if let Some(occurrences) = converted
+        .values
+        .iter()
+        .map(Value::occ)
+        .find(|occ| *occ > Integer::from(limits.value_occurrences))
+    {
+        return Some(denied(
+            LimitKind::ValueOccurrences,
+            limits.value_occurrences,
+            occurrences,
+        ));
+    }
+    (converted.nodes > limits.work_units).then(|| {
+        denied(
+            LimitKind::WorkUnits,
+            limits.work_units,
+            Integer::from(converted.nodes),
+        )
+    })
+}
+
+/// A replay that made no call because an accounting limit stopped the
+/// conversion: it settles `inconclusive` with cause `NoValue`, carrying the
+/// outcome `Incomplete` and no charges.
+fn settle_stopped(request: &ReplayRequest, incomplete: quire_exact::Incomplete) -> ReplayResult {
+    settle(
+        request,
+        Category::Incomplete,
+        None,
+        Vec::new(),
+        charges(std::iter::empty()),
+    )
+    .with_limit(incomplete)
+}
+
+/// The result on the arm of the request's replay source.
+fn settle(
+    request: &ReplayRequest,
+    replayed: Category,
+    value: Option<EvaluatedValue>,
+    regions: Vec<qsl_foundation::source::provenance::SourceRegion>,
+    charges: ScalarLimits,
+) -> ReplayResult {
+    let proved = Verdict::from_category(Category::Violation);
+    // ADR-031 SW-7: a function call's result has no decisive occurrence, so
+    // it carries no record.
+    match request.source() {
         ReplaySource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
             proved,
             Verdict::from_category(replayed),
             replayed,
             value,
-            // ADR-031 SW-7: a function call's or a frame check's result
-            // has no decisive occurrence, so it carries no record.
             WitnessCheck::Agrees(None),
             regions,
             charges,
@@ -598,7 +692,7 @@ pub fn replay(
             regions,
             charges,
         )),
-    })
+    }
 }
 
 /// FR-096-AC-15, SR-746 FND-002: a broken S6a invariant -- including a
@@ -967,10 +1061,12 @@ fn arguments(
     call: &Selected,
     source: &ReplaySource,
     obligation: ObligationIdentity,
-) -> Result<Vec<Value>, ReplayRefusal> {
+) -> Result<Vec<WitnessValue>, ReplayRefusal> {
     let values = match source {
         ReplaySource::Input(assignments) => {
-            let mut values: Vec<Option<WitnessValue>> = vec![None; call.parameters.len()];
+            let mut values: Vec<Option<WitnessValue>> = std::iter::repeat_with(|| None)
+                .take(call.parameters.len())
+                .collect();
             for assignment in assignments {
                 let position = package
                     .graph()
@@ -981,7 +1077,7 @@ fn arguments(
                 let slot = values
                     .get_mut(position)
                     .ok_or(ReplayRefusal::UnknownParameter(assignment.parameter))?;
-                if slot.replace(assignment.value).is_some() {
+                if slot.replace(assignment.value.clone()).is_some() {
                     return Err(ReplayRefusal::DuplicateArgument(assignment.parameter));
                 }
             }
@@ -1014,17 +1110,13 @@ fn arguments(
                 })?
         }
     };
-    values
-        .into_iter()
-        .zip(&call.types)
-        .enumerate()
-        .map(|(parameter, (value, value_type))| argument(parameter, value, value_type))
-        .collect()
+    Ok(values)
 }
 
 /// The witness type a parameter of `value_type` is read as: `Boolean` for
-/// `Boolean`, `I128` for an integer type. A type no witness value is a value
-/// of refuses `WrongValueKind` before the call.
+/// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
+/// text) for every other value type. A `Population<T>` is not a value, so it
+/// has no witness form and refuses `WrongValueKind` before the call.
 fn witness_type(
     parameter: usize,
     value_type: &ValueType,
@@ -1041,33 +1133,10 @@ fn witness_type(
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_)
-        | ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+        | ValueType::Reference(_) => Ok(WitnessValueType::Canonical),
+        ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
             parameter,
         })),
-    }
-}
-
-/// A typed argument value as a value of its parameter's declared type: a
-/// Boolean for `Boolean`, and an integer, widened without loss, for an
-/// integer type. Any other pairing refuses `WrongValueKind` before the call
-/// -- the refusal S6a admission gives an argument of the wrong kind.
-fn argument(
-    parameter: usize,
-    value: WitnessValue,
-    value_type: &ValueType,
-) -> Result<Value, ReplayRefusal> {
-    match (witness_type(parameter, value_type)?, value) {
-        (WitnessValueType::Boolean, WitnessValue::Boolean(value)) => Ok(Value::Boolean(value)),
-        (WitnessValueType::I128, WitnessValue::Integer(value)) => {
-            Ok(Value::Integer(Integer::from(value)))
-        }
-        (WitnessValueType::Boolean, WitnessValue::Integer(_))
-        | (WitnessValueType::I128, WitnessValue::Boolean(_)) => {
-            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-                parameter,
-            }))
-        }
     }
 }
 

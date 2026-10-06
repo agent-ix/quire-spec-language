@@ -13,6 +13,7 @@
 use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::library::PackageId;
 use quire_exact::Origin;
+use quire_semantic_value::declaration::EqualityOperator;
 
 use super::parity_identity::{
     parity_obligation, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
@@ -127,6 +128,28 @@ pub enum ScalarIdentityMismatch {
         /// The recompiled package.
         package: PackageId,
     },
+    /// FR-358: the claimed node is not an application of the claimed
+    /// equality operator.
+    #[error("scalar node {node} of package {} is no {operator:?} equality application", .package.hex())]
+    Equality {
+        /// The claim's node.
+        node: WireNodeId,
+        /// The claim's operator.
+        operator: EqualityOperator,
+        /// The recompiled package.
+        package: PackageId,
+    },
+    /// FR-358: an operand of the claimed equality is neither a parameter
+    /// reference nor a literal.
+    #[error("operand {position} of scalar node {node} of package {} is neither a parameter nor a literal", .package.hex())]
+    Operand {
+        /// The claim's node.
+        node: WireNodeId,
+        /// The operand's position: 0 for the left, 1 for the right.
+        position: usize,
+        /// The recompiled package.
+        package: PackageId,
+    },
 }
 
 /// FR-357: replay an operator-level claim.
@@ -144,14 +167,16 @@ pub enum ScalarIdentityMismatch {
 /// ([`OperatorParityReport::claim`]); the observation digest is carried and
 /// never recomputed or authenticated. `obligation_identity` is recomputed
 /// from the claim's ADR-013 O-09 preimage and a mismatch refuses
-/// [`ReplayRefusal::ScalarIdentity`].
+/// [`ReplayRefusal::ScalarIdentity`]. `replay_limits` is `replay.input_bytes`,
+/// as [`crate::replay`] takes it.
 pub fn replay_operator_parity(
     wire: ReplayRequestWire,
     claim: OperatorClaim,
+    replay_limits: ReplayLimits,
 ) -> OperatorParityReport {
     let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
     let identity = claim.identity(obligation);
-    let request = match ReplayRequest::decode(wire, ReplayLimits::default()) {
+    let request = match ReplayRequest::decode(wire, replay_limits) {
         Ok(request) => request,
         Err(refusal) => {
             return OperatorParityReport::new(
@@ -160,7 +185,7 @@ pub fn replay_operator_parity(
             );
         }
     };
-    let result = match settle(&request, &identity) {
+    let result = match settle(&request, &identity, replay_limits) {
         Ok(result) => result,
         Err(refusal) => OperatorParityResult::Refused(Box::new(refusal)),
     };
@@ -207,8 +232,9 @@ pub(super) fn preimage_of(claim: &OperatorIdentity) -> ParityPreimage {
 fn settle(
     request: &ReplayRequest,
     claim: &OperatorIdentity,
+    replay_limits: ReplayLimits,
 ) -> Result<OperatorParityResult, ReplayRefusal> {
-    let limits = request_limits(request.stage_limits(), ReplayLimits::default())?;
+    let limits = request_limits(request.stage_limits(), replay_limits)?;
     let compiled = recompile(request, &limits)?;
     let package = compiled.emitted.package().package_id();
     let checked_graph = compiled.checked.package().graph();

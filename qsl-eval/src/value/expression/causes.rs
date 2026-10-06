@@ -169,6 +169,25 @@ impl CatalogCoded for ProtocolClauseUnsupported {
     }
 }
 
+/// A read through a `Reference<T>` over an object environment that holds no
+/// object: a replay (FR-098) admits a reference argument by its identity, and
+/// a call that dereferences it completes no value.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ReferenceUnresolved;
+
+impl CatalogCoded for ReferenceUnresolved {
+    /// `unknown_required_feature`/`unsupported-feature`, naming the
+    /// construct, as [`ProtocolClauseUnsupported`] does for its own scoped
+    /// gap.
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("unknown_required_feature", "unsupported-feature")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("construct", "dereference".to_owned())]))
+    }
+}
+
 /// FR-115: `ProtocolClause`'s refusal when a `Frame` run's check 11 cannot
 /// evaluate the frame over the admitted invocation -- a declared delta that
 /// disagrees (`population_delta_mismatch`/`delta-disagreement`), or the

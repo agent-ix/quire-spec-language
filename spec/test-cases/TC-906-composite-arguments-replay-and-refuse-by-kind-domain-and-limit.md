@@ -1,0 +1,77 @@
+---
+id: TC-906
+title: "Composite and leaf-family arguments replay, and refuse by kind, by domain and at the request's limits"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-098
+    type: verifies
+---
+# TC-906: Composite and leaf-family arguments replay, and refuse by kind, by domain and at the request's limits
+
+## Description
+
+Verify that `qsl_replay::replay` converts a composite `WitnessValue` to a
+kernel value of the parameter's declared type, admits it through S6a, and
+replays a nested-record counterexample from both arms. Each kind, identity
+and domain defect refuses `WrongValueKind` before the call, and the
+`value_occurrences` and `work_units` limits stop the replay before the call, settling `Incomplete` by counter name.
+
+Scope: FR-098-AC-8, FR-098-AC-9, FR-098-AC-10.
+
+## Test Procedure
+
+The unit declares `record Inner { a: Int[0, 9]; b?: Boolean; }`,
+`union Shape { Circle(Int[0, 9]), Empty }`,
+`record Outer { i: Inner; o: Option<Int[0, 9]>; s: Sequence<Int[0, 9]>[0, 3]; u: Shape; }`
+and `p(x: Outer): Boolean { x.i.a < 5 }`. The counterexample `C` is
+`Outer { i: Inner { a: 7, b: true }, o: 4, s: [1, 2], u: Circle(3) }`.
+Requests are built from the unit's spine compile, as in TC-444.
+
+1. Replay `C` as an `Input` assignment, then as a `Witness` entry in
+   FR-070's witness value text.
+2. Replay `C` with one defect at a time: a sequence given for `o`; `i`'s
+   `name` set to `Outer`'s node id; `i` missing `a`; `i` with an undeclared
+   field `z`; `a` absent; `u` with member `Square`; `Circle` with no
+   component; `a = 12`; `s` with four elements. Replay `g(v)`, whose `v` is
+   a `Set` of a `Decimal` type with scales 0 to 2, with the set `1.0`,
+   `1.00`.
+3. Replay `C` with the accounting limit `value_occurrences` one below its
+   occurrence count, then raised to fit. Replay it with `work_units` one
+   below its node count, then raised to fit.
+
+4. A second unit declares `enum Color { Red, Green }`, a unit `m`, an object
+   type `T`, and one predicate per leaf family: `c(v: Color)`,
+   `t(v: Text[0, 8])`, `r(v: Rational)`, `d(v)` over a `Decimal` type with scales 0 to 2,
+   `f(v: Float64)`, `q(v)` over a quantity in `m` and `same(v: Reference<T>)`, which
+   compares `v` with itself. Each body is false at its counterexample.
+   Replay each from a `Witness` entry in FR-070's witness value text. Then
+   replay each with one defect: `v` naming another enum's declaration; a
+   nine-scalar text; a decimal with scale 3; a `float32` for `f`; a quantity
+   in another unit; a reference whose `object_type` is another type's.
+   Finally, replay `deref(v: Reference<T>)`, which reads a field of `v`.
+
+Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
+`#[trace("TC-906", "FR-098-AC-9")]` and
+`#[trace("TC-906", "FR-098-AC-10")]`.
+
+## Expected Results
+
+- Step 1: each replay evaluates `x.i.a` to `7` and settles as FR-098-AC-2
+  states: `reproduced-without-witness` for `Input` and
+  `reproduced-with-evaluated-witness` for `Witness`.
+- Step 2: each refuses `WrongValueKind` (`invalid_runtime_input`) naming
+  position 0, before the call, with no charge.
+- Step 3: each lowered limit makes no call and settles `inconclusive` with
+  cause `NoValue`, carrying the outcome `Incomplete` that names
+  `value_occurrences` or `work_units`, its configured value and the count
+  reached. Each raised limit replays as in step 1, with the same charges as
+  a replay of `C` under unlimited accounting.
+- Step 4: each leaf-family predicate settles `reproduced-with-evaluated-witness`.
+  Each defect refuses `WrongValueKind` naming position 0, before the call.
+  `deref` settles `inconclusive` with cause `NoValue`, since a replayed
+  function has no object environment.
+
+## Status
+
+Passed locally, `qsl-replay/src/execute/tests/composite.rs`, except the union cases
+(pending QSL-503) and a quantity-typed parameter in source (pending STD-113).

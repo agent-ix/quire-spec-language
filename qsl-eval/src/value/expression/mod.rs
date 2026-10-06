@@ -39,7 +39,29 @@ pub use s6a::separation::{
 // `qsl_package::CheckedPackage` and bring `CheckedPackageEvaluation` into
 // scope to call it.
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::CheckedExpression;
+use qsl_semantics::check::{CheckedExpression, CheckedNode};
+
+/// FR-358: evaluate `node`, a closed subexpression of a checked function
+/// body (it reads no local), to its outcome under `meter`. `slots` is the
+/// function's evaluation slot count, so a `let` inside the subexpression
+/// finds its slot. The object environment is empty: a closed expression
+/// reads no object.
+pub fn evaluate_closed(
+    package: &CheckedPackage,
+    node: CheckedNode<'_>,
+    slots: usize,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let objects = ObjectEnvironment::default();
+    Machine::new(
+        package.graph().scope(),
+        package.graph(),
+        &objects,
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(node, slots, Vec::new())
+}
 
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
@@ -171,7 +193,9 @@ fn validate(
         while let Some(value) = pending.pop() {
             match value {
                 Value::Reference(reference) => {
-                    if !objects.objects().contains(reference) {
+                    if !objects.references_are_unresolved()
+                        && !objects.objects().contains(reference)
+                    {
                         return Err(InputRefusal::DanglingReference { parameter });
                     }
                 }

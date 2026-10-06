@@ -267,6 +267,7 @@ pub(super) fn request(
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: default_accounting(1_000_000),
         stage_limits: std::collections::BTreeMap::new(),
+        declared_domains: Vec::new(),
         byte_provision,
     }
 }
