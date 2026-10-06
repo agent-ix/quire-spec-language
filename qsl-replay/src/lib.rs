@@ -3,7 +3,7 @@
 //! X-10) -- the CG-facing replay facade (ADR-011 §6.1, ADR-013 O-24 to
 //! O-27, C-13). It depends on layers 1 to 5, F and K, as §6.1 allows.
 //!
-//! Its public API is the replay executor entry [`replay`] (ADR-013 TK-01,
+//! Its public API is the compile entry [`compile_package`] and the replay executor entry [`replay`] (ADR-013 TK-01,
 //! C-13; FR-098), which recompiles a request's digest-addressed source
 //! through the spine ([`spine::parse`], [`spine::select`], [`spine::check`]
 //! and [`spine::package`], S1 to E4) and calls the selected
@@ -30,6 +30,7 @@
 
 mod bounds;
 mod call_site;
+mod compile;
 // Crate-private until `check_zone_certificate` (FR-245) calls it; until then
 // only its own tests and Kani harnesses reach it.
 #[allow(
@@ -52,6 +53,7 @@ pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
+pub use compile::{compile_package, CompiledPackage};
 pub use execute::{
     replay, replay_frame, replay_operator_parity, replay_value_parity, DependencySelectionsCause,
     FrameIdentityMismatch, FrameReplayResult, LimitAboveReader, ReplayRefusal,

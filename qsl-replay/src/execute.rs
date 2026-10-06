@@ -622,7 +622,7 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
 /// limit, and the v2 emitter takes none, so those stages run under their
 /// published defaults, as do S1's token, node and nesting ceilings and
 /// S3's node, depth and input-byte ceilings.
-fn spine_limits(stages: StageLimits) -> Result<SpineLimits, ReplayRefusal> {
+pub(crate) fn spine_limits(stages: StageLimits) -> Result<SpineLimits, ReplayRefusal> {
     let reader = u64::try_from(MAX_ENCODED_BYTES).unwrap_or(u64::MAX);
     let above = || {
         ReplayRefusal::LimitAboveReader(LimitAboveReader {
@@ -652,6 +652,53 @@ pub(crate) struct Recompiled {
     pub(crate) checked: spine::CheckedUnit,
     /// The recompiled package's v2 bytes and `package_id`.
     pub(crate) emitted: spine::EmittedUnit,
+}
+
+/// The one S1-to-E4 spine run: parse, select, check and emit `bytes` as
+/// the unit `unit` against `packages` and `dependencies`, under `limits`,
+/// over a handle nobody cancels. [`recompile`] and [`crate::compile_package`]
+/// both run it, so a compile and a replay's recompile refuse alike.
+pub(crate) fn run_spine(
+    unit: &SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+) -> Result<Recompiled, ReplayRefusal> {
+    let cancel = Cancel::new();
+    let refusal = |failure| match spine::refusal_or_fault(failure) {
+        Ok(refusal) => ReplayRefusal::Recompile(refusal),
+        Err(fault) => ReplayRefusal::Fault(fault),
+    };
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: unit,
+            path,
+            bytes,
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let models = spine::select(&parsed, packages, limits.model, &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        &models,
+        dependencies,
+        &spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
+        .map_err(refusal)?
+        .into_value();
+    Ok(Recompiled { checked, emitted })
 }
 
 /// Recompile the request's one source unit from the byte provision against
@@ -715,40 +762,14 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
     let bytes = provided(source)?;
     let packages = domain_packages(request);
     // Rule 4: the recompile.
-    let cancel = Cancel::new();
-    let refusal = |failure| match spine::refusal_or_fault(failure) {
-        Ok(refusal) => ReplayRefusal::Recompile(refusal),
-        Err(fault) => ReplayRefusal::Fault(fault),
-    };
-    let unit = labels(source);
-    let parsed = spine::parse(
-        &ParseRequest {
-            source: &unit,
-            path: source.identity(),
-            bytes,
-        },
-        limits.source,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
-    let models = spine::select(&parsed, &packages, limits.model, &cancel)
-        .map_err(refusal)?
-        .into_value();
-    let checked = spine::check(
-        &parsed,
-        &models,
+    let compiled = run_spine(
+        &labels(source),
+        source.identity(),
+        bytes,
+        &packages,
         &dependencies,
-        &spine::LockEvidence::default(),
         limits,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
-    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
-        .map_err(refusal)?
-        .into_value();
-    let compiled = Recompiled { checked, emitted };
+    )?;
     // Rules 6 and 7: every entry names a selection of the recompiled
     // closure, then at its recomputed `package_id`, before rule 5.
     let selections = compiled.checked.package().dependency_selections();
