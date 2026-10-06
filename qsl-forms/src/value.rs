@@ -1165,7 +1165,8 @@ impl<'c> Mapping<'c> {
     /// `-` and the literal, and no parenthesis, operator or other token
     /// stands in it (FR-091 "directly negated").
     fn is_directly_negated_two_pow_127(&self, operand: &CstNode) -> Result<bool, FormsRefusal> {
-        let [token] = significant_tokens(self.cst, operand).as_slice() else {
+        let tokens = significant_tokens(self.cst, operand);
+        let [token] = tokens.as_slice() else {
             return Ok(false);
         };
         if token.kind() != TokenKind::Integer {

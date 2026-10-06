@@ -77,7 +77,7 @@ fn field_member_redefining(
     })
 }
 
-fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
+fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
         lower,
@@ -848,7 +848,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
     let redefining_key = DeclarationKey::fixture("model.B.cs");
     let redefined_key = DeclarationKey::fixture("model.A.c");
 
-    let contained = |upper: i64| {
+    let contained = |upper: i128| {
         let mut records = r08_base();
         records.push(field_member_redefining(
             "model.B.cs",

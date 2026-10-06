@@ -940,6 +940,9 @@ impl Default for DependencyLimits {
 mod dependency_tests;
 
 #[cfg(test)]
+mod wide_integer_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
     use ix_trace_rs::trace;
