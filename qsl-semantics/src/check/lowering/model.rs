@@ -155,16 +155,23 @@ impl AdmittedModel {
     /// the node whether or not the package's own lowering minted it.
     /// `None` when this package does not declare `declaration`, or declares
     /// it as a record kind no checked node names.
-    pub(crate) fn model_node_key(&self, declaration: &DeclarationKey) -> Option<NodeKey> {
+    pub(crate) fn model_node_key(
+        &self,
+        declaration: &DeclarationKey,
+        identity: qsl_foundation::IdentityLimits,
+    ) -> Option<NodeKey> {
         if self.selection.identity != declaration.package {
             return None;
         }
         let (node_tag, form) = record_form(self.records.get(declaration)?)?;
         let owner =
             ModelOwner::new(self.selection.identity.clone(), declaration.node.clone()).ok()?;
-        crate::check::node_key::node_key(&model_node_content(owner, node_tag, form).input())
-            .ok()
-            .map(|keyed| keyed.key)
+        crate::check::node_key::node_key(
+            &model_node_content(owner, node_tag, form).input(),
+            identity,
+        )
+        .ok()
+        .map(|keyed| keyed.key)
     }
 
     /// The record `key` names in this package.
@@ -526,14 +533,14 @@ impl<'a> Lowering<'a> {
                         &offset,
                     )
                     .ok()
-                    .filter(|preimage| own(preimage.preimage_bytes()));
+                    .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
                     ("unit", Some(dimension), NominalNode::Unit(preimage))
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| *base));
                     let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
                         .ok()
-                        .filter(|preimage| own(preimage.preimage_bytes()));
+                        .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
                     ("dimension", None, NominalNode::Dimension(preimage))
                 }
             };

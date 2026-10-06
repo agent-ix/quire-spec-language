@@ -833,7 +833,10 @@ mod checked {
             types,
             aliases,
             functions,
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         // ADR-013 T-1 (FR-087): the S4 link step, over an

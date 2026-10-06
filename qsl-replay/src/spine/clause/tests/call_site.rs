@@ -519,7 +519,8 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
     wire.byte_provision.retain(|(domain, _, _)| {
         domain.as_deref() != Some(qsl_foundation::digest::DigestDomain::Sha256Jcs.as_str())
     });
-    let replayed = crate::replay(wire).expect_err("no domain package is provided");
+    let replayed = crate::replay(wire, crate::ReplayLimits::default())
+        .expect_err("no domain package is provided");
     assert!(
         matches!(replayed, crate::ReplayRefusal::Recompile(_)),
         "{replayed:?}"

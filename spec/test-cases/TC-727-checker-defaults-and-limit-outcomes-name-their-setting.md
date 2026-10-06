@@ -53,6 +53,6 @@ Backed: step 1 by `the_longest_and_chain_s1_admits_checks_and_emits_at_the_defau
 checking and the library builder by
 `a_1000_term_sum_stops_on_the_node_limit_at_the_failing_node` and
 `a_1000_term_sum_stops_on_a_work_budget_one_below_its_work`
-(`qsl-semantics/src/check/family.rs`). Remainder: B5 (the setting names in
-an outcome, the replay request's `stage_limits` entry and FR-255's settings
-operation).
+(`qsl-semantics/src/check/family.rs`); the setting names in an outcome, the
+replay request's `stage_limits` entry and FR-255's settings operation by
+TC-720 and TC-721 (`qsl-replay/src/limits.rs`).

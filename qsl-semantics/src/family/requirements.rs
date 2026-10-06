@@ -46,9 +46,9 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::bound::{DomainKey, FiniteBoundKind};
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
+use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::InternalFault;
+use qsl_foundation::{InternalFault, Setting};
 use quire_exact::{NodeKey, ValueType};
 
 use crate::check::Capability;
@@ -257,7 +257,7 @@ pub fn classify_domains(
     while let Some(position) = pending.pop() {
         if visited >= position_limit {
             return Err(ClassifyFailure::Limit(LimitExceeded::new(
-                LimitKind::NodeCount,
+                Setting::S3Nodes,
                 position_limit,
                 u128::from(visited) + 1,
             )));
@@ -352,6 +352,7 @@ fn child<'t>(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::LimitKind;
     use quire_exact::{
         CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, Presence,
     };
@@ -538,7 +539,7 @@ mod tests {
         assert_eq!(
             classify_extent(&roots, &types(), 2),
             Err(ClassifyFailure::Limit(LimitExceeded::new(
-                LimitKind::NodeCount,
+                Setting::S3Nodes,
                 2,
                 3
             )))

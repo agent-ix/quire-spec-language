@@ -230,6 +230,7 @@ fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
 /// D01's `dispatch_candidates` boundary: the eighth `dispatch.candidate`
 /// charge is denied when the counter's limit is `7`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
+#[trace("TC-720", "FR-255-AC-1")]
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     let mut records = fixture_g();
@@ -258,6 +259,10 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
         panic!("expected an incomplete outcome, got {outcome:?}");
     };
     assert_eq!(incomplete.limit_kind, LimitKind::DispatchCandidates);
+    assert_eq!(
+        incomplete.limit_exceeded().setting(),
+        qsl_foundation::Setting::ModelDispatchCandidates
+    );
     assert_eq!(incomplete.limit, 7);
     assert_eq!(incomplete.consumed, 7);
     assert_eq!(incomplete.next_charge, 8);
@@ -267,6 +272,7 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
 /// D01's `dispatch_candidates` boundary, the other half of FR-151-AC-8: the
 /// exact bound (`8`, the real count D01 charges) completes.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
+#[trace("TC-721", "FR-255-AC-4")]
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
     let mut records = fixture_g();
@@ -687,6 +693,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
             b"",
         ),
         &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("expected a checked dispatch family, got {refusal:?}"));
     assert_eq!(declarations.dispatch_tables.len(), 1);
@@ -764,6 +771,7 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
                 family_steps,
                 ..ModelNormalizationLimits::UNLIMITED
             }),
+            qsl_foundation::IdentityLimits::default(),
         )
     };
     assert!(
@@ -773,10 +781,7 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
     match run(EDGES - 1) {
         Err(DispatchBridgeRefusal::FamilyStepsExceeded(refusal)) => assert_eq!(
             refusal.cause,
-            ModelRefusalCause::FamilySteps {
-                original: root,
-                limit: EDGES - 1,
-            }
+            ModelRefusalCause::family_steps(root, EDGES - 1)
         ),
         other => panic!(
             "expected FamilyStepsExceeded at {}, got {other:?}",
@@ -791,6 +796,7 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
 /// `resource_exhausted` outcome naming the configured bound: not a linked
 /// table naming a "unique" winner the truncated walk happened to reach, and
 /// not an ambiguity result.
+#[trace("TC-720", "FR-255-AC-1")]
 #[trace("TC-225", "FR-083-AC-4")]
 #[test]
 fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
@@ -824,10 +830,23 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::FamilySteps {
-                    original: DeclarationKey::fixture("model.A.op0"),
-                    limit: BOUND,
-                }
+                ModelRefusalCause::family_steps(DeclarationKey::fixture("model.A.op0"), BOUND)
+            );
+            let exceeded = refusal
+                .cause
+                .limit_exceeded()
+                .expect("a step ceiling is a stage limit");
+            assert_eq!(
+                exceeded.setting(),
+                qsl_foundation::Setting::ModelFamilySteps
+            );
+            assert_eq!(
+                exceeded.actual(),
+                u128::from(match &refusal.cause {
+                    ModelRefusalCause::AncestorSteps { limit, .. }
+                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
+                    other => panic!("unexpected {other:?}"),
+                }) + 1
             );
             assert_eq!(refusal.cause.as_str(), "family-steps");
             assert!(

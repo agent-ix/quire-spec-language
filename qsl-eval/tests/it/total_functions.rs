@@ -189,7 +189,10 @@ fn declarations(
         types,
         aliases: vec![("Total".to_owned(), ValueType::Integer)],
         functions,
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -509,7 +512,10 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
     let model = PackageDeclarations {
         model_operations: vec!["M::pay".to_owned()],
         functions: vec![calling("M::pay")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default());
     let ineligible = refusal(model);
@@ -926,7 +932,10 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
             ],
             ieee_profile: Some(ieee_profile()),
             models: vec![obj_model()],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
     };
@@ -1030,7 +1039,10 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
 
     let limited = PackageDeclarations {
         functions: vec![down()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::new(4));
     let exhausted = refusal(limited);
@@ -1078,7 +1090,10 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
     // One such declaration, alone, fits comfortably under a budget of 4.
     PackageDeclarations {
         functions: vec![small("a")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::new(4))
     .expect("one small declaration admits under a budget of 4");
@@ -1087,7 +1102,10 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
     // the fix does not just refuse every multi-declaration package.
     PackageDeclarations {
         functions: vec![small("a"), small("b")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::new(100))
     .expect("two small declarations admit under a generous package-wide budget");
@@ -1099,7 +1117,10 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
     let exhausted = refusal(
         PackageDeclarations {
             functions: vec![small("a"), small("b")],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::new(4)),
     );
@@ -1130,7 +1151,10 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
 fn p_input_bytes_limit_refuses_through_package_declarations_check() {
     let limited = PackageDeclarations {
         functions: vec![down()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default().with_input_bytes(1));
     let exhausted = refusal(limited);
@@ -1150,7 +1174,10 @@ fn p_input_bytes_limit_refuses_through_package_declarations_check() {
 
     PackageDeclarations {
         functions: vec![down()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the unconfigured default is unlimited, so the same package admits");
@@ -1167,7 +1194,10 @@ fn p_input_bytes_limit_refuses_through_package_declarations_check() {
 fn p_work_budget_limit_refuses_through_package_declarations_check() {
     let limited = PackageDeclarations {
         functions: vec![down()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default().with_work_budget(0));
     let exhausted = refusal(limited);
@@ -1187,7 +1217,10 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
 
     PackageDeclarations {
         functions: vec![down()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the unconfigured default is unlimited, so the same package admits");
@@ -1401,7 +1434,10 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
             ),
         ],
         ieee_profile: Some(ieee_profile()),
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("convert(x) carries no definedness obligation, and q is nonzero");

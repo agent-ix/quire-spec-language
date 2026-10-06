@@ -43,7 +43,8 @@ fn terminal_records_are_built_and_read_through_the_facade_alone() {
             .map(|(index, value)| TerminalRecord::new(RequestIndex::new(index), value.clone()))
             .collect(),
     };
-    let envelopes = read_backend_provider_envelope(&source).unwrap();
+    let envelopes =
+        read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
 
     let categories: Vec<Category> = envelopes.iter().map(|e| e.category()).collect();
     assert_eq!(

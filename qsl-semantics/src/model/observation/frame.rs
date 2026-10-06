@@ -409,24 +409,5 @@ pub(super) fn verdict(
 }
 
 fn raw_values_equal(left: Option<&SnapshotValue>, right: Option<&SnapshotValue>) -> bool {
-    match (left, right) {
-        (None, None) => true,
-        (Some(left), Some(right)) => raw_value_eq(left, right),
-        _ => false,
-    }
-}
-
-fn raw_value_eq(left: &SnapshotValue, right: &SnapshotValue) -> bool {
-    use SnapshotValue::{Absent, Boolean, Integer, Present, Reference, Sequence};
-    match (left, right) {
-        (Boolean(a), Boolean(b)) => a == b,
-        (Integer(a), Integer(b)) => a == b,
-        (Absent, Absent) => true,
-        (Present(a), Present(b)) => raw_value_eq(a, b),
-        (Reference(a), Reference(b)) => a.population == b.population && a.key == b.key,
-        (Sequence(a), Sequence(b)) => {
-            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| raw_value_eq(a, b))
-        }
-        _ => false,
-    }
+    left == right
 }

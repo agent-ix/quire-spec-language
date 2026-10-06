@@ -815,14 +815,17 @@ fn replay_case(
         observation: config_version_current_selection(clause, label, self_key).input,
         witness,
     };
-    let envelope = WitnessEnvelope::reconstruct(packet(
-        &unit.bytes,
-        package_id,
-        source,
-        node,
-        OccurrenceKey::new(node, declaration.claim().clone()),
-        payload,
-    ));
+    let envelope = WitnessEnvelope::reconstruct(
+        packet(
+            &unit.bytes,
+            package_id,
+            source,
+            node,
+            OccurrenceKey::new(node, declaration.claim().clone()),
+            payload,
+        ),
+        crate::ReplayLimits::default(),
+    );
     (wire, envelope)
 }
 
@@ -833,7 +836,11 @@ fn replay_with(
     source: ReplaySource,
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
     let (wire, envelope) = replay_case(unit, clause, Snapshot::High, "mid", witness, source);
-    replay_state_clause(wire, &envelope.expect("the envelope reconstructs"))
+    replay_state_clause(
+        wire,
+        &envelope.expect("the envelope reconstructs"),
+        crate::ReplayLimits::default(),
+    )
 }
 
 fn input_source() -> ReplaySource {
@@ -1099,7 +1106,7 @@ fn tc_743_an_oversized_record_refuses_and_replay_is_deterministic() {
     let mut oversized = all_below_record(&unit);
     oversized.value_path.steps.insert(
         0,
-        ValuePathStep::Member("x".repeat(crate::MAX_ENCODED_BYTES + 1)),
+        ValuePathStep::Member("x".repeat(crate::bounds::DEFAULT_INPUT_BYTES + 1)),
     );
     let (_, envelope) = replay_case(
         &unit,
@@ -1571,7 +1578,11 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = quire_exact::NodeKey::from_digest(length.digest().unwrap());
+    let length_key = quire_exact::NodeKey::from_digest(
+        length
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap(),
+    );
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
@@ -1585,7 +1596,11 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = quire_exact::NodeKey::from_digest(metre.digest().unwrap());
+    let metre_key = quire_exact::NodeKey::from_digest(
+        metre
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap(),
+    );
     let graph = admit_unit_graph(
         [(length, length_key)],
         [(metre, metre_key)],
@@ -1593,12 +1608,16 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
             authority: "agent-ix".into(),
             identity: "example".into(),
         })]),
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     let units = quire_semantic_value::quantity::UnitTable::declared(&graph);
     let graph = qsl_semantics::check::PackageDeclarations {
         types: quire_semantic_value::declaration::TypeEnvironment::default().with_units(units),
-        ..qsl_semantics::check::PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..qsl_semantics::check::PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .expect("the unit table checks");
@@ -1736,7 +1755,7 @@ fn tc_744_a_refusal_reads_only_catalog_spellings() {
 #[test]
 fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
     let unit = witness_unit();
-    let long = "x".repeat(crate::MAX_ENCODED_BYTES + 1);
+    let long = "x".repeat(crate::bounds::DEFAULT_INPUT_BYTES + 1);
     let long_text = {
         let text_type = quire_exact::TextType::new(
             0,
@@ -1763,7 +1782,7 @@ fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
     let mut object_record = all_below_record(&unit);
     object_record.value_path.subject = ValuePathSubject::Object(object);
     for record in [text_record, object_record] {
-        assert!(record.measured_bytes() > crate::MAX_ENCODED_BYTES);
+        assert!(record.measured_bytes() > crate::bounds::DEFAULT_INPUT_BYTES);
         let (_, envelope) = replay_case(
             &unit,
             "AllBelow",

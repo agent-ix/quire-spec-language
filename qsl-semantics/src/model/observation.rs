@@ -29,7 +29,10 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::{Code, InternalFault, ALLOCATION_FAILED};
+use qsl_foundation::diagnostic::{
+    CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
+};
+use qsl_foundation::Setting;
 use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
@@ -79,17 +82,19 @@ pub struct ClauseFacts {
 // Limits
 // ---------------------------------------------------------------------------
 
-/// FR-106 Inputs: the four document-shape ceilings admission enforces
-/// before any semantic check (check 1.2).
+/// FR-106 Inputs: the document-shape ceilings the read enforces, each named
+/// by its setting (FR-255). No ceiling bounds nesting depth: a document of
+/// any depth is read under its byte, object and value limits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ObservationLimits {
-    /// The document byte ceiling (default 1 MiB).
+    /// The document byte ceiling, `observation.input_bytes` (default 1 MiB).
     pub document_bytes: u64,
-    /// The JSON nesting-depth ceiling (default 64).
-    pub nesting_depth: u32,
-    /// The objects-per-document ceiling (default 10,000).
+    /// The objects-per-document ceiling, `observation.objects` (default
+    /// 10,000).
     pub objects_per_document: u64,
-    /// The values-per-document ceiling (default 100,000).
+    /// The values-per-document ceiling, `observation.values` (default
+    /// 100,000): every value form of the document counts, nested ones
+    /// included.
     pub values_per_document: u64,
     /// How an out-of-range post-state integer is admitted (default
     /// [`PostStateRange::Refuse`]).
@@ -134,11 +139,56 @@ impl Default for ObservationLimits {
     fn default() -> Self {
         Self {
             document_bytes: 1_048_576,
-            nesting_depth: 64,
             objects_per_document: 10_000,
             values_per_document: 100_000,
             post_state: PostStateRange::Refuse,
         }
+    }
+}
+
+impl ObservationLimits {
+    /// These limits with `observation.input_bytes` set to `bound`.
+    #[must_use]
+    pub const fn with_document_bytes(mut self, bound: u64) -> Self {
+        self.document_bytes = bound;
+        self
+    }
+
+    /// These limits with `observation.objects` set to `bound`.
+    #[must_use]
+    pub const fn with_objects_per_document(mut self, bound: u64) -> Self {
+        self.objects_per_document = bound;
+        self
+    }
+
+    /// These limits with `observation.values` set to `bound`.
+    #[must_use]
+    pub const fn with_values_per_document(mut self, bound: u64) -> Self {
+        self.values_per_document = bound;
+        self
+    }
+}
+
+/// FR-255: the one mapping from each field to its setting.
+impl qsl_foundation::SettingLimits for ObservationLimits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        use qsl_foundation::Setting;
+        vec![
+            (Setting::ObservationInputBytes, self.document_bytes),
+            (Setting::ObservationObjects, self.objects_per_document),
+            (Setting::ObservationValues, self.values_per_document),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        use qsl_foundation::Setting;
+        match setting {
+            Setting::ObservationInputBytes => self.document_bytes = bound,
+            Setting::ObservationObjects => self.objects_per_document = bound,
+            Setting::ObservationValues => self.values_per_document = bound,
+            _ => return false,
+        }
+        true
     }
 }
 
@@ -360,7 +410,7 @@ pub struct Observation {
     pub out_of_range: Vec<OutOfRange>,
 }
 
-/// The amount [`ObservationLimits`]' four document-shape ceilings actually
+/// The amount [`ObservationLimits`]' three document-shape ceilings actually
 /// consumed, across every document one [`admit_observations`] or
 /// [`admit_current_snapshot`] call successfully read (FR-109 Outputs'
 /// "the admission work", distinct from `quire_exact::LimitKind`, which
@@ -371,11 +421,10 @@ pub struct Observation {
 pub struct AdmissionUsage {
     /// The sum of every admitted document's byte length.
     pub document_bytes: u64,
-    /// The greatest nesting depth any one admitted document reached.
-    pub nesting_depth: u32,
-    /// The sum of every admitted document's admitted object count.
+    /// The sum of every admitted document's object count.
     pub objects: u64,
-    /// The sum of every admitted document's admitted field-value count.
+    /// The sum of every admitted document's value-form count, nested forms
+    /// included.
     pub values: u64,
 }
 
@@ -383,7 +432,6 @@ impl AdmissionUsage {
     fn merged_with(self, other: Self) -> Self {
         Self {
             document_bytes: self.document_bytes + other.document_bytes,
-            nesting_depth: self.nesting_depth.max(other.nesting_depth),
             objects: self.objects + other.objects,
             values: self.values + other.values,
         }
@@ -430,60 +478,207 @@ pub struct AdmittedObservations {
 /// field's value in a snapshot, a parameter or result of an invocation, or
 /// a parameter of a `PreCall` selection. An integer keeps its FR-038
 /// decimal spelling; admission checks it against the declared type.
+///
+/// A value of any depth is held in one flat arena, so building, cloning,
+/// comparing, printing and dropping it never recurse with its nesting
+/// (FR-261, ADR-030): [`Self::form`] views the root, and each nested value
+/// is reached through a [`RawValue`] handle.
+#[derive(Clone, Debug)]
+pub struct SnapshotValue {
+    nodes: Vec<RawNode>,
+    root: usize,
+}
+
+/// One value form of a [`SnapshotValue`]'s arena; a nested value is the
+/// index of its own node.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SnapshotValue {
+enum RawNode {
+    Boolean(bool),
+    Integer(String),
+    Absent,
+    Present(usize),
+    Reference(SelectedObject),
+    Sequence(Vec<usize>),
+}
+
+/// The form of one value of a [`SnapshotValue`], with nested values as
+/// handles.
+#[derive(Clone, Copy, Debug)]
+pub enum RawForm<'v> {
     /// `{"boolean": true|false}`.
     Boolean(bool),
     /// `{"integer": "<decimal>"}`.
-    Integer(String),
+    Integer(&'v str),
     /// `{"absent": {}}`.
     Absent,
     /// `{"present": <value>}`.
-    Present(Box<SnapshotValue>),
+    Present(RawValue<'v>),
     /// `{"reference": {"population": ..., "key": ...}}`.
-    Reference(SelectedObject),
-    /// `{"sequence": [<value>, ...]}`.
-    Sequence(Vec<SnapshotValue>),
+    Reference(&'v SelectedObject),
+    /// `{"sequence": [<value>, ...]}`, its items in order.
+    Sequence(RawItems<'v>),
 }
 
-/// Read one FR-106 value form from `json`, or `None` when it is not one of
-/// the six tagged shapes: a wire-reading edge (ADR-012 §9), converting the
-/// value's tag to a closed [`SnapshotValue`] variant once, here.
-#[qsl_attrs::string_edge]
-fn read_raw_value(json: &serde_json::Value) -> Option<SnapshotValue> {
-    let object = json.as_object()?;
-    if object.len() != 1 {
-        return None;
+/// One value inside a [`SnapshotValue`].
+#[derive(Clone, Copy, Debug)]
+pub struct RawValue<'v> {
+    arena: &'v SnapshotValue,
+    index: usize,
+}
+
+/// The items of a `sequence` value, in order.
+#[derive(Clone, Copy, Debug)]
+pub struct RawItems<'v> {
+    arena: &'v SnapshotValue,
+    items: &'v [usize],
+}
+
+impl SnapshotValue {
+    /// A value over an arena of nodes the reader built, rooted at `root`.
+    fn from_arena(nodes: Vec<RawNode>, root: usize) -> Self {
+        Self { nodes, root }
     }
-    let (tag, payload) = object.iter().next()?;
-    match tag.as_str() {
-        "boolean" => Some(SnapshotValue::Boolean(payload.as_bool()?)),
-        "integer" => Some(SnapshotValue::Integer(payload.as_str()?.to_owned())),
-        // FR-106 line 107 spells this tag's payload `{}`, not any value
-        // (SR-750 FND-013): an object with any member, or a non-object
-        // payload, is not this shape at all.
-        "absent" => {
-            if payload.as_object().is_some_and(serde_json::Map::is_empty) {
-                Some(SnapshotValue::Absent)
-            } else {
-                None
+
+    fn single(node: RawNode) -> Self {
+        Self {
+            nodes: vec![node],
+            root: 0,
+        }
+    }
+
+    /// `{"boolean": value}`.
+    #[must_use]
+    pub fn boolean(value: bool) -> Self {
+        Self::single(RawNode::Boolean(value))
+    }
+
+    /// `{"integer": "<spelling>"}`.
+    #[must_use]
+    pub fn integer(spelling: impl Into<String>) -> Self {
+        Self::single(RawNode::Integer(spelling.into()))
+    }
+
+    /// `{"absent": {}}`.
+    #[must_use]
+    pub fn absent() -> Self {
+        Self::single(RawNode::Absent)
+    }
+
+    /// `{"reference": {"population": ..., "key": ...}}`.
+    #[must_use]
+    pub fn reference(reference: SelectedObject) -> Self {
+        Self::single(RawNode::Reference(reference))
+    }
+
+    /// `{"present": inner}`.
+    #[must_use]
+    pub fn present(inner: Self) -> Self {
+        let mut nodes = inner.nodes;
+        let at = nodes.len();
+        nodes.push(RawNode::Present(inner.root));
+        Self { nodes, root: at }
+    }
+
+    /// `{"sequence": [items...]}`.
+    #[must_use]
+    pub fn sequence(items: Vec<Self>) -> Self {
+        let mut nodes =
+            Vec::with_capacity(items.iter().map(|item| item.nodes.len()).sum::<usize>() + 1);
+        let mut roots = Vec::with_capacity(items.len());
+        for item in items {
+            let offset = nodes.len();
+            nodes.extend(item.nodes.into_iter().map(|node| node.shifted(offset)));
+            roots.push(item.root + offset);
+        }
+        let at = nodes.len();
+        nodes.push(RawNode::Sequence(roots));
+        Self { nodes, root: at }
+    }
+
+    /// The root value's form.
+    #[must_use]
+    pub fn form(&self) -> RawForm<'_> {
+        self.at(self.root)
+    }
+
+    fn at(&self, index: usize) -> RawForm<'_> {
+        match &self.nodes[index] {
+            RawNode::Boolean(value) => RawForm::Boolean(*value),
+            RawNode::Integer(spelling) => RawForm::Integer(spelling),
+            RawNode::Absent => RawForm::Absent,
+            RawNode::Present(inner) => RawForm::Present(RawValue {
+                arena: self,
+                index: *inner,
+            }),
+            RawNode::Reference(reference) => RawForm::Reference(reference),
+            RawNode::Sequence(items) => RawForm::Sequence(RawItems { arena: self, items }),
+        }
+    }
+}
+
+/// Structural equality, compared on an explicit heap stack so a value of any
+/// depth compares in constant native stack, whatever order its arena was
+/// built in.
+impl PartialEq for SnapshotValue {
+    fn eq(&self, other: &Self) -> bool {
+        let mut work = vec![(self.form(), other.form())];
+        while let Some(pair) = work.pop() {
+            match pair {
+                (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
+                (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
+                (RawForm::Absent, RawForm::Absent) => {}
+                (RawForm::Reference(left), RawForm::Reference(right)) if left == right => {}
+                (RawForm::Present(left), RawForm::Present(right)) => {
+                    work.push((left.form(), right.form()));
+                }
+                (RawForm::Sequence(left), RawForm::Sequence(right))
+                    if left.iter().len() == right.iter().len() =>
+                {
+                    work.extend(
+                        left.iter()
+                            .zip(right.iter())
+                            .map(|(left, right)| (left.form(), right.form())),
+                    );
+                }
+                _ => return false,
             }
         }
-        "present" => Some(SnapshotValue::Present(Box::new(read_raw_value(payload)?))),
-        "reference" => {
-            let population = payload.get("population")?.as_str()?.to_owned();
-            let key = payload.get("key")?.as_str()?.to_owned();
-            Some(SnapshotValue::Reference(SelectedObject { population, key }))
-        }
-        "sequence" => {
-            let items = payload.as_array()?;
-            let mut sequence = Vec::with_capacity(items.len());
-            for item in items {
-                sequence.push(read_raw_value(item)?);
+        true
+    }
+}
+
+impl Eq for SnapshotValue {}
+
+impl RawNode {
+    /// This node with every nested index moved up by `offset`.
+    fn shifted(self, offset: usize) -> Self {
+        match self {
+            Self::Present(inner) => Self::Present(inner + offset),
+            Self::Sequence(items) => {
+                Self::Sequence(items.into_iter().map(|item| item + offset).collect())
             }
-            Some(SnapshotValue::Sequence(sequence))
+            other @ (Self::Boolean(_) | Self::Integer(_) | Self::Absent | Self::Reference(_)) => {
+                other
+            }
         }
-        _ => None,
+    }
+}
+
+impl<'v> RawValue<'v> {
+    /// This value's form.
+    #[must_use]
+    pub fn form(self) -> RawForm<'v> {
+        self.arena.at(self.index)
+    }
+}
+
+impl<'v> RawItems<'v> {
+    /// The items, in order.
+    pub fn iter(self) -> impl DoubleEndedIterator<Item = RawValue<'v>> + ExactSizeIterator {
+        self.items.iter().map(move |index| RawValue {
+            arena: self.arena,
+            index: *index,
+        })
     }
 }
 
@@ -529,8 +724,20 @@ fn model_views(
             .map_err(|_| fault("model-reconsistent-records"))?;
         let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
             NormalizeOutcome::Completed(view) => view,
-            NormalizeOutcome::Refused(_) | NormalizeOutcome::Incomplete(_) => {
-                return Err(fault("model-reconsistent-normalize"))
+            // A reached ceiling is the stage's limit outcome naming its
+            // setting; any other refusal is a broken invariant, since the
+            // same packages already normalized at compile time.
+            NormalizeOutcome::Incomplete(incomplete) => {
+                return Err(limit_refusal(&incomplete.limit_exceeded()))
+            }
+            NormalizeOutcome::Refused(refusals) => {
+                return Err(refusals
+                    .iter()
+                    .find_map(|refusal| refusal.cause.limit_exceeded())
+                    .map_or_else(
+                        || fault("model-reconsistent-normalize"),
+                        |limit| limit_refusal(&limit),
+                    ))
             }
         };
         let by_effective_id = view
@@ -560,24 +767,24 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 // sha256-jcs digest (FR-056)
 // ---------------------------------------------------------------------------
 
-/// FR-106's digest-first rule, checked against `expected`: bytes that
-/// `quire-canonical`'s shared reader reads are digested over their RFC 8785
-/// canonical encoding, the reader's tree encoded by `quire-canonical`
-/// directly -- the one sanctioned encoder (ADR-013 §2); bytes the reader
-/// refuses are digested raw (FR-106 check 1.3). Observation never refuses
-/// evidence as malformed. The raw fallback itself is
-/// `model::intake::check_package_digest` (widened, to serve this second
-/// caller) -- never an ad hoc `ByteDigest::of` here, and never a second call
-/// site of `model::key::raw_bytes_digest` outside that already-exempt
-/// function (ADR-013 §2 O-05: one RFC 8785 encoder, one raw-fallback call
-/// site).
+/// FR-106's digest-first rule, checked against `expected` over `read`, the
+/// one read of `bytes` through `quire-canonical`'s shared reader: bytes the
+/// reader read are digested over their RFC 8785 canonical encoding, the
+/// reader's tree encoded by `quire-canonical` directly -- the one sanctioned
+/// encoder (ADR-013 §2); bytes the reader refuses are digested raw (FR-106
+/// check 1.3). Observation never refuses evidence as malformed. The raw
+/// fallback itself is `model::intake::check_package_digest` (widened, to
+/// serve this second caller) -- never an ad hoc `ByteDigest::of` here, and
+/// never a second call site of `model::key::raw_bytes_digest` outside that
+/// already-exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one
+/// raw-fallback call site).
 ///
-/// The caller has already held the bytes to `ObservationLimits::
-/// document_bytes`, so neither the read nor the encoding sets a byte limit
-/// of its own; a byte error from either is still check 1.2's
-/// `stage_limit_exceeded`/`input-bytes-exceeded` (FR-259 B4). A read or
-/// encoding that cannot reserve memory refuses
-/// `resource_exhausted`/`allocation-failed` carrying `requested` (FR-259 B6).
+/// The read ran under `limits.document_bytes`, and the encoding runs under
+/// the same bound, so a byte error from either is check 1.2's
+/// `stage_limit_exceeded`/`input-bytes-exceeded` naming
+/// `observation.input_bytes` (FR-259 B4). A read or encoding that cannot
+/// reserve memory refuses `resource_exhausted`/`allocation-failed` carrying
+/// `requested` (FR-259 B6).
 ///
 /// A document the reader reads that holds a number with no exact RFC 8785
 /// spelling refuses `noncanonical_wire` (`inexact-integer` or
@@ -591,8 +798,13 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 /// reads every number of the document, including members admission reads no
 /// further, such as an invocation's `post`, `result`, `created` and
 /// `deleted` under a precondition.
-fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
-    let parsed_digest = match quire_canonical::read(bytes, u64::MAX) {
+fn check_document_digest(
+    bytes: &[u8],
+    read: &Result<quire_canonical::Document, quire_canonical::ReadError>,
+    expected: [u8; 32],
+    limits: ObservationLimits,
+) -> Result<(), AdmissionFailure> {
+    let parsed_digest = match read {
         Ok(document) => {
             if let Some((pointer, inexact, _)) =
                 crate::model::intake::first_inexact_number(document.root())
@@ -603,12 +815,15 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
                 ));
             }
             Some(
-                *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-                    .map_err(digest_encode_refusal)?
-                    .as_bytes(),
+                *quire_canonical::sha256(
+                    document,
+                    quire_canonical::Limits::new(limits.document_bytes),
+                )
+                .map_err(|error| digest_encode_refusal(&error, limits))?
+                .as_bytes(),
             )
         }
-        Err(error) => match digest_read_refusal(error) {
+        Err(error) => match digest_read_refusal(error, limits) {
             Some(refusal) => return Err(refusal),
             None => None,
         },
@@ -632,45 +847,114 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
 /// [`check_document_digest`]'s refusal for a refusal of the shared reader,
 /// or `None` when the bytes are digested raw: malformed bytes, and any
 /// other refusal of the bytes themselves.
-fn digest_read_refusal(error: quire_canonical::ReadError) -> Option<AdmissionFailure> {
+fn digest_read_refusal(
+    error: &quire_canonical::ReadError,
+    limits: ObservationLimits,
+) -> Option<AdmissionFailure> {
     match error {
-        quire_canonical::ReadError::Limit(_) => Some(input_bytes_exceeded()),
-        quire_canonical::ReadError::Allocation { requested } => Some(allocation_failed(requested)),
+        quire_canonical::ReadError::Limit(limit) => Some(input_bytes_exceeded(
+            limits.document_bytes,
+            u128::from(limit.required),
+        )),
+        quire_canonical::ReadError::Allocation { requested } => Some(allocation_failed(*requested)),
         // A number with no finite double (`1e400`) is not malformed bytes:
         // it refuses like any other number with no exact RFC 8785 spelling,
         // classified from its lexeme.
         quire_canonical::ReadError::NumberOutOfRange {
             pointer, lexeme, ..
-        } => crate::model::intake::out_of_range_number(&pointer, &lexeme).map(
-            |(pointer, inexact)| {
+        } => {
+            crate::model::intake::out_of_range_number(pointer, lexeme).map(|(pointer, inexact)| {
                 refuse(
                     AdmissionRecord::new(Code::NoncanonicalWire, inexact.as_str())
                         .with("document_pointer", pointer.as_str()),
                 )
-            },
-        ),
+            })
+        }
         _ => None,
     }
 }
 
 /// [`check_document_digest`]'s refusal for an error of the digest's
 /// encoding.
-fn digest_encode_refusal(error: quire_canonical::Error) -> AdmissionFailure {
+fn digest_encode_refusal(
+    error: &quire_canonical::Error,
+    limits: ObservationLimits,
+) -> AdmissionFailure {
     match error {
-        quire_canonical::Error::Limit(_) => input_bytes_exceeded(),
-        quire_canonical::Error::Allocation { requested } => allocation_failed(requested),
+        quire_canonical::Error::Limit(limit) => {
+            input_bytes_exceeded(limits.document_bytes, u128::from(limit.required))
+        }
+        quire_canonical::Error::Allocation { requested } => allocation_failed(*requested),
         // A read tree always has an RFC 8785 encoding: every number is a
         // finite double and every member name a string.
         _ => fault("read-document-has-no-canonical-encoding"),
     }
 }
 
-/// FR-106 check 1.2's refusal.
-fn input_bytes_exceeded() -> AdmissionFailure {
-    refuse(AdmissionRecord::new(
-        Code::StageLimitExceeded,
-        "input-bytes-exceeded",
+/// FR-106 check 1.2's refusal: `stage_limit_exceeded`/`input-bytes-exceeded`
+/// naming `observation.input_bytes`, its bound and the length reached.
+fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
+    limit_refusal(&LimitExceeded::new(
+        Setting::ObservationInputBytes,
+        bound,
+        actual,
     ))
+}
+
+/// `limit` as an admission refusal: `stage_limit_exceeded` with the limit's
+/// cause and its `kind`, `bound`, `actual` and `setting` fields (FR-255
+/// Behavior 1).
+fn limit_refusal(limit: &LimitExceeded) -> AdmissionFailure {
+    let mut record = AdmissionRecord::new(Code::StageLimitExceeded, limit.kind().catalog_cause());
+    if let Some(fields) = limit.catalog_fields() {
+        record.fields.extend(fields);
+    }
+    refuse(record)
+}
+
+/// FR-261 Behavior 4: the object and value counts of one document, charged
+/// as the reader's tree is walked. `values` counts every value form of the
+/// document, nested ones included.
+struct ReadMeter {
+    limits: ObservationLimits,
+    objects: u64,
+    values: u64,
+}
+
+impl ReadMeter {
+    fn new(limits: ObservationLimits) -> Self {
+        Self {
+            limits,
+            objects: 0,
+            values: 0,
+        }
+    }
+
+    /// Charge one object: `observation.objects`.
+    fn object(&mut self) -> Result<(), AdmissionFailure> {
+        self.objects = self.objects.saturating_add(1);
+        if self.objects > self.limits.objects_per_document {
+            return Err(limit_refusal(&LimitExceeded::new(
+                Setting::ObservationObjects,
+                self.limits.objects_per_document,
+                u128::from(self.objects),
+            )));
+        }
+        Ok(())
+    }
+
+    /// Charge one value form: `observation.values`.
+    fn value(&mut self) -> Result<(), AdmissionFailure> {
+        self.values = self.values.saturating_add(1);
+        if self.values > self.limits.values_per_document {
+            return Err(limit_refusal(&LimitExceeded::new(
+                Setting::ObservationValues,
+                self.limits.values_per_document,
+                u128::from(self.values),
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// FR-259 B6: reading or encoding the document could not reserve
@@ -688,6 +972,14 @@ mod digest_tests {
     use ix_trace_rs::trace;
     use sha2::{Digest, Sha256};
 
+    /// `check_document_digest` over one read of `bytes` under the default
+    /// limits, as admission makes it.
+    fn check(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
+        let limits = ObservationLimits::default();
+        let read = quire_canonical::read(bytes, limits.document_bytes);
+        check_document_digest(bytes, &read, expected, limits)
+    }
+
     /// FR-106 check 1.3: bytes the shared reader refuses -- a repeated
     /// member name, a lone surrogate escape -- are digested raw and
     /// never refused as malformed. A repeated-name document therefore
@@ -698,11 +990,7 @@ mod digest_tests {
     fn bytes_the_shared_reader_refuses_are_digested_raw() {
         for text in [r#"{"a":1,"a":2}"#, r#"{"s":"\ud800"}"#] {
             let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
-            assert_eq!(
-                check_document_digest(text.as_bytes(), raw),
-                Ok(()),
-                "{text}"
-            );
+            assert_eq!(check(text.as_bytes(), raw), Ok(()), "{text}");
         }
         let last_wins = quire_canonical::read(br#"{"a":2}"#, u64::MAX).unwrap();
         let canonical =
@@ -711,7 +999,7 @@ mod digest_tests {
                 .as_bytes();
         let raw: [u8; 32] = Sha256::digest(br#"{"a":1,"a":2}"#).into();
         assert_eq!(
-            check_document_digest(br#"{"a":1,"a":2}"#, canonical),
+            check(br#"{"a":1,"a":2}"#, canonical),
             Err(refuse(
                 AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
                     .with("selected", hex(&canonical))
@@ -743,7 +1031,7 @@ mod digest_tests {
             let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
             for digest in [raw, [0_u8; 32]] {
                 assert_eq!(
-                    check_document_digest(text.as_bytes(), digest),
+                    check(text.as_bytes(), digest),
                     Err(refuse(
                         AdmissionRecord::new(Code::NoncanonicalWire, cause)
                             .with("document_pointer", pointer)
@@ -761,7 +1049,7 @@ mod digest_tests {
     fn a_repeated_name_before_an_underflow_is_digested_raw() {
         let text = r#"{"a":1,"a":2,"n":1e-400}"#;
         let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
-        assert_eq!(check_document_digest(text.as_bytes(), raw), Ok(()));
+        assert_eq!(check(text.as_bytes(), raw), Ok(()));
     }
 
     /// FR-106 check 1.3: a document the reader reads, offered under another
@@ -779,7 +1067,7 @@ mod digest_tests {
         .as_bytes();
         let selected: [u8; 32] = Sha256::digest(b"another document").into();
         assert_eq!(
-            check_document_digest(text, selected),
+            check(text, selected),
             Err(refuse(
                 AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
                     .with("selected", hex(&selected))
@@ -807,8 +1095,8 @@ mod digest_tests {
                         .as_bytes();
                 let other: [u8; 32] = Sha256::digest(b"another document").into();
                 (
-                    check_document_digest(text.as_bytes(), own),
-                    check_document_digest(text.as_bytes(), other),
+                    check(text.as_bytes(), own),
+                    check(text.as_bytes(), other),
                     own,
                     other,
                 )
@@ -839,15 +1127,25 @@ mod digest_tests {
                 .with("requested", "4096"),
         );
         assert_eq!(
-            digest_read_refusal(quire_canonical::ReadError::Allocation { requested: 4096 }),
+            digest_read_refusal(
+                &quire_canonical::ReadError::Allocation { requested: 4096 },
+                ObservationLimits::default()
+            ),
             Some(expected.clone())
         );
         assert_eq!(
-            digest_encode_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
+            digest_encode_refusal(
+                &quire_canonical::Error::Allocation { requested: 4096 },
+                ObservationLimits::default()
+            ),
             expected
         );
         let over = quire_canonical::to_vec("over", quire_canonical::Limits::new(1)).unwrap_err();
-        assert_eq!(digest_encode_refusal(over), input_bytes_exceeded());
+        let limits = ObservationLimits::default();
+        assert!(matches!(
+            digest_encode_refusal(&over, limits),
+            AdmissionFailure::Refused(record) if record.cause == "input-bytes-exceeded"
+        ));
     }
 }
 
@@ -891,9 +1189,14 @@ pub fn admit_current_snapshot(
         )));
     }
     check_model_any(&views, &snapshot.model)?;
-    let admitted = document::admit_populations(&views, types, &snapshot.populations, None, limits)?;
-    let usage = read.usage.merged_with(admitted.usage);
-    Ok((admitted.environment, usage))
+    let admitted = document::admit_populations(
+        &views,
+        types,
+        &snapshot.populations,
+        None,
+        model_limits.ancestor_steps,
+    )?;
+    Ok((admitted.environment, read.usage))
 }
 
 /// FR-109's `Function` selection: `type_identity`'s own [`UniverseId`],
@@ -977,6 +1280,7 @@ pub fn admit_observations(
                 .operation
                 .as_ref()
                 .ok_or_else(|| fault("clause-declares-no-operation"))?,
+            ancestor_steps: model_limits.ancestor_steps,
         })
     };
 
@@ -996,6 +1300,7 @@ pub fn admit_observations(
             anchor,
             self_object,
             limits,
+            model_limits.ancestor_steps,
         ),
         ClauseSelectionInput::PreCall {
             snapshot,
@@ -1022,7 +1327,6 @@ pub fn admit_observations(
                     self_object,
                     parameters: &parameters,
                 },
-                limits,
             )
         }
         ClauseSelectionInput::Invocation { invocation } => match clause.kind {
@@ -1053,7 +1357,7 @@ pub fn admit_observations(
 
 mod document;
 mod frame;
-mod ordered_json;
+mod tree;
 
 use document::{read_document, DocumentKind};
 
@@ -1069,6 +1373,7 @@ fn admit_invariant(
     anchor: &SelectedAnchor,
     self_object: &SelectedObject,
     limits: ObservationLimits,
+    ancestor_steps: u64,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let read = read_document(
         DocumentKind::Snapshot,
@@ -1118,7 +1423,7 @@ fn admit_invariant(
         types,
         &snapshot.populations,
         Some(&self_object.population),
-        limits,
+        ancestor_steps,
     )?;
 
     // Check 9: self.
@@ -1131,9 +1436,8 @@ fn admit_invariant(
         self_object,
     )?;
 
-    let usage = read.usage.merged_with(environment.usage);
     Ok(AdmittedObservations {
-        usage,
+        usage: read.usage,
         clause,
         current: Some(Observation {
             identity: read.identity,
@@ -1239,15 +1543,13 @@ struct InvocationAdmission {
 }
 
 impl InvocationAdmission {
-    /// Every document's read usage and both snapshots' admission usage.
+    /// Every document's read usage.
     fn usage(&self) -> AdmissionUsage {
         self.documents
             .invocation
             .usage
             .merged_with(self.documents.pre.usage)
             .merged_with(self.documents.post.usage)
-            .merged_with(self.pre.usage)
-            .merged_with(self.post.usage)
     }
 }
 
@@ -1266,6 +1568,7 @@ fn admit_invocation_documents(
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
+    ancestor_steps: u64,
 ) -> Result<InvocationAdmission, AdmissionFailure> {
     // Check 1: read every selected document -- the invocation, then its
     // pre and post snapshots, in that order -- before any of checks 2 to 5
@@ -1336,14 +1639,13 @@ fn admit_invocation_documents(
         views,
         types,
         &pre_snapshot.populations,
-        limits,
         PostStateRange::Refuse,
+        ancestor_steps,
     )?;
     let post_values = document::admit_population_values(
         views,
         types,
         &post_snapshot.populations,
-        limits,
         // Only a postcondition reads the post snapshot as the
         // subject's output; a frame run refuses as for any input.
         if post_self {
@@ -1351,6 +1653,7 @@ fn admit_invocation_documents(
         } else {
             PostStateRange::Refuse
         },
+        ancestor_steps,
     )?;
     document::check_population_completeness(
         &pre_snapshot.populations,
@@ -1439,6 +1742,7 @@ struct PreCallContext<'a> {
     context_name: &'a str,
     clause: quire_exact::NodeKey,
     operation: &'a OperationFacts,
+    ancestor_steps: u64,
 }
 
 /// FR-106 check 5: an invocation's `context` and `operation` must be the
@@ -1505,7 +1809,6 @@ fn admit_pre_call_invocation(
             self_object: &call.self_object,
             parameters: &call.parameters,
         },
-        limits,
     )
 }
 
@@ -1517,7 +1820,6 @@ fn admit_pre_call_invocation(
 fn admit_pre_call(
     context: &PreCallContext<'_>,
     input: PreCallInput<'_>,
-    limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let call = input.call;
     let snapshot = input
@@ -1550,8 +1852,8 @@ fn admit_pre_call(
         context.views,
         context.types,
         &snapshot.populations,
-        limits,
         PostStateRange::Refuse,
+        context.ancestor_steps,
     )?;
     document::check_population_completeness(
         &snapshot.populations,
@@ -1590,10 +1892,7 @@ fn admit_pre_call(
         input.parameters,
     )?;
 
-    let usage = input
-        .invocation_usage
-        .merged_with(input.pre.usage)
-        .merged_with(admitted.usage);
+    let usage = input.invocation_usage.merged_with(input.pre.usage);
     Ok(AdmittedObservations {
         usage,
         clause: context.clause,
@@ -1637,6 +1936,7 @@ fn admit_operation(
         provisions,
         selected,
         limits,
+        ancestor_steps,
     )?;
     let invocation = admitted.documents.invocation()?;
 
@@ -1880,6 +2180,7 @@ pub fn admit_frame_invocation<'t>(
         provisions,
         selected,
         limits,
+        model_limits.ancestor_steps,
     )?;
     Ok(AdmittedInvocation {
         usage: admitted.usage(),

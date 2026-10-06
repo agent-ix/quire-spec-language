@@ -979,10 +979,11 @@ fn ancestor_paths(
         {
             return Err(Denial::from(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::AncestorSteps {
-                    from: root_key.clone(),
-                    limit: max_steps,
-                },
+                cause: ModelRefusalCause::ancestor_steps(
+                    root_key.clone(),
+                    max_steps,
+                    qsl_foundation::Setting::ModelAncestorSteps,
+                ),
                 detail: format!(
                     "ancestor walk from {} exceeded the ancestor_steps limit of {max_steps}",
                     root_key.node

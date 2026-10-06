@@ -30,6 +30,7 @@ use super::semantic_node::{
     NodeIdDocument, NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSelection,
 };
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::IdentityLimits;
 use quire_exact::is_identifier;
 use quire_exact::NodeKey;
 use quire_exact::VariantId;
@@ -182,8 +183,8 @@ fn canonical_declaration<'a>(
 }
 
 impl NodeIdentityPreimage for EnumDeclarationPreimage {
-    fn digest(&self) -> Result<[u8; 32], NominalRefusal> {
-        preimage_digest(&self.canonical())
+    fn digest(&self, identity: IdentityLimits) -> Result<[u8; 32], NominalRefusal> {
+        preimage_digest(&self.canonical(), identity)
     }
 }
 
@@ -241,12 +242,15 @@ impl EnumMemberPreimage {
 }
 
 impl NodeIdentityPreimage for EnumMemberPreimage {
-    fn digest(&self) -> Result<[u8; 32], NominalRefusal> {
-        preimage_digest(&CanonicalMember {
-            case: &self.case,
-            declaration_node_id: CanonicalNodeId::from(*self.declaration.as_bytes()),
-            version: MEMBER_VERSION,
-        })
+    fn digest(&self, identity: IdentityLimits) -> Result<[u8; 32], NominalRefusal> {
+        preimage_digest(
+            &CanonicalMember {
+                case: &self.case,
+                declaration_node_id: CanonicalNodeId::from(*self.declaration.as_bytes()),
+                version: MEMBER_VERSION,
+            },
+            identity,
+        )
     }
 }
 
@@ -269,6 +273,7 @@ impl AdmittedEnumDeclaration {
         preimage: EnumDeclarationPreimage,
         key: NodeKey,
         owners: &OwnerSelection,
+        identity: IdentityLimits,
     ) -> Result<Self, NominalRefusal> {
         let EnumDeclarationPreimage {
             owner,
@@ -285,7 +290,7 @@ impl AdmittedEnumDeclaration {
             owner,
             qualified_declaration,
         };
-        if preimage_digest(&admitted.canonical())? != *key.as_bytes() {
+        if preimage_digest(&admitted.canonical(), identity)? != *key.as_bytes() {
             return Err(refuse(SemanticGraphCause::StaleKey).into());
         }
         Ok(admitted)
@@ -332,8 +337,11 @@ impl AdmittedEnumDeclaration {
 
     /// The RFC 8785 bytes whose SHA-256 is the declaration's node key: the
     /// checked graph node's preimage (FR-092 rule 1).
-    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, NominalRefusal> {
-        preimage_bytes(&self.canonical())
+    pub(crate) fn preimage_bytes(
+        &self,
+        identity: IdentityLimits,
+    ) -> Result<Vec<u8>, NominalRefusal> {
+        preimage_bytes(&self.canonical(), identity)
     }
 
     /// Admit a member node of this declaration whose graph retains `key`.
@@ -341,6 +349,7 @@ impl AdmittedEnumDeclaration {
         &self,
         preimage: &EnumMemberPreimage,
         key: NodeKey,
+        identity: IdentityLimits,
     ) -> Result<EnumValue, NominalRefusal> {
         // Resolve the member's wire declaration id by lookup against this
         // declaration's own key (ADR-013 O-04).
@@ -348,12 +357,20 @@ impl AdmittedEnumDeclaration {
             return Err(refuse(SemanticGraphCause::ForeignDeclaration).into());
         }
         let member = self.declaration.member(&preimage.case, key)?;
-        if !retains(key, preimage)? {
+        if !retains(key, preimage, identity)? {
             return Err(refuse(SemanticGraphCause::StaleKey).into());
         }
         Ok(member)
     }
 }
+
+/// The byte limit a variant id's preimage encodes under: none. The preimage
+/// is one validated case identifier and a 32-byte digest, so it is bounded by
+/// the case name the check stage already bounded, and no setting could
+/// raise a bound here.
+const VARIANT_ID_LIMITS: IdentityLimits = IdentityLimits {
+    input_bytes: u64::MAX,
+};
 
 /// Mint the FR-141/OQ-F enum-member `VariantId` of a member `case` of the
 /// enum declaration keyed by `declaration`: the node-key digest over
@@ -366,11 +383,14 @@ impl AdmittedEnumDeclaration {
 /// `"sum-variant-member"` preimage `check/identity.rs:570` carried before
 /// this change, which did not conform to FR-141's member identity.
 pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
-    let digest = preimage_digest(&CanonicalMember {
-        case,
-        declaration_node_id: declaration.into(),
-        version: MEMBER_VERSION,
-    })
+    let digest = preimage_digest(
+        &CanonicalMember {
+            case,
+            declaration_node_id: declaration.into(),
+            version: MEMBER_VERSION,
+        },
+        VARIANT_ID_LIMITS,
+    )
     .expect(
         "a declaration NodeKey and a validated case identifier are always \
          representable as canonical JSON",
@@ -385,10 +405,14 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
 pub(crate) fn member_preimage_bytes(
     declaration: NodeKey,
     case: &str,
+    identity: IdentityLimits,
 ) -> Result<Vec<u8>, NominalRefusal> {
-    preimage_bytes(&CanonicalMember {
-        case,
-        declaration_node_id: declaration.into(),
-        version: MEMBER_VERSION,
-    })
+    preimage_bytes(
+        &CanonicalMember {
+            case,
+            declaration_node_id: declaration.into(),
+            version: MEMBER_VERSION,
+        },
+        identity,
+    )
 }

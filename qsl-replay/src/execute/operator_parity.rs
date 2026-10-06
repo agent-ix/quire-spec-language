@@ -14,7 +14,8 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::library::PackageId;
 
 use super::scalar_site::{applies, in_body};
-use super::{lookup, recompile, ReplayRefusal};
+use super::{lookup, recompile, request_limits, ReplayRefusal};
+use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName};
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{
@@ -74,7 +75,7 @@ pub fn replay_operator_parity(
     claim: OperatorClaim,
 ) -> OperatorParityReport {
     let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
-    let request = match ReplayRequest::decode(wire) {
+    let request = match ReplayRequest::decode(wire, ReplayLimits::default()) {
         Ok(request) => request,
         Err(refusal) => {
             return OperatorParityReport::new(
@@ -94,7 +95,8 @@ fn settle(
     request: &ReplayRequest,
     claim: OperatorClaim,
 ) -> Result<OperatorParityResult, ReplayRefusal> {
-    let compiled = recompile(request)?;
+    let limits = request_limits(request.stage_limits(), ReplayLimits::default())?;
+    let compiled = recompile(request, &limits)?;
     let package = compiled.emitted.package().package_id();
     let graph = compiled.checked.package().graph().semantic_graph();
     let operator = claim.operation.operator();

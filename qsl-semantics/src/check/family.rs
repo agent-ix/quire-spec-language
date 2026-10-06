@@ -53,7 +53,10 @@ use qsl_forms::{
     FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, Staged};
+#[cfg(test)]
+use qsl_foundation::diagnostic::LimitKind;
+use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
+use qsl_foundation::Setting;
 // The relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
 // general typer this family delegates to for a body or a call's
@@ -1518,7 +1521,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 "the denied amount is this declaration's charge"
             );
             return Err(located(LimitExceeded::new(
-                LimitKind::WorkBudget,
+                Setting::S3WorkUnits,
                 incomplete.limit,
                 u128::from(incomplete.consumed) + u128::from(denied.unwrap_or(metrics.work_budget)),
             )));
@@ -1574,12 +1577,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // failed (FR-096), not a typed `Refused`.
         let body = checked_body.map_err(|refusal| match refusal.cause {
             CheckCause::ResourceExhausted(ref exceeded) => StageFailure::Limit(
-                LimitExceeded::new(
-                    exceeded.kind.foundation_kind(),
-                    exceeded.limit,
-                    exceeded.actual,
-                )
-                .at(declarations.locus(&refusal.location)),
+                LimitExceeded::new(exceeded.kind.setting(), exceeded.limit, exceeded.actual)
+                    .at(declarations.locus(&refusal.location)),
             ),
             _ => StageFailure::Refused(refusal),
         })?;
@@ -1629,7 +1628,10 @@ mod tests {
         aliases: &[(String, ValueType)],
         declaration: &FunctionDeclaration,
     ) -> NodeKey {
-        let mut package = crate::check::PackageDeclarations::new(fixture_source());
+        let mut package = crate::check::PackageDeclarations::new(
+            fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        );
         package.types = types.clone();
         package.aliases = aliases.to_vec();
         package.functions = vec![declaration.clone()];
@@ -2819,7 +2821,7 @@ pub(crate) mod checking_tests {
                 ..base
             },
             LimitExceeded::new(
-                LimitKind::InputBytes,
+                Setting::S3InputBytes,
                 metrics.input_bytes - 1,
                 u128::from(metrics.input_bytes),
             ),
@@ -2914,7 +2916,7 @@ pub(crate) mod checking_tests {
             })
         };
         let work_limit = |bound: u64, actual: u128| {
-            Some(LimitExceeded::new(LimitKind::WorkBudget, bound, actual))
+            Some(LimitExceeded::new(Setting::S3WorkUnits, bound, actual))
         };
 
         assert_eq!(
@@ -3092,7 +3094,10 @@ pub(crate) mod checking_tests {
         let identity = |name: &str| {
             crate::check::PackageDeclarations {
                 functions: vec![declaration(name, Expression::boolean(true))],
-                ..crate::check::PackageDeclarations::new(super::fixtures::fixture_source())
+                ..crate::check::PackageDeclarations::new(
+                    super::fixtures::fixture_source(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
             }
             .check(CheckingLimits::default())
             .expect("the fixture checks")
@@ -3208,7 +3213,10 @@ pub(crate) mod checking_tests {
                 .iter()
                 .map(|name| super::fixtures::declaration(name, Expression::boolean(true)))
                 .collect(),
-            ..crate::check::PackageDeclarations::new(super::fixtures::fixture_source())
+            ..crate::check::PackageDeclarations::new(
+                super::fixtures::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect_err("repeated names are refused");

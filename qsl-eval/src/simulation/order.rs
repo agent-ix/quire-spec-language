@@ -8,6 +8,7 @@ use qsl_foundation::digest::DigestRecord;
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{canonical_bytes, state_key, EncodingRefusal, StateKey};
+use qsl_foundation::IdentityLimits;
 
 /// One initial state, keyed and digested, before admission.
 pub(crate) struct InitialState<S> {
@@ -25,12 +26,13 @@ pub(crate) struct InitialState<S> {
 /// no RFC 8785 encoding.
 pub(crate) fn sorted_initial<S: TransitionSystem>(
     system: &S,
+    identity: IdentityLimits,
 ) -> Result<Vec<InitialState<S::State>>, EncodingRefusal> {
     let mut items: Vec<InitialState<S::State>> = system
         .initial()
         .into_iter()
         .map(|state| -> Result<InitialState<S::State>, EncodingRefusal> {
-            let (key, digest) = state_key(&system.key(&state))?;
+            let (key, digest) = state_key(&system.key(&state), identity)?;
             Ok(InitialState { state, key, digest })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -80,6 +82,7 @@ type ExpandResult<T, S, F> = Result<Expanded<T, S, F>, EncodingRefusal>;
 pub(crate) fn expand<S: TransitionSystem>(
     system: &S,
     state: &S::State,
+    identity: IdentityLimits,
 ) -> ExpandResult<S::TransitionId, S::State, S::Finding> {
     let expansion = match system.successors(state) {
         Ok(expansion) => expansion,
@@ -89,8 +92,8 @@ pub(crate) fn expand<S: TransitionSystem>(
         .successors
         .into_iter()
         .map(|(transition, next)| -> Result<_, EncodingRefusal> {
-            let transition_bytes = canonical_bytes(&transition)?;
-            let (key, digest) = state_key(&system.key(&next))?;
+            let transition_bytes = canonical_bytes(&transition, identity)?;
+            let (key, digest) = state_key(&system.key(&next), identity)?;
             Ok((
                 transition_bytes,
                 OrderedSuccessor {

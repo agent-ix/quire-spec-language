@@ -320,7 +320,8 @@ fn an_execute_accounting_limit_carries_its_kind_bound_counter_and_field() {
 #[test]
 fn a_stage_limit_refusal_of_run_is_incomplete_and_exits_22() {
     use crate::spine::CheckingLimits;
-    use qsl_foundation::diagnostic::{Category, LimitKind, LimitsField};
+    use qsl_foundation::diagnostic::{Category, LimitKind};
+    use qsl_foundation::Setting;
     let mut source_limit = SpineLimits::default();
     source_limit.source.source_bytes = 1;
     let checking_limit = SpineLimits {
@@ -328,16 +329,8 @@ fn a_stage_limit_refusal_of_run_is_incomplete_and_exits_22() {
         ..SpineLimits::default()
     };
     for (limits, field, kind) in [
-        (
-            source_limit,
-            LimitsField::SourceBytes,
-            LimitKind::InputBytes,
-        ),
-        (
-            checking_limit,
-            LimitsField::CheckingNodes,
-            LimitKind::NodeCount,
-        ),
+        (source_limit, Setting::S1InputBytes, LimitKind::InputBytes),
+        (checking_limit, Setting::S3Nodes, LimitKind::NodeCount),
     ] {
         let refusal = run_limited(limits, &call("seven", Vec::new()))
             .expect_err("a reached stage limit refuses");
@@ -350,7 +343,7 @@ fn a_stage_limit_refusal_of_run_is_incomplete_and_exits_22() {
         let CompileRefusal::Limit(limit) = *compile else {
             panic!("expected a limit refusal for {field:?}");
         };
-        assert_eq!(limit.limits_field(), Some(field));
+        assert_eq!(limit.setting(), field);
         assert_eq!(limit.kind(), kind);
         assert_eq!(limit.configured_bound(), 1);
     }
@@ -809,13 +802,14 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
         other => panic!("{other:?}"),
     }
-    let ancestor_steps = ModelCause(ModelRefusalCause::AncestorSteps {
-        from: DeclarationKey {
+    let ancestor_steps = ModelCause(ModelRefusalCause::ancestor_steps(
+        DeclarationKey {
             package: "test/orders".to_owned(),
             node: "n".to_owned(),
         },
-        limit: 5,
-    });
+        5,
+        qsl_foundation::Setting::ModelAncestorSteps,
+    ));
     match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(
         Box::new(ancestor_steps),
     )))
@@ -885,7 +879,10 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
     ));
     let graph = PackageDeclarations {
         aliases: vec![("Pos".to_owned(), pos.clone())],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1037,12 +1034,12 @@ fn convert_refusal_with_no_record_and_no_fallback_is_a_typed_fault() {
 /// FR-277-AC-1 (TC-758 step 1), driver view: each limits field is a
 /// caller limit set on its own. Changing `s3.nodes` alone through the
 /// re-exported `CheckingLimits` keeps the other s3 fields at their defaults,
-/// and the run refuses at that bound naming `checking.nodes`.
+/// and the run refuses at that bound naming `s3.nodes`.
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn changing_s3_nodes_alone_keeps_the_other_checking_limits() {
     use crate::spine::CheckingLimits;
-    use qsl_foundation::diagnostic::LimitsField;
+    use qsl_foundation::Setting;
     let defaults = CheckingLimits::default();
     let limits = SpineLimits {
         checking: defaults.with_nodes(1),
@@ -1058,7 +1055,7 @@ fn changing_s3_nodes_alone_keeps_the_other_checking_limits() {
     let CompileRefusal::Limit(limit) = *compile else {
         panic!("expected a limit refusal");
     };
-    assert_eq!(limit.limits_field(), Some(LimitsField::CheckingNodes));
+    assert_eq!(limit.setting(), Setting::S3Nodes);
     assert_eq!(limit.configured_bound(), 1);
 }
 

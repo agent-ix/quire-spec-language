@@ -286,7 +286,8 @@ fn a_node_ref_spells_its_digest_as_the_node_key_does() {
             *byte = offset.wrapping_add(u8::try_from(at).expect("32 positions") * 8);
         }
         let key = NodeKey::from_digest(digest);
-        let bytes = canonical_bytes(&NodeRef(key)).expect("a node ref encodes");
+        let bytes =
+            canonical_bytes(&NodeRef(key), IdentityLimits::default()).expect("a node ref encodes");
         assert_eq!(
             String::from_utf8(bytes).expect("UTF-8"),
             format!(r#"{{"digest":"{key}","domain":"quire.checked-semantic-node/v1"}}"#)
@@ -296,7 +297,7 @@ fn a_node_ref_spells_its_digest_as_the_node_key_does() {
 
 /// [`group_keys`] with unbounded work.
 fn keys_of(members: &[NodeInput<'_>], handles: &[NodeKey]) -> Result<GroupKeys, NodeKeyRefusal> {
-    group_keys(members, handles, &mut |_| Ok(()))
+    group_keys(members, handles, IdentityLimits::default(), &mut |_| Ok(()))
 }
 
 /// The input of an application node inside a group.
@@ -375,7 +376,8 @@ fn the_key_does_not_depend_on_group_member_handles() {
         &[key(7), key(8)],
     )
     .expect("the group keys");
-    let outside = node_key(&in_group(&first_bodies[0])).expect("the node keys");
+    let outside =
+        node_key(&in_group(&first_bodies[0]), IdentityLimits::default()).expect("the node keys");
 
     assert_eq!(first, second);
     assert_ne!(first.members[0].key, outside.key);
@@ -791,7 +793,8 @@ fn structural<'a>(body: &'a BodyTerm) -> NodeInput<'a> {
 #[test]
 fn a_structural_preimage_is_pinned() {
     let body = empty_aggregate();
-    let keyed = node_key(&structural(&body)).expect("a builtin scalar keys");
+    let keyed =
+        node_key(&structural(&body), IdentityLimits::default()).expect("a builtin scalar keys");
     let expected = r#"{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"boolean","semantic_type":null,"version":"quire.structural-node/v1"}"#;
     assert_eq!(String::from_utf8(keyed.preimage).expect("UTF-8"), expected);
     assert_eq!(
@@ -810,13 +813,16 @@ fn an_owner_enters_a_declared_structural_key_only() {
     let u = owner();
     let w = Owner::Source(SourceOwner::new("a", "w").expect("nonempty owner"));
     let declared = |owner: &Owner| {
-        node_key(&NodeInput {
-            owner: Some(owner),
-            node_tag: NodeTag::CompositeType,
-            semantic_form: "record",
-            declaration: Some(&name),
-            ..structural(&body)
-        })
+        node_key(
+            &NodeInput {
+                owner: Some(owner),
+                node_tag: NodeTag::CompositeType,
+                semantic_form: "record",
+                declaration: Some(&name),
+                ..structural(&body)
+            },
+            IdentityLimits::default(),
+        )
         .expect("a declared record keys")
     };
     let under_u = declared(&u);
@@ -826,50 +832,66 @@ fn an_owner_enters_a_declared_structural_key_only() {
         json!({"kind": "source", "authority": "a", "identity": "u"})
     );
     assert_ne!(under_u.key, declared(&w).key);
-    let bare: Value = serde_json::from_slice(&node_key(&structural(&body)).expect("keys").preimage)
-        .expect("JSON");
+    let bare: Value = serde_json::from_slice(
+        &node_key(&structural(&body), IdentityLimits::default())
+            .expect("keys")
+            .preimage,
+    )
+    .expect("JSON");
     assert!(
         bare.get("owner").is_none(),
         "an undeclared node has no owner member"
     );
 
     assert_eq!(
-        node_key(&NodeInput {
-            owner: Some(&u),
-            ..structural(&body)
-        }),
+        node_key(
+            &NodeInput {
+                owner: Some(&u),
+                ..structural(&body)
+            },
+            IdentityLimits::default()
+        ),
         Err(NodeKeyRefusal::OwnerDeclarationMismatch)
     );
     assert_eq!(
-        node_key(&NodeInput {
-            declaration: Some(&name),
-            ..structural(&body)
-        }),
+        node_key(
+            &NodeInput {
+                declaration: Some(&name),
+                ..structural(&body)
+            },
+            IdentityLimits::default()
+        ),
         Err(NodeKeyRefusal::OwnerDeclarationMismatch)
     );
     // FR-094: a model-owned node's `declaration` is `null`.
     let model =
         Owner::Model(ModelOwner::new("acme/orders", "ix://acme/orders/Order").expect("nonempty"));
     assert_eq!(
-        node_key(&NodeInput {
-            owner: Some(&model),
-            declaration: Some(&name),
-            ..structural(&body)
-        }),
+        node_key(
+            &NodeInput {
+                owner: Some(&model),
+                declaration: Some(&name),
+                ..structural(&body)
+            },
+            IdentityLimits::default()
+        ),
         Err(NodeKeyRefusal::OwnerDeclarationMismatch)
     );
     let application = add(vec![argument(1)]);
     assert_eq!(
-        node_key(&NodeInput {
-            owner: Some(&u),
-            declaration: Some(&name),
-            semantic_type: Some(key(3)),
-            ..structural(&application)
-        }),
+        node_key(
+            &NodeInput {
+                owner: Some(&u),
+                declaration: Some(&name),
+                semantic_type: Some(key(3)),
+                ..structural(&application)
+            },
+            IdentityLimits::default()
+        ),
         Err(NodeKeyRefusal::OwnedApplication)
     );
     assert_eq!(
-        node_key(&structural(&application)),
+        node_key(&structural(&application), IdentityLimits::default()),
         Err(NodeKeyRefusal::UntypedApplication)
     );
 }
@@ -914,7 +936,7 @@ fn conformance_fr092_nominal_enum_keys_match_qspec_vectors() {
 
     let declaration_key = EnumDeclarationPreimage::from_json(declaration["preimage"].clone())
         .expect("enum-status decodes")
-        .digest()
+        .digest(qsl_foundation::IdentityLimits::default())
         .expect("enum-status digests");
     assert_eq!(
         Some(hex(&declaration_key).as_str()),
@@ -922,7 +944,7 @@ fn conformance_fr092_nominal_enum_keys_match_qspec_vectors() {
     );
     let member_key = EnumMemberPreimage::from_json(member["preimage"].clone())
         .expect("enum-status-ready decodes")
-        .digest()
+        .digest(qsl_foundation::IdentityLimits::default())
         .expect("enum-status-ready digests");
     assert_eq!(Some(hex(&member_key).as_str()), member["sha256"].as_str());
     let minted = mint_variant_id(NodeKey::from_digest(declaration_key), "READY");
@@ -944,19 +966,20 @@ fn hex(bytes: &[u8; 32]) -> String {
 #[trace("TC-728", "FR-259-AC-2")]
 #[test]
 fn a_node_preimage_over_the_identity_byte_limit_is_the_identity_limit() {
-    let bound = LIMITS.max_bytes();
-    let over = "a".repeat(usize::try_from(bound).expect("16 MiB fits usize"));
+    let limits = IdentityLimits::default().with_input_bytes(1024);
+    let bound = limits.input_bytes;
+    let over = "a".repeat(usize::try_from(bound).expect("1 KiB fits usize"));
     let Err(NodeKeyRefusal::Identity(IdentityRefusal::InputBytes {
         bound: reached,
         required,
-    })) = canonical_bytes(over.as_str())
+    })) = canonical_bytes(over.as_str(), limits)
     else {
         panic!("a preimage of more than {bound} bytes reaches the identity limit");
     };
     assert_eq!(reached, bound);
     assert!(required > bound);
     assert!(matches!(
-        canonical_sha256(over.as_str()),
+        canonical_sha256(over.as_str(), limits),
         Err(NodeKeyRefusal::Identity(IdentityRefusal::InputBytes { .. }))
     ));
     assert_eq!(

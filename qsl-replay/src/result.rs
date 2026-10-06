@@ -17,7 +17,7 @@ use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, V
 use quire_exact::{compare_keys, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
 
-use crate::bounds::BoundExceeded;
+use crate::bounds::{BoundExceeded, ReplayLimits};
 
 mod wire;
 use crate::identity::TracePosition;
@@ -702,15 +702,18 @@ fn measured_encoded_bytes(result: &ReplayResult) -> usize {
 /// bound is measured from `result`'s own content -- there is no
 /// caller-declared `encoded_bytes` a caller could understate to launder an
 /// oversized value past the check.
-pub fn read_bounded(result: ReplayResult) -> Result<ReplayResult, BoundExceeded> {
-    BoundExceeded::check(measured_encoded_bytes(&result))?;
+pub fn read_bounded(
+    result: ReplayResult,
+    limits: ReplayLimits,
+) -> Result<ReplayResult, BoundExceeded> {
+    BoundExceeded::check(measured_encoded_bytes(&result), limits)?;
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bounds::MAX_ENCODED_BYTES;
+    use crate::bounds::DEFAULT_INPUT_BYTES;
     use ix_trace_rs::trace;
 
     fn regions() -> Vec<SourceRegion> {
@@ -1064,7 +1067,7 @@ mod tests {
         // FR-072-AC-5: an oversized encoding refuses. B3: `read_bounded`
         // measures the result's own content, so the oversized case has to
         // actually carry oversized content -- a huge value-path segment.
-        let huge_segment = "x".repeat(MAX_ENCODED_BYTES + 1);
+        let huge_segment = "x".repeat(DEFAULT_INPUT_BYTES + 1);
         let oversized_result = WitnessArmResult::settle(
             Verdict::from_category(Category::Success),
             Verdict::from_category(Category::Success),
@@ -1074,7 +1077,10 @@ mod tests {
             regions(),
             charges(),
         );
-        let oversized = read_bounded(ReplayResult::Witness(oversized_result));
+        let oversized = read_bounded(
+            ReplayResult::Witness(oversized_result),
+            crate::ReplayLimits::default(),
+        );
         assert!(oversized.is_err());
     }
 
@@ -1109,7 +1115,8 @@ mod tests {
                 TerminalValue::Refuted,
             )],
         };
-        let proof_envelopes = read_backend_provider_envelope(&proof_source).unwrap();
+        let proof_envelopes =
+            read_backend_provider_envelope(&proof_source, crate::ReplayLimits::default()).unwrap();
         assert_eq!(proof_envelopes[0].category(), Category::Violation);
 
         // FR-070: a witness envelope decoding a function call's
@@ -1154,7 +1161,7 @@ mod tests {
                     source: Some(ReplaySource::Witness(witness)),
                     family_payload: Some(NoPayload),
                 };
-                WitnessEnvelope::reconstruct(packet).unwrap()
+                WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap()
             };
         let one_arg = build_witness_envelope("one_arg_fn", "x=1");
         let two_arg = build_witness_envelope("two_arg_fn", "x=1;y=2");

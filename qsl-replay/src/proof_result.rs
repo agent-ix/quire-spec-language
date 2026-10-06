@@ -7,7 +7,7 @@
 //! proof column never produces `undefined`: an undefined claim evaluation
 //! settles `refuted`, category violation.
 
-use crate::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
+use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::execute::ReplayRefusal;
 use crate::identity::Backend;
@@ -478,13 +478,11 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
 #[qsl_attrs::string_edge]
 pub fn read_backend_provider_envelope(
     source: &BackendProviderSource,
+    limits: ReplayLimits,
 ) -> Result<Vec<ProofResultEnvelope>, ProofResultRefusal> {
     // The bound check happens strictly first: nothing below this point
     // touches `source.items` until it has passed.
-    let measured = measured_encoded_bytes(source);
-    if measured > MAX_ENCODED_BYTES {
-        return Err(BoundExceeded { actual: measured }.into());
-    }
+    BoundExceeded::check(measured_encoded_bytes(source), limits)?;
 
     let backend = Backend::new(source.backend_identity.clone());
     Ok(source
@@ -526,6 +524,7 @@ pub struct EmptyEnvelopeSet;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;
     use crate::scalar::{ScalarClaim, ScalarOutcome};
     use ix_trace_rs::trace;
@@ -646,7 +645,8 @@ mod tests {
             .enumerate()
             .map(|(i, (value, _, _))| TerminalRecord::new(RequestIndex::new(i), value.clone()))
             .collect();
-        let envelopes = read_backend_provider_envelope(&source(items)).unwrap();
+        let envelopes =
+            read_backend_provider_envelope(&source(items), crate::ReplayLimits::default()).unwrap();
         for (i, (envelope, (value, expected_category, expected_cause))) in
             envelopes.iter().zip(cases.iter()).enumerate()
         {
@@ -716,10 +716,13 @@ mod tests {
     #[trace("TC-769", "FR-285-AC-1")]
     #[test]
     fn tc_769_refuted_terminal_record_is_violation_exit_10() {
-        let envelopes = read_backend_provider_envelope(&source(vec![TerminalRecord::new(
-            RequestIndex::new(0),
-            TerminalValue::Refuted,
-        )]))
+        let envelopes = read_backend_provider_envelope(
+            &source(vec![TerminalRecord::new(
+                RequestIndex::new(0),
+                TerminalValue::Refuted,
+            )]),
+            crate::ReplayLimits::default(),
+        )
         .unwrap();
         assert_eq!(envelopes[0].category(), Category::Violation);
         assert_eq!(envelopes[0].category().exit_code(), 10);
@@ -753,8 +756,8 @@ mod tests {
             RequestIndex::new(0),
             TerminalValue::Tested,
         )]);
-        oversized.backend_identity = "x".repeat(MAX_ENCODED_BYTES + 1);
-        let result = read_backend_provider_envelope(&oversized);
+        oversized.backend_identity = "x".repeat(DEFAULT_INPUT_BYTES + 1);
+        let result = read_backend_provider_envelope(&oversized, crate::ReplayLimits::default());
         assert!(matches!(result, Err(ProofResultRefusal::BoundExceeded(_))));
     }
 
@@ -849,7 +852,7 @@ mod tests {
                 step: SeparationStep::Body,
                 reason: SeparationReason::Refused(SeparationRefusal {
                     code: "invalid_runtime_input".to_owned(),
-                    cause: "x".repeat(MAX_ENCODED_BYTES + 1),
+                    cause: "x".repeat(DEFAULT_INPUT_BYTES + 1),
                     fields: BTreeMap::new(),
                 }),
             },
@@ -859,7 +862,7 @@ mod tests {
             TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(cause)),
         )]);
         assert!(matches!(
-            read_backend_provider_envelope(&oversized),
+            read_backend_provider_envelope(&oversized, crate::ReplayLimits::default()),
             Err(ProofResultRefusal::BoundExceeded(_))
         ));
     }
@@ -878,7 +881,7 @@ mod tests {
                 .unwrap(),
                 bindings: vec![
                     quire_exact::Value::Integer(quire_exact::Integer::from(0_i64));
-                    MAX_ENCODED_BYTES + 1
+                    DEFAULT_INPUT_BYTES + 1
                 ],
             },
             ScalarOutcome::OtherRefusal,
@@ -888,7 +891,7 @@ mod tests {
             TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(oversized)),
         )]);
         assert!(matches!(
-            read_backend_provider_envelope(&source),
+            read_backend_provider_envelope(&source, crate::ReplayLimits::default()),
             Err(ProofResultRefusal::BoundExceeded(_))
         ));
     }
@@ -924,9 +927,11 @@ mod tests {
             ),
         ];
         let original = source(items);
-        let first = read_backend_provider_envelope(&original).unwrap();
+        let first =
+            read_backend_provider_envelope(&original, crate::ReplayLimits::default()).unwrap();
         let serialized = ProofResultEnvelope::to_source(&first).unwrap();
-        let second = read_backend_provider_envelope(&serialized).unwrap();
+        let second =
+            read_backend_provider_envelope(&serialized, crate::ReplayLimits::default()).unwrap();
         assert_eq!(first, second);
         for envelope in &first {
             assert_eq!(envelope.backend().identity(), "kani-backend-1");

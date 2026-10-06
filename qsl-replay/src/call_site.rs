@@ -701,7 +701,7 @@ mod tests {
 
     use super::{call_site, CallSite, CallSiteRefusal, FunctionSite};
     use crate::identity::QualifiedName;
-    use crate::request::{ReplayRequestWire, StageLimits, StateEnvironment};
+    use crate::request::{ReplayRequestWire, StateEnvironment};
     use crate::spine::DependencyInput;
     use crate::witness::{CanonicalAssignment, ReplaySource};
 
@@ -753,19 +753,6 @@ mod tests {
         }
     }
 
-    fn stage_limits() -> StageLimits {
-        let s1 = ScalarLimits {
-            text_input_bytes: u64::try_from(crate::bounds::MAX_ENCODED_BYTES).unwrap(),
-            ..scalar_limits(u64::MAX)
-        };
-        StageLimits {
-            s1,
-            s2: scalar_limits(u64::MAX),
-            s3: scalar_limits(u64::MAX),
-            s4: scalar_limits(u64::MAX),
-        }
-    }
-
     /// A `ReplayRequestWire` replaying `function` over `bytes`, keyed by
     /// `assignments` -- built entirely from `call_site`'s own
     /// `package_id`/parameter pairs plus fixed constants, never by
@@ -801,7 +788,7 @@ mod tests {
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(u64::MAX),
-            stage_limits: stage_limits(),
+            stage_limits: std::collections::BTreeMap::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
@@ -834,7 +821,7 @@ mod tests {
                 value: crate::witness::WitnessValue::Integer(3),
             }],
         );
-        let result = crate::replay(request);
+        let result = crate::replay(request, crate::ReplayLimits::default());
         assert!(
             result.is_ok(),
             "call_site's node id for x must be the one replay accepts: {result:?}"

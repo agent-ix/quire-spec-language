@@ -24,10 +24,13 @@ relationships:
 
 A limit outcome SHALL tell the caller everything needed to run the input
 again under a larger limit (ADR-030 D-3). Every configurable resource limit
-in QSL has one stable setting name. The same name raises the limit from the
-library, from a replay request and from the driver CLI (`quire`, ADR-029
-CB-1), which exposes the caller limits through QSL's settings operation. Every
-`stage_limit_exceeded` outcome names the limit, its value and its setting.
+of QSL's front end and engines has one stable setting name. The same name
+raises the limit from the library, from a replay request (every setting but
+`replay.input_bytes`) and from the driver CLI (`quire`, ADR-029 CB-1), which
+exposes the caller limits through QSL's settings operation, wherever that
+entry point takes the setting. Every `stage_limit_exceeded` outcome names the
+limit, its value and its setting. An execution budget set in a request's
+accounting limits (below) has no setting name here.
 
 The ecosystem rule that depth is never a limit kind, and that a reached
 limit names how to raise it, is QSpec's (ADR-030 D-1; QSpec FR-460 and
@@ -44,10 +47,9 @@ Every limit has no ceiling: a caller raises or lowers it, and the value is
 used as given. The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`),
 NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
-(`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
-FR-101 (`explore.*`), NFR-006 (`runtime.*`, `validation.*`, `evaluation.*`),
-NFR-007 (`package.*`), NFR-009 (`composed.*`), FR-003 (`format.*`), FR-025
-(`rule_model.*`), FR-009 (`lowering.*`) and NFR-008 (`temporal.*`).
+(`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`)
+and FR-101 (`explore.*`). A limit of an operation QSL has not yet
+ported takes its row, with its limits type, when that operation lands.
 
 | Setting | Stage | Limit kind | Library field | Default |
 | --- | --- | --- | --- | --- |
@@ -58,9 +60,10 @@ NFR-007 (`package.*`), NFR-009 (`composed.*`), FR-003 (`format.*`), FR-025
 | `s3.nodes` | S3 | node count | `CheckingLimits` nodes | 100000 units |
 | `s3.input_bytes` | S3 | input bytes | `CheckingLimits` declaration preimage bytes | 16777216 bytes |
 | `s3.work_units` | S3 | work budget | `CheckingLimits` work budget | 16777216 units |
+| `s3.decimal_scale` | S3 assembly | work budget | `AssemblyLimits` decimal scale | 4096 digits |
 | `environment.ancestor_steps` | S3 type-environment admission | edge count | `TypeEnvironmentLimits` ancestor_steps | 16777216 edges |
 | `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
-| `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes | 67108864 bytes |
+| `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes (pending QSL-487) | 67108864 bytes |
 | `model.declaration_records` | model normalization | node count | `ModelNormalizationLimitsV1` declaration_records | 100000 records |
 | `model.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
 | `model.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
@@ -82,7 +85,7 @@ NFR-007 (`package.*`), NFR-009 (`composed.*`), FR-003 (`format.*`), FR-025
 | `dependency.libraries` | S4 source resolution | node count | `DependencyLimits` libraries | 4096 libraries |
 | `dependency.import_edges` | S4 source resolution | edge count | `DependencyLimits` import_edges | 16384 edges |
 | `dependency.source_bytes` | S4 source resolution | input bytes | `DependencyLimits` source_bytes | 16777216 bytes |
-| `identity.input_bytes` | identity encoding (FR-259) | input bytes | the identity encoding limits' bytes (`IDENTITY_LIMITS` is the default) | 16777216 bytes |
+| `identity.input_bytes` | identity encoding | input bytes | `AssemblyLimits` identity (`IdentityLimits` input_bytes), carried into checking, bundle linking and exploration keys | 16777216 bytes |
 | `replay.input_bytes` | replay envelope readers | input bytes | the replay readers' encoded-byte bound | 1048576 bytes |
 | `i2.input_bytes` | I2 v2 reader | input bytes | the v2 read limits' artifact bytes | 16777216 bytes |
 | `i2.nodes` | I2 v2 reader | node count | the v2 read limits' nodes | 10000 nodes |
@@ -92,53 +95,14 @@ NFR-007 (`package.*`), NFR-009 (`composed.*`), FR-003 (`format.*`), FR-025
 | `i2.work_units` | I2 v2 reader | work budget | the v2 read limits' work | 1000000 units |
 | `explore.states` | exploration | node count | exploration `Limits` max_states | 10000000 states |
 | `explore.transitions` | exploration | edge count | exploration `Limits` max_transitions | 100000000 transitions |
-| `runtime.artifact_bytes` | native runtime construction | input bytes | `ArtifactLimits` artifact_bytes | 1048576 bytes |
-| `runtime.text_bytes` | native runtime construction | input bytes | `ArtifactLimits` text_bytes | 1048576 bytes |
-| `runtime.nodes` | native runtime construction | node count | `ArtifactLimits` nodes | 100000 nodes |
-| `runtime.entries` | native runtime construction | node count | `ArtifactLimits` entries | 100000 entries |
-| `validation.artifacts` | native validation | node count | `ValidationLimits` artifacts | 64 artifacts |
-| `validation.artifact_bytes` | native validation | input bytes | `ValidationLimits` artifact_bytes | 8388608 bytes |
-| `validation.objects` | native validation | node count | `ValidationLimits` objects | 10000 objects |
-| `validation.work_units` | native validation | work budget | `ValidationLimits` work | 1000000 visits |
-| `validation.text_steps` | native validation | work budget | `ValidationLimits` text_steps | 8388608 advances |
-| `validation.diagnostics` | native validation | diagnostic count | `ValidationLimits` diagnostics | 256 entries |
-| `evaluation.expression_steps` | native evaluation | work budget | `EvaluationLimits` expression_steps | 1000000 steps |
-| `evaluation.graph_steps` | native evaluation | work budget | `EvaluationLimits` graph_steps | 10000 steps |
-| `evaluation.comparisons` | native evaluation | work budget | `EvaluationLimits` comparisons | 100000 pairs |
-| `evaluation.text_steps` | native evaluation | work budget | `EvaluationLimits` text_steps | 1048576 advances |
-| `evaluation.events` | native evaluation | node count | `EvaluationLimits` events | 10000 events |
-| `package.input_bytes` | native package | input bytes | native `PackageLimits` artifact_bytes | 16777216 bytes |
-| `package.output_bytes` | native package | input bytes | native `PackageLimits` output_bytes | 16777216 bytes |
-| `package.string_bytes` | native package | input bytes | native `PackageLimits` string_bytes | 16777216 bytes |
-| `package.entries` | native package | node count | native `PackageLimits` entries | 100000 entries |
-| `composed.input_value_nodes` | composed evaluation | node count | composed `Limits` input_value_nodes | 100000 nodes |
-| `composed.input_aggregate_entries` | composed evaluation | node count | composed `Limits` input_aggregate_entries | 100000 entries |
-| `composed.input_text_bytes` | composed evaluation | input bytes | composed `Limits` input_text_bytes | 8388608 bytes |
-| `composed.expression_work` | composed evaluation | work budget | composed `Limits` expression_work | 1000000 operations |
-| `composed.sequence_work` | composed evaluation | occurrence count | composed `Limits` sequence_work | 1000000 occurrences |
-| `composed.retained_output` | composed evaluation | node count | composed `Limits` retained_output | 100000 values |
-| `composed.graph_expansion` | composed evaluation | node count | composed `Limits` graph_expansion | 10000 objects |
-| `composed.graph_edges` | composed evaluation | edge count | composed `Limits` graph_edges | 100000 edges |
-| `composed.value_comparison` | composed evaluation | work budget | composed `Limits` value_comparison | 100000 units |
-| `format.output_bytes` | native format | input bytes | `format_with_limit` output bytes | 1048576 bytes |
-| `rule_model.source_bytes` | rule-model source frontend | input bytes | `ModelSourceLimits` source_bytes | 1048576 bytes |
-| `rule_model.entries` | rule-model source frontend | node count | `ModelSourceLimits` entries | 10000 entries |
-| `lowering.nodes` | native projection lowering | node count | `LoweringLimits` nodes | 10000 nodes |
-| `lowering.output_bytes` | native projection lowering | input bytes | `LoweringLimits` bytes | 16777216 bytes |
-| `temporal.positions` | temporal evaluation | work budget | temporal `Limits` positions | 1000000 positions |
-| `temporal.valuations` | temporal evaluation | work budget | temporal `Limits` valuations | 1000000 lookups |
-| `temporal.instances` | temporal evaluation | node count | temporal `Limits` instances | 10000 instances |
-| `temporal.captures` | temporal evaluation | node count | temporal `Limits` captures | 100000 records |
-| `temporal.retention` | temporal evaluation | node count | temporal `Limits` retention | 1000000 records |
-| `temporal.visits` | temporal evaluation | work budget | temporal `Limits` visits | 1000000 visits |
-| `temporal.horizon` | temporal evaluation | work budget | temporal `Limits` horizon | 9223372036854775807 |
 
 S2 has no limit of its own (FR-257). `replay.input_bytes` bounds the replay
 request and envelope bytes themselves, so it is raised from the library and
 the CLI, and a request's own `stage_limits` does not carry it. An execution
-budget under `quire.value.accounting/v1` is named by its accounting counter,
-for example `work_units`, and that counter name is its setting (QSpec FR-461
-Behavior 5). A configurable limit QSL adds later takes a name by the same
+budget under `quire.value.accounting/v1` is set in a request's accounting limits,
+not through `--limit` or `CallerLimits`, and is named by its accounting
+counter, for example `work_units`, which settles as `Incomplete` (QSpec
+FR-461 Behavior 5); it has no row in this table. A configurable limit QSL adds later takes a name by the same
 rule and a row in this table.
 
 ## Behavior
@@ -189,6 +153,31 @@ rule and a row in this table.
 | FR-255-AC-4 | For each row of the setting table, an input that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each of: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, and a row whose stage a replay does not run, is exercised through the builder and the settings operation. | Test (TC-721) |
 | FR-255-AC-5 | The settings operation given `s9.nodes=1`, given `s3.nodes=ten`, given `s3.nodes=-1`, and given `s3.nodes=5` and `s3.nodes=6` together, each returns a usage refusal naming the offending operand, and no stage runs. | Test (TC-721) |
 | FR-255-AC-6 | A compile with no limit configured at any entry point runs each stage at the defaults the table lists, and the effective limits a checked package records equal those defaults. | Test (TC-721) |
+
+## Status
+
+The setting table, the one-mapping-per-limits-type rule, the builders, the
+settings operation, a request's `stage_limits` and the defaults are
+implemented (TC-720, TC-721). Backing of the criteria:
+
+- The `intake.input_bytes` row is pending: it has no setting in the code, no
+  limits type and no entry point yet, and lands with the semantic-IR intake
+  work (B6, QSL-487, FR-260). Until then the settings operation refuses it
+  as an unknown setting, AC-3 and AC-6 hold for every row but that one, and
+  the table marks it "(pending QSL-487)" so the tests can tell it from a
+  row the code forgot.
+- FR-255-AC-1 is stage-driven for every row but the pending one: the step
+  ceilings (`model.ancestor_steps`, `admission.ancestor_steps`,
+  `model.family_steps`) carry their setting and the count reached in the
+  model refusal cause itself.
+- FR-255-AC-3 compares the limits types against the table in this file.
+- FR-255-AC-4 is stage-driven through the settings operation and a request's
+  `stage_limits` for `s1.tokens`, `s3.nodes`, `s3.work_units` and
+  `identity.input_bytes`, and through the stage's own limit raise for
+  `library.*`, `admission.population_members`, `admission.work_units` and
+  `model.dispatch_candidates`; every other row is checked at the entry
+  points (the setting is accepted and sets its field) and not re-run
+  through its stage.
 
 ## Dependencies
 

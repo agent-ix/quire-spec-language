@@ -5,7 +5,8 @@
 //! (`value::expression::s6a`, ADR-011 §6.2 `family` row).
 
 use super::outcome::CheckOutcome;
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
+use qsl_foundation::diagnostic::LimitExceeded;
+use qsl_foundation::Setting;
 use quire_exact::Meter;
 
 /// A diagnostic a family's `check` records against the scope it was raised
@@ -173,7 +174,7 @@ impl<'a, D> CheckContext<'a, D> {
     pub(crate) fn check_input_bytes(&self, amount: u64) -> Result<(), LimitExceeded> {
         if amount > self.limits.input_bytes {
             return Err(LimitExceeded::new(
-                LimitKind::InputBytes,
+                Setting::S3InputBytes,
                 self.limits.input_bytes,
                 u128::from(amount),
             ));

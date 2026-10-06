@@ -292,7 +292,7 @@ impl CheckedPackage {
     /// fn build(
     ///     source: qsl_foundation::source::provenance::RawSourceRef,
     /// ) -> CheckedPackage {
-    ///     let graph = PackageDeclarations::new(source)
+    ///     let graph = PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
     ///         .check(CheckingLimits::default())
     ///         .expect("an empty package checks cleanly");
     ///     CheckedPackage::link(graph)
@@ -512,7 +512,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
     .reference()
     .clone();
     let graph = Arc::new(
-        PackageDeclarations::new(source)
+        PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
             .check(CheckingLimits::default())
             .expect("an empty package checks"),
     );
@@ -601,7 +601,10 @@ mod tests {
                 None,
                 qsl_forms::Expression::boolean(true),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("a function over a model reference checks");

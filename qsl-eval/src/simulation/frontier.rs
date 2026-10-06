@@ -3,6 +3,7 @@
 //! TR-7).
 
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::Setting;
 
 /// Canonical states not yet expanded when a run stopped, in the exact order
 /// the engine would expand them next: each a `quire.simulation.state-key/v1`
@@ -22,13 +23,13 @@ pub enum Limit {
 }
 
 impl Limit {
-    /// The setting name that raises this limit (FR-255): `explore.states`
-    /// or `explore.transitions`. The library raises it by setting the
-    /// matching `Limits` member.
-    pub const fn setting(self) -> &'static str {
+    /// The setting that raises this limit (FR-255): `explore.states` or
+    /// `explore.transitions`. The library raises it by setting the matching
+    /// `Limits` member.
+    pub const fn setting(self) -> Setting {
         match self {
-            Self::States(_) => "explore.states",
-            Self::Transitions(_) => "explore.transitions",
+            Self::States(_) => Setting::ExploreStates,
+            Self::Transitions(_) => Setting::ExploreTransitions,
         }
     }
 

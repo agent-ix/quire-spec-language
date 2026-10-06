@@ -330,7 +330,7 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
         types: types(acme),
         models: vec![acme.model.clone()],
         functions,
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the acme functions check: {refusals:?}"))
@@ -424,6 +424,7 @@ fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> Package
         clauses,
         fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
     declarations.types = types(acme);
@@ -456,6 +457,7 @@ fn lower<T>(
         0,
         &mut occurrences,
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     );
     let built = build(&mut lowering);
     (built, lowering.finish(&generated_location()).graph)
@@ -1064,6 +1066,7 @@ mod quantities {
                 authority: "agent-ix".into(),
                 identity: "example-model".into(),
             })]),
+            qsl_foundation::IdentityLimits::default(),
         )
         .expect("the QSpec unit vectors admit")
     }
@@ -1096,7 +1099,7 @@ mod quantities {
                 builtin(BuiltinType::Boolean),
                 body,
             )],
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         };
         let plain = check_declarations(package(Expression::boolean(true)));
         let graph = plain.semantic_graph();
@@ -1205,7 +1208,11 @@ mod quantities {
             "offset": {"numerator": "0", "denominator": "1"},
         }))
         .expect("a derived unit");
-        let km = NodeKey::from_digest(kilometre.digest().expect("the unit digests"));
+        let km = NodeKey::from_digest(
+            kilometre
+                .digest(qsl_foundation::IdentityLimits::default())
+                .expect("the unit digests"),
+        );
         let graph = admit_unit_graph(
             [
                 (dimension("Length"), node_key(LENGTH)),
@@ -1220,6 +1227,7 @@ mod quantities {
                 authority: "agent-ix".into(),
                 identity: "example-model".into(),
             })]),
+            qsl_foundation::IdentityLimits::default(),
         )
         .expect("metre, second and kilometre admit");
         let km_type = ValueType::Quantity(UnitId::declared(km));
@@ -1235,7 +1243,7 @@ mod quantities {
                 named("Km"),
                 Expression::convert(named("Km"), name("a")),
             )],
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         });
         let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
         assert_eq!(convert.len(), 1);

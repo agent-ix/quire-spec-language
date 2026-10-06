@@ -251,12 +251,19 @@ pub struct PackageDeclarations {
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
+    /// The byte limit every node identity of this package encodes under
+    /// (`identity.input_bytes`), carried from the assembly that built it.
+    pub identity: qsl_foundation::IdentityLimits,
 }
 
 impl PackageDeclarations {
     /// A package declared by the source unit `source` names, with no
-    /// declaration yet and no lock evidence.
-    pub fn new(source: qsl_foundation::source::provenance::RawSourceRef) -> Self {
+    /// declaration yet and no lock evidence, whose node identities encode
+    /// under `identity`.
+    pub fn new(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        identity: qsl_foundation::IdentityLimits,
+    ) -> Self {
         Self {
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
@@ -283,6 +290,7 @@ impl PackageDeclarations {
             state_clauses: Vec::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
+            identity,
         }
     }
 

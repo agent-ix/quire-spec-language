@@ -170,7 +170,13 @@ impl Nodes {
             .iter()
             .map(|(preimage, key)| Ok((UnitPreimage::from_json(preimage.clone())?, *key)))
             .collect();
-        admit_unit_graph(dimensions?, units?, &owners()).map_err(|refusal| match refusal {
+        admit_unit_graph(
+            dimensions?,
+            units?,
+            &owners(),
+            qsl_foundation::IdentityLimits::default(),
+        )
+        .map_err(|refusal| match refusal {
             NominalRefusal::Graph(invalid) => invalid,
             other @ (NominalRefusal::Limit(_) | NominalRefusal::Allocation { .. }) => {
                 panic!("a fixture preimage encodes: {other:?}")
@@ -396,7 +402,7 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         assert_eq!(
             DimensionPreimage::from_json(preimage.clone())
                 .unwrap()
-                .digest()
+                .digest(qsl_foundation::IdentityLimits::default())
                 .unwrap(),
             *key.as_bytes()
         );
@@ -406,7 +412,7 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         assert_eq!(
             UnitPreimage::from_json(preimage.clone())
                 .unwrap()
-                .digest()
+                .digest(qsl_foundation::IdentityLimits::default())
                 .unwrap(),
             *key.as_bytes()
         );
@@ -619,7 +625,13 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     ] {
         let expected_digest = digest_hex(&preimage);
         let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
-        assert_eq!(parsed.id().unwrap().to_string(), expected_digest);
+        assert_eq!(
+            parsed
+                .id(qsl_foundation::IdentityLimits::default())
+                .unwrap()
+                .to_string(),
+            expected_digest
+        );
         let unit = graph.compound_unit(parsed.terms()).unwrap();
         assert_eq!(unit.id().unwrap().to_string(), expected_digest);
         assert_eq!(unit.id().unwrap().domain(), UnitDomain::Compound);
@@ -774,7 +786,7 @@ fn tc_411_compound_unit_ids_match_qspec_vectors() {
         let name = vector["name"].as_str().expect("vector name is a string");
         let id = CompoundUnitPreimage::from_json(vector["preimage"].clone())
             .unwrap_or_else(|refusal| panic!("{name}: {refusal}"))
-            .id()
+            .id(qsl_foundation::IdentityLimits::default())
             .unwrap();
         assert_eq!(id.domain(), UnitDomain::Compound, "{name}");
         assert_eq!(

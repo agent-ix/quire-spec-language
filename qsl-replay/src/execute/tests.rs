@@ -17,7 +17,7 @@ use crate::proof_result::{InconclusiveCause, TerminalValue};
 use crate::request::StateEnvironment;
 use crate::result::{InputSettlement, WitnessSettlement};
 use crate::scalar::ScalarOutcome;
-use crate::spine::{compose, ComposedUnit, SpineStage};
+use crate::spine::{compose, ComposedUnit, SpineLimits, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -58,21 +58,6 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     work_units: u64::MAX,
     result_units: u64::MAX,
 };
-
-/// The proving run's stage limits: S1 admits any source a request can
-/// carry, and S3's work budget is used as given.
-fn stage_limits() -> StageLimits {
-    let s1 = ScalarLimits {
-        text_input_bytes: u64::try_from(MAX_ENCODED_BYTES).unwrap(),
-        ..UNLIMITED
-    };
-    StageLimits {
-        s1,
-        s2: UNLIMITED,
-        s3: UNLIMITED,
-        s4: UNLIMITED,
-    }
-}
 
 fn spine(source: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> ComposedUnit {
     compose(
@@ -146,7 +131,7 @@ fn request(
         backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: UNLIMITED,
-        stage_limits: stage_limits(),
+        stage_limits: BTreeMap::new(),
         byte_provision: vec![(
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             digest.hex(),
@@ -196,7 +181,9 @@ fn p(x: i64) -> ReplayRequestWire {
 #[trace("TC-444", "FR-098-AC-1", "FR-098-AC-2")]
 #[test]
 fn tc_444_an_input_counterexample_replays_and_agrees() {
-    let ReplayResult::Input(result) = replay(small(7)).expect("the replay runs") else {
+    let ReplayResult::Input(result) =
+        replay(small(7), ReplayLimits::default()).expect("the replay runs")
+    else {
         panic!("an Input-sourced request settles on the Input arm");
     };
     assert_eq!(
@@ -275,7 +262,10 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
     );
     wire.byte_provision = provision;
     assert!(
-        matches!(replay(wire), Ok(ReplayResult::Input(_))),
+        matches!(
+            replay(wire, ReplayLimits::default()),
+            Ok(ReplayResult::Input(_))
+        ),
         "the provision recompiles the package the request names"
     );
 }
@@ -298,7 +288,9 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
             ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{values}>>>")).unwrap()),
         )
     };
-    let ReplayResult::Witness(result) = replay(witness(format!("{x}=8"))).unwrap() else {
+    let ReplayResult::Witness(result) =
+        replay(witness(format!("{x}=8")), ReplayLimits::default()).unwrap()
+    else {
         panic!("a Witness-sourced request settles on the Witness arm");
     };
     assert_eq!(
@@ -309,7 +301,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     // decisive occurrence, so the agreement carries no record.
     assert!(result.record().is_none());
 
-    let refused = replay(witness(String::new())).unwrap_err();
+    let refused = replay(witness(String::new()), ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             refused,
@@ -317,7 +309,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
         ),
         "expected a missing entry, got {refused:?}"
     );
-    let refused = replay(witness("x=8".to_owned())).unwrap_err();
+    let refused = replay(witness("x=8".to_owned()), ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refused,
@@ -330,7 +322,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     // batch of replays reports which one failed.
     let mut wire = witness(String::new());
     wire.obligation_identity = [7; 32];
-    let refused = replay(wire).unwrap_err();
+    let refused = replay(wire, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Witness { obligation, .. } = &refused else {
         panic!("expected a witness refusal, got {refused:?}");
     };
@@ -345,7 +337,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
 #[trace("TC-444", "FR-098-AC-5")]
 #[test]
 fn tc_444_a_disagreement_settles_inconclusive() {
-    let ReplayResult::Input(holds) = replay(small(3)).unwrap() else {
+    let ReplayResult::Input(holds) = replay(small(3), ReplayLimits::default()).unwrap() else {
         panic!("Input arm");
     };
     assert_eq!(holds.settlement(), InputSettlement::Inconclusive);
@@ -363,7 +355,7 @@ fn tc_444_a_disagreement_settles_inconclusive() {
         work_units: 0,
         ..UNLIMITED
     };
-    let ReplayResult::Input(incomplete) = replay(starved).unwrap() else {
+    let ReplayResult::Input(incomplete) = replay(starved, ReplayLimits::default()).unwrap() else {
         panic!("Input arm");
     };
     assert_eq!(incomplete.settlement(), InputSettlement::Inconclusive);
@@ -389,7 +381,9 @@ fn tc_444_a_disagreement_settles_inconclusive() {
 #[trace("TC-444", "FR-098-AC-1", "FR-098-AC-2")]
 #[test]
 fn tc_444_a_nested_function_call_replays_and_agrees() {
-    let ReplayResult::Input(result) = replay(p(1)).expect("the replay runs") else {
+    let ReplayResult::Input(result) =
+        replay(p(1), ReplayLimits::default()).expect("the replay runs")
+    else {
         panic!("an Input-sourced request settles on the Input arm");
     };
     assert_eq!(
@@ -409,7 +403,9 @@ fn tc_444_a_nested_function_call_replays_and_agrees() {
 #[trace("TC-444", "FR-098-AC-5")]
 #[test]
 fn tc_444_a_nested_function_call_disagreement_settles_inconclusive() {
-    let ReplayResult::Input(result) = replay(p(5)).expect("the replay runs") else {
+    let ReplayResult::Input(result) =
+        replay(p(5), ReplayLimits::default()).expect("the replay runs")
+    else {
         panic!("an Input-sourced request settles on the Input arm");
     };
     assert_eq!(result.settlement(), InputSettlement::Inconclusive);
@@ -433,12 +429,15 @@ fn tc_444_a_meaning_edit_refuses_by_package_id() {
     let edited = source.replace("x < 5", "x < 6");
     let recompiled = spine(&edited, &BTreeMap::new()).emitted.package_id();
     assert_ne!(recompiled, compiled.emitted.package_id());
-    let refused = replay(request(
-        edited.as_bytes(),
-        compiled.emitted.package_id(),
-        name(&["small"]),
-        input(parameter(&compiled, "small", 0), 7),
-    ))
+    let refused = replay(
+        request(
+            edited.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["small"]),
+            input(parameter(&compiled, "small", 0), 7),
+        ),
+        ReplayLimits::default(),
+    )
     .unwrap_err();
     let ReplayRefusal::PackageIdMismatch {
         requested,
@@ -481,7 +480,7 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
         edited_digest.hex(),
         edited.as_bytes().to_vec(),
     )];
-    let refused = replay(absent).unwrap_err();
+    let refused = replay(absent, ReplayLimits::default()).unwrap_err();
     assert_eq!(refused.code(), Code::MissingImport);
     let original = source_digest(source.as_bytes());
     let ReplayRefusal::Request(ReplayRequestRefusal::IncompleteByteProvision {
@@ -507,7 +506,7 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
         input(x, 7),
     );
     mismatched.byte_provision[0].2 = edited.clone().into_bytes();
-    let refused = replay(mismatched).unwrap_err();
+    let refused = replay(mismatched, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Request(ReplayRequestRefusal::ByteDigestMismatch { declared, actual }) =
         &refused
     else {
@@ -551,7 +550,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
         hex.clone(),
         document,
     ));
-    let ReplayResult::Input(result) = replay(with_package).unwrap() else {
+    let ReplayResult::Input(result) = replay(with_package, ReplayLimits::default()).unwrap() else {
         panic!("Input arm");
     };
     assert_eq!(
@@ -559,7 +558,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
         InputSettlement::ReproducedWithoutWitness
     );
 
-    let refused = replay(wire()).unwrap_err();
+    let refused = replay(wire(), ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
         panic!("expected a recompile refusal, got {refused:?}");
     };
@@ -583,7 +582,7 @@ fn tc_444_a_selection_naming_no_function_refuses() {
     ] {
         let mut wire = small(7);
         wire.selected_function = selection.clone();
-        let refused = replay(wire).unwrap_err();
+        let refused = replay(wire, ReplayLimits::default()).unwrap_err();
         let ReplayRefusal::UnknownFunction {
             selection: named,
             package,
@@ -618,7 +617,9 @@ fn tc_166_case_variant_functions_each_replay_their_own_body() {
             name(&[function]),
             input(parameter(&compiled, function, 0), 7),
         );
-        let ReplayResult::Input(result) = replay(wire).expect("the replay runs") else {
+        let ReplayResult::Input(result) =
+            replay(wire, ReplayLimits::default()).expect("the replay runs")
+        else {
             panic!("an Input-sourced request settles on the Input arm");
         };
         assert_eq!(
@@ -640,12 +641,15 @@ fn tc_444_an_arity_mismatch_refuses() {
     let x = parameter(&compiled, "small", 0);
     let b = parameter(&compiled, "flag", 0);
     let with = |assignments: Vec<CanonicalAssignment>| {
-        replay(request(
-            source.as_bytes(),
-            compiled.emitted.package_id(),
-            name(&["small"]),
-            ReplaySource::Input(assignments),
-        ))
+        replay(
+            request(
+                source.as_bytes(),
+                compiled.emitted.package_id(),
+                name(&["small"]),
+                ReplaySource::Input(assignments),
+            ),
+            ReplayLimits::default(),
+        )
         .unwrap_err()
     };
 
@@ -695,12 +699,15 @@ fn tc_444_a_type_or_domain_mismatch_refuses_as_wrong_value_kind() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
     let with = |function: &str, value: WitnessValue| {
-        replay(request(
-            source.as_bytes(),
-            compiled.emitted.package_id(),
-            name(&[function]),
-            typed_input(parameter(&compiled, function, 0), value),
-        ))
+        replay(
+            request(
+                source.as_bytes(),
+                compiled.emitted.package_id(),
+                name(&[function]),
+                typed_input(parameter(&compiled, function, 0), value),
+            ),
+            ReplayLimits::default(),
+        )
         .unwrap_err()
     };
     for refused in [
@@ -728,12 +735,15 @@ fn tc_444_a_boolean_parameter_replays() {
     let compiled = spine(&source, &BTreeMap::new());
     let b = parameter(&compiled, "flag", 0);
     let flag = |source_of: ReplaySource| {
-        replay(request(
-            source.as_bytes(),
-            compiled.emitted.package_id(),
-            name(&["flag"]),
-            source_of,
-        ))
+        replay(
+            request(
+                source.as_bytes(),
+                compiled.emitted.package_id(),
+                name(&["flag"]),
+                source_of,
+            ),
+            ReplayLimits::default(),
+        )
         .unwrap()
     };
     let witness = |bit: u8| {
@@ -771,21 +781,24 @@ fn tc_444_a_boolean_parameter_replays() {
 fn tc_444_arguments_follow_declared_parameter_order() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
-    let ReplayResult::Input(result) = replay(request(
-        source.as_bytes(),
-        compiled.emitted.package_id(),
-        name(&["lt"]),
-        ReplaySource::Input(vec![
-            CanonicalAssignment {
-                parameter: parameter(&compiled, "lt", 1),
-                value: WitnessValue::Integer(3),
-            },
-            CanonicalAssignment {
-                parameter: parameter(&compiled, "lt", 0),
-                value: WitnessValue::Integer(5),
-            },
-        ]),
-    ))
+    let ReplayResult::Input(result) = replay(
+        request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["lt"]),
+            ReplaySource::Input(vec![
+                CanonicalAssignment {
+                    parameter: parameter(&compiled, "lt", 1),
+                    value: WitnessValue::Integer(3),
+                },
+                CanonicalAssignment {
+                    parameter: parameter(&compiled, "lt", 0),
+                    value: WitnessValue::Integer(5),
+                },
+            ]),
+        ),
+        ReplayLimits::default(),
+    )
     .unwrap() else {
         panic!("Input arm");
     };
@@ -796,16 +809,19 @@ fn tc_444_arguments_follow_declared_parameter_order() {
     );
 }
 
-/// FR-098-AC-4: an S1 limit above the reader limit refuses before the
-/// recompile; one below the source's size stops the recompile at S1 with
-/// `stage_limit_exceeded`.
+/// FR-098-AC-4: an `s1.input_bytes` entry above `replay.input_bytes`
+/// refuses before the recompile; one below the source's size stops the
+/// recompile at S1 with `stage_limit_exceeded`; so does an `s3.work_units`
+/// entry of 0 at S3.
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_444_stage_limits_bound_the_recompile() {
-    let reader = u64::try_from(MAX_ENCODED_BYTES).unwrap();
+    let reader = crate::bounds::DEFAULT_REPLAY_INPUT_BYTES;
     let mut above = small(7);
-    above.stage_limits.s1.text_input_bytes = reader + 1;
-    let refused = replay(above).unwrap_err();
+    above
+        .stage_limits
+        .insert("s1.input_bytes".to_owned(), reader + 1);
+    let refused = replay(above, ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             refused,
@@ -823,8 +839,8 @@ fn tc_444_stage_limits_bound_the_recompile() {
     assert_eq!(refused.code().category().exit_code(), 20);
 
     let mut tight = small(7);
-    tight.stage_limits.s1.text_input_bytes = 16;
-    let refused = replay(tight).unwrap_err();
+    tight.stage_limits.insert("s1.input_bytes".to_owned(), 16);
+    let refused = replay(tight, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
         panic!("expected a recompile refusal, got {refused:?}");
     };
@@ -832,8 +848,8 @@ fn tc_444_stage_limits_bound_the_recompile() {
     assert_eq!(refusal.code(), Code::StageLimitExceeded);
 
     let mut no_work = small(7);
-    no_work.stage_limits.s3.work_units = 0;
-    let refused = replay(no_work).unwrap_err();
+    no_work.stage_limits.insert("s3.work_units".to_owned(), 0);
+    let refused = replay(no_work, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
         panic!("expected a recompile refusal, got {refused:?}");
     };
@@ -850,7 +866,7 @@ fn tc_444_stage_limits_bound_the_recompile() {
 fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     let mut blank = small(7);
     blank.source_digests[0].0 = "   ".to_owned();
-    let refused = replay(blank).unwrap_err();
+    let refused = replay(blank, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
         panic!("expected a recompile refusal, got {refused:?}");
     };
@@ -896,7 +912,7 @@ fn tc_444_the_package_reference_names_one_source() {
         digest.hex(),
         definition,
     ));
-    let refused = replay(with_definition).unwrap_err();
+    let refused = replay(with_definition, ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(&refused, ReplayRefusal::NotASource(reference) if reference.digest() == digest),
         "{refused:?}"
@@ -918,7 +934,10 @@ fn tc_444_the_package_reference_names_one_source() {
         other_digest.hex(),
         other,
     ));
-    assert!(matches!(replay(two), Err(ReplayRefusal::SourceCount(2))));
+    assert!(matches!(
+        replay(two, ReplayLimits::default()),
+        Err(ReplayRefusal::SourceCount(2))
+    ));
 }
 
 /// FR-098-AC-4: a selected function whose declared result is not
@@ -940,7 +959,7 @@ fn tc_444_a_non_predicate_refuses() {
         work_units: 0,
         ..UNLIMITED
     };
-    let refused = replay(starved).unwrap_err();
+    let refused = replay(starved, ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refused,
@@ -1099,10 +1118,11 @@ impl Importing {
 #[test]
 fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     let importing = Importing::new();
-    let ReplayResult::Input(result) =
-        replay(importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]))
-            .expect("the replay runs")
-    else {
+    let ReplayResult::Input(result) = replay(
+        importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]),
+        ReplayLimits::default(),
+    )
+    .expect("the replay runs") else {
         panic!("Input arm");
     };
     assert_eq!(
@@ -1115,8 +1135,11 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     let edited = units_source(BIG_EDITED);
     let mut stale = importing.units_entry();
     stale.sources = vec![source_ref(UNITS_IDENTITY, REVISION, edited.as_bytes())];
-    let refused = replay(importing.request(vec![stale], &[edited.as_bytes()]))
-        .expect_err("test/units no longer compiles to the recorded id");
+    let refused = replay(
+        importing.request(vec![stale], &[edited.as_bytes()]),
+        ReplayLimits::default(),
+    )
+    .expect_err("test/units no longer compiles to the recorded id");
     assert_eq!(refused.code(), Code::StaleDependency);
     assert!(
         matches!(
@@ -1136,8 +1159,11 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
         Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
         other.hex(),
     );
-    let refused = replay(importing.request(vec![changed], &[importing.units.as_bytes()]))
-        .expect_err("the entry names another package_id");
+    let refused = replay(
+        importing.request(vec![changed], &[importing.units.as_bytes()]),
+        ReplayLimits::default(),
+    )
+    .expect_err("the entry names another package_id");
     assert_eq!(refused.code(), Code::StaleDependency);
     assert!(
         matches!(
@@ -1189,7 +1215,9 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
         site.package_id.hex(),
     );
     wire.source = input(*node, 3);
-    let ReplayResult::Input(result) = replay(wire).expect("the replay runs") else {
+    let ReplayResult::Input(result) =
+        replay(wire, ReplayLimits::default()).expect("the replay runs")
+    else {
         panic!("Input arm");
     };
     assert_eq!(
@@ -1306,7 +1334,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     );
     let mut wire = small(7);
     wire.selected_function = name(&["large"]);
-    let replayed = replay(wire).expect_err("large is not declared");
+    let replayed = replay(wire, ReplayLimits::default()).expect_err("large is not declared");
     assert_eq!(refusal.code(), Code::MissingDeclaration);
     assert_eq!(refusal.code(), replayed.code());
 
@@ -1325,12 +1353,15 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
         matches!(*refusal, crate::CallSiteRefusal::Compile { .. }),
         "{refusal:?}"
     );
-    let replayed = replay(request(
-        broken.as_bytes(),
-        compiled.emitted.package_id(),
-        name(&["small"]),
-        input(parameter(&compiled, "small", 0), 7),
-    ))
+    let replayed = replay(
+        request(
+            broken.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["small"]),
+            input(parameter(&compiled, "small", 0), 7),
+        ),
+        ReplayLimits::default(),
+    )
     .expect_err("the unit does not parse");
     assert!(
         matches!(replayed, ReplayRefusal::Recompile(_)),
@@ -1355,7 +1386,8 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
         matches!(*refusal, crate::CallSiteRefusal::Import { .. }),
         "{refusal:?}"
     );
-    let replayed = replay(importing.request(Vec::new(), &[])).expect_err("test/units is absent");
+    let replayed = replay(importing.request(Vec::new(), &[]), ReplayLimits::default())
+        .expect_err("test/units is absent");
     assert_eq!(refusal.code(), Code::MissingImport);
     assert_eq!(refusal.code(), replayed.code());
 
@@ -1372,8 +1404,11 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     );
     let mut shared = importing.units_entry();
     shared.sources = vec![source_ref(IDENTITY, REVISION, units_bytes)];
-    let replayed =
-        replay(importing.request(vec![shared], &[units_bytes])).expect_err("a shared owner");
+    let replayed = replay(
+        importing.request(vec![shared], &[units_bytes]),
+        ReplayLimits::default(),
+    )
+    .expect_err("a shared owner");
     assert!(
         matches!(replayed, ReplayRefusal::DependencyInput(_)),
         "{replayed:?}"
@@ -1394,8 +1429,11 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     );
     let mut broken_units = importing.units_entry();
     broken_units.sources = vec![source_ref(UNITS_IDENTITY, REVISION, unparsed)];
-    let replayed = replay(importing.request(vec![broken_units], &[unparsed]))
-        .expect_err("test/units does not parse");
+    let replayed = replay(
+        importing.request(vec![broken_units], &[unparsed]),
+        ReplayLimits::default(),
+    )
+    .expect_err("test/units does not parse");
     assert!(
         matches!(replayed, ReplayRefusal::Recompile(_)),
         "{replayed:?}"
@@ -1420,8 +1458,11 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let provision: &[&[u8]] = &[units_bytes, extra_bytes.as_bytes()];
 
     // An extra entry no import reaches: refused after the recompile.
-    let refused = replay(importing.request(vec![units.clone(), extra.clone()], provision))
-        .expect_err("test/zzz is not selected");
+    let refused = replay(
+        importing.request(vec![units.clone(), extra.clone()], provision),
+        ReplayLimits::default(),
+    )
+    .expect_err("test/zzz is not selected");
     assert_eq!(refused.code(), Code::InvalidPackage);
     assert!(
         matches!(
@@ -1438,7 +1479,11 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         (vec![extra.clone(), units.clone()], 1),
         (vec![units.clone(), units.clone()], 1),
     ] {
-        let refused = replay(importing.request(entries, provision)).expect_err("out of order");
+        let refused = replay(
+            importing.request(entries, provision),
+            ReplayLimits::default(),
+        )
+        .expect_err("out of order");
         assert!(
             matches!(
                 &refused,
@@ -1453,8 +1498,11 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     // An entry whose source has test/units's authority and identity.
     let mut same_owner = extra.clone();
     same_owner.sources = vec![source_ref(UNITS_IDENTITY, "r2", extra_bytes.as_bytes())];
-    let refused = replay(importing.request(vec![units.clone(), same_owner], provision))
-        .expect_err("one owner per compile");
+    let refused = replay(
+        importing.request(vec![units.clone(), same_owner], provision),
+        ReplayLimits::default(),
+    )
+    .expect_err("one owner per compile");
     assert_eq!(refused.code(), Code::InvalidPackage);
     assert!(
         matches!(
@@ -1470,8 +1518,11 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     // refused as the dependency input (rule 3), not as the recompile.
     let mut unit_owner = units.clone();
     unit_owner.sources = vec![source_ref(IDENTITY, "r2", importing.units.as_bytes())];
-    let refused = replay(importing.request(vec![unit_owner], provision))
-        .expect_err("the unit's owner is not a library's");
+    let refused = replay(
+        importing.request(vec![unit_owner], provision),
+        ReplayLimits::default(),
+    )
+    .expect_err("the unit's owner is not a library's");
     assert_eq!(refused.code(), Code::InvalidPackage);
     assert!(
         matches!(
@@ -1485,8 +1536,8 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     );
 
     // The entry removed: the import has no supplied library.
-    let refused =
-        replay(importing.request(Vec::new(), &[])).expect_err("test/units is not supplied");
+    let refused = replay(importing.request(Vec::new(), &[]), ReplayLimits::default())
+        .expect_err("test/units is not supplied");
     let ReplayRefusal::Recompile(refusal) = &refused else {
         panic!("expected a recompile refusal, got {refused:?}");
     };
@@ -1506,7 +1557,11 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let mut two = units.clone();
     two.sources
         .push(source_ref("test:zzz", REVISION, extra_bytes.as_bytes()));
-    let refused = replay(importing.request(vec![two], provision)).expect_err("two sources");
+    let refused = replay(
+        importing.request(vec![two], provision),
+        ReplayLimits::default(),
+    )
+    .expect_err("two sources");
     assert!(
         matches!(refused, ReplayRefusal::SourceCount(2)),
         "{refused:?}"
@@ -1533,7 +1588,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         digest.hex(),
         definition,
     ));
-    let refused = replay(wire).expect_err("a definition document");
+    let refused = replay(wire, ReplayLimits::default()).expect_err("a definition document");
     assert!(
         matches!(&refused, ReplayRefusal::NotASource(reference) if reference.digest() == digest),
         "{refused:?}"
@@ -1750,12 +1805,14 @@ fn tc_904_a_boolean_function_has_no_value_parity_replay() {
 #[trace("TC-904", "FR-357-AC-6")]
 #[test]
 fn tc_904_predicate_replay_still_refuses_a_non_boolean_function() {
-    let refused = replay(parity("inc", 3)).unwrap_err();
+    let refused = replay(parity("inc", 3), crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(&refused, ReplayRefusal::NotAPredicate { selection, .. } if selection == &name(&["inc"])),
         "{refused:?}"
     );
-    let ReplayResult::Input(result) = replay(parity("small", 7)).expect("the replay runs") else {
+    let ReplayResult::Input(result) =
+        replay(parity("small", 7), crate::ReplayLimits::default()).expect("the replay runs")
+    else {
         panic!("an Input-sourced request settles on the Input arm");
     };
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));

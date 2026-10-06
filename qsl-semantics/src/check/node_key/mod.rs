@@ -73,8 +73,8 @@ use quire_canonical::{Encode, FixedShape, Sink, Writer};
 use serde::Serialize;
 
 use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSubject};
+use qsl_foundation::IdentityLimits;
 use quire_semantic_value::semantic_node::IdentityRefusal;
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
@@ -1508,16 +1508,19 @@ pub(crate) fn application_node_key(
     if !has_application {
         return Err(NodeKeyRefusal::NoApplication);
     }
-    node_key(&input)
+    node_key(&input, IdentityLimits::default())
 }
 
 /// The key of `node`, a node outside every recursion group (FR-092 "Which
 /// preimage keys a node"): the FR-322 application-node preimage when its
 /// body contains an application, else the FR-092 structural-node preimage,
 /// with `recursion` `null`.
-pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
+pub(crate) fn node_key(
+    node: &NodeInput<'_>,
+    identity: IdentityLimits,
+) -> Result<KeyedPreimage, NodeKeyRefusal> {
     let (preimage, _) = typed_preimage(node, Walk::OUTSIDE, None)?;
-    keyed(&preimage)
+    keyed(&preimage, identity)
 }
 
 /// The keys of one recursion group's members (FR-092 "Recursion groups").
@@ -1555,6 +1558,7 @@ pub(crate) struct GroupKeys {
 pub(crate) fn group_keys(
     members: &[NodeInput<'_>],
     handles: &[NodeKey],
+    identity: IdentityLimits,
     charge: &mut dyn FnMut(u64) -> Result<(), NodeKeyRefusal>,
 ) -> Result<GroupKeys, NodeKeyRefusal> {
     let positions: BTreeMap<NodeKey, usize> = handles
@@ -1576,14 +1580,14 @@ pub(crate) fn group_keys(
     let mut targets = Vec::with_capacity(count);
     for member in members {
         let (preimage, _) = typed_preimage(member, Walk { group: &positions }, None)?;
-        let shapes = shape::member_shapes(&canonical_bytes(&preimage)?, count)?;
+        let shapes = shape::member_shapes(&canonical_bytes(&preimage, identity)?, count, identity)?;
         full_shapes.push(shapes.full);
         anonymous_shapes.push(shapes.anonymous);
         targets.push(shapes.targets);
     }
     // 3-4. One refinement pass per kind of shape, then the order.
-    let anonymous = refine(&anonymous_shapes, &targets, work, charge)?;
-    let full = refine(&full_shapes, &targets, work, charge)?;
+    let anonymous = refine(&anonymous_shapes, &targets, work, identity, charge)?;
+    let full = refine(&full_shapes, &targets, work, identity, charge)?;
     let mut order: Vec<usize> = (0..count).collect();
     order.sort_by(|left, right| {
         (&anonymous[*left], &full[*left]).cmp(&(&anonymous[*right], &full[*right]))
@@ -1626,9 +1630,9 @@ pub(crate) fn group_keys(
             Walk { group: &ordinal_of },
             Some(recursion),
         )?;
-        local.push(hex(&canonical_sha256(&preimage)?));
+        local.push(hex(&canonical_sha256(&preimage, identity)?));
     }
-    let digest = canonical_sha256(&local)?;
+    let digest = canonical_sha256(&local, identity)?;
     let digest_hex = hex(&digest);
     charge(work)?;
     let mut keys = Vec::with_capacity(count);
@@ -1639,7 +1643,7 @@ pub(crate) fn group_keys(
             size,
         };
         let (preimage, _) = typed_preimage(member, Walk { group: &ordinal_of }, Some(recursion))?;
-        keys.push(keyed(&preimage)?);
+        keys.push(keyed(&preimage, identity)?);
     }
     Ok(GroupKeys {
         members: keys,
@@ -1658,6 +1662,7 @@ fn refine(
     shapes: &[String],
     targets: &[Vec<usize>],
     work: u64,
+    identity: IdentityLimits,
     charge: &mut dyn FnMut(u64) -> Result<(), NodeKeyRefusal>,
 ) -> Result<Vec<String>, NodeKeyRefusal> {
     charge(work)?;
@@ -1681,7 +1686,7 @@ fn refine(
                 shape,
                 targets: round_targets,
             };
-            next.push(hex(&canonical_sha256(&round)?));
+            next.push(hex(&canonical_sha256(&round, identity)?));
         }
         let stable = distinct(&next) == distinct(&previous);
         previous = next;
@@ -1738,6 +1743,7 @@ pub(super) fn hex(bytes: &[u8; 32]) -> String {
 pub(crate) fn declared_type_handle(
     owner: &SourceOwner,
     name: &str,
+    identity: IdentityLimits,
 ) -> Result<NodeKey, NodeKeyRefusal> {
     #[derive(Serialize, FixedShape)]
     struct Handle<'a> {
@@ -1745,11 +1751,14 @@ pub(crate) fn declared_type_handle(
         owner: &'a SourceOwner,
         name: &'a str,
     }
-    canonical_sha256(&Handle {
-        version: "quire.qsl.declared-type-handle/v1",
-        owner,
-        name,
-    })
+    canonical_sha256(
+        &Handle {
+            version: "quire.qsl.declared-type-handle/v1",
+            owner,
+            name,
+        },
+        identity,
+    )
     .map(NodeKey::from_digest)
 }
 
@@ -1760,27 +1769,40 @@ pub(crate) fn declared_type_handle(
 /// [`node_key`] keys structural and application nodes and never a nominal
 /// preimage. Encoding a preimage can refuse, and the refusal is the
 /// caller's nominal-admission fault.
-pub(crate) fn nominal_key(preimage: &impl NodeIdentityPreimage) -> Result<NodeKey, NominalRefusal> {
-    preimage.digest().map(NodeKey::from_digest)
+pub(crate) fn nominal_key(
+    preimage: &impl NodeIdentityPreimage,
+    identity: IdentityLimits,
+) -> Result<NodeKey, NominalRefusal> {
+    preimage.digest(identity).map(NodeKey::from_digest)
 }
 
 /// `preimage`'s RFC 8785 bytes and the node key they hash to.
-fn keyed(preimage: &Preimage<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
-    let preimage = canonical_bytes(preimage)?;
+fn keyed(
+    preimage: &Preimage<'_>,
+    identity: IdentityLimits,
+) -> Result<KeyedPreimage, NodeKeyRefusal> {
+    let preimage = canonical_bytes(preimage, identity)?;
     let key = NodeKey::from_digest(ByteDigest::of(&preimage).as_bytes());
     Ok(KeyedPreimage { preimage, key })
 }
 
 /// `value`'s RFC 8785 bytes, from `quire-canonical` (ADR-013 §2,
 /// ADR-013:113: the one RFC 8785 implementation).
-pub(super) fn canonical_bytes(value: &(impl Encode + ?Sized)) -> Result<Vec<u8>, NodeKeyRefusal> {
-    quire_canonical::to_vec(value, LIMITS).map_err(encode_refusal)
+pub(super) fn canonical_bytes(
+    value: &(impl Encode + ?Sized),
+    identity: IdentityLimits,
+) -> Result<Vec<u8>, NodeKeyRefusal> {
+    quire_canonical::to_vec(value, quire_canonical::Limits::new(identity.input_bytes))
+        .map_err(encode_refusal)
 }
 
 /// The SHA-256 of `value`'s RFC 8785 bytes, hashed by `quire-canonical` as
 /// it encodes (ADR-013:113).
-fn canonical_sha256(value: &(impl Encode + ?Sized)) -> Result<[u8; 32], NodeKeyRefusal> {
-    quire_canonical::sha256(value, LIMITS)
+fn canonical_sha256(
+    value: &(impl Encode + ?Sized),
+    identity: IdentityLimits,
+) -> Result<[u8; 32], NodeKeyRefusal> {
+    quire_canonical::sha256(value, quire_canonical::Limits::new(identity.input_bytes))
         .map(|digest| *digest.as_bytes())
         .map_err(encode_refusal)
 }

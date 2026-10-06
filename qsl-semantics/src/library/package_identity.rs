@@ -12,7 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Map, Value};
+use quire_canonical::{Node, NodeRef};
 
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::digest::WireNodeId;
@@ -213,22 +213,57 @@ impl ProjectedDeclarations {
     }
 }
 
-fn members<'a>(
-    value: &'a Value,
+/// `value`'s members as `(name, value)` pairs, when it is an object.
+fn object_members<'d>(
+    value: NodeRef<'d>,
+) -> Option<impl ExactSizeIterator<Item = (&'d str, NodeRef<'d>)>> {
+    match value.node() {
+        Node::Object(members) => Some(members),
+        _ => None,
+    }
+}
+
+/// `value`'s elements, when it is an array.
+fn array_items<'d>(value: NodeRef<'d>) -> Option<impl ExactSizeIterator<Item = NodeRef<'d>>> {
+    match value.node() {
+        Node::Array(items) => Some(items),
+        _ => None,
+    }
+}
+
+/// `value` as a string, when it is one.
+fn string_of(value: NodeRef<'_>) -> Option<&str> {
+    match value.node() {
+        Node::String(text) => Some(text),
+        _ => None,
+    }
+}
+
+fn is_object(value: NodeRef<'_>) -> bool {
+    matches!(value.node(), Node::Object(_))
+}
+
+fn is_array(value: NodeRef<'_>) -> bool {
+    matches!(value.node(), Node::Array(_))
+}
+
+fn members<'d>(
+    value: NodeRef<'d>,
     required: &[&'static str],
     optional: &[&'static str],
-) -> Result<&'a Map<String, Value>, MemberDefect> {
-    let object = value.as_object().ok_or(MemberDefect::NotObject)?;
-    if let Some(missing) = required.iter().find(|name| !object.contains_key(**name)) {
+) -> Result<NodeRef<'d>, MemberDefect> {
+    let names = object_members(value).ok_or(MemberDefect::NotObject)?;
+    let present: Vec<&str> = names.map(|(name, _)| name).collect();
+    if let Some(missing) = required.iter().find(|name| !present.contains(name)) {
         return Err(MemberDefect::Missing(missing));
     }
-    if let Some(unknown) = object
-        .keys()
-        .find(|key| !required.contains(&key.as_str()) && !optional.contains(&key.as_str()))
+    if let Some(unknown) = present
+        .iter()
+        .find(|key| !required.contains(key) && !optional.contains(key))
     {
-        return Err(MemberDefect::Unknown(unknown.clone()));
+        return Err(MemberDefect::Unknown((*unknown).to_owned()));
     }
-    Ok(object)
+    Ok(value)
 }
 
 enum MemberDefect {
@@ -239,12 +274,11 @@ enum MemberDefect {
 
 /// The wire node id `{domain: quire.checked-semantic-node/v1, digest}`
 /// object names, without becoming a `NodeKey` (R-10, O-04).
-fn wire_node_id(value: &Value) -> Option<WireNodeId> {
-    let object = value.as_object()?;
-    if object.len() != 2 || object.get("domain")?.as_str()? != NODE_KEY_DOMAIN {
+fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
+    if object_members(value)?.len() != 2 || string_of(value.get("domain")?)? != NODE_KEY_DOMAIN {
         return None;
     }
-    WireNodeId::from_hex(object.get("digest")?.as_str()?)
+    WireNodeId::from_hex(string_of(value.get("digest")?)?)
 }
 
 /// The node tags of the V2 semantic graph.
@@ -274,19 +308,16 @@ fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
 
 /// The `qualified_declaration` of a nominal identity preimage, when the
 /// preimage form carries one (an enum member does not).
-fn nominal_declaration(nominal: &Value) -> Result<Option<String>, NodeDefect> {
-    let Some(segments) = nominal
-        .as_object()
-        .ok_or(NodeDefect::Declaration)?
-        .get("qualified_declaration")
-    else {
+fn nominal_declaration(nominal: NodeRef<'_>) -> Result<Option<String>, NodeDefect> {
+    if !is_object(nominal) {
+        return Err(NodeDefect::Declaration);
+    }
+    let Some(segments) = nominal.get("qualified_declaration") else {
         return Ok(None);
     };
-    let segments = segments
-        .as_array()
+    let segments = array_items(segments)
         .ok_or(NodeDefect::Declaration)?
-        .iter()
-        .map(|segment| segment.as_str().map(str::to_owned))
+        .map(|segment| string_of(segment).map(str::to_owned))
         .collect::<Option<Vec<_>>>()
         .ok_or(NodeDefect::Declaration)?;
     qualified(segments).map(Some)
@@ -294,17 +325,16 @@ fn nominal_declaration(nominal: &Value) -> Result<Option<String>, NodeDefect> {
 
 /// The `qualified_name` of a top-level `declaration` member, which must be
 /// exactly `{qualified_name}`.
-fn declared_name(value: &Value) -> Result<String, NodeDefect> {
-    let object = value.as_object().ok_or(NodeDefect::Declaration)?;
+fn declared_name(value: NodeRef<'_>) -> Result<String, NodeDefect> {
+    let object = object_members(value).ok_or(NodeDefect::Declaration)?;
     if object.len() != 1 {
         return Err(NodeDefect::Declaration);
     }
-    let segments = object
+    let segments = value
         .get("qualified_name")
-        .and_then(Value::as_array)
+        .and_then(array_items)
         .ok_or(NodeDefect::Declaration)?
-        .iter()
-        .map(|segment| segment.as_str().map(str::to_owned))
+        .map(|segment| string_of(segment).map(str::to_owned))
         .collect::<Option<Vec<_>>>()
         .ok_or(NodeDefect::Declaration)?;
     qualified(segments)
@@ -323,9 +353,7 @@ struct NodeShape {
 /// The shape-valid `declaration.qualified_name` and nominal
 /// `qualified_declaration` of one node's `declaration` and
 /// `nominal_identity_preimage` members, without checking whether they agree.
-fn declaration_shape(
-    node: &Map<String, Value>,
-) -> Result<(Option<String>, Option<String>), NodeDefect> {
+fn declaration_shape(node: NodeRef<'_>) -> Result<(Option<String>, Option<String>), NodeDefect> {
     let nominal = node
         .get("nominal_identity_preimage")
         .map(nominal_declaration)
@@ -335,7 +363,7 @@ fn declaration_shape(
     Ok((declared, nominal))
 }
 
-fn projected_node(value: &Value) -> Result<NodeShape, NodeDefect> {
+fn projected_node(value: NodeRef<'_>) -> Result<NodeShape, NodeDefect> {
     let node = members(value, &NODE_REQUIRED, &NODE_OPTIONAL).map_err(|defect| match defect {
         MemberDefect::NotObject => NodeDefect::NotObject,
         MemberDefect::Missing(name) => NodeDefect::MissingMember(name),
@@ -345,11 +373,11 @@ fn projected_node(value: &Value) -> Result<NodeShape, NodeDefect> {
         .get("node_id")
         .and_then(wire_node_id)
         .ok_or(NodeDefect::NodeId)?;
-    if node.get("schema_version").and_then(Value::as_str) != Some(NODE_SCHEMA_VERSION) {
+    if node.get("schema_version").and_then(string_of) != Some(NODE_SCHEMA_VERSION) {
         return Err(NodeDefect::SchemaVersion);
     }
     node.get("node_tag")
-        .and_then(Value::as_str)
+        .and_then(string_of)
         .filter(|tag| NODE_TAGS.contains(tag))
         .ok_or(NodeDefect::NodeTag)?;
     let (declared, nominal) = declaration_shape(node)?;
@@ -428,12 +456,12 @@ fn encode_defect(error: quire_canonical::Error) -> PreimageDefect {
 /// [`PreimageDefect::NonCanonical`].
 pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
     let document = quire_canonical::read(bytes, u64::MAX).map_err(read_defect)?;
-    let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
-    let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
-        MemberDefect::NotObject => PreimageDefect::NotObject,
-        MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
-        MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
-    })?;
+    let preimage =
+        members(document.root(), &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
+            MemberDefect::NotObject => PreimageDefect::NotObject,
+            MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
+            MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
+        })?;
     // Canonical bytes are exactly as long as `bytes`, which the reader's own
     // artifact byte limit already bounded: an encoding past that length is
     // not `bytes`' canonical form (FR-259 Behavior 3).
@@ -444,22 +472,22 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         Ok(_) => return Err(PreimageDefect::NonCanonical),
         Err(error) => return Err(encode_defect(error)),
     }
-    if preimage.get("version").and_then(Value::as_str) != Some(PACKAGE_ID_VERSION) {
+    if preimage.get("version").and_then(string_of) != Some(PACKAGE_ID_VERSION) {
         return Err(PreimageDefect::Version);
     }
-    if !preimage.get("edition").is_some_and(Value::is_object) {
+    if !preimage.get("edition").is_some_and(is_object) {
         return Err(PreimageDefect::MemberType("edition"));
     }
     if let Some(name) = PREIMAGE_REQUIRED[2..7]
         .iter()
-        .find(|name| !preimage.get(**name).is_some_and(Value::is_array))
+        .find(|name| !preimage.get(name).is_some_and(is_array))
     {
         return Err(PreimageDefect::MemberType(name));
     }
     let nodes = preimage
         .get("identity_projection")
-        .and_then(Value::as_array)
-        .filter(|nodes| !nodes.is_empty())
+        .and_then(array_items)
+        .filter(|nodes| nodes.len() > 0)
         .ok_or(PreimageDefect::EmptyProjection)?;
 
     // Pass 1 (native-diagnostics.md's refusal order, step 1): every node's
@@ -473,7 +501,7 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     // to be ascending by node id.
     let mut shapes = Vec::with_capacity(nodes.len());
     let mut seen_nodes = BTreeSet::new();
-    for (index, node) in nodes.iter().enumerate() {
+    for (index, node) in nodes.enumerate() {
         let shape =
             projected_node(node).map_err(|defect| PreimageDefect::Node { index, defect })?;
         if !seen_nodes.insert(shape.key) {
@@ -578,6 +606,7 @@ pub(super) mod fixtures {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
+    use serde_json::Value;
 
     use super::fixtures::{hex, one_node_preimage};
     use super::*;
@@ -721,5 +750,40 @@ mod tests {
             qsl_foundation::diagnostic::Code::ResourceExhausted
         );
         assert_eq!(refusal.cause().as_str(), "allocation-failed");
+    }
+
+    /// FR-261-AC-1: on a 512 KiB stack, a canonical preimage whose members
+    /// are valid except that `edition` holds an array nested 100,000 deep
+    /// refuses `MemberType("edition")`, not `NotObject`; bytes that are not
+    /// JSON refuse with the offset of the first malformed byte, and a
+    /// top-level array is `NotObject`.
+    #[trace("TC-733", "FR-261-AC-1")]
+    #[test]
+    fn a_preimage_with_a_deep_edition_refuses_by_member_type() {
+        let outcome = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 100_000;
+                let valid = String::from_utf8(one_node_preimage(b"L::R", &["L", "R"])).unwrap();
+                let edition = r#""edition":{"definition":{"authority":"agent-ix","identity":"quire-edition"},"role":"edition"}"#;
+                assert!(valid.contains(edition));
+                let deep = format!(
+                    "\"edition\":{}{}",
+                    "[".repeat(depth),
+                    "]".repeat(depth)
+                );
+                let bytes = valid.replacen(edition, &deep, 1);
+                (
+                    project_declarations(bytes.as_bytes()).unwrap_err(),
+                    project_declarations(b"not json").unwrap_err(),
+                    project_declarations(b"[]").unwrap_err(),
+                )
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(outcome.0, PreimageDefect::MemberType("edition"));
+        assert_eq!(outcome.1, PreimageDefect::Malformed { offset: 0 });
+        assert_eq!(outcome.2, PreimageDefect::NotObject);
     }
 }

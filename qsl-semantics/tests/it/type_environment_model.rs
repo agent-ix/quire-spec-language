@@ -393,12 +393,17 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     };
     assert_eq!(
         limit,
-        LimitExceeded::new(LimitKind::EdgeCount, CEILING, u128::from(CEILING) + 1)
+        LimitExceeded::new(
+            qsl_foundation::Setting::EnvironmentAncestorSteps,
+            CEILING,
+            u128::from(CEILING) + 1
+        )
     );
     assert_eq!(
         limit.catalog_code(),
         CatalogCode::new("stage_limit_exceeded", "edge-count-exceeded")
     );
+    assert_eq!(limit.setting().name(), "environment.ancestor_steps");
     assert_eq!(limit.locus(), None);
 }
 
@@ -470,7 +475,11 @@ fn check_and_evaluation_share_one_default_and_one_edge_count() {
     };
     assert_eq!(
         limit,
-        LimitExceeded::new(LimitKind::EdgeCount, below, u128::from(EDGES))
+        LimitExceeded::new(
+            qsl_foundation::Setting::EnvironmentAncestorSteps,
+            below,
+            u128::from(EDGES)
+        )
     );
 }
 

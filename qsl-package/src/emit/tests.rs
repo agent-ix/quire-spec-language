@@ -129,7 +129,7 @@ fn h() -> FunctionDeclaration {
 fn graph_of(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("the fixture functions check")
@@ -163,7 +163,7 @@ fn tree() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(source())
+            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("Tree checks"),
@@ -250,7 +250,7 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     let checked = |functions| {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(source())
+            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("t and f check")
@@ -793,7 +793,7 @@ fn declared_types(
             types: point_and_pair_types(),
             enums,
             functions,
-            ..PackageDeclarations::new(source())
+            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the declared types check"),
@@ -935,7 +935,7 @@ fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
     .expect("the environment admits the shape");
     let refusals = PackageDeclarations {
         types,
-        ..PackageDeclarations::new(source())
+        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect_err("the name has no identifier segments");
@@ -1009,8 +1009,18 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     }))
     .expect("a schema-valid preimage");
     let owners = OwnerSelection::new([NodeOwner::clone(preimage.owner())]);
-    let key = NodeKey::from_digest(preimage.digest().unwrap());
-    let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners).expect("admitted");
+    let key = NodeKey::from_digest(
+        preimage
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap(),
+    );
+    let declaration = AdmittedEnumDeclaration::admit(
+        preimage,
+        key,
+        &owners,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .expect("admitted");
     let members = ["Ready", "Done"]
         .into_iter()
         .map(|case| {
@@ -1020,8 +1030,18 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
                 "case": case,
             }))
             .unwrap();
-            let member_key = NodeKey::from_digest(member.digest().unwrap());
-            declaration.admit_member(&member, member_key).unwrap()
+            let member_key = NodeKey::from_digest(
+                member
+                    .digest(qsl_foundation::IdentityLimits::default())
+                    .unwrap(),
+            );
+            declaration
+                .admit_member(
+                    &member,
+                    member_key,
+                    qsl_foundation::IdentityLimits::default(),
+                )
+                .unwrap()
         })
         .collect();
     qsl_semantics::check::EnumBinding {
@@ -1500,7 +1520,7 @@ fn call_source() -> RawSourceRef {
 fn checked_call_package(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(call_source())
+        ..PackageDeclarations::new(call_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("g and f check cleanly")
@@ -1660,7 +1680,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     let package = CheckedPackage::link(
         PackageDeclarations {
             functions: vec![inc_read_from_text()],
-            ..PackageDeclarations::new(source)
+            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("inc checks"),
@@ -1831,7 +1851,11 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = NodeKey::from_digest(length.digest().expect("the dimension digests"));
+    let length_key = NodeKey::from_digest(
+        length
+            .digest(qsl_foundation::IdentityLimits::default())
+            .expect("the dimension digests"),
+    );
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
@@ -1842,12 +1866,17 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = NodeKey::from_digest(metre.digest().expect("the unit digests"));
+    let metre_key = NodeKey::from_digest(
+        metre
+            .digest(qsl_foundation::IdentityLimits::default())
+            .expect("the unit digests"),
+    );
     let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
         [(length, length_key)],
         [(metre, metre_key)],
         &OwnerSelection::new([selection]),
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (
@@ -1884,7 +1913,7 @@ pub(super) fn q_and_t_package_over(
             types: TypeEnvironment::default().with_units(units),
             aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
             functions: vec![q, t()],
-            ..PackageDeclarations::new(source())
+            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("q checks"),

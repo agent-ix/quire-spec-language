@@ -12,9 +12,9 @@ use ix_trace_rs::trace;
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, QualifiedName};
 use qsl_foundation::diagnostic::{
-    Category, LimitExceeded, LimitKind as FoundationKind, LimitsField, StageFailure, Staged,
+    Category, LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
 };
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{Setting, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
@@ -28,6 +28,9 @@ use super::{
     CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, LockEvidence, PackageLimits,
     ParseRequest, ParsedSource,
 };
+use crate::bounds::ReplayLimits;
+use crate::limits::CallerLimits;
+use crate::request::StageLimits;
 use crate::spine::{
     default_accounting, CompileRefusal, DependencyInput, SpineLimits, SpineStage, SuppliedLibrary,
     DEFAULT_WORK_UNITS,
@@ -790,6 +793,7 @@ fn read_back(chain: &Chain, packages: &BTreeMap<[u8; 32], Vec<u8>>, identity: &s
         LibraryName::new(identity).expect("a non-empty identity"),
         packages,
         &mut AdmittedPackages::default(),
+        qsl_package::V2ReadLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("the I2 reader refused {identity}: {refusal}"));
 }
@@ -954,19 +958,24 @@ fn reached<T>(outcome: Result<Staged<T>, FrontEndFailure>) -> Reached {
 /// which `run` produces its output is the counter the input reaches. One
 /// below it, `run` stops with `LimitExceeded` naming `field` and carrying the
 /// configured value; at it, `run` succeeds.
-fn assert_field(field: LimitsField, kind: FoundationKind, high: u64, run: impl Fn(u64) -> Reached) {
-    assert_field_with(field, kind, high, |value| value, run);
+fn assert_field(
+    field: Setting,
+    kind: FoundationKind,
+    high: u64,
+    run: impl Fn(u64) -> Reached,
+) -> u64 {
+    assert_field_with(field, kind, high, |value| value, run)
 }
 
 /// [`assert_field`] for a field whose configured bound is `bound(value)`
 /// rather than the value itself.
 fn assert_field_with(
-    field: LimitsField,
+    field: Setting,
     kind: FoundationKind,
     high: u64,
     bound: impl Fn(u64) -> u64,
     run: impl Fn(u64) -> Reached,
-) {
+) -> u64 {
     assert!(
         matches!(run(high), Reached::Output),
         "`{field:?}` at {high} does not admit the input"
@@ -977,7 +986,7 @@ fn assert_field_with(
         match run(middle) {
             Reached::Output => top = middle,
             Reached::Limit(limit) => {
-                assert_eq!(limit.limits_field(), Some(field), "limit at {middle}");
+                assert_eq!(limit.setting(), field, "limit at {middle}");
                 low = middle + 1;
             }
         }
@@ -986,7 +995,7 @@ fn assert_field_with(
     assert!(counter > 0, "`{field:?}` is not reached by the input");
     match run(counter - 1) {
         Reached::Limit(limit) => {
-            assert_eq!(limit.limits_field(), Some(field));
+            assert_eq!(limit.setting(), field);
             assert_eq!(limit.kind(), kind, "`{field:?}`");
             assert_eq!(limit.configured_bound(), bound(counter - 1), "`{field:?}`");
         }
@@ -996,6 +1005,7 @@ fn assert_field_with(
         matches!(run(counter), Reached::Output),
         "`{field:?}` at {counter}"
     );
+    counter
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `parse`: each field of the source limits.
@@ -1011,19 +1021,19 @@ fn parse_names_the_source_limit_field_it_reached() {
         }
     };
     assert_field(
-        LimitsField::SourceBytes,
+        Setting::S1InputBytes,
         FoundationKind::InputBytes,
         10_000,
         run(|limits, value| limits.source_bytes = usize::try_from(value).expect("small")),
     );
     assert_field(
-        LimitsField::SourceTokens,
+        Setting::S1Tokens,
         FoundationKind::TokenCount,
         10_000,
         run(|limits, value| limits.tokens = usize::try_from(value).expect("small")),
     );
     assert_field(
-        LimitsField::SourceNodes,
+        Setting::S1Nodes,
         FoundationKind::NodeCount,
         10_000,
         run(|limits, value| limits.nodes = usize::try_from(value).expect("small")),
@@ -1037,7 +1047,7 @@ fn parse_names_the_source_limit_field_it_reached() {
             Reached::Output => panic!("one step per token admits the fixture"),
         };
     assert_field_with(
-        LimitsField::SourceWorkUnits,
+        Setting::S1WorkUnits,
         FoundationKind::WorkBudget,
         256,
         |value| value * scale,
@@ -1076,37 +1086,37 @@ fn select_names_the_model_limit_field_it_reached() {
         }
     };
     assert_field(
-        LimitsField::ModelDeclarationRecords,
-        FoundationKind::OccurrenceCount,
+        Setting::ModelDeclarationRecords,
+        FoundationKind::NodeCount,
         100_000,
         run(|limits, value| limits.declaration_records = value),
     );
     assert_field(
-        LimitsField::ModelDerivationFacts,
-        FoundationKind::EdgeCount,
+        Setting::ModelDerivationFacts,
+        FoundationKind::NodeCount,
         100_000,
         run(|limits, value| limits.derivation_facts = value),
     );
     assert_field(
-        LimitsField::ModelEffectiveDeclarations,
+        Setting::ModelEffectiveDeclarations,
         FoundationKind::NodeCount,
         100_000,
         run(|limits, value| limits.effective_declarations = value),
     );
     assert_field(
-        LimitsField::ModelAncestorSteps,
+        Setting::ModelAncestorSteps,
         FoundationKind::EdgeCount,
         10_000,
         run(|limits, value| limits.ancestor_steps = value),
     );
     assert_field(
-        LimitsField::ModelHashedBytes,
+        Setting::ModelHashedBytes,
         FoundationKind::InputBytes,
         100_000,
         run(|limits, value| limits.hashed_bytes = value),
     );
     assert_field(
-        LimitsField::ModelWorkUnits,
+        Setting::ModelWorkUnits,
         FoundationKind::WorkBudget,
         100_000,
         run(|limits, value| limits.work_units = value),
@@ -1133,7 +1143,7 @@ fn check_names_the_checking_limit_field_it_reached() {
         }
     };
     assert_field(
-        LimitsField::CheckingNodes,
+        Setting::S3Nodes,
         FoundationKind::NodeCount,
         100_000,
         run(|mut limits, value| {
@@ -1144,7 +1154,7 @@ fn check_names_the_checking_limit_field_it_reached() {
         }),
     );
     assert_field(
-        LimitsField::CheckingInputBytes,
+        Setting::S3InputBytes,
         FoundationKind::InputBytes,
         1_000_000,
         run(|mut limits, value| {
@@ -1153,13 +1163,193 @@ fn check_names_the_checking_limit_field_it_reached() {
         }),
     );
     assert_field(
-        LimitsField::CheckingWorkBudget,
+        Setting::S3WorkUnits,
         FoundationKind::WorkBudget,
         1_000_000,
         run(|mut limits, value| {
             limits.checking = limits.checking.with_work_budget(value);
             limits
         }),
+    );
+}
+
+/// A unit with no record, enum or unit and one function whose 40-term body
+/// lowers to a node preimage of several hundred bytes: every identity
+/// encoding of it is a lowered node, none a declared type handle.
+fn long_body_chain() -> Chain {
+    let body = vec!["1"; 40].join(" + ");
+    let source = format!("{HEADER}function long using v(): Integer pure {{ {body} }}\n");
+    chain_of(
+        source.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .unwrap_or_else(|failure| panic!("the unit compiles: {failure:?}"))
+}
+
+/// FR-255-AC-1 for `identity.input_bytes` through the compile. The unit has
+/// no record, enum or unit, so no declared type handle or nominal preimage is
+/// encoded at assembly: every identity encoding is a node preimage lowering
+/// keys under the limit `AssemblyLimits.identity` carries into the checked
+/// package. The smallest `identity.input_bytes` at which `check` admits it is
+/// then the largest node preimage the checked package holds (well past a
+/// declared type handle's size); one below it `check` stops with
+/// `LimitExceeded` naming `identity.input_bytes` and that bound. It fails if
+/// assembly stops carrying the caller's limit into lowering (the search
+/// finds no refusal at all), or if the spine stops mapping the refusal.
+#[trace("TC-720", "FR-255-AC-1")]
+#[test]
+fn check_names_the_identity_limit_it_reached() {
+    let chain = long_body_chain();
+    let largest = chain
+        .checked
+        .package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .map(|node| u64::try_from(node.preimage().len()).expect("a small preimage"))
+        .max()
+        .expect("the checked package holds nodes");
+    // A declared type handle encodes to about 123 bytes.
+    assert!(
+        largest > 200,
+        "the fixture's largest node preimage ({largest}) must exceed a handle's size"
+    );
+    let run = |value: u64| {
+        let mut limits = SpineLimits::default();
+        limits.assembly.identity.input_bytes = value;
+        reached(check(
+            &chain.parsed,
+            &chain.models,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    let counter = assert_field(
+        Setting::IdentityInputBytes,
+        FoundationKind::InputBytes,
+        1_000_000,
+        run,
+    );
+    assert_eq!(
+        counter, largest,
+        "the identity limit the check reaches is the largest node preimage"
+    );
+}
+
+/// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
+/// limit stops with that limit's setting, and the same input passes once the
+/// setting is raised, through the settings operation's operand and through a
+/// replay request's `stage_limits` entry. Covers `s1.tokens` (parse),
+/// `s3.nodes`, `s3.work_units` and `identity.input_bytes` (check).
+#[trace("TC-721", "FR-255-AC-4")]
+#[test]
+fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
+    let chain = fixture_chain();
+    let entry_points = |name: &'static str| {
+        move |value: u64| -> [SpineLimits; 2] {
+            let setting = Setting::from_name(name).expect("a table name is a setting");
+            let operand = format!("{name}={value}");
+            let by_operand = CallerLimits::from_operands([operand.as_str()])
+                .expect("a well-formed operand")
+                .spine;
+            let entries: StageLimits = [(setting, value)].into_iter().collect();
+            let by_request = CallerLimits::for_request(&entries, ReplayLimits::default()).spine;
+            [by_operand, by_request]
+        }
+    };
+    let check_under = |limits: SpineLimits| {
+        reached(check(
+            &chain.parsed,
+            &chain.models,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    for entry in 0..2 {
+        let tokens = entry_points("s1.tokens");
+        assert_field(
+            Setting::S1Tokens,
+            FoundationKind::TokenCount,
+            10_000,
+            |value| {
+                reached(parse(
+                    &request(FIXTURE.as_bytes()),
+                    tokens(value)[entry].source,
+                    &Cancel::new(),
+                ))
+            },
+        );
+        let nodes = entry_points("s3.nodes");
+        assert_field(
+            Setting::S3Nodes,
+            FoundationKind::NodeCount,
+            100_000,
+            |value| check_under(nodes(value)[entry]),
+        );
+        let work = entry_points("s3.work_units");
+        assert_field(
+            Setting::S3WorkUnits,
+            FoundationKind::WorkBudget,
+            1_000_000,
+            |value| check_under(work(value)[entry]),
+        );
+        let identity = entry_points("identity.input_bytes");
+        let long = long_body_chain();
+        assert_field(
+            Setting::IdentityInputBytes,
+            FoundationKind::InputBytes,
+            1_000_000,
+            |value| {
+                reached(check(
+                    &long.parsed,
+                    &long.models,
+                    &DependencyInput::default(),
+                    &LockEvidence::default(),
+                    identity(value)[entry],
+                    &Cancel::new(),
+                ))
+            },
+        );
+    }
+}
+
+/// FR-255-AC-6, the second half: the effective limits a parsed source and a
+/// checked package record equal the table's defaults when nothing is
+/// configured.
+#[trace("TC-721", "FR-255-AC-6")]
+#[test]
+fn the_effective_limits_a_checked_package_records_are_the_defaults() {
+    use qsl_foundation::SettingLimits;
+
+    let limits = CallerLimits::from_operands([]).expect("no operands").spine;
+    let chain = fixture_chain();
+    assert_eq!(
+        chain.parsed.syntax().effective_limits(),
+        SourceLimits::default()
+    );
+    assert_eq!(
+        limits.source.bounds(),
+        chain.parsed.syntax().effective_limits().bounds()
+    );
+    let checked = check(
+        &chain.parsed,
+        &chain.models,
+        &DependencyInput::default(),
+        &LockEvidence::default(),
+        limits,
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|failure| panic!("the fixture checks: {failure:?}"))
+    .into_value();
+    assert_eq!(
+        checked.package.graph().effective_limits(),
+        CheckingLimits::default()
     );
 }
 
@@ -1192,16 +1382,16 @@ fn check_names_the_type_environment_limit_field_it_reached() {
         }
     };
     assert_field(
-        LimitsField::EnvironmentAncestorSteps,
+        Setting::EnvironmentAncestorSteps,
         FoundationKind::EdgeCount,
         10_000,
-        run(|limits, value| limits.environment.ancestor_steps = value),
+        run(|limits, value| limits.assembly.environment.ancestor_steps = value),
     );
     assert_field(
-        LimitsField::EnvironmentWorkUnits,
+        Setting::EnvironmentWorkUnits,
         FoundationKind::WorkBudget,
         10_000_000,
-        run(|limits, value| limits.environment.work_units = value),
+        run(|limits, value| limits.assembly.environment.work_units = value),
     );
 }
 
@@ -1253,19 +1443,19 @@ fn check_names_the_dependency_limit_field_it_reached() {
         }
     };
     assert_field(
-        LimitsField::DependencyLibraries,
+        Setting::DependencyLibraries,
         FoundationKind::NodeCount,
         10,
         run(|limits, value| limits.dependencies.libraries = value),
     );
     assert_field(
-        LimitsField::DependencyImportEdges,
+        Setting::DependencyImportEdges,
         FoundationKind::EdgeCount,
         10,
         run(|limits, value| limits.dependencies.import_edges = value),
     );
     assert_field(
-        LimitsField::DependencySourceBytes,
+        Setting::DependencySourceBytes,
         FoundationKind::InputBytes,
         1_000_000,
         run(|limits, value| limits.dependencies.source_bytes = value),

@@ -444,6 +444,7 @@ fn declaration(
         EnumDeclarationPreimage::from_json(preimage.clone())?,
         key,
         &owners(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .map_err(graph)
 }
@@ -473,6 +474,7 @@ fn member(declaration: &AdmittedEnumDeclaration, case: &str) -> EnumValue {
         .admit_member(
             &EnumMemberPreimage::from_json(preimage.clone()).unwrap(),
             fixture_key(&preimage),
+            qsl_foundation::IdentityLimits::default(),
         )
         .unwrap()
 }
@@ -517,16 +519,33 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         let preimage = declaration_preimage(qualified, ordered, members);
         let key = fixture_key(&preimage);
         let parsed = EnumDeclarationPreimage::from_json(preimage.clone()).unwrap();
-        assert_eq!(parsed.digest().unwrap(), *key.as_bytes(), "{qualified:?}");
+        assert_eq!(
+            parsed
+                .digest(qsl_foundation::IdentityLimits::default())
+                .unwrap(),
+            *key.as_bytes(),
+            "{qualified:?}"
+        );
         assert_eq!(declaration(&preimage, key).unwrap().key(), key);
     }
     let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
     let ready_preimage = member_preimage(status.key(), "READY");
     let ready_key = fixture_key(&ready_preimage);
     let parsed = EnumMemberPreimage::from_json(ready_preimage.clone()).unwrap();
-    assert_eq!(parsed.digest().unwrap(), *ready_key.as_bytes());
+    assert_eq!(
+        parsed
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap(),
+        *ready_key.as_bytes()
+    );
     assert_eq!(parsed.declaration().as_bytes(), status.key().as_bytes());
-    let ready = status.admit_member(&parsed, ready_key).unwrap();
+    let ready = status
+        .admit_member(
+            &parsed,
+            ready_key,
+            qsl_foundation::IdentityLimits::default(),
+        )
+        .unwrap();
     assert_eq!(
         (ready.declaration(), ready.member()),
         (status.key(), ready_key)
@@ -628,7 +647,12 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         .map(|byte| format!("{byte:02x}"))
         .collect();
     assert_eq!(
-        NodeKey::from_digest(escaped.digest().unwrap()).to_string(),
+        NodeKey::from_digest(
+            escaped
+                .digest(qsl_foundation::IdentityLimits::default())
+                .unwrap()
+        )
+        .to_string(),
         digest
     );
 }
@@ -699,7 +723,11 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     let restaged_case = EnumMemberPreimage::from_json(restaged_case).unwrap();
     assert_eq!(
         status
-            .admit_member(&restaged_case, ready_key)
+            .admit_member(
+                &restaged_case,
+                ready_key,
+                qsl_foundation::IdentityLimits::default()
+            )
             .map_err(graph)
             .unwrap_err()
             .cause,
@@ -764,7 +792,13 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     for changed in changes {
         let preimage = EnumDeclarationPreimage::from_json(changed.clone()).unwrap();
         assert_eq!(
-            AdmittedEnumDeclaration::admit(preimage.clone(), old_key, &selection).map_err(graph),
+            AdmittedEnumDeclaration::admit(
+                preimage.clone(),
+                old_key,
+                &selection,
+                qsl_foundation::IdentityLimits::default()
+            )
+            .map_err(graph),
             Err(InvalidSemanticGraph {
                 cause: SemanticGraphCause::StaleKey
             }),
@@ -772,7 +806,13 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
         );
         let new_key = fixture_key(&changed);
         assert_ne!(new_key, old_key);
-        let new = AdmittedEnumDeclaration::admit(preimage, new_key, &selection).unwrap();
+        let new = AdmittedEnumDeclaration::admit(
+            preimage,
+            new_key,
+            &selection,
+            qsl_foundation::IdentityLimits::default(),
+        )
+        .unwrap();
         let old_ready = member(&old, "READY");
         let new_case = new.declaration().members()[0].clone();
         let new_member = member(&new, &new_case);
@@ -791,7 +831,11 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     let ready_preimage = EnumMemberPreimage::from_json(ready_preimage).unwrap();
     assert_eq!(
         other
-            .admit_member(&ready_preimage, ready_key)
+            .admit_member(
+                &ready_preimage,
+                ready_key,
+                qsl_foundation::IdentityLimits::default()
+            )
             .map_err(graph)
             .unwrap_err()
             .cause,
@@ -799,10 +843,14 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     );
     let closed = EnumMemberPreimage::from_json(member_preimage(old_key, "CLOSED")).unwrap();
     assert_eq!(
-        old.admit_member(&closed, ready_key)
-            .map_err(graph)
-            .unwrap_err()
-            .cause,
+        old.admit_member(
+            &closed,
+            ready_key,
+            qsl_foundation::IdentityLimits::default()
+        )
+        .map_err(graph)
+        .unwrap_err()
+        .cause,
         SemanticGraphCause::UndeclaredCase
     );
 }
@@ -826,7 +874,11 @@ fn tc_409_declaration_key_is_never_accepted_as_a_member_key() {
         EnumMemberPreimage::from_json(member_preimage(status.key(), "READY")).unwrap();
     assert_eq!(
         status
-            .admit_member(&ready_preimage, status.key())
+            .admit_member(
+                &ready_preimage,
+                status.key(),
+                qsl_foundation::IdentityLimits::default()
+            )
             .map_err(graph)
             .unwrap_err()
             .cause,

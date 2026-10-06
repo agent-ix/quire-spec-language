@@ -10,8 +10,8 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{DimensionForm, ExactNumberForm, ExactNumberKind, TermOperator, UnitForm};
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
-use qsl_foundation::Span;
+use qsl_foundation::diagnostic::LimitExceeded;
+use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, NodeKey, Rational};
 
 use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
@@ -73,7 +73,7 @@ fn reduce(number: &ExactNumberForm, limits: AssemblyLimits) -> Result<Rational, 
                     let actual = number.second.to_u64().map_or(u128::MAX, u128::from);
                     return Err(error(
                         AssemblyCause::DecimalScaleLimit(LimitExceeded::new(
-                            LimitKind::WorkBudget,
+                            Setting::S3DecimalScale,
                             limits.decimal_scale,
                             actual,
                         )),
@@ -352,7 +352,7 @@ pub(super) fn assemble(
             let preimage =
                 DimensionPreimage::new(node_owner.clone(), vec![form.name.name.clone()], terms)
                     .map_err(|refusal| fault(refusal.into()))?;
-            let key = nominal_key(&preimage).map_err(fault)?;
+            let key = nominal_key(&preimage, limits.identity).map_err(fault)?;
             dimension_keys[index] = Some(key);
             dimension_nodes.push((preimage, key));
         }
@@ -383,12 +383,13 @@ pub(super) fn assemble(
                 &offsets[index],
             )
             .map_err(|refusal| fault(refusal.into()))?;
-            let key = nominal_key(&preimage).map_err(fault)?;
+            let key = nominal_key(&preimage, limits.identity).map_err(fault)?;
             unit_keys[index] = Some(key);
             unit_nodes.push((preimage, key));
         }
     }
-    let graph = admit_unit_graph(dimension_nodes, unit_nodes, owners).map_err(fault)?;
+    let graph =
+        admit_unit_graph(dimension_nodes, unit_nodes, owners, limits.identity).map_err(fault)?;
     let mut spans = BTreeMap::new();
     for (key, span) in dimension_keys.iter().zip(&dimension_spans) {
         if let Some(key) = key {

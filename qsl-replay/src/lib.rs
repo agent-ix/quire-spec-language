@@ -40,6 +40,7 @@ mod compile;
 mod certificate;
 mod execute;
 mod identity;
+mod limits;
 mod outcome;
 mod proof_result;
 mod request;
@@ -48,7 +49,7 @@ mod scalar;
 pub mod spine;
 mod witness;
 
-pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
+pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
@@ -63,6 +64,7 @@ pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
 };
+pub use limits::CallerLimits;
 // The typed identity and catalog code a `TerminalRecord` and a
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
@@ -236,19 +238,14 @@ mod redaction_tests {
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
-            stage_limits: StageLimits {
-                s1: scalar_limits(1),
-                s2: scalar_limits(1),
-                s3: scalar_limits(1),
-                s4: scalar_limits(1),
-            },
+            stage_limits: std::collections::BTreeMap::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
                 mismatched_bytes,
             )],
         };
-        let refusal = ReplayRequest::decode(wire).unwrap_err();
+        let refusal = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err();
         let rendered = format!("{refusal:?} {refusal}");
         assert!(!contains_bytes(&rendered, &entry_x));
 
@@ -280,19 +277,15 @@ mod redaction_tests {
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
-            stage_limits: StageLimits {
-                s1: scalar_limits(1),
-                s2: scalar_limits(1),
-                s3: scalar_limits(1),
-                s4: scalar_limits(1),
-            },
+            stage_limits: std::collections::BTreeMap::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
                 entry_x.clone(),
             )],
         };
-        let valid_request = ReplayRequest::decode(valid_wire).unwrap();
+        let valid_request =
+            ReplayRequest::decode(valid_wire, crate::ReplayLimits::default()).unwrap();
         let looked_up = valid_request
             .byte_provision()
             .get(source_digest_record)

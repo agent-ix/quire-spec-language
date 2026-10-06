@@ -35,7 +35,10 @@ fn call(name: &str, arguments: Vec<Expression>) -> Expression {
 fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 

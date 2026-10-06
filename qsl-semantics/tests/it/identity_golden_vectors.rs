@@ -218,13 +218,17 @@ fn enum_node_digests_match_their_golden_vectors() {
     assert_golden(
         ENUM_DECLARATION,
         ENUM_DECLARATION_DIGEST,
-        &hex(&declaration.digest().unwrap()),
+        &hex(&declaration
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap()),
     );
     let member = EnumMemberPreimage::from_json(serde_json::from_str(ENUM_MEMBER).unwrap()).unwrap();
     assert_golden(
         ENUM_MEMBER,
         ENUM_MEMBER_DIGEST,
-        &hex(&member.digest().unwrap()),
+        &hex(&member
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap()),
     );
 }
 
@@ -237,13 +241,23 @@ fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
     assert_golden(
         DIMENSION,
         DIMENSION_DIGEST,
-        &hex(&dimension.digest().unwrap()),
+        &hex(&dimension
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap()),
     );
     let unit = UnitPreimage::from_json(serde_json::from_str(UNIT).unwrap()).unwrap();
-    assert_golden(UNIT, UNIT_DIGEST, &hex(&unit.digest().unwrap()));
+    assert_golden(
+        UNIT,
+        UNIT_DIGEST,
+        &hex(&unit
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap()),
+    );
     let compound =
         CompoundUnitPreimage::from_json(serde_json::from_str(COMPOUND_UNIT).unwrap()).unwrap();
-    let id = compound.id().unwrap();
+    let id = compound
+        .id(qsl_foundation::IdentityLimits::default())
+        .unwrap();
     assert_eq!(id.domain(), quire_exact::UnitDomain::Compound);
     assert_golden(COMPOUND_UNIT, COMPOUND_UNIT_DIGEST, &hex(id.as_bytes()));
 }
@@ -270,6 +284,7 @@ fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
             authority: "agent-ix".into(),
             identity: "example-model".into(),
         })]),
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the golden dimension and unit admit");
     let compound =

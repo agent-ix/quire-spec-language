@@ -293,6 +293,7 @@ fn type_nodes(
         0,
         &mut occurrences,
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     );
     let keys = value_types
         .iter()
@@ -498,7 +499,10 @@ fn deep_option_keys(stack: usize) -> BTreeSet<NodeKey> {
                     None,
                     Expression::boolean(true),
                 )],
-                ..PackageDeclarations::new(fixture_source())
+                ..PackageDeclarations::new(
+                    fixture_source(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
             }
             .check(limits)
             .unwrap_or_else(|refusals| panic!("the deep option parameter checks: {refusals:?}"));
@@ -658,7 +662,7 @@ fn recursive_records_key_to_g2_g3_and_g7_to_g9() {
         let types = TypeEnvironment::new([record], []).expect("FR-143 admits the record");
         let checked = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the record checks");
@@ -728,7 +732,7 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
     let checked = PackageDeclarations {
         types: list_types(),
         functions: vec![eq, has],
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("equality and contains over List check");
@@ -842,7 +846,7 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     let checked = |budget: u64| {
         PackageDeclarations {
             functions: ring(k),
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default().with_work_budget(budget))
     };
@@ -952,7 +956,7 @@ fn a_declared_records_node_id_is_its_key_not_its_handle() {
         .expect("Point admits");
         let checked = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("Point checks");
@@ -993,7 +997,7 @@ fn an_alias_introduces_no_type_node() {
             None,
             Expression::boolean(true),
         )],
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("g checks");
@@ -1044,7 +1048,7 @@ fn check_under(
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(source)
+        ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
 }
@@ -1578,7 +1582,7 @@ fn a_law_comes_only_from_the_lock_evidence() {
     let graph = PackageDeclarations {
         functions: vec![te],
         lock_evidence: LockEvidence::default().with_text_profile(definition.clone()),
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("text-profile evidence admits the equality");
@@ -1978,7 +1982,7 @@ fn record_projection_and_record_values_name_their_record_node() {
     let graph = PackageDeclarations {
         types,
         functions: vec![project, build],
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("the record fixtures check");
@@ -2028,7 +2032,7 @@ fn a_declaration_key_follows_the_authority_and_identity_not_the_revision() {
                 [],
             )
             .unwrap(),
-            ..PackageDeclarations::new(source.clone())
+            ..PackageDeclarations::new(source.clone(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("Point checks: {refusals:?}"));
@@ -2113,6 +2117,7 @@ fn tc_441_an_unbounded_population_refuses_to_lower() {
         0,
         &mut occurrences,
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     );
     let refusal = lowering
         .population_type(

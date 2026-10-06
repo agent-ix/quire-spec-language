@@ -113,6 +113,7 @@ fn link_roots(
         &roots(&definitions[..root_count]),
         &DefinitionCatalog::new(definitions.to_vec()).unwrap(),
         limits,
+        qsl_foundation::IdentityLimits::default(),
     )
 }
 
@@ -186,6 +187,7 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
         &roots(&definitions),
         &DefinitionCatalog::new(definitions[1..].to_vec()).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(unknown.code, Code::UnknownProfile);
@@ -202,6 +204,7 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
         &foreign,
         &DefinitionCatalog::new(definitions.clone()).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(other_authority.code, Code::UnknownProfile);
@@ -230,6 +233,7 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
         &roots(&definitions),
         &DefinitionCatalog::new(rebytes).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect("a root resolves by identity alone");
     assert_eq!(
@@ -282,6 +286,7 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
         &roots_without_runtime,
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(missing.code, Code::MissingImport);
@@ -337,6 +342,7 @@ fn one_identity_selected_under_two_authorities_refuses_naming_both() {
         &[left.clone(), right.clone()],
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(both.code, Code::AmbiguousDeclaration);
@@ -392,6 +398,7 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
         std::slice::from_ref(&a_ref),
         &DefinitionCatalog::new(vec![a, b]).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::InvalidPackage);
@@ -559,6 +566,7 @@ fn a_root_naming_a_compiled_models_identity_is_not_a_definition_root() {
         &selected,
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::UnknownProfile);
@@ -594,6 +602,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: definitions.len() - 1,
+            actual: definitions.len(),
         }
     );
     assert_eq!(
@@ -608,6 +617,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::ArtifactBytes,
             limit: artifact_bytes - 1,
+            actual: artifact_bytes,
         }
     );
 
@@ -617,7 +627,13 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         artifact_bytes,
         ..PackageLimits::default()
     };
-    assert!(link_bundle(&selected, &catalog, link_exact).is_ok());
+    assert!(link_bundle(
+        &selected,
+        &catalog,
+        link_exact,
+        qsl_foundation::IdentityLimits::default()
+    )
+    .is_ok());
     let artifact_refusal = link_bundle(
         &selected,
         &catalog,
@@ -625,6 +641,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
             artifact_bytes: artifact_bytes - 1,
             ..link_exact
         },
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(artifact_refusal.code, Code::ResourceExhausted);
@@ -633,6 +650,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::ArtifactBytes,
             limit: artifact_bytes - 1,
+            actual: artifact_bytes,
         }
     );
     assert_eq!(
@@ -648,6 +666,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
             definitions: 1,
             ..PackageLimits::default()
         },
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::ResourceExhausted);
@@ -656,6 +675,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: 1,
+            actual: selected.len(),
         }
     );
 }
@@ -731,14 +751,16 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: raised.definitions,
+            actual: raised.definitions + 1,
         },
         "must name the raised ceiling actually in force, not the original default"
     );
     assert_eq!(
         refusal.to_string(),
         format!(
-            "package resource limit exceeded: definitions (limit {})",
-            raised.definitions
+            "package resource limit exceeded: definitions (limit {}, reached {}); raise it with `--limit library.definitions=<n>`",
+            raised.definitions,
+            raised.definitions + 1
         )
     );
 }
@@ -804,6 +826,7 @@ fn dependency_edge_limits_admit_exactly_and_refuse_one_below() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: 10,
+            actual: 11,
         }
     );
     assert_eq!(over.cause_tag, ResolutionCause::InsufficientNextCharge);
@@ -833,6 +856,7 @@ fn dependency_edge_limits_admit_exactly_and_refuse_one_below() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::DependencyEdges,
             limit: 1,
+            actual: 2,
         }
     );
     assert_eq!(edges.code, Code::ResourceExhausted);
@@ -891,7 +915,125 @@ fn a_dependency_chain_of_any_length_closes_within_the_edge_limit() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::DependencyEdges,
             limit: CHAIN - 1,
+            actual: CHAIN,
         }
+    );
+}
+
+/// The setting, bound and count a library resource refusal names.
+fn limit_outcome(error: &PackageError) -> (qsl_foundation::Setting, usize, usize) {
+    match error {
+        PackageError::ResourceLimit {
+            kind,
+            limit,
+            actual,
+        } => (kind.setting(), *limit, *actual),
+        other => panic!("expected a resource limit, got {other:?}"),
+    }
+}
+
+/// FR-255-AC-1 and AC-4 for `library.*`: each of the four limits, driven by
+/// the catalog or the link past its bound, refuses naming its own setting,
+/// and the same input is admitted once that bound is raised to the count it
+/// reached.
+#[trace("TC-720", "FR-255-AC-1")]
+#[trace("TC-721", "FR-255-AC-4")]
+#[test]
+fn each_library_limit_refuses_naming_its_setting_and_admits_once_raised() {
+    use qsl_foundation::Setting;
+
+    let definitions = complete_definitions();
+    let artifact_bytes: usize = definitions
+        .iter()
+        .map(|definition| definition.exact_bytes().len())
+        .sum();
+    let largest = definitions
+        .iter()
+        .map(|definition| definition.exact_bytes().len())
+        .max()
+        .unwrap();
+    let exact = PackageLimits {
+        definitions: definitions.len(),
+        artifact_bytes,
+        single_artifact_bytes: largest,
+        ..PackageLimits::default()
+    };
+    assert!(DefinitionCatalog::with_limits(definitions.clone(), exact).is_ok());
+    for (setting, lowered, bound, reached) in [
+        (
+            Setting::LibraryDefinitions,
+            PackageLimits {
+                definitions: definitions.len() - 1,
+                ..exact
+            },
+            definitions.len() - 1,
+            definitions.len(),
+        ),
+        (
+            Setting::LibraryArtifactBytes,
+            PackageLimits {
+                artifact_bytes: artifact_bytes - 1,
+                ..exact
+            },
+            artifact_bytes - 1,
+            artifact_bytes,
+        ),
+        (
+            Setting::LibrarySingleArtifactBytes,
+            PackageLimits {
+                single_artifact_bytes: largest - 1,
+                ..exact
+            },
+            largest - 1,
+            largest,
+        ),
+    ] {
+        let error = DefinitionCatalog::with_limits(definitions.clone(), lowered).unwrap_err();
+        assert_eq!(limit_outcome(&error), (setting, bound, reached));
+    }
+
+    const CHAIN: usize = 3;
+    let mut chained = complete_definitions();
+    let mut next: Option<DefinitionRef> = None;
+    let mut chain = Vec::with_capacity(CHAIN);
+    for index in (0..CHAIN).rev() {
+        let link = definition(
+            &format!("acme.chain.link{index}"),
+            DefinitionRole::MethodPlan,
+            next.iter().cloned().collect(),
+            BTreeSet::new(),
+            format!("chain link {index}").as_bytes(),
+        );
+        next = Some(link.exact().clone());
+        chain.push(link);
+    }
+    chained[0] = definition(
+        chained[0].exact().identity(),
+        DefinitionRole::Source,
+        next.iter().cloned().collect(),
+        inventory(),
+        b"source root over a short dependency chain",
+    );
+    let total = chained.len() + CHAIN;
+    chained.extend(chain);
+    let limits = PackageLimits {
+        definitions: total,
+        dependency_edges: CHAIN,
+        ..PackageLimits::default()
+    };
+    assert!(link_roots(&chained, 9, limits).is_ok());
+    let refused = link_roots(
+        &chained,
+        9,
+        PackageLimits {
+            dependency_edges: CHAIN - 1,
+            ..limits
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        limit_outcome(&refused.cause),
+        (Setting::LibraryDependencyEdges, CHAIN - 1, CHAIN)
     );
 }
 
@@ -986,6 +1128,7 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     let expected = PackageError::ResourceLimit {
         kind: PackageLimitKind::SingleArtifactBytes,
         limit: default.single_artifact_bytes,
+        actual: default.single_artifact_bytes + 1,
     };
     assert_eq!(
         DefinitionCatalog::with_limits(vec![large.clone()], default).unwrap_err(),
@@ -994,8 +1137,9 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     assert_eq!(
         expected.to_string(),
         format!(
-            "package resource limit exceeded: single_artifact_bytes (limit {})",
-            default.single_artifact_bytes
+            "package resource limit exceeded: single_artifact_bytes (limit {}, reached {}); raise it with `--limit library.single_artifact_bytes=<n>`",
+            default.single_artifact_bytes,
+            default.single_artifact_bytes + 1
         )
     );
 
@@ -1027,18 +1171,32 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
     let catalog = DefinitionCatalog::with_limits(definitions.clone(), raised).unwrap();
     let selected = roots(&definitions);
 
-    let refusal = link_bundle(&selected, &catalog, default).unwrap_err();
+    let refusal = link_bundle(
+        &selected,
+        &catalog,
+        default,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_err();
     assert_eq!(refusal.code, Code::ResourceExhausted);
     assert_eq!(
         refusal.cause,
         PackageError::ResourceLimit {
             kind: PackageLimitKind::SingleArtifactBytes,
             limit: default.single_artifact_bytes,
+            actual: default.single_artifact_bytes + 1,
         }
     );
     assert_catalogued(&refusal);
     assert_eq!(
-        link_bundle(&selected, &catalog, raised).unwrap().limits(),
+        link_bundle(
+            &selected,
+            &catalog,
+            raised,
+            qsl_foundation::IdentityLimits::default()
+        )
+        .unwrap()
+        .limits(),
         raised
     );
 }

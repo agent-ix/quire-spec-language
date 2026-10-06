@@ -141,7 +141,7 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         ],
         lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
         ieee_profile: Some(ieee),
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
 }
 
@@ -563,8 +563,18 @@ fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
         "members": cases,
     }))
     .unwrap();
-    let key = NodeKey::from_digest(preimage.digest().unwrap());
-    let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners).unwrap();
+    let key = NodeKey::from_digest(
+        preimage
+            .digest(qsl_foundation::IdentityLimits::default())
+            .unwrap(),
+    );
+    let declaration = AdmittedEnumDeclaration::admit(
+        preimage,
+        key,
+        &owners,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap();
     let members = cases
         .iter()
         .map(|case| {
@@ -574,8 +584,18 @@ fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
                 "case": case,
             }))
             .unwrap();
-            let member_key = NodeKey::from_digest(member.digest().unwrap());
-            declaration.admit_member(&member, member_key).unwrap()
+            let member_key = NodeKey::from_digest(
+                member
+                    .digest(qsl_foundation::IdentityLimits::default())
+                    .unwrap(),
+            );
+            declaration
+                .admit_member(
+                    &member,
+                    member_key,
+                    qsl_foundation::IdentityLimits::default(),
+                )
+                .unwrap()
         })
         .collect();
     EnumBinding {
@@ -604,7 +624,7 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
                 )
             })
             .collect(),
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
 }
 
@@ -698,7 +718,7 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
     let checked = PackageDeclarations {
         types,
         functions: vec![make],
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("the tuple fixture checks");

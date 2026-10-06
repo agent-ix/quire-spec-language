@@ -20,10 +20,10 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::ByteDigest;
 use qsl_semantics::check::CheckedOperationFrame;
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::observation::{DocumentRef, FrameWitness, ObservationLimits, Provisions};
+use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
 
 use super::{charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
+use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
@@ -184,15 +184,17 @@ impl FrameReplayResult {
 /// respects is `inconclusive`, `Verdicts`; a check that completed no value
 /// (a declared delta that disagrees) is `inconclusive`, `NoValue`.
 ///
-/// Admission and the domain package re-normalization run under their
-/// published defaults: no `quire.value.accounting/v1` counter names either.
+/// Admission and the domain package re-normalization run under the request's
+/// `stage_limits` entries for their settings, or their published defaults.
 pub fn replay_frame(
     wire: ReplayRequestWire,
     envelope: &WitnessEnvelope<FrameCounterexample>,
+    replay_limits: ReplayLimits,
 ) -> Result<FrameReplayResult, ReplayRefusal> {
-    let request = ReplayRequest::decode(wire)?;
+    let request = ReplayRequest::decode(wire, replay_limits)?;
+    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
     check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
-    let compiled = recompile(&request)?;
+    let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
         return Err(ReplayRefusal::PackageIdMismatch {
@@ -240,12 +242,12 @@ pub fn replay_frame(
     sources.extend(compiled.checked.libraries().iter().cloned());
     let run = CompiledRun {
         packages: &packages,
-        model_limits: ModelNormalizationLimits::default(),
+        model_limits: limits.spine.model,
         provisions: Provisions {
             snapshots: &documents,
             invocations: &documents,
         },
-        observation_limits: ObservationLimits::default(),
+        observation_limits: limits.observation,
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         package_id,

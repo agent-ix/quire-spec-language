@@ -200,10 +200,7 @@ impl<'a> FamilySteps<'a> {
     pub(crate) fn exceeded(&self) -> ModelRefusal {
         ModelRefusal {
             code: Code::ResourceExhausted,
-            cause: ModelRefusalCause::FamilySteps {
-                original: self.original.clone(),
-                limit: self.limit,
-            },
+            cause: ModelRefusalCause::family_steps(self.original.clone(), self.limit),
             detail: format!(
                 "dispatch family for {} exceeded the family_steps limit of {}",
                 self.original.node, self.limit
@@ -255,7 +252,12 @@ fn dominates(
     if p_owner == q_owner {
         return Ok(false);
     }
-    index.conforms(p_owner, q_owner, max_steps)
+    index.conforms(
+        p_owner,
+        q_owner,
+        max_steps,
+        qsl_foundation::Setting::ModelAncestorSteps,
+    )
 }
 
 /// Links `original`'s dispatch family across every effective type `view`
@@ -330,6 +332,7 @@ pub(crate) fn link_dispatch_counted(
             candidate_subtype,
             &receiver_type,
             meter.limits().ancestor_steps,
+            qsl_foundation::Setting::ModelAncestorSteps,
         ) {
             Ok(true) => subtypes.push(candidate_subtype.clone()),
             Ok(false) => {}
@@ -365,7 +368,12 @@ pub(crate) fn link_dispatch_counted(
                 });
             };
             let candidate_owner = &candidate_record.owner;
-            match index.conforms(subtype, candidate_owner, meter.limits().ancestor_steps) {
+            match index.conforms(
+                subtype,
+                candidate_owner,
+                meter.limits().ancestor_steps,
+                qsl_foundation::Setting::ModelAncestorSteps,
+            ) {
                 Ok(true) => applicable.push(candidate.clone()),
                 Ok(false) => {}
                 Err(refusal) => return LinkCheckOutcome::Refused(refusal),

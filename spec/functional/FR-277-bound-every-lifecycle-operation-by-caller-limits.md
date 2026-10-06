@@ -44,7 +44,7 @@ for `analyze`, each open FR-331 item settled `incomplete` with the limit as
 its cause.
 `LimitExceeded` carries the limit kind, the configured value, the counter at
 the failed charge, the `Locus` where the producer knows one (FR-096), and the
-name of the limits field that sets the bound.
+FR-255 setting that sets the bound.
 
 ## Behavior
 

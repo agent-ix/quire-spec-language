@@ -424,6 +424,6 @@ pub fn declarations(form: Form, levels: usize) -> PackageDeclarations {
         ],
         types: types(),
         aliases: vec![("Total".to_owned(), ValueType::Integer)],
-        ..PackageDeclarations::new(fixture_source())
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
 }

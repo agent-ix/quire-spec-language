@@ -14,6 +14,7 @@
 use quire_exact::CancelCause;
 
 use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
+use crate::setting::Setting;
 
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1` revision
@@ -69,83 +70,18 @@ impl LimitKind {
             Self::WorkBudget => "work-budget-exceeded",
         }
     }
-}
 
-/// The caller's limits field that sets a stage limit's bound (FR-277): the
-/// closed set of fields the front end's limits value carries, each spelled
-/// `<limits group>.<field>`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum LimitsField {
-    /// `source.source_bytes`.
-    SourceBytes,
-    /// `source.tokens`.
-    SourceTokens,
-    /// `source.nodes`.
-    SourceNodes,
-    /// `source.work_units`.
-    SourceWorkUnits,
-    /// `model.declaration_records`.
-    ModelDeclarationRecords,
-    /// `model.derivation_facts`.
-    ModelDerivationFacts,
-    /// `model.effective_declarations`.
-    ModelEffectiveDeclarations,
-    /// `model.dispatch_candidates`.
-    ModelDispatchCandidates,
-    /// `model.hashed_bytes`.
-    ModelHashedBytes,
-    /// `model.work_units`.
-    ModelWorkUnits,
-    /// `model.ancestor_steps`.
-    ModelAncestorSteps,
-    /// `model.family_steps`.
-    ModelFamilySteps,
-    /// `environment.ancestor_steps`.
-    EnvironmentAncestorSteps,
-    /// `environment.work_units`.
-    EnvironmentWorkUnits,
-    /// `dependency.libraries`.
-    DependencyLibraries,
-    /// `dependency.import_edges`.
-    DependencyImportEdges,
-    /// `dependency.source_bytes`.
-    DependencySourceBytes,
-    /// `checking.nodes`.
-    CheckingNodes,
-    /// `checking.input_bytes`.
-    CheckingInputBytes,
-    /// `checking.work_budget`.
-    CheckingWorkBudget,
-    /// `identity.input_bytes`: the byte limit every identity preimage
-    /// encodes under (FR-259 Behavior 3).
-    IdentityInputBytes,
-}
-
-impl LimitsField {
-    /// The field's `<limits group>.<field>` spelling.
-    pub const fn as_str(self) -> &'static str {
+    /// The counter's name in a rendered limit diagnostic, such as `node` in
+    /// "S3 node limit 4 reached (5)".
+    pub const fn noun(self) -> &'static str {
         match self {
-            Self::SourceBytes => "source.source_bytes",
-            Self::SourceTokens => "source.tokens",
-            Self::SourceNodes => "source.nodes",
-            Self::SourceWorkUnits => "source.work_units",
-            Self::ModelDeclarationRecords => "model.declaration_records",
-            Self::ModelDerivationFacts => "model.derivation_facts",
-            Self::ModelEffectiveDeclarations => "model.effective_declarations",
-            Self::ModelDispatchCandidates => "model.dispatch_candidates",
-            Self::ModelHashedBytes => "model.hashed_bytes",
-            Self::ModelWorkUnits => "model.work_units",
-            Self::ModelAncestorSteps => "model.ancestor_steps",
-            Self::ModelFamilySteps => "model.family_steps",
-            Self::EnvironmentAncestorSteps => "environment.ancestor_steps",
-            Self::EnvironmentWorkUnits => "environment.work_units",
-            Self::DependencyLibraries => "dependency.libraries",
-            Self::DependencyImportEdges => "dependency.import_edges",
-            Self::DependencySourceBytes => "dependency.source_bytes",
-            Self::CheckingNodes => "checking.nodes",
-            Self::CheckingInputBytes => "checking.input_bytes",
-            Self::CheckingWorkBudget => "checking.work_budget",
-            Self::IdentityInputBytes => "identity.input_bytes",
+            Self::InputBytes => "input byte",
+            Self::TokenCount => "token",
+            Self::NodeCount => "node",
+            Self::EdgeCount => "edge",
+            Self::OccurrenceCount => "occurrence",
+            Self::DiagnosticCount => "diagnostic",
+            Self::WorkBudget => "work",
         }
     }
 }
@@ -160,20 +96,18 @@ impl LimitsField {
 /// IR reports no position for.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LimitExceeded {
-    kind: LimitKind,
+    setting: Setting,
     configured_bound: u64,
     actual: u128,
     /// Boxed: a `Locus` names a source reference or a digest and pointer,
     /// far larger than the rest, and every stage's `Result` carries this.
     locus: Option<Box<Locus>>,
-    /// The name of the caller's limits field that sets the bound (FR-277),
-    /// such as `source.tokens`. `None` where no caller field sets it.
-    field: Option<LimitsField>,
 }
 
 impl LimitExceeded {
-    /// A reached limit of `kind`, configured at `configured_bound`, where
-    /// the stage's counter reached `actual`, with no locus yet.
+    /// A reached limit set by `setting` (FR-255), configured at
+    /// `configured_bound`, where the stage's counter reached `actual`, with
+    /// no locus yet. The limit kind is the setting's.
     ///
     /// `actual` is the value the refused step would have taken the counter
     /// to: the measured size for input bytes and node count, the edge count
@@ -181,27 +115,18 @@ impl LimitExceeded {
     /// cumulative total the refused charge would have reached for the work
     /// budget. It is wider than the bound because a cumulative total of two
     /// `u64` counters can exceed `u64::MAX`.
-    pub const fn new(kind: LimitKind, configured_bound: u64, actual: u128) -> Self {
+    pub const fn new(setting: Setting, configured_bound: u64, actual: u128) -> Self {
         Self {
-            kind,
+            setting,
             configured_bound,
             actual,
             locus: None,
-            field: None,
         }
     }
 
-    /// This limit, named by the caller's limits field `field` that raises
-    /// it (FR-277).
-    #[must_use]
-    pub const fn named(mut self, field: LimitsField) -> Self {
-        self.field = Some(field);
-        self
-    }
-
-    /// The caller's limits field that sets this bound, when one does.
-    pub const fn limits_field(&self) -> Option<LimitsField> {
-        self.field
+    /// The setting that raises this limit (FR-255), at every entry point.
+    pub const fn setting(&self) -> Setting {
+        self.setting
     }
 
     /// This limit, reached at `locus` (`None` where FR-096 says no
@@ -214,7 +139,7 @@ impl LimitExceeded {
 
     /// The limit that was reached.
     pub const fn kind(&self) -> LimitKind {
-        self.kind
+        self.setting.kind()
     }
 
     /// The configured bound of that limit.
@@ -238,22 +163,43 @@ impl CatalogCoded for LimitExceeded {
     /// cause; `configured_bound`/`actual` are carried by this value itself,
     /// not folded into the tag.
     fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("stage_limit_exceeded", self.kind.catalog_cause())
+        CatalogCode::new("stage_limit_exceeded", self.kind().catalog_cause())
     }
 
     /// The catalog row's payload: the exceeded limit kind (its cause tag),
-    /// the configured bound and the actual counter (FR-096). Its position is
-    /// its locus.
+    /// the configured bound, the actual counter and the setting that raises
+    /// the limit (FR-096, FR-255). Its position is its locus.
     fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
-        let mut fields = std::collections::BTreeMap::from([
-            ("kind", self.kind.catalog_cause().to_owned()),
+        Some(std::collections::BTreeMap::from([
+            ("kind", self.kind().catalog_cause().to_owned()),
             ("bound", self.configured_bound.to_string()),
             ("actual", self.actual.to_string()),
-        ]);
-        if let Some(field) = self.field {
-            fields.insert("field", field.as_str().to_owned());
+            ("setting", self.setting.name().to_owned()),
+        ]))
+    }
+}
+
+/// FR-255 Behavior 3, QSpec FR-461's rendering: the stage and counter, the
+/// configured bound, the count reached, the locus where known, and the
+/// setting that raises the limit at each entry point.
+impl std::fmt::Display for LimitExceeded {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} {} limit {} reached ({})",
+            self.setting.stage(),
+            self.kind().noun(),
+            self.configured_bound,
+            self.actual
+        )?;
+        if let Some(locus) = &self.locus {
+            write!(formatter, " at {locus}")?;
         }
-        Some(fields)
+        write!(
+            formatter,
+            "; raise it with `--limit {name}=<n>` or the request's `stage_limits` entry `{name}`",
+            name = self.setting.name()
+        )
     }
 }
 
@@ -263,8 +209,9 @@ mod tests {
 
     use quire_exact::CancelCause;
 
-    use super::{CatalogCoded, LimitExceeded, LimitKind, StageFailure};
+    use super::{CatalogCoded, LimitExceeded, StageFailure};
     use crate::diagnostic::{category_of, CatalogCode, Category};
+    use crate::setting::Setting;
 
     /// A stage cause with one fixed catalog code.
     #[derive(Debug)]
@@ -293,7 +240,7 @@ mod tests {
         assert_eq!(exit(StageFailure::Refused(Cause("ill_typed"))), 20);
         assert_eq!(
             exit(StageFailure::Limit(LimitExceeded::new(
-                LimitKind::TokenCount,
+                Setting::S1Tokens,
                 10,
                 11
             ))),
@@ -322,29 +269,21 @@ mod tests {
         }
     }
 
-    /// FR-096-AC-2 at catalog revision `1-draft.8`: each of the seven kinds
-    /// reports `stage_limit_exceeded` with its own cause, and a
-    /// `LimitExceeded` reports its kind's code with the bound and actual
-    /// counter.
+    /// FR-096-AC-2 at catalog revision `1-draft.8`: a `LimitExceeded` reports
+    /// `stage_limit_exceeded` with its setting's kind as the cause, and its
+    /// record carries `kind`, `bound`, `actual` and `setting` (FR-255 Behavior 1).
     #[trace("TC-427", "FR-096-AC-2", "TC-428", "FR-096-AC-7")]
     #[test]
-    fn limit_exceeded_reports_stage_limit_exceeded_per_kind() {
-        let causes = [
-            "input-bytes-exceeded",
-            "token-count-exceeded",
-            "node-count-exceeded",
-            "edge-count-exceeded",
-            "occurrence-count-exceeded",
-            "diagnostic-count-exceeded",
-            "work-budget-exceeded",
-        ];
-        for (kind, cause) in LimitKind::ALL.into_iter().zip(causes) {
-            let exceeded = LimitExceeded::new(kind, 10, 11);
+    fn limit_exceeded_reports_stage_limit_exceeded_per_setting() {
+        for setting in Setting::ALL.iter().copied() {
+            let exceeded = LimitExceeded::new(setting, 10, 11);
+            let cause = setting.kind().catalog_cause();
             let code = exceeded.catalog_code();
             assert_eq!(code, CatalogCode::new("stage_limit_exceeded", cause));
             assert_eq!(category_of(&code), Some(Category::Incomplete));
             assert_eq!(exceeded.configured_bound(), 10);
             assert_eq!(exceeded.actual(), 11);
+            assert_eq!(exceeded.setting(), setting);
             assert_eq!(exceeded.locus(), None);
             let fields = exceeded.catalog_fields().expect("a key-table row");
             assert_eq!(
@@ -353,9 +292,22 @@ mod tests {
                     ("actual", "11".to_owned()),
                     ("bound", "10".to_owned()),
                     ("kind", cause.to_owned()),
+                    ("setting", setting.name().to_owned()),
                 ]
             );
         }
+    }
+
+    /// FR-255-AC-2's rendering, with no locus: the stage and counter, the
+    /// bound, the count reached and the setting at both entry points.
+    #[trace("TC-720", "FR-255-AC-2")]
+    #[test]
+    fn a_limit_renders_its_setting_at_every_entry_point() {
+        assert_eq!(
+            LimitExceeded::new(Setting::S3Nodes, 4, 5).to_string(),
+            "S3 node limit 4 reached (5); raise it with `--limit s3.nodes=<n>` or the request's \
+             `stage_limits` entry `s3.nodes`"
+        );
     }
 }
 

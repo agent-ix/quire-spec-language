@@ -101,7 +101,10 @@ fn function_two() -> FunctionDeclaration {
 fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 

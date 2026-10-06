@@ -201,7 +201,7 @@ fn self_a() -> SelectedObject {
 }
 
 fn reference(key: &str) -> SnapshotValue {
-    SnapshotValue::Reference(SelectedObject {
+    SnapshotValue::reference(SelectedObject {
         population: config_version_population_identity(),
         key: key.to_owned(),
     })
@@ -245,14 +245,17 @@ fn case_with(
         witness: None,
     };
     let (clause_node, occurrence_key) = identity;
-    let envelope = WitnessEnvelope::reconstruct(packet(
-        &unit.bytes,
-        package_id,
-        source,
-        clause_node,
-        occurrence_key,
-        payload,
-    ))
+    let envelope = WitnessEnvelope::reconstruct(
+        packet(
+            &unit.bytes,
+            package_id,
+            source,
+            clause_node,
+            occurrence_key,
+            payload,
+        ),
+        crate::ReplayLimits::default(),
+    )
     .expect("a complete packet reconstructs");
     Case {
         unit,
@@ -263,7 +266,7 @@ fn case_with(
 }
 
 fn replay(case: Case) -> Result<StateClauseReplayResult, ReplayRefusal> {
-    replay_state_clause(case.wire, &case.envelope)
+    replay_state_clause(case.wire, &case.envelope, crate::ReplayLimits::default())
 }
 
 fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
@@ -557,20 +560,23 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
     );
     let documents = changed_version();
     let wire = request(&edited, &unit.domain_document, original, &documents.bytes);
-    let envelope = WitnessEnvelope::reconstruct(packet(
-        &edited,
-        original,
-        witness_source(),
-        clause_node,
-        occurrence_key,
-        StateClauseCounterexample {
-            clause: name("VersionUnchanged"),
-            observation: documents.observation,
-            witness: None,
-        },
-    ))
+    let envelope = WitnessEnvelope::reconstruct(
+        packet(
+            &edited,
+            original,
+            witness_source(),
+            clause_node,
+            occurrence_key,
+            StateClauseCounterexample {
+                clause: name("VersionUnchanged"),
+                observation: documents.observation,
+                witness: None,
+            },
+        ),
+        crate::ReplayLimits::default(),
+    )
     .unwrap();
-    let refusal = replay_state_clause(wire, &envelope).unwrap_err();
+    let refusal = replay_state_clause(wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refusal,
@@ -596,14 +602,17 @@ fn a_clause_naming_no_state_clause_refuses_missing_name() {
             witness: None,
         };
         let package_id = package_digest(case.unit.compiled.emitted.package_id());
-        case.envelope = WitnessEnvelope::reconstruct(packet(
-            &case.unit.bytes,
-            package_id,
-            witness_source(),
-            case.envelope.clause_node(),
-            case.envelope.occurrence_key().clone(),
-            payload,
-        ))
+        case.envelope = WitnessEnvelope::reconstruct(
+            packet(
+                &case.unit.bytes,
+                package_id,
+                witness_source(),
+                case.envelope.clause_node(),
+                case.envelope.occurrence_key().clone(),
+                payload,
+            ),
+            crate::ReplayLimits::default(),
+        )
         .unwrap();
         let refusal = replay(case).unwrap_err();
         assert!(

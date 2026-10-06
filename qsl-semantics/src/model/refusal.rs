@@ -74,6 +74,10 @@ pub enum ModelRefusalCause {
         original: DeclarationKey,
         /// The configured `family_steps` bound the walk reached.
         limit: u64,
+        /// The edge count the refused charge would have reached.
+        reached: u64,
+        /// The setting that raises the bound (`model.family_steps`).
+        setting: qsl_foundation::Setting,
     },
     /// An operation family closes over an unresolved or unproved method set.
     UnclosedMethodSet,
@@ -173,6 +177,12 @@ pub enum ModelRefusalCause {
         from: DeclarationKey,
         /// The configured `ancestor_steps` bound the walk reached.
         limit: u64,
+        /// The edge count the refused charge would have reached.
+        reached: u64,
+        /// The setting that raises the bound: `model.ancestor_steps` for a
+        /// normalization or conformance walk, `admission.ancestor_steps`
+        /// for a population admission walk.
+        setting: qsl_foundation::Setting,
     },
     /// A redefining or subsetting result/effect does not conform to the
     /// redefined/subsetted one under FR-151 variance.
@@ -771,6 +781,59 @@ impl Inexact {
 }
 
 impl ModelRefusalCause {
+    /// An ancestor-steps refusal: the walk from `from` reached `limit`
+    /// edges, and the next edge, the one past the bound, would have made
+    /// `limit + 1`. `setting` names the bound.
+    pub fn ancestor_steps(
+        from: DeclarationKey,
+        limit: u64,
+        setting: qsl_foundation::Setting,
+    ) -> Self {
+        Self::AncestorSteps {
+            from,
+            limit,
+            reached: limit.saturating_add(1),
+            setting,
+        }
+    }
+
+    /// A family-steps refusal: the dispatch family of `original` reached
+    /// `limit` edges, and the next one would have made `limit + 1`.
+    pub fn family_steps(original: DeclarationKey, limit: u64) -> Self {
+        Self::FamilySteps {
+            original,
+            limit,
+            reached: limit.saturating_add(1),
+            setting: qsl_foundation::Setting::ModelFamilySteps,
+        }
+    }
+
+    /// This refusal as the stage limit outcome FR-255 Behavior 1 describes,
+    /// when it is a reached step ceiling: the setting that raises it, its
+    /// bound and the count the refused edge would have reached.
+    pub fn limit_exceeded(&self) -> Option<qsl_foundation::diagnostic::LimitExceeded> {
+        let (setting, limit, reached) = match self {
+            Self::AncestorSteps {
+                setting,
+                limit,
+                reached,
+                ..
+            }
+            | Self::FamilySteps {
+                setting,
+                limit,
+                reached,
+                ..
+            } => (*setting, *limit, *reached),
+            _ => return None,
+        };
+        Some(qsl_foundation::diagnostic::LimitExceeded::new(
+            setting,
+            limit,
+            u128::from(reached),
+        ))
+    }
+
     /// FR-096: the catalog payload of this cause, for a cause with a row in
     /// FR-096's key table, else `None`: a cause with no row has no fields to
     /// give, and an empty map would pass for a record with none required.
@@ -1102,10 +1165,7 @@ pub mod fixtures {
             }};
         }
         samples![
-        FamilySteps => ModelRefusalCause::FamilySteps {
-            original: key("p"),
-            limit: 1,
-        },
+        FamilySteps => ModelRefusalCause::family_steps(key("p"), 1),
         UnclosedMethodSet => ModelRefusalCause::UnclosedMethodSet,
         UnknownOriginal => ModelRefusalCause::UnknownOriginal { original: key("p") },
         UnknownCandidate => ModelRefusalCause::UnknownCandidate {
@@ -1149,10 +1209,11 @@ pub mod fixtures {
             redefiners: vec![key("p")],
         },
         UnsuppliedProducerRecord => ModelRefusalCause::UnsuppliedProducerRecord,
-        AncestorSteps => ModelRefusalCause::AncestorSteps {
-            from: key("p"),
-            limit: 1,
-        },
+        AncestorSteps => ModelRefusalCause::ancestor_steps(
+            key("p"),
+            1,
+            qsl_foundation::Setting::ModelAncestorSteps,
+        ),
         VarianceResult => ModelRefusalCause::VarianceResult,
         MultiplicityNarrowing => ModelRefusalCause::MultiplicityNarrowing {
             from: multiplicity(),

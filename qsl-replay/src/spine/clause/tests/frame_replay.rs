@@ -12,8 +12,8 @@ use crate::spine::OperationName;
 use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FamilyPayload, FrameCounterexample,
     FrameIdentityMismatch, FrameOperation, FrameReplayResult, ProfileSelection, ReplayRefusal,
-    ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, StageLimits,
-    StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
+    ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, StateEnvironment, Verdict,
+    Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
@@ -194,10 +194,6 @@ fn changed_version() -> Invocation {
     )
 }
 
-pub(super) fn unlimited() -> quire_exact::ScalarLimits {
-    default_accounting(u64::MAX)
-}
-
 pub(super) fn source_digest(bytes: &[u8]) -> DigestRecord {
     DigestRecord::mint(
         DigestDomain::SourceBytesV1,
@@ -246,10 +242,6 @@ pub(super) fn request(
         let (domain, hex) = sha256_jcs(reference.digest);
         byte_provision.push((domain, hex, bytes.clone()));
     }
-    let s1 = quire_exact::ScalarLimits {
-        text_input_bytes: u64::try_from(crate::MAX_ENCODED_BYTES).unwrap(),
-        ..unlimited()
-    };
     ReplayRequestWire {
         profile_selections: Vec::new(),
         package_id: (
@@ -274,12 +266,7 @@ pub(super) fn request(
         backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: default_accounting(1_000_000),
-        stage_limits: StageLimits {
-            s1,
-            s2: unlimited(),
-            s3: unlimited(),
-            s4: unlimited(),
-        },
+        stage_limits: std::collections::BTreeMap::new(),
         byte_provision,
     }
 }
@@ -315,7 +302,8 @@ fn envelope_with(
         payload,
     );
     adjust(&mut packet);
-    WitnessEnvelope::reconstruct(packet).expect("a complete packet reconstructs")
+    WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default())
+        .expect("a complete packet reconstructs")
 }
 
 /// A complete packet carrying `payload` at `package_id`, from
@@ -407,7 +395,7 @@ fn case_with(
 }
 
 fn replay(case: Case) -> Result<FrameReplayResult, ReplayRefusal> {
-    replay_frame(case.wire, &case.envelope)
+    replay_frame(case.wire, &case.envelope, crate::ReplayLimits::default())
 }
 
 fn witness_arm(result: &FrameReplayResult) -> &crate::WitnessArmResult {
@@ -671,7 +659,12 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
     let (unit, wire, payload) = uncompilable_request();
     let package_id = package_digest(unit.compiled.emitted.package_id());
     let consistent = envelope(&unit.bytes, package_id, witness_source(), payload.clone());
-    let refusal = replay_frame(uncompilable_request().1, &consistent).unwrap_err();
+    let refusal = replay_frame(
+        uncompilable_request().1,
+        &consistent,
+        crate::ReplayLimits::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(refusal, ReplayRefusal::Recompile(_)),
         "{refusal:?}"
@@ -689,7 +682,7 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
             packet.clause_node = Some(other_frame);
         },
     );
-    let refusal = replay_frame(wire, &stale).unwrap_err();
+    let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refusal,
@@ -729,7 +722,7 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
             packet.occurrence_key = Some(other.clone());
         },
     );
-    let refusal = replay_frame(wire, &stale).unwrap_err();
+    let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refusal,
@@ -769,7 +762,7 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
     };
     let wire = request(&edited, &unit.domain_document, original, &input.documents);
     let envelope = envelope(&edited, original, witness_source(), payload);
-    let refusal = replay_frame(wire, &envelope).unwrap_err();
+    let refusal = replay_frame(wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refusal,
@@ -793,7 +786,7 @@ fn a_stale_envelope_package_id_refuses_by_the_stale_package_rule() {
     assert!(!current.matches(&other));
     let payload = case.envelope.family_payload().clone();
     let envelope = envelope(&case.unit.bytes, other, witness_source(), payload);
-    let refusal = replay_frame(case.wire, &envelope).unwrap_err();
+    let refusal = replay_frame(case.wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refusal,
@@ -929,7 +922,8 @@ fn an_input_arm_envelope_settles_the_input_arm() {
         ReplaySource::Input(Vec::new()),
         payload,
     );
-    let result = replay_frame(case.wire, &envelope).expect("the replay settles");
+    let result = replay_frame(case.wire, &envelope, crate::ReplayLimits::default())
+        .expect("the replay settles");
     let ReplayResult::Input(arm) = result.result() else {
         panic!("expected the input arm, got {:?}", result.result());
     };

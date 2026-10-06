@@ -274,7 +274,10 @@ fn one_candidate_package(
         dispatch_tables: vec![table],
         models: vec![receiver_model()],
         model_clauses,
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -625,7 +628,10 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
             Expression::boolean(true),
             DeclaredClauseKind::Body,
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
@@ -941,6 +947,7 @@ fn ab_bridge_declarations(
         &clauses,
         qsl_semantics::check::fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
         panic!("expected a linked, checked dispatch family, got {refusal:?}")
@@ -1210,7 +1217,10 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             (0, size_clause(DeclaredClauseKind::Body)),
             (1, size_clause(DeclaredClauseKind::Precondition)),
         ]),
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        ..PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1546,6 +1556,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         &clauses,
         qsl_semantics::check::fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
         panic!("expected a linked, checked dispatch family, got {refusal:?}")
@@ -1802,6 +1813,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         &clauses,
         qsl_semantics::check::fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
         panic!("expected a linked, checked dispatch family, got {refusal:?}")
@@ -1927,6 +1939,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         &clauses,
         qsl_semantics::check::fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
         panic!("expected a linked, checked dispatch family, got {refusal:?}")
@@ -2022,6 +2035,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         &clauses,
         qsl_semantics::check::fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect_err("a non-query dispatch target must refuse, not link")
 }
@@ -2152,6 +2166,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         &clauses,
         qsl_semantics::check::fixture_source(),
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .expect_err("neither candidate declares a result: the family must refuse, not link");
     match refusal {

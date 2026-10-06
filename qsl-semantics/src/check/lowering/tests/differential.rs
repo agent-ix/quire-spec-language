@@ -120,7 +120,8 @@ fn package(seed: u64) -> PackageDeclarations {
             )
         })
         .collect();
-    let mut declarations = PackageDeclarations::new(fixture_source());
+    let mut declarations =
+        PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default());
     if seed.is_multiple_of(3) {
         let list = || TypeForm::name("List", SPAN);
         for name in ["eq_a", "eq_b"] {
@@ -158,7 +159,11 @@ fn keying_each_content_once_keeps_every_key_and_preimage() {
             if node.recursion().is_some() {
                 grouped += 1;
             } else {
-                let keyed = node_key(&node.content.input()).expect("a lowered node keys");
+                let keyed = node_key(
+                    &node.content.input(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
+                .expect("a lowered node keys");
                 assert_eq!(keyed.key, node.key(), "package {seed}: key");
                 assert_eq!(keyed.preimage, node.preimage(), "package {seed}: preimage");
             }
@@ -195,6 +200,7 @@ fn built_types(
         0,
         &mut occurrences,
         &mut meter,
+        qsl_foundation::IdentityLimits::default(),
     )
     .with_content_hash(hash);
     let keys = value_types

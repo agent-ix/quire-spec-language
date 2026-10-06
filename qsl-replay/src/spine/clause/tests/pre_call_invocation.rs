@@ -236,7 +236,7 @@ fn a_precondition_over_an_invocation_reads_no_result_value() {
             },
             parameters: BTreeMap::from([(
                 identifier("target"),
-                SnapshotValue::Reference(SelectedObject {
+                SnapshotValue::reference(SelectedObject {
                     population: config_version_population_identity(),
                     key: "c".to_owned(),
                 }),

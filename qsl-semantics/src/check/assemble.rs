@@ -36,7 +36,7 @@ use qsl_forms::{
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{Code, Span};
+use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
     Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
     IntegerInterval, Presence, RoundingMode, ValueType,
@@ -69,12 +69,12 @@ use crate::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use crate::value::environment_stage::stage_limit;
-use crate::value::semantic_node::{NominalRefusal, OwnerSelection};
+use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
 };
-use quire_semantic_value::semantic_node::InvalidSemanticGraph;
+use quire_semantic_value::semantic_node::{IdentityRefusal, InvalidSemanticGraph};
 
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,7 +86,37 @@ pub struct AssemblyLimits {
     /// The type-environment ceilings the unit's records, tuples and object
     /// types are admitted under (FR-082).
     pub environment: TypeEnvironmentLimits,
+    /// The byte limit every node identity of the unit encodes under, from
+    /// assembly through checking (`identity.input_bytes`, FR-259).
+    pub identity: IdentityLimits,
 }
+
+/// FR-255: the assembler's own `s3.decimal_scale` and the type-environment
+/// settings of its `environment`.
+impl SettingLimits for AssemblyLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        let mut bounds = vec![(Setting::S3DecimalScale, self.decimal_scale)];
+        bounds.extend(super::environment_bounds(&self.environment));
+        bounds.extend(self.identity.bounds());
+        bounds
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        match setting {
+            Setting::S3DecimalScale => {
+                self.decimal_scale = bound;
+                true
+            }
+            _ => {
+                self.identity.set_bound(setting, bound)
+                    || super::set_environment_bound(&mut self.environment, setting, bound)
+            }
+        }
+    }
+}
+
+/// The default of `environment.ancestor_steps` and `environment.work_units` (FR-255).
+const DEFAULT_ENVIRONMENT_STEPS: u64 = 16_777_216;
 
 /// The default decimal-scale bound (FR-091).
 pub const DEFAULT_DECIMAL_SCALE: u64 = 4096;
@@ -95,7 +125,12 @@ impl Default for AssemblyLimits {
     fn default() -> Self {
         Self {
             decimal_scale: DEFAULT_DECIMAL_SCALE,
-            environment: TypeEnvironmentLimits::default(),
+            // FR-255's published default, 16777216 edges and units.
+            environment: TypeEnvironmentLimits {
+                ancestor_steps: DEFAULT_ENVIRONMENT_STEPS,
+                work_units: DEFAULT_ENVIRONMENT_STEPS,
+            },
+            identity: IdentityLimits::default(),
         }
     }
 }
@@ -210,6 +245,9 @@ pub enum AssemblyCause {
     /// An exact number `rational(n, 0)`.
     ZeroDenominator,
     /// A `decimal(c, s)` whose scale `s` is above the assembler's bound.
+    /// A `decimal(c, s)` whose scale `s` is above
+    /// [`AssemblyLimits::decimal_scale`] (`s3.decimal_scale`); `actual` is
+    /// `u128::MAX` when the scale does not fit a `u64`.
     DecimalScaleLimit(LimitExceeded),
     /// A unit-graph topology error, naming the declarations it concerns.
     UnitGraphTopology {
@@ -343,6 +381,21 @@ impl AssemblyCause {
             Self::TypeLimit(_) | Self::IdentityLimit(_) => Code::StageLimitExceeded,
             Self::IdentityAllocation { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
+        }
+    }
+
+    /// The cause of a declared type handle that could not be encoded: a
+    /// reached identity byte limit or a failed reservation as such, and
+    /// anything else a broken invariant.
+    pub(crate) fn handle(refusal: NodeKeyRefusal) -> Self {
+        match refusal {
+            NodeKeyRefusal::Identity(IdentityRefusal::InputBytes { bound, required }) => {
+                Self::IdentityLimit(identity_limit(bound, required))
+            }
+            NodeKeyRefusal::Identity(IdentityRefusal::Allocation { requested }) => {
+                Self::IdentityAllocation { requested }
+            }
+            other => Self::Handle(other),
         }
     }
 
@@ -1057,6 +1110,7 @@ fn admit_enum(
     form: &EnumForm,
     owner: &SourceOwner,
     owners: &OwnerSelection,
+    identity: IdentityLimits,
 ) -> Result<EnumBinding, NominalRefusal> {
     let mut cases: Vec<String> = form
         .members
@@ -1072,13 +1126,13 @@ fn admit_enum(
         form.ordered,
         cases.clone(),
     )?;
-    let key = nominal_key(&preimage)?;
-    let declaration = AdmittedEnumDeclaration::admit(preimage, key, owners)?;
+    let key = nominal_key(&preimage, identity)?;
+    let declaration = AdmittedEnumDeclaration::admit(preimage, key, owners, identity)?;
     let mut members = Vec::with_capacity(cases.len());
     for case in cases {
         let member = EnumMemberPreimage::new(declaration.key(), case)?;
-        let member_key = nominal_key(&member)?;
-        members.push(declaration.admit_member(&member, member_key)?);
+        let member_key = nominal_key(&member, identity)?;
+        members.push(declaration.admit_member(&member, member_key, identity)?);
     }
     Ok(EnumBinding {
         name: form.name.name.clone(),
@@ -1428,7 +1482,7 @@ impl PackageDeclarations {
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
         for enumeration in &unit.enums {
-            match admit_enum(enumeration, &owner, &owners) {
+            match admit_enum(enumeration, &owner, &owners, limits.identity) {
                 Ok(binding) => {
                     names
                         .types
@@ -1445,7 +1499,7 @@ impl PackageDeclarations {
         }
         let mut handles = Vec::with_capacity(unit.composites.len());
         for composite in &unit.composites {
-            match declared_type_handle(&owner, &composite.name.name) {
+            match declared_type_handle(&owner, &composite.name.name, limits.identity) {
                 Ok(handle) => {
                     names
                         .types
@@ -1455,7 +1509,7 @@ impl PackageDeclarations {
                     handles.push(handle);
                 }
                 Err(refusal) => errors.push(AssemblyError {
-                    cause: AssemblyCause::Handle(refusal),
+                    cause: AssemblyCause::handle(refusal),
                     span: composite.name.span,
                 }),
             }
@@ -1637,7 +1691,7 @@ impl PackageDeclarations {
             }
         };
 
-        let mut package = PackageDeclarations::new(source);
+        let mut package = PackageDeclarations::new(source, limits.identity);
         package.types = types;
         package.operations = operations;
         package.models = admitted;

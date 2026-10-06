@@ -34,9 +34,11 @@ use quire_exact::{
 };
 use quire_semantic_value::call::InputRefusal;
 
-use crate::bounds::MAX_ENCODED_BYTES;
+use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
-use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits};
+use crate::limits::CallerLimits;
+use crate::request::StageLimits;
+use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
@@ -49,6 +51,7 @@ use crate::witness::{
 };
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::Category;
+use qsl_foundation::Setting;
 use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
 
@@ -71,10 +74,10 @@ pub(crate) use state_clause::{separate, settle_separation, stopped_reason, Separ
 /// limit (ADR-013 O-26: "a limit above the reader limit").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LimitAboveReader {
-    /// The request's S1 `text_input_bytes`.
+    /// The request's `s1.input_bytes` entry.
     pub requested: u64,
-    /// The reader limit: [`MAX_ENCODED_BYTES`], the most source bytes any
-    /// admitted request can carry.
+    /// The reader limit: `replay.input_bytes`, the most bytes any admitted
+    /// request can carry.
     pub reader: u64,
 }
 
@@ -91,7 +94,7 @@ pub enum ReplayRefusal {
     /// asks for more than the reader allows, which is invalid input
     /// (`invalid-request`, exit 20), not an exhausted limit.
     #[error(
-        "invalid-request: the request's S1 text_input_bytes {} is above the reader limit {}",
+        "invalid-request: the request's `s1.input_bytes` {} is above the reader limit `replay.input_bytes` {}",
         .0.requested,
         .0.reader
     )]
@@ -399,10 +402,6 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
-/// # let s1 = ScalarLimits {
-/// #     text_input_bytes: u64::try_from(MAX_ENCODED_BYTES).unwrap(),
-/// #     ..unlimited
-/// # };
 /// let wire = ReplayRequestWire {
 ///     selected_function: "small",
 /// #   profile_selections: vec![],
@@ -427,7 +426,7 @@ pub enum DependencySelectionsCause {
 /// #   backend: "kani-backend-1".to_owned(),
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
-/// #   stage_limits: StageLimits { s1, s2: unlimited, s3: unlimited, s4: unlimited },
+/// #   stage_limits: std::collections::BTreeMap::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
 /// #       digest.hex(),
@@ -435,7 +434,7 @@ pub enum DependencySelectionsCause {
 /// #   )],
 ///     // ...every other member names the proved package and its input.
 /// };
-/// assert!(replay(wire).is_ok());
+/// assert!(replay(wire, ReplayLimits::default()).is_ok());
 /// ```
 ///
 /// The same request selecting `small` by its `QualifiedName` compiles and
@@ -472,10 +471,6 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
-/// # let s1 = ScalarLimits {
-/// #     text_input_bytes: u64::try_from(MAX_ENCODED_BYTES).unwrap(),
-/// #     ..unlimited
-/// # };
 /// let wire = ReplayRequestWire {
 ///     selected_function: small,
 /// #   profile_selections: vec![],
@@ -500,7 +495,7 @@ pub enum DependencySelectionsCause {
 /// #   backend: "kani-backend-1".to_owned(),
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
-/// #   stage_limits: StageLimits { s1, s2: unlimited, s3: unlimited, s4: unlimited },
+/// #   stage_limits: std::collections::BTreeMap::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
 /// #       digest.hex(),
@@ -508,12 +503,16 @@ pub enum DependencySelectionsCause {
 /// #   )],
 ///     // ...every other member names the proved package and its input.
 /// };
-/// assert!(replay(wire).is_ok());
+/// assert!(replay(wire, ReplayLimits::default()).is_ok());
 /// ```
 #[deny(clippy::wildcard_enum_match_arm)]
-pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
-    let request = ReplayRequest::decode(wire)?;
-    let compiled = recompile(&request)?;
+pub fn replay(
+    wire: ReplayRequestWire,
+    replay_limits: ReplayLimits,
+) -> Result<ReplayResult, ReplayRefusal> {
+    let request = ReplayRequest::decode(wire, replay_limits)?;
+    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
     let arguments = arguments(
@@ -616,33 +615,24 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     }
 }
 
-/// The recompile's stage limits: the request's S1 `text_input_bytes`
-/// bounds S1's source bytes, and its S3 `work_units` bounds the checker's
-/// work budget. No `quire.value.accounting/v1` counter names an S2 or I1
-/// limit, and the v2 emitter takes none, so those stages run under their
-/// published defaults, as do S1's token, node and nesting ceilings and
-/// S3's node, depth and input-byte ceilings.
-pub(crate) fn spine_limits(stages: StageLimits) -> Result<SpineLimits, ReplayRefusal> {
-    let reader = u64::try_from(MAX_ENCODED_BYTES).unwrap_or(u64::MAX);
-    let above = || {
-        ReplayRefusal::LimitAboveReader(LimitAboveReader {
-            requested: stages.s1.text_input_bytes,
-            reader,
-        })
-    };
-    if stages.s1.text_input_bytes > reader {
-        return Err(above());
+/// The limits a request replays under: every stage at the request's
+/// `stage_limits` entry for its setting, or at its published default, and
+/// `replay.input_bytes` from the library entry's own limits. An `s1.input_bytes`
+/// entry above `replay.input_bytes` refuses before the recompile.
+pub(crate) fn request_limits(
+    stage_limits: &StageLimits,
+    replay: ReplayLimits,
+) -> Result<CallerLimits, ReplayRefusal> {
+    let limits = CallerLimits::for_request(stage_limits, replay);
+    if let Some(requested) = stage_limits.bound(Setting::S1InputBytes) {
+        if requested > replay.input_bytes {
+            return Err(ReplayRefusal::LimitAboveReader(LimitAboveReader {
+                requested,
+                reader: replay.input_bytes,
+            }));
+        }
     }
-    let source_bytes = usize::try_from(stages.s1.text_input_bytes).map_err(|_| above())?;
-    let defaults = SpineLimits::default();
-    Ok(SpineLimits {
-        source: qsl_cst::Limits {
-            source_bytes,
-            ..defaults.source
-        },
-        checking: defaults.checking.with_work_budget(stages.s3.work_units),
-        ..defaults
-    })
+    Ok(limits)
 }
 
 /// The recompile of a request's unit: its checked package and the bytes it
@@ -706,7 +696,7 @@ pub(crate) fn run_spine(
 /// package the provision carries under its `sha256-jcs` digest as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
-fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
+fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
         if let [before, entry] = pair {
@@ -728,7 +718,6 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
         .iter()
         .map(|entry| one_source(entry.sources()))
         .collect::<Result<Vec<_>, _>>()?;
-    let limits = spine_limits(request.stage_limits())?;
     let provided = |reference: &RawSourceRef| {
         request
             .byte_provision()
@@ -768,7 +757,7 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
         bytes,
         &packages,
         &dependencies,
-        limits,
+        limits.spine,
     )?;
     // Rules 6 and 7: every entry names a selection of the recompiled
     // closure, then at its recomputed `package_id`, before rule 5.

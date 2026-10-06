@@ -77,13 +77,14 @@ use quire_contract_model::{
 };
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, LimitKind, Locus,
+    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, Locus,
     RefusalRecord, StageFailure, Staged,
 };
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
+use qsl_foundation::{Setting, SettingLimits};
 use qsl_semantics::library::{
     declared_exports, verify_binding, ImportView, LibraryName, LibraryPackage, LibraryRefusal,
     PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
@@ -151,25 +152,27 @@ pub(crate) fn read_v2(
     }
 }
 
-/// Every ceiling of one [`read_checked_package_v2`] call (see the module
+/// Every ceiling of one `read_checked_package_v2` call (see the module
 /// doc's "Ceilings" section). Each field is used exactly as the caller
 /// supplies it, above or below [`Self::default`]: an implementation ceiling
-/// is not a domain bound (NFR-001). There is no depth ceiling (FR-264).
+/// is not a domain bound (NFR-001). There is no depth ceiling (FR-264). Each
+/// field is named by its `i2.*` setting (FR-255).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct V2ReadLimits {
-    /// Offered bytes, checked here and handed to IR as its `bytes`.
-    /// Defaults to 16 MiB.
-    pub(crate) artifact_bytes: usize,
-    /// IR's semantic-graph node ceiling.
-    pub(crate) nodes: u64,
-    /// IR's graph dependency-edge ceiling.
-    pub(crate) edges: u64,
-    /// IR's combined semantic-occurrence and source-map-entry ceiling.
-    pub(crate) occurrences: u64,
-    /// IR's diagnostic-entry ceiling.
-    pub(crate) diagnostics: u64,
-    /// IR's semantic-term validation-visit ceiling.
-    pub(crate) work: u64,
+pub struct V2ReadLimits {
+    /// Offered bytes, checked here and handed to IR as its `bytes`
+    /// (`i2.input_bytes`). Defaults to 16 MiB.
+    pub artifact_bytes: usize,
+    /// IR's semantic-graph node ceiling (`i2.nodes`).
+    pub nodes: u64,
+    /// IR's graph dependency-edge ceiling (`i2.edges`).
+    pub edges: u64,
+    /// IR's combined semantic-occurrence and source-map-entry ceiling
+    /// (`i2.occurrences`).
+    pub occurrences: u64,
+    /// IR's diagnostic-entry ceiling (`i2.diagnostics`).
+    pub diagnostics: u64,
+    /// IR's semantic-term validation-visit ceiling (`i2.work_units`).
+    pub work: u64,
 }
 
 impl Default for V2ReadLimits {
@@ -187,6 +190,48 @@ impl Default for V2ReadLimits {
 }
 
 impl V2ReadLimits {
+    /// These limits with `i2.input_bytes` set to `bound`.
+    #[must_use]
+    pub const fn with_artifact_bytes(mut self, bound: usize) -> Self {
+        self.artifact_bytes = bound;
+        self
+    }
+
+    /// These limits with `i2.nodes` set to `bound`.
+    #[must_use]
+    pub const fn with_nodes(mut self, bound: u64) -> Self {
+        self.nodes = bound;
+        self
+    }
+
+    /// These limits with `i2.edges` set to `bound`.
+    #[must_use]
+    pub const fn with_edges(mut self, bound: u64) -> Self {
+        self.edges = bound;
+        self
+    }
+
+    /// These limits with `i2.occurrences` set to `bound`.
+    #[must_use]
+    pub const fn with_occurrences(mut self, bound: u64) -> Self {
+        self.occurrences = bound;
+        self
+    }
+
+    /// These limits with `i2.diagnostics` set to `bound`.
+    #[must_use]
+    pub const fn with_diagnostics(mut self, bound: u64) -> Self {
+        self.diagnostics = bound;
+        self
+    }
+
+    /// These limits with `i2.work_units` set to `bound`.
+    #[must_use]
+    pub const fn with_work(mut self, bound: u64) -> Self {
+        self.work = bound;
+        self
+    }
+
     /// The ceilings IR's reader receives: every field passed through
     /// unchanged.
     fn for_ir(self) -> CheckedPackageReadLimits {
@@ -462,16 +507,48 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     }
 }
 
-/// The T-4 [`LimitKind`] each of IR's reader limits carries (catalog
-/// revision `1-draft.8`'s `stage_limit_exceeded` row).
-fn limit_kind(kind: CheckedPackageLimit) -> LimitKind {
+/// FR-255: the one mapping from each field to its setting.
+impl SettingLimits for V2ReadLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![
+            (
+                Setting::I2InputBytes,
+                u64::try_from(self.artifact_bytes).unwrap_or(u64::MAX),
+            ),
+            (Setting::I2Nodes, self.nodes),
+            (Setting::I2Edges, self.edges),
+            (Setting::I2Occurrences, self.occurrences),
+            (Setting::I2Diagnostics, self.diagnostics),
+            (Setting::I2WorkUnits, self.work),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        match setting {
+            Setting::I2InputBytes => {
+                self.artifact_bytes = usize::try_from(bound).unwrap_or(usize::MAX);
+            }
+            Setting::I2Nodes => self.nodes = bound,
+            Setting::I2Edges => self.edges = bound,
+            Setting::I2Occurrences => self.occurrences = bound,
+            Setting::I2Diagnostics => self.diagnostics = bound,
+            Setting::I2WorkUnits => self.work = bound,
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// The setting that raises each of IR's reader limits (FR-255's `i2.*`
+/// rows).
+const fn limit_setting(kind: CheckedPackageLimit) -> Setting {
     match kind {
-        CheckedPackageLimit::Bytes => LimitKind::InputBytes,
-        CheckedPackageLimit::Nodes => LimitKind::NodeCount,
-        CheckedPackageLimit::Edges => LimitKind::EdgeCount,
-        CheckedPackageLimit::Occurrences => LimitKind::OccurrenceCount,
-        CheckedPackageLimit::Diagnostics => LimitKind::DiagnosticCount,
-        CheckedPackageLimit::Work => LimitKind::WorkBudget,
+        CheckedPackageLimit::Bytes => Setting::I2InputBytes,
+        CheckedPackageLimit::Nodes => Setting::I2Nodes,
+        CheckedPackageLimit::Edges => Setting::I2Edges,
+        CheckedPackageLimit::Occurrences => Setting::I2Occurrences,
+        CheckedPackageLimit::Diagnostics => Setting::I2Diagnostics,
+        CheckedPackageLimit::Work => Setting::I2WorkUnits,
     }
 }
 
@@ -577,7 +654,7 @@ pub(crate) fn read_checked_package_v2(
         // No locus: the ceiling refuses without hashing the oversized bytes,
         // and a digest over them is the only name the artifact has (FR-096).
         return Err(StageFailure::Limit(LimitExceeded::new(
-            LimitKind::InputBytes,
+            Setting::I2InputBytes,
             u64::try_from(limits.artifact_bytes).unwrap_or(u64::MAX),
             u128::try_from(bytes.len()).unwrap_or(u128::MAX),
         )));
@@ -680,7 +757,7 @@ pub(crate) fn read_checked_package_v2(
             path,
         }) => match Artifact::of(bytes).at_ir(path.as_ref()) {
             Ok(locus) => Err(StageFailure::Limit(
-                LimitExceeded::new(limit_kind(kind), limit, u128::from(consumed)).at(locus),
+                LimitExceeded::new(limit_setting(kind), limit, u128::from(consumed)).at(locus),
             )),
             Err(fault) => refused(V2ReadRefusal::Fault(fault)),
         },
@@ -723,12 +800,7 @@ pub enum ImportViewRefusal {
 fn read_message(refusal: &StageFailure<V2ReadRefusal>) -> String {
     match refusal {
         StageFailure::Refused(refusal) => refusal.to_string(),
-        StageFailure::Limit(limit) => format!(
-            "{} (bound {}, reached {})",
-            limit.kind().catalog_cause(),
-            limit.configured_bound(),
-            limit.actual()
-        ),
+        StageFailure::Limit(limit) => limit.to_string(),
         StageFailure::Cancelled(cause) => format!("cancelled ({cause:?})"),
         StageFailure::Fault(fault) => {
             format!("internal fault ({}, {})", fault.stage(), fault.invariant())
@@ -777,7 +849,8 @@ impl ImportViewRefusal {
 /// `admitted`, by `package_id`, where an earlier read admitted it, and
 /// otherwise read the same way from the closure `package` holds. Every
 /// package this read admits, `package` among them, is added to `admitted`
-/// for the next read. The reader's ceilings are its defaults.
+/// for the next read. Every read runs under `limits`, the caller's `i2.*`
+/// ceilings.
 ///
 /// The artifact evidence is vacuous by construction: it is the emission's
 /// own record of what it compiled against, so it cannot disagree with the
@@ -790,6 +863,7 @@ pub fn read_import_view(
     identity: LibraryName,
     domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
     admitted: &mut AdmittedPackages,
+    limits: V2ReadLimits,
 ) -> Result<ImportView, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
@@ -797,6 +871,7 @@ pub fn read_import_view(
         held,
         domain_packages,
         admitted: std::mem::take(&mut admitted.0),
+        limits,
     };
     let read = reader.read_emitted(package, emission, identity);
     admitted.0 = reader.admitted;
@@ -828,6 +903,7 @@ pub(crate) fn supply_closure(
         held,
         domain_packages: &domain_packages,
         admitted: BTreeMap::new(),
+        limits: V2ReadLimits::default(),
     }
     .supply(package, evidence)
 }
@@ -854,6 +930,7 @@ struct ClosureReader<'p> {
     held: BTreeMap<PackageId, &'p CheckedPackage>,
     domain_packages: &'p BTreeMap<[u8; 32], Vec<u8>>,
     admitted: BTreeMap<PackageId, Arc<CheckedPackageV2>>,
+    limits: V2ReadLimits,
 }
 
 impl ClosureReader<'_> {
@@ -894,7 +971,7 @@ impl ClosureReader<'_> {
         read_checked_package_v2(
             emission.package.bytes(),
             identity.clone(),
-            V2ReadLimits::default(),
+            self.limits,
             &evidence,
             &pinned,
         )

@@ -337,7 +337,7 @@ mod family_contract_tests {
         // under owner (a, u), FR-092 vector F1.
         let expected = PackageDeclarations {
             functions: vec![form],
-            ..PackageDeclarations::new(fixture_source())
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("f checks")
@@ -408,7 +408,10 @@ mod family_contract_tests {
     fn evaluate_faults_on_a_second_call_on_the_same_env() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly");
@@ -463,7 +466,10 @@ mod family_contract_tests {
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly, never Incomplete");
@@ -540,7 +546,10 @@ mod family_contract_tests {
                 decimal_division("rounding", "nearest-even"),
                 decimal_division("exact", "exact"),
             ],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("p / q with q in [1, 9] checks cleanly");
@@ -626,7 +635,10 @@ mod family_contract_tests {
                 declaration("callee", Expression::boolean(true)),
                 declaration("caller", Expression::call("callee".to_owned(), Vec::new())),
             ],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("callee and caller both check cleanly");
@@ -673,7 +685,7 @@ mod tests {
     fn checked_identity(source: RawSourceRef) -> NodeKey {
         PackageDeclarations {
             functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(source)
+            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks")

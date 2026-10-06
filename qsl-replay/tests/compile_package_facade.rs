@@ -6,10 +6,11 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::Setting;
 use qsl_replay::spine::{self, CompileRefusal, ParseRequest, SpineLimits};
 use qsl_replay::{
-    compile_package, Code, DependencyInput, ReplayRefusal, ScalarLimits, SourceIdentity,
-    StageLimits, SuppliedLibrary,
+    compile_package, Code, DependencyInput, ReplayRefusal, SourceIdentity, StageLimits,
+    SuppliedLibrary,
 };
 use qsl_semantics::model::intake::package_input;
 use quire_exact::Cancel;
@@ -24,27 +25,9 @@ fn identity() -> SourceIdentity {
 }
 
 fn limits(source_bytes: u64) -> StageLimits {
-    let unbounded = ScalarLimits {
-        integer_bits: u64::MAX,
-        decimal_digits: u64::MAX,
-        scale_expansion: u64::MAX,
-        text_input_bytes: u64::MAX,
-        text_scalars: u64::MAX,
-        normalized_scalars: u64::MAX,
-        unit_edges: u64::MAX,
-        value_occurrences: u64::MAX,
-        work_units: u64::MAX,
-        result_units: u64::MAX,
-    };
-    StageLimits {
-        s1: ScalarLimits {
-            text_input_bytes: source_bytes,
-            ..unbounded
-        },
-        s2: unbounded,
-        s3: unbounded,
-        s4: unbounded,
-    }
+    [(Setting::S1InputBytes, source_bytes)]
+        .into_iter()
+        .collect()
 }
 
 /// The spine's own run over `text`: its package bytes and `package_id`, or

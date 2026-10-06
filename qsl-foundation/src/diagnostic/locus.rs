@@ -34,6 +34,27 @@ pub enum Locus {
     },
 }
 
+/// QSpec FR-461's rendering of a position: a source region as the source's
+/// identity and its byte range, an occurrence as its kernel location, and an
+/// artifact as its digest and pointer.
+impl fmt::Display for Locus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Region(region) => write!(
+                f,
+                "`{}` bytes {}..{}",
+                region.source().identity(),
+                region.start(),
+                region.end()
+            ),
+            Self::Occurrence(location) => write!(f, "occurrence {location:?}"),
+            Self::Artifact { digest, pointer } => {
+                write!(f, "artifact {} at `{pointer}`", digest.hex())
+            }
+        }
+    }
+}
+
 /// Why a [`Locus`] names no source region.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum UnresolvedLocus {
