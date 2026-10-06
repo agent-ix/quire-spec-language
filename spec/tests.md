@@ -539,7 +539,7 @@ names different artifacts in each.
 | TC-910 | Wide integer ranges key to their vectors, and counters keep one exact spelling | Unit | P1 | FR-092-AC-14, FR-092-AC-15 | ✅ Passed locally; step 3 reads QSpec's `integer_encoding_vectors` under `QSPEC_DIR` (`make conformance`) |
 | TC-911 | Field refinement decides wide integer domains and literals exactly | Unit | P1 | FR-056-AC-16, FR-082-AC-9 | ✅ Passed locally |
 | TC-912 | The IR wire round-trips integer bounds and literals up to i128 | Integration | P1 | FR-033-AC-6 | 🚧 Planned (waits on IR-662) |
-| TC-913 | A wide-range source recompiles to its package_id and replays | Integration | P1 | FR-098-AC-11 | ✅ Passed locally; the Meter unit names its function `meter_over`, since `over` is a reserved word |
+| TC-913 | A wide-range source recompiles to its package_id and replays | Integration | P1 | FR-098-AC-11 | ✅ Passed locally |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 Planned |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 Planned |

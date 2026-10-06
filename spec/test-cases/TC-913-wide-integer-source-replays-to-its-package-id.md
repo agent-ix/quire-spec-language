@@ -33,7 +33,7 @@ and `package_id` with an `Input` assignment, and call `qsl_replay::replay`:
    `x` = `"-170141183460469231731687303715884105728"`.
 5. The u64-field model, QSL-642's stand-in for CG's wide-range model:
    `record Meter { reading: Int[0, 18446744073709551615]; }` and
-   `function over using v(m: Meter): Boolean pure { m.reading <=
+   `function meter_over using v(m: Meter): Boolean pure { m.reading <=
    18446744073709551614 }`; recompile it from its byte provision only.
 
 ## Expected Results

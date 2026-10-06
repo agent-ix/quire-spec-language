@@ -2940,8 +2940,6 @@ fn tc_913_a_wide_integer_input_replays_to_its_package_id() {
 #[trace("TC-913", "FR-098-AC-11")]
 #[test]
 fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
-    // FR-098-AC-11 names the function `over`, which the grammar reserves
-    // (`protocol ... over (...)`), so the unit spells it `meter_over`.
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
          record Meter {{ reading: Int[0, 18446744073709551615]; }}\n\
