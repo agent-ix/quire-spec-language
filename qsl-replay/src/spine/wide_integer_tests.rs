@@ -207,10 +207,18 @@ fn a_directly_negated_two_pow_127_is_one_literal() {
         );
     }
 
-    let compiled = compile(&unit(&parameter, "x >= -170141183460469231731687303715884105727"))
-        .expect("2^127 - 1 negated checks");
-    assert!(has_negate(&compiled), "a negation of 2^127 - 1 stays a Negate");
-    assert!(integer_literals(&compiled).iter().any(|(value, _)| value == I128_MAX));
+    let compiled = compile(&unit(
+        &parameter,
+        "x >= -170141183460469231731687303715884105727",
+    ))
+    .expect("2^127 - 1 negated checks");
+    assert!(
+        has_negate(&compiled),
+        "a negation of 2^127 - 1 stays a Negate"
+    );
+    assert!(integer_literals(&compiled)
+        .iter()
+        .any(|(value, _)| value == I128_MAX));
 }
 
 /// FR-091-AC-38 (TC-909 step 6): every other integer outside i128 refuses

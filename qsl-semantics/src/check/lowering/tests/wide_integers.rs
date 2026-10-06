@@ -93,7 +93,10 @@ fn wide_integer_parameters_key_to_their_vectors_in_one_unit() {
 fn compared_with(literal: Integer) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     check(vec![function(
         "g",
-        &[("x", wide_form("-170141183460469231731687303715884105728", "0"))],
+        &[(
+            "x",
+            wide_form("-170141183460469231731687303715884105728", "0"),
+        )],
         boolean(),
         None,
         binary(

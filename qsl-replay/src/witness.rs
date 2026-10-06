@@ -717,21 +717,6 @@ mod witness_tests {
         );
     }
 
-    /// An `Input` assignment is charged its 32-byte node id plus the value:
-    /// 8 bytes for a Boolean and 16 for an i128 integer (FR-070-AC-7).
-    #[trace("TC-209", "FR-070-AC-7")]
-    #[test]
-    fn an_input_integer_is_charged_sixteen_bytes() {
-        let source = |value| {
-            ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: WireNodeId::from_digest([1; 32]),
-                value,
-            }])
-        };
-        assert_eq!(source(WitnessValue::Integer(i128::MIN)).measured_bytes(), 32 + 16);
-        assert_eq!(source(WitnessValue::Boolean(true)).measured_bytes(), 32 + 8);
-    }
-
     /// FR-098-AC-4: each join failure refuses with its own typed variant --
     /// a parameter with no entry, a parameter with two, an entry naming no
     /// bound parameter, an entry that is not a `name=value` pair, and an

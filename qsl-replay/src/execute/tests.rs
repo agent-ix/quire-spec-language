@@ -3020,7 +3020,8 @@ fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
         name(&["meter_over"]),
         ReplaySource::Input(vec![]),
     );
-    let request = ReplayRequest::decode(wire, ReplayLimits::default()).expect("the request decodes");
+    let request =
+        ReplayRequest::decode(wire, ReplayLimits::default()).expect("the request decodes");
     let limits = request_limits(request.stage_limits(), ReplayLimits::default())
         .expect("the request's limits");
     let recompiled = recompile(&request, &limits).expect("the byte provision recompiles");

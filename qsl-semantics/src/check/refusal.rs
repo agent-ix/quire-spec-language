@@ -842,7 +842,9 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
-            Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => Code::IllTyped,
+            Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
+                Code::IllTyped
+            }
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
