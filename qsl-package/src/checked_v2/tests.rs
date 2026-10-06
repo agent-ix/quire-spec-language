@@ -1618,6 +1618,21 @@ fn conformance_dependency_selection_vectors() {
                     "/lock",
                     CheckedPackageRefusalCode::DigestDomainMismatch,
                 )],
+                // QSpec FR-322-AC-35: a selection binds by identity and package
+                // id and never by version, so a `version` member is a reader
+                // `unknown_member` in either member.
+                "refused:unknown_member" => vec![
+                    (
+                        with(&mutated, selections),
+                        "/lock",
+                        CheckedPackageRefusalCode::UnknownMember,
+                    ),
+                    (
+                        with(selections, &mutated),
+                        "/identity_preimage",
+                        CheckedPackageRefusalCode::UnknownMember,
+                    ),
+                ],
                 other => panic!("{id}: unmapped entry-mutation outcome {other}"),
             };
         for (envelope, member, expected) in cases {
