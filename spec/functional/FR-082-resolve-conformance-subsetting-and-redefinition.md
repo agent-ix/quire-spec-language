@@ -107,14 +107,6 @@ SHALL refuse it with an unproved-refinement cause naming the missing
 obligation kind. The model checker SHALL NOT admit a narrowing redefinition
 on the strength of its declared shape alone.
 
-The field-domain obligation is decided over exact integers. The redefined
-field's declared scalar bounds and a postcondition's comparison literal are
-exact integers in `i128::MIN..=i128::MAX`, the ceiling FR-091 fixes for
-every integer bound and literal, and the checker SHALL NOT narrow either to
-a smaller width. A scalar domain whose bounds exceed `i64`, such as
-`[0, 18446744073709551615]`, and a literal above `i64::MAX` take part in
-the obligation like any other.
-
 ### Presence and multiplicity are separate narrowing axes
 
 The model checker SHALL read a field's optionality from its declared
@@ -218,7 +210,6 @@ give the same verdict the model gives at evaluation:
 | FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` limit admits at both with the same answer to every conformance question; and a chain one edge past it refuses at check time with a stage limit (`LimitExceeded`, edge count) naming the limit, as the model's walk over it stops `Incomplete` at evaluation naming `ancestor_steps`. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
 | FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 | FR-082-AC-8 | Given a field `f` declared `optional` with multiplicity `[1, 1]`, redefined by a field declared `required` with multiplicity `[1, 1]` and written by an exposed operation whose postcondition establishes no presence fact, the checker refuses `unproved-refinement` with obligation `field-presence`; with `present(self.f)` established it admits the redefinition. Given `f` and its redefinition both declared `required` with multiplicity `[0, 1]`, or both `optional` with multiplicity `[1, 1]`, written by the same operation with no established fact, the checker admits the redefinition and engages no obligation. | Test (TC-896) |
-| FR-082-AC-9 | Given a domain package whose scalar type `Wide` is bound to `[0, 18446744073709551615]` (its bounds written as decimal strings, FR-056), a field `f: Wide` redefined by a field of scalar type `Narrow` bound to `[0, 9223372036854775808]`, and an exposed operation writing `f` whose stated postcondition is `self.f <= 9223372036854775808`, the checker admits the redefinition; with the postcondition `self.f <= 9223372036854775809` it refuses `unproved-refinement` with obligation `field-domain`. | Test (TC-911) |
 
 ## Dependencies
 
@@ -240,4 +231,3 @@ give the same verdict the model gives at evaluation:
 ## References
 
 - Linear QSL-254 (AC-8: presence and multiplicity are separate narrowing axes).
-- Linear QSL-642 (AC-9: the field-domain obligation over exact integers up to i128).
