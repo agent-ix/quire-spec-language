@@ -418,6 +418,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | T13 | Int[0, 18446744073709551615] | `f9ea36c52345743ae98ce1c1449610c7e955d986a3ecb08597ca427c6f1b4230` |
 | T14 | Int[0, 9223372036854775808] | `e30482372257edea6ae4eff49914af6476db7fb17a33a498ecf15ce7563d3220` |
 | T15 | Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727] | `6644ae14c8b9d7b64f26034401d81e9bbcfcffe983708df9649c06f835a5132d` |
+| T16 | Int[0, 18446744073709551616] | `811c72084566b1c44e2c052c052f302359b804b29767746da4850304f595aef2` |
 | D1 | record Point, owner (a, u) | `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4` |
 | D2 | record Point, owner (a, w) | `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88` |
 | D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
@@ -430,6 +431,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | L1 | literal true | `03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9` |
 | L2 | literal 7 | `9f42fd255e4db2821dffdd2da201755df67dec54e8b0814f8160cab40a44b29b` |
 | L3 | literal rational(1, 2) of type Rational[-9, 9; 1, 9] | `2ada675e3655813b63b63a9d926d9a3969c7950e53bb6d78b72dd64948911c71` |
+| L7 | literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091) | `c3aa30b239d70dea497badfb4fd426fb7b57e441aeb22d2eb450a19ad6617c5b` |
 | F1 | function f() -> Boolean { true }, owner (a, u) | `dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79` |
 | E1 | a and b | `a98896386ccee595ae1cc04f4f83c8792fc04e1027e779ac7def428592c8b21e` |
 | F2 | function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u) | `2597b9bf514c3dd93654daca8fbea64d0a4622ea8bc5002888ce72ecb2520454` |
@@ -577,6 +579,14 @@ Key: `e30482372257edea6ae4eff49914af6476db7fb17a33a498ecf15ce7563d3220`
 
 Key: `6644ae14c8b9d7b64f26034401d81e9bbcfcffe983708df9649c06f835a5132d`
 
+**T16**: Int[0, 18446744073709551616]
+
+```json
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `811c72084566b1c44e2c052c052f302359b804b29767746da4850304f595aef2`
+
 **D1**: record Point, owner (a, u)
 
 ```json
@@ -664,6 +674,14 @@ Key: `03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9`
 ```
 
 Key: `9f42fd255e4db2821dffdd2da201755df67dec54e8b0814f8160cab40a44b29b`
+
+**L7**: literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded)
+
+```json
+{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `c3aa30b239d70dea497badfb4fd426fb7b57e441aeb22d2eb450a19ad6617c5b`
 
 **L3**: literal rational(1, 2) of type Rational[-9, 9; 1, 9]
 
@@ -978,8 +996,8 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 | FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
-| FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` give type nodes with the preimage bytes and keys of vectors T13, T14 and T15 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |
-| FR-092-AC-15 | Keying writes each counter by the 2^53-1 rule: a group-local preimage whose `recursion` `size` is 9007199254740991 encodes `"size":9007199254740991`, and one whose `size` is 9007199254740992 encodes `"size":"9007199254740992"`, and the same holds for a `recursion` `ordinal`, a `group_reference` `ordinal` and an `operation.member` `position`. No counter or value refuses for its magnitude: `NodeKeyRefusal` has no magnitude variant. | Test (TC-910) |
+| FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` and `Int[0, 18446744073709551616]` give type nodes with the preimage bytes and keys of vectors T13, T14, T15 and T16 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |
+| FR-092-AC-15 | Keying writes each counter by the 2^53-1 rule and never refuses one for its magnitude: `NodeKeyRefusal` has no magnitude variant. Encoding QSpec's `integer_encoding_vectors` preimages (`proposals/checked-package-v2/node-identity-vectors.json`, QSpec FR-322) through QSL's key function gives their recorded keys: `recursion-size-safe-maximum` (`recursion` `{size: 9007199254740991, ordinal: 9007199254740990}`, both JSON numbers) keys to `bc6fe35a2c34a7162fe0ed0a20473ffb3284bd70236f96feb75b386c55992874`, and `recursion-size-two-pow-53` (`size` the string `"9007199254740992"`, `ordinal` the number 9007199254740991) keys to `89ec1ac87a8b82a05d5414f0c3b314f363e49328988ff5d8c3fc9a88014839bc`. A `group_reference` `ordinal` and an `operation.member` `position` take the same two spellings at 9007199254740991 and 9007199254740992. | Test (TC-910) |
 
 ## Dependencies
 

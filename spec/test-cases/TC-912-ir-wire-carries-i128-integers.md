@@ -24,12 +24,17 @@ Planned: this test lands when Linear IR-662 (i128 `IntegerType` and
 1. Lower a declaration bounded by 0 and 9223372036854775808 and the
    literal 9223372036854775808 through `integer-ir/v1`, and read the bytes
    back through the strict IR reader.
-2. Repeat with bounds `i128::MIN` and `i128::MAX` and literals at both
-   extremes.
+2. Repeat with bounds 0 and 18446744073709551615 (u64::MAX) and the literal
+   18446744073709551615.
+3. Repeat with bounds `i128::MIN` and `i128::MAX` and literals at both
+   extremes, the `i128::MIN` literal being FR-091's folded one.
 
 ## Expected Results
 
 1. `value_type.maximum` and `value` are both `"9223372036854775808"`, and
    the reader's declaration bounds and literal value equal the originals.
-2. The extremes are spelled `"-170141183460469231731687303715884105728"` and
-   `"170141183460469231731687303715884105727"` and reconstruct exactly.
+2. Bound and literal are spelled `"18446744073709551615"` and reconstruct
+   exactly.
+3. The extremes are spelled `"-170141183460469231731687303715884105728"` and
+   `"170141183460469231731687303715884105727"` and reconstruct exactly; the
+   `i128::MIN` literal is one `integer_literal` node, not a negation.
