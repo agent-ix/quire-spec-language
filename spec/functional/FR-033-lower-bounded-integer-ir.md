@@ -41,6 +41,8 @@ The integer target shall translate Boolean/integer literals, direct linked state
 The compiler shall retain operand order, authored clauses, source coordinates and declaration observation correspondence.
 The compiler shall map each native binary operator explicitly to its corresponding IR operator without a fallback operator.
 The compiler shall serialize integer declarations and literals in the existing flattened IR wire shape.
+The compiler shall carry every integer type bound and integer literal value as an exact integer in i128::MIN..=i128::MAX, the ceiling FR-091 fixes, with no narrower width between the checked scalar and the IR wire.
+The compiler shall write each such bound and value on the IR wire as its canonical decimal string. This covers every value outside the JSON-safe range (beyond ±(2^53-1)); the wire already writes integer members this way, exact at the i64 extremes.
 If an unadmitted prepared declaration or expression reaches the wire boundary, then the compiler shall refuse it with its clause and source before writing output.
 The compiler shall retain the actual IR definedness judgment and any upstream refusal.
 If any clause contains fields, objects/references, collections, calls, local bindings or another unadmitted form, then the compiler shall refuse the complete projection without partial output.
@@ -61,8 +63,11 @@ promise transactional directory publication.
 | FR-033-AC-3 | The Boolean default still refuses numeric clauses; unsupported later clauses and node/byte exhaustion return no partial projection, and fresh retries succeed. | Test |
 | FR-033-AC-4 | Actual command target selection exports exactly the library's bytes, which the IR reader accepts with the selected clause, identifies integer lowering failures and rejects unknown targets before dependent file access; runnable integer fixtures produce true/false natively and identical projection bytes. | Test |
 | FR-033-AC-5 | Native and Markdown fixture generation propagate output-directory and later file-write errors; the executable returns exit 2 with an error message, and a fresh valid output directory succeeds. | Test |
+| FR-033-AC-6 | A declaration typed with bounds 0 and 9223372036854775808 (i64::MAX + 1) and a literal 9223372036854775808 serialize with `value_type.maximum` and `value` both `"9223372036854775808"`, and the actual strict IR reader reconstructs the declaration's bounds and the literal's value exactly. A declaration bounded by i128::MIN and i128::MAX with literals at both extremes round-trips the same way, spelled `"-170141183460469231731687303715884105728"` and `"170141183460469231731687303715884105727"`. | Test (TC-912) |
 
 ## Dependencies
 
 - [FR-009](FR-009-lower-qualified-projections.md): existing complete projection/binder.
 - [FR-029](FR-029-export-executable-projection.md): existing standalone lower command.
+- [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md): the i128 ceiling on integer bounds and literals.
+- The IR's executable `IntegerType` bounds and `IntegerLiteral` value (`quire-contract-model`'s `expression.rs`) are `i64` on quire-contract-ir `main`; AC-6 needs them as `i128`, which the IR lane owns (QSL-642).

@@ -99,10 +99,20 @@ The members, the `group_reference` rule and the term shapes are those of
 `scalar_type` and a `composite_type` node are their own semantic type, so
 this `null` keeps their preimage acyclic.
 
-A number never appears in a preimage as a JSON number except `recursion`'s
-`size` and `ordinal`, a `group_reference` `ordinal` and an `operation.member`
-`position`. `recursion`'s `group` is a lowercase hex string. A literal's value
-is spelled by its `value_kind`:
+A preimage holds integers in two kinds of place. A *counter* is
+`recursion`'s `size` and `ordinal`, a `group_reference` `ordinal` or an
+`operation.member` `position`. A counter is a JCS number when its value is
+at most 2^53-1 (9007199254740991), and its canonical decimal string
+otherwise; each counter is decided on its own. This is the replay wire's
+rule for an integer that can exceed 2^53 (ADR-013 O-09), and it is not a
+choice: RFC 8785 renders a JSON number exactly only up to 2^53-1, so the
+decimal string is the one exact spelling beyond it. Every other integer is
+a literal's *value*, which includes every bound of `Int[lo, hi]`, and is
+the canonical decimal string at every magnitude (below). Keying never
+refuses an integer for its magnitude. Every key minted before this rule
+had counters below 2^53 and string values, so no existing key changes.
+`recursion`'s `group` is a lowercase hex string. A literal's value is
+spelled by its `value_kind`:
 
 - `integer`: the canonical decimal string of the value: no leading zero, no
   `+`, and `-` only before a nonzero value (QSpec `IntegerString`);
@@ -405,6 +415,9 @@ builds; they are listed here because F2 and E2 depend on them.
 | T10 | Rational[-9, 9; 1, 9] | `07d677acac076563319745323e09e3a6b3e83d658f0c1ea7e572e08f33732b9e` |
 | T11 | Decimal scalar | `61e127863156fc90ecc98bf5563dc20687f4e481cfa6752c25cffb654c61ef2d` |
 | T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc` |
+| T13 | Int[0, 18446744073709551615] | `f9ea36c52345743ae98ce1c1449610c7e955d986a3ecb08597ca427c6f1b4230` |
+| T14 | Int[0, 9223372036854775808] | `e30482372257edea6ae4eff49914af6476db7fb17a33a498ecf15ce7563d3220` |
+| T15 | Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727] | `6644ae14c8b9d7b64f26034401d81e9bbcfcffe983708df9649c06f835a5132d` |
 | D1 | record Point, owner (a, u) | `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4` |
 | D2 | record Point, owner (a, w) | `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88` |
 | D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
@@ -539,6 +552,30 @@ Key: `61e127863156fc90ecc98bf5563dc20687f4e481cfa6752c25cffb654c61ef2d`
 ```
 
 Key: `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc`
+
+**T13**: Int[0, 18446744073709551615]
+
+```json
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `f9ea36c52345743ae98ce1c1449610c7e955d986a3ecb08597ca427c6f1b4230`
+
+**T14**: Int[0, 9223372036854775808]
+
+```json
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `e30482372257edea6ae4eff49914af6476db7fb17a33a498ecf15ce7563d3220`
+
+**T15**: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]
+
+```json
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `6644ae14c8b9d7b64f26034401d81e9bbcfcffe983708df9649c06f835a5132d`
 
 **D1**: record Point, owner (a, u)
 
@@ -941,6 +978,8 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 | FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
+| FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` give type nodes with the preimage bytes and keys of vectors T13, T14 and T15 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |
+| FR-092-AC-15 | Keying writes each counter by the 2^53-1 rule: a group-local preimage whose `recursion` `size` is 9007199254740991 encodes `"size":9007199254740991`, and one whose `size` is 9007199254740992 encodes `"size":"9007199254740992"`, and the same holds for a `recursion` `ordinal`, a `group_reference` `ordinal` and an `operation.member` `position`. No counter or value refuses for its magnitude: `NodeKeyRefusal` has no magnitude variant. | Test (TC-910) |
 
 ## Dependencies
 
@@ -994,6 +1033,11 @@ AC-13, the `predicate` function node and a source enum's nodes, is
 implemented: lowering writes `predicate` for a declaration of kind
 `Predicate` outside a recursion group, and a source enum's declaration and
 member nodes reach lowering through the assembler's `enums`.
+
+QSL-642's wide integers (AC-14, AC-15) are specified and not implemented:
+integer values are already decimal strings, and keying still refuses a
+counter above 2^53-1 with `UnsafeInteger` instead of writing its decimal
+string.
 
 ## Open Questions
 

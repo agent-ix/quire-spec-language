@@ -639,6 +639,9 @@ The assembler refuses in these cases:
   bound is above its upper bound, a `Rational` denominator interval that
   reaches below one, and a `Text` minimum above its maximum. The refusal
   carries that value type's own cause and the type form's span.
+- **Integer outside i128.** An `Int[lo, hi]` bound lies outside
+  `i128::MIN..=i128::MAX` (stated under "Integer bounds and literals up to
+  i128" below).
 - **Floating type.** As stated above.
 - **Alias cycle.** An alias's resolution reaches that alias again, through
   other aliases or through a type constructor's element type forms (for
@@ -658,6 +661,44 @@ value alongside a refusal. The assembler runs before check mints any
 occurrence key, so each assembler error names its location as a
 `Locus::Region` over the type form's or declaration's span (ADR-013 T-5).
 
+### Integer bounds and literals up to i128
+
+Every bound of an `Int[lo, hi]` type form and every integer literal in an
+expression is an exact integer, with no narrower width anywhere from S2
+through check, field refinement, lowering, the IR wire and node keys. The
+other constructors' bounds keep their own rules. The
+end-to-end ceiling is i128: each such integer lies in
+`i128::MIN..=i128::MAX` (-170141183460469231731687303715884105728 to
+170141183460469231731687303715884105727). That range holds every value of
+the native `i8` to `i64`, `u8` to `u64` and `i128` types, so `Int[0,
+18446744073709551615]` (a full `u64`) and `Int[0, 9223372036854775808]`
+(`i64::MAX + 1`) are ordinary types. A `u128` value above `i128::MAX` is
+out of range.
+
+An unsigned integer literal that is the direct operand of unary `-` is in
+range when its negation is, so `-170141183460469231731687303715884105728`
+is `i128::MIN`. Any other literal is in range when it is at most
+`i128::MAX`.
+
+Check SHALL refuse an integer bound or literal outside that range with the
+typed cause `IntegerOutsideI128`, a member of the ill-formed-scalar-bounds
+family the `Int` interval's own refusal (`EmptyInterval`) belongs to. The
+cause names:
+
+- `site`: the bound it is, `lower` or `upper`, or `literal`;
+- `value`: the integer as written, as its canonical decimal string;
+- `limit`: the i128 limit it crosses, `i128::MIN` for a value below the
+  range and `i128::MAX` for a value above it, as its decimal string;
+
+and the span of the type form or the literal. Like the other assembler
+errors, a bound refusal is reported with every other error of the unit. A
+refused integer never reaches field refinement, keying, lowering or the IR:
+no `PackageDeclarations` and no checked package holds it.
+
+Runtime values are not type bounds. The evaluator's `ScalarLimits` budget
+the size of the values a run computes; they never narrow a declared bound
+or refuse a literal that this rule admits.
+
 ### Catalog codes
 
 Each S2 and assembler cause has one exhaustive `catalog_code()` (ADR-013
@@ -672,6 +713,7 @@ code or code/cause:
 | unresolved type name | `missing_declaration`/`missing-name` |
 | ambiguous type name | `ambiguous_declaration` |
 | ill-formed scalar bounds | `ill_typed` |
+| integer outside i128 (`IntegerOutsideI128`), a bound or a literal | `ill_typed`/`type-mismatch` |
 | floating type (a domain package model field only) | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
@@ -763,6 +805,8 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-33 | A parameter typed `m`, in a unit that declares `dimension Length;` and `unit m : Length = rational(1, 1);`, refuses with an unresolved-type-name error naming `m`. | Test (TC-483) |
 | FR-091-AC-34 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `dimension Length;`, `dimension Mass;`, `dimension Mass;`, `dimension Area = Width^2;`, `dimension P = Q; dimension Q = P;`, `unit a : Length = rational(1, 0);`, `unit b : Length = rational(2, 1) * c;` and `unit c : Length = rational(1, 2) * b;`. It holds exactly these errors: a duplicate-name error naming `Mass` and both spans (`ambiguous_declaration`/`ambiguous-name`); an unresolved-name error naming `Width` (`missing_declaration`/`missing-name`); a cycle error with edges `P`→`Q` and `Q`→`P`, and a cycle error with edges `b`→`c` and `c`→`b` (`invalid_package`/`definition-cycle`); and a zero-denominator error at `rational(1, 0)` (`undefined_expression`/`unproved-nonzero`). | Test (TC-483) |
 | FR-091-AC-35 | The assembler refuses each of these units with one unit-graph topology error naming the declarations it concerns, and returns no `PackageDeclarations`: `dimension L; dimension N = L / L;` (empty normalized terms); `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;` (zero scale); `dimension L; unit r : L = rational(2, 1);` (non-identity root); `dimension L; dimension T; unit r : L = rational(1, 1); unit s : T = rational(1, 1) * r;` (cross-dimension target); and `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);` (two roots). Each error's catalog code is `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). | Test (TC-483) |
+| FR-091-AC-36 | Check admits `function u using v(x: Int[0, 18446744073709551615]): Boolean pure { x >= 0 }` and the same function with `x: Int[0, 9223372036854775808]`; each parameter's resolved type is `ValueType::Int` with exactly those bounds. It admits a parameter typed `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]`, whose bounds are `i128::MIN` and `i128::MAX` exactly, and the bodies `x <= 170141183460469231731687303715884105727` and `x >= -170141183460469231731687303715884105728` over it. | Test (TC-909) |
+| FR-091-AC-37 | Check refuses `Int[0, 170141183460469231731687303715884105728]` (`i128::MAX + 1`) with `IntegerOutsideI128` naming site `upper`, value `170141183460469231731687303715884105728`, limit `i128::MAX` and the type form's span, and `Int[-170141183460469231731687303715884105729, 0]` naming site `lower` and limit `i128::MIN`; the body literal `170141183460469231731687303715884105728` in `x < 170141183460469231731687303715884105728` refuses naming site `literal` and limit `i128::MAX`, and `-170141183460469231731687303715884105729` naming limit `i128::MIN`. Each refusal's catalog code is `ill_typed`/`type-mismatch`, and the compile returns no checked package, so nothing is keyed or lowered. | Test (TC-909) |
 
 ## Dependencies
 
@@ -846,6 +890,8 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
+- QSL-642's i128 ceiling (FR-091-AC-36, AC-37) is specified and not
+  implemented: the `IntegerOutsideI128` cause does not exist yet.
 - AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
   publishes the topology causes the topology cause reports
   `invalid_package` with the informational cause `unit-graph-topology`.
