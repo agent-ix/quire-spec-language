@@ -41,3 +41,11 @@ Examined:
 ## Verdict
 
 One low finding: AC-7's "at the intake stage" clause is not asserted. Every AC is traced and has a real, divergence-sensitive oracle. Mergeable once FND-001 is fixed in this PR.
+
+## Dispositions
+
+Round 1, reviewed at 723980bb278a024eec9dc3dfdf86901ca13c6373.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 723980bb |

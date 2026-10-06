@@ -46,3 +46,12 @@ Examined:
 Gates at 3d53d1dd: `cargo test -p qsl-replay` passes (343 unit tests, 5 in `compile_package_facade`, plus the other integration tests and doctests, 0 failed), so the replay tests show no behaviour change. `cargo clippy -p qsl-replay --all-targets -- -D warnings` is clean, and `cargo fmt --check` passes.
 
 Two low findings. Neither is a behaviour defect. The extraction is a faithful single pipeline that `replay` and `compile_package` both run. `compile_package`'s inputs, limits, owner check and refusals match `recompile`, and its packages input matches `call_site`. The public surface is minimal and fits T12-A. Mergeable once the findings are fixed in this PR.
+
+## Dispositions
+
+Round 1, reviewed at 723980bb278a024eec9dc3dfdf86901ca13c6373.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 723980bb |
+| FND-002 | fixed | 723980bb |

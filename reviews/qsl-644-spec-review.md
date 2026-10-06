@@ -47,3 +47,14 @@ Examined:
 ## Verdict
 
 One medium and three low findings. FND-001: the `f?: T` to `f: T?` respelling is incomplete, and two ACs (FR-092-AC-9, FR-093-AC-11) and several vectors still spell source that does not parse. The new FR-060 statement and AC-5 to AC-7 are sound, testable and backed. Not mergeable until FND-001 is fixed. Fix the low findings in the same round.
+
+## Dispositions
+
+Round 1, reviewed at 723980bb278a024eec9dc3dfdf86901ca13c6373.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 723980bb |
+| FND-002 | fixed | 723980bb |
+| FND-003 | fixed | 723980bb |
+| FND-004 | fixed | 723980bb |
