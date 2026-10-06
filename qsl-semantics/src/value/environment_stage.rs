@@ -15,11 +15,12 @@ use quire_semantic_value::declaration::{
     EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, InvalidDeclaration,
 };
 
-/// `limit` as the stage limit it is: `ancestor_steps` is a node count, the
-/// types one conformance walk expands, and `work_units` is the work budget.
+/// `limit` as the stage limit it is: `ancestor_steps` is an edge count, the
+/// `supertypes` edges one conformance walk follows, and `work_units` is the
+/// work budget.
 pub fn stage_limit(limit: EnvironmentLimit) -> LimitExceeded {
     let kind = match limit.kind() {
-        EnvironmentLimitKind::AncestorSteps => LimitKind::NodeCount,
+        EnvironmentLimitKind::AncestorSteps => LimitKind::EdgeCount,
         EnvironmentLimitKind::WorkUnits => LimitKind::WorkBudget,
     };
     LimitExceeded::new(kind, limit.configured_bound(), limit.actual())
@@ -48,7 +49,7 @@ mod tests {
                 5,
                 6
             )),
-            LimitExceeded::new(LimitKind::NodeCount, 5, 6)
+            LimitExceeded::new(LimitKind::EdgeCount, 5, 6)
         );
         assert_eq!(
             stage_limit(EnvironmentLimit::new(EnvironmentLimitKind::WorkUnits, 4, 5)),

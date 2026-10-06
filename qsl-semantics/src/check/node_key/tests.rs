@@ -936,3 +936,35 @@ fn conformance_fr092_nominal_enum_keys_match_qspec_vectors() {
 fn hex(bytes: &[u8; 32]) -> String {
     NodeKey::from_digest(*bytes).to_string()
 }
+
+/// FR-259 Behaviors 4 and 6: a node preimage whose canonical bytes exceed
+/// `identity.input_bytes` refuses with that byte limit, and a failed
+/// reservation as an allocation failure, never as a preimage with no
+/// encoding. Lowering reports the limit as `stage_limit_exceeded`.
+#[trace("TC-728", "FR-259-AC-2")]
+#[test]
+fn a_node_preimage_over_the_identity_byte_limit_is_the_identity_limit() {
+    let bound = LIMITS.max_bytes();
+    let over = "a".repeat(usize::try_from(bound).expect("16 MiB fits usize"));
+    let Err(NodeKeyRefusal::Identity(IdentityRefusal::InputBytes {
+        bound: reached,
+        required,
+    })) = canonical_bytes(over.as_str())
+    else {
+        panic!("a preimage of more than {bound} bytes reaches the identity limit");
+    };
+    assert_eq!(reached, bound);
+    assert!(required > bound);
+    assert!(matches!(
+        canonical_sha256(over.as_str()),
+        Err(NodeKeyRefusal::Identity(IdentityRefusal::InputBytes { .. }))
+    ));
+    assert_eq!(
+        encode_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
+        NodeKeyRefusal::Identity(IdentityRefusal::Allocation { requested: 4096 })
+    );
+    let refused =
+        crate::check::CheckCause::Identity(IdentityRefusal::InputBytes { bound, required });
+    assert_eq!(refused.code(), qsl_foundation::Code::StageLimitExceeded);
+    assert_eq!(refused.cause(), Some("input-bytes-exceeded"));
+}

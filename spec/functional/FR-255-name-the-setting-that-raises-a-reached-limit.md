@@ -42,8 +42,8 @@ requirements named below. Each row's default is the published default a
 caller gets when it does not configure the limit (ADR-014 §2, "inherited").
 Every limit has no ceiling: a caller raises or lowers it, and the value is
 used as given. The requirement that owns each limit defines its counter:
-NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`types.*`), FR-260 (`intake.*`),
-NFR-012 (`normalization.*`, `admission.*`), FR-106 (`observation.*`), FR-111
+NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`),
+NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
 FR-101 (`explore.*`), NFR-006 (`runtime.*`, `validation.*`, `evaluation.*`),
 NFR-007 (`package.*`), NFR-009 (`composed.*`), FR-003 (`format.*`), FR-025
@@ -58,17 +58,17 @@ NFR-007 (`package.*`), NFR-009 (`composed.*`), FR-003 (`format.*`), FR-025
 | `s3.nodes` | S3 | node count | `CheckingLimits` nodes | 100000 units |
 | `s3.input_bytes` | S3 | input bytes | `CheckingLimits` declaration preimage bytes | 16777216 bytes |
 | `s3.work_units` | S3 | work budget | `CheckingLimits` work budget | 16777216 units |
-| `types.ancestor_steps` | S3 type-environment admission | edge count | `TypeEnvironmentLimits` ancestor_steps | 16777216 edges |
-| `types.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
+| `environment.ancestor_steps` | S3 type-environment admission | edge count | `TypeEnvironmentLimits` ancestor_steps | 16777216 edges |
+| `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
 | `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes | 67108864 bytes |
-| `normalization.declaration_records` | model normalization | node count | `ModelNormalizationLimitsV1` declaration_records | 100000 records |
-| `normalization.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
-| `normalization.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
-| `normalization.dispatch_candidates` | model normalization | node count | `ModelNormalizationLimitsV1` dispatch_candidates | 1600000 candidates |
-| `normalization.hashed_bytes` | model normalization | input bytes | `ModelNormalizationLimitsV1` hashed_bytes | 268435456 bytes |
-| `normalization.work_units` | model normalization | work budget | `ModelNormalizationLimitsV1` work_units | 16777216 units |
-| `normalization.ancestor_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` ancestor_steps | 16777216 edges |
-| `normalization.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |
+| `model.declaration_records` | model normalization | node count | `ModelNormalizationLimitsV1` declaration_records | 100000 records |
+| `model.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
+| `model.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
+| `model.dispatch_candidates` | model normalization | node count | `ModelNormalizationLimitsV1` dispatch_candidates | 1600000 candidates |
+| `model.hashed_bytes` | model normalization | input bytes | `ModelNormalizationLimitsV1` hashed_bytes | 268435456 bytes |
+| `model.work_units` | model normalization | work budget | `ModelNormalizationLimitsV1` work_units | 16777216 units |
+| `model.ancestor_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` ancestor_steps | 16777216 edges |
+| `model.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |
 | `admission.population_members` | population admission | node count | `PopulationAdmissionLimitsV1` population_members | 100000 members |
 | `admission.work_units` | population admission | work budget | `PopulationAdmissionLimitsV1` work_units | 16777216 units |
 | `admission.ancestor_steps` | population admission | edge count | `PopulationAdmissionLimitsV1` ancestor_steps | 16777216 edges |

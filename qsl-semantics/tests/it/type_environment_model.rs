@@ -316,8 +316,8 @@ fn divergence_generalization_cycle_refuses_at_check_and_at_evaluation() {
 }
 
 /// A linear chain `model.c.0 -> model.c.1 -> ... -> model.c.{depth}` plus an
-/// unrelated `model.z`: `model.c.0` has `depth` ancestors, so the model's
-/// walk from it to `model.z` expands `depth + 1` types.
+/// unrelated `model.z`: `model.c.0`'s closure holds `depth` `supertypes`
+/// edges, so the model's walk from it to `model.z` follows `depth` edges.
 fn chain_package(depth: u64) -> DomainPackage {
     let names: Vec<String> = (0..=depth).map(|i| format!("model.c.{i}")).collect();
     let mut records: Vec<DomainPackageRecord> = names
@@ -335,7 +335,7 @@ fn chain_package(depth: u64) -> DomainPackage {
 }
 
 /// Divergence row 3, at the ceiling: the deepest type's worst-case walk
-/// expands `depth + 1` types, exactly the ceiling. The checker admits the
+/// follows `depth` edges, exactly the ceiling. The checker admits the
 /// environment and every conformance question it answers completes at
 /// evaluation with the same verdict: `c.0` conforms to `c.{depth}`, and not
 /// to `z`.
@@ -343,7 +343,7 @@ fn chain_package(depth: u64) -> DomainPackage {
 #[test]
 fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
     const DEPTH: u64 = 5;
-    const CEILING: u64 = DEPTH + 1;
+    const CEILING: u64 = DEPTH;
     let domain_package = chain_package(DEPTH);
     let view = view(&domain_package, CEILING);
     let environment = environment_of(&view, CEILING).unwrap();
@@ -365,25 +365,25 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 }
 
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
-/// `depth`. The model still normalizes it (its longest path is `depth`
-/// steps) but refuses the walk from `c.0` to `z` with `resource_exhausted`/
-/// `ancestor-steps`. Check time stops at a node-count stage limit naming the
+/// `depth - 1`. The model still normalizes it (its longest path is `depth`
+/// steps) but refuses the walk from `c.0` to `z`, which follows `depth`
+/// edges, with `resource_exhausted`/`ancestor-steps`. Check time stops at an edge-count stage limit naming the
 /// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
 /// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
 #[test]
 fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     const DEPTH: u64 = 5;
-    const CEILING: u64 = DEPTH;
+    const CEILING: u64 = DEPTH - 1;
     let domain_package = chain_package(DEPTH);
-    let view = view(&domain_package, CEILING);
+    let view = view(&domain_package, DEPTH);
     let binding = binding(&view, CEILING);
     assert!(is_ancestor_steps(
         &evaluate_lookup(&binding, &view, "model.c.0", "model.z"),
         CEILING
     ));
 
-    // Check time: a stage limit (ADR-014 B-3), node count, the ceiling
+    // Check time: a stage limit (ADR-014 B-3), edge count, the ceiling
     // plus one, and no locus (FR-082).
     let Stopped::Limit(limit) = stage_failure(environment_of(&view, CEILING).unwrap_err())
         .into_refused()
@@ -393,21 +393,45 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
     };
     assert_eq!(
         limit,
-        LimitExceeded::new(LimitKind::NodeCount, CEILING, u128::from(CEILING) + 1)
+        LimitExceeded::new(LimitKind::EdgeCount, CEILING, u128::from(CEILING) + 1)
     );
     assert_eq!(
         limit.catalog_code(),
-        CatalogCode::new("stage_limit_exceeded", "node-count-exceeded")
+        CatalogCode::new("stage_limit_exceeded", "edge-count-exceeded")
     );
     assert_eq!(limit.locus(), None);
 }
 
-/// `TypeEnvironment::new` admits under the same default ceiling the model's
-/// own limits default to, so a caller that sets neither gets one bound.
-#[trace("TC-220", "FR-082-AC-6")]
+/// A diamond `model.d.d -> model.d.b, model.d.c, model.d.a;
+/// model.d.b -> model.d.a; model.d.c -> model.d.a` plus an unrelated
+/// `model.z`: five `supertypes` edges in `model.d.d`'s closure over four
+/// types, and no chain longer than two.
+fn diamond_package() -> DomainPackage {
+    package(
+        "bundle.qsl485-diamond",
+        vec![
+            object_type_record("model.d.a", &[]),
+            object_type_record("model.d.b", &["model.d.a"]),
+            object_type_record("model.d.c", &["model.d.a"]),
+            object_type_record("model.d.d", &["model.d.b", "model.d.c", "model.d.a"]),
+            object_type_record("model.z", &[]),
+            population_record(&["model.d.a", "model.z"]),
+        ],
+    )
+}
+
+/// The model's walk and `TypeEnvironment` share one `ancestor_steps`: the
+/// same NFR-012 default of 16777216, and the same edge count over a type's
+/// closure. Over the diamond, both admit at 5 edges (the walk from
+/// `model.d.d` to `model.z` completes `type-mismatch`) and both stop at 4
+/// (the walk refuses `ancestor-steps`, check time stops at an edge-count
+/// stage limit of 4 whose actual counter is the bound plus one), though the
+/// closure holds only four types and no chain is longer than two.
+#[trace("TC-220", "FR-082-AC-6", "TC-434", "NFR-012")]
 #[test]
-fn check_and_evaluation_share_one_default_ancestor_ceiling() {
+fn check_and_evaluation_share_one_default_and_one_edge_count() {
     use quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS;
+    assert_eq!(DEFAULT_ANCESTOR_STEPS, 16_777_216);
     assert_eq!(
         ModelNormalizationLimits::default().ancestor_steps,
         DEFAULT_ANCESTOR_STEPS
@@ -415,6 +439,38 @@ fn check_and_evaluation_share_one_default_ancestor_ceiling() {
     assert_eq!(
         PopulationAdmissionLimits::default().ancestor_steps,
         DEFAULT_ANCESTOR_STEPS
+    );
+    assert_eq!(
+        TypeEnvironmentLimits::default().ancestor_steps,
+        DEFAULT_ANCESTOR_STEPS
+    );
+
+    const EDGES: u64 = 5;
+    let domain_package = diamond_package();
+    let view = view(&domain_package, EDGES);
+
+    assert!(environment_of(&view, EDGES).is_ok());
+    assert!(is_type_mismatch(&evaluate_lookup(
+        &binding(&view, EDGES),
+        &view,
+        "model.d.d",
+        "model.z"
+    )));
+
+    let below = EDGES - 1;
+    assert!(is_ancestor_steps(
+        &evaluate_lookup(&binding(&view, below), &view, "model.d.d", "model.z"),
+        below
+    ));
+    let Stopped::Limit(limit) = stage_failure(environment_of(&view, below).unwrap_err())
+        .into_refused()
+        .unwrap_err()
+    else {
+        panic!("a stage limit, not a cancellation");
+    };
+    assert_eq!(
+        limit,
+        LimitExceeded::new(LimitKind::EdgeCount, below, u128::from(EDGES))
     );
 }
 

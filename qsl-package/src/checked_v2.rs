@@ -90,7 +90,7 @@ use qsl_semantics::library::{
 };
 use qsl_semantics::model::key::hex;
 
-use crate::checked::{CheckedPackage, ResolvedDependency};
+use crate::checked::CheckedPackage;
 use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 
@@ -838,9 +838,12 @@ fn hold_closure<'p>(
     package: &'p CheckedPackage,
     held: &mut BTreeMap<PackageId, &'p CheckedPackage>,
 ) {
-    for (id, dependency) in package.dependencies() {
-        if held.insert(*id, dependency).is_none() {
-            hold_closure(dependency, held);
+    let mut pending = vec![package];
+    while let Some(package) = pending.pop() {
+        for (id, dependency) in package.dependencies() {
+            if held.insert(*id, dependency).is_none() {
+                pending.push(dependency);
+            }
         }
     }
 }
@@ -909,31 +912,52 @@ impl ClosureReader<'_> {
         package: &CheckedPackage,
         evidence: &mut CheckedPackageEvidence,
     ) -> Result<(), ImportViewRefusal> {
+        self.admit_closure(package)?;
         for (dependency, resolved) in package.dependency_selections() {
-            let admitted = self.admitted(dependency, resolved)?;
-            evidence.insert_dependency_package(dependency.as_str(), admitted);
+            let admitted = self.admitted.get(&resolved.package_id).ok_or_else(|| {
+                ImportViewRefusal::UnheldDependency {
+                    identity: dependency.clone(),
+                }
+            })?;
+            evidence.insert_dependency_package(dependency.as_str(), Arc::clone(admitted));
         }
         Ok(())
     }
 
-    /// The admitted package of the closure entry `identity`, read once.
-    fn admitted(
-        &mut self,
-        identity: &LibraryName,
-        resolved: &ResolvedDependency,
-    ) -> Result<Arc<CheckedPackageV2>, ImportViewRefusal> {
-        let id = resolved.package_id;
-        if let Some(admitted) = self.admitted.get(&id) {
-            return Ok(Arc::clone(admitted));
+    /// Admits every package of `package`'s closure, each read once and only
+    /// after the packages it depends on, over an explicit stack so a
+    /// dependency chain of any length reads on a constant native stack
+    /// (ADR-030 D-1).
+    fn admit_closure(&mut self, package: &CheckedPackage) -> Result<(), ImportViewRefusal> {
+        // (library identity, package id, whether its dependencies are queued)
+        let mut pending: Vec<(LibraryName, PackageId, bool)> = package
+            .dependency_selections()
+            .iter()
+            .rev()
+            .map(|(identity, resolved)| (identity.clone(), resolved.package_id, false))
+            .collect();
+        while let Some((identity, id, expanded)) = pending.pop() {
+            if self.admitted.contains_key(&id) {
+                continue;
+            }
+            let held = *self
+                .held
+                .get(&id)
+                .ok_or_else(|| ImportViewRefusal::UnheldDependency {
+                    identity: identity.clone(),
+                })?;
+            if !expanded {
+                pending.push((identity, id, true));
+                for (dependency, resolved) in held.dependency_selections().iter().rev() {
+                    if !self.admitted.contains_key(&resolved.package_id) {
+                        pending.push((dependency.clone(), resolved.package_id, false));
+                    }
+                }
+                continue;
+            }
+            let read = self.read(held, identity)?;
+            self.admitted.insert(id, read.admitted);
         }
-        let package = *self
-            .held
-            .get(&id)
-            .ok_or_else(|| ImportViewRefusal::UnheldDependency {
-                identity: identity.clone(),
-            })?;
-        let read = self.read(package, identity.clone())?;
-        self.admitted.insert(id, Arc::clone(&read.admitted));
-        Ok(read.admitted)
+        Ok(())
     }
 }

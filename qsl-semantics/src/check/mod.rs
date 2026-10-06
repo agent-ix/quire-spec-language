@@ -1213,10 +1213,10 @@ impl PackageDeclarations {
         // kept until lowering has keyed each one's type node.
         let mut units = scope.types().units().clone();
         for (_, body, _) in &mut drafts {
-            units.extend(std::mem::take(&mut body.formed_units));
+            units.append(std::mem::take(&mut body.formed_units));
         }
         for clause in &mut typed_clauses {
-            units.extend(std::mem::take(&mut clause.formed_units));
+            units.append(std::mem::take(&mut clause.formed_units));
         }
         let mut lowering = lowering::Lowering::new(
             &scope,

@@ -74,11 +74,11 @@ pub(crate) fn canonical_bytes(value: &impl Encode) -> Result<Vec<u8>, EncodingRe
 
 /// The SHA-256 digest of `value`'s RFC 8785 bytes, with no domain label in
 /// the preimage (the sampler draw digest, FR-101). `value` is always a
-/// `DrawPreimage` this crate builds itself from bounded decimal strings, so
-/// -- unlike [`state_key`] and [`canonical_bytes`] -- an encoding failure
-/// here is an internal invariant break, not an implementer defect: exactly
-/// the reasoning `qsl_semantics::model::key::sha256_and_len` applies to
-/// every other engine-built identity preimage in this codebase.
+/// `DrawPreimage` this crate builds itself: five decimal strings of `u64`
+/// values, at most 20 digits each, so its canonical form is under 200 bytes
+/// and never reaches [`LIMITS`]' 16777216-byte bound. Unlike [`state_key`]
+/// and [`canonical_bytes`], whose values an implementer supplies, an
+/// encoding failure here is an internal invariant break.
 pub(crate) fn plain_digest(value: &impl Encode) -> [u8; 32] {
     *quire_canonical::sha256(value, LIMITS)
         .unwrap_or_else(|error| panic!("a sampler draw preimage encodes: {error}"))

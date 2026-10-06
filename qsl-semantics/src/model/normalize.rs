@@ -62,9 +62,10 @@
 //! counted from parts, before encoding (an effective type's identity is the
 //! one hash made earlier; see `build`). Facts derived along one ancestor
 //! path share it ([`FactInputs`]), so memory grows with facts plus total
-//! path length. `ancestor_steps` is read, not
-//! charged: a path one step past it refuses `AncestorSteps` where the walk
-//! reaches it, unless an earlier charge was already denied.
+//! path length. `ancestor_steps` is an edge count: each distinct
+//! `supertypes` edge of a type's closure is charged once, before the walk
+//! follows it, and the first edge past the ceiling refuses `AncestorSteps`
+//! where the walk reaches it, unless an earlier charge was already denied.
 //!
 //! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
 //! every contributing declaration in the cycle, rotated to start at its
@@ -928,9 +929,12 @@ struct AncestorWalk {
 ///
 /// `max_steps` is the caller's
 /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`],
-/// used as given: an ancestor path of `n` generalization steps is admitted
-/// at `max_steps == n`, and extending any path one step further refuses
-/// [`ModelRefusalCause::AncestorSteps`] naming `root_key` and the bound.
+/// used as given: it bounds how many distinct `supertypes` edges this one
+/// walk follows, each charged before it is followed, so under multiple
+/// supertypes it bounds the closure of `root_key`, never a chain depth. A
+/// closure of `n` edges is admitted at `max_steps == n`, and following one
+/// edge more refuses [`ModelRefusalCause::AncestorSteps`] naming `root_key`
+/// and the bound.
 fn ancestor_paths(
     root_key: &DeclarationKey,
     index: &RecordIndex,
@@ -952,29 +956,13 @@ fn ancestor_paths(
     }];
     let mut out = Vec::new();
     let mut closing_cycles: Vec<ClosingCycle> = Vec::new();
-    loop {
-        let stack_len = stack.len();
-        let Some(frame) = stack.last_mut() else { break };
+    let mut followed: HashSet<(DeclarationKey, DeclarationKey)> = HashSet::new();
+    while let Some(frame) = stack.last_mut() {
         if frame.next >= frame.directs.len() {
             stack.pop();
             continue;
         }
         work_step();
-        // Extending this frame's path gives a path of `stack_len`
-        // generalization steps (the root frame's own path is empty).
-        if u64::try_from(stack_len).unwrap_or(u64::MAX) > max_steps {
-            return Err(Denial::from(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::AncestorSteps {
-                    from: root_key.clone(),
-                    limit: max_steps,
-                },
-                detail: format!(
-                    "ancestor path from {} exceeded the ancestor_steps limit of {max_steps}",
-                    root_key.node
-                ),
-            }));
-        }
         // The type whose own `supertypes[]` this frame walks: a refusal
         // cites this owning node's own key.
         let specific_key = frame
@@ -984,6 +972,23 @@ fn ancestor_paths(
             .expect("every Frame is seeded with root_key and only ever grows visited");
         let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
+        // Charge the edge before following it: each distinct edge of the
+        // closure costs one step, however many paths reach it.
+        if followed.insert((specific_key.clone(), ancestor_key.clone()))
+            && u64::try_from(followed.len()).unwrap_or(u64::MAX) > max_steps
+        {
+            return Err(Denial::from(ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::AncestorSteps {
+                    from: root_key.clone(),
+                    limit: max_steps,
+                },
+                detail: format!(
+                    "ancestor walk from {} exceeded the ancestor_steps limit of {max_steps}",
+                    root_key.node
+                ),
+            }));
+        }
         let new_path = frame.path.extended(&ancestor_key);
 
         charges.cycle_check(new_path.len())?;
@@ -3198,8 +3203,8 @@ mod tests {
                 dispatch_candidates: 1_600_000,
                 hashed_bytes: 268_435_456,
                 work_units: 16_777_216,
-                ancestor_steps: 100_000,
-                family_steps: 100_000,
+                ancestor_steps: 16_777_216,
+                family_steps: 16_777_216,
             }
         );
         let NormalizeOutcome::Completed(view) =

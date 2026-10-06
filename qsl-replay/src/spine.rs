@@ -234,7 +234,11 @@ impl CompileRefusal {
                     | LimitsField::CheckingInputBytes
                     | LimitsField::CheckingWorkBudget,
                 ) => SpineStage::Check,
-                Some(LimitsField::EnvironmentAncestorSteps | LimitsField::EnvironmentWorkUnits)
+                Some(
+                    LimitsField::EnvironmentAncestorSteps
+                    | LimitsField::EnvironmentWorkUnits
+                    | LimitsField::IdentityInputBytes,
+                )
                 | None => SpineStage::Assembly,
                 Some(
                     LimitsField::ModelDeclarationRecords
@@ -244,7 +248,10 @@ impl CompileRefusal {
                     | LimitsField::ModelHashedBytes
                     | LimitsField::ModelWorkUnits
                     | LimitsField::ModelAncestorSteps
-                    | LimitsField::ModelFamilySteps,
+                    | LimitsField::ModelFamilySteps
+                    | LimitsField::DependencyLibraries
+                    | LimitsField::DependencyImportEdges
+                    | LimitsField::DependencySourceBytes,
                 ) => SpineStage::Intake,
             },
         }
@@ -277,7 +284,7 @@ impl CompileRefusal {
             self,
             Self::DependencyInput(_)
                 | Self::Import {
-                    refusal: ImportRefusal::Cycle { .. } | ImportRefusal::DepthLimit { .. },
+                    refusal: ImportRefusal::Cycle { .. },
                     ..
                 }
         )
@@ -402,7 +409,10 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::InvalidTypeDeclaration(_) => {
             "the records and tuples are not an admitted declaration set".to_owned()
         }
-        AssemblyCause::TypeLimit(limit) => format!(
+        AssemblyCause::IdentityAllocation { requested } => {
+            format!("an identity preimage could not reserve {requested} bytes of memory")
+        }
+        AssemblyCause::TypeLimit(limit) | AssemblyCause::IdentityLimit(limit) => format!(
             "{} (bound {}, reached {})",
             limit.kind().catalog_cause(),
             limit.configured_bound(),
@@ -788,16 +798,11 @@ pub enum ImportRefusal {
         /// The identity the import names.
         identity: LibraryName,
     },
-    /// Step 4: compiling the library would nest library compiles deeper
-    /// than [`DependencyLimits::depth`] (`stage_limit_exceeded`/
-    /// `nesting-depth-exceeded`). Closure-level.
-    #[error("stage_limit_exceeded/nesting-depth-exceeded: {} nests library compiles deeper than {limit}", display_path(.path))]
-    DepthLimit {
-        /// The configured ceiling.
-        limit: usize,
-        /// The dependency path whose compile would exceed it.
-        path: Vec<LibraryName>,
-    },
+    /// Step 4: charging the import graph reached a [`DependencyLimits`]
+    /// ceiling, naming the limit kind, bound, counter and setting
+    /// (`stage_limit_exceeded`, FR-099).
+    #[error("{}", limit_message(.0))]
+    Limit(LimitExceeded),
     /// An import names the empty identity, which the parser never admits:
     /// a broken invariant (`runtime_invariant`).
     #[error("runtime_invariant: an admitted import names the empty library identity")]
@@ -819,7 +824,7 @@ impl ImportRefusal {
         match self {
             Self::Cycle { .. } => Code::InvalidPackage,
             Self::MissingSelection { .. } => Code::MissingImport,
-            Self::DepthLimit { .. } => Code::StageLimitExceeded,
+            Self::Limit(_) => Code::StageLimitExceeded,
             Self::UnnamedImport => Code::RuntimeInvariant,
             Self::View { refusal, .. } => refusal.code(),
         }
@@ -830,7 +835,7 @@ impl ImportRefusal {
         match self {
             Self::Cycle { .. } => Some("definition-cycle"),
             Self::MissingSelection { .. } => Some("missing-selection"),
-            Self::DepthLimit { .. } => Some("nesting-depth-exceeded"),
+            Self::Limit(limit) => Some(limit.kind().catalog_cause()),
             Self::UnnamedImport => None,
             Self::View { .. } => None,
         }
@@ -848,26 +853,36 @@ pub struct SpineLimits {
     pub model: ModelNormalizationLimits,
     /// S3: the checker's ceilings.
     pub checking: CheckingLimits,
-    /// The S4 source resolution's ceilings (ADR-015 D-1).
+    /// The S4 source resolution's ceilings (FR-099).
     pub dependencies: DependencyLimits,
     /// The type-environment ceilings the assembler admits records, tuples
     /// and object types under (FR-082).
     pub environment: TypeEnvironmentLimits,
 }
 
-/// The S4 source resolution's ceilings. A library compile is charged the
-/// full S1 to S4 limits as its own unit; this bounds how deeply library
-/// compiles nest, since each nested compile holds its caller's state.
+/// The S4 source resolution's ceilings (FR-099): caller-configurable
+/// resource limits on the import graph, each used as given. A library
+/// compile is charged the full S1 to S4 limits as its own unit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DependencyLimits {
-    /// The most library compiles in progress at once: the longest
-    /// dependency path from the unit. Defaults to 64.
-    pub depth: usize,
+    /// A node count of the library compiles in the closure, set by
+    /// `dependency.libraries`. Defaults to 4096.
+    pub libraries: usize,
+    /// An edge count of the imports resolved across the closure, set by
+    /// `dependency.import_edges`. Defaults to 16384.
+    pub import_edges: usize,
+    /// The summed input bytes of the library sources compiled, set by
+    /// `dependency.source_bytes`. Defaults to 16777216.
+    pub source_bytes: usize,
 }
 
 impl Default for DependencyLimits {
     fn default() -> Self {
-        Self { depth: 64 }
+        Self {
+            libraries: 4096,
+            import_edges: 16384,
+            source_bytes: 16_777_216,
+        }
     }
 }
 

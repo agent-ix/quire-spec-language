@@ -42,7 +42,14 @@ use std::sync::Arc;
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::library::{LibraryName, PackageId};
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
+
+/// The limits the E4 emitter encodes a package's identity preimage and its
+/// `quire.checked-package/v2` bytes under: no byte bound of their own. Both
+/// project a checked graph the check stage already bounded (`checking.nodes`,
+/// `checking.input_bytes`), the stage budget FR-259 Behavior 3 has the site
+/// pass; a bound here could only refuse a package `check` admitted, with no
+/// setting to raise.
+pub(crate) const EMIT_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(u64::MAX);
 
 use crate::emit::{emit_checked, EmitRefusal};
 
@@ -214,6 +221,22 @@ impl LinkRefusal {
         match self {
             Self::ConflictingDefinition { .. } => Some("conflicting-definition"),
             Self::DependencyEmission { .. } => None,
+        }
+    }
+}
+
+/// Drops the dependency closure over an explicit stack, so a chain of any
+/// length drops on a constant native stack (ADR-030 D-1): the derived drop
+/// would recurse once per link.
+impl Drop for CheckedPackage {
+    fn drop(&mut self) {
+        let mut pending: Vec<Arc<CheckedPackage>> = std::mem::take(&mut self.dependencies)
+            .into_values()
+            .collect();
+        while let Some(package) = pending.pop() {
+            if let Ok(mut owned) = Arc::try_unwrap(package) {
+                pending.extend(std::mem::take(&mut owned.dependencies).into_values());
+            }
         }
     }
 }
@@ -453,7 +476,7 @@ impl EmittedPackage {
         // preimage through its `quire_canonical::Encode`: the encoder orders
         // members itself, and the projected node bodies nest as deep as
         // their expressions.
-        let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)?;
+        let preimage_bytes = quire_canonical::to_vec(identity_preimage, EMIT_LIMITS)?;
         let package_id = PackageId::of_preimage(&preimage_bytes);
         Ok(Self {
             bytes: encode(package_id)?,
@@ -472,12 +495,64 @@ impl EmittedPackage {
     }
 }
 
+/// A chain of `length` packages over one empty checked graph, each
+/// depending on the next under a distinct `package_id`: the shape a
+/// `length`-long library import chain links to, for the stack-depth tests.
+#[cfg(test)]
+pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
+    use qsl_semantics::check::PackageDeclarations;
+    use quire_semantic_value::checking::CheckingLimits;
+    let source = qsl_foundation::Source::read(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "u".to_owned(),
+        b"",
+        0,
+    )
+    .expect("an empty source reads")
+    .reference()
+    .clone();
+    let graph = Arc::new(
+        PackageDeclarations::new(source)
+            .check(CheckingLimits::default())
+            .expect("an empty package checks"),
+    );
+    (0..length).fold(
+        CheckedPackage {
+            graph: Arc::clone(&graph),
+            dependencies: BTreeMap::new(),
+            selections: BTreeMap::new(),
+        },
+        |dependency, link| CheckedPackage {
+            graph: Arc::clone(&graph),
+            dependencies: BTreeMap::from([(
+                PackageId::of_preimage(&link.to_le_bytes()),
+                Arc::new(dependency),
+            )]),
+            selections: BTreeMap::new(),
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_semantics::check::PackageDeclarations;
     use quire_semantic_value::checking::CheckingLimits;
+
+    /// ADR-030: dropping a 100,000-long dependency chain runs on a 128 KiB
+    /// stack. A derived, recursive drop would use one frame per link.
+    #[trace("FR-099-AC-7", "TC-446")]
+    #[test]
+    fn a_dependency_chain_of_any_length_drops_on_a_small_stack() {
+        let chain = dependency_chain(100_000);
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(move || drop(chain))
+            .expect("spawn a 128 KiB thread")
+            .join()
+            .expect("the drop must not overflow a 128 KiB stack");
+    }
 
     /// FR-094 (TC-417), through the layer-4 `CheckedPackage`: `check` is
     /// the model correspondence's only writer. A function over a

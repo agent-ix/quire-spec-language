@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
     is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalOwner,
-    NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+    NodeIdDocument, NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSelection,
 };
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::is_identifier;
@@ -182,7 +182,7 @@ fn canonical_declaration<'a>(
 }
 
 impl NodeIdentityPreimage for EnumDeclarationPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+    fn digest(&self) -> Result<[u8; 32], NominalRefusal> {
         preimage_digest(&self.canonical())
     }
 }
@@ -241,7 +241,7 @@ impl EnumMemberPreimage {
 }
 
 impl NodeIdentityPreimage for EnumMemberPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+    fn digest(&self) -> Result<[u8; 32], NominalRefusal> {
         preimage_digest(&CanonicalMember {
             case: &self.case,
             declaration_node_id: CanonicalNodeId::from(*self.declaration.as_bytes()),
@@ -269,7 +269,7 @@ impl AdmittedEnumDeclaration {
         preimage: EnumDeclarationPreimage,
         key: NodeKey,
         owners: &OwnerSelection,
-    ) -> Result<Self, InvalidSemanticGraph> {
+    ) -> Result<Self, NominalRefusal> {
         let EnumDeclarationPreimage {
             owner,
             qualified_declaration,
@@ -278,7 +278,7 @@ impl AdmittedEnumDeclaration {
         } = preimage;
         let declaration = EnumDeclaration::new(key, ordered, members)?;
         if !owners.contains(&owner) {
-            return Err(refuse(SemanticGraphCause::OwnerNotSelected));
+            return Err(refuse(SemanticGraphCause::OwnerNotSelected).into());
         }
         let admitted = Self {
             declaration,
@@ -286,7 +286,7 @@ impl AdmittedEnumDeclaration {
             qualified_declaration,
         };
         if preimage_digest(&admitted.canonical())? != *key.as_bytes() {
-            return Err(refuse(SemanticGraphCause::StaleKey));
+            return Err(refuse(SemanticGraphCause::StaleKey).into());
         }
         Ok(admitted)
     }
@@ -332,7 +332,7 @@ impl AdmittedEnumDeclaration {
 
     /// The RFC 8785 bytes whose SHA-256 is the declaration's node key: the
     /// checked graph node's preimage (FR-092 rule 1).
-    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, NominalRefusal> {
         preimage_bytes(&self.canonical())
     }
 
@@ -341,15 +341,15 @@ impl AdmittedEnumDeclaration {
         &self,
         preimage: &EnumMemberPreimage,
         key: NodeKey,
-    ) -> Result<EnumValue, InvalidSemanticGraph> {
+    ) -> Result<EnumValue, NominalRefusal> {
         // Resolve the member's wire declaration id by lookup against this
         // declaration's own key (ADR-013 O-04).
         if preimage.declaration.as_bytes() != self.key().as_bytes() {
-            return Err(refuse(SemanticGraphCause::ForeignDeclaration));
+            return Err(refuse(SemanticGraphCause::ForeignDeclaration).into());
         }
         let member = self.declaration.member(&preimage.case, key)?;
         if !retains(key, preimage)? {
-            return Err(refuse(SemanticGraphCause::StaleKey));
+            return Err(refuse(SemanticGraphCause::StaleKey).into());
         }
         Ok(member)
     }
@@ -385,7 +385,7 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
 pub(crate) fn member_preimage_bytes(
     declaration: NodeKey,
     case: &str,
-) -> Result<Vec<u8>, InvalidSemanticGraph> {
+) -> Result<Vec<u8>, NominalRefusal> {
     preimage_bytes(&CanonicalMember {
         case,
         declaration_node_id: declaration.into(),

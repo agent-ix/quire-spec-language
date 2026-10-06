@@ -13,8 +13,8 @@ use num_traits::Pow;
 use qsl_semantics::check::{to_kernel_value_type, CheckedTypeNode, ScalarShape};
 use qsl_semantics::value::NodeIdentityPreimage;
 use qsl_semantics::value::{
-    admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeOwner, OwnerSelection,
-    OwnerSubject, UnitPreimage,
+    admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeOwner, NominalRefusal,
+    OwnerSelection, OwnerSubject, UnitPreimage,
 };
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -26,7 +26,7 @@ use quire_exact::{
     RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
 };
 use quire_semantic_value::quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity, ConvertedValue, QuantityOperation,
+    compare_quantity, convert_quantity, ConvertedValue, QuantityOperation, QuantityRefusal,
     QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
 };
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
@@ -169,7 +169,12 @@ impl Nodes {
             .iter()
             .map(|(preimage, key)| Ok((UnitPreimage::from_json(preimage.clone())?, *key)))
             .collect();
-        admit_unit_graph(dimensions?, units?, &owners())
+        admit_unit_graph(dimensions?, units?, &owners()).map_err(|refusal| match refusal {
+            NominalRefusal::Graph(invalid) => invalid,
+            other @ (NominalRefusal::Limit(_) | NominalRefusal::Allocation { .. }) => {
+                panic!("a fixture preimage encodes: {other:?}")
+            }
+        })
     }
 }
 
@@ -272,6 +277,20 @@ fn whole(value: i64) -> Rational {
 
 fn evaluated(operation: QuantityOperation<'_>, meter: &mut Meter) -> Outcome<Quantity> {
     evaluate_quantity(operation, meter).expect("well-typed operation")
+}
+
+/// `quire_semantic_value::quantity::evaluate_quantity`, whose units here are
+/// all small enough to have an id: its only refusal is ill-typed.
+fn evaluate_quantity(
+    operation: QuantityOperation<'_>,
+    meter: &mut Meter,
+) -> Result<Outcome<Quantity>, IllTyped> {
+    quire_semantic_value::quantity::evaluate_quantity(operation, meter).map_err(|refusal| {
+        match refusal {
+            QuantityRefusal::IllTyped(ill_typed) => ill_typed,
+            QuantityRefusal::Identity(identity) => panic!("a fixture unit has an id: {identity}"),
+        }
+    })
 }
 
 fn typed<T>(cause: IllTypedCause) -> Result<T, IllTyped> {
@@ -599,10 +618,10 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     ] {
         let expected_digest = digest_hex(&preimage);
         let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
-        assert_eq!(parsed.id().to_string(), expected_digest);
+        assert_eq!(parsed.id().unwrap().to_string(), expected_digest);
         let unit = graph.compound_unit(parsed.terms()).unwrap();
-        assert_eq!(unit.id().to_string(), expected_digest);
-        assert_eq!(unit.id().domain(), UnitDomain::Compound);
+        assert_eq!(unit.id().unwrap().to_string(), expected_digest);
+        assert_eq!(unit.id().unwrap().domain(), UnitDomain::Compound);
         assert_eq!(unit.dimension().is_dimensionless(), is_dimensionless);
     }
     assert_ne!(
@@ -682,7 +701,8 @@ fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
     let compound_metre = graph
         .compound_unit(compound(&[(m, "1")]).terms())
         .unwrap()
-        .id();
+        .id()
+        .unwrap();
     for (a, b) in [
         (metre, kilometre),
         (metre, compound_metre),
@@ -753,7 +773,8 @@ fn tc_411_compound_unit_ids_match_qspec_vectors() {
         let name = vector["name"].as_str().expect("vector name is a string");
         let id = CompoundUnitPreimage::from_json(vector["preimage"].clone())
             .unwrap_or_else(|refusal| panic!("{name}: {refusal}"))
-            .id();
+            .id()
+            .unwrap();
         assert_eq!(id.domain(), UnitDomain::Compound, "{name}");
         assert_eq!(
             Some(id.to_string().as_str()),
@@ -793,7 +814,7 @@ fn u01_exact_conversion_then_arithmetic() {
         &mut unlimited(),
     ));
     assert_eq!(sum.magnitude(), &ratio(7, 2));
-    assert_eq!(sum.unit(), f.unit(f.m).id());
+    assert_eq!(sum.unit(), f.unit(f.m).id().unwrap());
     let dimension: Vec<_> = f
         .at(&sum)
         .unit()
@@ -1048,8 +1069,8 @@ fn u09_u09b_identity_is_the_node_key_not_the_shape() {
     let units = UnitTable::declared(&graph);
     let at = |quantity| units.resolve(quantity).expect("a declared unit");
     let declared = |key| QuantityUnit::Declared(Box::new(graph.unit(key).unwrap().clone()));
-    let metre = Quantity::new(whole(1), declared(f.m).id());
-    let other = Quantity::new(whole(1), declared(other_metre).id());
+    let metre = Quantity::new(whole(1), declared(f.m).id().unwrap());
+    let other = Quantity::new(whole(1), declared(other_metre).id().unwrap());
     assert_eq!(
         evaluate_quantity(
             QuantityOperation::Add(at(&metre), at(&other)),
@@ -1067,7 +1088,7 @@ fn u09_u09b_identity_is_the_node_key_not_the_shape() {
         typed(IllTypedCause::IncompatibleDimensions)
     );
 
-    let aliased = Quantity::new(whole(7), declared(alias).id());
+    let aliased = Quantity::new(whole(7), declared(alias).id().unwrap());
     assert_eq!(
         converted(
             at(&aliased),
@@ -1278,7 +1299,7 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     for (operation, value, unit) in cases {
         let result = exact(evaluated(operation, &mut unlimited()));
         assert_eq!(result.magnitude(), &whole(value), "{operation:?}");
-        assert_eq!(result.unit(), unit.id(), "{operation:?}");
+        assert_eq!(result.unit(), unit.id().unwrap(), "{operation:?}");
     }
     // The evaluator's own compound-unit identity matches an independently
     // recomputed content digest over the same terms, under the compound
@@ -1313,20 +1334,20 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     ));
     assert_eq!(product.magnitude(), &whole(3));
     let metre_second = compound_unit(&f, &[(f.m, "1"), (f.s, "1")]);
-    assert_eq!(product.unit(), metre_second.id());
+    assert_eq!(product.unit(), metre_second.id().unwrap());
     assert_eq!(meter.consumed(LimitKind::UnitEdges), 1);
     // A compound operand reads its unit from a table that holds it.
     let mut units = f.units.clone();
-    units.insert(metre_second);
+    units.insert(metre_second).unwrap();
     let metre = compound_unit(&f, &[(f.m, "1")]);
-    units.insert(metre.clone());
+    units.insert(metre.clone()).unwrap();
     // Multiplication and division are inverse on normalized units.
     let back = exact(evaluated(
         QuantityOperation::Divide(units.resolve(&product).unwrap(), f.at(&two_s)),
         &mut unlimited(),
     ));
     assert_eq!(back.magnitude(), &ratio(3, 2));
-    assert_eq!(back.unit(), metre.id());
+    assert_eq!(back.unit(), metre.id().unwrap());
     assert_eq!(metre.dimension(), f.unit(f.m).dimension());
     assert_eq!(
         converted(
@@ -1951,7 +1972,7 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
         &mut meter,
     ));
     assert_eq!(result.magnitude(), &whole(1));
-    assert_eq!(result.unit(), compound_unit(&f, &[]).id());
+    assert_eq!(result.unit(), compound_unit(&f, &[]).id().unwrap());
     assert_eq!(
         meter.admitted_charges(),
         [
@@ -2013,11 +2034,13 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     ));
     // A compound operand reads its unit from a table that holds it.
     let mut units = x.units.clone();
-    units.insert(QuantityUnit::Compound(
-        x.graph
-            .compound_unit(compound(&[(x.base.m, "2")]).terms())
-            .unwrap(),
-    ));
+    units
+        .insert(QuantityUnit::Compound(
+            x.graph
+                .compound_unit(compound(&[(x.base.m, "2")]).terms())
+                .unwrap(),
+        ))
+        .unwrap();
     let mut meter = limits(3, 0, 0, 1, 3, 1);
     assert_eq!(
         converted(
@@ -2086,8 +2109,8 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         panic!("declared to compound did not complete");
     };
     assert_eq!(pivot, whole(5));
-    let pivot = Quantity::new(pivot, compound.id());
-    units.insert(compound);
+    let pivot = Quantity::new(pivot, compound.id().unwrap());
+    units.insert(compound).unwrap();
     assert_eq!(
         converted(
             units.resolve(&pivot).unwrap(),
@@ -2235,9 +2258,9 @@ fn u25_compound_pivot_between_nominal_dimensions() {
         panic!("N_m to the compound unit did not complete");
     };
     assert_eq!(meter.admitted_charges(), no_edge);
-    let pivot = Quantity::new(pivot, compound.id());
+    let pivot = Quantity::new(pivot, compound.id().unwrap());
     let mut units = x.units.clone();
-    units.insert(compound);
+    units.insert(compound).unwrap();
     let mut meter = limits(1, 0, 0, 1, 3, 1);
     assert_eq!(
         converted(
@@ -2310,7 +2333,10 @@ fn u28_multiplication_charges_left_then_right_then_the_product() {
     let mut meter = limits(20, 0, 2, 2, 11, 1);
     let product = exact(evaluated(operation, &mut meter));
     assert_eq!(product.magnitude(), &ratio(127, 500_000));
-    assert_eq!(product.unit(), compound_unit(&f, &[(f.m, "2")]).id());
+    assert_eq!(
+        product.unit(),
+        compound_unit(&f, &[(f.m, "2")]).id().unwrap()
+    );
     let mut expected = vec![ChargePoint::UnitIdentityRead; 2];
     expected.extend([ChargePoint::UnitEdge; 2]);
     expected.extend([ChargePoint::UnitRationalArithmetic; 5]);
@@ -2610,7 +2636,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     canonical.1 * target_offset.1,
                 );
                 let expected = reduce(lifted.0 * target_scale.1, lifted.1 * target_scale.0);
-                let quantity = Quantity::new(as_rational(value), declared(*source).id());
+                let quantity = Quantity::new(as_rational(value), declared(*source).id().unwrap());
                 let at = |quantity| units.resolve(quantity).expect("a declared unit");
                 let mut meter = unlimited();
                 let Outcome::Completed(conversion) = convert_quantity(
@@ -2668,7 +2694,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                 }
 
                 // Arithmetic in the source unit.
-                let other = Quantity::new(whole(3), declared(*source).id());
+                let other = Quantity::new(whole(3), declared(*source).id().unwrap());
                 let sum = evaluate_quantity(
                     QuantityOperation::Add(at(&quantity), at(&other)),
                     &mut unlimited(),
@@ -2698,6 +2724,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                         .compound_unit(compound(&[(root, "2")]).terms())
                         .unwrap()
                         .id()
+                        .unwrap()
                 );
             }
         }

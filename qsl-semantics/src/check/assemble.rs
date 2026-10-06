@@ -69,7 +69,7 @@ use crate::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use crate::value::environment_stage::stage_limit;
-use crate::value::semantic_node::OwnerSelection;
+use crate::value::semantic_node::{NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
@@ -174,6 +174,15 @@ pub enum AssemblyCause {
     /// Admitting the unit's records and tuples reached a
     /// `TypeEnvironmentLimits` ceiling (FR-082, ADR-014 B-3).
     TypeLimit(LimitExceeded),
+    /// A nominal preimage's identity encoding reached the
+    /// `identity.input_bytes` limit (FR-259 Behavior 4).
+    IdentityLimit(LimitExceeded),
+    /// A heap reservation for a nominal preimage's canonical bytes failed
+    /// (FR-259 Behavior 6): `resource_exhausted`/`allocation-failed`.
+    IdentityAllocation {
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
@@ -331,8 +340,19 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownDeclaration(_)
                 | DeclarationCause::UnknownObjectType(_) => Code::RuntimeInvariant,
             },
-            Self::TypeLimit(_) => Code::StageLimitExceeded,
+            Self::TypeLimit(_) | Self::IdentityLimit(_) => Code::StageLimitExceeded,
+            Self::IdentityAllocation { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
+        }
+    }
+
+    /// The cause of a refused nominal admission: a reached identity byte
+    /// limit, or a broken invariant of `check`.
+    pub(crate) fn nominal(refusal: NominalRefusal) -> Self {
+        match refusal {
+            NominalRefusal::Graph(invalid) => Self::NominalAdmission(invalid),
+            NominalRefusal::Limit(limit) => Self::IdentityLimit(limit),
+            NominalRefusal::Allocation { requested } => Self::IdentityAllocation { requested },
         }
     }
 
@@ -376,7 +396,8 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownDeclaration(_)
                 | DeclarationCause::UnknownObjectType(_) => "established-invariant-broken",
             },
-            Self::TypeLimit(limit) => limit.kind().catalog_cause(),
+            Self::TypeLimit(limit) | Self::IdentityLimit(limit) => limit.kind().catalog_cause(),
+            Self::IdentityAllocation { .. } => "allocation-failed",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
         };
         CatalogCode::new(self.code().as_str(), cause)
@@ -1036,7 +1057,7 @@ fn admit_enum(
     form: &EnumForm,
     owner: &SourceOwner,
     owners: &OwnerSelection,
-) -> Result<EnumBinding, InvalidSemanticGraph> {
+) -> Result<EnumBinding, NominalRefusal> {
     let mut cases: Vec<String> = form
         .members
         .iter()
@@ -1417,7 +1438,7 @@ impl PackageDeclarations {
                     enums.push(binding);
                 }
                 Err(refusal) => errors.push(AssemblyError {
-                    cause: AssemblyCause::NominalAdmission(refusal),
+                    cause: AssemblyCause::nominal(refusal),
                     span: enumeration.name.span,
                 }),
             }

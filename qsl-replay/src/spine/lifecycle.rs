@@ -106,9 +106,11 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::ModelRefusalCause;
+use qsl_semantics::value::identity_limit;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
+use quire_semantic_value::semantic_node::IdentityRefusal;
 
-use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits};
+use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary};
 
 /// What a front-end operation returns when it produces no output: the
 /// stage's refusal, a reached limit, a cancellation or a fault.
@@ -189,17 +191,26 @@ fn limit_of(
                     source_len(&diagnostic.source).unwrap_or(bound + 1),
                     LimitsField::SourceBytes,
                 ),
-                SyntaxLimit::Tokens { bound } => {
-                    (FoundationKind::TokenCount, bound, bound + 1, LimitsField::SourceTokens)
-                }
-                SyntaxLimit::Nodes { bound } => {
-                    (FoundationKind::NodeCount, bound, bound + 1, LimitsField::SourceNodes)
-                }
+                SyntaxLimit::Tokens { bound } => (
+                    FoundationKind::TokenCount,
+                    bound,
+                    bound + 1,
+                    LimitsField::SourceTokens,
+                ),
+                SyntaxLimit::Nodes { bound } => (
+                    FoundationKind::NodeCount,
+                    bound,
+                    bound + 1,
+                    LimitsField::SourceNodes,
+                ),
                 // Bound and counter are both in parser steps: the unit's total
                 // step budget, which `source.work_units` sets per token.
-                SyntaxLimit::Work { bound } => {
-                    (FoundationKind::WorkBudget, bound, bound + 1, LimitsField::SourceWorkUnits)
-                }
+                SyntaxLimit::Work { bound } => (
+                    FoundationKind::WorkBudget,
+                    bound,
+                    bound + 1,
+                    LimitsField::SourceWorkUnits,
+                ),
             };
             let limit = LimitExceeded::new(
                 kind,
@@ -212,43 +223,48 @@ fn limit_of(
         CompileRefusal::Intake { refusal, region } => {
             let incomplete = match &refusal.cause {
                 UnitIntakeCause::Limit(incomplete) => incomplete,
-                // The two ceilings normalization reads rather than charges
-                // refuse as model causes; the counter is the first value
-                // past the bound.
+                // The two edge ceilings refuse as model causes; the
+                // counter is the edge count the denied charge would have
+                // reached, the first value past the bound.
                 UnitIntakeCause::Refused(refusals) => {
                     let (kind, bound, field) =
-                        refusals
-                            .iter()
-                            .find_map(|refusal| match refusal.cause {
-                                ModelRefusalCause::AncestorSteps { limit, .. } => Some((
-                                    FoundationKind::NodeCount,
-                                    limit,
-                                    LimitsField::ModelAncestorSteps,
-                                )),
-                                ModelRefusalCause::FamilySteps { limit, .. } => Some((
-                                    FoundationKind::EdgeCount,
-                                    limit,
-                                    LimitsField::ModelFamilySteps,
-                                )),
-                                _ => None,
-                            })?;
+                        refusals.iter().find_map(|refusal| match refusal.cause {
+                            ModelRefusalCause::AncestorSteps { limit, .. } => Some((
+                                FoundationKind::EdgeCount,
+                                limit,
+                                LimitsField::ModelAncestorSteps,
+                            )),
+                            ModelRefusalCause::FamilySteps { limit, .. } => Some((
+                                FoundationKind::EdgeCount,
+                                limit,
+                                LimitsField::ModelFamilySteps,
+                            )),
+                            _ => None,
+                        })?;
                     let limit = LimitExceeded::new(kind, bound, u128::from(bound) + 1).named(field);
                     return Some(at(limit, region.as_ref()));
                 }
                 _ => return None,
             };
             let (kind, field) = match incomplete.limit_kind {
-                ModelKind::DeclarationRecords => {
-                    (FoundationKind::OccurrenceCount, LimitsField::ModelDeclarationRecords)
+                ModelKind::DeclarationRecords => (
+                    FoundationKind::OccurrenceCount,
+                    LimitsField::ModelDeclarationRecords,
+                ),
+                ModelKind::DerivationFacts => {
+                    (FoundationKind::EdgeCount, LimitsField::ModelDerivationFacts)
                 }
-                ModelKind::DerivationFacts => (FoundationKind::EdgeCount, LimitsField::ModelDerivationFacts),
-                ModelKind::EffectiveDeclarations => {
-                    (FoundationKind::NodeCount, LimitsField::ModelEffectiveDeclarations)
+                ModelKind::EffectiveDeclarations => (
+                    FoundationKind::NodeCount,
+                    LimitsField::ModelEffectiveDeclarations,
+                ),
+                ModelKind::DispatchCandidates => (
+                    FoundationKind::EdgeCount,
+                    LimitsField::ModelDispatchCandidates,
+                ),
+                ModelKind::HashedBytes => {
+                    (FoundationKind::InputBytes, LimitsField::ModelHashedBytes)
                 }
-                ModelKind::DispatchCandidates => {
-                    (FoundationKind::EdgeCount, LimitsField::ModelDispatchCandidates)
-                }
-                ModelKind::HashedBytes => (FoundationKind::InputBytes, LimitsField::ModelHashedBytes),
                 ModelKind::WorkUnits => (FoundationKind::WorkBudget, LimitsField::ModelWorkUnits),
             };
             let limit = LimitExceeded::new(
@@ -260,6 +276,16 @@ fn limit_of(
             Some(at(limit, region.as_ref()))
         }
         CompileRefusal::Check { refusals, region } => {
+            if let Some((bound, required)) =
+                refusals.iter().find_map(|refusal| match refusal.cause {
+                    CheckCause::Identity(IdentityRefusal::InputBytes { bound, required }) => {
+                        Some((bound, required))
+                    }
+                    _ => None,
+                })
+            {
+                return Some(at(identity_limit(bound, required), region.as_ref()));
+            }
             let cause = refusals.iter().find_map(|refusal| match &refusal.cause {
                 CheckCause::ResourceExhausted(cause) => Some(cause),
                 _ => None,
@@ -282,19 +308,24 @@ fn limit_of(
         CompileRefusal::Assembly { refusal, .. } => {
             refusal.errors.iter().find_map(|error| match &error.cause {
                 AssemblyCause::TypeLimit(limit) => Some(match limit.kind() {
-                    FoundationKind::NodeCount => limit.clone().named(LimitsField::EnvironmentAncestorSteps),
+                    FoundationKind::EdgeCount => {
+                        limit.clone().named(LimitsField::EnvironmentAncestorSteps)
+                    }
                     _ => limit.clone().named(LimitsField::EnvironmentWorkUnits),
                 }),
+                AssemblyCause::IdentityLimit(limit) => Some(limit.clone()),
                 _ => None,
             })
         }
+        CompileRefusal::Import {
+            refusal: ImportRefusal::Limit(limit),
+            region,
+        } => Some(at(limit.clone(), region.as_ref())),
         CompileRefusal::Dependency { refusal, .. } => limit_of(refusal, source_len),
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
         | CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
-        // The dependency depth stays the import refusal of ADR-015 D-1,
-        // which names the chain that nests too deep.
         | CompileRefusal::Import { .. }
         | CompileRefusal::Link(_)
         | CompileRefusal::Emit(_)
@@ -527,6 +558,8 @@ pub fn check(
             cancel,
             active: Vec::new(),
             compiled: BTreeMap::new(),
+            import_edges: 0,
+            source_bytes: 0,
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
@@ -759,6 +792,12 @@ struct Resolution<'a> {
     /// once per compile, so the number of library compiles is at most the
     /// number of supplied libraries.
     compiled: BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+    /// The imports resolved so far across the closure
+    /// (`dependency.import_edges`).
+    import_edges: usize,
+    /// The summed input bytes of the library sources compiled so far
+    /// (`dependency.source_bytes`).
+    source_bytes: usize,
     /// IR's admitted package of each library read so far, which a later
     /// library's view read takes for its closure instead of reading again.
     admitted: AdmittedPackages,
@@ -767,17 +806,101 @@ struct Resolution<'a> {
     work: StageWork,
 }
 
-impl Resolution<'_> {
-    /// One library through S1 to E4, resolving its own imports depth first.
-    fn compile_library(
+/// One unit whose imports the resolution is walking: the unit itself, or a
+/// library whose compile is in progress.
+struct Frame {
+    raw: RawSourceRef,
+    unit: ParsedUnit,
+    models: Vec<SelectedModel>,
+    lock: LockEvidence,
+    /// The index of the import being resolved.
+    next: usize,
+    admitted: Vec<AdmittedImport>,
+    links: Vec<Import>,
+}
+
+impl Frame {
+    fn new(parsed: &ParsedSource, models: Vec<SelectedModel>, lock: LockEvidence) -> Self {
+        let imports = parsed.unit.selections().imports.len();
+        Self {
+            raw: parsed.source().reference().clone(),
+            unit: parsed.unit.clone(),
+            models,
+            lock,
+            next: 0,
+            admitted: Vec::with_capacity(imports),
+            links: Vec::with_capacity(imports),
+        }
+    }
+
+    /// Records the resolved `library` for the import being resolved and
+    /// moves to the next import.
+    fn push_import(&mut self, identity: LibraryName, library: &ResolvedLibrary) {
+        self.admitted.push(AdmittedImport {
+            identity: identity.clone(),
+            view: library.view.clone(),
+            graph: library.package.shared_graph(),
+        });
+        self.links.push(Import {
+            identity,
+            package: Arc::clone(&library.package),
+        });
+        self.next += 1;
+    }
+}
+
+/// A library whose compile is in progress on the resolution's stack.
+struct Library {
+    identity: LibraryName,
+    /// This library's own source, exactly as its own `qsl_cst::parse` read
+    /// it (FND-016).
+    source: Source,
+    frame: Frame,
+}
+
+/// What ADR-015 D-1's steps 1 to 3 decide for one import.
+enum Selected<'a> {
+    /// A library compiled earlier in this closure, reused.
+    Reused(LibraryName, Arc<ResolvedLibrary>),
+    /// The supplied library to compile.
+    Compile(LibraryName, &'a SuppliedLibrary),
+}
+
+/// The frame the walk is in: the innermost library, or the unit itself when
+/// no library compile is in progress.
+fn current<'a>(root: &'a mut Frame, libraries: &'a mut [Library]) -> &'a mut Frame {
+    match libraries.last_mut() {
+        Some(library) => &mut library.frame,
+        None => root,
+    }
+}
+
+/// `refusal`, raised while the libraries on the stack are being compiled, as
+/// the unit reports it: wrapped under each library's dependency path,
+/// innermost first (ADR-015 D-1).
+fn unwind(libraries: &[Library], refusal: Box<CompileRefusal>) -> Box<CompileRefusal> {
+    libraries
+        .iter()
+        .rev()
+        .fold(refusal, |refusal, library| wrap(&library.identity, refusal))
+}
+
+impl<'a> Resolution<'a> {
+    /// One library through S1 and I1, ready to resolve its own imports.
+    fn begin_library(
         &mut self,
-        source: SourceIdentity,
-        path: &str,
-        bytes: &[u8],
-    ) -> Result<(pkg::CheckedPackage, Emission, Source), Box<CompileRefusal>> {
+        identity: LibraryName,
+        supplied: &SuppliedLibrary,
+    ) -> Result<Library, Box<CompileRefusal>> {
         let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
         let parsed = charged(cancel, &mut self.work.s1, || {
-            parse_unit(source, path, bytes, limits.source, cancel)
+            parse_unit(
+                supplied.source.clone(),
+                &supplied.path,
+                &supplied.bytes,
+                limits.source,
+                cancel,
+            )
         })?;
         let models = charged(cancel, &mut self.work.i1, || {
             select_models(&parsed, packages, limits.model, cancel)
@@ -785,35 +908,24 @@ impl Resolution<'_> {
         // A library is compiled independently of whoever imports it, so its
         // recomputed `package_id` cannot depend on the importer: it is
         // checked under the default lock evidence, never the importer's.
-        let package = self.check_unit(&parsed, models, &LockEvidence::default())?;
-        let emission = charged(cancel, &mut self.work.e4, || emit_unit(&package, cancel))?;
-        Ok((package, emission, parsed.source().clone()))
+        Ok(Library {
+            identity,
+            source: parsed.source().clone(),
+            frame: Frame::new(&parsed, models, LockEvidence::default()),
+        })
     }
 
-    /// One parsed unit through S3 and S4, resolving its imports depth first.
-    fn check_unit(
+    /// One unit through S3 and S4 once its imports are resolved.
+    fn finish_unit(
         &mut self,
-        parsed: &ParsedSource,
-        models: Vec<SelectedModel>,
-        lock: &LockEvidence,
+        frame: &mut Frame,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let limits = self.limits;
-        let raw = parsed.source().reference().clone();
-        let unit = parsed.unit.clone();
-        let mut admitted = Vec::with_capacity(unit.selections().imports.len());
-        let mut links = Vec::with_capacity(unit.selections().imports.len());
-        for import in &unit.selections().imports {
-            let (identity, library) = self.resolve(&raw, import)?;
-            admitted.push(AdmittedImport {
-                identity: identity.clone(),
-                view: library.view.clone(),
-                graph: library.package.shared_graph(),
-            });
-            links.push(Import {
-                identity,
-                package: Arc::clone(&library.package),
-            });
-        }
+        let raw = frame.raw.clone();
+        let unit = frame.unit.clone();
+        let models = std::mem::take(&mut frame.models);
+        let admitted = std::mem::take(&mut frame.admitted);
+        let links = std::mem::take(&mut frame.links);
         resolve_profiles(&unit.selections().profiles).map_err(|refusals| {
             Box::new(CompileRefusal::Profile {
                 region: refusals
@@ -848,7 +960,7 @@ impl Resolution<'_> {
                 refusal,
             })
         })?;
-        declarations.lock_evidence = lock.clone();
+        declarations.lock_evidence = frame.lock.clone();
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
             declarations.check_with_cancel(limits.checking, cancel)
@@ -867,16 +979,125 @@ impl Resolution<'_> {
         .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))
     }
 
+    /// One parsed unit through S3 and S4, resolving its imports depth first
+    /// over an explicit stack of the library compiles in progress, so a
+    /// dependency chain of any length compiles on a constant native stack
+    /// (ADR-030 D-1).
+    fn check_unit(
+        &mut self,
+        parsed: &ParsedSource,
+        models: Vec<SelectedModel>,
+        lock: &LockEvidence,
+    ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
+        let mut root = Frame::new(parsed, models, lock.clone());
+        let mut libraries: Vec<Library> = Vec::new();
+        loop {
+            let frame = current(&mut root, &mut libraries);
+            if let Some(import) = frame.unit.selections().imports.get(frame.next).cloned() {
+                let raw = frame.raw.clone();
+                match self
+                    .select_import(&raw, &import)
+                    .map_err(|refusal| unwind(&libraries, refusal))?
+                {
+                    Selected::Reused(identity, library) => {
+                        current(&mut root, &mut libraries).push_import(identity, &library);
+                    }
+                    Selected::Compile(identity, supplied) => {
+                        // 4. Compile, by this same resolution.
+                        let library = self
+                            .begin_library(identity.clone(), supplied)
+                            .map_err(|refusal| unwind(&libraries, wrap(&identity, refusal)))?;
+                        self.active.push(identity);
+                        libraries.push(library);
+                    }
+                }
+                continue;
+            }
+            let package = self
+                .finish_unit(frame)
+                .map_err(|refusal| unwind(&libraries, refusal))?;
+            if libraries.is_empty() {
+                return Ok(package);
+            }
+            let cancel = self.cancel;
+            let emission = charged(cancel, &mut self.work.e4, || emit_unit(&package, cancel))
+                .map_err(|refusal| unwind(&libraries, refusal))?;
+            let Some(done) = libraries.pop() else {
+                return Ok(package);
+            };
+            self.active.pop();
+            // 5. View, in the importing unit's context.
+            let parent = current(&mut root, &mut libraries);
+            let at_import = parent
+                .unit
+                .selections()
+                .imports
+                .get(parent.next)
+                .and_then(|import| region(&parent.raw, import.span));
+            let view = read_import_view(
+                &package,
+                &emission,
+                done.identity.clone(),
+                self.packages,
+                &mut self.admitted,
+            )
+            .map_err(|refusal| {
+                unwind(
+                    &libraries,
+                    Box::new(CompileRefusal::Import {
+                        refusal: ImportRefusal::View {
+                            identity: done.identity.clone(),
+                            refusal: Box::new(refusal),
+                        },
+                        region: at_import,
+                    }),
+                )
+            })?;
+            let library = Arc::new(ResolvedLibrary {
+                package: Arc::new(package),
+                view,
+                source: done.source,
+            });
+            self.compiled
+                .insert(done.identity.clone(), Arc::clone(&library));
+            current(&mut root, &mut libraries).push_import(done.identity, &library);
+        }
+    }
+
     /// ADR-015 D-1's steps for one `import` of the unit `raw` names:
-    /// cycle, reuse, selection, compile, view.
-    fn resolve(
+    /// cycle, reuse, selection.
+    fn select_import(
         &mut self,
         raw: &RawSourceRef,
         import: &ImportSelection,
-    ) -> Result<(LibraryName, Arc<ResolvedLibrary>), Box<CompileRefusal>> {
+    ) -> Result<Selected<'a>, Box<CompileRefusal>> {
         let at_identity = || region(raw, import.identity_span);
-        let at_import = || region(raw, import.span);
         let refuse = |refusal, region| Box::new(CompileRefusal::Import { refusal, region });
+        let limits = self.limits.dependencies;
+        let reached = |kind, bound: usize, actual: usize, field| {
+            refuse(
+                ImportRefusal::Limit(
+                    LimitExceeded::new(
+                        kind,
+                        u64::try_from(bound).unwrap_or(u64::MAX),
+                        u128::try_from(actual).unwrap_or(u128::MAX),
+                    )
+                    .named(field),
+                ),
+                at_identity(),
+            )
+        };
+        // Each import resolved is one edge of the import graph, charged
+        // before it is resolved.
+        self.import_edges = self.import_edges.saturating_add(1);
+        if self.import_edges > limits.import_edges {
+            return Err(reached(
+                FoundationKind::EdgeCount,
+                limits.import_edges,
+                self.import_edges,
+                LimitsField::DependencyImportEdges,
+            ));
+        }
         // The parser admits no empty identity.
         let Ok(identity) = LibraryName::new(import.identity.as_str()) else {
             return Err(refuse(ImportRefusal::UnnamedImport, at_identity()));
@@ -890,7 +1111,7 @@ impl Resolution<'_> {
         // 2. A library compiled earlier in this closure is reused: one
         // supplied library per identity makes every import of it the same.
         if let Some(library) = self.compiled.get(&identity) {
-            return Ok((identity, Arc::clone(library)));
+            return Ok(Selected::Reused(identity, Arc::clone(library)));
         }
         // 3. Selection, by identity alone.
         let dependencies = self.dependencies;
@@ -900,48 +1121,32 @@ impl Resolution<'_> {
                 at_identity(),
             ));
         };
-        // 4. Compile, by this same resolution, within the depth ceiling.
-        if self.active.len() >= self.limits.dependencies.depth {
-            let mut path = self.active.clone();
-            path.push(identity);
-            return Err(refuse(
-                ImportRefusal::DepthLimit {
-                    limit: self.limits.dependencies.depth,
-                    path,
-                },
-                at_identity(),
+        // A library compile is one node of the closure, and its source's
+        // bytes are summed, each charged before the compile starts.
+        let libraries = self
+            .compiled
+            .len()
+            .saturating_add(self.active.len())
+            .saturating_add(1);
+        if libraries > limits.libraries {
+            return Err(reached(
+                FoundationKind::NodeCount,
+                limits.libraries,
+                libraries,
+                LimitsField::DependencyLibraries,
             ));
         }
-        self.active.push(identity.clone());
-        let compiled =
-            self.compile_library(supplied.source.clone(), &supplied.path, &supplied.bytes);
-        self.active.pop();
-        let (package, emission, library_source) =
-            compiled.map_err(|refusal| wrap(&identity, refusal))?;
-        // 5. View.
-        let view = read_import_view(
-            &package,
-            &emission,
-            identity.clone(),
-            self.packages,
-            &mut self.admitted,
-        )
-        .map_err(|refusal| {
-            refuse(
-                ImportRefusal::View {
-                    identity: identity.clone(),
-                    refusal: Box::new(refusal),
-                },
-                at_import(),
-            )
-        })?;
-        let library = Arc::new(ResolvedLibrary {
-            package: Arc::new(package),
-            view,
-            source: library_source,
-        });
-        self.compiled.insert(identity.clone(), Arc::clone(&library));
-        Ok((identity, library))
+        let source_bytes = self.source_bytes.saturating_add(supplied.bytes.len());
+        if source_bytes > limits.source_bytes {
+            return Err(reached(
+                FoundationKind::InputBytes,
+                limits.source_bytes,
+                source_bytes,
+                LimitsField::DependencySourceBytes,
+            ));
+        }
+        self.source_bytes = source_bytes;
+        Ok(Selected::Compile(identity, supplied))
     }
 }
 

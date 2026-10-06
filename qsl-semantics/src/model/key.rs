@@ -12,11 +12,22 @@
 use std::sync::Arc;
 
 use qsl_foundation::ByteDigest;
-use quire_canonical::{Encode, FixedShape};
+use quire_canonical::{Encode, FixedShape, Limits};
 use serde::Serialize;
 
 use crate::model::refusal::ModelRefusalCause;
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
+
+/// The model stage's identity encoding limits: no byte bound of their own.
+/// Normalization applies its own byte budget instead (FR-259 Behavior 3):
+/// each effective-declaration, object-universe and effective-view
+/// preimage's canonical length is charged to `model.hashed_bytes` before it
+/// is hashed, which refuses as that named stage limit. The population-id
+/// preimage (`population::mint_population_id`) is not charged: it holds one
+/// domain package header, one declaration key and a role name, each a field
+/// of a domain package that intake's `intake.input_bytes` already bounded.
+/// A bound here could only turn a preimage the stage admits into a refusal
+/// with no setting to raise.
+const LIMITS: Limits = Limits::new(u64::MAX);
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
 /// domain `quire.model.effective-declaration/v1`, minted only through
@@ -500,7 +511,8 @@ pub fn hex(bytes: &[u8]) -> String {
 /// Every preimage this module and `normalize`/`population` hand here is a
 /// fixed-shape typed view of strings, `null`s, arrays and objects with fixed
 /// ASCII member names: it has an RFC 8785 encoding, and [`LIMITS`] sets no
-/// byte ceiling. The one refusal left is a
+/// byte ceiling (the stage's byte budget is `model.hashed_bytes`). The one
+/// refusal left is a
 /// failed heap reservation for an object's buffered members, which the
 /// `serde_json` encoder this replaced aborted the process on; this panics
 /// with the encoder's reason instead.

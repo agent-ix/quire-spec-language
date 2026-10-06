@@ -144,7 +144,7 @@ denied charge settles `Incomplete` with `resource_exhausted` wherever they run
 §1, NFR-012). The expression checker's type-environment admission below reads
 its own check-stage limits type, `TypeEnvironmentLimits`, whose limits are
 stage limits (ADR-014 B-3, FR-096): `ancestor_steps`, setting
-`types.ancestor_steps`, and `work_units`, setting `types.work_units`, each
+`environment.ancestor_steps`, and `work_units`, setting `environment.work_units`, each
 with a published default of 16777216 and no ceiling (FR-255). When a type's ancestor closure would
 follow more `supertypes` edges than its `ancestor_steps` limit, the
 expression checker SHALL return `StageFailure::Limit(LimitExceeded)` with

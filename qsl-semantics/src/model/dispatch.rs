@@ -156,47 +156,85 @@ pub enum LinkCheckOutcome {
     OpenClosure(UnclosedMethodSet),
 }
 
+/// The `family_steps` count of one dispatch-family link: every `redefines`
+/// edge the link's walks follow, the family enumeration and each
+/// effective-precondition walk up a linked candidate's chain, together.
+///
+/// The ceiling is the caller's `family_steps`
+/// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]),
+/// used as given. Each distinct edge, keyed by the redefining member whose
+/// `redefines` it is, is charged once, before the walk follows it, however
+/// many walks follow it. The count is of edges, never of chain depth.
+/// Following one edge more than the ceiling refuses
+/// [`ModelRefusalCause::FamilySteps`] naming `original` and the ceiling; the
+/// family is never truncated.
+pub(crate) struct FamilySteps<'a> {
+    original: &'a DeclarationKey,
+    limit: u64,
+    followed: HashSet<DeclarationKey>,
+}
+
+impl<'a> FamilySteps<'a> {
+    /// A fresh count for the link of `original` under `limit`.
+    pub(crate) fn new(original: &'a DeclarationKey, limit: u64) -> Self {
+        Self {
+            original,
+            limit,
+            followed: HashSet::new(),
+        }
+    }
+
+    /// Charges the `redefines` edge of `redefining` before a walk follows it.
+    pub(crate) fn charge(&mut self, redefining: &DeclarationKey) -> Result<(), ModelRefusal> {
+        if self.followed.contains(redefining) {
+            return Ok(());
+        }
+        if u64::try_from(self.followed.len()).map_or(true, |count| count >= self.limit) {
+            return Err(self.exceeded());
+        }
+        self.followed.insert(redefining.clone());
+        Ok(())
+    }
+
+    /// The refusal for a walk that cannot finish under the ceiling.
+    pub(crate) fn exceeded(&self) -> ModelRefusal {
+        ModelRefusal {
+            code: Code::ResourceExhausted,
+            cause: ModelRefusalCause::FamilySteps {
+                original: self.original.clone(),
+                limit: self.limit,
+            },
+            detail: format!(
+                "dispatch family for {} exceeded the family_steps limit of {}",
+                self.original.node, self.limit
+            ),
+        }
+    }
+}
+
 /// The family of `original`: `original` itself together with every
 /// redefining operation reaching it, by any chain of members' own inline
 /// `redefines` property (`model-complete.md`:162), sorted ascending by
 /// [`DeclarationKey`] for deterministic reporting. Bounded task stack, never
-/// native recursion, over the domain package's own operation members.
-/// `max_steps` is the caller's `family_steps` ceiling
-/// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]),
-/// used as given: it bounds how many `redefines` edges the walk follows into
-/// the family, one per redefiner admitted, so a linear chain of `n`
-/// redefinitions below `original` is admitted at `max_steps == n`. Following
-/// one more refuses with [`ModelRefusalCause::FamilySteps`] naming
-/// `original` and `max_steps`; the family is never truncated.
+/// native recursion, over the domain package's own operation members. Each
+/// `redefines` edge the walk follows into the family is charged to `steps`
+/// before it is followed, one per redefiner admitted, so a linear chain of
+/// `n` redefinitions below `original` costs `n` edges.
 fn build_family(
     index: &ModelIndex,
     original: &DeclarationKey,
-    max_steps: u64,
+    steps: &mut FamilySteps<'_>,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let mut family = vec![original.clone()];
     let mut frontier: Vec<DeclarationKey> = vec![original.clone()];
     let mut visited: HashSet<DeclarationKey> = HashSet::new();
     visited.insert(original.clone());
-    let mut steps: u64 = 0;
     while let Some(target) = frontier.pop() {
         for operation in index.operations() {
             if operation.redefines.as_ref() == Some(&target)
                 && visited.insert(operation.key.clone())
             {
-                if steps >= max_steps {
-                    return Err(ModelRefusal {
-                        code: Code::ResourceExhausted,
-                        cause: ModelRefusalCause::FamilySteps {
-                            original: original.clone(),
-                            limit: max_steps,
-                        },
-                        detail: format!(
-                            "dispatch family for {} exceeded the family_steps limit of {max_steps}",
-                            original.node
-                        ),
-                    });
-                }
-                steps += 1;
+                steps.charge(&operation.key)?;
                 family.push(operation.key.clone());
                 frontier.push(operation.key.clone());
             }
@@ -232,6 +270,20 @@ pub fn link_dispatch(
     closure: GeneralizationClosure,
     meter: &mut Meter,
 ) -> LinkCheckOutcome {
+    let mut steps = FamilySteps::new(original, meter.limits().family_steps);
+    link_dispatch_counted(view, original, closure, meter, &mut steps)
+}
+
+/// [`link_dispatch`] charging its family walk to `steps`, so a caller that
+/// walks the family's `redefines` edges again shares one `family_steps`
+/// count with the link.
+pub(crate) fn link_dispatch_counted(
+    view: &EffectiveView,
+    original: &DeclarationKey,
+    closure: GeneralizationClosure,
+    meter: &mut Meter,
+    steps: &mut FamilySteps<'_>,
+) -> LinkCheckOutcome {
     if matches!(closure, GeneralizationClosure::Open) {
         return LinkCheckOutcome::OpenClosure(UnclosedMethodSet {
             code: Code::IncompletePopulation,
@@ -252,7 +304,7 @@ pub fn link_dispatch(
     };
     let receiver_type = receiver_operation.owner.clone();
 
-    let family = match build_family(index, original, meter.limits().family_steps) {
+    let family = match build_family(index, original, steps) {
         Ok(family) => family,
         Err(refusal) => return LinkCheckOutcome::Refused(refusal),
     };
