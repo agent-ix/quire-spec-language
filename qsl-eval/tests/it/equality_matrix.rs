@@ -9,6 +9,7 @@
 //! expression checker and evaluator, as do the scalar operator rows.
 
 use std::cell::Cell;
+use std::num::NonZeroU64;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
@@ -1340,7 +1341,10 @@ fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
         assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 17);
 
         let denied = |point, occurrence| {
-            Meter::new(E21).with_injected_denial(InjectedDenial { point, occurrence })
+            Meter::new(E21).with_injected_denial(InjectedDenial {
+                point,
+                occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
+            })
         };
         assert_eq!(
             checked.evaluate(&left, &right, &mut denied(ChargePoint::EqualityPair, 17)),

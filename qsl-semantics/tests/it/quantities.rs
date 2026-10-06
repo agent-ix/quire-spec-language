@@ -35,6 +35,7 @@ use quire_semantic_value::unit::{
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::num::NonZeroU64;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -1201,7 +1202,10 @@ fn u10_exact_bound_accounting_and_named_denials() {
                 1
             }
         };
-        let mut denied = Meter::new(U10).with_injected_denial(InjectedDenial { point, occurrence });
+        let mut denied = Meter::new(U10).with_injected_denial(InjectedDenial {
+            point,
+            occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
+        });
         assert_eq!(
             run(&mut denied),
             Outcome::Incomplete(Incomplete {
@@ -2673,7 +2677,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                         u64::try_from(seen.iter().filter(|p| *p == point).count()).unwrap();
                     let mut denied = unlimited().with_injected_denial(InjectedDenial {
                         point: *point,
-                        occurrence,
+                        occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
                     });
                     assert_eq!(
                         converted(

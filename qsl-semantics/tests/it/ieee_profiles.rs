@@ -10,6 +10,7 @@
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
@@ -180,7 +181,7 @@ fn compare(comparison: IeeeComparison, left: IeeeValue, right: IeeeValue) -> boo
 fn injected(point: ChargePoint) -> Meter {
     Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
         point,
-        occurrence: 1,
+        occurrence: NonZeroU64::MIN,
     })
 }
 
@@ -570,7 +571,7 @@ fn f17_f18_classified_paths_charge_only_operands_and_retention() {
     for (index, point) in CLASSIFIED_CHARGES.into_iter().enumerate() {
         let mut denied = Meter::new(F17).with_injected_denial(InjectedDenial {
             point,
-            occurrence: 1,
+            occurrence: NonZeroU64::MIN,
         });
         assert_denied(nan_equal(&mut denied), point, index as u64);
     }
@@ -595,7 +596,7 @@ fn f17_f18_classified_paths_charge_only_operands_and_retention() {
     assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
     let mut denied = Meter::new(F17).with_injected_denial(InjectedDenial {
         point: ChargePoint::IeeeResultRetain,
-        occurrence: 1,
+        occurrence: NonZeroU64::MIN,
     });
     assert_denied(
         eval_with(invalid, RoundingMode::NearestEven, &mut denied),
@@ -636,7 +637,7 @@ fn f19_irrational_square_root_charges_the_fixed_width_allowance() {
     for (index, point) in FINITE_CHARGES.into_iter().enumerate() {
         let mut denied = Meter::new(F19).with_injected_denial(InjectedDenial {
             point,
-            occurrence: 1,
+            occurrence: NonZeroU64::MIN,
         });
         assert_denied(
             eval_with(root, RoundingMode::NearestEven, &mut denied),
@@ -662,7 +663,7 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
 
     let mut denied = Meter::new(F10).with_injected_denial(InjectedDenial {
         point: ChargePoint::IeeeResultRetain,
-        occurrence: 1,
+        occurrence: NonZeroU64::MIN,
     });
     assert_denied(
         eval_with(f10, RoundingMode::NearestEven, &mut denied),

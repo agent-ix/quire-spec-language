@@ -161,3 +161,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
 
 [lints.clippy]
 all = "deny"
+
+# Temporary: pins quire-exact at the exact rev of the single-shot denial change.
+# The www host spelling makes this a distinct source from the one it patches (cargo refuses a same-URL patch); remove once that change is on quire-exact main.
+[patch."https://github.com/agent-ix/quire-exact"]
+quire-exact = { git = "https://www.github.com/agent-ix/quire-exact", rev = "13951d6909266bbd1cce82932ba516c738db4460" }

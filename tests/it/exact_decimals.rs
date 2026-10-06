@@ -16,6 +16,7 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits, Undefined,
 };
+use std::num::NonZeroU64;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -313,7 +314,7 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
     for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
         let mut denied = Meter::new(D09).with_injected_denial(InjectedDenial {
             point: *point,
-            occurrence: 1,
+            occurrence: NonZeroU64::MIN,
         });
         assert_eq!(d05(&mut denied), work_denied(work, *point));
         assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
@@ -1196,7 +1197,7 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                             let mut denied =
                                 Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
                                     point: *point,
-                                    occurrence: 1,
+                                    occurrence: NonZeroU64::MIN,
                                 });
                             assert_eq!(
                                 evaluate_decimal(operation, &decimal_type, &mut denied),

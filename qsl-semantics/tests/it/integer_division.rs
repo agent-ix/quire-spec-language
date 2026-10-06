@@ -6,6 +6,7 @@
 //! authored ad hoc.
 
 use std::num::NonZeroU32;
+use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
 use qsl_semantics::value::{
@@ -374,7 +375,7 @@ fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
         for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
             let mut denied = Meter::new(DIV_08).with_injected_denial(InjectedDenial {
                 point: *point,
-                occurrence: 1,
+                occurrence: NonZeroU64::MIN,
             });
             assert_eq!(div_08(member, &mut denied), work_denied(work, *point));
             assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
@@ -420,7 +421,7 @@ fn div_10_mod_charges_only_the_integer_modulus_points() {
     for (work, point) in (0_u64..).zip(points) {
         let mut denied = Meter::new(DIV_10).with_injected_denial(InjectedDenial {
             point,
-            occurrence: 1,
+            occurrence: NonZeroU64::MIN,
         });
         assert_eq!(
             mod_10(&IntegerDomain::Mathematical, &mut denied),
@@ -681,7 +682,7 @@ fn generated_members_match_the_law_oracle_domains_and_every_denial() {
                         let mut denied =
                             Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
                                 point: *point,
-                                occurrence: 1,
+                                occurrence: NonZeroU64::MIN,
                             });
                         assert!(matches!(
                             divide(

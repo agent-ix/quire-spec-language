@@ -15,6 +15,7 @@
 //! as the thing under test through the `Frame` selection.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
@@ -3199,7 +3200,7 @@ fn tc466_step3_reaches_target_true_self_a_target_a_over_the_loop() {
 // result retain. Its five charges are, in order: `graph.expand` occurrence
 // 1, `graph.edge` occurrence 1, `graph.expand` occurrence 2, `graph.edge`
 // occurrence 2, `graph.result-retain` occurrence 1 -- exactly what
-// `quire_exact::InjectedDenial { point, occurrence }` denies.
+// `quire_exact::InjectedDenial { point, occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence") }` denies.
 // ---------------------------------------------------------------------------
 
 /// Evaluates TC-466 step 3(a)'s `ReachesTarget` (`self` `a`, `target` `c`,
@@ -3341,8 +3342,11 @@ fn assert_step3_denial_is_incomplete(point: ChargePoint, occurrence: u64, nth: u
         "the walk's charge {nth} is {:?}, not {point:?}",
         STEP3_CASE_A_GRAPH_CHARGES[nth - 1]
     );
-    let mut meter = Meter::new(default_accounting(1_000_000))
-        .with_injected_denial(InjectedDenial { point, occurrence });
+    let mut meter =
+        Meter::new(default_accounting(1_000_000)).with_injected_denial(InjectedDenial {
+            point,
+            occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
+        });
     let evaluation = evaluate_step3_case_a_with_meter(&mut meter);
     let FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) = evaluation.outcome else {
         panic!(
@@ -3419,7 +3423,7 @@ fn tc466_step3_completes_true_when_the_denied_charge_is_never_made() {
     let mut meter =
         Meter::new(default_accounting(1_000_000)).with_injected_denial(InjectedDenial {
             point: ChargePoint::GraphExpand,
-            occurrence: 3,
+            occurrence: NonZeroU64::new(3).expect("nonzero occurrence"),
         });
     let evaluation = evaluate_step3_case_a_with_meter(&mut meter);
     assert!(
