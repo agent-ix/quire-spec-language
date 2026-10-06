@@ -200,7 +200,7 @@ fn a_directly_negated_two_pow_127_is_one_literal() {
         format!("x >= {I128_MIN}"),
         // Only layout stands between the `-` and the literal.
         format!("x >= - {TWO_POW_127}"),
-        format!("x >= -/* the minimum */{TWO_POW_127}"),
+        format!("x >= -// the minimum\n{TWO_POW_127}"),
     ] {
         let compiled =
             compile(&unit(&parameter, &body)).unwrap_or_else(|refusal| panic!("{body}: {refusal}"));
