@@ -394,7 +394,7 @@ pub fn admit_namespace<'a>(
         exhaustion: None,
         usage: Usage::default(),
         limits: work.limits(),
-        parser_limits: parser_limits,
+        parser_limits,
     };
     if let Err(exhaustion) = establish(&mut report, &mut work) {
         report.exhaustion = Some(exhaustion);
