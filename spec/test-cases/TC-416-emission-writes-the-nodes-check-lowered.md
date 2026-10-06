@@ -24,7 +24,7 @@ the members those fixtures pin. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
-Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-AC-19, FR-093-AC-20, FR-093-CON-2.
+Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-AC-19, FR-093-AC-20, FR-093-AC-21, FR-093-AC-22, FR-093-CON-2.
 
 ## Test Procedure
 
@@ -83,6 +83,27 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     recursive `Tree` of step 6. Read each through QSL's I2 read, and decode
     each checked node's (`node_tag`, `semantic_form`) through IR's node
     kinds (FR-093-AC-19).
+12. Check and emit, under owner (`a`, `u`), `record P { x: Int[0, 9]; }`,
+    the `Tree` of step 6, `ordered enum Status { READY, DONE }` and a
+    declared function over a `Reference<M::Order>` parameter with
+    `acme/orders` admitted (FR-094-AC-1). Build FR-094-AC-5's clause
+    functions with `checked_dispatch_operation` over `acme/orders`'
+    effective view and a test-built `OperationClauses` table, with
+    `RawSourceRef` (`a`, `u`) as the source, then `check` the returned
+    `PackageDeclarations`, `CheckedPackage::link` the graph and
+    `emit_checked` it. That unit's source text holds each clause's text, so
+    each clause function's `generated` occurrence is placed at a region of
+    it; an `UnlocatedOccurrence` refusal fails the step. For every emitted node, read its `owner` and
+    its `identity_projection` entry's `owner`, and compare them with the
+    owner of the node's preimage; recompute each structural key and each
+    group label from the wire node alone with a test-side key function that
+    calls no `qsl-package` function, and read each package with IR's v2
+    reader (FR-093-AC-21).
+13. Check and emit `record Point { x: Integer; }` and
+    `record List { next?: List; }` under (`agent-ix`, `example-a`), then
+    under (`agent-ix`, `example-b`). Compare the two packages' `Point` ids,
+    `List` group labels, `List` group member ids, `Integer` ids and
+    `package_id`s, and read both with IR's v2 reader (FR-093-AC-22).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -134,6 +155,17 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   TC-160's `q` and `t`, over a `metre` unit the fixture unit's own source
   declares, give the `dimension`, `unit` and `compound_unit` rows. No node is
   omitted (FR-093-AC-19).
+- Step 12: a node carries `owner` exactly when its preimage does, equal to
+  its preimage's owner and to its projection entry's. That is the
+  `SourceOwner` (`a`, `u`) on `P`, `Tree` and the declared function, the
+  `ModelOwner` on M1, M5 and the clause functions C1, C2, C4, C5 and C6,
+  and no `owner` on any other node, including the enum declaration and
+  member nodes; every recomputed key
+  equals its `node_id`, the `Tree` label recomputes, and IR admits each
+  package (FR-093-AC-21).
+- Step 13: the `Point` ids differ, the `List` labels and member ids differ,
+  the `Integer` id is equal, the `package_id`s differ, and IR admits both
+  (FR-093-AC-22).
 
 ## Status
 
@@ -157,3 +189,9 @@ compared, and IR's v2 reader admits each emitted package. It compares every
 member including `mode` (`float64.add` under `toward-zero` and `nearest-even`)
 and skips, by name, the fixture identities no row lowers in a
 function body.
+
+Steps 12 and 13 are not implemented yet (QSL-638): the emitter writes no
+`owner` member until IR-646 adds it to `CheckedSemanticNodeV2`. AC-7 is
+unmet as worded until then: step 2's test supplies the owner (`a`, `u`)
+itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
+`owner` member.

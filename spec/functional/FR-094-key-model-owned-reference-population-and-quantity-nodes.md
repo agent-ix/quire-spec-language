@@ -91,7 +91,9 @@ QSpec FR-321), so within one check the owner's (`identity`, `node`) names
 exactly one declaration. The selected package's `sha256-jcs` digest is lock evidence in
 `model_selections`, not owner content, so a change of the domain package
 that leaves a node's content unchanged keys the same model-owned nodes, and a node id depends only
-on content (QSpec FR-322-AC-28).
+on content (QSpec FR-322-AC-28). The v2 emission writes a model-owned node's
+`ModelOwner` as its wire `owner` member (FR-093), so a reader keys the node
+from the node itself.
 
 ### Model declaration nodes
 
