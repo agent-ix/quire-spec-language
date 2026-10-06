@@ -1294,11 +1294,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // compare by value whatever their declared range, so such
                 // a pair compares directly. Only a witnessed value gets
                 // this: any other operand outside its type still faults.
-                let outside_declared_range = |id, value: &Value| match value {
-                    Value::Integer(integer) => {
-                        !node.at(id).value_type().admits(value) && self.is_witnessed(integer)
-                    }
-                    _ => false,
+                let outside_declared_range = |id, value: &Value| {
+                    let Value::Integer(integer) = value else {
+                        return false;
+                    };
+                    !node.at(id).value_type().admits(value) && self.is_witnessed(integer)
                 };
                 match (&left, &right) {
                     (Value::Integer(l), Value::Integer(r))
