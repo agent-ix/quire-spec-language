@@ -62,6 +62,12 @@ fn source_ref(label: &str) -> Value {
     })
 }
 
+/// The `SourceOwner` of a declared node: the lock's one source, `src`
+/// (QSpec FR-322 "Owner member schema").
+fn declared_owner() -> Value {
+    json!({"kind": "source", "authority": "pkg", "identity": "src"})
+}
+
 fn selection(role: &str, label: &str) -> Value {
     json!({"role": role, "definition": artifact_ref(label)})
 }
@@ -95,6 +101,7 @@ fn node_fields(label: &str, export: &str) -> Value {
         "semantic_type": reference,
         "dependencies": [],
         "declaration": {"qualified_name": [export]},
+        "owner": declared_owner(),
         "body": {
             "term": "literal",
             "type": reference,
@@ -2123,6 +2130,7 @@ fn model_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -
         "semantic_form": form,
         "semantic_type": type_ref,
         "declaration": {"qualified_name": [qualified_name]},
+        "owner": declared_owner(),
         "dependencies": [],
         "body": {"term": "aggregate", "members": []},
     })

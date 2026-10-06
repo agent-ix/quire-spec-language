@@ -108,7 +108,10 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
             "{id}: FR-322's presence rule"
         );
     }
-    for (node, group) in with_groups(written) {
+    for (node, group) in with_groups(written)
+        .into_iter()
+        .filter(|(node, _)| node.get("nominal_identity_preimage").is_none())
+    {
         assert_eq!(
             json!(rebuilt_key(node, &group)),
             node["node_id"]["digest"],

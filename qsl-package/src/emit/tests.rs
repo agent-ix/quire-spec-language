@@ -171,8 +171,14 @@ fn tree() -> CheckedPackage {
     )
 }
 
+/// `package` emitted with every occurrence placed at the whole of the unit it
+/// was checked from, so each declared node's regions name its owner's source.
 fn emit(package: &CheckedPackage) -> Emission {
-    emit_package(package, whole_unit).expect("the package emits")
+    let own = package.graph().source().clone();
+    emit_package(package, move |_| {
+        Some(SourceRegion::new(own.clone(), 0, TEXT.len() as u64).unwrap())
+    })
+    .expect("the package emits")
 }
 
 pub(super) fn wire(emission: &Emission) -> Value {
