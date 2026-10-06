@@ -1240,7 +1240,7 @@ fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: 
         .as_array()
         .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
     if selected {
-        evidence.insert_domain_package_document(&digest, &document[..]);
+        evidence.insert_domain_package_document(digest.as_str(), &document[..]);
     }
 }
 
