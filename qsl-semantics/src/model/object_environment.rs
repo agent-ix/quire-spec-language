@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::model::observation::OutOfRange;
 use crate::model::population::PopulationBinding;
-use quire_exact::{Integer, ObjectReference, PopulationId};
+use quire_exact::{ObjectReference, PopulationId};
 use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -82,13 +82,6 @@ impl ObjectEnvironment {
                     attribute.identity() == witnessed.field && attribute.stands_for(field)
                 })
         })
-    }
-
-    /// Whether `value` is one of the witnessed out-of-range integers.
-    pub fn witnesses_integer(&self, value: &Integer) -> bool {
-        self.out_of_range
-            .iter()
-            .any(|witnessed| witnessed.observed == *value)
     }
 
     /// The environment's core object closure.

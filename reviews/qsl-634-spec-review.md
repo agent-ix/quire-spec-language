@@ -34,3 +34,13 @@ the code does not meet in every case.
 | FND-001 | medium | Two FR-122 SHALLs cover the same case and settle it differently. The new bullet says a range violation with a completed value reproduces "whatever the clause evaluated", including `true`. The unchanged next bullet says "If the evaluation completes `true`, then the executor SHALL settle `inconclusive` with cause `Verdicts`", with no exception for a range violation. Fix: qualify the `true` and `false` bullets with "and the post snapshot holds no range violation", or state that the range bullet takes precedence. | spec/functional/FR-122-replay-a-state-clause-counterexample.md:168-181 |
 | FND-002 | medium | FR-122 settles the range violation only "and the evaluation completes a value". The no-value case therefore stays `inconclusive`/`NoValue`, or becomes an `InternalFault` refusal when a typed op faults on the exact value. The QSL-634 ruling makes the out-of-range value itself the witness and settles reproduced/violated, with no condition on the clause's evaluation. This narrows the ruling in the spec without a ruling of its own (see SR-1339 FND-002). | spec/functional/FR-122-replay-a-state-clause-counterexample.md:168-179 |
 | FND-003 | low | FR-106 check 6.5 ends "A clause that reads the field evaluates over the exact integer." That holds for ordering, arithmetic and equality. A clause that passes the field to a typed op that checks its static range (a coercion, or anything still raising `CheckedInvariant`) does not evaluate: it refuses or faults. Either make the statement true or narrow it to what the evaluator actually does. | spec/functional/FR-106-admit-snapshots-and-invocations.md:285 |
+
+## Dispositions
+
+Round 1, reviewed at b2c7911504123cbd65bb139209b9736f9cddf675 (fix commits 9869ac332, 78edbf4b3, b2c791150, rebased onto origin/main; compared by content).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 78edbf4b3 |
+| FND-002 | fixed | 78edbf4b3 |
+| FND-003 | fixed | 78edbf4b3 |

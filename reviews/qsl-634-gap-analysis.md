@@ -45,3 +45,13 @@ can be built the same way.
 | FND-001 | medium | FR-106-AC-12's argument case is not tested. Both unit tests call `admit_scalar` directly with `None`, so they would still pass if `admit_parameters` started passing a witness sink. That is the regression the AC exists to catch. Fix: admit an invocation or `PreCall` whose operation declares an `Int[0, 1000]` parameter with value `-1`, through `admit_parameters` (or full admission), and assert `invalid_runtime_input`/`invalid-value` naming the parameter. Do it under `PostStateRange::Witness` too, to show witnessing never reaches arguments. | qsl-semantics/src/model/observation/document.rs:1912-1937 |
 | FND-002 | low | FR-106-AC-12 says each witnessed value is reported "with its declared range [0, 1000], its object and its field". The TC-465 unit test checks only the range and the value, because `admit_scalar` has no object or field. Object and field are covered only through FR-122-AC-7's replay tests. Either test the object and field through `admit_population_values` under TC-465, or drop them from AC-12 and leave them to FR-122-AC-7. | qsl-semantics/src/model/observation/document.rs:1939-1968 |
 | FND-003 | medium | No test pins the `Refuse` default for the post snapshot. Nothing asserts that `run_clause` (default limits) or a frame run (`post_self` false) over the wrapping-debit invocation still refuses `invalid_runtime_input`/`invalid-value`. FR-106 check 6.5 now states both ("The default is `Refuse`, and a `Frame` run's post snapshot always refuses"), but no AC row or test backs them. Add both to FR-106-AC-12 and test them. | qsl-semantics/src/model/observation.rs:1338-1351 |
+
+## Dispositions
+
+Round 1, reviewed at b2c7911504123cbd65bb139209b9736f9cddf675 (fix commits 9869ac332, 78edbf4b3, b2c791150, rebased onto origin/main; compared by content).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 78edbf4b3 |
+| FND-002 | fixed | 78edbf4b3 |
+| FND-003 | fixed | 9869ac332 |
