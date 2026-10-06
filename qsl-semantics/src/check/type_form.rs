@@ -72,17 +72,6 @@ pub enum I128Limit {
     Max,
 }
 
-impl I128Limit {
-    /// The limit's value as its decimal string (FR-091 "Integer bounds and
-    /// literals up to i128").
-    pub fn decimal(self) -> String {
-        match self {
-            Self::Min => i128::MIN.to_string(),
-            Self::Max => i128::MAX.to_string(),
-        }
-    }
-}
-
 /// FR-091's `IntegerOutsideI128` cause: an integer bound or literal outside
 /// `i128::MIN..=i128::MAX`. The span of the type form or literal is carried
 /// by the refusal that holds this cause.

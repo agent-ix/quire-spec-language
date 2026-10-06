@@ -397,8 +397,8 @@ pub enum ReplaySource {
 
 impl ReplaySource {
     /// This source's measured encoded size: a witness transcript's length,
-    /// or per assignment a 32-byte node id plus its value, which is at most 8
-    /// bytes for a scalar and the byte length of the escaped witness value
+    /// or per assignment a 32-byte node id plus its value, which is 8 bytes
+    /// for a Boolean, 16 for an i128 integer and the byte length of the escaped witness value
     /// text for any other (FR-070).
     pub(crate) fn measured_bytes(&self) -> usize {
         match self {
@@ -407,7 +407,8 @@ impl ReplaySource {
                 .iter()
                 .map(|assignment| {
                     32_usize.saturating_add(match &assignment.value {
-                        WitnessValue::Boolean(_) | WitnessValue::Integer(_) => 8,
+                        WitnessValue::Boolean(_) => 8,
+                        WitnessValue::Integer(_) => 16,
                         other => other.value_text_len(),
                     })
                 })
@@ -714,6 +715,21 @@ mod witness_tests {
             off.decode(&[boolean(flag)]),
             Ok(vec![WitnessValue::Boolean(false)])
         );
+    }
+
+    /// An `Input` assignment is charged its 32-byte node id plus the value:
+    /// 8 bytes for a Boolean and 16 for an i128 integer (FR-070-AC-7).
+    #[trace("TC-209", "FR-070-AC-7")]
+    #[test]
+    fn an_input_integer_is_charged_sixteen_bytes() {
+        let source = |value| {
+            ReplaySource::Input(vec![CanonicalAssignment {
+                parameter: WireNodeId::from_digest([1; 32]),
+                value,
+            }])
+        };
+        assert_eq!(source(WitnessValue::Integer(i128::MIN)).measured_bytes(), 32 + 16);
+        assert_eq!(source(WitnessValue::Boolean(true)).measured_bytes(), 32 + 8);
     }
 
     /// FR-098-AC-4: each join failure refuses with its own typed variant --

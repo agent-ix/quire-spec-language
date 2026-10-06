@@ -27,9 +27,10 @@ impl Counter {
 
 impl From<usize> for Counter {
     fn from(value: usize) -> Self {
-        // `usize` is at most 64 bits on every supported target, so the
-        // fallback never runs.
-        Self(u64::try_from(value).unwrap_or(u64::MAX))
+        const _: () = assert!(usize::BITS <= u64::BITS, "usize must fit u64");
+        // Lossless: the assert above bounds `usize` by 64 bits.
+        #[allow(clippy::cast_possible_truncation)]
+        Self(value as u64)
     }
 }
 

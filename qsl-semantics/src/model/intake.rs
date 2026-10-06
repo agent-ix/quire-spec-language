@@ -4960,6 +4960,90 @@ mod tests {
         );
     }
 
+    /// The package document of FR-056-AC-16's `Wide` scalar type: `min` the
+    /// JSON integer 0 and `max` the raw JSON text `max_json`. Also returns
+    /// the RFC 6901 pointer of the `max` operand.
+    fn wide_document(max_json: &str) -> (Vec<u8>, String) {
+        const SENTINEL: &str = "@@max@@";
+        let constraint = |keyword: &str, value: Value| {
+            serde_json::json!({
+                "identity": format!("ix://acme/orders/Wide/constraints/{keyword}"),
+                "keyword": keyword,
+                "operands": {"value": value},
+                "appliesTo": "ix://quire/native/Integer",
+                "diagnosticCode": format!("bound.{keyword}"),
+                "origin": {"generated": {
+                    "generatorIdentity": "ix://acme/orders/Wide",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://acme/orders/Wide"],
+                }},
+            })
+        };
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "value_type",
+                meaning::VALUE_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Wide",
+                serde_json::json!({"module": "acme/orders", "name": "value_type"}),
+                serde_json::json!({
+                    "scalar": "integer",
+                    "constraints": [
+                        constraint("min", serde_json::json!(0)),
+                        constraint("max", Value::String(SENTINEL.to_owned())),
+                    ],
+                }),
+            )]),
+        );
+        let pointer = "/types/0/constraints/1/operands/value".to_owned();
+        assert_eq!(
+            document.pointer(&pointer),
+            Some(&Value::String(SENTINEL.to_owned())),
+            "the max operand sits where the pointer says"
+        );
+        let text = document
+            .to_string()
+            .replace(&format!("\"{SENTINEL}\""), max_json);
+        (text.into_bytes(), pointer)
+    }
+
+    /// FR-056-AC-16 (TC-911 step 1 and 2), through the package's one parse:
+    /// `Wide` with `max` the string `"18446744073709551615"` admits and reads
+    /// as `[0, 18446744073709551615]`; `max` the JSON number
+    /// `18446744073709551615` refuses `noncanonical_wire`/`inexact-integer`
+    /// at that number's pointer.
+    #[trace("TC-911", "FR-056-AC-16")]
+    #[test]
+    fn a_wide_bound_is_a_decimal_string_and_a_wide_json_number_is_inexact() {
+        let (bytes, _) = wide_document("\"18446744073709551615\"");
+        let records = read_records("acme/orders", &parse_document(&bytes))
+            .expect("Wide with a string bound admits");
+        assert_eq!(
+            records,
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/Wide"),
+                lower: 0,
+                upper: i128::from(u64::MAX),
+            })]
+        );
+
+        let (bytes, pointer) = wide_document("18446744073709551615");
+        let refusal = PackageDocument::parse(&bytes).unwrap_err();
+        assert_eq!(
+            refusal,
+            noncanonical_number(
+                pointer.parse().unwrap(),
+                Inexact::Integer,
+                "18446744073709551615"
+            )
+        );
+        assert_eq!(refusal.code, Code::NoncanonicalWire);
+    }
+
     /// A construct's `meaning` is schema-free text to
     /// `agent-ix-semantic-ir` (`vocabulary.rs`'s `DECLARATION_REQUIRED`
     /// only requires it present and non-empty) -- FR-208's closed

@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify that `Int` ranges up to the i128 extremes key to FR-092's T13 to
-T15, that existing vectors are unchanged, and that a counter is a JSON
+T16, that existing vectors are unchanged, and that a counter is a JSON
 number up to 2^53-1 and a decimal string beyond it, never a refusal.
 
 Scope: FR-092-AC-14, FR-092-AC-15.
