@@ -66,3 +66,9 @@ Round 1, reviewed 5398844084ce266a5010f76b21c6ecdf8015b9b0 (tree diff 9922c999..
 | FND-002 | fixed | 5398844084ce266a5010f76b21c6ecdf8015b9b0 |
 | FND-003 | fixed | 5398844084ce266a5010f76b21c6ecdf8015b9b0 |
 | FND-004 | fixed | 5398844084ce266a5010f76b21c6ecdf8015b9b0 |
+
+Round 2, reviewed f399076c519060be9800705d5d13d9bf9285122a (tree diff 53988440..f399076c, same base 4403f2f0e).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | f399076c519060be9800705d5d13d9bf9285122a |
