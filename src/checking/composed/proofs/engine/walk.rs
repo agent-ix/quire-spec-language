@@ -113,7 +113,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                 ExprKind::Integer(text) => {
                     self.work.charge(D::Bytes, text.len(), self.site(at))?;
                     let value = text
-                        .parse::<i64>()
+                        .parse::<i128>()
                         .map_err(|_| self.unsupported(at, Unsupported::ValueRepresentation))?;
                     let ty = self
                         .ty(at)?
@@ -178,10 +178,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                         {
                             self.work.charge(D::Bytes, text.len(), self.site(at))?;
                             if let Ok(raw) = text.parse::<i128>() {
-                                if let Some(value) = raw
-                                    .checked_neg()
-                                    .and_then(|value| i64::try_from(value).ok())
-                                {
+                                if let Some(value) = raw.checked_neg() {
                                     self.work.charge(D::Expressions, 1, self.site(*argument))?;
                                     let graph = self.node(
                                         Kind::Integer(

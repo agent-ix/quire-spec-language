@@ -1345,19 +1345,18 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
                         ir::ValueType::Integer { value: domain },
                         ScalarKind::Integer { .. },
                         ProtocolNumber::Integer(actual),
-                    ) => actual.value() >= domain.minimum() && actual.value() <= domain.maximum(),
+                    ) => {
+                        i128::from(actual.value()) >= domain.minimum()
+                            && i128::from(actual.value()) <= domain.maximum()
+                    }
                     (
                         ir::ValueType::Rational { value: domain },
                         ScalarKind::Rational { .. },
                         ProtocolNumber::Rational(actual),
                     ) => {
-                        actual.numerator() >= domain.numerator_minimum()
-                            && actual.numerator() <= domain.numerator_maximum()
-                            && u64::try_from(actual.denominator())
-                                .ok()
-                                .is_some_and(|denominator| {
-                                    denominator <= domain.maximum_denominator()
-                                })
+                        i128::from(actual.numerator()) >= domain.numerator_minimum()
+                            && i128::from(actual.numerator()) <= domain.numerator_maximum()
+                            && i128::from(actual.denominator()) <= domain.maximum_denominator()
                     }
                     _ => false,
                 };

@@ -53,8 +53,8 @@ fn tc_040_source_derived_rule_model() {
                 value.overflow()
             ),
             (
-                min,
-                max,
+                i128::from(min),
+                i128::from(max),
                 ir::IntegerDomain::Signed,
                 ir::OverflowPolicy::Reject
             )

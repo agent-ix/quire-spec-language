@@ -976,7 +976,8 @@ fn scalar(
             ScalarKind::Integer { .. },
             w::Representation::Integer { minimum, maximum },
         ) => {
-            integer(minimum, work)? == value.minimum() && integer(maximum, work)? == value.maximum()
+            i128::from(integer(minimum, work)?) == value.minimum()
+                && i128::from(integer(maximum, work)?) == value.maximum()
         }
         (
             ir::ValueType::Rational { value },
@@ -987,10 +988,9 @@ fn scalar(
                 maximum_denominator,
             },
         ) => {
-            integer(numerator_minimum, work)? == value.numerator_minimum()
-                && integer(numerator_maximum, work)? == value.numerator_maximum()
-                && u64::try_from(integer(maximum_denominator, work)?).ok()
-                    == Some(value.maximum_denominator())
+            i128::from(integer(numerator_minimum, work)?) == value.numerator_minimum()
+                && i128::from(integer(numerator_maximum, work)?) == value.numerator_maximum()
+                && i128::from(integer(maximum_denominator, work)?) == value.maximum_denominator()
         }
         (
             ir::ValueType::Text,

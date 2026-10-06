@@ -234,7 +234,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
         let maximum = self.sequence(domain, at)?;
         if let (Some(maximum), Some(ty)) = (maximum, self.get(self.var(at), at)?) {
             if !ty.integer().is_some_and(|integer| {
-                integer.minimum() <= 0 && integer.maximum() >= i64::from(maximum)
+                integer.minimum() <= 0 && integer.maximum() >= i128::from(maximum)
             }) || ty.numeric_unit() != Some(&Unit::Dimensionless)
             {
                 self.cause(at, CauseKind::InvalidAggregateDomain)?;

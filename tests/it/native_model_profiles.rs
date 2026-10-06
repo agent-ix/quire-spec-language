@@ -80,6 +80,11 @@ fn rational(ty: &ir::ValueType) -> &ir::RationalType {
 
 fn assert_bounds(ty: &ir::ValueType, expected: (i64, i64, u64)) {
     let ty = rational(ty);
+    let expected = (
+        i128::from(expected.0),
+        i128::from(expected.1),
+        i128::from(expected.2),
+    );
     assert_eq!(
         (
             ty.numerator_minimum(),

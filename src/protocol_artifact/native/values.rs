@@ -335,6 +335,13 @@ impl ValueBuilder<'_> {
                 let (numerator, denominator) = node
                     .normalized_rational
                     .ok_or(Error::Invalid(Invalid::NumericDomain))?;
+                // The protocol number wire is i64-bounded; a wider checked
+                // value has no protocol representation.
+                let (Ok(numerator), Ok(denominator)) =
+                    (i64::try_from(numerator), i64::try_from(denominator))
+                else {
+                    return Err(Error::Invalid(Invalid::NumericDomain));
+                };
                 // Validate the existing checker's result; never normalize again.
                 work.visit()?;
                 ExactRational::new(numerator, denominator)?;

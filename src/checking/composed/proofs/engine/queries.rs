@@ -260,7 +260,7 @@ impl Builder<'_, '_> {
         self.expression(graph, at, true, Outcomes::unknown())
     }
 
-    fn numeric_literal(&mut self, at: ExprId, value: i64) -> Result<GraphId> {
+    fn numeric_literal(&mut self, at: ExprId, value: i128) -> Result<GraphId> {
         let kind = if let Some(ty) = self.ty(at)?.integer() {
             Kind::Integer(value, ty)
         } else if let Some(ty) = self.ty(at)?.rational() {
@@ -329,11 +329,15 @@ impl Builder<'_, '_> {
                 };
                 // Both operands have the same sign, so integer division gives
                 // the exact number of safe endpoint prefixes. Widen before
-                // division, including i64::MIN / -1, and before multiplication.
-                let safe = i128::from(bound) / i128::from(item);
-                let prefix = i128::from(maximum).min(safe + 1);
-                let prior = (prefix - 1) * i128::from(item);
-                i64::try_from(prior).map_err(|_| upstream(self.site(at)))?
+                // division and before multiplication; every step is checked, so
+                // an i128::MIN / -1 or an overflowing product is no panic.
+                let safe = bound
+                    .checked_div(item)
+                    .ok_or_else(|| upstream(self.site(at)))?;
+                let prefix = i128::from(maximum).min(safe.saturating_add(1));
+                (prefix - 1)
+                    .checked_mul(item)
+                    .ok_or_else(|| upstream(self.site(at)))?
             };
             // This prior is derived from cardinality and the element bound,
             // never supplied as an assumption that an accumulator is in Total.
@@ -372,9 +376,9 @@ fn rational_sum_domain_contains_all_prefixes(
     }
 
     let mut common_denominator = 1_u128;
-    let total_denominator = u128::from(total.maximum_denominator());
+    let total_denominator = u128::try_from(total.maximum_denominator()).unwrap_or(u128::MAX);
     for denominator in 2..=projection.maximum_denominator() {
-        let denominator = u128::from(denominator);
+        let denominator = u128::try_from(denominator).unwrap_or(u128::MAX);
         common_denominator = match common_denominator
             .checked_div(gcd(common_denominator, denominator))
             .and_then(|reduced| reduced.checked_mul(denominator))

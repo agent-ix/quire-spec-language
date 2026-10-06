@@ -79,13 +79,13 @@ impl Solver<'_, '_, '_, '_> {
                         numerator.value.len() + denominator.value.len(),
                         self.site(at),
                     )?;
-                    let parsed_denominator = denominator.value.parse::<i64>();
+                    let parsed_denominator = denominator.value.parse::<i128>();
                     if parsed_denominator == Ok(0) {
                         self.cause(at, CauseKind::ZeroDenominator)?;
                         continue;
                     }
                     let (Ok(raw_numerator), Ok(raw_denominator)) =
-                        (numerator.value.parse::<i64>(), parsed_denominator)
+                        (numerator.value.parse::<i128>(), parsed_denominator)
                     else {
                         self.cause(
                             at,
@@ -159,9 +159,7 @@ impl Solver<'_, '_, '_, '_> {
                     };
                     if numerator < domain.numerator_minimum()
                         || numerator > domain.numerator_maximum()
-                        || u64::try_from(*denominator)
-                            .ok()
-                            .is_none_or(|value| value > domain.maximum_denominator())
+                        || *denominator > domain.maximum_denominator()
                     {
                         self.cause(at, CauseKind::LiteralDomain)?;
                     }

@@ -156,7 +156,9 @@ impl<'a, 'checked, 'model, P: FnMut() -> bool> Evaluator<'a, 'checked, 'model, P
             return Err(self.invariant(span, "checked integer result type is absent"));
         };
         let value = value
-            .filter(|value| *value >= integer.minimum() && *value <= integer.maximum())
+            .filter(|value| {
+                i128::from(*value) >= integer.minimum() && i128::from(*value) <= integer.maximum()
+            })
             .ok_or_else(|| {
                 self.invariant(
                     span,

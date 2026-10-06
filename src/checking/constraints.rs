@@ -495,7 +495,7 @@ impl<'u, 'a> Solver<'u, 'a> {
         let ty = self.known(id)?;
         let valid = match &self.unit.expressions()[id.0].kind {
             ExprKind::Integer(text) => ty.integer().is_some_and(|integer| {
-                text.parse::<i64>()
+                text.parse::<i128>()
                     .is_ok_and(|n| n >= integer.minimum() && n <= integer.maximum())
             }),
             ExprKind::Text(text) => {
@@ -543,7 +543,7 @@ impl<'u, 'a> Solver<'u, 'a> {
                 argument,
             } => {
                 let input = self.known(*argument)?;
-                matches!(input, NativeType::Sequence { maximum, .. } if ty.dimensionless() && ty.integer().is_some_and(|integer| integer.minimum() <= 0 && integer.maximum() >= i64::from(maximum)))
+                matches!(input, NativeType::Sequence { maximum, .. } if ty.dimensionless() && ty.integer().is_some_and(|integer| integer.minimum() <= 0 && integer.maximum() >= i128::from(maximum)))
             }
             ExprKind::Reaches { start, target, .. } => {
                 let start_ty = self.known(*start)?;

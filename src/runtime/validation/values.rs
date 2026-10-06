@@ -213,7 +213,8 @@ impl<'model, F: FnMut() -> bool> Validator<'_, 'model, F> {
                 },
                 ValueNode::Integer { value },
             ) => {
-                if *value < integer.minimum() || *value > integer.maximum() {
+                if i128::from(*value) < integer.minimum() || i128::from(*value) > integer.maximum()
+                {
                     self.related(
                         Stage::Value,
                         Code::InvalidRuntimeInput,

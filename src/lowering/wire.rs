@@ -135,7 +135,7 @@ enum ExpressionKind<'a> {
     },
     IntegerLiteral {
         #[serde(serialize_with = "decimal")]
-        value: i64,
+        value: i128,
         value_type: IntegerType<'a>,
     },
     ValueReference {
@@ -165,7 +165,7 @@ enum ExpressionKind<'a> {
     },
 }
 
-fn decimal<S: Serializer>(value: &i64, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+fn decimal<S: Serializer>(value: &i128, serializer: S) -> std::result::Result<S::Ok, S::Error> {
     Decimal(value).serialize(serializer)
 }
 
@@ -397,14 +397,14 @@ mod tests {
         };
         let value_type = ir::IntegerType::new(
             ir::IntegerDomain::Signed,
-            i64::MIN,
-            i64::MAX,
+            i128::from(i64::MIN),
+            i128::from(i64::MAX),
             ir::OverflowPolicy::Reject,
         )
         .unwrap();
         let literal = ir::Expression::new(
             ir::ExpressionKind::IntegerLiteral {
-                value: i64::MIN,
+                value: i128::from(i64::MIN),
                 value_type,
             },
             span,

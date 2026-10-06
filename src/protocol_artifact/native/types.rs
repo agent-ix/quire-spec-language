@@ -374,11 +374,7 @@ impl<'a> ValueBuilder<'a> {
                         w::Representation::Rational {
                             numerator_minimum: integer(value.numerator_minimum(), work)?,
                             numerator_maximum: integer(value.numerator_maximum(), work)?,
-                            maximum_denominator: integer(
-                                i64::try_from(value.maximum_denominator())
-                                    .map_err(|_| Error::Invalid(Invalid::NumericDomain))?,
-                                work,
-                            )?,
+                            maximum_denominator: integer(value.maximum_denominator(), work)?,
                         },
                     ),
                     (ScalarKind::Text { max_scalars }, ir::ValueType::Text) => (
@@ -656,8 +652,9 @@ pub(super) fn text(value: &str, work: &mut Work) -> Result<String, Error> {
     Ok(value.to_owned())
 }
 
-pub(super) fn integer(value: i64, work: &mut Work) -> Result<w::Integer, Error> {
-    let magnitude = value.unsigned_abs();
+pub(super) fn integer(value: impl Into<i128>, work: &mut Work) -> Result<w::Integer, Error> {
+    let value = value.into();
+    let magnitude = i128::unsigned_abs(value);
     let digits =
         magnitude.checked_ilog10().map_or(1, |log| log as usize + 1) + usize::from(value < 0);
     work.bytes(digits)?;

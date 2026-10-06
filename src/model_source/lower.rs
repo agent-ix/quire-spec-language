@@ -109,8 +109,8 @@ fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
                 .map_or(Unit::Dimensionless, Unit::Named);
             let integer = ir::IntegerType::new(
                 ir::IntegerDomain::Signed,
-                minimum,
-                maximum,
+                i128::from(minimum),
+                i128::from(maximum),
                 ir::OverflowPolicy::Reject,
             )?;
             (
@@ -129,12 +129,15 @@ fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
             maximum_denominator,
             unit,
         } => {
-            let rational =
-                ir::RationalType::new(numerator_minimum, numerator_maximum, maximum_denominator)
-                    .map_err(|mut error| {
-                        error.span = Some(Box::new(declaration.source.clone()));
-                        error
-                    })?;
+            let rational = ir::RationalType::new(
+                i128::from(numerator_minimum),
+                i128::from(numerator_maximum),
+                i128::from(maximum_denominator),
+            )
+            .map_err(|mut error| {
+                error.span = Some(Box::new(declaration.source.clone()));
+                error
+            })?;
             let unit = unit
                 .as_deref()
                 .map(try_symbol)
