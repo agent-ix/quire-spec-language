@@ -265,10 +265,11 @@ exits with that code's exit status:
 | An argument naming no parameter, a parameter named twice, or a parameter with no argument | `call` | `invalid_runtime_input` | `{"parameter": "<the parameter name>"}` | 20 |
 | A value that is not of its parameter's declared type (`WrongValueKind`) | `call` | `invalid_runtime_input` | `{"position": <the parameter's zero-based position>}` | 20 |
 
-An unsupported result type exits 21, where FR-098's replay refuses a
-non-`Boolean` selection as `NotAPredicate` (`invalid_runtime_input`, 20).
-The difference is deliberate: replay requires a predicate, so a
-non-`Boolean` selection is a bad request; run calls any function, and a
+An unsupported result type exits 21, where FR-098's predicate replay refuses
+a non-`Boolean` selection as `NotAPredicate` (`invalid_runtime_input`, 20).
+The difference is deliberate: predicate replay requires a predicate, so asking
+it to replay a non-`Boolean` selection is a bad request (a non-`Boolean`
+function's claim is replayed by FR-357's value-parity entry); run calls any function, and a
 result kind the outcome document cannot express is an unsupported construct,
 not bad input.
 
