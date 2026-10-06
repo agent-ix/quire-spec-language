@@ -1169,6 +1169,7 @@ pub struct Provisions<'a> {
 /// [`ObjectEnvironment`], for the caller to resolve each object argument
 /// against (FR-109's own `wrong-role-mapping` refusal on an unresolved
 /// one).
+#[allow(clippy::too_many_arguments)]
 pub fn admit_current_snapshot(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
