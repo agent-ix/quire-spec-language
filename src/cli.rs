@@ -150,6 +150,7 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
 
 /// `--source-bytes`, `--tokens` and `--nodes`, each followed by its count;
 /// an option left out keeps its default. `None` is a malformed option list.
+#[qsl_attrs::string_edge]
 fn limit_options(options: &[OsString]) -> Option<Result<Limits, UsageError<'_>>> {
     let mut limits = Limits::default();
     for pair in options.chunks(2) {
