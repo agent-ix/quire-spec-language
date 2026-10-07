@@ -411,6 +411,10 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // ADR-013 O-06's structured member identity, which the FR-093
     // lowering's operation members name (ADR-011 §6.2: 3 `semantic_value`).
     "value::member",
+    // The one spelling of a preimage counter (FR-092-AC-15), which the node
+    // keys' `recursion`, `group_reference` and member `position` write; it
+    // imports only `serde` and `quire-canonical`.
+    "value::counter",
     "model",
     "value::model_query",
     // The type environment's stage-limit mapping (F and SV imports only).
