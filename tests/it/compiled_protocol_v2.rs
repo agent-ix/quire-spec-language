@@ -2501,6 +2501,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             references: usize::MAX,
             byte_work: usize::MAX,
             depth: usize::MAX,
+            ..Limits::default()
         };
         let clamped = inputs.read_v2_bytes(
             proofs,

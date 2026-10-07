@@ -5080,7 +5080,8 @@ mod tests {
         );
 
         let (bytes, pointer) = wide_document("18446744073709551615");
-        let refusal = PackageDocument::parse(&bytes).unwrap_err();
+        let refusal =
+            PackageDocument::parse(&bytes, qsl_foundation::IntakeLimits::default()).unwrap_err();
         assert_eq!(
             refusal,
             noncanonical_number(
@@ -6905,21 +6906,6 @@ mod tests {
         quire_canonical::read(text.as_bytes(), u64::MAX).expect("the document reads")
     }
 
-    /// Takes `json` apart over a heap stack: `Json` has no iterative drop.
-    fn drop_json(json: agent_ix_semantic_ir::json::Json) {
-        use agent_ix_semantic_ir::json::Json;
-        let mut pending = vec![json];
-        while let Some(json) = pending.pop() {
-            match json {
-                Json::Array(items) => pending.extend(items),
-                Json::Object(members) => {
-                    pending.extend(members.into_iter().map(|(_, member)| member));
-                }
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Str(_) => {}
-            }
-        }
-    }
-
     /// Runs `body` on a 512 KiB thread and fails the test if it overflows.
     fn on_a_small_stack(body: impl FnOnce() + Send + 'static) {
         std::thread::Builder::new()
@@ -6943,7 +6929,7 @@ mod tests {
                 let document = read_text(&text);
                 let tree = value_of(document.root()).expect("the deep tree builds");
                 quire_canonical::drop_value(tree);
-                drop_json(json_of(document.root()).expect("the deep tree builds"));
+                drop(json_of(document.root()).expect("the deep tree builds"));
             });
         }
     }
