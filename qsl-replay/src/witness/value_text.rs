@@ -9,10 +9,10 @@
 //! encodes and decodes on a small native stack, and only the entry's byte
 //! length bounds it.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use qsl_foundation::digest::WireNodeId;
-use quire_canonical::{read, to_vec, Error as CanonicalError, Limits, Node, NodeRef, Sink, Writer};
+use quire_canonical::{read, to_vec, Error as CanonicalError, Limits, Node, NodeRef, Writer};
 use quire_exact::Integer;
 
 use super::value::{QuantityMagnitude, WitnessField, WitnessSlot, WitnessValue};
@@ -52,34 +52,9 @@ pub enum EntryFault {
 // Encoding.
 // ---------------------------------------------------------------------------
 
-/// Counts the escaped length of the bytes fed to it, keeping none.
-#[derive(Default)]
-struct EscapedLength {
-    bytes: u64,
-}
-
-impl Sink for EscapedLength {
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CanonicalError> {
-        let escaped = bytes
-            .iter()
-            .map(|byte| if is_escaped(*byte) { 3_u64 } else { 1 })
-            .sum::<u64>();
-        self.bytes = self.bytes.saturating_add(escaped);
-        Ok(())
-    }
-}
-
 /// The four bytes the entry replaces.
 fn is_escaped(byte: u8) -> bool {
     matches!(byte, b'%' | b';' | b'<' | b'>')
-}
-
-/// Sort orders of each set and bag in a tree, by node address: the indices of
-/// its elements in ascending order of their JCS bytes.
-type Orders = BTreeMap<usize, Vec<usize>>;
-
-fn address(value: &WitnessValue) -> usize {
-    std::ptr::from_ref(value) as usize
 }
 
 /// One step of the encoder.
@@ -126,39 +101,158 @@ fn text_of(value: &Integer) -> Task<'static> {
     Task::Owned(value.to_string())
 }
 
-/// Write `root`'s value text, unescaped, to `sink`.
-fn encode_into<S: Sink + ?Sized>(
-    root: &WitnessValue,
-    orders: &Orders,
-    sink: &mut S,
-) -> Result<(), CanonicalError> {
-    let mut writer = Writer::new(sink, Limits::new(u64::MAX));
-    let mut tasks = vec![Task::Value(root)];
-    while let Some(task) = tasks.pop() {
-        match task {
-            Task::Name(name) => writer.name(name)?,
-            Task::Str(text) => writer.string(text)?,
-            Task::Owned(text) => writer.string(&text)?,
-            Task::Bool(value) => writer.bool(value)?,
-            Task::Null => writer.null()?,
-            Task::BeginObject => writer.begin_object()?,
-            Task::EndObject => writer.end_object()?,
-            Task::BeginArray => writer.begin_array()?,
-            Task::EndArray => writer.end_array()?,
-            Task::Slot(slot) => match slot {
-                WitnessSlot::Present(value) => tasks.push(Task::Value(value)),
-                WitnessSlot::Absent => tasks.push(Task::Null),
-                WitnessSlot::Null => {
-                    push_in_order(&mut tasks, object(vec![tag("null")], Vec::new()));
+/// One value's shell: the JCS bytes of the value with each child written as
+/// a placeholder number `k`, and the children in placeholder order.
+struct Shell<'v> {
+    bytes: Vec<u8>,
+    children: Vec<&'v WitnessValue>,
+}
+
+/// Encode `value`'s own shell. A child (`Task::Value` below the root) is not
+/// expanded: it is written as the bare number `k`, its position in
+/// `Shell::children`. The shell holds no other bare number (every scalar the
+/// forms carry is a string, a boolean or `null`), so [`splice`] finds each
+/// placeholder by position, outside any string.
+fn encode_shell<'v>(
+    value: &'v WitnessValue,
+    order: Option<&[usize]>,
+) -> Result<Shell<'v>, CanonicalError> {
+    let mut bytes = Vec::new();
+    let mut children = Vec::new();
+    {
+        let mut writer = Writer::new(&mut bytes, Limits::new(u64::MAX));
+        let mut tasks = value_steps(value, order);
+        tasks.reverse();
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Name(name) => writer.name(name)?,
+                Task::Str(text) => writer.string(text)?,
+                Task::Owned(text) => writer.string(&text)?,
+                Task::Bool(flag) => writer.bool(flag)?,
+                Task::Null => writer.null()?,
+                Task::BeginObject => writer.begin_object()?,
+                Task::EndObject => writer.end_object()?,
+                Task::BeginArray => writer.begin_array()?,
+                Task::EndArray => writer.end_array()?,
+                Task::Slot(slot) => match slot {
+                    WitnessSlot::Present(child) => tasks.push(Task::Value(child)),
+                    WitnessSlot::Absent => tasks.push(Task::Null),
+                    WitnessSlot::Null => {
+                        push_in_order(&mut tasks, object(vec![tag("null")], Vec::new()));
+                    }
+                },
+                Task::Value(child) => {
+                    writer.integer(i128::try_from(children.len()).map_err(|_| {
+                        CanonicalError::Internal {
+                            invariant: "a value has fewer children than i128 holds",
+                        }
+                    })?)?;
+                    children.push(child);
                 }
-            },
-            Task::Value(value) => {
-                let steps = value_steps(value, orders);
-                push_in_order(&mut tasks, steps);
             }
         }
+        writer.finish()?;
     }
-    writer.finish().map(|_| ())
+    Ok(Shell { bytes, children })
+}
+
+/// `shell` with each placeholder number replaced by the matching entry of
+/// `parts`, found by scanning the shell outside its strings.
+fn splice(shell: &[u8], parts: &mut [Vec<u8>]) -> Result<Vec<u8>, CanonicalError> {
+    let invariant = |invariant| CanonicalError::Internal { invariant };
+    let total: usize = parts.iter().map(Vec::len).sum();
+    let mut out = Vec::with_capacity(shell.len() + total);
+    let mut position = 0;
+    let mut in_string = false;
+    while let Some(&byte) = shell.get(position) {
+        if in_string {
+            out.push(byte);
+            match byte {
+                b'\\' => {
+                    position += 1;
+                    out.push(
+                        *shell
+                            .get(position)
+                            .ok_or(invariant("a string escape ends"))?,
+                    );
+                }
+                b'"' => in_string = false,
+                _ => {}
+            }
+            position += 1;
+        } else if byte.is_ascii_digit() {
+            let mut index = 0_usize;
+            while let Some(digit) = shell.get(position).filter(|digit| digit.is_ascii_digit()) {
+                index = index * 10 + usize::from(digit - b'0');
+                position += 1;
+            }
+            let part = parts
+                .get_mut(index)
+                .ok_or(invariant("a placeholder names a child"))?;
+            out.append(part);
+        } else {
+            in_string = byte == b'"';
+            out.push(byte);
+            position += 1;
+        }
+    }
+    Ok(out)
+}
+
+/// The JCS bytes of `root`, built bottom-up: each value's shell is encoded
+/// once, and its parent splices the finished bytes in, so no value is encoded
+/// more than once at any nesting depth. Set and bag elements are ordered by
+/// those bytes. Also returns the bytes the encoder wrote, which is the sum of
+/// every value's shell.
+fn encode_bottom_up(root: &WitnessValue) -> Result<(Vec<u8>, u64), CanonicalError> {
+    let mut preorder = Vec::new();
+    let mut pending = vec![root];
+    while let Some(value) = pending.pop() {
+        preorder.push(value);
+        pending.extend(value.children());
+    }
+    let mut finished: HashMap<*const WitnessValue, Vec<u8>> = HashMap::new();
+    let mut encoded = 0_u64;
+    let missing = || CanonicalError::Internal {
+        invariant: "a child is finished before its parent",
+    };
+    for value in preorder.into_iter().rev() {
+        let order = match value {
+            WitnessValue::Set(elements) | WitnessValue::Bag(elements) => {
+                let mut keyed = Vec::with_capacity(elements.len());
+                for (index, element) in elements.iter().enumerate() {
+                    let bytes = finished
+                        .get(&std::ptr::from_ref(element))
+                        .ok_or_else(missing)?;
+                    keyed.push((bytes, index));
+                }
+                keyed.sort();
+                Some(
+                    keyed
+                        .into_iter()
+                        .map(|(_, index)| index)
+                        .collect::<Vec<_>>(),
+                )
+            }
+            _ => None,
+        };
+        let shell = encode_shell(value, order.as_deref())?;
+        encoded = encoded.saturating_add(u64::try_from(shell.bytes.len()).unwrap_or(u64::MAX));
+        let mut parts = Vec::with_capacity(shell.children.len());
+        for child in &shell.children {
+            parts.push(
+                finished
+                    .remove(&std::ptr::from_ref(*child))
+                    .ok_or_else(missing)?,
+            );
+        }
+        let bytes = splice(&shell.bytes, &mut parts)?;
+        finished.insert(std::ptr::from_ref(value), bytes);
+    }
+    let bytes = finished
+        .remove(&std::ptr::from_ref(root))
+        .ok_or_else(missing)?;
+    Ok((bytes, encoded))
 }
 
 /// An array of `elements`, each written as a value.
@@ -188,7 +282,7 @@ fn with_array<'v>(
 }
 
 /// The steps that write one value.
-fn value_steps<'v>(value: &'v WitnessValue, orders: &Orders) -> Vec<Task<'v>> {
+fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task<'v>> {
     match value {
         WitnessValue::Boolean(flag) => {
             object(vec![tag("boolean"), ("value", Task::Bool(*flag))], vec![])
@@ -340,7 +434,7 @@ fn value_steps<'v>(value: &'v WitnessValue, orders: &Orders) -> Vec<Task<'v>> {
                 "bag"
             };
             // The element order is the sorted one computed for this node.
-            let ordered: Vec<&WitnessValue> = match orders.get(&address(value)) {
+            let ordered: Vec<&WitnessValue> = match order {
                 Some(order) => order
                     .iter()
                     .filter_map(|index| elements.get(*index))
@@ -352,48 +446,13 @@ fn value_steps<'v>(value: &'v WitnessValue, orders: &Orders) -> Vec<Task<'v>> {
     }
 }
 
-/// The JCS bytes of `value`, with `orders` holding its descendants' sets.
-fn jcs_bytes(value: &WitnessValue, orders: &Orders) -> Result<Vec<u8>, CanonicalError> {
-    let mut bytes = Vec::new();
-    encode_into(value, orders, &mut bytes)?;
-    Ok(bytes)
-}
-
-/// Every set and bag's element order in `root`, deepest first, so each
-/// element's bytes are final when its parent sorts.
-fn sort_orders(root: &WitnessValue) -> Result<Orders, CanonicalError> {
-    let mut preorder = Vec::new();
-    let mut pending = vec![root];
-    while let Some(value) = pending.pop() {
-        preorder.push(value);
-        pending.extend(value.children());
-    }
-    let mut orders = Orders::new();
-    for value in preorder.into_iter().rev() {
-        let (WitnessValue::Set(elements) | WitnessValue::Bag(elements)) = value else {
-            continue;
-        };
-        let mut keyed = Vec::with_capacity(elements.len());
-        for (index, element) in elements.iter().enumerate() {
-            keyed.push((jcs_bytes(element, &orders)?, index));
-        }
-        keyed.sort();
-        orders.insert(
-            address(value),
-            keyed.into_iter().map(|(_, index)| index).collect(),
-        );
-    }
-    Ok(orders)
-}
-
 impl WitnessValue {
     /// This value's witness value text as a transcript entry carries it: its
     /// JCS encoding with `%`, `;`, `<` and `>` replaced by `%25`, `%3B`,
     /// `%3C` and `%3E`. Set and bag elements are written ascending by their
     /// own JCS bytes, so equal values always give the same text.
     pub fn to_value_text(&self) -> Result<String, ValueTextError> {
-        let orders = sort_orders(self)?;
-        let bytes = jcs_bytes(self, &orders)?;
+        let (bytes, _) = encode_bottom_up(self)?;
         let mut escaped = Vec::with_capacity(bytes.len());
         for byte in bytes {
             match byte {
@@ -411,17 +470,15 @@ impl WitnessValue {
         })
     }
 
-    /// The byte length of [`Self::to_value_text`], counted without building
-    /// it. A value that does not encode counts as `usize::MAX`, so the
-    /// reader bound refuses it.
+    /// The byte length of [`Self::to_value_text`]. A value that does not
+    /// encode counts as `usize::MAX`, so the reader bound refuses it.
     pub fn value_text_len(&self) -> usize {
-        let counted = sort_orders(self).and_then(|orders| {
-            let mut length = EscapedLength::default();
-            encode_into(self, &orders, &mut length)?;
-            Ok(length.bytes)
-        });
-        counted.map_or(usize::MAX, |bytes| {
-            usize::try_from(bytes).unwrap_or(usize::MAX)
+        encode_bottom_up(self).map_or(usize::MAX, |(bytes, _)| {
+            let escaped: usize = bytes
+                .iter()
+                .map(|byte| if is_escaped(*byte) { 3 } else { 1 })
+                .sum();
+            escaped
         })
     }
 
@@ -435,7 +492,9 @@ impl WitnessValue {
         if canonical != bytes {
             return Err(EntryFault::NotJcs);
         }
-        build(document.root())
+        let value = build(document.root())?;
+        check_collections(&bytes)?;
+        Ok(value)
     }
 }
 
@@ -621,22 +680,150 @@ fn array_of<'d>(node: NodeRef<'d>) -> Result<Vec<NodeRef<'d>>, EntryFault> {
     }
 }
 
-/// Check a collection's elements' order and distinctness by their JCS bytes.
-fn check_elements(kind: CollectionKind, elements: &[NodeRef<'_>]) -> Result<(), EntryFault> {
-    // No order or distinctness check applies below two elements, so a
-    // collection of none or one is never encoded.
-    if matches!(kind, CollectionKind::Sequence) || elements.len() < 2 {
+/// A value's byte range in the text.
+type Span = (usize, usize);
+
+/// An open array or object while [`check_collections`] scans.
+enum Open {
+    Array {
+        start: usize,
+        items: Vec<Span>,
+    },
+    Object {
+        start: usize,
+        /// The key just read, until its value arrives.
+        key: Option<Span>,
+        /// Each member's key, value and, for an array, its items.
+        members: Vec<(Span, Span, Option<Vec<Span>>)>,
+    },
+}
+
+/// Check every `set`, `bag` and `ordered-set` in `bytes`: elements ascending
+/// and distinct (`set`), ascending (`bag`) or distinct (`ordered-set`) by
+/// their JCS bytes.
+///
+/// `bytes` is already known to be one canonical JCS document, so each
+/// element's bytes are its own span of `bytes`: one scan finds every span,
+/// and nothing is encoded again at any nesting depth. The scan runs on an
+/// explicit stack.
+fn check_collections(bytes: &[u8]) -> Result<(), EntryFault> {
+    let mut stack: Vec<Open> = Vec::new();
+    let mut position = 0;
+    while let Some(&byte) = bytes.get(position) {
+        match byte {
+            b'{' => {
+                stack.push(Open::Object {
+                    start: position,
+                    key: None,
+                    members: Vec::new(),
+                });
+                position += 1;
+            }
+            b'[' => {
+                stack.push(Open::Array {
+                    start: position,
+                    items: Vec::new(),
+                });
+                position += 1;
+            }
+            b'}' | b']' => {
+                let closed = stack.pop().ok_or(EntryFault::Shape)?;
+                position += 1;
+                match closed {
+                    Open::Array { start, items } => {
+                        deliver(&mut stack, (start, position), Some(items))?;
+                    }
+                    Open::Object { start, members, .. } => {
+                        check_object(bytes, &members)?;
+                        deliver(&mut stack, (start, position), None)?;
+                    }
+                }
+            }
+            b',' | b':' => position += 1,
+            b'"' => {
+                let end = string_end(bytes, position)?;
+                match stack.last_mut() {
+                    Some(Open::Object { key, .. }) if key.is_none() => {
+                        *key = Some((position + 1, end - 1));
+                    }
+                    _ => deliver(&mut stack, (position, end), None)?,
+                }
+                position = end;
+            }
+            _ => {
+                let end = bytes
+                    .get(position..)
+                    .and_then(|rest| rest.iter().position(|b| matches!(b, b',' | b'}' | b']')))
+                    .map_or(bytes.len(), |offset| position + offset);
+                deliver(&mut stack, (position, end), None)?;
+                position = end;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The end (one past the closing quote) of the string starting at `start`.
+fn string_end(bytes: &[u8], start: usize) -> Result<usize, EntryFault> {
+    let mut position = start + 1;
+    while let Some(&byte) = bytes.get(position) {
+        match byte {
+            b'\\' => position += 2,
+            b'"' => return Ok(position + 1),
+            _ => position += 1,
+        }
+    }
+    Err(EntryFault::Json)
+}
+
+/// Hand a finished value to the array or object holding it.
+fn deliver(stack: &mut [Open], span: Span, items: Option<Vec<Span>>) -> Result<(), EntryFault> {
+    match stack.last_mut() {
+        Some(Open::Array { items: held, .. }) => held.push(span),
+        Some(Open::Object { key, members, .. }) => {
+            let key = key.take().ok_or(EntryFault::Shape)?;
+            members.push((key, span, items));
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+/// If the closed object is a collection, check its elements.
+fn check_object(
+    bytes: &[u8],
+    members: &[(Span, Span, Option<Vec<Span>>)],
+) -> Result<(), EntryFault> {
+    let named = |name: &[u8]| {
+        members
+            .iter()
+            .find(|((start, end), ..)| bytes.get(*start..*end) == Some(name))
+    };
+    let Some(((_, _), (start, end), _)) = named(b"type") else {
+        return Ok(());
+    };
+    let kind = match bytes.get(*start..*end) {
+        Some(b"\"set\"") => CollectionKind::Set,
+        Some(b"\"bag\"") => CollectionKind::Bag,
+        Some(b"\"ordered-set\"") => CollectionKind::OrderedSet,
+        _ => return Ok(()),
+    };
+    let Some((_, _, Some(elements))) = named(b"elements") else {
+        return Ok(());
+    };
+    // No order or distinctness check applies below two elements.
+    if elements.len() < 2 {
         return Ok(());
     }
-    let keys: Vec<Vec<u8>> = elements
+    let keys: Vec<&[u8]> = elements
         .iter()
-        .map(|element| to_vec(element, Limits::new(u64::MAX)).map_err(|_| EntryFault::Json))
+        .map(|(start, end)| bytes.get(*start..*end).ok_or(EntryFault::Shape))
         .collect::<Result<_, _>>()?;
     let ordered = match kind {
         CollectionKind::Set => keys.windows(2).all(|pair| pair[0] < pair[1]),
         CollectionKind::Bag => keys.windows(2).all(|pair| pair[0] <= pair[1]),
         CollectionKind::OrderedSet => {
-            let distinct: HashSet<&Vec<u8>> = keys.iter().collect();
+            let distinct: HashSet<&[u8]> = keys.iter().copied().collect();
             distinct.len() == keys.len()
         }
         CollectionKind::Sequence => true,
@@ -905,7 +1092,6 @@ fn visit<'d>(
             };
             let members = exact_object(node, &["type", "elements"])?;
             let elements = array_of(member(&members, "elements")?)?;
-            check_elements(kind, &elements)?;
             pending.push(Step::Collection {
                 kind,
                 count: elements.len(),

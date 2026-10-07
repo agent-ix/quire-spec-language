@@ -455,3 +455,79 @@ fn tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack() {
         drop(value);
     });
 }
+
+/// `depth` nested sets, each holding the next one and a text leaf, so every
+/// level has two elements to order.
+fn nested_sets(depth: usize) -> WitnessValue {
+    let mut value = WitnessValue::Set(vec![WitnessValue::Text("leaf".to_owned()), int(0)]);
+    for _ in 1..depth {
+        value = WitnessValue::Set(vec![value, WitnessValue::Text("leaf".to_owned())]);
+    }
+    value
+}
+
+/// FR-263-AC-1 (QSL-647): a set or bag nested 20,000 deep, two elements at
+/// every level, encodes each value once. The encoder writes the sum of the
+/// values' own shells, which is the size of the output, not that size times
+/// the depth, and the text decodes, ordering check included, on a 512 KiB
+/// stack and round-trips to the same text.
+#[trace("TC-736", "FR-263-AC-1")]
+#[test]
+fn tc_736_nested_sets_encode_each_value_once() {
+    on_small_stack(|| {
+        const DEPTH: usize = 20_000;
+        let value = nested_sets(DEPTH);
+        let (bytes, encoded) = super::encode_bottom_up(&value).unwrap();
+        assert!(
+            encoded <= 2 * bytes.len() as u64,
+            "the encoder wrote {encoded} bytes for {} bytes of output",
+            bytes.len()
+        );
+        let text = value.to_value_text().unwrap();
+        assert_eq!(value.value_text_len(), text.len());
+        let decoded = WitnessValue::from_value_text(&text).unwrap();
+        assert_eq!(decoded.to_value_text().unwrap(), text);
+        drop(decoded);
+        drop(value);
+    });
+}
+
+/// FR-263-AC-1 (QSL-647): the decode order check still refuses out-of-order
+/// and duplicate elements found by span, in a nested set, a bag and an
+/// ordered set.
+#[trace("TC-736", "FR-263-AC-1")]
+#[test]
+fn tc_736_the_element_order_check_reads_spans() {
+    let text = |value: &str| format!(r#"{{"type":"text","value":"{value}"}}"#);
+    let a = text("a");
+    let b = text("b");
+    let collection = |kind: &str, elements: &[&str]| {
+        format!(r#"{{"elements":[{}],"type":"{kind}"}}"#, elements.join(","))
+    };
+    let decodes = |json: &str| WitnessValue::from_value_text(json).map(|_| ());
+    assert_eq!(decodes(&collection("set", &[&a, &b])), Ok(()));
+    assert_eq!(decodes(&collection("bag", &[&a, &a, &b])), Ok(()));
+    assert_eq!(decodes(&collection("ordered-set", &[&b, &a])), Ok(()));
+    assert_eq!(
+        decodes(&collection("set", &[&b, &a])),
+        Err(EntryFault::Elements)
+    );
+    assert_eq!(
+        decodes(&collection("set", &[&a, &a])),
+        Err(EntryFault::Elements)
+    );
+    assert_eq!(
+        decodes(&collection("bag", &[&b, &a])),
+        Err(EntryFault::Elements)
+    );
+    assert_eq!(
+        decodes(&collection("ordered-set", &[&a, &a])),
+        Err(EntryFault::Elements)
+    );
+    // A bad collection nested inside a good one is found.
+    let bad = collection("set", &[&b, &a]);
+    assert_eq!(
+        decodes(&collection("set", &[&a, &bad])),
+        Err(EntryFault::Elements)
+    );
+}
