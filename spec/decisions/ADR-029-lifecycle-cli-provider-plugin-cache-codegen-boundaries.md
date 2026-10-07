@@ -511,13 +511,22 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
       `unsupported_projection`/`unsupported-requested-capability`.
    2. The item's domain kinds are in the manifest's `domains`. The domain
       kinds are read from the item's own extent, never from the manifest's
-      `bounds` or `domains`. For a bounded item this check always applies,
-      over the item extent's `bounds[].kind` (FR-331 `ProofBound.kind`). For
-      an unbounded item it applies only when the manifest does not advertise
-      `unbounded` for the item's kind, over the item extent's
-      `domains[].kind`; an unbounded item on a
-      provider that advertises `unbounded` for its kind skips it. An item
-      that fails it settles `unsupported`,
+      `bounds` or `domains`. This step applies only on a provider that
+      advertises `bounded` for the item's kind, and the backend-provider/v1
+      schema requires `domains` on every descriptor that advertises a
+      `bounded` mode, so the manifest's `domains` is always present here. A
+      provider that advertises only `unbounded` for the item's kind never
+      reaches this step. On a provider that advertises `bounded` for the
+      kind:
+      - a bounded item is checked over its extent's `bounds[].kind` (FR-331
+        `ProofBound.kind`); a bounded item with an empty `bounds[]` has no
+        domain kind to check and passes;
+      - an unbounded item is checked over its extent's `domains[].kind` only
+        when the provider advertises `bounded` and not `unbounded` for the
+        kind; an unbounded item on a provider that advertises `unbounded`
+        for its kind skips this step.
+
+      An item that fails it settles `unsupported`,
       `unsupported_projection`/`unsupported-requested-capability`, whatever
       `finite_bound_available` says.
    3. FR-290's advertised-mode rows. An unbounded item on a provider that
