@@ -369,3 +369,24 @@ fn repeated_domain_kinds_refuse_and_the_boundable_four_are_kept() {
         Some(4)
     );
 }
+
+/// FR-290-AC-13: a present, malformed `domains` refuses `invalid-domains`
+/// for any registration, an unbounded-only one included.
+#[test]
+#[trace("TC-271", "FR-290-AC-13")]
+fn malformed_domains_refuse_an_unbounded_only_registration() {
+    let unbounded: &[(Option<&str>, &str)] = &[(Some("value-validity"), "unbounded")];
+    let cases: [(&[&str], DomainsDefect); 4] = [
+        (&[], DomainsDefect::Empty),
+        (&["quantity"], DomainsDefect::NotBoundable("quantity".to_owned())),
+        (&["bogus"], DomainsDefect::NotBoundable("bogus".to_owned())),
+        (
+            &["integer", "integer"],
+            DomainsDefect::Repeated(DomainKind::Integer),
+        ),
+    ];
+    for (domains, defect) in cases {
+        let refusal = admit_domains(unbounded, Some(domains)).expect_err("malformed domains");
+        assert_invalid_domains(refusal, defect);
+    }
+}
