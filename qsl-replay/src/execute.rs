@@ -770,7 +770,7 @@ pub(crate) fn run_spine(
     )
     .map_err(refusal)?
     .into_value();
-    let models = spine::select(&parsed, packages, limits.intake, limits.model, &cancel)
+    let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = spine::check(
@@ -913,7 +913,6 @@ fn domain_packages(
             .entries()
             .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
             .map(|(_, bytes)| bytes),
-        limits.spine.intake,
     )
 }
 

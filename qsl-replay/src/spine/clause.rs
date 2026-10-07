@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::Source;
 use qsl_foundation::source_map::NativeLanguage;
-use qsl_foundation::{ByteDigest, IntakeLimits, SourceIdentity};
+use qsl_foundation::{ByteDigest, SourceIdentity};
 use qsl_semantics::check::{CheckedGraph, CheckedStateClause};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -219,8 +219,6 @@ pub struct ClauseRunRequest {
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The byte limit admission re-reads the domain packages under.
-    pub intake_limits: IntakeLimits,
     /// The limits admission re-normalizes the unit's domain packages under
     /// (see `qsl_semantics::model::observation`'s own module doc).
     pub model_limits: ModelNormalizationLimits,
@@ -535,12 +533,10 @@ pub(crate) struct UnitProvenance {
 /// `check::CheckedStateClause` here, into model-level
 /// `ClauseFacts`/`OperationFacts`, rather than that module importing
 /// `check` itself.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn admit_clause_observations(
     graph: &CheckedGraph,
     clause: &CheckedStateClause,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    intake_limits: IntakeLimits,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selection: &ClauseSelection,
@@ -560,7 +556,6 @@ pub(crate) fn admit_clause_observations(
         graph.scope().types(),
         &clause_facts,
         packages,
-        intake_limits,
         model_limits,
         provisions,
         selection,
@@ -642,7 +637,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         let models = front_end::select(
             &parsed,
             &request.packages,
-            request.limits.intake,
             request.limits.model,
             &cancel,
         )?
@@ -698,7 +692,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         ClauseRunSelection::Clause(ref selection) => {
             let run = CompiledRun {
                 packages: &request.packages,
-                intake_limits: request.intake_limits,
                 model_limits: request.model_limits,
                 provisions: Provisions {
                     snapshots: &request.snapshots,
@@ -730,7 +723,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref snapshot,
         } => run_function(
             &request.packages,
-            request.intake_limits,
             request.model_limits,
             &request.snapshots,
             request.observation_limits,
@@ -752,7 +744,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         } => Ok(run_frame(
             &CompiledRun {
                 packages: &request.packages,
-                intake_limits: request.intake_limits,
                 model_limits: request.model_limits,
                 provisions: Provisions {
                     snapshots: &request.snapshots,
@@ -780,8 +771,8 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
 pub(crate) struct CompiledRun<'a> {
     /// FR-056's package input.
     pub(crate) packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
-    /// The limits admission re-normalizes the domain packages under.
-    pub(crate) intake_limits: IntakeLimits,
+    /// The limits admission re-reads (`intake.input_bytes`) and
+    /// re-normalizes the domain packages under.
     pub(crate) model_limits: ModelNormalizationLimits,
     /// FR-106's snapshot and invocation provisions.
     pub(crate) provisions: Provisions<'a>,
@@ -868,7 +859,6 @@ pub(crate) fn check_clause_admitted(
         graph,
         clause,
         run.packages,
-        run.intake_limits,
         run.model_limits,
         &run.provisions,
         selection,
@@ -1026,7 +1016,6 @@ pub(crate) fn check_frame(
         graph.scope().types(),
         &facts,
         run.packages,
-        run.intake_limits,
         run.model_limits,
         &run.provisions,
         invocation,
@@ -1107,7 +1096,6 @@ pub(crate) fn check_frame(
 #[allow(clippy::too_many_arguments)]
 fn run_function(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    intake_limits: IntakeLimits,
     model_limits: ModelNormalizationLimits,
     snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
     observation_limits: ObservationLimits,
@@ -1179,7 +1167,6 @@ fn run_function(
         package.graph().model_selections(),
         package.graph().scope().types(),
         packages,
-        intake_limits,
         model_limits,
         snapshots,
         snapshot,
@@ -1235,7 +1222,6 @@ fn run_function(
                 let universe = match population_universe_for(
                     package.graph().model_selections(),
                     packages,
-                    intake_limits,
                     model_limits,
                     *type_identity,
                 ) {

@@ -95,7 +95,6 @@ fn witness_unit_text() -> String {
     let document = config_version_domain_document();
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -206,7 +205,6 @@ fn clause_request(
     let document = config_version_domain_document();
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let mut request = config_version_request_for(
         witness_unit_text(),
@@ -238,7 +236,6 @@ fn evaluate(
     let (selection, snapshots) = selection(clause, snapshot, self_key);
     let packages = qsl_semantics::model::intake::package_input(
         [unit.domain_document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");

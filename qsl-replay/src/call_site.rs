@@ -424,7 +424,7 @@ pub fn call_site<'a, S: CallSiteSelection>(
         Err(fault) => Box::new(CallSiteRefusal::Fault(fault)),
     };
     let limits = spine::SpineLimits::default();
-    let packages = package_input(packages, limits.intake);
+    let packages = package_input(packages);
     let parsed = spine::parse(
         &spine::ParseRequest {
             source: &source,
@@ -436,7 +436,7 @@ pub fn call_site<'a, S: CallSiteSelection>(
     )
     .map_err(refusal)?
     .into_value();
-    let models = spine::select(&parsed, &packages, limits.intake, limits.model, &cancel)
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = spine::check(
@@ -905,7 +905,6 @@ mod tests {
             UNIT.as_bytes(),
             &qsl_semantics::model::intake::package_input(
                 [],
-                qsl_foundation::IntakeLimits::default(),
             ),
             &DependencyInput::default(),
             crate::spine::SpineLimits::default(),

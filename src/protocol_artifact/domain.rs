@@ -18,6 +18,7 @@ use super::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::checking::DomainType;
 use crate::linking::composed::models::BoundDeclaration;
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration};
+use qsl_semantics::model::refusal::ModelRefusalCause;
 use qsl_semantics::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, PopulationRecord, ValueTypeRef,
 };
@@ -259,7 +260,20 @@ pub(super) fn verify_document(
         intake,
     )
     .map(|_| ())
-    .map_err(|_| Error::Invalid(Invalid::Model))
+    .map_err(|refusal| match refusal.cause {
+        // A reached `intake.input_bytes` is the caller's limit, not a
+        // malformed model.
+        ModelRefusalCause::IntakeLimitExceeded { bound, .. } => {
+            Error::Incomplete(super::Exhaustion {
+                dimension: Dimension::PayloadBytes,
+                used: 0,
+                requested: bytes.len(),
+                limit: usize::try_from(bound).unwrap_or(usize::MAX),
+                locus: None,
+            })
+        }
+        _ => Error::Invalid(Invalid::Model),
+    })
 }
 
 /// Whether `population` covers the object type `object` (FR-153): one of
@@ -377,4 +391,54 @@ pub(super) fn operation<'a>(
         .and_then(|owner| DomainType::new(package, owner))
         .ok_or(Error::Invalid(Invalid::Model))?;
     Ok(Some((owner, name)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol_artifact::Limits;
+    use ix_trace_rs::trace;
+    use qsl_foundation::IntakeLimits;
+    use qsl_semantics::model::intake::PackageDocument;
+
+    const DOCUMENT: &[u8] = include_bytes!("../../tests/fixtures/spine-model.semantic-ir.json");
+
+    fn selection() -> DomainPackageRef {
+        let digest = PackageDocument::parse(DOCUMENT, IntakeLimits::default())
+            .expect("the fixture parses")
+            .jcs_digest();
+        DomainPackageRef {
+            identity: "acme/orders".to_owned(),
+            version: "1.0.0".to_owned(),
+            digest,
+        }
+    }
+
+    /// FR-260-AC-4: the caller's `Limits::intake` reaches admission. A
+    /// document within it verifies; one byte past it is the caller's limit
+    /// reached, reported as exhaustion naming the bound, never as an
+    /// invalid model.
+    #[trace("TC-732", "FR-260-AC-4")]
+    #[test]
+    fn verify_document_reads_under_the_callers_intake_limit() {
+        let size = DOCUMENT.len();
+        let verify = |bound: usize| {
+            let limits = Limits {
+                intake: IntakeLimits::default().with_input_bytes(bound as u64),
+                ..Limits::default()
+            };
+            verify_document(
+                &selection(),
+                DOCUMENT,
+                limits.intake,
+                &mut Work::new(limits),
+            )
+        };
+        assert!(verify(size).is_ok());
+        let Err(Error::Incomplete(exhausted)) = verify(size - 1) else {
+            panic!("a document over the intake limit is exhaustion");
+        };
+        assert_eq!(exhausted.limit, size - 1);
+        assert_eq!(exhausted.requested, size);
+    }
 }

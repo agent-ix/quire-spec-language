@@ -1325,7 +1325,6 @@ fn run_frame_clause_limited(
     let document = frame_test_document();
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -2794,7 +2793,6 @@ fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
 fn tc465_model_digest_hex(document: &[u8]) -> String {
     let packages = qsl_semantics::model::intake::package_input(
         [document],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -2996,7 +2994,6 @@ fn run_tc465_with_clauses_under(
 > {
     let packages = qsl_semantics::model::intake::package_input(
         [document],
-        qsl_foundation::IntakeLimits::default(),
     );
     let declarations = admit_and_assemble_with_body(document, clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));

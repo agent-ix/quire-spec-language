@@ -88,7 +88,6 @@ fn chain_of(
     let models = select(
         &parsed,
         packages,
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &cancel,
     )?
@@ -436,7 +435,6 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
     assert_requested(select(
         &chain.parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &cancelled,
     ));
@@ -519,7 +517,6 @@ fn parsed_declarations(count: usize) -> (ParsedSource, AdmittedModels, SpineLimi
     let models = select(
         &parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &live,
     )
@@ -616,7 +613,6 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
     let models = select(
         &parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &live,
     )
@@ -650,7 +646,6 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
 fn a_cancel_inside_select_stops_within_one_charge() {
     let packages = qsl_semantics::model::intake::package_input(
         [MODEL_DOCUMENT.as_bytes()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let limits = SpineLimits::default();
     let live = Cancel::new();
@@ -661,7 +656,6 @@ fn a_cancel_inside_select_stops_within_one_charge() {
         select(
             &parsed,
             &packages,
-            qsl_foundation::IntakeLimits::default(),
             limits.model,
             cancel,
         )
@@ -676,6 +670,45 @@ fn a_cancel_inside_select_stops_within_one_charge() {
         Err(StageFailure::Cancelled(CancelCause::Requested))
     ));
     gate.assert_stopped_at(at);
+}
+
+/// FR-260-AC-4 (FR-056-AC-2): a model document one byte over the caller's
+/// `intake.input_bytes` refuses through `select` naming that limit, its
+/// bound and the document's size, never as a missing package.
+#[trace("TC-732", "FR-260-AC-4")]
+#[test]
+fn select_names_the_intake_limit_for_an_oversize_document() {
+    let packages =
+        qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let mut limits = SpineLimits::default();
+    let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
+    limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
+    let parsed = parse(&request(MODEL_FIXTURE.as_bytes()), limits.source, &Cancel::new())
+        .expect("the model fixture parses")
+        .into_value();
+    let Err(StageFailure::Refused(refusal)) =
+        select(&parsed, &packages, limits.model, &Cancel::new())
+    else {
+        panic!("a document over the intake limit refuses");
+    };
+    let CompileRefusal::Intake { refusal, .. } = *refusal else {
+        panic!("an intake refusal");
+    };
+    let qsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = refusal.cause else {
+        panic!("a refused admission");
+    };
+    assert!(
+        matches!(
+            refusals[0].cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeLimitExceeded {
+                bound,
+                actual,
+                ..
+            } if bound == size - 1 && actual == size
+        ),
+        "{:?}",
+        refusals[0]
+    );
 }
 
 /// FR-276-AC-2 for `package`: the emitter polls the handle at entry and at
@@ -779,7 +812,6 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     // its `sha256-jcs` digest.
     let packages = qsl_semantics::model::intake::package_input(
         [MODEL_DOCUMENT.as_bytes()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let model = chain_of(
         MODEL_FIXTURE.as_bytes(),
@@ -861,7 +893,6 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         select(
             &parsed,
             &BTreeMap::new(),
-            qsl_foundation::IntakeLimits::default(),
             limits.model,
             &live,
         )
@@ -886,7 +917,6 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
     let models = select(
         &parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &live,
     )
@@ -958,7 +988,6 @@ fn each_operation_reports_the_work_of_its_own_stages() {
     let models = select(
         &parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &cancel,
     )
@@ -1122,7 +1151,6 @@ fn parse_names_the_source_limit_field_it_reached() {
 fn select_names_the_model_limit_field_it_reached() {
     let packages = qsl_semantics::model::intake::package_input(
         [MODEL_DOCUMENT.as_bytes()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let live = Cancel::new();
     let parsed = parse(
@@ -1140,7 +1168,6 @@ fn select_names_the_model_limit_field_it_reached() {
             reached(select(
                 parsed,
                 packages,
-                qsl_foundation::IntakeLimits::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1421,7 +1448,6 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
 fn check_names_the_type_environment_limit_field_it_reached() {
     let packages = qsl_semantics::model::intake::package_input(
         [MODEL_DOCUMENT.as_bytes()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let model = chain_of(
         MODEL_FIXTURE.as_bytes(),
@@ -1483,7 +1509,6 @@ fn check_names_the_dependency_limit_field_it_reached() {
     let models = select(
         &parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         SpineLimits::default().model,
         &cancel,
     )
@@ -1644,7 +1669,6 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
     let models = select(
         &parsed,
         &BTreeMap::new(),
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &live,
     )

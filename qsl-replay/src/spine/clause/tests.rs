@@ -175,7 +175,6 @@ fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let document = domain_document();
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -702,7 +701,6 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        intake_limits: qsl_foundation::IntakeLimits::default(),
         model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
@@ -1218,7 +1216,6 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let document = domain_document();
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let model_selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: PACKAGE_IDENTITY.to_owned(),
@@ -1646,7 +1643,6 @@ fn config_version_unit_and_packages_for(
 ) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -1703,7 +1699,6 @@ fn config_version_request_for(
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        intake_limits: qsl_foundation::IntakeLimits::default(),
         model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
@@ -2897,7 +2892,6 @@ fn config_version_step3_domain_document() -> Vec<u8> {
 fn config_version_step3_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
     qsl_semantics::model::intake::package_input(
         [config_version_step3_domain_document().as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     )
 }
 

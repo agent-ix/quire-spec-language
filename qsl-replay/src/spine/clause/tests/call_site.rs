@@ -60,7 +60,6 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     let document = config_version_step3_domain_document();
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -279,7 +278,6 @@ fn call_site_locates_a_state_clause_by_name() {
     let (unit, document) = two_operation_unit(true);
     let packages = qsl_semantics::model::intake::package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let compiled = compose(
         source(),
@@ -392,7 +390,7 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
         source(),
         "pq.native",
         PQ.as_bytes(),
-        &qsl_semantics::model::intake::package_input([], qsl_foundation::IntakeLimits::default()),
+        &qsl_semantics::model::intake::package_input([]),
         &DependencyInput::default(),
         SpineLimits::default(),
     )

@@ -618,6 +618,7 @@ impl ReplayRequest {
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
         let intake = CallerLimits::for_request(&stage_limits, limits)
             .spine
+            .model
             .intake;
 
         // Only past this point does decoding touch the package reference or
@@ -1259,30 +1260,27 @@ mod tests {
         );
         assert_eq!(malformed.code(), Code::InvalidModelBinding);
 
-        // A document over the caller's intake limit refuses with intake's
-        // limit outcome, keeping its cause.
-        let over = b"[0,0,0,0,0,0,0,0]".to_vec();
-        let limits = qsl_foundation::IntakeLimits::default().with_input_bytes(4);
-        let ModelRefusalCause::IntakeLimitExceeded {
-            limit,
-            bound,
-            actual,
-        } = PackageDocument::parse(&over, limits).unwrap_err().cause
-        else {
-            panic!("a document over the byte limit refuses naming it");
-        };
-        assert_eq!(limit, IntakeLimit::InputBytes);
-        let over_limit = package_document_refusal(
-            digest,
-            PackageDocument::parse(&over, limits).unwrap_err(),
-        );
+        // A document over `intake.input_bytes`, carried in the request's
+        // `stage_limits`, refuses with intake's limit outcome, keeping its
+        // cause, through `decode`.
+        let mut request = wire(1);
+        request
+            .stage_limits
+            .insert("intake.input_bytes".to_owned(), 4);
+        request.byte_provision.push((
+            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+            digest.hex(),
+            b"[0,0,0,0,0,0,0,0]".to_vec(),
+        ));
+        let over_limit =
+            ReplayRequest::decode(request, crate::ReplayLimits::default()).unwrap_err();
         assert_eq!(
             over_limit,
             ReplayRequestRefusal::IntakeLimitExceeded {
                 entry: entry.clone(),
-                limit,
-                bound,
-                actual,
+                limit: IntakeLimit::InputBytes,
+                bound: 4,
+                actual: 17,
             }
         );
         assert_eq!(over_limit.code(), Code::ResourceExhausted);

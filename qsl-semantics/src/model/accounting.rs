@@ -45,6 +45,10 @@ pub struct ModelNormalizationLimits {
     /// redefinitions is admitted at `family_steps == n`. Reaching it
     /// refuses `ModelRefusalCause::FamilySteps` naming this bound.
     pub family_steps: u64,
+    /// The byte limit one domain package document is read under
+    /// (`intake.input_bytes`, FR-260): it rides here so every stage that
+    /// admits a package carries it with the other model limits.
+    pub intake: qsl_foundation::IntakeLimits,
 }
 
 /// NFR-012's finite default ceilings, which a caller may raise or
@@ -61,6 +65,7 @@ impl Default for ModelNormalizationLimits {
             work_units: 16_777_216,
             ancestor_steps: quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS,
             family_steps: 16_777_216,
+            intake: qsl_foundation::IntakeLimits::default(),
         }
     }
 }
@@ -78,6 +83,9 @@ impl ModelNormalizationLimits {
         work_units: u64::MAX,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
+        intake: qsl_foundation::IntakeLimits {
+            input_bytes: u64::MAX,
+        },
     };
 }
 
@@ -172,6 +180,7 @@ impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
             (Setting::ModelWorkUnits, self.work_units),
             (Setting::ModelAncestorSteps, self.ancestor_steps),
             (Setting::ModelFamilySteps, self.family_steps),
+            (Setting::IntakeInputBytes, self.intake.input_bytes),
         ]
     }
 
@@ -186,6 +195,7 @@ impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
             Setting::ModelWorkUnits => self.work_units = bound,
             Setting::ModelAncestorSteps => self.ancestor_steps = bound,
             Setting::ModelFamilySteps => self.family_steps = bound,
+            Setting::IntakeInputBytes => self.intake.input_bytes = bound,
             _ => return false,
         }
         true

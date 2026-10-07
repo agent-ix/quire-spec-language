@@ -79,7 +79,7 @@ fn model_fixture(body: &str) -> Fixture {
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
          model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n{body}"
     );
-    let packages = package_input([document.as_slice()], qsl_foundation::IntakeLimits::default());
+    let packages = package_input([document.as_slice()]);
     let compiled = spine(&source, &packages);
     let record = DigestRecord::mint(DigestDomain::Sha256Jcs, digest);
     Fixture {

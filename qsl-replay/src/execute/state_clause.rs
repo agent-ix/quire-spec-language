@@ -229,7 +229,6 @@ pub fn replay_state_clause(
     };
     let run = CompiledRun {
         packages: &packages,
-        intake_limits: limits.spine.intake,
         model_limits: limits.spine.model,
         provisions: Provisions {
             snapshots: &documents,

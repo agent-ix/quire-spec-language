@@ -64,7 +64,7 @@ pub fn compile_package<'a>(
         &source,
         path,
         bytes,
-        &package_input(packages, limits.spine.intake),
+        &package_input(packages),
         dependencies,
         limits.spine,
     )?;

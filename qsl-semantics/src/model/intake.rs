@@ -291,7 +291,6 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// The `sha256-jcs` digest is taken here, once, by `quire-canonical` (ADR-013
 /// §2, ADR-013:113: the one RFC 8785 implementation) under
 /// `digest_limits`, and [`admit`]'s check 3 compares it.
-#[derive(Debug, Clone)]
 pub struct PackageDocument {
     /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
     /// (`input-bundle.schema.json` requires an `ir` member).
@@ -301,6 +300,16 @@ pub struct PackageDocument {
     /// SHA-256 over the document's RFC 8785 bytes: the package's
     /// `sha256-jcs` digest.
     jcs_digest: [u8; 32],
+}
+
+/// The digest only: `Value` and `Json` format by recursion, once per level,
+/// so a derived `Debug` would overflow the stack on a deep document.
+impl std::fmt::Debug for PackageDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PackageDocument")
+            .field("jcs_digest", &self.jcs_digest)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Drop for PackageDocument {
@@ -6136,7 +6145,7 @@ mod tests {
             &map,
             qsl_foundation::IntakeLimits::default(),
         )
-        .expect("a document within the reader's 200-deep bound admits under its JCS digest");
+        .expect("a deeply nested document admits under its JCS digest");
         assert_eq!(package_ref.digest, digest);
         assert_eq!(admitted.tree(), &document);
     }
@@ -6285,10 +6294,10 @@ mod tests {
         format!("{}{inner}{}", "[".repeat(depth), "]".repeat(depth))
     }
 
-    /// FR-056-AC-2, FR-260-AC-5: intake has no depth limit. A document nested
-    /// 100,000 deep, far past the old 128 cap, reads, digests and drops on a
+    /// FR-260-AC-5: intake has no depth limit. A document nested
+    /// 100,000 deep reads, digests and drops on a
     /// 512 KiB thread; it is judged on its content, never refused as a depth.
-    #[trace("TC-145", "FR-056-AC-2")]
+    #[trace("TC-730", "FR-260-AC-5")]
     #[test]
     fn a_package_document_nested_100000_deep_is_read_not_refused_as_a_depth() {
         on_a_small_stack(|| {
@@ -6311,6 +6320,7 @@ mod tests {
     /// at bound `B` refuses naming the limit, `B`, `B + 1` and the setting;
     /// raised to `B + 1` through the builder and through the settings
     /// operation, the same document is judged on its content.
+    #[trace("TC-145", "FR-056-AC-2")]
     #[trace("TC-732", "FR-260-AC-4")]
     #[test]
     fn refuses_an_oversize_document_with_its_correct_digest_as_a_size_limit() {

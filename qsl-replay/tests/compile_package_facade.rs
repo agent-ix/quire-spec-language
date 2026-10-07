@@ -53,7 +53,7 @@ fn spine_run(
     )
     .map_err(refusal)?
     .into_value();
-    let models = spine::select(&parsed, packages, limits.intake, limits.model, &cancel)
+    let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
     let checked = spine::check(
@@ -198,7 +198,6 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
     .unwrap();
     let packages = package_input(
         [document.as_slice()],
-        qsl_foundation::IntakeLimits::default(),
     );
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");

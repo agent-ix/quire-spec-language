@@ -238,7 +238,6 @@ mod tests {
         mapped.set_bound(Setting::IntakeInputBytes, 35);
         let built = CallerLimits {
             spine: SpineLimits {
-                intake: qsl_foundation::IntakeLimits::default().with_input_bytes(35),
                 source: qsl_cst::Limits::default()
                     .with_source_bytes(28)
                     .with_tokens(29)
@@ -259,6 +258,10 @@ mod tests {
                     .with_occurrences(22)
                     .with_diagnostics(23)
                     .with_work(24),
+                model: qsl_semantics::model::accounting::ModelNormalizationLimits {
+                    intake: qsl_foundation::IntakeLimits::default().with_input_bytes(35),
+                    ..SpineLimits::default().model
+                },
                 ..SpineLimits::default()
             },
             library: LibraryLimits::default()

@@ -825,7 +825,6 @@ mod tests {
         let models = select(
             &parsed,
             &BTreeMap::new(),
-            limits.intake,
             limits.model,
             &cancel,
         )
@@ -1206,7 +1205,6 @@ mod tests {
         let models = select(
             &parsed,
             &BTreeMap::new(),
-            qsl_foundation::IntakeLimits::default(),
             limits.model,
             &live,
         )

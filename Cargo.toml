@@ -12,7 +12,7 @@ quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch 
 # The shared no_std exact-value kernel and the semantic-value leaf above it,
 # each its own repository so IR, RT and CG depend on them without the QSL repo.
 quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
-quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", rev = "e0ada80708fe73469923a9d6c2263cfebc0087a0" }
+quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
 # its own repository so IR, RT and CG depend on it without the QSL repo.
 quire-walk = { git = "https://github.com/agent-ix/quire-walk", branch = "main" }

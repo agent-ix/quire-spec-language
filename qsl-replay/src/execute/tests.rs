@@ -226,7 +226,6 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
     let models = crate::spine::select(
         &parsed,
         &packages,
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &cancel,
     )
@@ -550,7 +549,6 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
         &source,
         &package_input(
             [document.as_slice()],
-            qsl_foundation::IntakeLimits::default(),
         ),
     );
     let wire = || {

@@ -852,8 +852,6 @@ impl ImportRefusal {
 pub struct SpineLimits {
     /// S1: the lexer and parser ceilings.
     pub source: qsl_cst::Limits,
-    /// I1: the byte limit a domain package document is read under.
-    pub intake: qsl_foundation::IntakeLimits,
     /// I1: domain package normalization ceilings.
     pub model: ModelNormalizationLimits,
     /// S3: the checker's ceilings.
@@ -872,7 +870,6 @@ pub struct SpineLimits {
 impl qsl_foundation::SettingLimits for SpineLimits {
     fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
         let mut bounds = self.source.bounds();
-        bounds.extend(self.intake.bounds());
         bounds.extend(self.model.bounds());
         bounds.extend(qsl_semantics::check::checking_bounds(&self.checking));
         bounds.extend(self.dependencies.bounds());
@@ -883,7 +880,6 @@ impl qsl_foundation::SettingLimits for SpineLimits {
 
     fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
         self.source.set_bound(setting, bound)
-            || self.intake.set_bound(setting, bound)
             || self.model.set_bound(setting, bound)
             || qsl_semantics::check::set_checking_bound(&mut self.checking, setting, bound)
             || self.dependencies.set_bound(setting, bound)

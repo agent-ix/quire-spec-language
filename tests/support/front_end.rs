@@ -41,7 +41,6 @@ pub fn emitted(
     let models = select(
         &parsed,
         packages,
-        qsl_foundation::IntakeLimits::default(),
         limits.model,
         &cancel,
     )

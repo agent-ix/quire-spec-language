@@ -707,7 +707,6 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         &program,
         &qsl_semantics::model::intake::package_input(
             [document.as_slice()],
-            qsl_foundation::IntakeLimits::default(),
         ),
         &qsl_replay::spine::DependencyInput::default(),
     )

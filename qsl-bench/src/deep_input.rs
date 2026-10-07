@@ -221,7 +221,6 @@ impl DeepInput {
         let models = select(
             &parsed,
             &BTreeMap::new(),
-            limits.intake,
             limits.model,
             &cancel,
         )?

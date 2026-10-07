@@ -8,7 +8,7 @@ pub const DEFAULT_INTAKE_INPUT_BYTES: u64 = 67_108_864;
 
 /// The caller's limit on one domain package document's bytes. The bound is
 /// used as given, with no ceiling.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct IntakeLimits {
     /// The most bytes one package document may hold (`intake.input_bytes`).
     pub input_bytes: u64,
