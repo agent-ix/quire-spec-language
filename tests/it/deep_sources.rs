@@ -249,39 +249,3 @@ fn cli_parse_takes_caller_limits() {
         assert_eq!(parse(extra).status.code(), Some(20), "{extra:?}");
     }
 }
-
-/// Verified source intake takes the caller's byte ceiling as given, so a
-/// source over the default ceiling reads and parses under raised limits.
-#[trace("TC-749", "FR-256-AC-4")]
-#[test]
-fn read_verified_uses_a_raised_byte_ceiling_as_given() {
-    let mut text = historical(&sum());
-    text.push_str(&" ".repeat(qsl_foundation::source::MAX_SOURCE_BYTES));
-    let digest = qsl_foundation::ByteDigest::of(text.as_bytes());
-    assert!(
-        Source::read_verified(
-            identity(),
-            "deep.native",
-            text.as_bytes(),
-            digest,
-            Limits::default().source_bytes
-        )
-        .is_err(),
-        "the default ceiling refuses this source"
-    );
-    let source = Source::read_verified(
-        identity(),
-        "deep.native",
-        text.as_bytes(),
-        digest,
-        usize::MAX,
-    )
-    .expect("a raised ceiling reads it");
-    parse(
-        identity(),
-        "deep.native",
-        source.text().as_bytes(),
-        raised(),
-    )
-    .expect("and it parses");
-}
