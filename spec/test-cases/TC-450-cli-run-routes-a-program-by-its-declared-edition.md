@@ -33,8 +33,10 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
    `snapshots`, `invocations`, `package`, `limits.validation_work`,
    `limits.expression_steps`, program `clauses`, program `extraction`, and a
    `native-rule-model/1` model whose file holds malformed bytes added; then
-   with `call` removed; then with `work_units` `18446744073709551616`, `-1`
-   and `1.5`.
+   with `call` removed; then with an `accounting` member `work_units` of
+   `18446744073709551616`, `-1`, `1.5` and `null`, with an `accounting`
+   member `depth`, with an `accounting` of `5`, and with a top-level
+   `call.work_units` of `0`.
 5. Run a `0-draft` standalone request with a `call` added; then with a
    `libraries` entry added.
 6. Run a `1-draft` program that imports `test/geometry` and declares

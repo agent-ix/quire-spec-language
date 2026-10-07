@@ -29,8 +29,9 @@ raises the limit from the library, from a replay request (every setting but
 `replay.input_bytes`) and from the driver CLI (`quire`, ADR-029 CB-1), which
 exposes the caller limits through QSL's settings operation, wherever that
 entry point takes the setting. Every `stage_limit_exceeded` outcome names the
-limit, its value and its setting. An execution budget set in a request's
-accounting limits (below) has no setting name here.
+limit, its value and its setting. Each execution budget under
+`quire.value.accounting/v1` also has a setting name, `accounting.<counter>`
+(see Accounting setting names), and a reached budget names it.
 
 The ecosystem rule that depth is never a limit kind, and that a reached
 limit names how to raise it, is QSpec's (ADR-030 D-1; QSpec FR-460 and
@@ -110,12 +111,41 @@ input or source bytes. The formatter has no replay `stage_limits` entry because
 replay does not run the format operation. Its typed `FormatLimits` field and
 the settings operation remain the library entry points for raising it. `replay.input_bytes` bounds the replay
 request and envelope bytes themselves, so it is raised from the library and
-the CLI, and a request's own `stage_limits` does not carry it. An execution
-budget under `quire.value.accounting/v1` is set in a request's accounting limits,
-not through `--limit` or `CallerLimits`, and is named by its accounting
-counter, for example `work_units`, which settles as `Incomplete` (QSpec
-FR-461 Behavior 5); it has no row in this table. A configurable limit QSL adds later takes a name by the same
-rule and a row in this table.
+the CLI, and a request's own `stage_limits` does not carry it. A configurable
+limit QSL adds later takes a name by the same rule and a row in this table.
+
+## Accounting setting names
+
+The S6a evaluation of a call charges the ten counters of
+`quire.value.accounting/v1` (QSpec FR-323 `limits`), which the call's
+accounting limits (`quire_exact::ScalarLimits`) bound. Each counter has the
+setting name `accounting.<counter>`, where `<counter>` is the counter's
+`quire.value.accounting/v1` member name and the `ScalarLimits` field of the
+same name. The prefix `accounting` names the accounting limits, as QSpec
+FR-461 Behavior 5 names an engine's limits by the engine. The table lists
+all ten. Each row's default is the bound a call gets when the caller does
+not configure that counter, the defaults FR-100 gives a `1-draft` run.
+
+| Setting | Counter | Default |
+| --- | --- | --- |
+| `accounting.integer_bits` | `integer_bits` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.decimal_digits` | `decimal_digits` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.scale_expansion` | `scale_expansion` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.text_input_bytes` | `text_input_bytes` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.text_scalars` | `text_scalars` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.normalized_scalars` | `normalized_scalars` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.unit_edges` | `unit_edges` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.value_occurrences` | `value_occurrences` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.work_units` | `work_units` | 1000000 units |
+| `accounting.result_units` | `result_units` | 18446744073709551615 (`u64::MAX`) |
+
+An accounting setting is not a stage limit. A reached budget settles the
+call `Incomplete`, never `LimitExceeded` (QSpec FR-461 Behavior 5),
+so Behaviors 1 to 4 do not apply to this table. The settings operation sets
+these names through the same operand grammar as the stage settings
+(Behavior 8). A request sets a budget in its own accounting limits, by
+counter member name (FR-098's accounting limits, FR-100's `accounting`),
+and not in its `stage_limits` (Behavior 10).
 
 ## Behavior
 
@@ -158,7 +188,7 @@ rule and a row in this table.
    exposes the caller limits as `--limit <name>=<value>`, repeatable
    (ADR-029 CB-1). QSL SHALL provide the library settings operation that the
    driver CLI calls with those operands: given a list of `<name>=<value>`
-   operands, where `<name>` is a setting name from the table and `<value>` a
+   operands, where `<name>` is a setting name from either table and `<value>` a
    non-negative decimal integer, it SHALL return the stages' limits with each
    named limit at that value. For `format.output_bytes`, the returned caller
    limits SHALL expose the resulting `FormatLimits` to the formatter. When
@@ -167,7 +197,29 @@ rule and a row in this table.
    return a usage refusal that names the operand, and no stage runs.
 11. **Absent settings take their defaults.** When a caller does not
    configure a limit at an entry point, QSL SHALL run the stage with that
-   limit at its default from the table.
+   limit at its default from the table, and a call with each accounting
+   counter at its default from the accounting table.
+8. **The settings operation sets every accounting budget by name.** Given
+   an operand `accounting.<counter>=<value>` whose name is in the accounting
+   table, the settings operation SHALL return the call's accounting limits
+   with that counter at `<value>` and every counter no operand names at its
+   default. The grammar, value, duplicate and unknown-name rules are
+   Behavior 6's, with the same usage refusal naming the operand and its
+   cause: a name with the `accounting.` prefix that is not in the accounting
+   table (`accounting.depth`), and the bare `accounting`, are unknown
+   settings; a value above `u64::MAX` is not an integer that fits a bound;
+   the same name given twice is refused at the second operand.
+9. **A reached budget names its setting.** When an evaluation charge would
+   exceed an accounting counter's bound, the call SHALL settle `Incomplete`
+   (QSpec FR-461 Behavior 5), and the outcome SHALL name the counter, the
+   configured bound, the count the denied charge would have reached, and
+   the setting `accounting.<counter>`, so the caller can raise it with
+   `--limit accounting.<counter>=<n>`. FR-286 serializes the setting as the
+   incomplete limit's `setting` member.
+10. **A request carries no accounting setting in `stage_limits`.** When a
+   replay request's `stage_limits` holds an entry whose name is in the
+   accounting table, request decode SHALL refuse it, naming the entry, as
+   it refuses `replay.input_bytes` (FR-263).
 
 ## Acceptance Criteria
 
@@ -179,6 +231,30 @@ rule and a row in this table.
 | FR-255-AC-4 | For each row of the setting table, an input or operation that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each applicable entry point: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, `format.output_bytes`, and a row whose stage a replay does not run are exercised through the builder and the settings operation; the formatter receives the resulting `FormatLimits`. | Test (TC-721, TC-931) |
 | FR-255-AC-5 | The settings operation given `s9.nodes=1`, given `s3.nodes=ten`, given `s3.nodes=-1`, and given `s3.nodes=5` and `s3.nodes=6` together, each returns a usage refusal naming the offending operand, and no stage runs. | Test (TC-721) |
 | FR-255-AC-6 | A compile with no limit configured at any entry point runs each stage at the defaults the table lists, and the effective limits a checked package records equal those defaults; an unconfigured format operation uses 1048576 output bytes. | Test (TC-721, TC-931) |
+| FR-255-AC-7 | `seven` called with the setting operand `work_units=0` settles `Incomplete` naming counter `work_units`, bound 0, count 1 and setting `work_units`; its outcome's `setting` member is `work_units`. With `work_units=1000000`, the same call completes with 7. | Test (TC-921) |
+| FR-255-AC-8 | For each accounting counter, the settings operation given `<counter>=123456789` returns accounting limits with that counter at 123456789 and the other nine at their defaults; given no operand, it returns the accounting defaults; given `work_units=18446744073709551615`, it returns `work_units` at `u64::MAX`. | Test (TC-921) |
+| FR-255-AC-9 | The settings operation given `depth=1` and `accounting=1` each returns a usage refusal with cause unknown setting; given `work_units=ten`, `work_units=-1` and `work_units=18446744073709551616` each returns cause not an integer; given `work_units=5` and `work_units=6` together returns cause repeated naming `work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-921) |
+| FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `work_units` refuses at decode, naming the entry. | Test (TC-921) |
+
+## Status
+
+The setting table, the one-mapping-per-limits-type rule, the builders, the
+settings operation, a request's `stage_limits` and the defaults are
+implemented (TC-720, TC-721). Backing of the criteria:
+
+- FR-255-AC-1 is stage-driven for the step ceilings and the byte limits: the step
+  ceilings (`model.ancestor_steps`, `admission.ancestor_steps`,
+  `model.family_steps`) carry their setting and the count reached in the
+  model refusal cause itself, and `intake.input_bytes` in the intake
+  refusal (FR-260-AC-4).
+- FR-255-AC-3 compares the limits types against the table in this file.
+- FR-255-AC-4 is stage-driven through the settings operation and a request's
+  `stage_limits` for `s1.tokens`, `s3.nodes`, `s3.work_units` and
+  `identity.input_bytes`, and through the stage's own limit raise for
+  `library.*`, `admission.population_members`, `admission.work_units` and
+  `model.dispatch_candidates`; every other row is checked at the entry
+  points (the setting is accepted and sets its field) and not re-run
+  through its stage.
 
 ## Dependencies
 
@@ -195,6 +271,10 @@ rule and a row in this table.
   §2: an absent bound is inherited from its published default.
 - QSpec FR-461 owns the naming rule and the rendering this requirement
   applies.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md) gives a call's
+  accounting defaults and its request's `accounting` member, and
+  [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md)
+  serializes a reached budget's setting.
 
 ## References
 

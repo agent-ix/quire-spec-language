@@ -37,8 +37,9 @@ request (ADR-030 D-4.8, D-3).
    settings at the entry's bound, and every setting with no entry at its
    published default.
 2. **Request decode.** When a `stage_limits` entry names a setting that is
-   not in FR-255's table, or names `replay.input_bytes`, request decode SHALL
-   refuse it, naming the entry (FR-071).
+   not in FR-255's setting table, names `replay.input_bytes`, or names a
+   setting of FR-255's accounting table, request decode SHALL refuse it,
+   naming the entry (FR-071).
 3. **Values.** Replay SHALL decode each canonical assignment value into a
    `quire_exact::Value` from `quire-canonical`'s reader tree (FR-259), over
    an explicit heap stack.
