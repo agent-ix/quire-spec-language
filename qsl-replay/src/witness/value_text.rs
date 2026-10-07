@@ -255,12 +255,6 @@ struct Work {
     compared: u64,
 }
 
-impl Work {
-    fn total(self) -> u64 {
-        self.written.saturating_add(self.compared)
-    }
-}
-
 /// `left` against `right` by their finished bytes, counting the bytes looked
 /// at in `compared`.
 fn compare(

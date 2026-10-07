@@ -470,7 +470,7 @@ fn nested_sets(depth: usize) -> WitnessValue {
 fn work_of(value: &WitnessValue) -> (u64, usize) {
     let (arena, work) = super::encode_pieces(value).unwrap();
     let length = super::Chunks::new(&arena, 0).map(<[u8]>::len).sum();
-    (work.total(), length)
+    (work.written + work.compared, length)
 }
 
 fn nested_options(depth: usize) -> WitnessValue {
