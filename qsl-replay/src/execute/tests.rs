@@ -2384,7 +2384,7 @@ mod operator_arm {
     /// `PackageIdMismatch` (`stale_dependency/content-mismatch`); a node the
     /// package does not hold, a node that is not in the selected function's
     /// body and an operator the node is not an application of each refuse
-    /// `ScalarIdentity` (`stale_dependency/revision-mismatch`) with their own
+    /// `ScalarIdentity` (`stale_dependency/content-mismatch`) with their own
     /// cause; an enclosing function the package does not declare refuses
     /// `UnknownFunction` (`missing_declaration/missing-name`).
     #[trace("TC-904", "FR-357-AC-11")]
@@ -2434,7 +2434,7 @@ mod operator_arm {
             (parity("inc", 3), wrong_operator, "Operator"),
         ] {
             let (text, code, settled, report) = refusal_of(wire, claim);
-            assert!(text.contains("revision-mismatch"), "{text}");
+            assert!(text.contains("content-mismatch"), "{text}");
             assert_eq!(code, Code::StaleDependency);
             assert_eq!(settled, stale_code);
             let OperatorParityResult::Refused(refusal) = report.result() else {
@@ -2691,7 +2691,7 @@ mod operator_arm {
     }
 
     /// FR-357-AC-16: a request whose obligation identity is not the
-    /// recomputed one refuses `ScalarIdentity` (`revision-mismatch`) with the
+    /// recomputed one refuses `ScalarIdentity` (`content-mismatch`) with the
     /// cause `Obligation` naming both digests, after any member of the
     /// preimage changes.
     #[trace("TC-904", "FR-357-AC-16")]
@@ -2729,7 +2729,7 @@ mod operator_arm {
                 "{label}: {refusal:?}"
             );
             assert_eq!(refusal.code(), Code::StaleDependency, "{label}");
-            assert_eq!(refusal.cause(), Some("revision-mismatch"), "{label}");
+            assert_eq!(refusal.cause(), Some("content-mismatch"), "{label}");
             let text = refusal.to_string();
             assert!(
                 text.contains(&sent_id.to_string()) && text.contains(&minted(&base).to_string()),
@@ -2747,7 +2747,7 @@ mod operator_arm {
             panic!("expected ScalarIdentity: {refusal:?}");
         };
         assert_eq!(refusal.code(), Code::StaleDependency);
-        assert_eq!(refusal.cause(), Some("revision-mismatch"));
+        assert_eq!(refusal.cause(), Some("content-mismatch"));
         cause
     }
 

@@ -166,7 +166,7 @@ that retains this contract and names the exact public surface it consumes:
 
 - `protocol_artifact::handoff::{PUBLISHED_HANDOFF, PUBLISHED_OFFER_FILE,
   PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_SELECTION_FILE,
-  PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_CHECKSUMS_FILE,
+  PUBLISHED_MUTATION_MANIFEST_FILE,
   MUTATION_MANIFEST_FORMAT}`;
 - `protocol_artifact::v2::{Expected, ExpectedDefinition, ExpectedTemporal,
   AdmittedPackage, read, encode_candidate}` and
@@ -231,11 +231,10 @@ refusal with its report limits, usage and source locus; no partial admission is
 written.
 
 The repository commits one generated instance at
-[`artifacts/compiled-protocol-v2/`](../artifacts/compiled-protocol-v2/). Its
-`SHA256SUMS` lists the raw SHA-256 digest of every other file in that directory;
-TC-138 verifies the inventory and digests and decodes both interchange files
-with the published record types. The public `protocol_artifact::handoff`
-constants name this directory, its five consumer-facing members and the
+[`artifacts/compiled-protocol-v2/`](../artifacts/compiled-protocol-v2/). TC-138
+decodes both interchange files with the published record types. The public
+`protocol_artifact::handoff`
+constants name this directory, its four consumer-facing members and the
 mutation-corpus format; downstream Rust consumers import those values rather
 than discovering them through an environment variable or shadow vocabulary.
 

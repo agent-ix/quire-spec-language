@@ -64,8 +64,7 @@ impl SettingLimits for ReplayLimits {
 }
 
 /// A #231 reader refused an encoding exceeding its [`ReplayLimits`]:
-/// `stage_limit_exceeded/input-bytes-exceeded` (catalog revision
-/// `1-draft.8`) naming `replay.input_bytes`, through
+/// `stage_limit_exceeded/input-bytes-exceeded` naming `replay.input_bytes`, through
 /// [`qsl_foundation::diagnostic::CatalogCoded`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error(

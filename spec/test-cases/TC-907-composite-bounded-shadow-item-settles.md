@@ -119,7 +119,7 @@ backs.
     their stage.
 - Step 3: in order, `PackageIdMismatch` (`content-mismatch`),
   `UnknownFunction` (`missing-name`), three `ScalarIdentity`
-  (`revision-mismatch`) refusals each with its own cause, two
+  (`content-mismatch`) refusals each with its own cause, two
   `ScalarIdentity::Occurrence` refusals, and `ScalarIdentity::Obligation`
   naming both digests. Each report carries the full claim.
 - Step 4: `Proved { success_checks: 4 }`, success, for each (row V-4).

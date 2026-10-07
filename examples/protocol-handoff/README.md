@@ -89,8 +89,6 @@ The output directory contains:
   `expected.json` maps each reference to its file and direct prerequisites. The
   producer's own binary is not among them: `expected.json`'s `producer.binary`
   records its identity as a digest.
-- `SHA256SUMS`: a deterministic complete inventory of every other generated
-  handoff member, using normalized handoff-relative paths.
 
 The immutable checked-in consumer copy is addressed by
 `protocol_artifact::handoff::PUBLISHED_V1_HANDOFF`; its version-explicit member

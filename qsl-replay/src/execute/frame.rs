@@ -37,7 +37,7 @@ use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplayS
 use crate::WitnessEnvelope;
 use qsl_foundation::diagnostic::Category;
 
-/// FR-116's `stale_dependency`/`revision-mismatch`: one payload identity
+/// FR-116's `stale_dependency`/`content-mismatch`: one payload identity
 /// that is not the recompiled package's, or one envelope identity that is
 /// not the payload's, naming both.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

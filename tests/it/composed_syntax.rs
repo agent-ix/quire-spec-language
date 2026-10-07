@@ -490,8 +490,7 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
     };
     assert_eq!(parsed.declarations().len(), 1);
     assert_eq!(parsed.expressions().len(), 1);
-    // Every syntax ceiling reports `stage_limit_exceeded` (catalog revision
-    // `1-draft.8`): `tokens` is `token-count-exceeded`.
+    // Every syntax ceiling reports `stage_limit_exceeded`: `tokens` is `token-count-exceeded`.
     for (limits, phase, code) in [
         (
             Limits {

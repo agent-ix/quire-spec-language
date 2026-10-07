@@ -63,7 +63,7 @@ fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
 
 /// The limit a refusal names, asserting it is a resource refusal whose
 /// message renders that same limit, with code `stage_limit_exceeded` for
-/// every kind (catalog revision `1-draft.8`).
+/// every kind.
 fn refused_limit(error: &CompleteDiagnostic) -> SyntaxLimit {
     let limit = error
         .limit()

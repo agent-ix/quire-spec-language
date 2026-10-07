@@ -225,13 +225,12 @@ pub(crate) const EXEMPT: &[Exemption] = &[
             "producer_source_digest",
             "clock_input_digest",
             "DefinitionInputs::new",
-            "write_checksum_inventory",
         ],
         calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
                  emitted or embedded (offer, mutation offers, sources, clock inputs, rule \
-                 placeholders, its own source, `SHA256SUMS` members); not an identity over a \
+                 placeholders, its own source); not an identity over a \
                  canonical form",
     },
     Exemption {
