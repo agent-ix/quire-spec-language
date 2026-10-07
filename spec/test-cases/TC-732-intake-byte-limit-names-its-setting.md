@@ -32,4 +32,4 @@ Tag the tests `#[trace("TC-732", "FR-260-AC-4")]`.
 
 ## Status
 
-Planned.
+Implemented.

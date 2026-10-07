@@ -50,6 +50,6 @@ Tag the tests `#[trace("TC-730", "FR-260-AC-1")]`, `#[trace("TC-730", "FR-260-AC
 
 ## Status
 
-Step 4 is implemented. Steps 1 and 2 (FR-260-AC-1) are planned: intake still
-refuses a document nested 200 or more deep as a depth limit until Filament
-AGE-2224 removes the semantic-IR crate's recursion.
+Steps 1 to 4 are implemented. Intake has no depth limit: a document nested
+100,000 deep is read, judged by the semantic-IR reader and dropped on a
+512 KiB stack.
