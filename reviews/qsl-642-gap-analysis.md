@@ -51,3 +51,11 @@ No unowned production code: every changed production item traces to FR-091, FR-0
 ## Verdict
 
 Every criterion the PR implements is tagged and asserted except FR-056-AC-16, whose JSON-number branch and resolved-type branch have no test (FND-001). FR-033-AC-6 is planned on IR-662 under the rulings. Mergeable once FND-001 is fixed in this PR.
+
+## Dispositions
+
+Round 1, reviewed at fe7a43674bff9296046a1222336d6a8606839e5b.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Part (a) is fixed in 73f15d363 and fe7a43674. `a_wide_bound_is_a_decimal_string_and_a_wide_json_number_is_inexact` parses a real package document and asserts `noncanonical_wire`/`inexact-integer` at `/types/0/constraints/1/operands/value`. Part (b) is tested at reader level through the one parse plus `read_nodes`, and asserts the exact `ScalarTypeRecord` `[0, u64::MAX]`. Full admission via `read_records` waits on the FCD semantic-ir validator rejecting a string min/max operand, routed upstream as AGE-2228 (Backlog). Until then string bounds do not admit end to end. |

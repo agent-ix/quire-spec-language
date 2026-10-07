@@ -54,3 +54,13 @@ Examined:
 The core changes are correct and match the rulings: the S2 fold, the literal and bound ceiling with its typed cause and catalog code, the counter spelling, i128 intake and refinement, and the i128 witness. The three findings are low, and none gives a wrong result on any path the PR's tests reach. Mergeable once the findings are fixed in this PR.
 
 Gates: focused runs at 90bc007a7 through `locked-build.sh` with `QSPEC_DIR` set to QSpec main. qsl-semantics lib QSL-642 tests: 9 passed, including the QSpec `integer_encoding_vectors` conformance. `check::lowering::tests`: 68 passed, all FR-092 vectors. qsl-semantics `it --features test-support` (`wide_domain`, `r08`, `model_systems`): 22 passed. qsl-replay lib (`wide_integer`, `tc_913`, `tc_444`, `parity_identity`, `value_text`): 40 passed, including the IR-631 pin. `cargo clippy -p qsl-semantics -p qsl-replay -p qsl-forms --all-targets -D warnings` is clean. Full `make ci` was not run, per the brief.
+
+## Dispositions
+
+Round 1, reviewed at fe7a43674bff9296046a1222336d6a8606839e5b.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 73f15d363 |
+| FND-002 | fixed | 73f15d363 |
+| FND-003 | fixed | fe7a43674 |

@@ -51,3 +51,12 @@ Examined:
 ## Verdict
 
 The re-applied spec is consistent with the code and the rulings. There are two low bookkeeping inconsistencies in the test-case text and status tables. Mergeable once they are fixed in this PR.
+
+## Dispositions
+
+Round 1, reviewed at fe7a43674bff9296046a1222336d6a8606839e5b.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 73f15d363 |
+| FND-002 | fixed | 73f15d363 |
