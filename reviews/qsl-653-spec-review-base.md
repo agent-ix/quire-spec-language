@@ -40,3 +40,12 @@ The FR-286 statement that `unsupported_construct` "needs no new code" relies on 
 | --- | --- | --- | --- |
 | FND-001 | medium | The FR-286 statement and AC-6 fix `unsupported_construct` as the code for a driver's unsupported engine. QSpec FR-271, the authority QSL reads its catalog from, separates `unsupported_construct` (a source form prohibited by the selected profile) from `unimplemented_capability` (valid meaning that the selected producer does not implement). An engine that is named and valid but not built is the second case. | spec/functional/FR-286-serialize-every-outcome-as-one-json-outcome-document.md:125-128 |
 | FND-002 | low | The FR-100 edit is one unwrapped 200-character line inside a wrapped paragraph. It also says "a cancel at any stage or during the call", which no test backs for the call or for any stage after S1 (see the code-review SR-2442 FND-001). | spec/functional/FR-100-run-a-named-function-through-the-spine.md:47 |
+
+## Dispositions
+
+Round 1, reviewed at 0ae852bf192acfd086f7bf7c0d2db2596be2fecd.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 71423c552: FR-286 now names QSpec FR-271's `unimplemented_capability` for an unbuilt engine, never `unsupported_construct`, in category unsupported, exit 21. FR-286-AC-6 and TC-770 step 6 match. |
+| FND-002 | fixed | 71423c552: the FR-100 paragraph is rewrapped. Its "S1 to S4 or during the S6a call" claim is now FR-100-AC-12, backed by TC-452 step 5. |

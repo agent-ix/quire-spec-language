@@ -41,3 +41,21 @@ Gates at 2f0b6594 are recorded in the reviewer's Linear comment.
 | FND-002 | medium | The driver's unsupported engine (AOT or JIT requested, interpreter only) is written with `unsupported_construct`. QSpec FR-271 defines that code as "a recognized form prohibited by the exact selected profile", which is a source form. The catalog has `unimplemented_capability` ("valid complete-V1 meaning is not implemented by the selected producer; distinct from prohibited source and unsupported backend projection") for exactly this case. QSL's `Code` enum lacks that variant. The ticket said to add a code when the catalog has none for this case. The category and exit (unsupported, 21) are correct; the code a consumer reads is the wrong catalog entry. | qsl-replay/src/outcome.rs:1563-1576; spec/functional/FR-286-serialize-every-outcome-as-one-json-outcome-document.md:125-128 |
 | FND-003 | low | `a_driver_side_unsupported_engine_document_exits_21` builds a document with `Category::Unsupported` and asserts that it reads back as unsupported with exit 21. It exercises no code this PR adds, and its two real assertions, `exit_code(Unsupported) == 21` and `UnsupportedConstruct.category()`, are already TC-769's. It documents the driver's usage; it does not test it. | qsl-replay/src/outcome.rs:1563-1576 |
 | FND-004 | low | `RunRefusal::stage()` returns `"call"` for `Cancelled`, even when the cancel stopped S1 to S4. Its doc says it returns "the stage FR-100's refusal table names". A CLI or driver envelope that reads `stage()` would report a parse-time cancel as a call-stage stop. `from_run` itself writes `last_stage` null, so the two surfaces disagree. | qsl-replay/src/spine/call.rs:283-293 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | Nothing asserts `Code::UnimplementedCapability.category() == Category::Unsupported`. The `from_run_documents_every_arm` driver block passes `Category::Unsupported` to `OutcomeDocument::new` directly, and TC-470's `Code::all()` loop accepts any exit from 20 to 22. quire-driver's `catalog_failure` (quire-cli/src/cli.rs:326-333 on driver origin/main 5cddd5f) builds its document from `code.category()`. If the variant were dropped from `is_unsupported`, the unbuilt-engine document would exit 20 (refusal) with every QSL test green. | qsl-foundation/src/diagnostic.rs:315-322; qsl-replay/src/outcome.rs:1557-1573 |
+
+## Dispositions
+
+Round 1, reviewed at 0ae852bf192acfd086f7bf7c0d2db2596be2fecd (spec half 71423c552, code half 0ae852bf1).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0ae852bf1: `a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault` (qsl-replay/src/spine/lifecycle/tests.rs). The Gate harness trips `Requested` at the last front-end charge F and `Deadline` at F+1, the first S6a charge. Each must be `RunRefusal::Cancelled` with that cause, exit 22, `last_stage` null. Without the call.rs:389 arm, the F+1 run becomes `Fault` and the `matches!` fails. |
+| FND-002 | fixed | 0ae852bf1: adds `Code::UnimplementedCapability` (`unimplemented_capability`, in `all()` and `is_unsupported`). The driver document in `from_run_documents_every_arm` uses it. |
+| FND-003 | fixed | 0ae852bf1: the vacuous test is deleted. Its replacement block asserts the new code's spelling and `last_stage` null. |
+| FND-004 | fixed | 0ae852bf1: `RunRefusal::stage()` returns `Option<&'static str>`, `None` for `Cancelled`. src/command/output.rs maps `None` to `types::Stage::Request`. I accept that: the envelope type has no stageless variant, the CLI passes a fresh `Cancel` it never cancels, and `Request` is the existing pre-stage label. |
+| FND-005 | deferred | Low. Add the assertion in a follow-up or the next touch of TC-470 or TC-769. Not merge-blocking: the mapping is correct at 0ae852bf1. |

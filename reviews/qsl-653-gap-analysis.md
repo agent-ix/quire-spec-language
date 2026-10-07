@@ -51,3 +51,11 @@ The semantic review (intent to test to code) was not run.
 - Semantic review: skipped. The run was a reviewer subagent with no opt-in.
 
 Plan completion: not assessed
+
+## Dispositions
+
+Round 1, reviewed at 0ae852bf192acfd086f7bf7c0d2db2596be2fecd.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 71423c552 adds FR-100-AC-12 and TC-452 step 5. 0ae852bf1 adds `a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault`, tagged `#[trace("TC-452", "FR-100-AC-12")]`. |

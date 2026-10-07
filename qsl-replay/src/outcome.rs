@@ -1563,6 +1563,11 @@ mod tests {
                 None,
                 "the AOT engine is not built",
             )]);
+        assert_eq!(
+            Code::UnimplementedCapability.category(),
+            Category::Unsupported
+        );
+        assert_eq!(Code::UnimplementedCapability.category().exit_code(), 21);
         assert_eq!(driver.category().exit_code(), 21);
         let document = json_of(&driver);
         assert_eq!(document["category"], "unsupported");
