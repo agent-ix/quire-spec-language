@@ -476,23 +476,17 @@ third-party provider cannot add an arm, so CG's closed kind gains one
 variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
 
 1. **Manifest checked in full.** Its arm settles from the provider's manifest
-   alone: the advertised (kind, mode) pairs, domains and bounds, against the
-   item's extent classification, under QSpec FR-290's rules. The descriptor
-   CG receives carries the manifest's advertised domains and bounds, not the
-   (kind, mode) pairs alone. That descriptor is CG's own descriptor for the
-   Process variant, not `qsl_route::BackendDescriptor`, which holds only
-   (kind, mode); CG sources the domains and bounds from the FR-331 manifest
-   the `BackendDescriptor` came from. An item whose domain or bound the
-   manifest does not advertise declines under FR-290. The FR-290 decline
-   cause for an unadvertised domain or bound is pending in QSpec under
-   QSL-637, in a QSpec PR that follows this one. Until then CG uses existing
-   FR-290 causes: an unadvertised unbounded mode settles by FR-290's
-   existing unbounded-extent row (`requires-bound` when a finite bound is
-   available, otherwise `unsupported`, warned,
-   `unsupported_projection`/`unbounded-extent`, as its table gives), and an
-   unadvertised domain or bound settles `unsupported`,
-   `unsupported_projection`/`unsupported-requested-capability`, until the
-   QSL-637 QSpec cause replaces it. It never calls the plugin.
+   alone, against the item's extent classification, under QSpec FR-290's
+   rules. The descriptor CG receives is a QSpec FR-331 backend-provider/v1
+   `BackendDescriptor` (`proposals/backend-provider-v1/schema.json`): its
+   `advertises` (kind, mode) pairs, its `domains` (the ADR-014 domain kinds
+   for which the backend accepts a finite bound) and its `bounds`. The
+   `bounds` are the published default of each limit the backend applies;
+   they are not admission maxima, and routing never compares an item's bound
+   against them. That descriptor is CG's own descriptor for the Process
+   variant, not `qsl_route::BackendDescriptor`, which holds only (kind, mode);
+   CG sources `domains` and `bounds` from the FR-331 manifest the
+   `BackendDescriptor` came from. It never calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor
@@ -508,17 +502,20 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    reader and settles per PL-7 (`refuted` only through S6a replay; `proved`
    keeps the basis label trusted). Each CG arm for `Process` is a typed
    pass-through or empty output, never a panic.
-4. **Disposition from the manifest alone.** A bounded item routes when the
-   manifest advertises the bounded mode with a bound that covers the item's.
-   An unbounded item routes only when the manifest advertises the unbounded
-   mode. Otherwise the item declines under FR-290, with the interim or
-   pending causes above. There is no default disposition. FR-290's existing
-   `requires-bound` row (an unbounded item on a bounded-only provider when a
-   finite bound is available) is the case where the manifest advertises the
-   bounded mode but the item's extent is unbounded; it stays a
-   `requires-bound` settlement of that row, and routing happens only once
-   a bound is supplied that the advertised bound covers. Every other
-   unadvertised case declines.
+4. **Disposition from the manifest alone.** CG checks an item in this
+   order, and the first check that fails settles it:
+   1. The manifest advertises a mode for the item's kind.
+   2. Every domain kind of the item's extent (`bounds[].kind` for a bounded
+      extent, `domains[].kind` for an unbounded one) is in the manifest's
+      `domains`. Otherwise the item settles `unsupported`,
+      `unsupported_projection`/`unsupported-requested-capability`, whatever
+      `finite_bound_available` says.
+   3. FR-290's advertised-mode rows. An unbounded item on a provider that
+      advertises only `bounded` for its kind settles `requires-bound` when
+      `finite_bound_available` is true, and otherwise `unsupported`, warned,
+      `unsupported_projection`/`unbounded-extent`.
+
+   An item that passes all three routes. There is no default disposition.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
    learns that a descriptor is a process provider. Not (a), a driver-supplied
    map beside the descriptors: it is a second source of truth that can
