@@ -139,6 +139,7 @@ pub use quire_semantic_value::call::InputRefusal;
 // constructor (ADR-011 §3 FB-05).
 pub use qsl_foundation::bound::{
     DomainKey, DomainKind, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
+    ProofBoundRefusal,
 };
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{

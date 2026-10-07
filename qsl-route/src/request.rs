@@ -39,13 +39,13 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::check::{Capability, RequirementRecord};
-use qsl_semantics::family::{ClaimExtent, DomainKind, Requirements};
+use qsl_semantics::family::{ClaimExtent, Requirements};
 
 use crate::{BackendId, CandidateOutcome, Registry};
 
@@ -263,11 +263,15 @@ impl RequestWriter {
                     supplied: bound.kind(),
                 });
             }
-            domains.push(ProofBound {
-                domain: domain.clone(),
-                kind: Some(kind),
-                bound: bound.clone(),
-            });
+            let proof =
+                ProofBound::new(domain.clone(), Some(kind), bound.clone()).map_err(|_| {
+                    BoundRefusal::KindMismatch {
+                        domain: domain.clone(),
+                        expected,
+                        supplied: bound.kind(),
+                    }
+                })?;
+            domains.push(proof);
         }
         Ok(self.push(
             occurrence,
@@ -546,16 +550,13 @@ mod tests {
         assert_eq!(
             bounded.domains(),
             [
-                ProofBound {
-                    domain: key(1, &[]),
-                    kind: Some(DomainKind::Collection),
-                    bound: FiniteBound::cardinality(8),
-                },
-                ProofBound {
-                    domain: key(1, &[0]),
-                    kind: Some(DomainKind::Recursive),
-                    bound: depth(3),
-                },
+                ProofBound::new(
+                    key(1, &[]),
+                    Some(DomainKind::Collection),
+                    FiniteBound::cardinality(8)
+                )
+                .unwrap(),
+                ProofBound::new(key(1, &[0]), Some(DomainKind::Recursive), depth(3)).unwrap(),
             ]
         );
         // The proof bounds are part of the item: different bounds, different
@@ -567,13 +568,14 @@ mod tests {
     /// FR-331 `extent.bounds[].kind`: every proof bound the writer emits
     /// carries its domain's kind, and the kind pairs with the bound's
     /// variant as `DomainKind::finite_kind` says.
-    #[trace("TC-438", "FR-097-AC-4")]
+    #[trace("TC-438", "FR-097-AC-9")]
     #[test]
     fn tc_438_each_proof_bound_carries_the_kind_its_bound_variant_pairs_with() {
         let requirements = claim(&[
             (key(1, &[]), DomainKind::Population),
             (key(2, &[]), DomainKind::Integer),
             (key(3, &[]), DomainKind::Recursive),
+            (key(4, &[]), DomainKind::Collection),
         ]);
         let mut writer = RequestWriter::new();
         let index = writer
@@ -591,6 +593,7 @@ mod tests {
                         .unwrap(),
                     ),
                     (key(3, &[]), depth(2)),
+                    (key(4, &[]), FiniteBound::cardinality(5)),
                 ]),
             )
             .unwrap();
@@ -598,20 +601,21 @@ mod tests {
         let kinds: Vec<_> = items[index.get()]
             .domains()
             .iter()
-            .map(|bound| bound.kind)
+            .map(|bound| bound.kind())
             .collect();
         assert_eq!(
             kinds,
             [
                 Some(DomainKind::Population),
                 Some(DomainKind::Integer),
-                Some(DomainKind::Recursive)
+                Some(DomainKind::Recursive),
+                Some(DomainKind::Collection)
             ]
         );
         for bound in items[index.get()].domains() {
             assert_eq!(
-                bound.kind.and_then(DomainKind::finite_kind),
-                Some(bound.bound.kind())
+                bound.kind().and_then(DomainKind::finite_kind),
+                Some(bound.bound().kind())
             );
         }
     }

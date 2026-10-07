@@ -61,19 +61,17 @@ fn range(lower: i64, upper: i64) -> FiniteBound {
 }
 
 fn bound(node: WireNodeId, path: &[u32], bound: FiniteBound) -> ProofBound {
-    ProofBound {
-        domain: DomainKey::Node {
-            node,
-            path: path.to_vec(),
-        },
-        kind: match bound.kind() {
-            FiniteBoundKind::Cardinality => Some(DomainKind::Collection),
-            FiniteBoundKind::IntegerRange => Some(DomainKind::Integer),
-            FiniteBoundKind::Depth => Some(DomainKind::Recursive),
-            FiniteBoundKind::Variants => None,
-        },
-        bound,
-    }
+    let kind = match bound.kind() {
+        FiniteBoundKind::Cardinality => Some(DomainKind::Collection),
+        FiniteBoundKind::IntegerRange => Some(DomainKind::Integer),
+        FiniteBoundKind::Depth => Some(DomainKind::Recursive),
+        FiniteBoundKind::Variants => None,
+    };
+    let domain = DomainKey::Node {
+        node,
+        path: path.to_vec(),
+    };
+    ProofBound::new(domain, kind, bound).unwrap()
 }
 
 fn outcome(equal: bool, pair_count: u64) -> EqualityOutcome {

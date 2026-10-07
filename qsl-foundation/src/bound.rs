@@ -264,17 +264,74 @@ impl FiniteBound {
 /// substituted for one unbounded domain of an item. It is part of the
 /// bounded request's obligation identity (ADR-013 O-09), and a result
 /// qualifies only over it.
+///
+/// Its `kind` (QSpec FR-331 `kind`) pairs with its bound: [`ProofBound::new`]
+/// refuses a bound whose kind is not the one [`DomainKind::finite_kind`]
+/// names, so no `ProofBound` exists with a missing or mispaired kind.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ProofBound {
+    domain: DomainKey,
+    kind: Option<DomainKind>,
+    bound: FiniteBound,
+}
+
+/// Why [`ProofBound::new`] refused a kind and bound pairing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ProofBoundRefusal {
+    /// A cardinality, integer-range or depth bound with no kind.
+    #[error("a {bound:?} bound needs its domain kind")]
+    MissingKind {
+        /// The bound's variant.
+        bound: FiniteBoundKind,
+    },
+    /// A kind whose finite bound is not the bound's variant, or a
+    /// harness `Variants` bound given a kind (no domain kind describes it).
+    #[error("domain kind {kind:?} does not pair with a {bound:?} bound")]
+    KindMismatch {
+        /// The supplied kind.
+        kind: DomainKind,
+        /// The bound's variant.
+        bound: FiniteBoundKind,
+    },
+}
+
+impl ProofBound {
+    /// Pair `bound` with `domain` and its `kind`. `kind` must be the
+    /// domain kind whose [`DomainKind::finite_kind`] is the bound's
+    /// variant; it is `None` exactly for a harness-drawn
+    /// [`FiniteBound::Variants`] bound (FR-358).
+    pub fn new(
+        domain: DomainKey,
+        kind: Option<DomainKind>,
+        bound: FiniteBound,
+    ) -> Result<Self, ProofBoundRefusal> {
+        match (kind, bound.kind()) {
+            (None, FiniteBoundKind::Variants) => {}
+            (None, bound) => return Err(ProofBoundRefusal::MissingKind { bound }),
+            (Some(kind), bound_kind) if kind.finite_kind() == Some(bound_kind) => {}
+            (Some(kind), bound) => return Err(ProofBoundRefusal::KindMismatch { kind, bound }),
+        }
+        Ok(Self {
+            domain,
+            kind,
+            bound,
+        })
+    }
+
     /// The unbounded domain this bound replaces.
-    pub domain: DomainKey,
-    /// The domain's kind (QSpec FR-331 `kind`). `finite_kind` of it is the
-    /// kind of `bound`. `None` only for a harness-drawn
-    /// [`FiniteBound::Variants`] bound (FR-358), which no domain kind
-    /// describes; a request's bounds always carry `Some`.
-    pub kind: Option<DomainKind>,
+    pub fn domain(&self) -> &DomainKey {
+        &self.domain
+    }
+
+    /// The domain's kind; `None` only for a harness `Variants` bound.
+    pub fn kind(&self) -> Option<DomainKind> {
+        self.kind
+    }
+
     /// The finite domain substituted for it.
-    pub bound: FiniteBound,
+    pub fn bound(&self) -> &FiniteBound {
+        &self.bound
+    }
 }
 
 /// QSpec FR-255's key of one bounded temporal interval, in wire form
@@ -347,9 +404,52 @@ impl IntervalKey {
 
 #[cfg(test)]
 mod tests {
-    /// FR-290-AC-13, FR-331: the seven wire spellings round-trip exactly,
+    /// FR-097-AC-9: a proof bound exists only with the kind its variant
+    /// pairs with; `None` is for a `Variants` bound alone.
+    #[trace("TC-436", "FR-097-AC-9")]
+    #[test]
+    fn a_proof_bound_refuses_a_missing_or_mispaired_kind() {
+        let domain = || DomainKey::Population {
+            member_type: WireNodeId::from_digest([1; 32]),
+            ordinal: 0,
+        };
+        assert!(ProofBound::new(
+            domain(),
+            Some(DomainKind::Population),
+            FiniteBound::cardinality(2)
+        )
+        .is_ok());
+        assert!(ProofBound::new(
+            domain(),
+            Some(DomainKind::Collection),
+            FiniteBound::cardinality(2)
+        )
+        .is_ok());
+        assert_eq!(
+            ProofBound::new(domain(), None, FiniteBound::cardinality(2)),
+            Err(ProofBoundRefusal::MissingKind {
+                bound: FiniteBoundKind::Cardinality
+            })
+        );
+        assert_eq!(
+            ProofBound::new(
+                domain(),
+                Some(DomainKind::Integer),
+                FiniteBound::cardinality(2)
+            ),
+            Err(ProofBoundRefusal::KindMismatch {
+                kind: DomainKind::Integer,
+                bound: FiniteBoundKind::Cardinality
+            })
+        );
+        let variants = FiniteBound::variants(["A".to_owned()]).expect("one variant");
+        assert!(ProofBound::new(domain(), None, variants.clone()).is_ok());
+        assert!(ProofBound::new(domain(), Some(DomainKind::Collection), variants).is_err());
+    }
+
+    /// FR-097-AC-9, FR-331: the seven wire spellings round-trip exactly,
     /// and a near-miss is refused rather than normalized.
-    #[trace("TC-271", "FR-290-AC-13")]
+    #[trace("TC-436", "FR-097-AC-9")]
     #[test]
     fn domain_kind_wire_spellings_round_trip_exactly() {
         let spellings = [

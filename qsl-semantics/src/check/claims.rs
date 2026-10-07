@@ -55,7 +55,8 @@ use super::{
     family::{OccurrenceMap, OccurrenceRole},
     Capability,
 };
-use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, DomainKind, Requirements};
+use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
+use qsl_foundation::bound::DomainKind;
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::location::{Location, Origin as CheckOrigin};
 

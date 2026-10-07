@@ -224,20 +224,37 @@ impl BackendDescriptor {
     /// identity carries exactly one manifest digest at a time (FR-075
     /// Inputs). `domains` is the manifest's `domains`, `None` when it has
     /// none.
+    ///
+    /// The same `domains` rules as [`BackendDescriptor::admit`] apply: an
+    /// absent set while a `bounded` pair is advertised, an empty set, or a
+    /// kind that is not boundable refuses `invalid_capability`/
+    /// `invalid-domains`, keyed by `backend` and `manifest_digest`. (A set
+    /// holds no repeat.)
     pub fn new(
         backend: Candidate,
         origin: ProviderOrigin,
         manifest_digest: ManifestDigest,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
         domains: Option<BTreeSet<DomainKind>>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, RegistrationRefusal> {
+        let advertises: HashSet<_> = advertises.into_iter().collect();
+        let advertises_bounded = advertises
+            .iter()
+            .any(|&(_, mode)| matches!(mode, Mode::Bounded));
+        check_domains(domains.as_ref(), advertises_bounded).map_err(|defect| {
+            RegistrationRefusal {
+                backend: backend.clone(),
+                manifest_digest,
+                cause: RegistrationCause::InvalidDomains(defect),
+            }
+        })?;
+        Ok(Self {
             backend,
             origin,
             manifest_digest,
-            advertises: advertises.into_iter().collect(),
+            advertises,
             domains,
-        }
+        })
     }
 
     /// Build a descriptor from the advertised `(kind, mode)` labels exactly
@@ -319,7 +336,8 @@ impl BackendDescriptor {
 
     /// The boundable domain kinds the manifest accepts a finite bound for
     /// (FR-331 `domains`), or `None` when it stated none, which only a
-    /// registration advertising no `bounded` pair may do.
+    /// descriptor advertising no `bounded` pair can hold: both
+    /// constructors refuse the rest.
     pub fn domains(&self) -> Option<&BTreeSet<DomainKind>> {
         self.domains.as_ref()
     }
@@ -388,31 +406,48 @@ impl BackendDescriptor {
     }
 }
 
-/// Admit a manifest's `domains` labels (FR-290 "Advertised mode").
+/// Admit a manifest's `domains` labels (FR-290 "Advertised mode"): parse
+/// them, then apply [`check_domains`].
 fn admit_domains(
     labels: Option<&[&str]>,
     advertises_bounded: bool,
 ) -> Result<Option<BTreeSet<DomainKind>>, DomainsDefect> {
     let Some(labels) = labels else {
-        return if advertises_bounded {
-            Err(DomainsDefect::Absent)
-        } else {
-            Ok(None)
-        };
+        check_domains(None, advertises_bounded)?;
+        return Ok(None);
     };
-    if labels.is_empty() {
-        return Err(DomainsDefect::Empty);
-    }
-    let mut admitted = BTreeSet::new();
+    let mut parsed = BTreeSet::new();
     for &label in labels {
         let kind = DomainKind::from_wire(label)
-            .filter(|kind| kind.finite_kind().is_some())
             .ok_or_else(|| DomainsDefect::NotBoundable(label.to_owned()))?;
-        if !admitted.insert(kind) {
+        if !parsed.insert(kind) {
             return Err(DomainsDefect::Repeated(kind));
         }
     }
-    Ok(Some(admitted))
+    check_domains(Some(&parsed), advertises_bounded)?;
+    Ok(Some(parsed))
+}
+
+/// The FR-290 `domains` rules over typed kinds: absent only without a
+/// `bounded` pair, never empty, every kind boundable.
+fn check_domains(
+    domains: Option<&BTreeSet<DomainKind>>,
+    advertises_bounded: bool,
+) -> Result<(), DomainsDefect> {
+    let Some(domains) = domains else {
+        return if advertises_bounded {
+            Err(DomainsDefect::Absent)
+        } else {
+            Ok(())
+        };
+    };
+    if domains.is_empty() {
+        return Err(DomainsDefect::Empty);
+    }
+    match domains.iter().find(|kind| kind.finite_kind().is_none()) {
+        Some(kind) => Err(DomainsDefect::NotBoundable(kind.to_wire().to_owned())),
+        None => Ok(()),
+    }
 }
 
 /// What is wrong with a manifest's `domains` (FR-290 "Advertised mode"):
@@ -773,8 +808,9 @@ mod tests {
             ProviderOrigin::Linked,
             ManifestDigest::from_digest([digest_byte; 32]),
             advertises,
-            None,
+            Some(BTreeSet::from([DomainKind::Collection])),
         )
+        .expect("a well-formed descriptor")
     }
 
     /// FR-075-AC-5 (TC-193 step 6, narrowed to what a unit test -- not a
