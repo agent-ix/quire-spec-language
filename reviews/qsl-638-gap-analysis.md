@@ -72,3 +72,24 @@ by equality with the preimage, not against the AC's own values.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | FR-093-AC-21 says the model declaration nodes M1 and M5 carry the `ModelOwner`s `ix://acme/orders/Order` and `ix://acme/orders/Sub`. The test only asserts `owner.kind == "model"` and no `version`. The node values are checked only against the checked preimage (QSL's own derivation) and through IR's owner join, so swapping Order's and Sub's owners in the preimage would not be caught by an assertion naming the AC's values. Fix: assert that the set of `model`/`object_type` owner `node`s equals {`ix://acme/orders/Order`, `ix://acme/orders/Sub`} (and the owner `identity` is `acme/orders`). | qsl-package/src/emit/tests/owners.rs:428-433 |
+
+## Dispositions
+
+Round 1, reviewed at 6f9f8e72cd34981a82734249e32b929e6f3cf346 (fix commits
+6c8208363 and 6f9f8e72c; `git diff d91fd5530 6f9f8e72c`). The round adds no
+new finding.
+
+FND-001: each model node now asserts `owner.identity == "acme/orders"`. The
+owner `node`s are collected across the three roots, and the union must equal
+{`ix://acme/orders/Order`, `ix://acme/orders/Sub`}. That still checks
+FR-093-AC-21. The AC names the M1 and M5 owners without saying the two share
+one package, and each root's package holds only its own model declaration
+node. The union check fails if either owner is missing, is wrong, or has an
+extra value. Only a swap between roots (the Order roots owning Sub and the
+Sub root owning Order) would pass. `assert_owners`' equality with each
+package's preimage and IR's owner join make that unlikely, so it is not a
+new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6f9f8e72c |

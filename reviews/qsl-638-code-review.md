@@ -100,3 +100,16 @@ exercises it.
 | FND-001 | low | The new `rekey_stale` doc comment was inserted under the existing `refresh_frame_identity` doc comment. Rustdoc joins the two, so `rekey_stale` carries both texts ("Rebuilds `envelope`'s `identity_projection` ... Renames every stale node key ...") and `refresh_frame_identity` has none. Fix: move the five "Rebuilds ..." lines back above `fn refresh_frame_identity`. | qsl-package/src/checked_v2/tests.rs:2041-2051 |
 | FND-002 | low | The `rebuilt_key` doc comment still says it rebuilds "FR-092's structural preimage under owner (`a`, `u`)". This PR changed it to read the owner from the wire node's own `owner` member, and it is now used for `pkg`/`src` and `agent-ix`/`example-*` owners. Fix: say the owner is the wire node's own `owner`. | qsl-package/src/emit/tests.rs:412-415 |
 | FND-003 | low | `emit()` in `emit/tests.rs` now builds the same closure as `owners.rs`' `emit_under` (place every occurrence at the whole of a given source), with the source taken from `package.graph().source()`. That is two copies of one helper. Fix: make `emit_under` the shared helper in `emit/tests.rs` and define `emit(p)` as `emit_under(p, p.graph().source())`. | qsl-package/src/emit/tests.rs:174-182; qsl-package/src/emit/tests/owners.rs:31-37 |
+
+## Dispositions
+
+Round 1, reviewed at 6f9f8e72cd34981a82734249e32b929e6f3cf346 (fix commits
+6c8208363 and 6f9f8e72c after the review-records commit d91fd5530;
+`git diff d91fd5530 6f9f8e72c`). The round adds no new finding. The fix
+commits touch only the three test files the findings name.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6c8208363 |
+| FND-002 | fixed | 6c8208363 |
+| FND-003 | fixed | 6c8208363 |
