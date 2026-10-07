@@ -1049,9 +1049,7 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
     on_a_small_stack(|| {
         let package_identity = "acme/orders";
         for count in [300_usize, 100_000] {
-            let origin = format!(
-                r#"{{"generated":{{"generatorIdentity":"ix://acme/orders/gen","generatorVersion":"1.0.0","inputIdentities":["ix://acme/orders/gen"]}}}}"#
-            );
+            let origin = r#"{"generated":{"generatorIdentity":"ix://acme/orders/gen","generatorVersion":"1.0.0","inputIdentities":["ix://acme/orders/gen"]}}"#;
             let mut types = String::from("[");
             for position in 0..count {
                 let next = (position + 1) % count;
