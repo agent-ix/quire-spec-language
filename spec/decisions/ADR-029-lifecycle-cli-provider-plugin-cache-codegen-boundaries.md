@@ -505,8 +505,7 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    keeps the basis label trusted). Each CG arm for `Process` is a typed
    pass-through or empty output, never a panic.
 4. **Disposition from the manifest alone.** A `Process(id)` item settles
-   under QSpec FR-290's "Single-candidate arm" (quire-specification
-   `74645130bfdeebd64cec116ec5dafb0e770d47ee`), whose step 2 is the
+   under QSpec FR-290's "Single-candidate arm", whose step 2 is the
    domain-kind check (FR-290-AC-13), read from the descriptor in ruling 1
    and the item's extent. There is no default disposition.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG

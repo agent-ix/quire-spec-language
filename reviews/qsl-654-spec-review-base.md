@@ -44,3 +44,30 @@ The rewrite implements the ruling as decided, apart from four gaps in the wordin
 - **Checks:** `quire validate` passes on ADR-029. The `make ci` log (~/dev/worktrees/logs/qsl-654-spec-ci.log) was written after the head commit and ends rc=0, with no failed tests. No code reads the ADR.
 
 Three medium findings and one low, all wording in PV-4. **Mergeable once FND-001 to FND-004 are fixed, and after QSpec #196 merges.**
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | The fix round pins a QSpec commit in spec prose: "QSpec FR-290's \"Single-candidate arm\" (quire-specification `74645130bfdeebd64cec116ec5dafb0e770d47ee`)". This is a pin that guards nothing. FR-290 is already addressed by its id, the SHA only goes stale when FR-290 next changes, and no tool resolves it. Delete the parenthesised SHA and keep "QSpec FR-290's \"Single-candidate arm\" … (FR-290-AC-13)". | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:508-509 |
+
+## Dispositions
+
+Round 1, reviewed at 660e338dcbc8adb311d4cd7622edd3677ba7e581.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 660e338d |
+| FND-002 | fixed | 660e338d |
+| FND-003 | fixed | 660e338d |
+| FND-004 | fixed | f43bd242 |
+
+How each finding was fixed, per the plan's rulings:
+
+- **FND-001 to FND-003.** PV-4 no longer restates the check order. Item 4 now defers to QSpec FR-290's "Single-candidate arm" (on QSpec main):
+  - Its step 1 is the candidate table, which fixes FND-002.
+  - Its step 2 reads `extent.bounds[].kind` and the boundable `extent.domains` kinds, which fixes FND-001.
+  - Its registration rule refuses a missing or malformed `domains` with `invalid_capability`/`invalid-domains`, which fixes FND-003. Item 1 states that rule without contradicting FR-290.
+- **FND-004.** The circular "CG sources `domains` and `bounds`" sentence is gone (f43bd242).
+
+ADR-029 validates at head. **Not mergeable until FND-005 is fixed.** The fix is a one-line deletion.
