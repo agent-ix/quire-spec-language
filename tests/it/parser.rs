@@ -260,8 +260,7 @@ fn exact_header_versions_and_source_validation() {
 #[trace("TC-011", "TC-012", "FR-001-AC-4", "FR-002-AC-4")]
 #[test]
 fn resource_limits_never_become_boolean_results() {
-    // Every syntax ceiling, `tokens` included (`token-count-exceeded`,
-    // catalog revision `1-draft.8`), is a stage limit
+    // Every syntax ceiling, `tokens` included (`token-count-exceeded`), is a stage limit
     // (`stage_limit_exceeded`, incomplete work, exit 22), and never becomes a
     // boolean result.
     for (limits, incomplete) in [

@@ -473,18 +473,18 @@ fn stale_identity(
     .unwrap_err()
 }
 
-fn assert_revision_mismatch(refusal: &ReplayRefusal) {
+fn assert_content_mismatch(refusal: &ReplayRefusal) {
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     assert!(
         refusal
             .to_string()
-            .starts_with("stale_dependency/revision-mismatch"),
+            .starts_with("stale_dependency/content-mismatch"),
         "{refusal}"
     );
 }
 
 /// TC-517 step 3 (FR-122-AC-3): an envelope whose `clause_node` is
-/// `ParentOrder`'s node refuses `stale_dependency`/`revision-mismatch`
+/// `ParentOrder`'s node refuses `stale_dependency`/`content-mismatch`
 /// naming both nodes, and so does one whose occurrence key is also at
 /// ordinal 1 (the node goes first); each again with the invocation absent
 /// from the provision, so no document was admitted.
@@ -514,7 +514,7 @@ fn a_stale_clause_node_refuses_naming_both_nodes_before_admission() {
                 ),
                 "{refusal:?}"
             );
-            assert_revision_mismatch(&refusal);
+            assert_content_mismatch(&refusal);
         }
     }
 }
@@ -542,7 +542,7 @@ fn a_stale_occurrence_refuses_naming_both_occurrences_before_admission() {
             ),
             "{refusal:?}"
         );
-        assert_revision_mismatch(&refusal);
+        assert_content_mismatch(&refusal);
     }
 }
 

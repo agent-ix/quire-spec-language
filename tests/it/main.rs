@@ -74,7 +74,6 @@ mod layer_crate_reexports;
 mod linking;
 mod located_json;
 mod lower_command;
-mod lowering_registry_isolation;
 mod mapped;
 mod model_source;
 mod name_resolution_confinement;

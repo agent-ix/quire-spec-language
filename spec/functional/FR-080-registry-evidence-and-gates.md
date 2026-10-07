@@ -120,7 +120,3 @@ checked-in `E0004` locations when the probe feature is enabled.
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
 Not yet implemented.
-
-Remaining work (implementation A1, QSL-470): `tests/it/lowering_registry_isolation.rs`
-still traces the deleted FR-079 and TC-204 (`#[trace("TC-204", "FR-079-AC-2")]`
-and its module doc). The traces are deleted.

@@ -49,7 +49,7 @@ use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::observation::AdmittedObservations;
 use quire_exact::Meter;
 
-/// FR-122's `stale_dependency`/`revision-mismatch`: an envelope clause
+/// FR-122's `stale_dependency`/`content-mismatch`: an envelope clause
 /// identity that is not the recompiled clause's, naming both.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ClauseIdentityMismatch {

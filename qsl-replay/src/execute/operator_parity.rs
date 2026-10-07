@@ -28,7 +28,7 @@ use crate::scalar::{
     ScalarOperator,
 };
 
-/// FR-357's `stale_dependency`/`revision-mismatch`: a claim identity that is
+/// FR-357's `stale_dependency`/`content-mismatch`: a claim identity that is
 /// not the recompiled package's.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ScalarIdentityMismatch {

@@ -7,9 +7,9 @@
 //! compile time) through the real compiler stages, read the emitted bytes back
 //! through the strict public reader, and only then write a fresh handoff
 //! directory: original sources, model source, `dependencies/` exact bytes, the
-//! independent `expected*.json` selection, the artifact reference, the offer
-//! and a complete `SHA256SUMS`. The `native_protocol_handoff` and
-//! `native_protocol_v2_handoff` examples are thin callers of these functions.
+//! independent `expected*.json` selection, the artifact reference and the
+//! offer. The `native_protocol_handoff` and `native_protocol_v2_handoff`
+//! examples are thin callers of these functions.
 //!
 //! Every written dependency byte is first-party content this crate already
 //! owns: the admitted model artifact, `docs/compiled-protocol-v{1,2}.md`, and
@@ -43,9 +43,8 @@ use crate::{
             MutationCase, MutationInput, MutationManifest, SelectedArtifactLimits,
             SelectedClockInput, SelectedDeclaration, SelectedDependency, SelectedModel,
             SelectedSource, SelectedTemporal, Selection, SelectionV2, MUTATION_MANIFEST_FORMAT,
-            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_CHECKSUMS_FILE,
-            PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
-            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, PUBLISHED_V1_CHECKSUMS_FILE,
+            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
+            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
             PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
         native, v2, wire as w,
@@ -1870,7 +1869,7 @@ impl<'a> ExpectedUnit<'a> {
 /// The directory receives `compiled-protocol.json`, its
 /// `compiled-protocol.ref.json` seal, the `expected.json` [`Selection`], every
 /// original source and `model-source.json`, each selected dependency's exact
-/// bytes under `dependencies/`, and a `SHA256SUMS` inventory of all of them.
+/// bytes under `dependencies/`.
 /// The emitted bytes are read back through [`crate::protocol_artifact::read`]
 /// before anything is written. The output is deterministic: two calls write
 /// byte-identical trees.
@@ -1993,51 +1992,7 @@ fn write_files(
         &directory.join(PUBLISHED_V1_ARTIFACT_REFERENCE_FILE),
         &reference_bytes,
     )?;
-    write_file(&directory.join(PUBLISHED_V1_OFFER_FILE), bytes)?;
-    write_checksum_inventory(directory, PUBLISHED_V1_CHECKSUMS_FILE)
-}
-
-fn collect_handoff_files(
-    root: &Path,
-    directory: &Path,
-    files: &mut BTreeSet<PathBuf>,
-) -> Result<(), Error> {
-    for entry in fs::read_dir(directory).map_err(|error| io_at(directory, error))? {
-        let entry = entry.map_err(|error| io_at(directory, error))?;
-        let path = entry.path();
-        let file_type = entry.file_type().map_err(|error| io_at(&path, error))?;
-        if file_type.is_dir() {
-            collect_handoff_files(root, &path, files)?;
-        } else if file_type.is_file() {
-            files.insert(
-                path.strip_prefix(root)
-                    .map_err(|error| Error::HandoffPath(error.to_string()))?
-                    .to_owned(),
-            );
-        } else {
-            return Err(Error::HandoffPath(path.display().to_string()));
-        }
-    }
-    Ok(())
-}
-
-fn write_checksum_inventory(directory: &Path, checksums_file: &str) -> Result<(), Error> {
-    let mut files = BTreeSet::new();
-    collect_handoff_files(directory, directory, &mut files)?;
-    let mut sums = String::new();
-    for relative in files {
-        let path = directory.join(&relative);
-        let bytes = fs::read(&path).map_err(|error| io_at(&path, error))?;
-        use std::fmt::Write as _;
-        writeln!(
-            sums,
-            "{:x}  ./{}",
-            ByteDigest::of(&bytes),
-            relative.display()
-        )
-        .map_err(|error| Error::HandoffPath(error.to_string()))?;
-    }
-    write_file(&directory.join(checksums_file), sums.as_bytes())
+    write_file(&directory.join(PUBLISHED_V1_OFFER_FILE), bytes)
 }
 
 fn write_files_v2(
@@ -2084,8 +2039,7 @@ fn write_files_v2(
         &directory.join(PUBLISHED_ARTIFACT_REFERENCE_FILE),
         &reference_bytes,
     )?;
-    write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)?;
-    write_checksum_inventory(directory, PUBLISHED_CHECKSUMS_FILE)
+    write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)
 }
 
 fn mutation_fixtures(

@@ -642,8 +642,8 @@ fn parser_budget_exhaustion_keeps_its_distinct_source_bound_cause() {
     };
     let report = admit_namespace(&selected, &supplied, WorkLimits::default(), parser);
     assert!(report.namespace().is_none());
-    // A syntax budget is a stage limit (`stage_limit_exceeded`, catalog
-    // revision `1-draft.8`): incomplete work (ADR-029 CB-4).
+    // A syntax budget is a stage limit (`stage_limit_exceeded`):
+    // incomplete work (ADR-029 CB-4).
     assert!(report.is_incomplete());
     assert_eq!(report.exhaustion(), None);
     assert_eq!(report.parser_limits().tokens, 0);

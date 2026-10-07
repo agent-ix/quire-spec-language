@@ -25,8 +25,8 @@ use quire_spec_language::{
         self as artifact,
         handoff::{
             self, writer, Selection, SelectionV2, PUBLISHED_ARTIFACT_REFERENCE_FILE,
-            PUBLISHED_CHECKSUMS_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
-            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, PUBLISHED_V1_CHECKSUMS_FILE,
+            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, 
             PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
         v2, wire as w,
@@ -52,39 +52,6 @@ fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut files = BTreeMap::new();
     walk(root, root, &mut files);
     files
-}
-
-/// `SHA256SUMS` lists every other file exactly once with its digest.
-fn assert_checksums_complete(root: &Path, checksums: &str) {
-    let mut files = tree(root);
-    let sums = String::from_utf8(
-        files
-            .remove(Path::new(checksums))
-            .expect("the handoff carries its checksum inventory"),
-    )
-    .expect("checksum inventory is UTF-8");
-    let mut listed = BTreeMap::new();
-    for line in sums.lines() {
-        let (digest, relative) = line.split_once("  ./").expect("sha256sum line");
-        assert!(
-            listed
-                .insert(PathBuf::from(relative), digest.to_owned())
-                .is_none(),
-            "duplicate checksum path {relative}"
-        );
-    }
-    assert_eq!(
-        listed.keys().collect::<Vec<_>>(),
-        files.keys().collect::<Vec<_>>(),
-        "SHA256SUMS covers every handoff file"
-    );
-    for (relative, bytes) in &files {
-        assert_eq!(
-            format!("{:x}", ByteDigest::of(bytes)),
-            listed[relative],
-            "{relative:?}"
-        );
-    }
 }
 
 /// A consumer's view of one written handoff, loaded from its files only.
@@ -259,7 +226,6 @@ fn written(write: fn(&Path) -> Result<(), writer::Error>) -> (tempfile::TempDir,
 #[trace("TC-121", "FR-042-AC-15", "FR-042-AC-7")]
 fn write_v1_handoff_admits_from_its_files_through_the_strict_v1_reader() {
     let (_directory, root) = written(handoff::write_v1);
-    assert_checksums_complete(&root, PUBLISHED_V1_CHECKSUMS_FILE);
 
     let selection: Selection = serde_json::from_slice(
         &fs::read(root.join(PUBLISHED_V1_SELECTION_FILE)).expect("written v1 selection"),
@@ -285,7 +251,6 @@ fn write_v1_handoff_admits_from_its_files_through_the_strict_v1_reader() {
 #[trace("TC-138", "FR-050-AC-8", "FR-050-AC-1")]
 fn write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader() {
     let (_directory, root) = written(handoff::write_v2);
-    assert_checksums_complete(&root, PUBLISHED_CHECKSUMS_FILE);
 
     let selection: SelectionV2 = serde_json::from_slice(
         &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("written v2 selection"),

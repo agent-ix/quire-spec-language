@@ -7,8 +7,7 @@
 //!
 //! `LimitExceeded`'s catalog code is `stage_limit_exceeded` with the kind's
 //! own `<kind>-exceeded` cause ([`LimitKind::catalog_cause`]), under
-//! `quire.native.diagnostics/v1` revision `1-draft.8`, which this build
-//! claims. It carries the T-5 [`Locus`] where the limit was reached, absent
+//! `quire.native.diagnostics/v1`. It carries the T-5 [`Locus`] where the limit was reached, absent
 //! only where FR-096 says no producer can know one.
 
 use quire_exact::CancelCause;
@@ -17,8 +16,7 @@ use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
 use crate::setting::Setting;
 
 /// ADR-013 T-4's closed limit kind: one variant per
-/// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1` revision
-/// `1-draft.8`. Nesting depth is not a kind: no stage refuses on depth
+/// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1`. Nesting depth is not a kind: no stage refuses on depth
 /// (ADR-030).
 ///
 /// Distinct from `quire_exact::LimitKind`, which names the evaluation
@@ -58,7 +56,7 @@ impl LimitKind {
     ];
 
     /// The catalog's own cause tag for this kind, exactly
-    /// `stage_limit_exceeded/<kind>-exceeded` (revision `1-draft.8`).
+    /// `stage_limit_exceeded/<kind>-exceeded`.
     pub const fn catalog_cause(self) -> &'static str {
         match self {
             Self::InputBytes => "input-bytes-exceeded",
@@ -269,7 +267,7 @@ mod tests {
         }
     }
 
-    /// FR-096-AC-2 at catalog revision `1-draft.8`: a `LimitExceeded` reports
+    /// FR-096-AC-2: a `LimitExceeded` reports
     /// `stage_limit_exceeded` with its setting's kind as the cause, and its
     /// record carries `kind`, `bound`, `actual` and `setting` (FR-255 Behavior 1).
     #[trace("TC-427", "FR-096-AC-2", "TC-428", "FR-096-AC-7")]

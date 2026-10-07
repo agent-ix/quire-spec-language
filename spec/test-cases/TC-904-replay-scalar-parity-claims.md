@@ -91,14 +91,14 @@ the encoded-size bound.
   `Refuted`. The envelope round-trips the agreement and refuses the oversized
   one.
 - Step 11: `PackageIdMismatch` (`content-mismatch`); `ScalarIdentity`
-  (`revision-mismatch`) with cause `Node`, `Function` and `Operator`;
+  (`content-mismatch`) with cause `Node`, `Function` and `Operator`;
   `UnknownFunction` (`missing-name`); each carries the obligation identity.
 
 - Step 12: `claim()` equals the claim sent on every outcome; a claim differing
   in any member is not equal; an agreement's claim is the report's.
 - Step 13: each report carries the digest it was sent; the claims differ.
 - Step 14: the recomputed digests equal the hand-computed ones; the two literals differ.
-- Step 15: `ScalarIdentity` (`revision-mismatch`) cause `Obligation`, naming both digests.
+- Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both digests.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
 - Step 17: cause `Encoding` for the first, `Obligation` for the second.
 - Step 18: the digest `4c36290f8830ff25cbb3915fa955b093f802fb801de2074415a6c4884fc9659f` for the entry; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.

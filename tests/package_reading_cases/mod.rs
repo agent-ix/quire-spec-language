@@ -379,7 +379,7 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
         )
         .unwrap_err();
         // Every S1 syntax dimension is a `SyntaxLimit` kind the catalog
-        // admits (revision `1-draft.8`); `link.*` (`src/linking.rs`'s own node/depth/model-byte
+        // admits; `link.*` (`src/linking.rs`'s own node/depth/model-byte
         // budgets) and `check.*` (`src/checking.rs`'s native constraint
         // checker) are untouched producers outside this ticket's four
         // kinds, and stay `resource_exhausted`.

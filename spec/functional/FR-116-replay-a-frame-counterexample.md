@@ -141,8 +141,3 @@ Specified, and implemented by
 the same path as FR-109's `Frame` selection, verified by TC-515. The decode
 from IR's witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49.
-
-Remaining work: the cause `content-mismatch` replaces `revision-mismatch`
-for an identity that differs from the recompile (QSpec FR-272-AC-14,
-quire-specification#174 and #176), and `qsl_replay::ReplayRefusal::FrameIdentity`
-still renders `revision-mismatch`.

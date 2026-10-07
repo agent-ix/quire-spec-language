@@ -100,9 +100,8 @@ qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
 # ADR-011 §7.3 X-9: layer R, extracted out of this crate. No
 # shipped module of this crate calls it, so it is a dev dependency only
 # (ADR-011 §7.1: "A dependency needed only by tests is a dev dependency"):
-# `tests/it/lowering_registry_isolation.rs` builds a `qsl_route::Registry`
-# beside the SEAM-1 lowering pipeline. This crate re-exports none of its
-# items (ADR-011 §7.2).
+# `tests/it/layer_crate_reexports.rs` checks that this crate re-exports none
+# of its items (ADR-011 §7.2).
 qsl-route = { path = "qsl-route" }
 tempfile = "3.27.0"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }

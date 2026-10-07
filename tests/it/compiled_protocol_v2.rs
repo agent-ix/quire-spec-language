@@ -16,8 +16,8 @@ use quire_spec_language::linking::composed::definition_source::RegisteredDefinit
 use quire_spec_language::protocol_artifact::{
     self as artifact,
     handoff::{
-        MUTATION_MANIFEST_FORMAT, PUBLISHED_CHECKSUMS_FILE, PUBLISHED_HANDOFF,
-        PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
+        MUTATION_MANIFEST_FORMAT, PUBLISHED_HANDOFF, PUBLISHED_MUTATION_MANIFEST_FILE,
+        PUBLISHED_SELECTION_FILE,
     },
     native, v2, v3, wire as w, Dimension as WorkDimension, Error, ExactInteger, Invalid, Limits,
     NumberComponent, NumberError, NumberWire, ProtocolNumber, Unsupported,
@@ -39,66 +39,10 @@ const DECLARATIONS: [(&str, R); 3] = [
     ("ByTimestamp", R::TimestampedWindow),
 ];
 
-fn handoff_files(root: &Path, directory: &Path, files: &mut BTreeSet<PathBuf>) {
-    for entry in fs::read_dir(directory).expect("read committed handoff directory") {
-        let entry = entry.expect("read committed handoff entry");
-        let path = entry.path();
-        if entry
-            .file_type()
-            .expect("read committed handoff file type")
-            .is_dir()
-        {
-            handoff_files(root, &path, files);
-        } else {
-            let relative = path
-                .strip_prefix(root)
-                .expect("handoff entry remains below its root")
-                .to_owned();
-            if relative != Path::new(PUBLISHED_CHECKSUMS_FILE) {
-                assert!(files.insert(relative), "duplicate handoff file");
-            }
-        }
-    }
-}
-
 #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
 #[test]
-fn committed_handoff_checksums_and_interchange_records_are_complete() {
+fn committed_handoff_interchange_records_are_complete() {
     let root = Path::new(PUBLISHED_HANDOFF);
-    let sums =
-        fs::read_to_string(root.join(PUBLISHED_CHECKSUMS_FILE)).expect("committed SHA256SUMS");
-    let mut listed = BTreeSet::new();
-
-    for (line_index, line) in sums.lines().enumerate() {
-        let (expected_digest, relative) = line
-            .split_once("  ./")
-            .unwrap_or_else(|| panic!("malformed SHA256SUMS line {}", line_index + 1));
-        assert_eq!(expected_digest.len(), 64, "SHA-256 width");
-        assert!(
-            expected_digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
-            "SHA-256 must use lowercase hexadecimal"
-        );
-        let relative = PathBuf::from(relative);
-        assert!(
-            relative
-                .components()
-                .all(|component| matches!(component, Component::Normal(_))),
-            "checksum path must remain relative and normalized"
-        );
-        assert!(
-            listed.insert(relative.clone()),
-            "duplicate checksum path {relative:?}"
-        );
-        let bytes = fs::read(root.join(&relative)).expect("read checksummed handoff file");
-        assert_eq!(format!("{:x}", ByteDigest::of(&bytes)), expected_digest);
-    }
-
-    let mut actual = BTreeSet::new();
-    handoff_files(root, root, &mut actual);
-    assert_eq!(listed, actual, "SHA256SUMS must cover every handoff file");
-
     let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
         &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("committed reader selection"),
     )

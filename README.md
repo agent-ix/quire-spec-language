@@ -70,7 +70,7 @@ operations, recording the producer's own source identity as a digest over its
 own source text and retaining independently derived selectors.
 `protocol_artifact::handoff::PUBLISHED_V1_HANDOFF` now addresses that committed
 `/1` handoff directly from the crate. Version-explicit member constants
-name its offer, external reference, `Selection` record and checksum inventory;
+name its offer, external reference and `Selection` record;
 consumers need no environment variable, producer execution or repository-layout
 guess. Its `Service` and `Provider` roles retain distinct admitted model
 authorities so a strict consumer linker can enforce duplicate-authority refusal

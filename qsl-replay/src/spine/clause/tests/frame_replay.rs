@@ -539,7 +539,7 @@ fn a_disagreeing_declared_delta_is_inconclusive_with_no_value() {
 
 /// TC-515 step 3 (FR-116-AC-3): an envelope whose identities are taken from
 /// a package whose `attemptUpdate` frame also modifies `parent` refuses
-/// `stale_dependency`/`revision-mismatch` naming both frame identities --
+/// `stale_dependency`/`content-mismatch` naming both frame identities --
 /// before admission: the pre snapshot is also missing from the provision,
 /// and admission would have refused that first. All three identities come
 /// from that package, as a real producer would emit them: its anchor
@@ -577,14 +577,14 @@ fn a_stale_frame_identity_refuses_before_admission() {
     );
     assert!(refusal
         .to_string()
-        .starts_with("stale_dependency/revision-mismatch"));
+        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// FR-116 Behavior: a stale anchor node, or a frame occurrence minted at
 /// another ordinal, refuses the same way, each naming both identities.
 #[trace("TC-515", "FR-116-AC-3")]
 #[test]
-fn a_stale_anchor_or_occurrence_refuses_revision_mismatch() {
+fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
     let stale_anchor = WireNodeId::from_digest([0xAA; 32]);
     let refusal = replay(case_with(
         forbidden_parent_change(),
@@ -650,7 +650,7 @@ fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
 }
 
 /// TC-515 step 3 (FR-116-AC-6): an envelope whose `clause_node` is not its
-/// payload's frame node refuses `stale_dependency`/`revision-mismatch`
+/// payload's frame node refuses `stale_dependency`/`content-mismatch`
 /// naming both, before recompiling: the request's source does not compile,
 /// and the same request with a consistent envelope refuses at the
 /// recompile.
@@ -695,14 +695,14 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     let message = refusal.to_string();
-    assert!(message.starts_with("stale_dependency/revision-mismatch"));
+    assert!(message.starts_with("stale_dependency/content-mismatch"));
     assert!(message.contains(&other_frame.to_string()), "{message}");
     assert!(message.contains(&frame.to_string()), "{message}");
 }
 
 /// TC-515 step 3 (FR-116-AC-6): an envelope whose `occurrence_key` is not
 /// its payload's frame occurrence refuses `stale_dependency`/
-/// `revision-mismatch` naming both, before recompiling.
+/// `content-mismatch` naming both, before recompiling.
 #[trace("TC-515", "FR-116-AC-6")]
 #[test]
 fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompiling() {
@@ -735,7 +735,7 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     let message = refusal.to_string();
-    assert!(message.starts_with("stale_dependency/revision-mismatch"));
+    assert!(message.starts_with("stale_dependency/content-mismatch"));
     assert!(message.contains(&format!("{other:?}")), "{message}");
     assert!(message.contains(&format!("{occurrence:?}")), "{message}");
 }

@@ -486,9 +486,3 @@ an `Unsupported` reason. The implementation (#132) amends FR-050-AC-4,
 FR-054's Description and both wire-contract docs to the in-place `Model`.
 
 ## Status
-
-Remaining work (implementation A2, or with the M-6c removal): the handoff
-writer still writes and asserts a `SHA256SUMS` file over every handoff file
-(`src/protocol_artifact/handoff.rs` and `handoff/writer.rs`), and
-`PUBLISHED_CHECKSUMS_FILE` still exists. Both are deleted; the handoff is the
-files AC-15 lists.

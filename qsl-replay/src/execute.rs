@@ -217,7 +217,7 @@ pub enum ReplayRefusal {
     },
     /// FR-357: an operator-level claim's scalar node, enclosing function or
     /// operator is not the recompiled package's.
-    #[error("stale_dependency/revision-mismatch: {0}")]
+    #[error("stale_dependency/content-mismatch: {0}")]
     ScalarIdentity(Box<ScalarIdentityMismatch>),
     /// FR-358: a request's declared domain or a claim's harness bound does
     /// not fit the claimed node's operands (naming the domain key), or the
@@ -237,7 +237,7 @@ pub enum ReplayRefusal {
     /// identity is not the recompiled package's (refused before any
     /// admission), or its envelope's clause node or occurrence key is not
     /// the payload's frame node or occurrence (refused before recompiling).
-    #[error("stale_dependency/revision-mismatch: {0}")]
+    #[error("stale_dependency/content-mismatch: {0}")]
     FrameIdentity(Box<FrameIdentityMismatch>),
     /// FR-122: a state-clause counterexample's clause names no state clause
     /// of the recompiled package.
@@ -251,7 +251,7 @@ pub enum ReplayRefusal {
     /// FR-122: a state-clause counterexample's envelope names a clause node
     /// or `claim` occurrence that is not the recompiled clause's (refused
     /// before any admission).
-    #[error("stale_dependency/revision-mismatch: {0}")]
+    #[error("stale_dependency/content-mismatch: {0}")]
     ClauseIdentity(Box<ClauseIdentityMismatch>),
     /// FR-122: a state-clause counterexample's observation form is not the
     /// one its clause's kind takes (refused before any admission).
@@ -324,7 +324,7 @@ impl ReplayRefusal {
             | Self::UnknownOperation { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
             Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
-                Some("revision-mismatch")
+                Some("content-mismatch")
             }
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::Input(refusal) => Some(refusal.cause()),
