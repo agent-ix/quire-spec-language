@@ -3558,7 +3558,8 @@ fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
         record.fields.get("actual").map(String::as_str),
         Some("50001")
     );
-    let judged = assert_tc465_refused(counted(raised), "invalid_runtime_input", "wrong-value-kind");
+    let judged =
+        assert_tc465_refused(counted(raised), "invalid_runtime_input", "wrong-value-kind");
     assert_eq!(
         judged.fields.get("field").map(String::as_str),
         Some("parent")
