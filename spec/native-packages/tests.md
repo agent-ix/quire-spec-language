@@ -7,10 +7,7 @@ type: TestMatrix
 ## Overview
 
 This LC02 slice covers FR-019/020/021, NFR-007 and IT-007. All 27 functional
-criteria have explicit cases. All fourteen cases are qualified by the producer evidence in SR-111 and the
-reader/runtime evidence in the PR review. Native payload qualification is complete. Existing TM-001–004
-and qualified native runtime behavior retain their scopes. A planned mapping
-is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
+criteria have explicit cases.
 
 ## Requirements Traceability
 
@@ -18,67 +15,63 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
-| FR-019 | FR-019-AC-1 | TC-078, TC-089 | ✅ Qualified |
-| FR-019 | FR-019-AC-2 | TC-078 | ✅ Qualified |
-| FR-019 | FR-019-AC-3 | TC-078 | ✅ Qualified |
-| FR-019 | FR-019-AC-4 | TC-079 | ✅ Qualified |
-| FR-019 | FR-019-AC-5 (retired) | — | ⛔ Retired; the definition revision/digest members are deleted from the wire |
-| FR-019 | FR-019-AC-6 | TC-080 | ✅ Qualified |
-| FR-019 | FR-019-AC-7 | TC-081, TC-089 | ✅ Qualified |
-| FR-019 | FR-019-AC-8 | TC-082 | ✅ Qualified |
-| FR-019 | FR-019-AC-9 | TC-081, TC-082 | ✅ Qualified |
-| FR-019 | FR-019-AC-10 | TC-088 | ✅ Qualified |
-| FR-020 | FR-020-AC-1 | TC-089 | ✅ Qualified |
-| FR-020 | FR-020-AC-2 | TC-083 | ✅ Qualified |
-| FR-020 | FR-020-AC-3 | TC-084 | ✅ Qualified |
-| FR-020 | FR-020-AC-4 | TC-084 | ✅ Qualified |
-| FR-020 | FR-020-AC-5 | TC-085 | ✅ Qualified |
-| FR-020 | FR-020-AC-6 | TC-085 | ✅ Qualified |
-| FR-020 | FR-020-AC-7 | TC-086 | ✅ Qualified |
-| FR-020 | FR-020-AC-8 | TC-087 | ✅ Qualified |
-| FR-020 | FR-020-AC-9 | TC-087, TC-088 | ✅ Qualified |
-| FR-020 | FR-020-AC-10 | TC-082 | ✅ Qualified |
-| FR-020 | FR-020-AC-11 | TC-081, TC-086 | ✅ Qualified |
-| FR-021 | FR-021-AC-1 | TC-090 | ✅ Qualified |
-| FR-021 | FR-021-AC-2 | TC-082 | ✅ Qualified |
-| FR-021 | FR-021-AC-3 | TC-091 | ✅ Qualified |
-| FR-021 | FR-021-AC-4 | TC-091 | ✅ Qualified |
-| FR-021 | FR-021-AC-5 | TC-091 | ✅ Qualified |
-| FR-021 | FR-021-AC-6 | TC-088, TC-090 | ✅ Qualified |
+| FR-019 | FR-019-AC-1 | TC-078, TC-089 |  |
+| FR-019 | FR-019-AC-2 | TC-078 |  |
+| FR-019 | FR-019-AC-3 | TC-078 |  |
+| FR-019 | FR-019-AC-4 | TC-079 |  |
+| FR-019 | FR-019-AC-5 (retired) | — |  |
+| FR-019 | FR-019-AC-6 | TC-080 |  |
+| FR-019 | FR-019-AC-7 | TC-081, TC-089 |  |
+| FR-019 | FR-019-AC-8 | TC-082 |  |
+| FR-019 | FR-019-AC-9 | TC-081, TC-082 |  |
+| FR-019 | FR-019-AC-10 | TC-088 |  |
+| FR-020 | FR-020-AC-1 | TC-089 |  |
+| FR-020 | FR-020-AC-2 | TC-083 |  |
+| FR-020 | FR-020-AC-3 | TC-084 |  |
+| FR-020 | FR-020-AC-4 | TC-084 |  |
+| FR-020 | FR-020-AC-5 | TC-085 |  |
+| FR-020 | FR-020-AC-6 | TC-085 |  |
+| FR-020 | FR-020-AC-7 | TC-086 |  |
+| FR-020 | FR-020-AC-8 | TC-087 |  |
+| FR-020 | FR-020-AC-9 | TC-087, TC-088 |  |
+| FR-020 | FR-020-AC-10 | TC-082 |  |
+| FR-020 | FR-020-AC-11 | TC-081, TC-086 |  |
+| FR-021 | FR-021-AC-1 | TC-090 |  |
+| FR-021 | FR-021-AC-2 | TC-082 |  |
+| FR-021 | FR-021-AC-3 | TC-091 |  |
+| FR-021 | FR-021-AC-4 | TC-091 |  |
+| FR-021 | FR-021-AC-5 | TC-091 |  |
+| FR-021 | FR-021-AC-6 | TC-088, TC-090 |  |
 
 ### Non-Functional Requirement Coverage
 
 | Non-Functional Req | Verification Method | Evidence/Test Cases | Status |
 | --- | --- | --- | --- |
-| NFR-007 | Test: negative-abuse-testing | TC-088; offered/emitted bytes, string content, entries, depth, every bounded pass and independent frontend limits | ✅ All package passes and frontend limits qualified |
-| NFR-005 | Inspection and existing Rust gates | Source/dependency/CI review and actual Rust qualification | ✅ Qualified |
+| NFR-007 | Test: negative-abuse-testing | TC-088; offered/emitted bytes, string content, entries, depth, every bounded pass and independent frontend limits |  |
+| NFR-005 | Inspection and existing Rust gates | Source/dependency/CI review and actual Rust qualification |  |
 
 ## Test Case Summary
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
-| TC-078 | Retain complete package inventories | Integration | P1 | FR-019-AC-1, FR-019-AC-2, FR-019-AC-3 | ✅ Qualified |
-| TC-079 | Retain package resolutions and obligations | Integration | P1 | FR-019-AC-4 | ✅ Qualified |
-| TC-080 | Bind package semantics and features | Property | P1 | FR-019-AC-6 | ✅ Qualified |
-| TC-081 | Retain unlowered package projections | Integration | P1 | FR-019-AC-7, FR-019-AC-9, FR-020-AC-11 | ✅ Qualified |
-| TC-082 | Preserve static package byte identity | Property | P1 | FR-019-AC-8, FR-019-AC-9, FR-020-AC-10, FR-021-AC-2 | ✅ Qualified |
-| TC-083 | Reject nonclosed package JSON | Property | P1 | FR-020-AC-2 | ✅ Qualified |
-| TC-084 | Select package versions and features | Property | P1 | FR-020-AC-3, FR-020-AC-4 | ✅ Qualified |
-| TC-085 | Verify package dependencies and authorship | Property | P1 | FR-020-AC-5, FR-020-AC-6 | ✅ Qualified |
-| TC-086 | Reject forged package derivations | Property | P1 | FR-020-AC-7, FR-020-AC-11 | ✅ Qualified |
-| TC-087 | Reconstruct through real compiler stages | Integration | P1 | FR-020-AC-8, FR-020-AC-9 | ✅ Qualified |
-| TC-088 | Bound package passes and retries | Property | P1 | FR-019-AC-10, FR-020-AC-9, FR-021-AC-6 | ✅ Qualified |
-| TC-089 | Qualify native package runtime reconstruction | Integration | P1 | FR-020-AC-1, FR-019-AC-1, FR-019-AC-7 | ✅ Qualified |
-| TC-090 | Qualify native canonical bytes and domain vectors | Property | P1 | FR-021-AC-1, FR-021-AC-6 | ✅ Qualified |
-| TC-091 | Reject static identity and projection substitutions | Property | P1 | FR-021-AC-3, FR-021-AC-4, FR-021-AC-5 | ✅ Qualified |
+| TC-078 | Retain complete package inventories | Integration | P1 | FR-019-AC-1, FR-019-AC-2, FR-019-AC-3 | ✅ |
+| TC-079 | Retain package resolutions and obligations | Integration | P1 | FR-019-AC-4 | ✅ |
+| TC-080 | Bind package semantics and features | Property | P1 | FR-019-AC-6 | ✅ |
+| TC-081 | Retain unlowered package projections | Integration | P1 | FR-019-AC-7, FR-019-AC-9, FR-020-AC-11 | ✅ |
+| TC-082 | Preserve static package byte identity | Property | P1 | FR-019-AC-8, FR-019-AC-9, FR-020-AC-10, FR-021-AC-2 | ✅ |
+| TC-083 | Reject nonclosed package JSON | Property | P1 | FR-020-AC-2 | ✅ |
+| TC-084 | Select package versions and features | Property | P1 | FR-020-AC-3, FR-020-AC-4 | ✅ |
+| TC-085 | Verify package dependencies and authorship | Property | P1 | FR-020-AC-5, FR-020-AC-6 | ✅ |
+| TC-086 | Reject forged package derivations | Property | P1 | FR-020-AC-7, FR-020-AC-11 | ✅ |
+| TC-087 | Reconstruct through real compiler stages | Integration | P1 | FR-020-AC-8, FR-020-AC-9 | ✅ |
+| TC-088 | Bound package passes and retries | Property | P1 | FR-019-AC-10, FR-020-AC-9, FR-021-AC-6 | ✅ |
+| TC-089 | Qualify native package runtime reconstruction | Integration | P1 | FR-020-AC-1, FR-019-AC-1, FR-019-AC-7 | ✅ |
+| TC-090 | Qualify native canonical bytes and domain vectors | Property | P1 | FR-021-AC-1, FR-021-AC-6 | ✅ |
+| TC-091 | Reject static identity and projection substitutions | Property | P1 | FR-021-AC-3, FR-021-AC-4, FR-021-AC-5 | ✅ |
 
 ## Test Matrix Rules
 
-EARS/requirement grammar was run before updating this matrix: all 227 current
-spec documents were grammar-clean using Quire 0.31.0. The initial 218-document
-identity/reader-order check remains historical evidence.
-The six rules below govern the completed local
-qualification. Tests use imported bare single-line #[trace(...)] attributes
+Tests use imported bare single-line #[trace(...)] attributes
 with minted TC/FR criterion IDs. IT procedure labels and NFR metric ordinals
 are not invented trace IDs.
 
@@ -153,15 +146,3 @@ runtime oracles remain in the full regression. The API has no shared scheduler
 or lock state for Loom; no fuzz or mutation-adequacy result is claimed without
 its separate actual tooling. The adviser's known limitations do not replace
 this explicit assessment of applicable methods.
-
-## Coverage Gaps
-
-All fourteen cases have executed Rust evidence. NFR-007's five metrics are
-measured at their actual boundaries, with private controls for coupled maxima
-that cannot be reached through public intake. The PR review maps the reader
-and runtime observations; SR-111 retains the producer evidence. The existing
-NFR metric trace-target discrepancy remains a tooling limitation. Shared-domain
-registration and full interchange acceptance remain open under LC02/FS05.
-Independent B/C consumption,
-LC04 actual lowering/backend parity and LC05 Quire integration remain required.
-Coverage tables use the single `Status` column from `spec-artifacts-process#87`.
