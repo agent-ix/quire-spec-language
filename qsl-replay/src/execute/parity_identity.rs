@@ -9,7 +9,7 @@
 //! and one argument per operand position, each an operand identity and a
 //! domain (a range for a scalar, harness bounds for a composite).
 
-use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
+use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{IntegerInterval, Origin};
@@ -340,6 +340,7 @@ impl Encode for ParityPreimage {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use qsl_foundation::bound::DomainKind;
     use qsl_foundation::ByteDigest;
     use quire_exact::{Integer, Role};
 
