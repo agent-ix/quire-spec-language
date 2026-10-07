@@ -38,3 +38,11 @@ Examined:
 ## Verdict
 
 Gates at 5aaaf81c: `cargo test --test it deep_sources` passes (10 tests, 0.72 s); `cargo clippy -p quire-spec-language --all-targets -- -D warnings` and `cargo fmt --check` are clean. Mutation results above. One low finding. The code change is correct and minimal: no recursion on any parser path, flat result trees, no remaining parser-side clamp. Mergeable on the code side once FND-001 is fixed; see SR-1364 and SR-1365 for the spec and gap findings that block.
+
+## Dispositions
+
+Round 1, reviewed at 9163ca383852b50150be0ab472efcbb5c6008002.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3430ab929 (bounds refined in 9ffcfbbb2): each TC-749 test now asserts one clause/declaration and an expression count of at least DEPTH (2*DEPTH-1 for the sum) |

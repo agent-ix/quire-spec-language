@@ -33,3 +33,14 @@ Examined: FR-256 Description, FR-256-AC-4, TC-749, the FR-256 row in spec.md, th
 ## Verdict
 
 AC-4 is testable and it says what QSL-645 asks for, with five shapes, both editions, 512 KiB and limits used as given. But it does not resolve as a criterion (high), and the widened Description claims behaviour the root parser does not have (medium). Changes requested.
+
+## Dispositions
+
+Round 1, reviewed at 9163ca383852b50150be0ab472efcbb5c6008002.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3430ab929: blank line removed; `quire matrix` now lists FR-256-AC-4 and FR-256-AC-5 as tagged |
+| FND-002 | fixed | 1b9555987: Description scopes the root parser to its `source_bytes`, `tokens` and `nodes` and its diagnostic. The finding's word `resource_exhausted` was wrong: `qsl_foundation::diagnostic::resource_exhausted` is a constructor that emits `Code::StageLimitExceeded` carrying a `SyntaxLimit` (qsl-foundation/src/diagnostic.rs:427-442). The new text matches the code |
+| FND-003 | fixed | 3430ab929 |
+| FND-004 | fixed | 3430ab929 |

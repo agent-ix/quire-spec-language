@@ -33,3 +33,19 @@ Intent (QSL-645, read as data): the root native parser, live through the CLI `pa
 ## Verdict
 
 AC-4 is implemented and tested for the two named entry points. Two gaps: the CLI path cannot use raised limits (medium), and the admit path's pass-through is untested (low). Changes requested.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | The ruling that L2 needs 100,000 depth live through `read_verified` is not met, and parser work alone cannot meet it. (1) The new test `read_verified_uses_a_raised_byte_ceiling_as_given` calls `qsl_foundation::Source::read_verified`, which took its byte limit as given before this PR too. It never reaches `package::reading::read`, the path QSL-645 names. Its only check that would fail on main is the trailing `parse`, which repeats `historical_100000_term_sum_parses`. It is also tagged FR-256-AC-4, which does not mention `read_verified`. (2) The coder's premise is wrong. `NativePackage::read_verified` does take parser limits: `PackageReadLimits.syntax` ("Actual native parser limits") goes to `parse` at src/package/reading.rs:410. (3) Right after the parse, the same path runs `link_native`, whose `LinkLimits::bounded()` caps nodes at 10,000 and depth at 64 (src/linking.rs:31-61, preflight at :373), and then `check`, whose `CheckLimits` caps depth at 64. So no source 100,000 deep, or even more than 64 deep, can get through `read_verified`, whatever parser limits the caller gives. The `run` command also hard-codes `PackageReadLimits::default()` (src/command/compilation.rs:146). Either remove the link/check caps on this path in this PR (FR-257/FR-258 territory) and test `NativePackage::read_verified` end to end, or narrow the L2 claim to the parser stage. That is a lead/owner decision. | src/package/reading.rs:410, src/linking.rs:350-373, tests/it/deep_sources.rs:254-287 |
+
+## Dispositions
+
+Round 1, reviewed at 9163ca383852b50150be0ab472efcbb5c6008002.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3430ab929 (wording 1b9555987): `quire-spec parse` takes `--source-bytes`, `--tokens` and `--nodes` (FR-256-AC-5, TC-750). The CLI test parses 100,000-deep brackets with raised flags, exits 22 with `stage_limit_exceeded` without them, and exits 20 on a missing value, a non-numeric value or an unknown option. Leaving compilation.rs:117 and handoff/writer.rs:1344 alone holds, but not for the stated reason: both do parse (`parse_source` and `admit_namespace` under `Limits::default()`). compilation.rs:117 is followed by `link_native` under the capped `LinkLimits` (see FND-003), so raising its parser limits would change nothing. The writer is an internal caller with fixed work limits, outside the three paths in the ruling |
+| FND-002 | fixed | 3430ab929: `admit_namespace_uses_raised_parser_limits_as_given` refuses under default limits, then admits under raised ones and checks `parser_limits()` equals them, so a clamp at src/linking/composed.rs:397 would fail it |
+| FND-003 | deferred | Out of scope per plan v2 §10(d)1: M6C-S deletes the native read_verified/link/check/package path. 9163ca383 limits FR-256 to the parser plus `admit_namespace`, says that path keeps its bounded limits, and drops the `Source::read_verified` test. No AC, TC or spec.md row claims read_verified carries the depth any more |
