@@ -278,7 +278,8 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                         position: *position,
                     }
                 }
-                qsl_replay::spine::RunRefusal::Compile(_) => types::Details::None,
+                qsl_replay::spine::RunRefusal::Compile(_)
+                | qsl_replay::spine::RunRefusal::Cancelled(_) => types::Details::None,
                 qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {
                     stage: fault.stage(),
                     invariant: fault.invariant(),

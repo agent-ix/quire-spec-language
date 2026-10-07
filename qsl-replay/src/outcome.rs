@@ -1480,7 +1480,7 @@ mod tests {
 
         // Undefined: the call's undefined result, still with the artifact.
         let undefined = Ok((
-            package_id.clone(),
+            *package_id,
             CallOutcome::Undefined {
                 reason: "division-by-zero",
             },
@@ -1495,7 +1495,7 @@ mod tests {
 
         // Refused call: its catalog code and cause as one diagnostic.
         let refused = Ok((
-            package_id.clone(),
+            *package_id,
             CallOutcome::Refused(CallRefusal::Family {
                 code: CatalogCode::new("ill_typed", "type-mismatch"),
                 location: None,
@@ -1535,7 +1535,7 @@ mod tests {
         let code = fault.catalog_code();
         let faulted = Err(Box::new(RunRefusal::Fault(fault)));
         let document = json_of(&OutcomeDocument::from_run(&faulted));
-        assert_eq!(document["category"], "failed");
+        assert_eq!(document["category"], "internal-failure");
         assert_eq!(document["last_stage"], Value::Null);
         assert_eq!(document["diagnostics"][0]["code"], code.code());
         assert_eq!(document["diagnostics"][0]["cause"], code.cause());
