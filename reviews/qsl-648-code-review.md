@@ -65,3 +65,9 @@ Round 1, reviewed at 67237309027c179ed07aceb9ba4ccab01a42f5b0. Full `cargo test 
 | FND-002 | fixed | 88502cb52 |
 | FND-003 | fixed | 88502cb52 |
 | FND-004 | rejected | After FND-001, model numerators are i64 and denominators are <= i64::MAX, so a normalized in-domain rational always fits i64 and the guard is unreachable from source. It is not ceremony to delete: `ExactRational::new` takes i64, so an i128 -> i64 conversion is required, and the fallible form mapped to `NumericDomain` is the correct idiom (the alternatives are a panic or a truncating cast). Testing it would need a forged TypeReport, so no test. |
+
+Round 2, reviewed at 78b7bbd80afa1f6122f36171e86a784efc5deb48.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 78b7bbd80 |
