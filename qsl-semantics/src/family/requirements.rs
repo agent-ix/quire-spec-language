@@ -317,6 +317,7 @@ fn child<'t>(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use qsl_foundation::bound::FiniteBoundKind;
     use qsl_foundation::diagnostic::LimitKind;
     use quire_exact::{
         CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, Presence,
