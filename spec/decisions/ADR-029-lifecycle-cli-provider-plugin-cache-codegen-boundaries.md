@@ -481,10 +481,11 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    them. The descriptor CG receives is a QSpec FR-331 backend-provider/v1
    `BackendDescriptor` (`proposals/backend-provider-v1/schema.json`). It
    carries the `advertises` (kind, mode) pairs and `domains`, the ADR-014
-   domain kinds for which the backend accepts a finite bound. Its `bounds`
-   are the published default of each limit the backend applies, not
+   boundable domain kinds for which the backend accepts a finite bound. Its
+   `bounds` are the published default of each limit the backend applies, not
    admission maxima. Every `domains` defect in a provider's hello is a
-   per-registration `invalid_capability` refusal under FR-290. That
+   per-registration refusal under FR-290,
+   `invalid_capability`/`invalid-domains`. That
    descriptor is CG's own descriptor for the Process variant, not
    `qsl_route::BackendDescriptor`, which holds only (kind, mode). It never
    calls the plugin.
@@ -504,8 +505,10 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    keeps the basis label trusted). Each CG arm for `Process` is a typed
    pass-through or empty output, never a panic.
 4. **Disposition from the manifest alone.** A `Process(id)` item settles
-   under QSpec FR-290's check order and outcomes, read from the descriptor
-   in ruling 1 and the item's extent. There is no default disposition.
+   under QSpec FR-290's "Single-candidate arm" (quire-specification
+   `74645130bfdeebd64cec116ec5dafb0e770d47ee`), whose step 2 is the
+   domain-kind check (FR-290-AC-13), read from the descriptor in ruling 1
+   and the item's extent. There is no default disposition.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
    learns that a descriptor is a process provider. Not (a), a driver-supplied
    map beside the descriptors: it is a second source of truth that can
