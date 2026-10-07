@@ -219,9 +219,6 @@ pub struct ClauseRunRequest {
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The limits admission re-normalizes the unit's domain packages under
-    /// (see `qsl_semantics::model::observation`'s own module doc).
-    pub model_limits: ModelNormalizationLimits,
     /// The evaluation meter's accounting limits (FR-100's `work_units`).
     pub accounting: ScalarLimits,
 }
@@ -692,7 +689,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         ClauseRunSelection::Clause(ref selection) => {
             let run = CompiledRun {
                 packages: &request.packages,
-                model_limits: request.model_limits,
+                model_limits: request.limits.model,
                 provisions: Provisions {
                     snapshots: &request.snapshots,
                     invocations: &request.invocations,
@@ -723,7 +720,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref snapshot,
         } => run_function(
             &request.packages,
-            request.model_limits,
+            request.limits.model,
             &request.snapshots,
             request.observation_limits,
             request.accounting,
@@ -744,7 +741,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         } => Ok(run_frame(
             &CompiledRun {
                 packages: &request.packages,
-                model_limits: request.model_limits,
+                model_limits: request.limits.model,
                 provisions: Provisions {
                     snapshots: &request.snapshots,
                     invocations: &request.invocations,

@@ -242,7 +242,6 @@ pub fn replay_frame(
     sources.extend(compiled.checked.libraries().iter().cloned());
     let run = CompiledRun {
         packages: &packages,
-        model_limits: limits.spine.model,
         provisions: Provisions {
             snapshots: &documents,
             invocations: &documents,

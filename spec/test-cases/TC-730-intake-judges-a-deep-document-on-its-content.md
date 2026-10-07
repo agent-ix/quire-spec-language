@@ -47,9 +47,3 @@ Tag the tests `#[trace("TC-730", "FR-260-AC-1")]`, `#[trace("TC-730", "FR-260-AC
 - Step 4: both views build and the `serde_json` view drops with no stack
   overflow; the failing leaf's failure is returned; the shallow views equal
   the expected trees, members in document order and numbers by lexeme.
-
-## Status
-
-Steps 1 to 4 are implemented. Intake has no depth limit: a document nested
-100,000 deep is read, judged by the semantic-IR reader and dropped on a
-512 KiB stack.

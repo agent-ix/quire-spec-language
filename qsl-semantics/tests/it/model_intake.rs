@@ -1003,6 +1003,12 @@ fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
                     "fields": [],
                     "operations": [],
                     "bogus": "@@DEEP@@",
+                    "origin": {"source": {
+                        "sourceIdentity": "ix://acme/orders/spec",
+                        "path": "spec/Widget.md",
+                        "startLine": 3,
+                        "startColumn": 5,
+                    }},
                 }),
             )]),
         );
@@ -1030,12 +1036,22 @@ fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
                 "{refusal:?}"
             );
         }
-        assert!(
-            refusals
-                .iter()
-                .any(|refusal| refusal.detail.contains("agent-ix-semantic-ir refused")),
-            "{refusals:?}"
-        );
+        // The retained diagnostic names the member's IR node, artifact id
+        // and span.
+        let named = refusals.iter().any(|refusal| {
+            refusal.detail.contains("agent-ix-semantic-ir refused")
+                && matches!(
+                    &refusal.cause,
+                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                        node,
+                        artifact: Some(artifact),
+                        span: Some(span),
+                    } if *node == widget
+                        && artifact == "ix://acme/orders/spec"
+                        && (span.start.line, span.start.column) == (3, 5)
+                )
+        });
+        assert!(named, "{refusals:?}");
         drop(parsed);
     });
 }
@@ -1078,13 +1094,21 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
                 .expect("the cyclic document reads");
             let refusals = read_records(package_identity, &parsed)
                 .expect_err("a composite cycle refuses");
-            assert!(
-                refusals
-                    .iter()
-                    .any(|refusal| refusal.detail.contains("COMPOSITE_CYCLE")),
-                "{count} types: {:?}",
-                refusals.first()
+            let closing = format!(
+                "ix://{package_identity}/relationship/C{}-has-C0",
+                count - 1
             );
+            let names_it = refusals.iter().any(|refusal| {
+                refusal.detail.contains("COMPOSITE_CYCLE")
+                    && matches!(
+                        &refusal.cause,
+                        qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                            node,
+                            ..
+                        } if *node == closing
+                    )
+            });
+            assert!(names_it, "{count} types: {refusals:?}");
             drop(parsed);
         }
     });

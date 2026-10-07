@@ -701,7 +701,6 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
 }
@@ -1698,7 +1697,6 @@ fn config_version_request_for(
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
 }

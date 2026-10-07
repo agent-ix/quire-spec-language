@@ -358,6 +358,7 @@ fn digest_bytes(hex: &str) -> [u8; 32] {
 /// 3): taken over the RFC 8785 text of the parsed document, not the raw
 /// bytes, so a whitespace/order variant admits under the canonical digest.
 #[trace("TC-145", "FR-056-AC-2")]
+#[trace("TC-730", "FR-260-AC-1")]
 #[test]
 fn domain_package_digest_matches_its_golden_vector() {
     let parsed: Value = serde_json::from_str(DOCUMENT_RAW).unwrap();

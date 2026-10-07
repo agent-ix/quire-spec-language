@@ -405,7 +405,6 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         // `exhausted-work`'s own `work_units: 0` (FR-108's Corpus table);
         // every other case gets a generous ceiling it never approaches.
         accounting: default_accounting(case.spec().expression_steps.unwrap_or(1_000_000)),

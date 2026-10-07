@@ -48,3 +48,23 @@ FR-260-AC-1 (deep, schema-refused intake judged on content through the decide
 path), is untested, although this PR deletes the cap that guarded that path. Not
 mergeable until FND-001 is fixed in this PR. FND-002 needs a test here or a named
 deferral.
+
+## New findings (disposition pass 1)
+
+Reviewed at be49d0e576454f5620fc611e037316bf255aedd0.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-260-AC-3's text was changed in this PR (55b92bde5) from "naming every type on the cycle" to "naming the relationship that closes the cycle", to match semantic-IR's refusal. The new TC-731 test asserts only that some refusal's detail contains `COMPOSITE_CYCLE`. It checks neither naming clause, old or new, so the AC's naming clause has no oracle. The AC edit is also a spec change, which no spec review has checked. Fix: assert that the refusal names the closing relationship, `ix://acme/orders/relationship/C{count-1}-has-C0` (or the identity semantic-IR names), for both 300 and 100,000. Run spec review on the FR-260-AC-3 edit, or have the spec owner confirm it. | spec/functional/FR-260-admit-semantic-ir-documents-at-any-depth.md:65; qsl-semantics/tests/it/model_intake.rs:1048-1090 |
+| FND-006 | low | TC-730's Status now says "Steps 1 to 4 are implemented". Step 2 ("Admit every corpus package FR-056's tests admit, and read each digest") has no test tagged TC-730/FR-260-AC-1. The step 1 test's oracle also checks only that some refusal's detail contains "agent-ix-semantic-ir refused". The AC also requires the retained diagnostic to name the member's IR node, artifact id and span, and nothing asserts that. Fix: assert the diagnostic's node, artifact id and span for the `bogus` member in `a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule`. Either tag an existing corpus-digest test for step 2 or reword the Status. | spec/test-cases/TC-730-intake-judges-a-deep-document-on-its-content.md:25,53; qsl-semantics/tests/it/model_intake.rs:985-1040 |
+
+## Dispositions
+
+Round 1, reviewed at be49d0e576454f5620fc611e037316bf255aedd0 (fix commits 9f771b93..be49d0e57).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4b1e37f63. `a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule` (model_intake.rs:985), tagged TC-730/FR-260-AC-1, runs on a 512 KiB thread. A valid package holds a 100,000-deep array at a schema-refused member. `PackageDocument::parse` reads it, and `read_records` runs `validate_with_semantic_ir`, which calls `agent_ix_semantic_ir::decide` on the deep bundle (intake.rs:1389). The test asserts refusals only, every one `IntakeMalformedDeclaration`, none `resource_exhausted`, then drops the document on the same thread. Oracle gaps are recorded as FND-006. |
+| FND-002 | fixed | 4b1e37f63 (fixture 688e28a4f, be49d0e57). `a_composite_cycle_of_any_length_is_refused_by_the_readers_rule` (model_intake.rs:1048), tagged TC-731/FR-260-AC-3, builds 300-type and 100,000-type composite cycles on a 512 KiB thread and asserts a `COMPOSITE_CYCLE` refusal through `read_records`. The naming-clause gap and the AC edit are recorded as FND-005. |
+| FND-003 | fixed | 4b1e37f63. The deep test is retagged `#[trace("TC-730", "FR-260-AC-5")]` (intake.rs:6300). The oversize test carries `#[trace("TC-145", "FR-056-AC-2")]` again next to TC-732 (intake.rs:6323-6324). |
+| FND-004 | fixed | 55b92bde5. TC-730 Status, TC-732 Status ("Implemented") and TC-186 step 9 (an entry longer than the request's `intake.input_bytes` (4), refusing with bound 4 and its size) are updated. TC-730's new Status overclaims step 2, recorded as FND-006. |

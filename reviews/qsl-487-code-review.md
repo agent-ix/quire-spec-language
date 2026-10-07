@@ -89,3 +89,27 @@ quire-integration `tests/qsl_model_owner_admission.rs:57,90-92`. When
 quire-protocol, which pins QSL 9395be42, is next bumped:
 `tests/support/v2_handoff/mod.rs:228` builds an `artifact::Limits` literal with
 no `..`.
+
+## New findings (disposition pass 1)
+
+Reviewed at be49d0e576454f5620fc611e037316bf255aedd0.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | The intake bound now rides `ModelNormalizationLimits`. `ClauseRunRequest` still carries that type twice: `limits.model`, used by compile-time `select`, and the older `model_limits`, used by admission's re-read. The bound is still one field per type, but a public caller can again set `model_limits.intake` below `limits.model.intake`. A document between the two then compiles, and `model_views` turns the re-admission refusal into `fault("model-reconsistent-admission")`. The in-repo constructors (execute/frame.rs:245, execute/state_clause.rs:232) pass `limits.spine.model` to both, so nothing in the repo diverges. The duplicate `model_limits` field predates this PR. Fix, if the ruling "carried once, inside SpineLimits" should hold for `ClauseRunRequest` too: drop `model_limits` and use `request.limits.model`. Otherwise record that both fields must agree. | qsl-replay/src/spine/clause.rs:219-224; qsl-semantics/src/model/observation.rs:720-726 |
+
+## Dispositions
+
+Round 1, reviewed at be49d0e576454f5620fc611e037316bf255aedd0 (fix commits 9f771b93..be49d0e57).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4b1e37f63 (test settled in e77697e29). `package_input` keys each document under `UNBOUNDED` (unit.rs:77-79, 89-101), so `admit`'s own parse under the caller's `intake.input_bytes` returns the limit refusal. `select_names_the_intake_limit_for_an_oversize_document` (lifecycle/tests.rs) asserts a `StageFailure::Limit` naming `Setting::IntakeInputBytes`, bound `size - 1` and actual `size`. |
+| FND-002 | fixed | 4b1e37f63. The `intake_limits` field and every `intake` parameter are gone. The bound is one field, `ModelNormalizationLimits::intake`, inside `SpineLimits.model`. A residual through the older `model_limits` duplicate is recorded as FND-010. |
+| FND-003 | fixed | 4b1e37f63. `a_package_document_refusal_keeps_its_cause` now puts `intake.input_bytes=4` in the wire request's `stage_limits` and asserts that `ReplayRequest::decode` refuses `IntakeLimitExceeded { bound: 4, actual: 17 }`. |
+| FND-004 | fixed | 4b1e37f63. A reached intake limit maps to `Error::Incomplete(Exhaustion { dimension: PayloadBytes, limit: bound, requested: len })`, and `verify_document_reads_under_the_callers_intake_limit` tests bound = size (ok) and size - 1 (exhaustion). |
+| FND-005 | fixed | 4b1e37f63. `intake_limits` is gone. The `CompiledRun.model_limits` doc reads "The limits admission re-reads (`intake.input_bytes`) and re-normalizes the domain packages under." |
+| FND-006 | fixed | 4b1e37f63. intake.rs:6148 reads "a deeply nested document admits under its JCS digest". The 100,000-deep test's doc drops "the old 128 cap". The model_intake.rs H3 doc and expect message now name only serde_json's recursion limit. No 200-deep, `MAX_DEPTH` or `NestingDepth` text remains about intake. |
+| FND-007 | fixed | 4b1e37f63. Both new `#[allow(clippy::too_many_arguments)]` are removed. The intake bound rides `ModelNormalizationLimits`, so `admit_current_snapshot` and `admit_clause_observations` keep their original arity. |
+| FND-008 | fixed | 4b1e37f63. `#[derive(Debug, Clone)]` is removed from `PackageDocument`. A hand-written `Debug` prints only `jcs_digest` (intake.rs:307-313). |
+| FND-009 | fixed | 4b1e37f63. `quire-semantic-value` is `branch = "main"` (Cargo.toml:15). Cargo.lock resolves the same commit e0ada807 through `?branch=main`. |
