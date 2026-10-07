@@ -377,6 +377,7 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         Expression::boolean(true),
     );
     let mut seen = BTreeSet::new();
+    let mut model_nodes = BTreeSet::new();
     for root in ["Order/size", "Order/count", "Sub/size"] {
         let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
         let mut declarations = checked_dispatch_operation(
@@ -424,17 +425,10 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             assert_eq!(node["owner"]["identity"], "acme/orders");
             assert!(node["owner"].get("version").is_none());
         }
-        // FR-093-AC-21: exactly the document's two object types own a node.
-        assert_eq!(
+        model_nodes.extend(
             models
                 .iter()
-                .map(|node| node["owner"]["node"].as_str().unwrap().to_owned())
-                .collect::<BTreeSet<_>>(),
-            BTreeSet::from([
-                "ix://acme/orders/Order".to_owned(),
-                "ix://acme/orders/Sub".to_owned(),
-            ]),
-            "{root}: the model owners' nodes"
+                .map(|node| node["owner"]["node"].as_str().unwrap().to_owned()),
         );
         for node in node_where(&wire, "function", "pure_function")
             .into_iter()
@@ -446,6 +440,15 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             assert!(node.get("owner").is_none());
         }
     }
+    // FR-093-AC-21: exactly the document's two object types own a node.
+    assert_eq!(
+        model_nodes,
+        BTreeSet::from([
+            "ix://acme/orders/Order".to_owned(),
+            "ix://acme/orders/Sub".to_owned(),
+        ]),
+        "the model owners' nodes"
+    );
     assert_eq!(
         seen,
         BTreeSet::from([
