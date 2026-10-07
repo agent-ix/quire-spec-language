@@ -6,7 +6,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
+use quire_spec_language::checking::composed::{proofs, CauseKind, TypeDisposition, TypeLimits};
 use quire_spec_language::protocol_artifact::{
     native, wire as w, ExactInteger, ExactRational, Limits, ProtocolNumber,
 };
@@ -174,11 +174,23 @@ fn a_rational_literal_wider_than_the_protocol_wire_is_refused_before_emission() 
         TypeLimits::default(),
         proofs::ProofLimits::default(),
         |proofs, _selected| {
-            let refused = proofs.declarations().iter().any(|declaration| {
-                proofs.types().disposition(declaration.declaration())
-                    == Some(TypeDisposition::Refused)
-            });
-            assert!(refused, "the wide rational literal must not type");
+            let types = proofs.types();
+            let [bounded] = types.binding().namespace().lookup("Bounded") else {
+                panic!("one authored declaration named Bounded")
+            };
+            assert_eq!(types.disposition(*bounded), Some(TypeDisposition::Refused));
+            let typed = types.declaration(*bounded).unwrap();
+            let literal = typed
+                .causes()
+                .iter()
+                .find(|cause| cause.kind == CauseKind::LiteralDomain)
+                .unwrap_or_else(|| panic!("LiteralDomain on Bounded: {:?}", typed.causes()));
+            assert_eq!(literal.site.declaration, *bounded);
+            let unit = types.binding().namespace().unit(literal.site.unit).unwrap();
+            assert_eq!(
+                unit.source().slice(literal.site.span),
+                Some("rational(1, 9223372036854775808)")
+            );
         },
     );
 }
