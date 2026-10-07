@@ -25,8 +25,7 @@ use quire_spec_language::{
         self as artifact,
         handoff::{
             self, writer, Selection, SelectionV2, PUBLISHED_ARTIFACT_REFERENCE_FILE,
-            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
-            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, 
+            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
             PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
         v2, wire as w,
