@@ -1173,8 +1173,7 @@ mod tests {
     ///
     /// N1: no `#[trace]` tag -- TC-192's literal claim ("no fifth type is
     /// defined for #217's exemplar") is a fact about #217's own, separate
-    /// repository scope that nothing runnable in this repo can observe;
-    /// `spec/tests.md` attributes that row to #217, not to #231's debt.
+    /// repository scope that nothing runnable in this repo can observe.
     #[test]
     fn tc_192_function_exemplar_reuses_the_four_types_with_none_new() {
         use crate::identity::QualifiedName;

@@ -40,29 +40,8 @@ package the classification also retains the definition selection it
 authenticated (FR-045-AC-6); authenticated clock parameters and trace premises
 are FR-050's claim under TC-138, not this matrix's.
 
-One obligation is explicitly outstanding rather than covered: mutation testing
-of NFR-008's exhaustion paths is not performed by this revision. Pointwise
-Boolean composition, guard/redelivery dispositions and settled-sibling behavior
-are ratified shared semantics from `quire-specification` PR #23. The outstanding
-obligation and the blocked emission half are recorded on compiler
-[#38](https://github.com/agent-ix/quire-spec-language/issues/38).
-
-Status values are set from local runs only; hosted workflows remain
-manual-dispatch. The 41 live controls are `tests/composed_temporal_evaluation.rs`
-(14), `tests/composed_temporal_activation.rs` (11), `tests/composed_temporal_limits.rs`
-(7) and `tests/composed_temporal_mapping.rs` (7), `tests/composed_temporal_mapping_v2.rs`
-(2); all pass under
-`cargo test --locked --no-default-features -j 1 -- --test-threads=1`, with
-`cargo fmt --all -- --check` and Clippy clean under both the minimal and the
-`quire-extraction` lanes. The formula-wide owner suite `tests/native_temporal_owner.rs`
-(12 controls, FR-052/FR-053) and the FR-051-AC-1 through FR-051-AC-5 handoff
-tests formerly in `tests/it/compiled_protocol_v2.rs` are deleted by
-M-6d; see the retirement note above.
-
-Every coverage table uses the single `Status` column that
-`spec-artifacts-process#87` collapsed the naming to, and the installed `quire
-coverage` at this revision reports no `status-column-matches-nothing`
-diagnostic for any matrix, so the status check ran rather than being skipped.
+Pointwise Boolean composition, guard/redelivery dispositions and settled-sibling
+behavior are ratified shared semantics from `quire-specification` PR #23.
 
 ## Requirements Traceability
 
@@ -70,51 +49,51 @@ diagnostic for any matrix, so the status check ran rather than being skipped.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
-| FR-043 | FR-043-AC-1 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-2 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-3 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-4 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-5 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-6 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-7 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-8 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-9 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-10 | TC-122 | ✅ Tested and inspected; basis substitution is not an input surface |
-| FR-043 | FR-043-AC-11 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-12 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-13 | TC-122 | ✅ Tested |
-| FR-044 | FR-044-AC-1 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-2 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-3 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-4 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-5 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-6 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-7 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-8 | TC-123 | ✅ Tested |
-| FR-044 | FR-044-AC-9 | TC-123 | ✅ Tested |
-| FR-045 | FR-045-AC-1 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-2 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-3 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-4 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the missing-binding and other-definition refusals are inspected |
-| FR-051 | FR-051-AC-1, FR-051-AC-2, FR-051-AC-3, FR-051-AC-4, FR-051-AC-5 (retired) | TC-139 | ⛔ Retired (M-6d); handoff modules and their tests deleted |
-| FR-051 | FR-051-AC-6 | TC-139 | ✅ Tested: `tools/arch-lint` `tc_arch_lint_metadata_010` runs the `arch-lint direction` (FR-059) check over QSL's own resolved graph |
-| FR-052 | FR-052-AC-1 through FR-052-AC-8 (retired) | TC-140 | ⛔ Retired (M-6d); `protocol_artifact::native_temporal` and `tests/it/native_temporal_owner.rs` deleted |
-| FR-053 | FR-053-AC-1 through FR-053-AC-6 (retired) | TC-141 | ⛔ Retired (M-6d), for the same reason as FR-052 |
-| NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
-| NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
-| NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |
-| NFR-008 | NFR-008-AC-4 | TC-124 | ✅ Tested |
-| NFR-008 | NFR-008-AC-5 | TC-124 | ✅ Tested |
+| FR-043 | FR-043-AC-1 | TC-122 |  |
+| FR-043 | FR-043-AC-2 | TC-122 |  |
+| FR-043 | FR-043-AC-3 | TC-122 |  |
+| FR-043 | FR-043-AC-4 | TC-122 |  |
+| FR-043 | FR-043-AC-5 | TC-122 |  |
+| FR-043 | FR-043-AC-6 | TC-122 |  |
+| FR-043 | FR-043-AC-7 | TC-122 |  |
+| FR-043 | FR-043-AC-8 | TC-122 |  |
+| FR-043 | FR-043-AC-9 | TC-122 |  |
+| FR-043 | FR-043-AC-10 | TC-122 |  |
+| FR-043 | FR-043-AC-11 | TC-122 |  |
+| FR-043 | FR-043-AC-12 | TC-122 |  |
+| FR-043 | FR-043-AC-13 | TC-122 |  |
+| FR-044 | FR-044-AC-1 | TC-123 |  |
+| FR-044 | FR-044-AC-2 | TC-123 |  |
+| FR-044 | FR-044-AC-3 | TC-123 |  |
+| FR-044 | FR-044-AC-4 | TC-123 |  |
+| FR-044 | FR-044-AC-5 | TC-123 |  |
+| FR-044 | FR-044-AC-6 | TC-123 |  |
+| FR-044 | FR-044-AC-7 | TC-123 |  |
+| FR-044 | FR-044-AC-8 | TC-123 |  |
+| FR-044 | FR-044-AC-9 | TC-123 |  |
+| FR-045 | FR-045-AC-1 | TC-125 |  |
+| FR-045 | FR-045-AC-2 | TC-125 |  |
+| FR-045 | FR-045-AC-3 | TC-125 |  |
+| FR-045 | FR-045-AC-4 | TC-125 |  |
+| FR-045 | FR-045-AC-5 | TC-125 |  |
+| FR-045 | FR-045-AC-6 | TC-125 |  |
+| FR-051 | FR-051-AC-1, FR-051-AC-2, FR-051-AC-3, FR-051-AC-4, FR-051-AC-5 (retired) | TC-139 |  |
+| FR-051 | FR-051-AC-6 | TC-139 |  |
+| FR-052 | FR-052-AC-1 through FR-052-AC-8 (retired) | TC-140 |  |
+| FR-053 | FR-053-AC-1 through FR-053-AC-6 (retired) | TC-141 |  |
+| NFR-008 | NFR-008-AC-1 | TC-124 |  |
+| NFR-008 | NFR-008-AC-2 | TC-124 |  |
+| NFR-008 | NFR-008-AC-3 | TC-124 |  |
+| NFR-008 | NFR-008-AC-4 | TC-124 |  |
+| NFR-008 | NFR-008-AC-5 | TC-124 |  |
 
 ### Non-Functional Requirement Coverage
 
 | Non-Functional Req | Verification Method | Evidence/Test Cases | Status |
 | --- | --- | --- | --- |
-| NFR-008 | property-based-testing over the declared nested-horizon population; fault-injection for each forced stop; model-based-test-generation for eviction schedules; integration-testing for result reuse; negative-abuse-testing for ceiling permutations | TC-124 groups 1–5; counters published in docs/native-temporal-evaluation.md | ✅ Tested; mutation-testing of the exhaustion paths outstanding on #38 |
-| NFR-005 | Inspection and the existing Rust gates | Rust-only evaluator, tests and fixtures; no shell or foreign-language executable path added | ✅ Inspected locally |
-| NFR-003 | Inspection and Test | Five distinct outcomes and five distinct settlement bases asserted in TC-122; no resource stop rendered as Boolean in TC-124 | ✅ Tested |
+| NFR-008 | property-based-testing over the declared nested-horizon population; fault-injection for each forced stop; model-based-test-generation for eviction schedules; integration-testing for result reuse; negative-abuse-testing for ceiling permutations | TC-124 groups 1–5; counters published in docs/native-temporal-evaluation.md |  |
+| NFR-005 | Inspection and the existing Rust gates | Rust-only evaluator, tests and fixtures; no shell or foreign-language executable path added |  |
+| NFR-003 | Inspection and Test | Five distinct outcomes and five distinct settlement bases asserted in TC-122; no resource stop rendered as Boolean in TC-124 |  |
 
 ### Stakeholder and User Story Coverage
 
@@ -126,13 +105,13 @@ groups 2 and 3. Illustrative EX IDs are not minted as acceptance criteria.
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
-| TC-122 | Bounded temporal truth under each selected profile | Integration | P1 | FR-043 | ✅ Tested |
-| TC-123 | Activation dispositions and immutable captures | Integration | P1 | FR-044 | ✅ Tested |
-| TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | ✅ Tested |
-| TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | ✅ Tested |
-| TC-139 | Publish and read checked native handoffs | Integration | P0 | FR-051 | ✅ FR-051-AC-6 tested (`tc_arch_lint_metadata_010`); FR-051-AC-1–AC-5 steps retired (M-6d) |
-| TC-140 | Canonical native temporal request/result owner boundary | Integration | P0 | FR-052 | ⛔ Retired (M-6d); `tests/it/native_temporal_owner.rs` deleted |
-| TC-141 | Preserve opaque semantic-trigger identity through native temporal v2 | Integration | P0 | FR-053 | ⛔ Retired (M-6d), for the same reason as TC-140 |
+| TC-122 | Bounded temporal truth under each selected profile | Integration | P1 | FR-043 | ✅ |
+| TC-123 | Activation dispositions and immutable captures | Integration | P1 | FR-044 | ✅ |
+| TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | ✅ |
+| TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | ✅ |
+| TC-139 | Publish and read checked native handoffs | Integration | P0 | FR-051 | ✅ |
+| TC-140 | Canonical native temporal request/result owner boundary | Integration | P0 | FR-052 | ⛔ |
+| TC-141 | Preserve opaque semantic-trigger identity through native temporal v2 | Integration | P0 | FR-053 | ⛔ |
 
 ## Six coverage rules
 
