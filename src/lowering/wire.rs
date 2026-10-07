@@ -395,24 +395,38 @@ mod tests {
             binding: &binding,
             source: &source,
         };
-        let value_type = ir::IntegerType::new(
-            ir::IntegerDomain::Signed,
-            i128::from(i64::MIN),
-            i128::from(i64::MAX),
-            ir::OverflowPolicy::Reject,
-        )
-        .unwrap();
-        let literal = ir::Expression::new(
-            ir::ExpressionKind::IntegerLiteral {
-                value: i128::from(i64::MIN),
-                value_type,
-            },
-            span,
-        );
-        let wire = serde_json::to_value(conversion.expression(&literal).unwrap()).unwrap();
-        assert_eq!(wire["node"], "integer_literal");
-        assert_eq!(wire["value"], "-9223372036854775808");
-        assert_eq!(wire["value_type"]["minimum"], "-9223372036854775808");
-        assert_eq!(wire["value_type"]["maximum"], "9223372036854775807");
+        // (minimum, maximum, literal) at the i64 extremes, i64::MAX + 1,
+        // u64::MAX and both i128 extremes. The integration test
+        // `wide_integer_bounds_and_literals_round_trip_through_irs_strict_reader`
+        // feeds the same spellings to IR's strict package reader.
+        let cases: [(i128, i128, i128); 5] = [
+            (
+                i128::from(i64::MIN),
+                i128::from(i64::MAX),
+                i128::from(i64::MIN),
+            ),
+            (0, i128::from(i64::MAX) + 1, i128::from(i64::MAX) + 1),
+            (0, i128::from(u64::MAX), i128::from(u64::MAX)),
+            (i128::MIN, i128::MAX, i128::MAX),
+            (i128::MIN, i128::MAX, i128::MIN),
+        ];
+        for (minimum, maximum, value) in cases {
+            let value_type = ir::IntegerType::new(
+                ir::IntegerDomain::Signed,
+                minimum,
+                maximum,
+                ir::OverflowPolicy::Reject,
+            )
+            .unwrap();
+            let literal = ir::Expression::new(
+                ir::ExpressionKind::IntegerLiteral { value, value_type },
+                span.clone(),
+            );
+            let wire = serde_json::to_value(conversion.expression(&literal).unwrap()).unwrap();
+            assert_eq!(wire["node"], "integer_literal");
+            assert_eq!(wire["value"], value.to_string());
+            assert_eq!(wire["value_type"]["minimum"], minimum.to_string());
+            assert_eq!(wire["value_type"]["maximum"], maximum.to_string());
+        }
     }
 }

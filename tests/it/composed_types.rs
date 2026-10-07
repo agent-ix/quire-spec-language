@@ -644,6 +644,14 @@ fn normalization_requires_exact_formal_source_without_erasing_inferred_types() {
             );
         },
     );
+    // 2^63/2^63 now parses and normalizes to 1/1, which M::Q admits.
+    inspect("predicate WideNormalized using S (input: M::Q): Boolean { input = rational(9223372036854775808,9223372036854775808) }", |binding, formal| {
+        let report = composed::admit_types(binding, formal, TypeLimits::default());
+        assert_eq!(
+            report.disposition(id(binding, "WideNormalized")),
+            Some(TypeDisposition::Typed)
+        );
+    });
     inspect("predicate WideRaw using S (input: M::Q): Boolean { input = rational(170141183460469231731687303715884105728,170141183460469231731687303715884105728) }", |binding, formal| {
         let report = composed::admit_types(binding, formal, TypeLimits::default());
         refused(&report, "WideRaw", CauseKind::UnsupportedPrerequisite(Prerequisite::RationalNormalization));

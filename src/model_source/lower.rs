@@ -129,6 +129,17 @@ fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
             maximum_denominator,
             unit,
         } => {
+            // FR-041 bounds the denominator ceiling to 1..=i64::MAX, though IR's
+            // type now holds more.
+            if i64::try_from(maximum_denominator).is_err() {
+                let mut error = ir::Diagnostic::error(
+                    ir::DiagnosticCode::InvalidNumericBounds,
+                    "rational maximum_denominator is above i64::MAX",
+                    "maximum_denominator",
+                );
+                error.span = Some(Box::new(declaration.source.clone()));
+                return Err(error.into());
+            }
             let rational = ir::RationalType::new(
                 i128::from(numerator_minimum),
                 i128::from(numerator_maximum),

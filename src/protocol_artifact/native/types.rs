@@ -374,7 +374,11 @@ impl<'a> ValueBuilder<'a> {
                         w::Representation::Rational {
                             numerator_minimum: integer(value.numerator_minimum(), work)?,
                             numerator_maximum: integer(value.numerator_maximum(), work)?,
-                            maximum_denominator: integer(value.maximum_denominator(), work)?,
+                            maximum_denominator: integer(
+                                i64::try_from(value.maximum_denominator())
+                                    .map_err(|_| Error::Invalid(Invalid::NumericDomain))?,
+                                work,
+                            )?,
                         },
                     ),
                     (ScalarKind::Text { max_scalars }, ir::ValueType::Text) => (

@@ -376,9 +376,13 @@ fn rational_sum_domain_contains_all_prefixes(
     }
 
     let mut common_denominator = 1_u128;
-    let total_denominator = u128::try_from(total.maximum_denominator()).unwrap_or(u128::MAX);
-    for denominator in 2..=projection.maximum_denominator() {
-        let denominator = u128::try_from(denominator).unwrap_or(u128::MAX);
+    let (Ok(total_denominator), Ok(projection_denominator)) = (
+        u128::try_from(total.maximum_denominator()),
+        u128::try_from(projection.maximum_denominator()),
+    ) else {
+        return false;
+    };
+    for denominator in 2..=projection_denominator {
         common_denominator = match common_denominator
             .checked_div(gcd(common_denominator, denominator))
             .and_then(|reduced| reduced.checked_mul(denominator))

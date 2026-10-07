@@ -186,6 +186,7 @@ fn integers_above_2_pow_53_round_trip_through_irs_decoder() {
 /// at the wire: the bound and the literal it carries are replaced by the
 /// decimal strings under test, and the actual strict IR reader must
 /// reconstruct them exactly as `i128` values.
+#[trace("TC-912", "FR-033-AC-6")]
 #[test]
 fn wide_integer_bounds_and_literals_round_trip_through_irs_strict_reader() {
     const I64_MAX: &str = "9223372036854775807";

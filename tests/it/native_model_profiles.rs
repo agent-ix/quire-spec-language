@@ -419,6 +419,14 @@ fn rational_wire_variant_is_closed_and_never_rounds_numbers() {
 fn invalid_ir_bounds_keep_the_original_scalar_occurrence() {
     for scalar in [
         RATIONAL.replace("\"maximum_denominator\":2", "\"maximum_denominator\":0"),
+        RATIONAL.replace(
+            "\"maximum_denominator\":2",
+            "\"maximum_denominator\":9223372036854775808",
+        ),
+        RATIONAL.replace(
+            "\"maximum_denominator\":2",
+            "\"maximum_denominator\":18446744073709551615",
+        ),
         RATIONAL.replace("\"numerator_minimum\":-1", "\"numerator_minimum\":2"),
     ] {
         let text = document(&scalar, "", AMOUNT).replace("\"scalars\":[", "\"scalars\":[\r\n  ");
