@@ -111,7 +111,7 @@ struct Shell<'v> {
 /// Encode `value`'s own shell. A child (`Task::Value` below the root) is not
 /// expanded: it is written as the bare number `k`, its position in
 /// `Shell::children`. The shell holds no other bare number (every scalar the
-/// forms carry is a string, a boolean or `null`), so [`splice`] finds each
+/// forms carry is a string, a boolean or `null`), so [`cut`] finds each
 /// placeholder by position, outside any string.
 fn encode_shell<'v>(
     value: &'v WitnessValue,
@@ -156,21 +156,30 @@ fn encode_shell<'v>(
     Ok(Shell { bytes, children })
 }
 
-/// `shell` with each placeholder number replaced by the matching entry of
-/// `parts`, found by scanning the shell outside its strings.
-fn splice(shell: &[u8], parts: &mut [Vec<u8>]) -> Result<Vec<u8>, CanonicalError> {
+/// One piece of a finished value's bytes: literal bytes, or the whole of
+/// another finished value.
+enum Piece {
+    Bytes(Vec<u8>),
+    Child(usize),
+}
+
+/// `shell` cut at its placeholder numbers: the literal bytes between them,
+/// and a [`Piece::Child`] naming the matching entry of `ids` for each
+/// placeholder, found by scanning the shell outside its strings. The bytes
+/// are moved once; nothing of a child is copied into its parent.
+fn cut(shell: &[u8], ids: &[usize]) -> Result<Vec<Piece>, CanonicalError> {
     let invariant = |invariant| CanonicalError::Internal { invariant };
-    let total: usize = parts.iter().map(Vec::len).sum();
-    let mut out = Vec::with_capacity(shell.len() + total);
+    let mut pieces = Vec::new();
+    let mut literal = Vec::new();
     let mut position = 0;
     let mut in_string = false;
     while let Some(&byte) = shell.get(position) {
         if in_string {
-            out.push(byte);
+            literal.push(byte);
             match byte {
                 b'\\' => {
                     position += 1;
-                    out.push(
+                    literal.push(
                         *shell
                             .get(position)
                             .ok_or(invariant("a string escape ends"))?,
@@ -186,73 +195,167 @@ fn splice(shell: &[u8], parts: &mut [Vec<u8>]) -> Result<Vec<u8>, CanonicalError
                 index = index * 10 + usize::from(digit - b'0');
                 position += 1;
             }
-            let part = parts
-                .get_mut(index)
+            let id = *ids
+                .get(index)
                 .ok_or(invariant("a placeholder names a child"))?;
-            out.append(part);
+            pieces.push(Piece::Bytes(std::mem::take(&mut literal)));
+            pieces.push(Piece::Child(id));
         } else {
             in_string = byte == b'"';
-            out.push(byte);
+            literal.push(byte);
             position += 1;
         }
     }
-    Ok(out)
+    pieces.push(Piece::Bytes(literal));
+    Ok(pieces)
 }
 
-/// The JCS bytes of `root`, built bottom-up: each value's shell is encoded
-/// once, and its parent splices the finished bytes in, so no value is encoded
-/// more than once at any nesting depth. Set and bag elements are ordered by
-/// those bytes. Also returns the bytes the encoder wrote, which is the sum of
-/// every value's shell.
-fn encode_bottom_up(root: &WitnessValue) -> Result<(Vec<u8>, u64), CanonicalError> {
+/// The literal chunks of finished value `root`, in order, walking its
+/// children on a heap stack.
+struct Chunks<'a> {
+    arena: &'a [Vec<Piece>],
+    stack: Vec<(usize, usize)>,
+}
+
+impl<'a> Chunks<'a> {
+    fn new(arena: &'a [Vec<Piece>], root: usize) -> Self {
+        Self {
+            arena,
+            stack: vec![(root, 0)],
+        }
+    }
+}
+
+impl<'a> Iterator for Chunks<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<&'a [u8]> {
+        loop {
+            let (rope, index) = self.stack.last_mut()?;
+            let piece = self.arena.get(*rope).and_then(|pieces| pieces.get(*index));
+            *index += 1;
+            match piece {
+                None => {
+                    self.stack.pop();
+                }
+                Some(Piece::Bytes(bytes)) => return Some(bytes),
+                Some(Piece::Child(child)) => self.stack.push((*child, 0)),
+            }
+        }
+    }
+}
+
+/// The work an encoding did: every byte the writer produced, and every byte
+/// compared to order set and bag elements. Each value's bytes are produced
+/// once, however deep it sits, so this stays a constant times the output
+/// for values without sets and grows with the elements compared for sets.
+#[derive(Clone, Copy, Debug, Default)]
+struct Work {
+    written: u64,
+    compared: u64,
+}
+
+impl Work {
+    fn total(self) -> u64 {
+        self.written.saturating_add(self.compared)
+    }
+}
+
+/// `left` against `right` by their finished bytes, counting the bytes looked
+/// at in `compared`.
+fn compare(
+    arena: &[Vec<Piece>],
+    left: usize,
+    right: usize,
+    compared: &mut u64,
+) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let mut lefts = Chunks::new(arena, left);
+    let mut rights = Chunks::new(arena, right);
+    let mut a: &[u8] = &[];
+    let mut b: &[u8] = &[];
+    loop {
+        while a.is_empty() {
+            match lefts.next() {
+                Some(chunk) => a = chunk,
+                None => break,
+            }
+        }
+        while b.is_empty() {
+            match rights.next() {
+                Some(chunk) => b = chunk,
+                None => break,
+            }
+        }
+        match (a.is_empty(), b.is_empty()) {
+            (true, true) => return Ordering::Equal,
+            (true, false) => return Ordering::Less,
+            (false, true) => return Ordering::Greater,
+            (false, false) => {}
+        }
+        let n = a.len().min(b.len());
+        *compared = compared.saturating_add(n as u64);
+        let (a_head, a_rest) = a.split_at(n);
+        let (b_head, b_rest) = b.split_at(n);
+        match a_head.cmp(b_head) {
+            Ordering::Equal => {
+                a = a_rest;
+                b = b_rest;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// The finished bytes of `root` as pieces in an arena, built bottom-up: each
+/// value's shell is encoded once into its own pieces that name its children,
+/// so no value's bytes are copied into an ancestor. Set and bag elements are
+/// ordered by comparing their finished bytes in place.
+fn encode_pieces(root: &WitnessValue) -> Result<(Vec<Vec<Piece>>, Work), CanonicalError> {
     let mut preorder = Vec::new();
     let mut pending = vec![root];
     while let Some(value) = pending.pop() {
         preorder.push(value);
         pending.extend(value.children());
     }
-    let mut finished: HashMap<*const WitnessValue, Vec<u8>> = HashMap::new();
-    let mut encoded = 0_u64;
+    let ids: HashMap<*const WitnessValue, usize> = preorder
+        .iter()
+        .enumerate()
+        .map(|(id, value)| (std::ptr::from_ref(*value), id))
+        .collect();
     let missing = || CanonicalError::Internal {
         invariant: "a child is finished before its parent",
     };
-    for value in preorder.into_iter().rev() {
+    let mut arena: Vec<Vec<Piece>> = Vec::new();
+    arena.resize_with(preorder.len(), Vec::new);
+    let mut work = Work::default();
+    for (id, value) in preorder.iter().enumerate().rev() {
         let order = match value {
             WitnessValue::Set(elements) | WitnessValue::Bag(elements) => {
                 let mut keyed = Vec::with_capacity(elements.len());
                 for (index, element) in elements.iter().enumerate() {
-                    let bytes = finished
-                        .get(&std::ptr::from_ref(element))
-                        .ok_or_else(missing)?;
-                    keyed.push((bytes, index));
+                    let child = *ids.get(&std::ptr::from_ref(element)).ok_or_else(missing)?;
+                    keyed.push((child, index));
                 }
-                keyed.sort();
-                Some(
-                    keyed
-                        .into_iter()
-                        .map(|(_, index)| index)
-                        .collect::<Vec<_>>(),
-                )
+                let mut compared = 0;
+                keyed.sort_by(|(left, _), (right, _)| compare(&arena, *left, *right, &mut compared));
+                work.compared = work.compared.saturating_add(compared);
+                Some(keyed.into_iter().map(|(_, index)| index).collect::<Vec<_>>())
             }
             _ => None,
         };
         let shell = encode_shell(value, order.as_deref())?;
-        encoded = encoded.saturating_add(u64::try_from(shell.bytes.len()).unwrap_or(u64::MAX));
-        let mut parts = Vec::with_capacity(shell.children.len());
+        work.written = work
+            .written
+            .saturating_add(u64::try_from(shell.bytes.len()).unwrap_or(u64::MAX));
+        let mut children = Vec::with_capacity(shell.children.len());
         for child in &shell.children {
-            parts.push(
-                finished
-                    .remove(&std::ptr::from_ref(*child))
-                    .ok_or_else(missing)?,
-            );
+            children.push(*ids.get(&std::ptr::from_ref(*child)).ok_or_else(missing)?);
         }
-        let bytes = splice(&shell.bytes, &mut parts)?;
-        finished.insert(std::ptr::from_ref(value), bytes);
+        let pieces = cut(&shell.bytes, &children)?;
+        *arena.get_mut(id).ok_or_else(missing)? = pieces;
     }
-    let bytes = finished
-        .remove(&std::ptr::from_ref(root))
-        .ok_or_else(missing)?;
-    Ok((bytes, encoded))
+    Ok((arena, work))
 }
 
 /// An array of `elements`, each written as a value.
@@ -452,15 +555,17 @@ impl WitnessValue {
     /// `%3C` and `%3E`. Set and bag elements are written ascending by their
     /// own JCS bytes, so equal values always give the same text.
     pub fn to_value_text(&self) -> Result<String, ValueTextError> {
-        let (bytes, _) = encode_bottom_up(self)?;
-        let mut escaped = Vec::with_capacity(bytes.len());
-        for byte in bytes {
-            match byte {
-                b'%' => escaped.extend_from_slice(b"%25"),
-                b';' => escaped.extend_from_slice(b"%3B"),
-                b'<' => escaped.extend_from_slice(b"%3C"),
-                b'>' => escaped.extend_from_slice(b"%3E"),
-                other => escaped.push(other),
+        let (arena, _) = encode_pieces(self)?;
+        let mut escaped = Vec::new();
+        for chunk in Chunks::new(&arena, 0) {
+            for byte in chunk {
+                match byte {
+                    b'%' => escaped.extend_from_slice(b"%25"),
+                    b';' => escaped.extend_from_slice(b"%3B"),
+                    b'<' => escaped.extend_from_slice(b"%3C"),
+                    b'>' => escaped.extend_from_slice(b"%3E"),
+                    other => escaped.push(*other),
+                }
             }
         }
         String::from_utf8(escaped).map_err(|_| {
@@ -470,15 +575,15 @@ impl WitnessValue {
         })
     }
 
-    /// The byte length of [`Self::to_value_text`]. A value that does not
-    /// encode counts as `usize::MAX`, so the reader bound refuses it.
+    /// The byte length of [`Self::to_value_text`], counted over the finished
+    /// pieces without building the text. A value that does not encode counts
+    /// as `usize::MAX`, so the reader bound refuses it.
     pub fn value_text_len(&self) -> usize {
-        encode_bottom_up(self).map_or(usize::MAX, |(bytes, _)| {
-            let escaped: usize = bytes
-                .iter()
-                .map(|byte| if is_escaped(*byte) { 3 } else { 1 })
-                .sum();
-            escaped
+        encode_pieces(self).map_or(usize::MAX, |(arena, _)| {
+            Chunks::new(&arena, 0)
+                .flatten()
+                .map(|byte| if is_escaped(*byte) { 3_usize } else { 1 })
+                .sum()
         })
     }
 

@@ -239,6 +239,7 @@ length of its escaped value text.
 | FR-070-AC-10 | On a thread with a 512 KiB stack, a transcript entry holding a 100,000-long recursive list (`record List { head: Int[0, 9]; tail?: List; }`) decodes, with the envelope's reader bound raised to fit it through `replay.input_bytes`. The decoded value clones, compares equal to itself, renders its redacted `Debug` and drops with no stack overflow. With the bound one byte below the envelope's size, construction refuses `BoundExceeded` naming `replay.input_bytes`. | Test (TC-736) |
 | FR-070-AC-11 | One `Canonical` entry per leaf family decodes exactly as written: an integer `-170141183460469231731687303715884105728` (outside `i64`); an enum member; the text `a;b=c<<<d>>>e%f` (its entry holds `a%3Bb=c%3C%3C%3Cd%3E%3E%3Ee%25f`, and its escaped bytes count toward `replay.input_bytes`), which parses as one block whose entry splits only at its own delimiters; the rational `-3`/`4`; the decimal with coefficient `1050` and scale `2`; a `float32` NaN with payload `7fc00001` and a `float64` negative zero `8000000000000000`; a quantity `{"type":"decimal","coefficient":"15","scale":"1","unit":"<unit>"}`; and a reference. A sequence of text values holding `;` and `>` decodes in order. | Test (TC-905) |
 | FR-070-AC-12 | A transcript with entries for node ids `0a…` and `0b…` in that order decodes. The same entries with `0b…` first refuse `DecodeRefusal::EntryOrder` naming the `0a…` entry, with no partial result. | Test (TC-905) |
+| FR-070-AC-13 | Encoding a witness value does work proportional to its output at any depth: each value's bytes are produced once and set and bag elements are ordered by comparing finished bytes in place, so doubling the depth of nested sets, of nested options and of nested sequences at most triples the counted work (a subtree copied into every ancestor quadruples it), and the work stays within three times the output's bytes. The value text's length is counted without building the text. | Test (TC-905) |
 
 ## Dependencies
 
@@ -273,7 +274,7 @@ length of its escaped value text.
 ## Status
 
 Implemented: `qsl_replay::WitnessEnvelope`, verified by TC-180 to TC-186.
-Witness value texts (FR-070-AC-8 to FR-070-AC-12, QSL-640) are
+Witness value texts (FR-070-AC-8 to FR-070-AC-13, QSL-640, QSL-647) are
 implemented in `qsl_replay::WitnessValue` and `Witness::decode`, and the
 envelope's reader bound is raised through the `ReplayLimits` argument of
 `WitnessEnvelope::reconstruct` (`replay.input_bytes`): TC-905 and TC-736 (AC-10) pass locally. A `union`

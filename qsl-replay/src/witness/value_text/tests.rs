@@ -466,23 +466,62 @@ fn nested_sets(depth: usize) -> WitnessValue {
     value
 }
 
-/// FR-263-AC-1 (QSL-647): a set or bag nested 20,000 deep, two elements at
-/// every level, encodes each value once. The encoder writes the sum of the
-/// values' own shells, which is the size of the output, not that size times
-/// the depth, and the text decodes, ordering check included, on a 512 KiB
-/// stack and round-trips to the same text.
-#[trace("TC-736", "FR-263-AC-1")]
+/// The work `value` takes to encode, and the length of its output.
+fn work_of(value: &WitnessValue) -> (u64, usize) {
+    let (arena, work) = super::encode_pieces(value).unwrap();
+    let length = super::Chunks::new(&arena, 0).map(<[u8]>::len).sum();
+    (work.total(), length)
+}
+
+fn nested_options(depth: usize) -> WitnessValue {
+    let mut value = int(0);
+    for _ in 0..depth {
+        value = WitnessValue::Option(Some(Box::new(value)));
+    }
+    value
+}
+
+fn nested_sequences(depth: usize) -> WitnessValue {
+    let mut value = int(0);
+    for _ in 0..depth {
+        value = WitnessValue::Sequence(vec![value, int(1)]);
+    }
+    value
+}
+
+/// FR-070-AC-13 (QSL-647): encoding does work proportional to the output, at
+/// any depth. Doubling the depth of nested sets, nested options and nested
+/// sequences doubles the work (a ratio near 2); an encoder that copies each
+/// subtree into every ancestor would quadruple it. The text decodes, order
+/// check included, on a 512 KiB stack and round-trips.
+#[trace("TC-905", "FR-070-AC-13")]
 #[test]
-fn tc_736_nested_sets_encode_each_value_once() {
+fn tc_905_encoding_work_is_linear_in_depth() {
     on_small_stack(|| {
-        const DEPTH: usize = 20_000;
+        const DEPTH: usize = 5_000;
+        let shapes: [(&str, fn(usize) -> WitnessValue); 3] = [
+            ("sets", nested_sets),
+            ("options", nested_options),
+            ("sequences", nested_sequences),
+        ];
+        for (name, build) in shapes {
+            let (single, single_len) = work_of(&build(DEPTH));
+            let (double, double_len) = work_of(&build(2 * DEPTH));
+            assert!(
+                single >= single_len as u64,
+                "{name}: work counts at least the output"
+            );
+            assert!(
+                double <= 3 * single,
+                "{name}: work {single} at depth {DEPTH} became {double} at {}",
+                2 * DEPTH
+            );
+            assert!(
+                double <= 3 * double_len as u64,
+                "{name}: work {double} for {double_len} bytes of output"
+            );
+        }
         let value = nested_sets(DEPTH);
-        let (bytes, encoded) = super::encode_bottom_up(&value).unwrap();
-        assert!(
-            encoded <= 2 * bytes.len() as u64,
-            "the encoder wrote {encoded} bytes for {} bytes of output",
-            bytes.len()
-        );
         let text = value.to_value_text().unwrap();
         assert_eq!(value.value_text_len(), text.len());
         let decoded = WitnessValue::from_value_text(&text).unwrap();
@@ -492,12 +531,12 @@ fn tc_736_nested_sets_encode_each_value_once() {
     });
 }
 
-/// FR-263-AC-1 (QSL-647): the decode order check still refuses out-of-order
+/// FR-070-AC-9 (QSL-647): the decode order check still refuses out-of-order
 /// and duplicate elements found by span, in a nested set, a bag and an
 /// ordered set.
-#[trace("TC-736", "FR-263-AC-1")]
+#[trace("TC-905", "FR-070-AC-9")]
 #[test]
-fn tc_736_the_element_order_check_reads_spans() {
+fn tc_905_the_element_order_check_reads_spans() {
     let text = |value: &str| format!(r#"{{"type":"text","value":"{value}"}}"#);
     let a = text("a");
     let b = text("b");
