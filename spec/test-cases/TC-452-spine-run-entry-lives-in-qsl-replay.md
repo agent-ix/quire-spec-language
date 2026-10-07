@@ -18,7 +18,7 @@ catches CLI-only run behavior (ADR-011 §5: no behavior is reachable only
 through the CLI), a layer-5 type leaking through `qsl_replay`, and an
 outcome kind rendered with the wrong spelling or exit status.
 
-Scope: FR-100-AC-7 to FR-100-AC-9.
+Scope: FR-100-AC-7 to FR-100-AC-9, and FR-100-AC-12.
 
 ## Test Procedure
 
@@ -79,10 +79,21 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
      `absent-key`;
    - a `CallFailure::Fault` of `InternalFault::new("S6a",
      "checked-identity-not-resolved-by-package")`.
+5. Count the charges a live `Cancel::observing` handle sees while
+   `qsl_replay::spine::run` compiles and calls FR-100-AC-1's `seven`:
+   `F` charges up to the end of S4 and `T` in all, with `T > F` (S6a charges
+   at least once, FR-100-AC-6). Run `seven` twice more, each with a fresh
+   handle tripped by the `Cancel::observing` gate harness
+   (`qsl-replay/src/spine/lifecycle/tests.rs`) so that the run observes it
+   only from the chosen charge on: (a) `CancelCause::Requested` at charge
+   `F`, the last front-end charge; (b) `CancelCause::Deadline` at charge
+   `F + 1`, the first S6a charge, inside `CheckedPackage::call`. Pass each
+   result to `OutcomeDocument::from_run`.
 
 Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 `#[trace("TC-452", "FR-100-AC-8")]` (step 3) and
-`#[trace("TC-452", "FR-100-AC-9")]` (step 4).
+`#[trace("TC-452", "FR-100-AC-9")]` (step 4) and
+`#[trace("TC-452", "FR-100-AC-12")]` (step 5).
 
 ## Expected Results
 
@@ -155,6 +166,13 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     `call` with `details` `{"stage": "S6a", "invariant":
     "checked-identity-not-resolved-by-package"}`, at the internal-failure
     exit status.
+- Step 5: neither handle is cancelled when `run` starts. Run (a) returns
+  `RunRefusal::Cancelled(CancelCause::Requested)` and run (b)
+  `RunRefusal::Cancelled(CancelCause::Deadline)`; neither returns
+  `RunRefusal::Fault`. Each has category incomplete and FR-285 exit 22. Each
+  `from_run` document has `category` incomplete, `last_stage` `null`,
+  `result` `null` and one diagnostic with code `cancelled`, whose cause is
+  `requested` for (a) and `deadline` for (b).
 
 ## Status
 

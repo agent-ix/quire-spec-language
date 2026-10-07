@@ -120,12 +120,16 @@ The outcome document's bytes.
   document with the compiled package's `package_id` as its artifact; a
   compile refusal carries the stage it reached, the refusal's category and its
   diagnostic; a call-stage refusal (FR-100) carries `S6a`, its category and its
-  code; a cancelled run is incomplete at no stage with the cancel's cause; a
+  code; a cancelled run is incomplete with `last_stage` `null`, whichever
+  stage the cancel stopped, and the cancel's cause; a
   fault is internal failure at no stage with its catalog code.
-- A driver failure before any operation runs, an unsupported engine among
-  them, shall be one `OutcomeDocument::new(operation, None, category)` with a
-  diagnostic of an existing catalog code: `unsupported_construct`, category
-  unsupported (FR-285, exit 21), needs no new code.
+- A driver failure before any operation runs shall be one
+  `OutcomeDocument::new(operation, None, category)` with one diagnostic. An
+  engine the request names that the driver has not built (AOT or JIT, where
+  only the interpreter exists) is valid meaning the selected producer does
+  not implement, so its diagnostic code is QSpec FR-271's
+  `unimplemented_capability`, never `unsupported_construct` (a source form
+  the selected profile prohibits), in category unsupported (FR-285, exit 21).
 - The serialization shall write an `execute` outcome's completed value,
   undefined reason or exhausted limit as the `result` member, and `result`
   `null` on every other document.
@@ -139,7 +143,7 @@ The outcome document's bytes.
 | FR-286-AC-3 | An `analyze` outcome of three items serializes with three `items` entries in request order, each holding its terminal record and category. Serializing any outcome twice gives equal bytes. | Test (TC-770) |
 | FR-286-AC-4 | FR-281-AC-7's `analyze` outcome serializes its item with category violation and cause `undefined-evaluation`, and the document holds no `undefined` label; FR-283-AC-5's `monitor` outcome serializes the same way; FR-100-AC-10's `execute` outcome serializes with category undefined and the label `undefined`. | Test (TC-770) |
 | FR-286-AC-5 | The `execute` outcome of FR-100-AC-1's `seven` serializes with `category` success and `result` `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`; FR-100-AC-10's empty `sum` with `category` undefined and `result` `{"kind": "undefined", "reason": "sum-out-of-domain"}`; FR-100-AC-6's `seven` with `work_units` 0 with `category` incomplete and `result` `{"kind": "incomplete", "limit": {"kind": "work_units", "bound": "0", "counter": "1", "field": "work_units"}}`. A `check` called with a `Cancel` already cancelled serializes with `category` incomplete, `last_stage` `null`, `items` `[]` and `result` `null`. | Test (TC-770) |
-| FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and one `package_id` artifact; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` with an `unsupported_construct` diagnostic exits 21. | Test (TC-770) |
+| FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and one `package_id` artifact; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` for an unbuilt engine holds one diagnostic whose code serializes as `unimplemented_capability`, with `category` unsupported, `last_stage` `null`, and exits 21. | Test (TC-770) |
 
 ## Status
 
@@ -159,6 +163,8 @@ outcomes.
 - [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): the exit code.
 - QSpec FR-300-AC-3, FR-301-AC-1: library and CLI agree.
 - QSpec FR-331: the terminal record and its wire spellings.
+- QSpec FR-271: the diagnostic code catalog, `unimplemented_capability` among
+  it.
 - [FR-100](FR-100-run-a-named-function-through-the-spine.md): the value,
   undefined reason and limit spellings of `result`.
 - [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md): the
