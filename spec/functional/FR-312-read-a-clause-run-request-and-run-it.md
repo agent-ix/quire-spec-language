@@ -55,7 +55,8 @@ place of `call`. `clause` is a closed object:
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
 - `package_id`: optional, the expected `package_id`, lowercase hex;
-- `work_units`: optional, FR-100's evaluation budget;
+- `accounting`: optional, FR-100's `accounting` object, the evaluation
+  budget;
 - `observation_limits`: optional, FR-106's `ObservationLimits` overrides.
 
 The request's `models` and `libraries` are FR-100's and give FR-109's

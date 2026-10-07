@@ -214,8 +214,8 @@ under a larger limit.
    `--limit s3.nodes=<n>` or the request's `stage_limits` entry `s3.nodes`".
 6. **Catalogs.** The `stage_limit_exceeded` row of the native diagnostics
    catalog carries the setting name with the limit kind and bound (overlap
-   item O-5). An `incomplete` outcome names its accounting counter, which is
-   already its setting under `quire.value.accounting/v1`.
+   item O-5). An `incomplete` outcome names its accounting counter and that
+   counter's setting, `accounting.<counter>` (FR-255).
 
 ### D-4. Components in QSL's lane
 
