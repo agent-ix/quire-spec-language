@@ -36,3 +36,12 @@ Examined:
 ## Verdict
 
 **Changes requested (medium).** The code covers every case in QSpec FR-290-AC-13's registration sentence, and the routing.rs tests exercise each one. The QSL spec has not caught up: FR-057 and FR-097 do not state the new behaviour, so it has no QSL acceptance criterion, and ADR-029 PV-4 contradicts it after the merge. The domain-kind routing step of FR-290-AC-13 is CG's, as already decided, and is not counted as a QSL gap here.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed b19561202 | FR-057 gains the `invalid-domains` SHALL paragraph and FR-057-AC-12 (TC-155 step 7). The implementation note lists `invalid-domains`. |
+| FND-002 | fixed b19561202 | FR-097 Outputs and the new FR-097-AC-9 state that each proof bound carries its `DomainKind`, paired by `finite_kind`, with the seven exact wire spellings (TC-436 step 4, TC-438 step 4). |
+| FND-003 | fixed b19561202 | ADR-029 PV-4 item 1 now says `qsl_route::BackendDescriptor` holds the admitted pairs and `domains`, and that CG reads them through `domains()`. |
+| FND-004 | fixed b19561202 | C-28 cites "(QSpec FR-290)" with no SHA. |

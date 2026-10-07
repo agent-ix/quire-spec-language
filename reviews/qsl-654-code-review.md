@@ -49,3 +49,21 @@ Examined:
 - **Layering.** The move respects layering. `qsl_foundation` is on `LAYER_PERMITTED_MODULES`, no Cargo edge changed, and the arch-lint api-surface and qualified-core rules do not cover `bound`.
 
 FND-001 and FND-002 say the same thing about two types: the invariant lives in prose, and a public constructor can break it. FND-003 means none of the new tests count toward QSL's matrix.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | The consumer breaks go beyond "quire-driver src/registry.rs:49". At their origin/main heads, both downstream repos depend on QSL `branch = "main"`. quire-driver (5cddd5f) calls `BackendDescriptor::admit` with the old four-argument form at nine sites: src/registry.rs:177, 299, 348, 372, 439; src/drive.rs:426; quire-cli/src/backend_provider.rs:261; quire-cli/src/process_provider.rs:250; quire-cli/src/signals.rs:541. quire-contract-codegen (9569f5d) builds `ProofBound { domain, bound }` as a struct literal in production code at src/replay/state_clause.rs:933, and in tests at tests/it/composite_parity_converter.rs:141, 148, 599 and tests/it/skeleton_spine.rs:399. Both fail to compile on their next QSL update unless the adaptations land with this PR. | qsl-foundation/src/bound.rs:272-335; qsl-route/src/lib.rs:233-258 |
+| FND-008 | low | TC-155 step 7 registers `loop`, `infinite-trace` and `Collection` once with a `bounded` pair and once unbounded-only. The unbounded-only test covers only empty, `quantity`, `bogus` and a repeated kind. The code path does not branch on mode for a present `domains`, so this is a gap between the test and its step text, not untested logic. | qsl-route/tests/it/routing.rs:372-391 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed d8d66205d | ProofBound fields are private. `ProofBound::new` returns `Result<_, ProofBoundRefusal>` (MissingKind, KindMismatch; `None` only for Variants), with accessors. No struct literal remains in QSL. |
+| FND-002 | fixed d8d66205d | `BackendDescriptor::new` returns `Result<Self, RegistrationRefusal>` and runs the shared `check_domains`. Covered by `the_typed_constructor_applies_the_same_domains_rules`. |
+| FND-003 | fixed d8d66205d | Retagged to TC-155/FR-057-AC-12 (routing.rs) and TC-436/FR-097-AC-9 (bound.rs). Both ids now exist in QSL's spec (b19561202). |
+| FND-004 | fixed d8d66205d | Retagged to TC-438/FR-097-AC-9, which states kind emission. |
+| FND-005 | fixed d8d66205d | The re-export is deleted from requirements.rs and family/mod.rs. All QSL users import `qsl_foundation::bound::DomainKind`. |
+| FND-006 | fixed d8d66205d | Added `a_pair_defect_is_reported_before_a_domains_defect` (unknown mode with empty `domains` refuses `unknown-mode`). |

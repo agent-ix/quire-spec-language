@@ -372,13 +372,22 @@ fn repeated_domain_kinds_refuse_and_the_boundable_four_are_kept() {
 #[trace("TC-155", "FR-057-AC-12")]
 fn malformed_domains_refuse_an_unbounded_only_registration() {
     let unbounded: &[(Option<&str>, &str)] = &[(Some("value-validity"), "unbounded")];
-    let cases: [(&[&str], DomainsDefect); 4] = [
+    let cases: [(&[&str], DomainsDefect); 7] = [
         (&[], DomainsDefect::Empty),
         (
             &["quantity"],
             DomainsDefect::NotBoundable("quantity".to_owned()),
         ),
         (&["bogus"], DomainsDefect::NotBoundable("bogus".to_owned())),
+        (&["loop"], DomainsDefect::NotBoundable("loop".to_owned())),
+        (
+            &["infinite-trace"],
+            DomainsDefect::NotBoundable("infinite-trace".to_owned()),
+        ),
+        (
+            &["Collection"],
+            DomainsDefect::NotBoundable("Collection".to_owned()),
+        ),
         (
             &["integer", "integer"],
             DomainsDefect::Repeated(DomainKind::Integer),
