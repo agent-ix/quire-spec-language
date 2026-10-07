@@ -1469,7 +1469,7 @@ mod tests {
                 "category": "success",
                 "items": [],
                 "diagnostics": [],
-                "artifacts": [{"kind": "package_id", "id": package_id.to_string()}],
+                "artifacts": [{"kind": "package_id", "id": package_id.hex()}],
                 "result": {"kind": "completed", "value": {"kind": "integer", "decimal": "7"}},
             })
         );
