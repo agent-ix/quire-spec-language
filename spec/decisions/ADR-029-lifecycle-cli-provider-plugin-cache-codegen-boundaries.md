@@ -476,23 +476,19 @@ third-party provider cannot add an arm, so CG's closed kind gains one
 variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
 
 1. **Manifest checked in full.** Its arm settles from the provider's manifest
-   alone: the advertised (kind, mode) pairs, domains and bounds, against the
-   item's extent classification, under QSpec FR-290's rules. The descriptor
-   CG receives carries the manifest's advertised domains and bounds, not the
-   (kind, mode) pairs alone. That descriptor is CG's own descriptor for the
-   Process variant, not `qsl_route::BackendDescriptor`, which holds only
-   (kind, mode); CG sources the domains and bounds from the FR-331 manifest
-   the `BackendDescriptor` came from. An item whose domain or bound the
-   manifest does not advertise declines under FR-290. The FR-290 decline
-   cause for an unadvertised domain or bound is pending in QSpec under
-   QSL-637, in a QSpec PR that follows this one. Until then CG uses existing
-   FR-290 causes: an unadvertised unbounded mode settles by FR-290's
-   existing unbounded-extent row (`requires-bound` when a finite bound is
-   available, otherwise `unsupported`, warned,
-   `unsupported_projection`/`unbounded-extent`, as its table gives), and an
-   unadvertised domain or bound settles `unsupported`,
-   `unsupported_projection`/`unsupported-requested-capability`, until the
-   QSL-637 QSpec cause replaces it. It never calls the plugin.
+   alone, against the item's extent classification. QSpec FR-290 owns the
+   check order and every disposition and cause; this ADR does not restate
+   them. The descriptor CG receives is a QSpec FR-331 backend-provider/v1
+   `BackendDescriptor` (`proposals/backend-provider-v1/schema.json`). It
+   carries the `advertises` (kind, mode) pairs and `domains`, the ADR-014
+   boundable domain kinds for which the backend accepts a finite bound. Its
+   `bounds` are the published default of each limit the backend applies, not
+   admission maxima. Every `domains` defect in a provider's hello is a
+   per-registration refusal under FR-290,
+   `invalid_capability`/`invalid-domains`. That
+   descriptor is CG's own descriptor for the Process variant, not
+   `qsl_route::BackendDescriptor`, which holds only (kind, mode). It never
+   calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor
@@ -508,17 +504,10 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    reader and settles per PL-7 (`refuted` only through S6a replay; `proved`
    keeps the basis label trusted). Each CG arm for `Process` is a typed
    pass-through or empty output, never a panic.
-4. **Disposition from the manifest alone.** A bounded item routes when the
-   manifest advertises the bounded mode with a bound that covers the item's.
-   An unbounded item routes only when the manifest advertises the unbounded
-   mode. Otherwise the item declines under FR-290, with the interim or
-   pending causes above. There is no default disposition. FR-290's existing
-   `requires-bound` row (an unbounded item on a bounded-only provider when a
-   finite bound is available) is the case where the manifest advertises the
-   bounded mode but the item's extent is unbounded; it stays a
-   `requires-bound` settlement of that row, and routing happens only once
-   a bound is supplied that the advertised bound covers. Every other
-   unadvertised case declines.
+4. **Disposition from the manifest alone.** A `Process(id)` item settles
+   under QSpec FR-290's "Single-candidate arm", whose step 2 is the
+   domain-kind check (FR-290-AC-13), read from the descriptor in ruling 1
+   and the item's extent. There is no default disposition.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
    learns that a descriptor is a process provider. Not (a), a driver-supplied
    map beside the descriptors: it is a second source of truth that can
