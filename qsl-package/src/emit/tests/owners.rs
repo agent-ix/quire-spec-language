@@ -28,14 +28,6 @@ fn source_of(authority: &str, identity: &str) -> RawSourceRef {
     )
 }
 
-fn emit_under(package: &CheckedPackage, source: &RawSourceRef) -> Emission {
-    let source = source.clone();
-    emit_package(package, move |_| {
-        Some(SourceRegion::new(source.clone(), 0, TEXT.len() as u64).unwrap())
-    })
-    .expect("the package emits")
-}
-
 /// The owner kind FR-322's presence rule requires of a wire node.
 fn required_kind(node: &Value) -> Option<&'static str> {
     let structural =
@@ -427,10 +419,23 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         assert_eq!(declared(&wire, "held")["owner"], owner_json("a", "u"));
         let models = node_where(&wire, "model", "object_type");
         assert!(!models.is_empty(), "{root}: a model declaration node");
-        for node in models {
+        for node in &models {
             assert_eq!(node["owner"]["kind"], "model");
+            assert_eq!(node["owner"]["identity"], "acme/orders");
             assert!(node["owner"].get("version").is_none());
         }
+        // FR-093-AC-21: exactly the document's two object types own a node.
+        assert_eq!(
+            models
+                .iter()
+                .map(|node| node["owner"]["node"].as_str().unwrap().to_owned())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "ix://acme/orders/Order".to_owned(),
+                "ix://acme/orders/Sub".to_owned(),
+            ]),
+            "{root}: the model owners' nodes"
+        );
         for node in node_where(&wire, "function", "pure_function")
             .into_iter()
             .filter(|node| node.get("declaration").is_none())

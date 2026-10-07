@@ -174,9 +174,14 @@ fn tree() -> CheckedPackage {
 /// `package` emitted with every occurrence placed at the whole of the unit it
 /// was checked from, so each declared node's regions name its owner's source.
 fn emit(package: &CheckedPackage) -> Emission {
-    let own = package.graph().source().clone();
+    emit_under(package, package.graph().source())
+}
+
+/// `package` emitted with every occurrence placed at the whole of `source`.
+fn emit_under(package: &CheckedPackage, source: &RawSourceRef) -> Emission {
+    let source = source.clone();
     emit_package(package, move |_| {
-        Some(SourceRegion::new(own.clone(), 0, TEXT.len() as u64).unwrap())
+        Some(SourceRegion::new(source.clone(), 0, TEXT.len() as u64).unwrap())
     })
     .expect("the package emits")
 }
@@ -410,8 +415,8 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
 }
 
 /// FR-322's `application_node_preimage` of a wire node, or FR-092's
-/// structural preimage under owner (`a`, `u`), rebuilt by the test from the
-/// wire alone. `group` is the node's recursion group in graph order.
+/// structural preimage under the owner the wire node's own `owner` member
+/// names, rebuilt by the test from the wire alone. `group` is the node's recursion group in graph order.
 pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
     sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
 }

@@ -2038,11 +2038,6 @@ fn projection_of(nodes: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// Rebuilds `envelope`'s `identity_preimage.identity_projection` from its
-/// current `semantic_graph.nodes`, and recomputes the envelope's own
-/// `package_id` over the refreshed preimage. Every other `identity_preimage`
-/// field is left as the fixture's own, so a frame-only mutation changes no
-/// other identity input.
 /// Renames every stale node key of `envelope` to the key QSL's own FR-092 /
 /// FR-322 derivation gives its node (the derivation IR re-derives), until
 /// none is stale, then recomputes the projection and `package_id`. Returns
@@ -2093,6 +2088,11 @@ fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
     panic!("rekeying does not settle within {limit} renames");
 }
 
+/// Rebuilds `envelope`'s `identity_preimage.identity_projection` from its
+/// current `semantic_graph.nodes`, and recomputes the envelope's own
+/// `package_id` over the refreshed preimage. Every other `identity_preimage`
+/// field is left as the fixture's own, so a frame-only mutation changes no
+/// other identity input.
 fn refresh_frame_identity(envelope: &mut Value) {
     let projection = projection_of(
         envelope["semantic_graph"]["nodes"]
