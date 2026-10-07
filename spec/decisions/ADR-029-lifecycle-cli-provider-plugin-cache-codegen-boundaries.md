@@ -484,9 +484,8 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    `bounds` are the published default of each limit the backend applies;
    they are not admission maxima, and routing never compares an item's bound
    against them. That descriptor is CG's own descriptor for the Process
-   variant, not `qsl_route::BackendDescriptor`, which holds only (kind, mode);
-   CG sources `domains` and `bounds` from the FR-331 manifest the
-   `BackendDescriptor` came from. It never calls the plugin.
+   variant, not `qsl_route::BackendDescriptor`, which holds only (kind, mode).
+   It never calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor
@@ -504,11 +503,19 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    pass-through or empty output, never a panic.
 4. **Disposition from the manifest alone.** CG checks an item in this
    order, and the first check that fails settles it:
-   1. The manifest advertises a mode for the item's kind.
-   2. The item's domain kinds are in the manifest's `domains`. For a bounded
-      item this check always applies, over `bounds[].kind`. For an unbounded
-      item it applies only when the manifest does not advertise `unbounded`
-      for the item's kind, over `domains[].kind`; an unbounded item on a
+   1. The manifest advertises a mode for the item's kind. This is QSpec
+      FR-290's candidate table: a candidate that does not advertise the
+      item's kind settles `invalid-request`,
+      `invalid_capability`/`inconsistent-candidates`, and an empty candidate
+      set settles `unsupported`,
+      `unsupported_projection`/`unsupported-requested-capability`.
+   2. The item's domain kinds are in the manifest's `domains`. The domain
+      kinds are read from the item's own extent, never from the manifest's
+      `bounds` or `domains`. For a bounded item this check always applies,
+      over the item extent's `bounds[].kind` (FR-331 `ProofBound.kind`). For
+      an unbounded item it applies only when the manifest does not advertise
+      `unbounded` for the item's kind, over the item extent's
+      `domains[].kind`; an unbounded item on a
       provider that advertises `unbounded` for its kind skips it. An item
       that fails it settles `unsupported`,
       `unsupported_projection`/`unsupported-requested-capability`, whatever
