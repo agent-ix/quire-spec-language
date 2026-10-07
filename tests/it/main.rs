@@ -59,6 +59,7 @@ mod composed_types;
 mod config_version;
 mod config_version_refusals;
 mod config_version_spine;
+mod deep_sources;
 mod domain_protocol_emission;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
