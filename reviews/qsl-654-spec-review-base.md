@@ -71,3 +71,11 @@ How each finding was fixed, per the plan's rulings:
 - **FND-004.** The circular "CG sources `domains` and `bounds`" sentence is gone (f43bd242).
 
 ADR-029 validates at head. **Not mergeable until FND-005 is fixed.** The fix is a one-line deletion.
+
+Round 2, reviewed at 4fe80329bd2cce3b2802061b136ea7f6dadd98fe.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 4fe80329 |
+
+PV-4 ruling 4 now cites QSpec FR-290's "Single-candidate arm" and FR-290-AC-13 by id, with no commit SHA. The added lines of #661's spec and docs diff contain no hex SHA. ADR-029 validates at the head commit. Every finding now reads fixed. **Mergeable.**
