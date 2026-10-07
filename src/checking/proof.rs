@@ -57,8 +57,8 @@ struct KeyInfo {
 #[derive(Clone)]
 pub(super) enum Kind<'a> {
     Boolean(bool),
-    Integer(i64, &'a ir::IntegerType),
-    Rational(i64, i64, &'a ir::RationalType),
+    Integer(i128, &'a ir::IntegerType),
+    Rational(i128, i128, &'a ir::RationalType),
     Input(ValueKey),
     Present(GraphId),
     Unwrap(GraphId),

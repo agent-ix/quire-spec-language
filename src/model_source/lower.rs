@@ -109,8 +109,8 @@ fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
                 .map_or(Unit::Dimensionless, Unit::Named);
             let integer = ir::IntegerType::new(
                 ir::IntegerDomain::Signed,
-                minimum,
-                maximum,
+                i128::from(minimum),
+                i128::from(maximum),
                 ir::OverflowPolicy::Reject,
             )?;
             (
@@ -129,12 +129,24 @@ fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
             maximum_denominator,
             unit,
         } => {
-            let rational =
-                ir::RationalType::new(numerator_minimum, numerator_maximum, maximum_denominator)
-                    .map_err(|mut error| {
-                        error.span = Some(Box::new(declaration.source.clone()));
-                        error
-                    })?;
+            // FR-041 bounds the denominator ceiling to 1..=i64::MAX, though IR's
+            // type now holds more.
+            // IR's own constructor supplies the typed refusal: a zero ceiling
+            // is the one value it rejects with `InvalidNumericBounds`.
+            let ceiling = if i64::try_from(maximum_denominator).is_ok() {
+                i128::from(maximum_denominator)
+            } else {
+                0
+            };
+            let rational = ir::RationalType::new(
+                i128::from(numerator_minimum),
+                i128::from(numerator_maximum),
+                ceiling,
+            )
+            .map_err(|mut error| {
+                error.span = Some(Box::new(declaration.source.clone()));
+                error
+            })?;
             let unit = unit
                 .as_deref()
                 .map(try_symbol)

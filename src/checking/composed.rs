@@ -171,7 +171,7 @@ pub struct NodeType<'a> {
     /// Initializer/branch provenance, separate from the direct binder anchor.
     pub origin: Option<ObservationOrigin>,
     /// Exact normalized components produced through the existing IR constructor.
-    pub normalized_rational: Option<(i64, i64)>,
+    pub normalized_rational: Option<(i128, i128)>,
     /// Exact applied profile-use index, including nested protocol checks.
     pub profile: usize,
 }

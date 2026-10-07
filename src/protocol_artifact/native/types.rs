@@ -656,8 +656,9 @@ pub(super) fn text(value: &str, work: &mut Work) -> Result<String, Error> {
     Ok(value.to_owned())
 }
 
-pub(super) fn integer(value: i64, work: &mut Work) -> Result<w::Integer, Error> {
-    let magnitude = value.unsigned_abs();
+pub(super) fn integer(value: impl Into<i128>, work: &mut Work) -> Result<w::Integer, Error> {
+    let value = value.into();
+    let magnitude = i128::unsigned_abs(value);
     let digits =
         magnitude.checked_ilog10().map_or(1, |log| log as usize + 1) + usize::from(value < 0);
     work.bytes(digits)?;

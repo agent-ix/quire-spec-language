@@ -142,8 +142,8 @@ fn integer(min: i64, max: i64) -> ir::ValueType {
     ir::ValueType::integer(
         ir::IntegerType::new(
             ir::IntegerDomain::Signed,
-            min,
-            max,
+            i128::from(min),
+            i128::from(max),
             ir::OverflowPolicy::Reject,
         )
         .unwrap(),

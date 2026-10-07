@@ -6,7 +6,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
+use quire_spec_language::checking::composed::{proofs, CauseKind, TypeDisposition, TypeLimits};
 use quire_spec_language::protocol_artifact::{
     native, wire as w, ExactInteger, ExactRational, Limits, ProtocolNumber,
 };
@@ -142,6 +142,55 @@ fn signed64_extrema_and_ceiling_rational_survive_native_emission_and_independent
             assert_eq!(read.package(), package);
             assert_eq!(read.digest(), emitted.digest());
             assert_eq!(numbers(bounded(read.package())), numbers(declaration));
+        },
+    );
+}
+
+/// A rational literal whose normalized value is wider than the protocol
+/// number wire's i64 never reaches native emission: `rational(1, 2^63)` is
+/// above the admitted denominator ceiling (FR-041), so the type check refuses
+/// it with `LiteralDomain` and the emission guard for a wider checked value
+/// (`NumericDomain`) stays a defence behind that refusal.
+#[test]
+#[trace("TC-121", "FR-042-AC-2")]
+fn a_rational_literal_wider_than_the_protocol_wire_is_refused_before_emission() {
+    let bounded = BOUNDED.replace(
+        "rational(9223372036854775807, 9223372036854775806)",
+        "rational(1, 9223372036854775808)",
+    );
+    let inputs = Inputs::with_signed64_domains(&[
+        Unit {
+            name: "numeric-domains",
+            body: &bounded,
+            declarations: &["Bounded"],
+        },
+        Unit {
+            name: "numeric-protocol",
+            body: FLOW,
+            declarations: &["Flow"],
+        },
+    ]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, _selected| {
+            let types = proofs.types();
+            let [bounded] = types.binding().namespace().lookup("Bounded") else {
+                panic!("one authored declaration named Bounded")
+            };
+            assert_eq!(types.disposition(*bounded), Some(TypeDisposition::Refused));
+            let typed = types.declaration(*bounded).unwrap();
+            let literal = typed
+                .causes()
+                .iter()
+                .find(|cause| cause.kind == CauseKind::LiteralDomain)
+                .unwrap_or_else(|| panic!("LiteralDomain on Bounded: {:?}", typed.causes()));
+            assert_eq!(literal.site.declaration, *bounded);
+            let unit = types.binding().namespace().unit(literal.site.unit).unwrap();
+            assert_eq!(
+                unit.source().slice(literal.site.span),
+                Some("rational(1, 9223372036854775808)")
+            );
         },
     );
 }

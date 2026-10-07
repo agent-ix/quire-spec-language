@@ -66,7 +66,7 @@ impl<'u, 'a> Builder<'u, 'a> {
                         "integer proof has no native integer type",
                     )
                 })?;
-                let value = text.parse().map_err(|_| {
+                let value = text.parse::<i128>().map_err(|_| {
                     failure(
                         self.meter.source,
                         Code::InvalidModelBinding,

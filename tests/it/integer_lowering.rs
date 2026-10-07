@@ -157,7 +157,10 @@ fn integers_above_2_pow_53_round_trip_through_irs_decoder() {
     else {
         panic!("actual bounded integer declaration");
     };
-    assert_eq!((value.minimum(), value.maximum()), (0, i64::MAX));
+    assert_eq!(
+        (value.minimum(), value.maximum()),
+        (0, i128::from(i64::MAX))
+    );
     let wire: Value = serde_json::from_slice(projection.bytes()).unwrap();
     let binding = wire["bindings"]
         .as_array()
@@ -176,6 +179,83 @@ fn integers_above_2_pow_53_round_trip_through_irs_decoder() {
         .find(|node| node["node"] == "integer_literal")
         .unwrap();
     assert_eq!(literal["value"], "9223372036854775807");
+}
+
+/// FR-033-AC-6, at the wire level. QSL source cannot yet author a bound above
+/// `i64`, so the lowering of an `i64::MAX`-bounded declaration is rewritten
+/// at the wire: the bound and the literal it carries are replaced by the
+/// decimal strings under test, and the actual strict IR reader must
+/// reconstruct them exactly as `i128` values.
+#[trace("TC-912", "FR-033-AC-6")]
+#[test]
+fn wide_integer_bounds_and_literals_round_trip_through_irs_strict_reader() {
+    const I64_MAX: &str = "9223372036854775807";
+    const I128_MIN: &str = "-170141183460469231731687303715884105728";
+    const I128_MAX: &str = "170141183460469231731687303715884105727";
+    let models = [model(false, i64::MAX)];
+    let native = package(
+        &models,
+        "amount <= 9223372036854775807",
+        ClauseKind::Invariant,
+    );
+    let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
+    let original: Value = serde_json::from_slice(projection.bytes()).unwrap();
+
+    fn rewrite(value: &mut Value, minimum: &str, maximum: &str, literal: &str) {
+        match value {
+            Value::Object(members) => {
+                if members.get("kind") == Some(&json!("integer"))
+                    && members.get("maximum") == Some(&json!(I64_MAX))
+                {
+                    members.insert("minimum".into(), json!(minimum));
+                    members.insert("maximum".into(), json!(maximum));
+                }
+                if members.get("node") == Some(&json!("integer_literal")) {
+                    members.insert("value".into(), json!(literal));
+                }
+                for child in members.values_mut() {
+                    rewrite(child, minimum, maximum, literal);
+                }
+            }
+            Value::Array(items) => {
+                for child in items {
+                    rewrite(child, minimum, maximum, literal);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+
+    let cases = [
+        ("0", "9223372036854775808", "9223372036854775808"),
+        ("0", "18446744073709551615", "18446744073709551615"),
+        (I128_MIN, I128_MAX, I128_MAX),
+        (I128_MIN, I128_MAX, I128_MIN),
+    ];
+    for (minimum, maximum, literal) in cases {
+        let mut wire = original.clone();
+        rewrite(&mut wire, minimum, maximum, literal);
+        let consumer =
+            ir::BoundPackage::from_json_bytes(&serde_json::to_vec(&wire).unwrap()).unwrap();
+        let ir::ValueType::Integer { value } =
+            selected(&consumer).environment().values()[0].value_type()
+        else {
+            panic!("actual bounded integer declaration");
+        };
+        assert_eq!(
+            (value.minimum().to_string(), value.maximum().to_string()),
+            (minimum.to_owned(), maximum.to_owned())
+        );
+        let ir::ExpressionKind::Compare { right, .. } =
+            selected(&consumer).expression().expression().kind()
+        else {
+            panic!("actual comparison");
+        };
+        let ir::ExpressionKind::IntegerLiteral { value, .. } = right.kind() else {
+            panic!("actual integer literal");
+        };
+        assert_eq!(value.to_string(), literal);
+    }
 }
 
 #[test]

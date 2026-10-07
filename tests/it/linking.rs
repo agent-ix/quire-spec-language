@@ -81,7 +81,7 @@ fn environment(owner: &str, revision: u64, unused_bound: i64) -> ir::Declaration
                     ir::IntegerType::new(
                         ir::IntegerDomain::Unsigned,
                         0,
-                        unused_bound,
+                        i128::from(unused_bound),
                         ir::OverflowPolicy::Reject,
                     )
                     .unwrap(),
