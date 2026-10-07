@@ -281,11 +281,10 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// from `quire_canonical`, the double the digest spells (`serde_json`'s own
 /// float parse can land one unit in the last place away from it).
 ///
-/// `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH` refuse as
+/// The caller's `IntakeLimits::input_bytes` refuses as
 /// [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit, never as a
-/// malformed document. The depth limit stays while the semantic-IR crate's
-/// checks and its `Json` drop recurse once per nesting level; the `serde_json`
-/// view builds and drops without recursion. A read
+/// malformed document. Nesting depth is no limit (ADR-030): the reader, the
+/// `serde_json` view and their drops all run without recursion. A read
 /// or digest that cannot reserve memory refuses as
 /// [`ModelRefusalCause::AllocationFailed`] (FR-259 B6).
 ///
@@ -315,8 +314,7 @@ impl Drop for PackageDocument {
 impl PackageDocument {
     /// Parses package document bytes once.
     ///
-    /// Input over `json::MAX_INPUT_BYTES`, or a value enclosed by
-    /// `json::MAX_DEPTH` or more arrays and objects, refuses
+    /// Input over the caller's `input_bytes` limit refuses
     /// `resource_exhausted`/`intake-limit-exceeded` naming the limit and its
     /// bound. A read or digest that cannot reserve memory refuses
     /// `resource_exhausted`/`allocation-failed` carrying the bytes requested.
@@ -327,19 +325,11 @@ impl PackageDocument {
     /// (`inexact-integer` or `inexact-number`) at that number's pointer,
     /// before the digest is taken.
     pub fn parse(bytes: &[u8], limits: IntakeLimits) -> Result<Self, ModelRefusal> {
-        use agent_ix_semantic_ir::json::MAX_DEPTH;
         let max_input_bytes = limits.input_bytes;
         // `usize` is at most 64 bits on every target Rust supports: lossless.
         let length = bytes.len() as u64;
         if length > max_input_bytes {
             return Err(input_bytes_exceeded(max_input_bytes, length));
-        }
-        if too_deep(bytes) {
-            return Err(limit_exceeded(
-                IntakeLimit::NestingDepth,
-                MAX_DEPTH as u64,
-                MAX_DEPTH as u64 + 1,
-            ));
         }
         let document = quire_canonical::read(bytes, max_input_bytes)
             .map_err(|error| read_refusal(error, max_input_bytes, length))?;
@@ -756,42 +746,6 @@ fn allocation_failed(requested: usize) -> ModelRefusal {
             "reading the package document could not reserve {requested} bytes of memory"
         ),
     }
-}
-
-/// Whether `agent_ix_semantic_ir::json`'s depth rule refuses `bytes`: a
-/// value already enclosed by `MAX_DEPTH` arrays and objects. A member name
-/// counts as that value's start, since a member always carries one. The
-/// scan runs over any bytes, well-formed or not, before the read, so an
-/// over-deep document refuses as a depth limit whatever else is wrong with
-/// it.
-fn too_deep(bytes: &[u8]) -> bool {
-    use agent_ix_semantic_ir::json::MAX_DEPTH;
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut at = 0usize;
-    while let Some(&byte) = bytes.get(at) {
-        if in_string {
-            match byte {
-                b'"' => in_string = false,
-                // An escape is at least two bytes; skipping the second keeps
-                // an escaped quote from closing the string.
-                b'\\' => at += 1,
-                _ => {}
-            }
-        } else {
-            match byte {
-                b']' | b'}' => depth = depth.saturating_sub(1),
-                b' ' | b'\t' | b'\n' | b'\r' | b',' | b':' => {}
-                _ if depth >= MAX_DEPTH => return true,
-                b'[' | b'{' => depth += 1,
-                b'"' => in_string = true,
-                // A scalar's bytes; none opens or closes anything.
-                _ => {}
-            }
-        }
-        at += 1;
-    }
-    false
 }
 
 /// A value that holds no other value.
@@ -5114,10 +5068,7 @@ mod tests {
     #[test]
     fn a_wide_bound_is_a_decimal_string_and_a_wide_json_number_is_inexact() {
         let (bytes, _) = wide_document("\"18446744073709551615\"");
-        // `read_nodes`, not `read_records`: the pinned FCD validator
-        // (`INVALID_OPERAND`) still demands a number operand for `min`/`max`,
-        // so a string bound cannot pass `validate_with_semantic_ir` yet.
-        let records = read_nodes("acme/orders", parse_document(&bytes).tree())
+        let records = read_records("acme/orders", &parse_document(&bytes))
             .expect("Wide with a string bound admits");
         assert_eq!(
             records,
@@ -6333,83 +6284,26 @@ mod tests {
         format!("{}{inner}{}", "[".repeat(depth), "]".repeat(depth))
     }
 
-    /// The scan's depth rule agrees with the reader's own at the boundary.
+    /// FR-056-AC-2, FR-260-AC-5: intake has no depth limit. A document nested
+    /// 100,000 deep, far past the old 128 cap, reads, digests and drops on a
+    /// 512 KiB thread; it is judged on its content, never refused as a depth.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn nesting_limit_matches_the_readers_own_boundary() {
-        let max = agent_ix_semantic_ir::json::MAX_DEPTH;
-        let cases = [
-            (nested_arrays(max - 1, "0"), true),
-            (nested_arrays(max, ""), true),
-            (nested_arrays(max, "0"), false),
-            (nested_arrays(max, "[]"), false),
-            (nested_arrays(max, "\"s\""), false),
-            (nested_arrays(max - 1, "{}"), true),
-            (nested_arrays(max - 1, r#"{"a":0}"#), false),
-            (nested_arrays(max + 50, "0"), false),
-        ];
-        for (text, within) in cases {
-            let label = &text[text.len() / 2 - 4..text.len() / 2 + 4];
-            assert_eq!(
-                agent_ix_semantic_ir::json::parse(&text).is_ok(),
-                within,
-                "the reader, around {label}"
+    fn a_package_document_nested_100000_deep_is_read_not_refused_as_a_depth() {
+        on_a_small_stack(|| {
+            let depth = 100_000;
+            let text = format!(
+                r#"{{"package":{{"identity":"acme/orders","version":"1"}},"payload":{}0{}}}"#,
+                "[".repeat(depth),
+                "]".repeat(depth)
             );
-            assert_eq!(
-                !too_deep(text.as_bytes()),
-                within,
-                "the scan, around {label}"
-            );
-            match PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default()) {
-                Ok(_) => assert!(within, "{label}"),
-                Err(refusal) => {
-                    assert!(!within, "{label}: {refusal:?}");
-                    assert_eq!(
-                        refusal,
-                        limit_exceeded(IntakeLimit::NestingDepth, max as u64, max as u64 + 1)
-                    );
-                }
-            }
-        }
-    }
-
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn refuses_an_overdeep_document_with_its_correct_digest_as_a_depth_limit() {
-        let max = agent_ix_semantic_ir::json::MAX_DEPTH;
-        let mut nested = serde_json::json!(0);
-        for _ in 0..max {
-            nested = serde_json::json!([nested]);
-        }
-        let document = serde_json::json!({
-            "package": {"identity": "acme/orders", "version": "1"},
-            "payload": nested,
+            let document = PackageDocument::parse(
+                text.as_bytes(),
+                qsl_foundation::IntakeLimits::default(),
+            )
+            .expect("a deep document reads");
+            drop(document);
         });
-        let bytes = document.to_string().into_bytes();
-        let digest = digest_of(&canonical(&document));
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::IntakeLimitExceeded {
-                    limit: IntakeLimit::NestingDepth,
-                    bound: max as u64,
-                    actual: max as u64 + 1,
-                },
-                detail: format!("package document exceeds intake's nesting_depth limit of {max}"),
-            }
-        );
     }
 
     /// FR-260-AC-4 (FR-056-AC-2): a document one byte over `intake.input_bytes`

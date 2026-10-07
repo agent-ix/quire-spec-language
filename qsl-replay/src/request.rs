@@ -1259,21 +1259,23 @@ mod tests {
         );
         assert_eq!(malformed.code(), Code::InvalidModelBinding);
 
-        // Nested far past the semantic-IR reader's depth limit, and far
-        // below the request's encoded-size bound.
-        let deep = format!("{}{}", "[".repeat(1000), "]".repeat(1000)).into_bytes();
+        // A document over the caller's intake limit refuses with intake's
+        // limit outcome, keeping its cause.
+        let over = b"[0,0,0,0,0,0,0,0]".to_vec();
+        let limits = qsl_foundation::IntakeLimits::default().with_input_bytes(4);
         let ModelRefusalCause::IntakeLimitExceeded {
             limit,
             bound,
             actual,
-        } = PackageDocument::parse(&deep, qsl_foundation::IntakeLimits::default())
-            .unwrap_err()
-            .cause
+        } = PackageDocument::parse(&over, limits).unwrap_err().cause
         else {
-            panic!("a 1000-deep document is over intake's depth limit");
+            panic!("a document over the byte limit refuses naming it");
         };
-        assert_eq!(limit, IntakeLimit::NestingDepth);
-        let over_limit = decode(deep);
+        assert_eq!(limit, IntakeLimit::InputBytes);
+        let over_limit = package_document_refusal(
+            digest,
+            PackageDocument::parse(&over, limits).unwrap_err(),
+        );
         assert_eq!(
             over_limit,
             ReplayRequestRefusal::IntakeLimitExceeded {

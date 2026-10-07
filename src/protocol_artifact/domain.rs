@@ -243,10 +243,11 @@ pub(super) fn naming(
 
 /// Whether `bytes` are the selected package's document: FR-154 admission of
 /// `bytes` under the selection's own identity, version and `sha256-jcs`
-/// digest.
+/// digest, read under the caller's `intake` limit.
 pub(super) fn verify_document(
     selection: &DomainPackageRef,
     bytes: &[u8],
+    intake: qsl_foundation::IntakeLimits,
     work: &mut Work,
 ) -> Result<(), Error> {
     work.bytes(bytes.len())?;
@@ -255,7 +256,7 @@ pub(super) fn verify_document(
         selection,
         SHA256_JCS_DIGEST_DOMAIN,
         &offered,
-        qsl_foundation::IntakeLimits::default(),
+        intake,
     )
     .map(|_| ())
     .map_err(|_| Error::Invalid(Invalid::Model))

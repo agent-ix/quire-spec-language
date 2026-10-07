@@ -6,7 +6,8 @@ use super::wire::Locus;
 /// Counter contract, independent of native parser and model-admission budgets.
 pub const ACCOUNTING_VERSION: &str = "quire.protocol.artifact-work/1";
 
-/// Independently lowered ceilings. Values above the defaults are clamped.
+/// Independently lowered ceilings. Values above the defaults are clamped,
+/// except `intake`, which is used as given.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
     /// Complete offered bytes, at most 8 MiB.
@@ -35,6 +36,9 @@ pub struct Limits {
     pub byte_work: usize,
     /// Maximum JSON or graph traversal depth, at most 64.
     pub depth: usize,
+    /// The limit each admitted domain package document is read under
+    /// (`intake.input_bytes`, FR-260). Used as given: no ceiling clamps it.
+    pub intake: qsl_foundation::IntakeLimits,
 }
 
 impl Default for Limits {
@@ -53,6 +57,7 @@ impl Default for Limits {
             references: 1_000_000,
             byte_work: 64 * 1_048_576,
             depth: 64,
+            intake: qsl_foundation::IntakeLimits::default(),
         }
     }
 }

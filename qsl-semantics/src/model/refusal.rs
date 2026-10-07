@@ -747,17 +747,13 @@ pub enum ModelRefusalCause {
 pub enum IntakeLimit {
     /// The document's length in bytes.
     InputBytes,
-    /// The number of arrays and objects enclosing any one value.
-    NestingDepth,
 }
 
 impl IntakeLimit {
-    /// The setting that raises this limit (FR-255): the byte limit's, and
-    /// none for the nesting depth.
-    pub const fn setting(self) -> Option<qsl_foundation::Setting> {
+    /// The setting that raises this limit (FR-255).
+    pub const fn setting(self) -> qsl_foundation::Setting {
         match self {
-            Self::InputBytes => Some(qsl_foundation::Setting::IntakeInputBytes),
-            Self::NestingDepth => None,
+            Self::InputBytes => qsl_foundation::Setting::IntakeInputBytes,
         }
     }
 
@@ -765,7 +761,6 @@ impl IntakeLimit {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InputBytes => "input_bytes",
-            Self::NestingDepth => "nesting_depth",
         }
     }
 }
@@ -842,7 +837,7 @@ impl ModelRefusalCause {
                 limit,
                 bound,
                 actual,
-            } => (limit.setting()?, *bound, *actual),
+            } => (limit.setting(), *bound, *actual),
             _ => return None,
         };
         Some(qsl_foundation::diagnostic::LimitExceeded::new(
@@ -1421,7 +1416,7 @@ pub mod fixtures {
             actual_version: String::new(),
         },
         IntakeLimitExceeded => ModelRefusalCause::IntakeLimitExceeded {
-            limit: super::IntakeLimit::NestingDepth,
+            limit: super::IntakeLimit::InputBytes,
             bound: 0,
             actual: 1,
         },
