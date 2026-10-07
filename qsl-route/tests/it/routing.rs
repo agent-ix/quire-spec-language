@@ -13,7 +13,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, DomainsDefect, ManifestDigest,
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, DomainsDefect, ManifestDigest, Mode,
     ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
