@@ -6,9 +6,9 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    call_site, DeclaredDomain, DependencyInput, DomainKey, EmptyFiniteBound, EmptyInterval,
-    FiniteBound, FiniteBoundKind, Identifier, Integer, IntegerInterval, ProofBound, QualifiedName,
-    SourceIdentity,
+    call_site, DeclaredDomain, DependencyInput, DomainKey, DomainKind, EmptyFiniteBound,
+    EmptyInterval, FiniteBound, FiniteBoundKind, Identifier, Integer, IntegerInterval, ProofBound,
+    QualifiedName, SourceIdentity,
 };
 
 /// A unit of one Boolean predicate `p` of one parameter `x`.

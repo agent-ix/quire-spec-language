@@ -588,7 +588,7 @@ mod tests {
                             quire_exact::Integer::from(0_i64),
                             quire_exact::Integer::from(1_i64),
                         )
-                            .unwrap(),
+                        .unwrap(),
                     ),
                     (key(3, &[]), depth(2)),
                 ]),

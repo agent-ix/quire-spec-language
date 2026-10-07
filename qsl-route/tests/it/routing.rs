@@ -10,12 +10,12 @@
 //! and are planned under #213.
 
 use ix_trace_rs::trace;
+use qsl_foundation::bound::DomainKind;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, ProviderOrigin,
-    DomainsDefect, RegistrationCause, Registry,
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, DomainsDefect, ManifestDigest,
+    ProviderOrigin, RegistrationCause, Registry,
 };
-use qsl_foundation::bound::DomainKind;
 use qsl_semantics::check::Capability;
 
 fn candidate(id: &str) -> Candidate {
@@ -302,10 +302,7 @@ fn admit_domains(
 
 const BOUNDED: &[(Option<&str>, &str)] = &[(Some("value-validity"), "bounded")];
 
-fn assert_invalid_domains(
-    refusal: qsl_route::RegistrationRefusal,
-    defect: DomainsDefect,
-) {
+fn assert_invalid_domains(refusal: qsl_route::RegistrationRefusal, defect: DomainsDefect) {
     assert_eq!(refusal.identity().as_str(), "plug");
     assert_eq!(refusal.cause(), &RegistrationCause::InvalidDomains(defect));
     assert_eq!(refusal.catalog_code().code(), "invalid_capability");
@@ -326,7 +323,8 @@ fn absent_domains_refuse_only_a_bounded_registration() {
     assert_eq!(without.domains(), None);
     let with = admit_domains(unbounded, Some(&["integer"])).expect("and may state them");
     assert_eq!(
-        with.domains().map(|kinds| kinds.iter().copied().collect::<Vec<_>>()),
+        with.domains()
+            .map(|kinds| kinds.iter().copied().collect::<Vec<_>>()),
         Some(vec![DomainKind::Integer])
     );
 }
@@ -364,10 +362,7 @@ fn repeated_domain_kinds_refuse_and_the_boundable_four_are_kept() {
         Some(&["recursive", "population", "integer", "collection"]),
     )
     .expect("the four boundable kinds");
-    assert_eq!(
-        admitted.domains().map(|kinds| kinds.len()),
-        Some(4)
-    );
+    assert_eq!(admitted.domains().map(|kinds| kinds.len()), Some(4));
 }
 
 /// FR-290-AC-13: a present, malformed `domains` refuses `invalid-domains`
@@ -378,7 +373,10 @@ fn malformed_domains_refuse_an_unbounded_only_registration() {
     let unbounded: &[(Option<&str>, &str)] = &[(Some("value-validity"), "unbounded")];
     let cases: [(&[&str], DomainsDefect); 4] = [
         (&[], DomainsDefect::Empty),
-        (&["quantity"], DomainsDefect::NotBoundable("quantity".to_owned())),
+        (
+            &["quantity"],
+            DomainsDefect::NotBoundable("quantity".to_owned()),
+        ),
         (&["bogus"], DomainsDefect::NotBoundable("bogus".to_owned())),
         (
             &["integer", "integer"],

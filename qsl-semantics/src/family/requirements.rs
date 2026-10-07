@@ -45,8 +45,8 @@
 
 use std::collections::BTreeMap;
 
-pub use qsl_foundation::bound::DomainKind;
 use qsl_foundation::bound::DomainKey;
+pub use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{InternalFault, Setting};

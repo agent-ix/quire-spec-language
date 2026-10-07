@@ -50,8 +50,8 @@ pub mod routing;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
-pub use qsl_foundation::digest::ManifestDigest;
 use qsl_foundation::bound::DomainKind;
+pub use qsl_foundation::digest::ManifestDigest;
 use qsl_foundation::{CatalogCode, Category, Code};
 use qsl_semantics::check::Capability;
 
