@@ -473,6 +473,9 @@ fn work_of(value: &WitnessValue) -> (u64, usize) {
     (work.written + work.compared, length)
 }
 
+/// A value of a given nesting depth.
+type Shape = fn(usize) -> WitnessValue;
+
 fn nested_options(depth: usize) -> WitnessValue {
     let mut value = int(0);
     for _ in 0..depth {
@@ -499,7 +502,7 @@ fn nested_sequences(depth: usize) -> WitnessValue {
 fn tc_905_encoding_work_is_linear_in_depth() {
     on_small_stack(|| {
         const DEPTH: usize = 5_000;
-        let shapes: [(&str, fn(usize) -> WitnessValue); 3] = [
+        let shapes: [(&str, Shape); 3] = [
             ("sets", nested_sets),
             ("options", nested_options),
             ("sequences", nested_sequences),
