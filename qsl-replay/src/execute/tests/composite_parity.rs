@@ -3,7 +3,7 @@
 //! `Agrees` or refused when falsified, and by rows V-1 to V-5 when verified.
 
 use ix_trace_rs::trace;
-use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
 use quire_exact::{Integer, LimitKind, ScalarLimits};
 use quire_semantic_value::declaration::EqualityOperator;
 
@@ -65,6 +65,12 @@ fn bound(node: WireNodeId, path: &[u32], bound: FiniteBound) -> ProofBound {
         domain: DomainKey::Node {
             node,
             path: path.to_vec(),
+        },
+        kind: match bound.kind() {
+            FiniteBoundKind::Cardinality => Some(DomainKind::Collection),
+            FiniteBoundKind::IntegerRange => Some(DomainKind::Integer),
+            FiniteBoundKind::Depth => Some(DomainKind::Recursive),
+            FiniteBoundKind::Variants => None,
         },
         bound,
     }

@@ -71,6 +71,7 @@ fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
         ProviderOrigin::Linked,
         ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [advertises],
+        None,
     )
 }
 

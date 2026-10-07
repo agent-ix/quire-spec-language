@@ -79,6 +79,72 @@ impl fmt::Display for DomainKey {
     }
 }
 
+/// The kind of one unbounded domain (ADR-014 §4's table). Its wire
+/// spelling is the QSpec FR-331 `kind` of an extent's `domains` and
+/// `bounds` entries and of a provider manifest's `domains`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DomainKind {
+    /// A collection type with no cardinality bound.
+    Collection,
+    /// A population with no declared maximum.
+    Population,
+    /// `Integer` with no range.
+    Integer,
+    /// A recursive record or tuple type (QSpec FR-143), at its first
+    /// position on the path.
+    Recursive,
+    /// A loop admitted with an invariant and a well-founded variant and no
+    /// finite maximum (QSpec FR-228-AC-5).
+    Loop,
+    /// A temporal formula under `quire.temporal.infinite-trace/v1`. A finite
+    /// prefix never proves infinite satisfaction (QSpec FR-161).
+    InfiniteTrace,
+    /// A quantity type: its magnitude is an unbounded `Rational`, and no
+    /// finite bound ranges over it.
+    Quantity,
+}
+
+impl DomainKind {
+    /// The [`FiniteBoundKind`] a proof bound for this domain must have, or
+    /// `None` when no finite bound can stand for it.
+    pub const fn finite_kind(self) -> Option<FiniteBoundKind> {
+        match self {
+            Self::Collection | Self::Population => Some(FiniteBoundKind::Cardinality),
+            Self::Integer => Some(FiniteBoundKind::IntegerRange),
+            Self::Recursive => Some(FiniteBoundKind::Depth),
+            Self::Loop | Self::InfiniteTrace | Self::Quantity => None,
+        }
+    }
+
+    /// The wire spelling: `collection`, `population`, `integer`,
+    /// `recursive`, `loop`, `infinite-trace` or `quantity`.
+    pub const fn to_wire(self) -> &'static str {
+        match self {
+            Self::Collection => "collection",
+            Self::Population => "population",
+            Self::Integer => "integer",
+            Self::Recursive => "recursive",
+            Self::Loop => "loop",
+            Self::InfiniteTrace => "infinite-trace",
+            Self::Quantity => "quantity",
+        }
+    }
+
+    /// The kind spelled exactly `wire`, or `None`: no normalization.
+    pub fn from_wire(wire: &str) -> Option<Self> {
+        const ALL: [DomainKind; 7] = [
+            DomainKind::Collection,
+            DomainKind::Population,
+            DomainKind::Integer,
+            DomainKind::Recursive,
+            DomainKind::Loop,
+            DomainKind::InfiniteTrace,
+            DomainKind::Quantity,
+        ];
+        ALL.into_iter().find(|kind| kind.to_wire() == wire)
+    }
+}
+
 /// Which [`FiniteBound`] variant a domain takes (ADR-014 §4's boundable
 /// table, right column).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -202,6 +268,11 @@ impl FiniteBound {
 pub struct ProofBound {
     /// The unbounded domain this bound replaces.
     pub domain: DomainKey,
+    /// The domain's kind (QSpec FR-331 `kind`). `finite_kind` of it is the
+    /// kind of `bound`. `None` only for a harness-drawn
+    /// [`FiniteBound::Variants`] bound (FR-358), which no domain kind
+    /// describes; a request's bounds always carry `Some`.
+    pub kind: Option<DomainKind>,
     /// The finite domain substituted for it.
     pub bound: FiniteBound,
 }
@@ -276,6 +347,28 @@ impl IntervalKey {
 
 #[cfg(test)]
 mod tests {
+    /// FR-290-AC-13, FR-331: the seven wire spellings round-trip exactly,
+    /// and a near-miss is refused rather than normalized.
+    #[trace("TC-271", "FR-290-AC-13")]
+    #[test]
+    fn domain_kind_wire_spellings_round_trip_exactly() {
+        let spellings = [
+            (DomainKind::Collection, "collection"),
+            (DomainKind::Population, "population"),
+            (DomainKind::Integer, "integer"),
+            (DomainKind::Recursive, "recursive"),
+            (DomainKind::Loop, "loop"),
+            (DomainKind::InfiniteTrace, "infinite-trace"),
+            (DomainKind::Quantity, "quantity"),
+        ];
+        for (kind, wire) in spellings {
+            assert_eq!(kind.to_wire(), wire);
+            assert_eq!(DomainKind::from_wire(wire), Some(kind));
+        }
+        assert_eq!(DomainKind::from_wire("Collection"), None);
+        assert_eq!(DomainKind::from_wire("infinite_trace"), None);
+    }
+
     use super::*;
     use ix_trace_rs::trace;
 

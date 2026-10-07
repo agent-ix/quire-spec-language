@@ -13,8 +13,9 @@ use ix_trace_rs::trace;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
     BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, ProviderOrigin,
-    RegistrationCause, Registry,
+    DomainsDefect, RegistrationCause, Registry,
 };
+use qsl_foundation::bound::DomainKind;
 use qsl_semantics::check::Capability;
 
 fn candidate(id: &str) -> Candidate {
@@ -31,6 +32,7 @@ fn admit(
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
+        Some(&["collection", "integer"]),
     )
 }
 
@@ -130,6 +132,7 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
+        Some(&["collection"]),
     )
     .expect_err("an absent mode is never defaulted");
     assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
@@ -281,5 +284,88 @@ fn every_non_supported_disposition_gets_no_target_and_blocks_no_other_item() {
     assert_eq!(
         route(&dispositions),
         [Some(&first), None, None, None, Some(&second)]
+    );
+}
+
+fn admit_domains(
+    advertised: &[(Option<&str>, &str)],
+    domains: Option<&[&str]>,
+) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
+    BackendDescriptor::admit(
+        candidate("plug"),
+        ProviderOrigin::Process,
+        ManifestDigest::from_digest([4; 32]),
+        advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
+        domains,
+    )
+}
+
+const BOUNDED: &[(Option<&str>, &str)] = &[(Some("value-validity"), "bounded")];
+
+fn assert_invalid_domains(
+    refusal: qsl_route::RegistrationRefusal,
+    defect: DomainsDefect,
+) {
+    assert_eq!(refusal.identity().as_str(), "plug");
+    assert_eq!(refusal.cause(), &RegistrationCause::InvalidDomains(defect));
+    assert_eq!(refusal.catalog_code().code(), "invalid_capability");
+    assert_eq!(refusal.catalog_code().cause(), "invalid-domains");
+}
+
+/// FR-290-AC-13: a registration that advertises `bounded` with no
+/// `domains` refuses `invalid-domains`; one advertising only `unbounded`
+/// is admitted with or without them.
+#[test]
+#[trace("TC-271", "FR-290-AC-13")]
+fn absent_domains_refuse_only_a_bounded_registration() {
+    let refusal = admit_domains(BOUNDED, None).expect_err("bounded needs domains");
+    assert_invalid_domains(refusal, DomainsDefect::Absent);
+
+    let unbounded: &[(Option<&str>, &str)] = &[(Some("value-validity"), "unbounded")];
+    let without = admit_domains(unbounded, None).expect("unbounded-only may omit domains");
+    assert_eq!(without.domains(), None);
+    let with = admit_domains(unbounded, Some(&["integer"])).expect("and may state them");
+    assert_eq!(
+        with.domains().map(|kinds| kinds.iter().copied().collect::<Vec<_>>()),
+        Some(vec![DomainKind::Integer])
+    );
+}
+
+/// FR-290-AC-13: an empty `domains` refuses `invalid-domains`.
+#[test]
+#[trace("TC-271", "FR-290-AC-13")]
+fn empty_domains_refuse() {
+    let refusal = admit_domains(BOUNDED, Some(&[])).expect_err("empty domains");
+    assert_invalid_domains(refusal, DomainsDefect::Empty);
+}
+
+/// FR-290-AC-13: a non-boundable kind, and an unknown label, refuse
+/// `invalid-domains` carrying the received bytes.
+#[test]
+#[trace("TC-271", "FR-290-AC-13")]
+fn non_boundable_or_unknown_domain_kinds_refuse() {
+    for label in ["quantity", "loop", "infinite-trace", "Collection"] {
+        let refusal = admit_domains(BOUNDED, Some(&["integer", label])).expect_err(label);
+        assert_invalid_domains(refusal, DomainsDefect::NotBoundable(label.to_owned()));
+    }
+}
+
+/// FR-290-AC-13: a repeated kind refuses `invalid-domains`; the four
+/// boundable kinds are admitted and kept.
+#[test]
+#[trace("TC-271", "FR-290-AC-13")]
+fn repeated_domain_kinds_refuse_and_the_boundable_four_are_kept() {
+    let refusal =
+        admit_domains(BOUNDED, Some(&["integer", "integer"])).expect_err("a repeated kind");
+    assert_invalid_domains(refusal, DomainsDefect::Repeated(DomainKind::Integer));
+
+    let admitted = admit_domains(
+        BOUNDED,
+        Some(&["recursive", "population", "integer", "collection"]),
+    )
+    .expect("the four boundable kinds");
+    assert_eq!(
+        admitted.domains().map(|kinds| kinds.len()),
+        Some(4)
     );
 }

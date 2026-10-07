@@ -20,6 +20,7 @@ fn kani(origin: ProviderOrigin) -> BackendDescriptor {
         origin,
         manifest_digest(),
         [(Capability::OperationContract, Mode::Bounded)],
+        None,
     )
 }
 
@@ -40,6 +41,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
         ProviderOrigin::Process,
         manifest_digest(),
         [(Some("value-validity"), Some("bounded"))],
+        Some(&["collection"]),
     )
     .expect("a well-formed manifest is admitted");
     assert_eq!(admitted.origin(), ProviderOrigin::Process);

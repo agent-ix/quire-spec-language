@@ -138,7 +138,7 @@ pub use quire_semantic_value::call::InputRefusal;
 // conversions -- and the refusals they return. None is a T-12-governed
 // constructor (ADR-011 §3 FB-05).
 pub use qsl_foundation::bound::{
-    DomainKey, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
+    DomainKey, DomainKind, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
 };
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{

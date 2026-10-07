@@ -51,6 +51,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
 pub use qsl_foundation::digest::ManifestDigest;
+use qsl_foundation::bound::DomainKind;
 use qsl_foundation::{CatalogCode, Category, Code};
 use qsl_semantics::check::Capability;
 
@@ -198,7 +199,8 @@ pub enum ProviderOrigin {
 
 /// One backend's registration (FR-075 Inputs): its identity, its
 /// [`ProviderOrigin`], the digest of its own FR-331 provider manifest, and
-/// the `(capability kind, mode)` pairs it advertises. Two descriptors of one
+/// the `(capability kind, mode)` pairs it advertises, and the boundable
+/// domain kinds its manifest accepts a finite bound for (`domains`). Two descriptors of one
 /// identity that differ in origin differ in a member, so they conflict like
 /// any other differing pair (FR-288-AC-6). The manifest digest only tells
 /// two registrations of one identity apart, so a conflict is refused once
@@ -213,24 +215,28 @@ pub struct BackendDescriptor {
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertises: HashSet<(Capability, Mode)>,
+    domains: Option<BTreeSet<DomainKind>>,
 }
 
 impl BackendDescriptor {
     /// Build a descriptor from already-typed FR-331 provider-manifest
     /// fields. A backend supplies one descriptor per registration, so its
     /// identity carries exactly one manifest digest at a time (FR-075
-    /// Inputs).
+    /// Inputs). `domains` is the manifest's `domains`, `None` when it has
+    /// none.
     pub fn new(
         backend: Candidate,
         origin: ProviderOrigin,
         manifest_digest: ManifestDigest,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
+        domains: Option<BTreeSet<DomainKind>>,
     ) -> Self {
         Self {
             backend,
             origin,
             manifest_digest,
             advertises: advertises.into_iter().collect(),
+            domains,
         }
     }
 
@@ -261,6 +267,15 @@ impl BackendDescriptor {
     /// manifest. Whether the refusal is reported at all never depends on
     /// order.
     ///
+    /// `domains` is the manifest's `domains` (`None` when absent), and is
+    /// checked after every pair. A defective one refuses
+    /// `invalid_capability`/`invalid-domains` (FR-290 "Advertised mode"),
+    /// with the defect in [`DomainsDefect`]: absent while a `bounded` pair is
+    /// advertised, empty, a kind that is not one of the four boundable ones
+    /// (an unknown label included), or a repeated kind. A registration that
+    /// advertises only `unbounded` modes may omit `domains`. The admitted
+    /// descriptor keeps them ([`BackendDescriptor::domains`]).
+    ///
     /// A refused descriptor never exists, so it contributes nothing to any
     /// registry.
     pub fn admit<'a>(
@@ -268,6 +283,7 @@ impl BackendDescriptor {
         origin: ProviderOrigin,
         manifest_digest: ManifestDigest,
         advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+        domains: Option<&[&str]>,
     ) -> Result<Self, RegistrationRefusal> {
         let refuse = |cause| RegistrationRefusal {
             backend: backend.clone(),
@@ -287,12 +303,25 @@ impl BackendDescriptor {
                 .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
             advertises.insert((kind, mode));
         }
+        let advertises_bounded = advertises
+            .iter()
+            .any(|&(_, mode)| matches!(mode, Mode::Bounded));
+        let domains = admit_domains(domains, advertises_bounded)
+            .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
         Ok(Self {
             backend,
             origin,
             manifest_digest,
             advertises,
+            domains,
         })
+    }
+
+    /// The boundable domain kinds the manifest accepts a finite bound for
+    /// (FR-331 `domains`), or `None` when it stated none, which only a
+    /// registration advertising no `bounded` pair may do.
+    pub fn domains(&self) -> Option<&BTreeSet<DomainKind>> {
+        self.domains.as_ref()
     }
 
     /// This descriptor's backend identity.
@@ -359,6 +388,48 @@ impl BackendDescriptor {
     }
 }
 
+/// Admit a manifest's `domains` labels (FR-290 "Advertised mode").
+fn admit_domains(
+    labels: Option<&[&str]>,
+    advertises_bounded: bool,
+) -> Result<Option<BTreeSet<DomainKind>>, DomainsDefect> {
+    let Some(labels) = labels else {
+        return if advertises_bounded {
+            Err(DomainsDefect::Absent)
+        } else {
+            Ok(None)
+        };
+    };
+    if labels.is_empty() {
+        return Err(DomainsDefect::Empty);
+    }
+    let mut admitted = BTreeSet::new();
+    for &label in labels {
+        let kind = DomainKind::from_wire(label)
+            .filter(|kind| kind.finite_kind().is_some())
+            .ok_or_else(|| DomainsDefect::NotBoundable(label.to_owned()))?;
+        if !admitted.insert(kind) {
+            return Err(DomainsDefect::Repeated(kind));
+        }
+    }
+    Ok(Some(admitted))
+}
+
+/// What is wrong with a manifest's `domains` (FR-290 "Advertised mode"):
+/// the detail of [`RegistrationCause::InvalidDomains`].
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DomainsDefect {
+    /// No `domains`, though a `bounded` pair is advertised.
+    Absent,
+    /// `domains` is present and empty.
+    Empty,
+    /// A label that is not `collection`, `population`, `integer` or
+    /// `recursive`; carries the exact received bytes.
+    NotBoundable(String),
+    /// A kind listed twice.
+    Repeated(DomainKind),
+}
+
 /// Why a registration is refused: the FR-290 registration causes, all
 /// under code `invalid_capability` (FR-057-AC-8).
 ///
@@ -377,6 +448,8 @@ pub enum RegistrationCause {
     /// An advertised mode is absent, or neither `bounded` nor `unbounded`;
     /// carries the exact received bytes, `None` when there were none.
     UnknownMode(Option<String>),
+    /// The manifest's `domains` is defective (FR-290 "Advertised mode").
+    InvalidDomains(DomainsDefect),
 }
 
 impl RegistrationCause {
@@ -387,6 +460,7 @@ impl RegistrationCause {
             Self::AbsentKind => "absent-kind",
             Self::UnknownKind(_) => "unknown-kind",
             Self::UnknownMode(_) => "unknown-mode",
+            Self::InvalidDomains(_) => "invalid-domains",
         }
     }
 }
@@ -699,6 +773,7 @@ mod tests {
             ProviderOrigin::Linked,
             ManifestDigest::from_digest([digest_byte; 32]),
             advertises,
+            None,
         )
     }
 

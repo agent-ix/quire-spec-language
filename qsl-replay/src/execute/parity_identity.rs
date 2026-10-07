@@ -9,7 +9,7 @@
 //! and one argument per operand position, each an operand identity and a
 //! domain (a range for a scalar, harness bounds for a composite).
 
-use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{IntegerInterval, Origin};
@@ -358,10 +358,12 @@ mod tests {
                 BoundEntries::new(vec![
                     ProofBound {
                         domain: key(vec![0]),
+                        kind: Some(DomainKind::Collection),
                         bound: FiniteBound::cardinality(3),
                     },
                     ProofBound {
                         domain: key(vec![0, 0]),
+                        kind: Some(DomainKind::Integer),
                         bound: FiniteBound::integer_range(
                             Integer::from(0_i64),
                             Integer::from(9_i64),
@@ -478,6 +480,7 @@ mod tests {
     fn bound_entries_order_by_the_encoded_key_and_refuse_a_repeat() {
         let bound = |path: Vec<u32>| ProofBound {
             domain: key(path),
+            kind: Some(DomainKind::Collection),
             bound: FiniteBound::cardinality(1),
         };
         let entries =

@@ -34,6 +34,7 @@ fn backend(
         ProviderOrigin::Linked,
         digest(seed),
         advertises,
+        None,
     )
 }
 
@@ -895,6 +896,7 @@ mod tc_282_duplicate_backend_identity {
                     ProviderOrigin::Linked,
                     d2,
                     [(Some("value-validity"), Some("finite"))],
+                    Some(&["collection"]),
                 )
                 .expect_err("`finite` is not an FR-290 mode")
             };

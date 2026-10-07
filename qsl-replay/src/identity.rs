@@ -285,12 +285,15 @@ impl DeclaredDomain {
     /// crate's root, so a client builds one through `qsl_replay` alone:
     ///
     /// ```
-    /// use qsl_replay::{DeclaredDomain, DomainKey, FiniteBound, Integer, ProofBound, WireNodeId};
+    /// use qsl_replay::{
+    ///     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, WireNodeId,
+    /// };
     ///
     /// let parameter = WireNodeId::from_digest([7; 32]);
     /// let bound = FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))?;
     /// let declared = DeclaredDomain::new(ProofBound {
     ///     domain: DomainKey::Node { node: parameter, path: Vec::new() },
+    ///     kind: Some(DomainKind::Integer),
     ///     bound,
     /// });
     /// assert_eq!(declared.domain(), &DomainKey::Node { node: parameter, path: Vec::new() });

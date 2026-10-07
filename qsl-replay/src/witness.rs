@@ -1071,7 +1071,7 @@ mod envelope_tests {
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use ix_trace_rs::trace;
-    use qsl_foundation::bound::ProofBound;
+    use qsl_foundation::bound::{DomainKind, ProofBound};
     use quire_exact::Identifier;
 
     fn digest(byte: u8) -> [u8; 32] {
@@ -1126,6 +1126,7 @@ mod envelope_tests {
                     node: WireNodeId::from_digest(digest(6)),
                     path: Vec::new(),
                 },
+                kind: Some(DomainKind::Integer),
                 bound: FiniteBound::integer_range(
                     quire_exact::Integer::from(0_i64),
                     quire_exact::Integer::from(u64::from(u32::MAX)),
@@ -1215,10 +1216,12 @@ mod envelope_tests {
         packet.declared_domains = Some(vec![
             DeclaredDomain::new(ProofBound {
                 domain: whole.clone(),
+                kind: Some(DomainKind::Collection),
                 bound: FiniteBound::cardinality(8),
             }),
             DeclaredDomain::new(ProofBound {
                 domain: element.clone(),
+                kind: Some(DomainKind::Recursive),
                 bound: FiniteBound::depth(3).unwrap(),
             }),
         ]);
@@ -1401,6 +1404,7 @@ mod envelope_tests {
                     node: WireNodeId::from_digest(digest(6)),
                     path,
                 },
+                kind: Some(DomainKind::Collection),
                 bound: FiniteBound::cardinality(8),
             })
         };

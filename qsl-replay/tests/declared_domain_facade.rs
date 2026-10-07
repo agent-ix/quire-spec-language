@@ -47,6 +47,7 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
             node: parameter,
             path: Vec::new(),
         },
+        kind: Some(DomainKind::Integer),
         bound: bound.clone(),
     });
     assert_eq!(

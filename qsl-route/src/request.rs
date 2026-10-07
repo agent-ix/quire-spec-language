@@ -124,7 +124,7 @@ impl RequestItem {
     }
 
     /// The proof bounds substituted for the item's unbounded domains, in
-    /// [`DomainKey`] order (QSpec FR-331 request `domains`). Empty for an
+    /// [`DomainKey`] order (QSpec FR-331 `extent.bounds`). Empty for an
     /// item requested without bounds.
     pub fn domains(&self) -> &[ProofBound] {
         &self.domains
@@ -247,9 +247,10 @@ impl RequestWriter {
                     kind,
                 });
             };
-            expected_kinds.push((domain, expected));
+            expected_kinds.push((domain, kind, expected));
         }
-        for (domain, expected) in expected_kinds {
+        let mut domains = Vec::with_capacity(expected_kinds.len());
+        for (domain, kind, expected) in expected_kinds {
             let Some(bound) = bounds.get(domain) else {
                 return Err(BoundRefusal::MissingDomain {
                     domain: domain.clone(),
@@ -262,11 +263,12 @@ impl RequestWriter {
                     supplied: bound.kind(),
                 });
             }
+            domains.push(ProofBound {
+                domain: domain.clone(),
+                kind: Some(kind),
+                bound: bound.clone(),
+            });
         }
-        let domains = bounds
-            .into_iter()
-            .map(|(domain, bound)| ProofBound { domain, bound })
-            .collect();
         Ok(self.push(
             occurrence,
             requirements.kind(),
@@ -546,10 +548,12 @@ mod tests {
             [
                 ProofBound {
                     domain: key(1, &[]),
+                    kind: Some(DomainKind::Collection),
                     bound: FiniteBound::cardinality(8),
                 },
                 ProofBound {
                     domain: key(1, &[0]),
+                    kind: Some(DomainKind::Recursive),
                     bound: depth(3),
                 },
             ]
@@ -558,6 +562,58 @@ mod tests {
         // items; neither is the unbounded item.
         assert_ne!(items[eight.get()].domains(), items[four.get()].domains());
         assert_ne!(items[eight.get()], items[unbounded.get()]);
+    }
+
+    /// FR-331 `extent.bounds[].kind`: every proof bound the writer emits
+    /// carries its domain's kind, and the kind pairs with the bound's
+    /// variant as `DomainKind::finite_kind` says.
+    #[trace("TC-438", "FR-097-AC-4")]
+    #[test]
+    fn tc_438_each_proof_bound_carries_the_kind_its_bound_variant_pairs_with() {
+        let requirements = claim(&[
+            (key(1, &[]), DomainKind::Population),
+            (key(2, &[]), DomainKind::Integer),
+            (key(3, &[]), DomainKind::Recursive),
+        ]);
+        let mut writer = RequestWriter::new();
+        let index = writer
+            .bounded_item(
+                occurrence(),
+                &requirements,
+                BTreeMap::from([
+                    (key(1, &[]), FiniteBound::cardinality(2)),
+                    (
+                        key(2, &[]),
+                        FiniteBound::integer_range(
+                            quire_exact::Integer::from(0_i64),
+                            quire_exact::Integer::from(1_i64),
+                        )
+                            .unwrap(),
+                    ),
+                    (key(3, &[]), depth(2)),
+                ]),
+            )
+            .unwrap();
+        let items = writer.finish();
+        let kinds: Vec<_> = items[index.get()]
+            .domains()
+            .iter()
+            .map(|bound| bound.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                Some(DomainKind::Population),
+                Some(DomainKind::Integer),
+                Some(DomainKind::Recursive)
+            ]
+        );
+        for bound in items[index.get()].domains() {
+            assert_eq!(
+                bound.kind.and_then(DomainKind::finite_kind),
+                Some(bound.bound.kind())
+            );
+        }
     }
 
     /// TC-438 (ADR-014 §4 refusals): an unknown domain, an unboundable
