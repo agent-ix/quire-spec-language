@@ -505,9 +505,12 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
 4. **Disposition from the manifest alone.** CG checks an item in this
    order, and the first check that fails settles it:
    1. The manifest advertises a mode for the item's kind.
-   2. Every domain kind of the item's extent (`bounds[].kind` for a bounded
-      extent, `domains[].kind` for an unbounded one) is in the manifest's
-      `domains`. Otherwise the item settles `unsupported`,
+   2. The item's domain kinds are in the manifest's `domains`. For a bounded
+      item this check always applies, over `bounds[].kind`. For an unbounded
+      item it applies only when the manifest does not advertise `unbounded`
+      for the item's kind, over `domains[].kind`; an unbounded item on a
+      provider that advertises `unbounded` for its kind skips it. An item
+      that fails it settles `unsupported`,
       `unsupported_projection`/`unsupported-requested-capability`, whatever
       `finite_bound_available` says.
    3. FR-290's advertised-mode rows. An unbounded item on a provider that
@@ -515,7 +518,9 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
       `finite_bound_available` is true, and otherwise `unsupported`, warned,
       `unsupported_projection`/`unbounded-extent`.
 
-   An item that passes all three routes. There is no default disposition.
+   An item that passes all three routes; an unbounded item on a provider that
+   advertises `unbounded` for its kind therefore routes after step 1. There
+   is no default disposition.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
    learns that a descriptor is a process provider. Not (a), a driver-supplied
    map beside the descriptors: it is a second source of truth that can
