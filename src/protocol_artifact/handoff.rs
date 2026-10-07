@@ -342,7 +342,6 @@ mod tests {
         PUBLISHED_V1_SELECTION_FILE,
     };
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
-    use qsl_foundation::ByteDigest;
 
     fn normalized_handoff_path(relative: &Path) -> bool {
         relative

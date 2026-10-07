@@ -3,11 +3,7 @@
 
 use crate::support::native_protocol as setup;
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::{Component, Path, PathBuf},
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
@@ -93,8 +89,8 @@ fn committed_handoff_interchange_records_are_complete() {
         manifest.independent_selection,
     ] {
         assert!(
-            listed.contains(Path::new(&path)),
-            "unlisted manifest path {path}"
+            root.join(&path).is_file(),
+            "manifest path {path} is not a published file"
         );
     }
 }
