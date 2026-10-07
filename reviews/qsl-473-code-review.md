@@ -51,3 +51,13 @@ Examined:
 ## Verdict
 
 Gates run at 384d6898e through locked-build.sh: `cargo test --locked --test it -- compiled_protocol_v2::` passes (16 passed, 0 failed), so the docs/compiled-protocol-v2.md edit breaks no embedded-doc test. `cargo run --locked -p arch-lint -- canonical-encoder --qsl .` FAILS with "stale exemption, `write_checksum_inventory` has no hash site: src protocol_artifact::handoff::writer" (FND-001, reproduced). The rename and the deletions are correct and complete in code, with no compat layer. FND-001 turns `make ci` red and must be fixed before merge; FND-002 is a false coverage claim; FND-003 is dead API left by the deletion. Mergeable on the code side once all three are fixed.
+
+## Dispositions
+
+Round 1, reviewed at 7b326716f68cfb2b7e0086c94704b9382e6175ca (rebased onto main dac0d90f).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7b326716f: `write_checksum_inventory` and the `SHA256SUMS` clause removed from the exemption; `arch-lint canonical-encoder` re-run at the head |
+| FND-002 | rejected | The finding was wrong. `tc_440_quantity_extent_agrees_with_ir_requires_bound` already existed at 384d6898e (extent_agreement.rs:560). It calls `disagreement("Measure", Some(DomainKind::Quantity), ..)`, which accepts only QSL `Unbounded` with a Quantity domain plus IR `RequiresBound`. The reviewer had read only `tc_440_a_quantity_record_is_emitted_and_reaches_ir`. The doc sentence was true; 7b326716f now names the test, which is fine. |
+| FND-003 | fixed | 7b326716f: `Error::HandoffPath` deleted; no reference remains |

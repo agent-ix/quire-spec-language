@@ -42,3 +42,13 @@ Examined: FR-357 Behavior and AC-11/16/17; FR-358 step 2, AC-3 and lines 168-176
 ## Verdict
 
 The content-mismatch edits are correct and complete, and the plan-lead-ruled FR-358 sentence is intact. The checksum deletion left two spec statements that are no longer true (FND-001, FND-002) and one empty section (FND-003). Mergeable on the spec side once these three are fixed.
+
+## Dispositions
+
+Round 1, reviewed at 7b326716f68cfb2b7e0086c94704b9382e6175ca (rebased onto main dac0d90f).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7b326716f: both TC-138 checksum sentences replaced by the base-file existence check and the byte-identical-writes check; no `checksum` text remains in TC-138 |
+| FND-002 | fixed | 7b326716f: FR-050-AC-7 says "four member filenames" |
+| FND-003 | fixed | 7b326716f: the empty `## Status` heading is removed from FR-042 |
