@@ -484,5 +484,3 @@ Description points an implementer at, defines the exact `ProducerObject`,
 the dependency-index rules that mention them, and `ProducerCorrespondence` as
 an `Unsupported` reason. The implementation (#132) amends FR-050-AC-4,
 FR-054's Description and both wire-contract docs to the in-place `Model`.
-
-## Status

@@ -20,8 +20,9 @@
 //!
 //! A quantity record (`Measure{len: metre}`) is emitted with the `metre`
 //! unit and `Length` dimension nodes lowering builds (FR-094), and IR reads
-//! and lowers it. QSL classifies it unbounded and unboundable (ADR-014 §4), and
-//! IR's `requires-bound` agrees: the agreement test over it asserts both.
+//! and lowers it. QSL classifies it unbounded and unboundable (ADR-014 §4);
+//! `tc_440_quantity_extent_agrees_with_ir_requires_bound` asserts that IR's
+//! `requires-bound` agrees.
 //!
 //! **Operation-application records** (FR-097-AC-6). QSL's requirement
 //! record is the authority for an operation-application claim's extent.

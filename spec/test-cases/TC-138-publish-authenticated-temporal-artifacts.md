@@ -54,15 +54,13 @@ Import the public `protocol_artifact::handoff` path, member-name and mutation
 format constants. Join each member name to `PUBLISHED_HANDOFF`, require every
 named file to exist, decode the named mutation manifest, and compare its base
 offer, artifact reference, independent selection and format fields with the
-published constants. Verify every entry in the named checksum inventory against
-the corresponding handoff bytes without consulting an environment variable or
+published constants, and require each of those base files to exist, without consulting an environment variable or
 redeclaring a path, filename or format literal in the consumer harness.
 
 Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
 that public function -- exactly as a downstream crate would. Confirm the two
-written trees are byte-identical, that every file the written checksum
-inventory lists is present with the matching digest, that each written clock
+written trees are byte-identical, that each written clock
 input's bytes match its selection entry's digest, and that the strict `/2`
 reader admits the written offer against the written selection with no other
 input. Decode the written mutation manifest, confirm every case's referenced

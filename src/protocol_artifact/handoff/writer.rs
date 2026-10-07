@@ -390,9 +390,6 @@ pub enum Error {
     /// The selected reader limits do not fit their wire width.
     #[error("cannot serialize the selected reader limits: {0}")]
     HandoffLimits(#[from] artifact::handoff::LimitWidthError),
-    /// A generated handoff entry is not a plain file below the output root.
-    #[error("invalid generated handoff path: {0}")]
-    HandoffPath(String),
     /// The independently read package differs from the native emission.
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
