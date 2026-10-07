@@ -17,8 +17,6 @@
 //! the object type's `EffectiveId` exactly as `crate::value::model_query`
 //! does (ADR-013 §8 OQ-C ruling).
 
-use std::sync::Arc;
-
 use ix_trace_rs::trace;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
@@ -1545,9 +1543,7 @@ fn population_refused_as_option_payload() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = Expression::convert(
-        crate::support::type_form::type_form(&ValueType::Option(Arc::new(ValueType::Population(
-            Some(3),
-        )))),
+        crate::support::type_form::type_form(&ValueType::option(ValueType::Population(Some(3)))),
         Expression::boolean(true),
     );
     let refusal = check_refusal(&package, &parameters, &expression);
