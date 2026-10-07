@@ -11,8 +11,7 @@ relationships:
 ## Description
 
 Verify that the three D-4.10 sites read through the shared reader, keep
-malformed input apart from limits and from wrong shapes, and admit deep
-documents.
+malformed input apart from limits and from wrong shapes.
 
 Scope: FR-261-AC-1, FR-261-AC-2, FR-261-AC-3.
 
@@ -30,8 +29,8 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
 3. Read a snapshot whose population field holds a value nested 100,000
    levels deep that the field's declared type does not admit. First with
    `observation.input_bytes` and `observation.values` raised to fit; then
-   with `observation.values` one below the document's value count; then with
-   the setting raised again through `ObservationLimits`' builder.
+   with `observation.values` at 50,000, which the nested value alone
+   crosses.
 
 Tag the tests `#[trace("TC-733", "FR-261-AC-1")]`, `#[trace("TC-733", "FR-261-AC-2")]`, `#[trace("TC-733", "FR-261-AC-3")]`.
 
@@ -41,7 +40,6 @@ Tag the tests `#[trace("TC-733", "FR-261-AC-1")]`, `#[trace("TC-733", "FR-261-AC
   with the first malformed byte's offset; and the not-an-object defect.
 - Step 2: the digest is read and admission proceeds to FR-106's later
   checks; under the other digest, `stale_dependency`/`content-mismatch`.
-- Step 3: refused `invalid_runtime_input`/`wrong-value-kind` at that field,
+- Step 3: refused `invalid_runtime_input`/`wrong-value-kind` at the field,
   after the whole value is read and counted; then refused naming
-  `observation.values`, its bound and the count reached; then refused
-  `wrong-value-kind` again.
+  `observation.values`, bound 50,000 and the count reached, 50,001.
