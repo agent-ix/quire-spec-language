@@ -45,7 +45,7 @@ fn canonical(parameter: WireNodeId) -> WitnessBinding {
 fn scalar(parameter: WireNodeId) -> WitnessBinding {
     WitnessBinding {
         parameter,
-        value_type: WitnessValueType::I64,
+        value_type: WitnessValueType::I128,
     }
 }
 
@@ -335,7 +335,8 @@ fn tc_905_an_input_value_counts_at_its_escaped_text_length() {
         parameter: id(1),
         value: WitnessValue::Integer(1),
     }]);
-    assert_eq!(scalar_source.measured_bytes(), 32 + 8);
+    // An i128 integer is charged its 16 bytes.
+    assert_eq!(scalar_source.measured_bytes(), 32 + 16);
 }
 
 /// FR-070-AC-12 (TC-905): entries for `0a..` and `0b..` in that order

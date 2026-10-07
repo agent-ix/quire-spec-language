@@ -27,6 +27,7 @@ use crate::check::ir::{
     CheckedBody, CheckedLiteral, Connective, Node, NodeId, NodeKind, RecordSlot, Slot, Visit,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
+use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, ExprRef, Expression,
@@ -633,11 +634,19 @@ impl<'a> Typer<'a> {
                 ValueType::Boolean,
                 &location,
             ),
-            ExprNode::Integer(value) => node(
-                NodeKind::Literal(CheckedLiteral(Value::Integer(value.clone()))),
-                ValueType::Integer,
-                &location,
-            ),
+            ExprNode::Integer(value) => {
+                if let Some(outside) = IntegerOutsideI128::of(IntegerSite::Literal, value) {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::IntegerOutsideI128(outside),
+                    });
+                }
+                node(
+                    NodeKind::Literal(CheckedLiteral(Value::Integer(value.clone()))),
+                    ValueType::Integer,
+                    &location,
+                )
+            }
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }

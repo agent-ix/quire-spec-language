@@ -170,6 +170,7 @@ fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static 
         F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
         F::Malformed
         | F::EmptyInterval
+        | F::IntegerOutsideI128(_)
         | F::DenominatorBelowOne
         | F::MalformedDecimal
         | F::EmptyTextBounds
@@ -525,6 +526,10 @@ pub enum CheckCause {
         /// Every declaring locus.
         loci: Vec<Location>,
     },
+    /// `ill_typed` / `type-mismatch` (FR-091): an integer literal outside
+    /// `i128::MIN..=i128::MAX`, at the literal. Never a nonzero-magnitude
+    /// rewrite: a literal is refused, not truncated.
+    IntegerOutsideI128(super::type_form::IntegerOutsideI128),
     /// `ill_typed` / `non-boolean-root` (FR-104): a state clause body whose
     /// type is not `Boolean`, at the body.
     NonBooleanRoot,
@@ -837,7 +842,9 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
-            Self::IllTyped(_) | Self::NonBooleanRoot => Code::IllTyped,
+            Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
+                Code::IllTyped
+            }
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
@@ -876,6 +883,7 @@ impl CheckCause {
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
+            Self::IntegerOutsideI128(_) => Some("type-mismatch"),
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_) => Some("missing-name"),
             Self::AmbiguousName { .. } => Some("ambiguous-name"),

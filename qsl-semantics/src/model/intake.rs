@@ -2289,8 +2289,8 @@ fn read_value_type(
         ));
     }
     let constraints = ctx.array_field("constraints")?;
-    let mut lower: Option<i64> = None;
-    let mut upper: Option<i64> = None;
+    let mut lower: Option<i128> = None;
+    let mut upper: Option<i128> = None;
     for (position, constraint) in constraints.iter().enumerate() {
         let constraint_at = format!("{at}.constraints[{position}]");
         let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
@@ -2309,12 +2309,13 @@ fn read_value_type(
         if slot.is_some() {
             return Err(constraint_ctx.malformed(format!("keyword: {keyword:?} is declared twice")));
         }
-        let value = constraint
+        let operand = constraint
             .get("operands")
             .and_then(|operands| operands.get("value"))
-            .and_then(Value::as_i64)
             .ok_or_else(|| constraint_ctx.malformed("operands.value: missing or not an integer"))?;
-        *slot = Some(value);
+        *slot = Some(
+            bound_operand(operand, keyword).map_err(|reason| constraint_ctx.malformed(reason))?,
+        );
     }
     let (lower, upper) = match (lower, upper) {
         (Some(lower), Some(upper)) => (lower, upper),
@@ -2349,6 +2350,28 @@ fn read_value_type(
         lower,
         upper,
     })
+}
+
+/// A scalar bound operand: a JSON integer (the read already refuses one
+/// beyond +/-2^53 as inexact) or a canonical decimal string, either exact in
+/// `i128::MIN..=i128::MAX` (FR-056). `Err` is the refusal's reason, naming
+/// `keyword` and the written value.
+fn bound_operand(operand: &Value, keyword: &str) -> Result<i128, String> {
+    if let Some(number) = operand.as_i64() {
+        return Ok(i128::from(number));
+    }
+    let Some(text) = operand.as_str() else {
+        return Err("operands.value: missing or not an integer".to_owned());
+    };
+    // Canonical: no sign but `-`, no leading zero, no `-0`; so it prints
+    // back as it was written.
+    match text.parse::<i128>() {
+        Ok(value) if value.to_string() == text => Ok(value),
+        Ok(_) | Err(_) => Err(format!(
+            "operands.value: {text:?} for keyword {keyword:?} is not a canonical decimal \
+             integer in i128::MIN..=i128::MAX"
+        )),
+    }
 }
 
 fn read_component(
@@ -4662,6 +4685,42 @@ mod tests {
         );
     }
 
+    /// FR-056-AC-16 (TC-911 step 1): a bound beyond +/-2^53 arrives as a
+    /// canonical decimal string and reads exactly, up to the i128 limits; a
+    /// JSON integer bound still reads.
+    #[trace("TC-911", "FR-056-AC-16")]
+    #[test]
+    fn reads_decimal_string_bounds_up_to_i128() {
+        for (upper, expected) in [
+            (
+                serde_json::json!("18446744073709551615"),
+                i128::from(u64::MAX),
+            ),
+            (
+                serde_json::json!("9223372036854775808"),
+                9_223_372_036_854_775_808,
+            ),
+            (
+                serde_json::json!("170141183460469231731687303715884105727"),
+                i128::MAX,
+            ),
+            (serde_json::json!(1000), 1000),
+        ] {
+            let record = read_version_number(serde_json::json!({"constraints": [
+                {"keyword": "min", "operands": {"value": 0}},
+                {"keyword": "max", "operands": {"value": upper}},
+            ]}))
+            .unwrap_or_else(|refusal| panic!("{upper}: {refusal:?}"));
+            assert_eq!(record.upper, expected, "{upper}");
+        }
+        let record = read_version_number(serde_json::json!({"constraints": [
+            {"keyword": "min", "operands": {"value": "-170141183460469231731687303715884105728"}},
+            {"keyword": "max", "operands": {"value": 0}},
+        ]}))
+        .expect("i128::MIN reads");
+        assert_eq!(record.lower, i128::MIN);
+    }
+
     /// Every malformed or unsupported bound-scalar wire shape this reader
     /// refuses -- structurally, from the constraint's own typed `keyword`/
     /// `operands.value` fields, never from a rendered `Int[lo,hi]` string.
@@ -4731,7 +4790,35 @@ mod tests {
                     {"keyword": "max", "operands": {"value": 1000}},
                 ]}),
                 Code::InvalidModelBinding,
+                "$.types[0].constraints[0]: operands.value: \"zero\" for keyword \"min\" is not a \
+                 canonical decimal integer in i128::MIN..=i128::MAX",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": true}},
+                    {"keyword": "max", "operands": {"value": 1000}},
+                ]}),
+                Code::InvalidModelBinding,
                 "$.types[0].constraints[0]: operands.value: missing or not an integer",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": 0}},
+                    {"keyword": "max", "operands": {"value": "170141183460469231731687303715884105728"}},
+                ]}),
+                Code::InvalidModelBinding,
+                "$.types[0].constraints[1]: operands.value: \
+                 \"170141183460469231731687303715884105728\" for keyword \"max\" is not a \
+                 canonical decimal integer in i128::MIN..=i128::MAX",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": 0}},
+                    {"keyword": "max", "operands": {"value": "0018"}},
+                ]}),
+                Code::InvalidModelBinding,
+                "$.types[0].constraints[1]: operands.value: \"0018\" for keyword \"max\" is not \
+                 a canonical decimal integer in i128::MIN..=i128::MAX",
             ),
             (
                 serde_json::json!({"operations": [{"identity": "ix://acme/orders/VersionNumber/inc"}]}),
@@ -4880,6 +4967,93 @@ mod tests {
                 upper: 1000,
             })]
         );
+    }
+
+    /// The package document of FR-056-AC-16's `Wide` scalar type: `min` the
+    /// JSON integer 0 and `max` the raw JSON text `max_json`. Also returns
+    /// the RFC 6901 pointer of the `max` operand.
+    fn wide_document(max_json: &str) -> (Vec<u8>, String) {
+        const SENTINEL: &str = "@@max@@";
+        let constraint = |keyword: &str, value: Value| {
+            serde_json::json!({
+                "identity": format!("ix://acme/orders/Wide/constraints/{keyword}"),
+                "keyword": keyword,
+                "operands": {"value": value},
+                "appliesTo": "ix://quire/native/Integer",
+                "diagnosticCode": format!("bound.{keyword}"),
+                "origin": {"generated": {
+                    "generatorIdentity": "ix://acme/orders/Wide",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://acme/orders/Wide"],
+                }},
+            })
+        };
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "value_type",
+                meaning::VALUE_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Wide",
+                serde_json::json!({"module": "acme/orders", "name": "value_type"}),
+                serde_json::json!({
+                    "scalar": "integer",
+                    "constraints": [
+                        constraint("min", serde_json::json!(0)),
+                        constraint("max", Value::String(SENTINEL.to_owned())),
+                    ],
+                }),
+            )]),
+        );
+        let pointer = "/types/0/constraints/1/operands/value".to_owned();
+        assert_eq!(
+            document.pointer(&pointer),
+            Some(&Value::String(SENTINEL.to_owned())),
+            "the max operand sits where the pointer says"
+        );
+        let text = document
+            .to_string()
+            .replace(&format!("\"{SENTINEL}\""), max_json);
+        (text.into_bytes(), pointer)
+    }
+
+    /// FR-056-AC-16 (TC-911 step 1 and 2), through the package's one parse:
+    /// `Wide` with `max` the string `"18446744073709551615"` admits and reads
+    /// as `[0, 18446744073709551615]`; `max` the JSON number
+    /// `18446744073709551615` refuses `noncanonical_wire`/`inexact-integer`
+    /// at that number's pointer.
+    #[trace("TC-911", "FR-056-AC-16")]
+    #[test]
+    fn a_wide_bound_is_a_decimal_string_and_a_wide_json_number_is_inexact() {
+        let (bytes, _) = wide_document("\"18446744073709551615\"");
+        // `read_nodes`, not `read_records`: the pinned FCD validator
+        // (`INVALID_OPERAND`) still demands a number operand for `min`/`max`,
+        // so a string bound cannot pass `validate_with_semantic_ir` yet.
+        let records = read_nodes("acme/orders", parse_document(&bytes).tree())
+            .expect("Wide with a string bound admits");
+        assert_eq!(
+            records,
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/Wide"),
+                lower: 0,
+                upper: i128::from(u64::MAX),
+            })]
+        );
+
+        let (bytes, pointer) = wide_document("18446744073709551615");
+        let refusal = PackageDocument::parse(&bytes).unwrap_err();
+        assert_eq!(
+            refusal,
+            noncanonical_number(
+                pointer.parse().unwrap(),
+                Inexact::Integer,
+                "18446744073709551615"
+            )
+        );
+        assert_eq!(refusal.code, Code::NoncanonicalWire);
     }
 
     /// A construct's `meaning` is schema-free text to

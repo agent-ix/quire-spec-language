@@ -469,9 +469,21 @@ fn integer_and_rational_literals_are_spelled_as_strings() {
     assert_eq!(arguments[2]["value_kind"], json!("rational"));
 }
 
+/// The key of the application `input` under `recursion`.
+fn keyed_in_group(input: &NodeInput<'_>, recursion: RecursionPreimage) -> KeyedPreimage {
+    let (preimage, _) =
+        typed_preimage(input, Walk::OUTSIDE, Some(recursion)).expect("an application preimage");
+    keyed(&preimage, IdentityLimits::default()).expect("a keyable preimage")
+}
+
+/// FR-092-AC-15: a counter is the JSON number up to 2^53-1 and its decimal
+/// string beyond it; no counter is refused for its magnitude. A member
+/// `position` and a `group_reference` ordinal take the same two spellings.
+#[trace("FR-092-AC-15", "TC-910")]
 #[test]
-fn a_member_position_outside_the_exact_range_is_refused() {
-    let safe = JCS_SAFE_INTEGER;
+fn a_counter_is_a_number_to_2_pow_53_minus_1_and_a_string_beyond() {
+    let safe: u64 = 9_007_199_254_740_991;
+    let beyond = safe + 1;
     let positioned = |position: u64| {
         let BodyTerm::Application(mut application) = add(Vec::new()) else {
             unreachable!("add builds an application")
@@ -482,17 +494,106 @@ fn a_member_position_outside_the_exact_range_is_refused() {
         });
         BodyTerm::Application(application)
     };
-    let edge = positioned(safe);
-    let beyond = positioned(safe + 1);
+    let member_position = |position: u64| {
+        let body = positioned(position);
+        preimage_json(&node(&body))["body"]["operation"]["member"]["position"].clone()
+    };
+    assert_eq!(member_position(safe), json!(9_007_199_254_740_991_u64));
+    assert_eq!(member_position(beyond), json!("9007199254740992"));
 
-    assert!(application_node_key(&node(&edge)).is_ok());
-    assert_eq!(
-        application_node_key(&node(&beyond)),
-        Err(NodeKeyRefusal::UnsafeInteger {
-            site: IntegerSite::MemberPosition,
-            value: JCS_SAFE_INTEGER + 1
-        })
-    );
+    let ordinal_of = |position: u64| {
+        let body = add(vec![argument(1)]);
+        let handle = key(1);
+        let mut group = BTreeMap::new();
+        group.insert(handle, usize::try_from(position).expect("a 64-bit usize"));
+        let (preimage, _) = typed_preimage(&node_input(&body), Walk { group: &group }, None)
+            .expect("an application preimage");
+        let bytes = canonical_bytes(&preimage, IdentityLimits::default()).expect("encodes");
+        let json: Value = serde_json::from_slice(&bytes).expect("JSON");
+        json["body"]["arguments"][0]["ordinal"].clone()
+    };
+    assert_eq!(ordinal_of(safe), json!(9_007_199_254_740_991_u64));
+    assert_eq!(ordinal_of(beyond), json!("9007199254740992"));
+}
+
+fn node_input(body: &BodyTerm) -> NodeInput<'_> {
+    NodeInput {
+        owner: None,
+        node_tag: NodeTag::Expression,
+        semantic_form: "binary",
+        semantic_type: Some(key(3)),
+        declaration: None,
+        body,
+    }
+}
+
+/// FR-092-AC-15: QSpec's `integer_encoding_vectors`, read at run time from
+/// `$QSPEC_DIR`, key through this module's key function to their recorded
+/// keys: a recursion `size` of 2^53-1 is a number and 2^53 a string. Skipped
+/// (and passing) when `QSPEC_DIR` is unset; nothing of QSpec is copied here.
+#[trace("FR-092-AC-15", "TC-910")]
+#[test]
+fn conformance_fr092_integer_encoding_vectors_match_qspec() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/node-identity-vectors.json");
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let document: Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let vectors = document["integer_encoding_vectors"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{} has no integer_encoding_vectors array", path.display()));
+    let counter = |value: &Value| match value {
+        Value::Number(number) => number.as_u64().expect("an unsigned counter"),
+        Value::String(text) => text.parse().expect("a decimal counter"),
+        other => panic!("not a counter: {other}"),
+    };
+    let mut keyed_vectors = 0;
+    for vector in vectors {
+        let name = vector["name"].as_str().expect("vector name is a string");
+        let published = &vector["preimage"];
+        // The structural integer-range vectors are keyed from the checked
+        // type (TC-910 step 1); only an application vector with a
+        // `recursion` is rebuilt from its preimage here.
+        if published["version"] != APPLICATION_NODE_VERSION {
+            continue;
+        }
+        let decoded = VectorPreimage::deserialize(published)
+            .unwrap_or_else(|error| panic!("{name}: preimage does not decode: {error}"));
+        let recursion = decoded
+            .recursion
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name}: no recursion"));
+        let input = NodeInput {
+            semantic_type: Some(decoded.semantic_type.0),
+            semantic_form: &decoded.semantic_form,
+            ..node_input(&decoded.body)
+        };
+        let computed = keyed_in_group(
+            &input,
+            RecursionPreimage {
+                group: None,
+                ordinal: Counter::new(counter(&recursion["ordinal"])),
+                size: Counter::new(counter(&recursion["size"])),
+            },
+        );
+        assert_eq!(
+            computed.preimage,
+            serde_json::to_vec(published).expect("a parsed preimage serializes"),
+            "{name}: preimage bytes"
+        );
+        assert_eq!(
+            Some(computed.key.to_string().as_str()),
+            vector["sha256"].as_str(),
+            "{name}: key"
+        );
+        keyed_vectors += 1;
+    }
+    assert_eq!(keyed_vectors, 2, "the two recursion-size vectors");
 }
 
 #[test]

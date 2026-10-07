@@ -90,7 +90,7 @@ fn self_field_node(body: &mut BodyBuilder, value_type: ValueType) -> NodeId {
 /// type, or a [`ModelRefusal`] when a domain package's `ScalarTypeRecord` is
 /// malformed (its own lower greater than its upper) — a real defect in
 /// caller-supplied domain package data, refused rather than panicked on.
-fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefusal> {
+fn field_domain_type(domain: Option<(i128, i128)>) -> Result<ValueType, ModelRefusal> {
     match domain {
         Some((lower, upper)) => {
             let interval =
@@ -130,9 +130,9 @@ fn presence_condition(body: &mut BodyBuilder) -> Node {
 /// [`PostconditionClause::Comparison`] clause describes.
 fn comparison_condition(
     body: &mut BodyBuilder,
-    domain: Option<(i64, i64)>,
+    domain: Option<(i128, i128)>,
     operator: OrderingOperator,
-    literal: i64,
+    literal: i128,
 ) -> Result<Node, ModelRefusal> {
     let field = self_field_node(body, field_domain_type(domain)?);
     let literal_node = body.push(Node {
@@ -159,7 +159,7 @@ fn comparison_condition(
 /// itself is malformed (see [`field_domain_type`]).
 fn established_facts(
     clauses: &[&PostconditionClause],
-    domain: Option<(i64, i64)>,
+    domain: Option<(i128, i128)>,
 ) -> Result<Established, ModelRefusal> {
     let mut body = BodyBuilder::default();
     let condition = |body: &mut BodyBuilder, clause: &PostconditionClause| match clause {

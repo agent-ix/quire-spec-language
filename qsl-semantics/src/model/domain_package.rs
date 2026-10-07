@@ -218,9 +218,9 @@ pub struct ScalarTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
     /// Inclusive lower bound.
-    pub lower: i64,
+    pub lower: i128,
     /// Inclusive upper bound.
-    pub upper: i64,
+    pub upper: i128,
 }
 
 /// One operation parameter: `{key, value_type, multiplicity}`.
@@ -293,7 +293,7 @@ pub enum PostconditionClause {
         /// The stated ordering between `self.<field>` and `literal`.
         operator: OrderingOperator,
         /// The integer literal `self.<field>` is compared against.
-        literal: i64,
+        literal: i128,
     },
 }
 

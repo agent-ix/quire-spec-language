@@ -57,7 +57,7 @@ fn object_type(
     })
 }
 
-fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
+fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
         lower,

@@ -52,6 +52,57 @@ impl TypeNames for Scope {
     }
 }
 
+/// Which integer of a type form or an expression lies outside i128.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IntegerSite {
+    /// An `Int[lo, hi]` type form's lower bound.
+    Lower,
+    /// An `Int[lo, hi]` type form's upper bound.
+    Upper,
+    /// An integer literal of an expression.
+    Literal,
+}
+
+/// The i128 limit an integer crosses.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum I128Limit {
+    /// `i128::MIN`, crossed by a value below the range.
+    Min,
+    /// `i128::MAX`, crossed by a value above the range.
+    Max,
+}
+
+/// FR-091's `IntegerOutsideI128` cause: an integer bound or literal outside
+/// `i128::MIN..=i128::MAX`. The span of the type form or literal is carried
+/// by the refusal that holds this cause.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct IntegerOutsideI128 {
+    /// The bound or literal it is.
+    pub site: IntegerSite,
+    /// The integer as written, as its canonical decimal string.
+    pub value: String,
+    /// The limit it crosses.
+    pub limit: I128Limit,
+}
+
+impl IntegerOutsideI128 {
+    /// `Some` when `value` lies outside `i128::MIN..=i128::MAX`.
+    pub(crate) fn of(site: IntegerSite, value: &Integer) -> Option<Self> {
+        let limit = if *value < Integer::from(i128::MIN) {
+            I128Limit::Min
+        } else if *value > Integer::from(i128::MAX) {
+            I128Limit::Max
+        } else {
+            return None;
+        };
+        Some(Self {
+            site,
+            value: value.to_string(),
+            limit,
+        })
+    }
+}
+
 /// Why a type form did not resolve.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeFormFault {
@@ -65,6 +116,8 @@ pub enum TypeFormFault {
     /// An `Int` or `Rational` interval whose lower bound is above its
     /// upper bound (`IntegerInterval`'s own refusal).
     EmptyInterval,
+    /// An `Int` bound outside `i128::MIN..=i128::MAX` (FR-091).
+    IntegerOutsideI128(IntegerOutsideI128),
     /// A `Rational` denominator interval that reaches below one
     /// (`RationalDomain`'s own refusal).
     DenominatorBelowOne,
@@ -96,6 +149,7 @@ impl TypeFormError {
                 name,
                 loci: vec![location.clone()],
             },
+            TypeFormFault::IntegerOutsideI128(outside) => CheckCause::IntegerOutsideI128(outside),
             TypeFormFault::Malformed
             | TypeFormFault::EmptyInterval
             | TypeFormFault::DenominatorBelowOne
@@ -210,6 +264,17 @@ fn interval(form: &TypeForm, lower: usize) -> Result<IntegerInterval, TypeFormEr
         .map_err(|_| fault(form, TypeFormFault::EmptyInterval))
 }
 
+/// An `Int[lo, hi]` form's interval, each bound inside i128 (FR-091). The
+/// lower bound is judged before the upper.
+fn int_interval(form: &TypeForm) -> Result<IntegerInterval, TypeFormError> {
+    for (index, site) in [(0, IntegerSite::Lower), (1, IntegerSite::Upper)] {
+        if let Some(outside) = IntegerOutsideI128::of(site, &bound_integer(form, index)?) {
+            return Err(fault(form, TypeFormFault::IntegerOutsideI128(outside)));
+        }
+    }
+    interval(form, 0)
+}
+
 /// `Float32[mode]`/`Float64[mode]`; the bare spelling is strict `exact`
 /// (FR-091-OQ-4).
 fn float_type(form: &TypeForm, width: IeeeWidth) -> Result<ValueType, TypeFormError> {
@@ -247,7 +312,7 @@ fn resolve_builtin<'f>(
     let leaf = match builtin {
         BuiltinType::Boolean => Ok(ValueType::Boolean),
         BuiltinType::Integer => Ok(ValueType::Integer),
-        BuiltinType::Int => interval(form, 0).map(ValueType::Int),
+        BuiltinType::Int => int_interval(form).map(ValueType::Int),
         BuiltinType::Rational => RationalDomain::new(interval(form, 0)?, interval(form, 2)?)
             .map(ValueType::Rational)
             .map_err(|_| fault(form, TypeFormFault::DenominatorBelowOne)),

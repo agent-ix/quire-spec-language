@@ -540,6 +540,11 @@ names different artifacts in each.
 | TC-906 | Composite and leaf-family arguments replay, and refuse by kind, by domain and at the request's limits | Unit | P1 | FR-098-AC-8, FR-098-AC-9, FR-098-AC-10 | 🚧 Passed locally except the union cases (QSL-503) and a quantity-typed parameter in source (STD-113) |
 | TC-907 | A composite equality-parity claim settles Diverged, Agrees or refused when falsified, and by rows V-1 to V-5 when verified | Unit | P1 | FR-358-AC-1, FR-358-AC-2, FR-358-AC-3, FR-358-AC-4, FR-358-AC-5, FR-358-AC-6, FR-358-AC-7, FR-358-AC-8 | 🚧 Passed locally except the `Text` leaf (QSL-646) and the source-level `k` cases (tested on the derivation seam) |
 | TC-908 | The replay facade compiles QSL source to the checked-package bytes the spine emits | Integration | P2 | FR-060-AC-5, FR-060-AC-6, FR-060-AC-7 | ✅ Passed locally |
+| TC-909 | Integer bounds and literals up to i128 check, and one beyond refuses at check | Unit | P1 | FR-091-AC-36, FR-091-AC-37, FR-091-AC-38 | ✅ Passed locally |
+| TC-910 | Wide integer ranges key to their vectors, and counters keep one exact spelling | Unit | P1 | FR-092-AC-14, FR-092-AC-15 | ✅ Passed locally; step 3 reads QSpec's `integer_encoding_vectors` under `QSPEC_DIR` (`make conformance`) |
+| TC-911 | Field refinement decides wide integer domains and literals exactly | Unit | P1 | FR-056-AC-16, FR-082-AC-9 | ✅ Passed locally |
+| TC-912 | The IR wire round-trips integer bounds and literals up to i128 | Integration | P1 | FR-033-AC-6 | 🚧 Planned (waits on IR-662) |
+| TC-913 | A wide-range source recompiles to its package_id and replays | Integration | P1 | FR-098-AC-11 | ✅ Passed locally |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 Planned |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 Planned |

@@ -64,8 +64,8 @@ pub struct WitnessField {
 pub enum WitnessValue {
     /// A Boolean value.
     Boolean(bool),
-    /// A signed 64-bit integer value.
-    Integer(i64),
+    /// A signed 128-bit integer value (FR-091's i128 ceiling).
+    Integer(i128),
     /// An exact integer of any size, as a witness value text holds it.
     ExactInteger(Integer),
     /// An enum member.

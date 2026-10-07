@@ -1369,7 +1369,7 @@ mod tests {
         )];
         // B2's second half: a distinctive concrete-argument value on the
         // `Input` arm.
-        let distinctive_value: i64 = 918_273_645;
+        let distinctive_value: i128 = 918_273_645;
         request_wire.source = ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
             parameter: WireNodeId::from_digest([42; 32]),
             value: crate::witness::WitnessValue::Integer(distinctive_value),

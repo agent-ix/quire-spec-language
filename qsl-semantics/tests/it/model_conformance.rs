@@ -77,7 +77,7 @@ fn field_member_redefining(
     })
 }
 
-fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
+fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
         lower,
@@ -848,7 +848,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
     let redefining_key = DeclarationKey::fixture("model.B.cs");
     let redefined_key = DeclarationKey::fixture("model.A.c");
 
-    let contained = |upper: i64| {
+    let contained = |upper: i128| {
         let mut records = r08_base();
         records.push(field_member_redefining(
             "model.B.cs",
@@ -894,6 +894,82 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (f), got {other:?}"),
+    }
+}
+
+/// FR-082-AC-9 (TC-911 step 3): a field of scalar type `Wide`
+/// (`[0, u64::MAX]`) redefined by a field of `Narrow` (`[0, i64::MAX + 1]`)
+/// is decided exactly: a postcondition `self.f <= 9223372036854775808`
+/// admits the redefinition, `self.f <= 9223372036854775809` refuses
+/// `unproved-refinement` with obligation `field-domain`.
+#[trace("TC-911", "FR-082-AC-9")]
+#[test]
+fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
+    let redefining_key = DeclarationKey::fixture("model.B.fn");
+    let redefined_key = DeclarationKey::fixture("model.A.f");
+    let package_stating = |literal: i128| {
+        DomainPackage::new(
+            DomainPackageRef::fixture("bundle.wide"),
+            vec![
+                object_type("model.A", vec![]),
+                object_type("model.B", vec!["model.A"]),
+                scalar_type("model.Wide", 0, i128::from(u64::MAX)),
+                scalar_type("model.Narrow", 0, 9_223_372_036_854_775_808),
+                field_member("model.A.f", "model.A", "model.Wide", mult(1, Some(1))),
+                operation(
+                    "model.A.set",
+                    "model.A",
+                    vec![],
+                    None,
+                    vec!["model.A.f"],
+                    vec![],
+                    vec![],
+                    vec![],
+                ),
+                field_member_redefining(
+                    "model.B.fn",
+                    "model.B",
+                    "model.Narrow",
+                    mult(1, Some(1)),
+                    Some("model.A.f"),
+                    vec![],
+                ),
+                operation_redefining(
+                    "model.B.set",
+                    "model.B",
+                    vec![],
+                    None,
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![PostconditionClause::Comparison {
+                        field: DeclarationKey::fixture("model.B.fn"),
+                        operator: OrderingOperator::LessOrEqual,
+                        literal,
+                    }],
+                    Some("model.A.set"),
+                ),
+            ],
+        )
+    };
+    match check_field_refinement_obligation(
+        &ModelIndex::build(package_stating(9_223_372_036_854_775_808)),
+        &redefining_key,
+        &redefined_key,
+    ) {
+        Ok(ConformanceOutcome::Compatible) => {}
+        other => panic!("expected Compatible at 2^63, got {other:?}"),
+    }
+    match check_field_refinement_obligation(
+        &ModelIndex::build(package_stating(9_223_372_036_854_775_809)),
+        &redefining_key,
+        &redefined_key,
+    ) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
+            assert!(failures[0].detail.contains("field-domain"));
+        }
+        other => panic!("expected Refused (field-domain) at 2^63 + 1, got {other:?}"),
     }
 }
 

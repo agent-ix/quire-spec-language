@@ -143,7 +143,7 @@ impl Witness {
     /// integer, is skipped here, where
     /// [`Self::decode`] reads each entry as its binding's declared type and
     /// refuses a malformed one.
-    pub fn concrete_values(&self) -> Vec<(String, i64)> {
+    pub fn concrete_values(&self) -> Vec<(String, i128)> {
         self.raw_bindings()
             .into_iter()
             .filter_map(|entry| {
@@ -226,8 +226,9 @@ pub enum WitnessValueType {
     /// A Boolean, written `0` (`false`) or `1` (`true`) in a transcript, as
     /// a backend's one-byte encoding carries it.
     Boolean,
-    /// A signed 64-bit integer, written in decimal in a transcript.
-    I64,
+    /// A signed 128-bit integer (FR-091's i128 ceiling), written in decimal
+    /// in a transcript.
+    I128,
     /// Every other parameter: a witness value text (FR-070), the escaped RFC
     /// 8785 encoding of the value in its typed canonical form.
     Canonical,
@@ -243,7 +244,7 @@ impl WitnessValueType {
                 "1" => Ok(WitnessValue::Boolean(true)),
                 _ => Err(EntryFault::Scalar),
             },
-            Self::I64 => text
+            Self::I128 => text
                 .parse()
                 .map(WitnessValue::Integer)
                 .map_err(|_| EntryFault::Scalar),
@@ -396,8 +397,8 @@ pub enum ReplaySource {
 
 impl ReplaySource {
     /// This source's measured encoded size: a witness transcript's length,
-    /// or per assignment a 32-byte node id plus its value, which is at most 8
-    /// bytes for a scalar and the byte length of the escaped witness value
+    /// or per assignment a 32-byte node id plus its value, which is 8 bytes
+    /// for a Boolean, 16 for an i128 integer and the byte length of the escaped witness value
     /// text for any other (FR-070).
     pub(crate) fn measured_bytes(&self) -> usize {
         match self {
@@ -406,7 +407,8 @@ impl ReplaySource {
                 .iter()
                 .map(|assignment| {
                     32_usize.saturating_add(match &assignment.value {
-                        WitnessValue::Boolean(_) | WitnessValue::Integer(_) => 8,
+                        WitnessValue::Boolean(_) => 8,
+                        WitnessValue::Integer(_) => 16,
                         other => other.value_text_len(),
                     })
                 })
@@ -588,7 +590,7 @@ mod witness_tests {
     fn integer(parameter: WireNodeId) -> WitnessBinding {
         WitnessBinding {
             parameter,
-            value_type: WitnessValueType::I64,
+            value_type: WitnessValueType::I128,
         }
     }
 
@@ -690,22 +692,22 @@ mod witness_tests {
     /// FR-098-AC-2: `decode` reads one typed value per binding, in binding
     /// order whatever order the bindings list their parameters in, joined by
     /// parameter node id from entries in ascending node id order: `0`/`1` as a Boolean binding's `false`/`true`, and
-    /// decimal text as an integer binding's value, `i64::MIN` and
-    /// `i64::MAX` included.
+    /// decimal text as an integer binding's value, `i128::MIN` and
+    /// `i128::MAX` included.
     #[trace("TC-444", "FR-098-AC-2")]
     #[test]
     fn tc_444_decode_reads_typed_values_by_parameter_node_id() {
         let flag = WireNodeId::from_digest([1; 32]);
         let low = WireNodeId::from_digest([2; 32]);
         let high = WireNodeId::from_digest([3; 32]);
-        let values = format!("{flag}=1;{low}={};{high}={}", i64::MIN, i64::MAX);
+        let values = format!("{flag}=1;{low}={};{high}={}", i128::MIN, i128::MAX);
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
             witness.decode(&[boolean(flag), integer(low), integer(high)]),
             Ok(vec![
                 WitnessValue::Boolean(true),
-                WitnessValue::Integer(i64::MIN),
-                WitnessValue::Integer(i64::MAX),
+                WitnessValue::Integer(i128::MIN),
+                WitnessValue::Integer(i128::MAX),
             ])
         );
         let off = Witness::parse(assertion("h", "c", &format!("{flag}=0"))).unwrap();
@@ -720,7 +722,7 @@ mod witness_tests {
     /// bound parameter, an entry that is not a `name=value` pair, and an
     /// entry whose text is not a value of its
     /// binding's type (`2` for a Boolean, non-decimal text and a value past
-    /// `i64::MAX` for an integer).
+    /// `i128::MAX` for an integer).
     #[trace("TC-444", "FR-098-AC-4")]
     #[test]
     fn tc_444_decode_refuses_each_join_failure_with_its_own_variant() {
@@ -756,13 +758,13 @@ mod witness_tests {
                 fault: EntryFault::Scalar,
             })
         );
-        let past_max = format!("{}0", i64::MAX);
+        let past_max = format!("{}0", i128::MAX);
         for text in ["not-a-number", past_max.as_str()] {
             assert_eq!(
                 decode(format!("{x}={text}"), &[integer(x)]),
                 Err(DecodeRefusal::Malformed {
                     parameter: x,
-                    value_type: WitnessValueType::I64,
+                    value_type: WitnessValueType::I128,
                     fault: EntryFault::Scalar,
                 })
             );

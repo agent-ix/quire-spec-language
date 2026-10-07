@@ -134,7 +134,7 @@ pub(crate) struct RecordIndex {
     /// by key.
     operations: BTreeMap<DeclIdx, usize>,
     /// The last scalar record's `[lower, upper]` under each key.
-    scalars: HashMap<DeclIdx, (i64, i64)>,
+    scalars: HashMap<DeclIdx, (i128, i128)>,
     /// Each member's owning type, from the last member record under its key.
     member_owner: HashMap<DeclIdx, DeclIdx>,
     /// Each owner's field members, in record order.
@@ -249,7 +249,7 @@ impl ModelIndex {
     }
 
     /// The `[lower, upper]` of the scalar type declared under `key`.
-    pub(crate) fn scalar_bounds(&self, key: &DeclarationKey) -> Option<(i64, i64)> {
+    pub(crate) fn scalar_bounds(&self, key: &DeclarationKey) -> Option<(i128, i128)> {
         self.records.scalar_bounds(key)
     }
 
@@ -541,7 +541,7 @@ impl RecordIndex {
     }
 
     /// The `[lower, upper]` of the scalar type declared under `key`.
-    pub(crate) fn scalar_bounds(&self, key: &DeclarationKey) -> Option<(i64, i64)> {
+    pub(crate) fn scalar_bounds(&self, key: &DeclarationKey) -> Option<(i128, i128)> {
         self.scalars.get(&self.position(key)?).copied()
     }
 

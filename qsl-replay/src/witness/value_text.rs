@@ -26,7 +26,7 @@ pub struct ValueTextError(#[from] CanonicalError);
 /// It tells the refusals apart without carrying any of the entry's content.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntryFault {
-    /// A `Boolean` or integer entry that is not `0`/`1` or a decimal `i64`.
+    /// A `Boolean` or integer entry that is not `0`/`1` or a decimal `i128`.
     Scalar,
     /// A `%` that does not begin one of the four escapes, an escape in
     /// lowercase hex, or a raw `<`, `>` or `;` in the escaped text.

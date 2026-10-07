@@ -48,8 +48,8 @@
 //! for the anonymous shape, `owner` left out and `declaration` cleared). The only
 //! JSON numbers in a preimage are
 //! `recursion`'s size and ordinal, a `group_reference` ordinal and an
-//! `operation.member` position; each is refused when RFC 8785 cannot render
-//! it exactly (outside the IEEE-754 safe range) rather than hashed. No
+//! `operation.member` position; each is a counter ([`Counter`]): the JSON
+//! number up to 2^53-1 and its decimal string beyond, never refused. No
 //! `Debug` or `Display` formatting of a Rust value is on the path except the
 //! canonical wire spelling `Integer` (the complete-V1 canonical decimal)
 //! documents as a contract. A node key, a group digest and a signature are
@@ -79,6 +79,7 @@ use quire_semantic_value::semantic_node::IdentityRefusal;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
 
+use crate::value::counter::Counter;
 use crate::value::definition::DefinitionReference;
 use crate::value::member::Member;
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
@@ -88,9 +89,6 @@ pub(crate) const APPLICATION_NODE_VERSION: &str = "quire.application-node/v1";
 
 /// FR-092's structural-node preimage version.
 pub(crate) const STRUCTURAL_NODE_VERSION: &str = "quire.structural-node/v1";
-
-/// The largest integer magnitude RFC 8785 renders exactly (2^53 - 1).
-const JCS_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 /// The owner of a declared node (ADR-013 O-04): the declaring source unit's
 /// `SourceOwner{kind: "source", authority, identity}`, a required E3 input
@@ -1381,15 +1379,6 @@ pub(crate) struct KeyedPreimage {
     pub(crate) key: NodeKey,
 }
 
-/// Where a preimage number sits.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IntegerSite {
-    /// An `operation.member` position.
-    MemberPosition,
-    /// The `recursion` group size.
-    RecursionSize,
-}
-
 /// Why no key exists for a node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum NodeKeyRefusal {
@@ -1424,14 +1413,6 @@ pub enum NodeKeyRefusal {
     /// A `binding` term's name is empty.
     #[error("a binding name is empty")]
     EmptyBindingName,
-    /// A number lies outside the range RFC 8785 renders exactly.
-    #[error("{site:?} {value} is outside the RFC 8785 exact-integer range")]
-    UnsafeInteger {
-        /// Where the number sits.
-        site: IntegerSite,
-        /// The offending value.
-        value: u64,
-    },
     /// A recursion group has no member, names one member twice, or a
     /// placeholder names no member: an internal fault of the caller.
     #[error("a recursion group is empty, names a member twice, or names no member")]
@@ -1476,15 +1457,6 @@ fn encode_refusal(error: quire_canonical::Error) -> NodeKeyRefusal {
     match IdentityRefusal::from(error) {
         IdentityRefusal::NonCanonical => NodeKeyRefusal::Encode { reason },
         identity => NodeKeyRefusal::Identity(identity),
-    }
-}
-
-/// Refuse `value` at `site` when RFC 8785 cannot render it exactly.
-fn exact_integer(site: IntegerSite, value: u64) -> Result<(), NodeKeyRefusal> {
-    if value <= JCS_SAFE_INTEGER {
-        Ok(())
-    } else {
-        Err(NodeKeyRefusal::UnsafeInteger { site, value })
     }
 }
 
@@ -1606,10 +1578,6 @@ pub(crate) fn group_keys(
         ordinals[member] = ordinal;
     }
     let size = classes.len();
-    exact_integer(
-        IntegerSite::RecursionSize,
-        u64::try_from(size).map_err(|_| NodeKeyRefusal::InvalidGroup)?,
-    )?;
     let ordinal_of: BTreeMap<NodeKey, usize> = handles
         .iter()
         .zip(&ordinals)
@@ -1622,8 +1590,8 @@ pub(crate) fn group_keys(
     for (ordinal, member) in representatives.iter().enumerate() {
         let recursion = RecursionPreimage {
             group: None,
-            ordinal,
-            size,
+            ordinal: Counter::from(ordinal),
+            size: Counter::from(size),
         };
         let (preimage, _) = typed_preimage(
             &members[*member],
@@ -1639,8 +1607,8 @@ pub(crate) fn group_keys(
     for (member, ordinal) in members.iter().zip(&ordinals) {
         let recursion = RecursionPreimage {
             group: Some(digest_hex.clone()),
-            ordinal: *ordinal,
-            size,
+            ordinal: Counter::from(*ordinal),
+            size: Counter::from(size),
         };
         let (preimage, _) = typed_preimage(member, Walk { group: &ordinal_of }, Some(recursion))?;
         keys.push(keyed(&preimage, identity)?);
@@ -1850,7 +1818,9 @@ fn typed_preimage<'a>(
     let semantic_type = node
         .semantic_type
         .map(|semantic_type| match walk.ordinal(semantic_type) {
-            Some(ordinal) => SemanticTypePreimage::Group(GroupReference { ordinal }),
+            Some(ordinal) => SemanticTypePreimage::Group(GroupReference {
+                ordinal: Counter::from(ordinal),
+            }),
             None => SemanticTypePreimage::Node(NodeRef(semantic_type)),
         });
     let preimage = Preimage {
@@ -1927,7 +1897,7 @@ enum SemanticTypePreimage {
 #[derive(Serialize, FixedShape)]
 #[serde(tag = "term", rename = "group_reference")]
 struct GroupReference {
-    ordinal: usize,
+    ordinal: Counter,
 }
 
 #[derive(Serialize, FixedShape)]
@@ -1939,8 +1909,8 @@ struct DeclarationPreimage<'a> {
 struct RecursionPreimage {
     #[serde(skip_serializing_if = "Option::is_none")]
     group: Option<String>,
-    ordinal: usize,
-    size: usize,
+    ordinal: Counter,
+    size: Counter,
 }
 
 /// A body term as it enters the preimage: [`SemanticTerm`] with references
@@ -1977,7 +1947,7 @@ enum PreimageLeaf<'a> {
         target: NodeRef,
     },
     GroupReference {
-        ordinal: usize,
+        ordinal: Counter,
     },
     DependencyReference {
         package: PackageRef,
@@ -2127,7 +2097,9 @@ impl Walk<'_> {
                 PreimageTerm::Leaf(PreimageLeaf::Literal { ty: *ty, value })
             }
             LeafTerm::Reference { target } => match self.ordinal(target.0) {
-                Some(ordinal) => PreimageTerm::Leaf(PreimageLeaf::GroupReference { ordinal }),
+                Some(ordinal) => PreimageTerm::Leaf(PreimageLeaf::GroupReference {
+                    ordinal: Counter::from(ordinal),
+                }),
                 None => PreimageTerm::Leaf(PreimageLeaf::Reference { target: *target }),
             },
             // ADR-015 D-5: the dependency's `package_id` and node id enter
@@ -2223,9 +2195,6 @@ impl Walk<'_> {
                 result_type,
                 arguments,
             }) => {
-                if let Some(Member::Position { position, .. }) = &operation.member {
-                    exact_integer(IntegerSite::MemberPosition, *position)?;
-                }
                 if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
                     self.type_position(declaration)?;
                 }

@@ -156,6 +156,7 @@ per-group counts before moving this row to Passed.
 | FR-056 | FR-056-AC-13 | TC-145 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`, `qsl-semantics/tests/it/identity_golden_vectors.rs`) |
 | FR-056 | FR-056-AC-14 | TC-145 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`) |
 | FR-056 | FR-056-AC-15 | TC-145 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`) |
+| FR-056 | FR-056-AC-16 | TC-911 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`) |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is

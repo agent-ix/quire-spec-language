@@ -145,7 +145,7 @@ fn request(
 }
 
 fn input(parameter: WireNodeId, value: i64) -> ReplaySource {
-    typed_input(parameter, WitnessValue::Integer(value))
+    typed_input(parameter, WitnessValue::Integer(i128::from(value)))
 }
 
 fn typed_input(parameter: WireNodeId, value: WitnessValue) -> ReplaySource {
@@ -2931,4 +2931,102 @@ mod operator_arm {
         let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
         assert_eq!(kind(report.result()), "refused");
     }
+}
+
+/// `function wide using v(x: <parameter>): Boolean pure { <body> }`.
+fn wide_source(parameter: &str, body: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+         function wide using v(x: {parameter}): Boolean pure {{ {body} }}\n"
+    )
+}
+
+/// FR-098-AC-11 (TC-913 steps 1 to 4): a proved package whose range is
+/// beyond `i64` recompiles from its byte provision to the request's
+/// `package_id`, and an `Input` assignment at the range's edge settles
+/// `reproduced-without-witness` with the call's result `false`.
+#[trace("TC-913", "FR-098-AC-11")]
+#[test]
+fn tc_913_a_wide_integer_input_replays_to_its_package_id() {
+    let cases: [(&str, &str, i128); 4] = [
+        (
+            "Int[0, 18446744073709551615]",
+            "x <= 18446744073709551614",
+            i128::from(u64::MAX),
+        ),
+        (
+            "Int[0, 9223372036854775808]",
+            "x <= 9223372036854775807",
+            9_223_372_036_854_775_808,
+        ),
+        (
+            "Int[0, 18446744073709551616]",
+            "x <= 18446744073709551615",
+            18_446_744_073_709_551_616,
+        ),
+        (
+            "Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]",
+            "x > -170141183460469231731687303715884105728",
+            i128::MIN,
+        ),
+    ];
+    for (declared, body, value) in cases {
+        let source = wide_source(declared, body);
+        let compiled = spine(&source, &BTreeMap::new());
+        let wire = request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["wide"]),
+            typed_input(
+                parameter(&compiled, "wide", 0),
+                WitnessValue::Integer(value),
+            ),
+        );
+        let ReplayResult::Input(result) =
+            replay(wire, ReplayLimits::default()).unwrap_or_else(|refusal| {
+                panic!("{declared}: {refusal:?}");
+            })
+        else {
+            panic!("{declared}: an Input-sourced request settles on the Input arm");
+        };
+        assert_eq!(
+            result.settlement(),
+            InputSettlement::ReproducedWithoutWitness,
+            "{declared}"
+        );
+        assert_eq!(
+            result.value(),
+            Some(EvaluatedValue::Boolean(false)),
+            "{declared}"
+        );
+    }
+}
+
+/// FR-098-AC-11 (TC-913 step 5): the u64-field model, QSL's stand-in for
+/// CG's wide-range model, recompiles from its byte provision alone to the
+/// request's `package_id`.
+#[trace("TC-913", "FR-098-AC-11")]
+#[test]
+fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+         record Meter {{ reading: Int[0, 18446744073709551615]; }}\n\
+         function meter_over using v(m: Meter): Boolean pure {{ m.reading <= 18446744073709551614 }}\n"
+    );
+    let compiled = spine(&source, &BTreeMap::new());
+    let wire = request(
+        source.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&["meter_over"]),
+        ReplaySource::Input(vec![]),
+    );
+    let request =
+        ReplayRequest::decode(wire, ReplayLimits::default()).expect("the request decodes");
+    let limits = request_limits(request.stage_limits(), ReplayLimits::default())
+        .expect("the request's limits");
+    let recompiled = recompile(&request, &limits).expect("the byte provision recompiles");
+    assert_eq!(
+        recompiled.emitted.package().package_id(),
+        compiled.emitted.package_id()
+    );
 }

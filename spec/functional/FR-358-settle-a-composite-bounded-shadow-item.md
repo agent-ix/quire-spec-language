@@ -171,8 +171,7 @@ strengths and its `ShadowCounterexample` row for a falsified shadow harness.
 ### Common steps
 
 Both entries SHALL run these steps in order, stopping at the first refusal.
-A refusal settles as `TerminalValue::from_replay_refusal` gives (FR-069),
-which is `Inconclusive(ReplayRefused(code))`. It takes precedence over every
+A refusal settles as `TerminalValue::from_replay_refusal` gives (FR-069, FR-121-AC-16): `Failed` for a fault (`ReplayRefusal::Fault`, or `Admission` with `AdmissionFailure::Fault`), otherwise `Inconclusive(ReplayRefused(code))`. It takes precedence over every
 settlement row, including the vacuous row V-3.
 
 1. **Recompile and tie the package.** Recompile the request's package by

@@ -180,7 +180,7 @@ fn invariant(what: &'static str) -> Stopped {
     ReplayRefusal::Fault(InternalFault::new("replay", what)).into()
 }
 
-/// An integer leaf: the scalar `i64` form or an exact integer.
+/// An integer leaf: the scalar `i128` form or an exact integer.
 fn integer_of(value: &WitnessValue) -> Option<Integer> {
     match value {
         WitnessValue::Integer(number) => Some(Integer::from(*number)),

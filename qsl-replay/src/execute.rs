@@ -1114,7 +1114,7 @@ fn arguments(
 }
 
 /// The witness type a parameter of `value_type` is read as: `Boolean` for
-/// `Boolean`, `I64` for an integer type, and `Canonical` (a witness value
+/// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
 /// text) for every other value type. A `Population<T>` is not a value, so it
 /// has no witness form and refuses `WrongValueKind` before the call.
 fn witness_type(
@@ -1123,7 +1123,7 @@ fn witness_type(
 ) -> Result<WitnessValueType, ReplayRefusal> {
     match value_type {
         ValueType::Boolean => Ok(WitnessValueType::Boolean),
-        ValueType::Integer | ValueType::Int(_) => Ok(WitnessValueType::I64),
+        ValueType::Integer | ValueType::Int(_) => Ok(WitnessValueType::I128),
         ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Float(_)

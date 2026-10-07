@@ -32,6 +32,7 @@ compiler's lowering with the code generator; that repository also owns
 | FR-033 | FR-033-AC-3 | TC-111 | ✅ Tested |
 | FR-033 | FR-033-AC-4 | TC-111 | ✅ Tested |
 | FR-033 | FR-033-AC-5 | TC-111 | ✅ Tested |
+| FR-033 | FR-033-AC-6 | TC-912 | 🚧 Planned (waits on IR-662) |
 | FR-034 | FR-034-AC-1 | TC-112 | ✅ Tested |
 | FR-034 | FR-034-AC-2 | TC-112 | ✅ Tested |
 | FR-034 | FR-034-AC-3 | TC-112 | ✅ Tested |
