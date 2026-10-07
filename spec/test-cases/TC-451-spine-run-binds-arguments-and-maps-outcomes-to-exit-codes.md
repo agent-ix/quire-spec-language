@@ -35,7 +35,7 @@ result is a record) and `seven(): Digit { 7 }`.
    `origin`.
 6. Run a `1-draft` source with a syntax error; run a `1-draft` source
    declaring `inv(x: Digit): Boolean { 1 / x > 0 }`.
-7. Run `seven` with `work_units` 0.
+7. Run `seven` with `accounting` `{"work_units": 0}`.
 
 Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
 `#[trace("TC-451", "FR-100-AC-5")]` (steps 5 and 6) and

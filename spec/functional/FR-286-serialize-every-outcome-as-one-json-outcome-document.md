@@ -76,14 +76,15 @@ the same document (QSpec FR-300-AC-3). The document's members are:
     FR-100's undefined tables spell it, such as `sum-out-of-domain` or
     `precondition-false`.
   - `{"kind": "incomplete", "limit": {"kind": K, "bound": B, "counter": C,
-    "field": F}}`, the exhausted limit as FR-277 names one: `K` the limit
+    "field": F, "setting": S}}`, the exhausted limit as FR-277 names one: `K` the limit
     kind, the exhausted counter's `quire.value.accounting/v1` member name
     (such as `work_units`); `B` the configured value; `C` the counter at the failed
     charge as FR-277 defines it (the consumed value plus the denied amount for
     a cumulative counter, the denied size for a high-water counter); `F` the name of the `execute`
     limits field that sets the bound, which for an accounting counter is the
-    `ScalarLimits` field of the same name. `B` and `C` are ASCII decimal
-    strings in FR-038's integer spelling.
+    `ScalarLimits` field of the same name; `S` the FR-255 setting that
+    raises it, `accounting.<K>` for an accounting counter. `B` and `C` are
+    ASCII decimal strings in FR-038's integer spelling.
 
 `quire-outcome/1` is the outcome document of every operation, `execute`
 included; it replaces FR-100's `spine-run-result/1` when the driver's verbs
