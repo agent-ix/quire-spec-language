@@ -476,16 +476,18 @@ third-party provider cannot add an arm, so CG's closed kind gains one
 variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
 
 1. **Manifest checked in full.** Its arm settles from the provider's manifest
-   alone, against the item's extent classification, under QSpec FR-290's
-   rules. The descriptor CG receives is a QSpec FR-331 backend-provider/v1
-   `BackendDescriptor` (`proposals/backend-provider-v1/schema.json`): its
-   `advertises` (kind, mode) pairs, its `domains` (the ADR-014 domain kinds
-   for which the backend accepts a finite bound) and its `bounds`. The
-   `bounds` are the published default of each limit the backend applies;
-   they are not admission maxima, and routing never compares an item's bound
-   against them. That descriptor is CG's own descriptor for the Process
-   variant, not `qsl_route::BackendDescriptor`, which holds only (kind, mode).
-   It never calls the plugin.
+   alone, against the item's extent classification. QSpec FR-290 owns the
+   check order and every disposition and cause; this ADR does not restate
+   them. The descriptor CG receives is a QSpec FR-331 backend-provider/v1
+   `BackendDescriptor` (`proposals/backend-provider-v1/schema.json`). It
+   carries the `advertises` (kind, mode) pairs and `domains`, the ADR-014
+   domain kinds for which the backend accepts a finite bound. Its `bounds`
+   are the published default of each limit the backend applies, not
+   admission maxima. Every `domains` defect in a provider's hello is a
+   per-registration `invalid_capability` refusal under FR-290. That
+   descriptor is CG's own descriptor for the Process variant, not
+   `qsl_route::BackendDescriptor`, which holds only (kind, mode). It never
+   calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor
@@ -501,42 +503,9 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    reader and settles per PL-7 (`refuted` only through S6a replay; `proved`
    keeps the basis label trusted). Each CG arm for `Process` is a typed
    pass-through or empty output, never a panic.
-4. **Disposition from the manifest alone.** CG checks an item in this
-   order, and the first check that fails settles it:
-   1. The manifest advertises a mode for the item's kind. This is QSpec
-      FR-290's candidate table: a candidate that does not advertise the
-      item's kind settles `invalid-request`,
-      `invalid_capability`/`inconsistent-candidates`, and an empty candidate
-      set settles `unsupported`,
-      `unsupported_projection`/`unsupported-requested-capability`.
-   2. The item's domain kinds are in the manifest's `domains`. The domain
-      kinds are read from the item's own extent, never from the manifest's
-      `bounds` or `domains`. This step applies only on a provider that
-      advertises `bounded` for the item's kind, and the backend-provider/v1
-      schema requires `domains` on every descriptor that advertises a
-      `bounded` mode, so the manifest's `domains` is always present here. A
-      provider that advertises only `unbounded` for the item's kind never
-      reaches this step. On a provider that advertises `bounded` for the
-      kind:
-      - a bounded item is checked over its extent's `bounds[].kind` (FR-331
-        `ProofBound.kind`); a bounded item with an empty `bounds[]` has no
-        domain kind to check and passes;
-      - an unbounded item is checked over its extent's `domains[].kind` only
-        when the provider advertises `bounded` and not `unbounded` for the
-        kind; an unbounded item on a provider that advertises `unbounded`
-        for its kind skips this step.
-
-      An item that fails it settles `unsupported`,
-      `unsupported_projection`/`unsupported-requested-capability`, whatever
-      `finite_bound_available` says.
-   3. FR-290's advertised-mode rows. An unbounded item on a provider that
-      advertises only `bounded` for its kind settles `requires-bound` when
-      `finite_bound_available` is true, and otherwise `unsupported`, warned,
-      `unsupported_projection`/`unbounded-extent`.
-
-   An item that passes all three routes; an unbounded item on a provider that
-   advertises `unbounded` for its kind therefore routes after step 1. There
-   is no default disposition.
+4. **Disposition from the manifest alone.** A `Process(id)` item settles
+   under QSpec FR-290's check order and outcomes, read from the descriptor
+   in ruling 1 and the item's extent. There is no default disposition.
 5. **Origin, option (b).** `ProviderOrigin` on the descriptor (PV-1) is how CG
    learns that a descriptor is a process provider. Not (a), a driver-supplied
    map beside the descriptors: it is a second source of truth that can
