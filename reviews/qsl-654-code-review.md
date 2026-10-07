@@ -67,3 +67,5 @@ FND-001 and FND-002 say the same thing about two types: the invariant lives in p
 | FND-004 | fixed d8d66205d | Retagged to TC-438/FR-097-AC-9, which states kind emission. |
 | FND-005 | fixed d8d66205d | The re-export is deleted from requirements.rs and family/mod.rs. All QSL users import `qsl_foundation::bound::DomainKind`. |
 | FND-006 | fixed d8d66205d | Added `a_pair_defect_is_reported_before_a_domains_defect` (unknown mode with empty `domains` refuses `unknown-mode`). |
+| FND-007 | deferred | Sent to the plan lead for a paired landing, not a code defect in this PR. The quire-driver `admit` call sites and quire-contract-codegen `ProofBound` construction (src/replay/state_clause.rs:933 plus three test files) land paired with this PR, because both consume QSL `branch = "main"`. |
+| FND-008 | fixed 741e59a80 | The unbounded-only test now also covers `loop`, `infinite-trace` and `Collection`, each refusing `NotBoundable` with the received label. |
