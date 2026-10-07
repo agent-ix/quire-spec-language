@@ -44,7 +44,7 @@ compiles through the spine (S1 to S4) and the command calls the one
 function the request names through S6a (`CheckedPackage::call`), with the
 arguments the request supplies. This is ADR-011 §5's spine `run`.
 
-The spine run entry is `qsl_replay::spine::run`. It compiles the source with
+The spine run entry is `qsl_replay::spine::run`. It takes the caller's `&Cancel` (ADR-029): a cancel at any stage or during the call returns `RunRefusal::Cancelled`, category incomplete, exit 22. It compiles the source with
 the FR-278 composition, selects the function by name lookup in the
 compiled package, binds the arguments, calls the function and returns the
 call's outcome. The root crate reaches it through `qsl_replay` and names

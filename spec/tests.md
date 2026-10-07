@@ -567,7 +567,7 @@ names different artifacts in each.
 | TC-768 | Core operations read no ambient input and write nothing to the process streams | Integration | P1 | FR-284-AC-2, FR-284-AC-3, FR-284-AC-4 | 🚧 |
 | TC-785 | The compile command is the composition of the front-end operations | Unit | P1 | FR-027-AC-11 | 🚧 |
 | TC-786 | run's exit statuses come from the exit function, with undefined at 10 | Unit | P1 | FR-100-AC-10, FR-100-AC-11 | ✅ |
-| TC-770 | Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only | Unit | P1 | FR-286-AC-1, FR-286-AC-2, FR-286-AC-3, FR-286-AC-4, FR-286-AC-5, FR-357-AC-12 | 🚧 |
+| TC-770 | Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only | Unit | P1 | FR-286-AC-1, FR-286-AC-2, FR-286-AC-3, FR-286-AC-4, FR-286-AC-5, FR-286-AC-6, FR-357-AC-12 | 🚧 |
 | TC-771 | QSL builds no binary, and command is a library operation that writes nothing | Integration | P1 | FR-287-AC-1, FR-287-AC-2 | 🚧 |
 | TC-769 | The exit function maps every category and multi-item outcome, with undefined at 10 | Unit | P1 | FR-285-AC-1, FR-285-AC-2, FR-285-AC-3, FR-285-AC-4, FR-285-AC-5 | 🚧 |
 | TC-776 | analyze requests and records have one canonical form that changes only with key members | Unit | P1 | FR-292-AC-1, FR-292-AC-2, FR-292-AC-3 | 🚧 |

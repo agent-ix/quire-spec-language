@@ -43,6 +43,7 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &DependencyInput::default(),
         SpineLimits::default(),
         call,
+        &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
 }
@@ -76,6 +77,7 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &Cancel::new(),
     )
     .unwrap();
     assert_eq!(package_id, compiled.emitted.package_id());
@@ -104,6 +106,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &Cancel::new(),
     )
     .unwrap()
     .1;
@@ -265,6 +268,7 @@ fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunR
         &DependencyInput::default(),
         limits,
         call,
+        &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
 }
