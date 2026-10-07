@@ -46,6 +46,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 mod typing;
 
@@ -2236,7 +2237,7 @@ impl<'a> Typer<'a> {
         source: &Node,
         binder: &str,
         location: &Location,
-    ) -> Result<(Slot, Box<CollectionType>), CheckRefusal> {
+    ) -> Result<(Slot, Arc<CollectionType>), CheckRefusal> {
         let ValueType::Collection(source_type) = &source.value_type else {
             return Err(mismatch(location));
         };
@@ -2255,7 +2256,7 @@ impl<'a> Typer<'a> {
     fn query(
         &mut self,
         query: BinderQuery,
-        (slot, source_type): (Slot, Box<CollectionType>),
+        (slot, source_type): (Slot, Arc<CollectionType>),
         source: Node,
         body: Node,
         location: &Location,
@@ -2390,7 +2391,7 @@ impl<'a> Typer<'a> {
         (accumulator, binder): (&str, &str),
         source: &Node,
         location: &Location,
-    ) -> Result<(Slot, Slot, Box<CollectionType>), CheckRefusal> {
+    ) -> Result<(Slot, Slot, Arc<CollectionType>), CheckRefusal> {
         let ValueType::Collection(source_type) = &source.value_type else {
             return Err(mismatch(location));
         };
