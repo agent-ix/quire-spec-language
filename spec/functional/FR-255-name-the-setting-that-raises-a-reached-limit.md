@@ -196,6 +196,14 @@ these names through the same operand grammar as the stage settings
    table, replay SHALL run its call with that counter at the entry's bound,
    in place of the value the request's accounting limits give it; every
    counter with no such entry keeps the request's accounting-limits value.
+   The result is the request's effective accounting limits. Everything
+   downstream of decode SHALL use the effective accounting limits and never
+   either member alone: every evaluation meter and pre-call check, and
+   every identity or claim that binds the request's limits, such as the
+   function-level value-parity claim identity's `limits` (FR-357). Two
+   requests with the same effective accounting limits are equivalent, and
+   how their limits split between `accounting_limits` and `stage_limits`
+   never reaches an identity.
 
 ## Acceptance Criteria
 
@@ -211,6 +219,7 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-8 | For each of the ten rows of the accounting table, the settings operation given `<setting>=123456789` returns accounting limits with that counter at 123456789 and the other nine at their accounting-table defaults; given no operand, it returns accounting limits equal to the accounting-table defaults; given `work_units=18446744073709551615`, it returns `work_units` at `u64::MAX`. | Test (TC-914) |
 | FR-255-AC-9 | The settings operation given `depth=1` and given `accounting.work_units=1` each returns a usage refusal with cause unknown setting; given `work_units=ten`, `work_units=-1` and `work_units=18446744073709551616` each returns cause not an integer; given `work_units=5` and `work_units=6` together returns cause repeated naming `work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-914) |
 | FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `work_units` at `B` decodes, and its call runs with `work_units` at `B` whatever the request's accounting limits give `work_units`, and with every other counter at the request's accounting-limits value. For FR-098-AC-9's counterexample, the entry `work_units` one below the argument's node count settles `inconclusive` with cause `NoValue`, naming `work_units`, and the entry raised to fit replays. | Test (TC-914) |
+| FR-255-AC-11 | Two replay requests that differ only in how they reach the same effective accounting limits, one carrying every counter in its accounting limits and no accounting entry in `stage_limits`, the other carrying `work_units` and `value_occurrences` only as `stage_limits` entries over accounting limits holding other values for them, give the same function-level value-parity claim identity (`claim()`, FR-357) on every outcome, settle the same, and charge the same. | Test (TC-914) |
 
 ## Status
 

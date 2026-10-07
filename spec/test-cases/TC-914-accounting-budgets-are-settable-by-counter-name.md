@@ -20,7 +20,7 @@ entry of a counter name sets that budget, and that a native-run/1
 request's `call.accounting` object reaches the call as its accounting
 limits.
 
-Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-100-AC-12.
+Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-12.
 
 ## Test Procedure
 
@@ -40,12 +40,19 @@ Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-100-AC-12.
    `work_units`, and read the accounting limits its call runs under. Replay
    FR-098-AC-9's counterexample with the entry `work_units` one below the
    argument's node count, then with it raised to fit.
-5. Run the `1-draft` fixture request for `seven` with `call.accounting`
+5. Build two function-level value-parity requests for the same claim with
+   the same effective accounting limits: one with every counter in
+   `accounting_limits` and no accounting entry in `stage_limits`; the other
+   with `work_units` and `value_occurrences` given only as `stage_limits`
+   entries, over `accounting_limits` holding other values for those two.
+   Replay each once with limits that fit and once with `work_units` too
+   small.
+6. Run the `1-draft` fixture request for `seven` with `call.accounting`
    naming all ten counters at the values 1 to 10 in accounting-table order,
    with `{"work_units": 7}`, with `{}`, and with no `accounting`, and read
    the accounting limits of the `Call` handed to `qsl_replay::spine::run`.
 
-Tag the tests `#[trace("TC-914", "FR-255-AC-7")]`, `#[trace("TC-914", "FR-255-AC-8")]`, `#[trace("TC-914", "FR-255-AC-9")]`, `#[trace("TC-914", "FR-255-AC-10")]`, `#[trace("TC-914", "FR-100-AC-12")]`.
+Tag the tests `#[trace("TC-914", "FR-255-AC-7")]`, `#[trace("TC-914", "FR-255-AC-8")]`, `#[trace("TC-914", "FR-255-AC-9")]`, `#[trace("TC-914", "FR-255-AC-10")]`, `#[trace("TC-914", "FR-255-AC-11")]`, `#[trace("TC-914", "FR-100-AC-12")]`.
 
 ## Expected Results
 
@@ -66,7 +73,9 @@ Tag the tests `#[trace("TC-914", "FR-255-AC-7")]`, `#[trace("TC-914", "FR-255-AC
   every other counter at the request's accounting-limits value. The
   counterexample settles `inconclusive`, `NoValue`, naming `work_units`,
   and replays once the entry fits.
-- Step 5: the ten-counter object gives `ScalarLimits` holding exactly 1 to
+- Step 5: both requests give equal `claim()` identities, the same
+  settlement and the same charges, in each run.
+- Step 6: the ten-counter object gives `ScalarLimits` holding exactly 1 to
   10; `{"work_units": 7}` gives `work_units` 7 and the others `u64::MAX`;
   `{}` and no `accounting` give `work_units` 1000000 and the others
   `u64::MAX`.
