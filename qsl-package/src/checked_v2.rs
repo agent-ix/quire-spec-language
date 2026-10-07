@@ -504,6 +504,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::IllTyped => Code::IllTyped,
         CheckedPackageRefusalCode::MissingImport => Code::MissingImport,
         CheckedPackageRefusalCode::UnknownProfile => Code::UnknownProfile,
+        CheckedPackageRefusalCode::UnsupportedConstruct => Code::UnsupportedConstruct,
     }
 }
 

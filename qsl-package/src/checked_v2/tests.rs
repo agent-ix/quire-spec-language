@@ -62,6 +62,12 @@ fn source_ref(label: &str) -> Value {
     })
 }
 
+/// The `SourceOwner` of a declared node: the lock's one source, `src`
+/// (QSpec FR-322 "Owner member schema").
+fn declared_owner() -> Value {
+    json!({"kind": "source", "authority": "pkg", "identity": "src"})
+}
+
 fn selection(role: &str, label: &str) -> Value {
     json!({"role": role, "definition": artifact_ref(label)})
 }
@@ -95,6 +101,7 @@ fn node_fields(label: &str, export: &str) -> Value {
         "semantic_type": reference,
         "dependencies": [],
         "declaration": {"qualified_name": [export]},
+        "owner": declared_owner(),
         "body": {
             "term": "literal",
             "type": reference,
@@ -1214,6 +1221,28 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
+/// Supplies, as domain package evidence, QSpec's selected `acme/orders`
+/// semantic IR document (`domain-package-acme-orders.json` under `$QSPEC_DIR`)
+/// when one of `envelope`'s `model_selections` rows selects its digest
+/// (QSpec FR-322 "Model-owned members" step 1).
+fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        return;
+    };
+    let document = read_fixture(
+        &std::path::Path::new(&qspec)
+            .join("proposals/checked-package-v2/domain-package-acme-orders.json"),
+    );
+    let bytes = jcs(&document);
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let selected = envelope["lock"]["model_selections"]
+        .as_array()
+        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
+    if selected {
+        evidence.insert_domain_package_document(digest.as_str(), &bytes[..]);
+    }
+}
+
 /// QSL's whole I2 read of the fixture `envelope`, pinned at the
 /// `package_id` its own identity preimage recomputes to. Evidence treats
 /// the fixture's required features as supported. The published fixture is
@@ -1223,6 +1252,7 @@ fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
+    supply_qspec_domain_package(&mut evidence, envelope);
     let package_id = PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
     let outcome = read_v2(
         &jcs(envelope),
@@ -1588,6 +1618,21 @@ fn conformance_dependency_selection_vectors() {
                     "/lock",
                     CheckedPackageRefusalCode::DigestDomainMismatch,
                 )],
+                // QSpec FR-322-AC-35: a selection binds by identity and package
+                // id and never by version, so a `version` member is a reader
+                // `unknown_member` in either member.
+                "refused:unknown_member" => vec![
+                    (
+                        with(&mutated, selections),
+                        "/lock",
+                        CheckedPackageRefusalCode::UnknownMember,
+                    ),
+                    (
+                        with(selections, &mutated),
+                        "/identity_preimage",
+                        CheckedPackageRefusalCode::UnknownMember,
+                    ),
+                ],
                 other => panic!("{id}: unmapped entry-mutation outcome {other}"),
             };
         for (envelope, member, expected) in cases {
@@ -1993,6 +2038,56 @@ fn projection_of(nodes: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+/// Renames every stale node key of `envelope` to the key QSL's own FR-092 /
+/// FR-322 derivation gives its node (the derivation IR re-derives), until
+/// none is stale, then recomputes the projection and `package_id`. Returns
+/// each original digest's final digest, so a test names a node by its
+/// current key.
+fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
+    let mut renames = BTreeMap::<String, String>::new();
+    let limit = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .map_or(0, Vec::len)
+        .pow(2);
+    for _ in 0..=limit {
+        let nodes = envelope["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("nodes");
+        let stale = nodes.iter().find_map(|node| {
+            if node.get("recursion_group").is_some()
+                || node.get("nominal_identity_preimage").is_some()
+            {
+                return None;
+            }
+            let derived = crate::emit::tests::rebuilt_key(node, &[]);
+            let retained = node["node_id"]["digest"].as_str()?;
+            (retained != derived).then(|| (retained.to_owned(), derived))
+        });
+        let Some((old, new)) = stale else {
+            refresh_frame_identity(envelope);
+            return renames;
+        };
+        let text = serde_json::to_string(envelope)
+            .expect("envelope serializes")
+            .replace(&old, &new);
+        *envelope = serde_json::from_str(&text).expect("rekeyed envelope parses");
+        for node in envelope["semantic_graph"]["nodes"]
+            .as_array_mut()
+            .expect("nodes")
+        {
+            if let Some(dependencies) = node["dependencies"].as_array_mut() {
+                dependencies
+                    .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+            }
+        }
+        for value in renames.values_mut().filter(|value| **value == old) {
+            value.clone_from(&new);
+        }
+        renames.entry(old).or_insert(new);
+    }
+    panic!("rekeying does not settle within {limit} renames");
+}
+
 /// Rebuilds `envelope`'s `identity_preimage.identity_projection` from its
 /// current `semantic_graph.nodes`, and recomputes the envelope's own
 /// `package_id` over the refreshed preimage. Every other `identity_preimage`
@@ -2073,7 +2168,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
                 .expect("nodes")
                 .push(second_frame.clone());
         }
-        refresh_frame_identity(&mut candidate);
+        let renames = rekey_stale(&mut candidate);
 
         let expected_code = match mutation["expected_code"].as_str().expect("expected_code") {
             "missing_declaration" => CheckedPackageRefusalCode::MissingDeclaration,
@@ -2087,9 +2182,13 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
             None => None,
             Some(other) => panic!("{name}: unmapped expected_cause {other}"),
         };
-        let expected_locus = mutation["expected_locus_digest"]
+        let recorded_locus = mutation["expected_locus_digest"]
             .as_str()
             .expect("expected_locus_digest");
+        // A mutated node is named by the key QSL's derivation now gives it.
+        let expected_locus = renames
+            .get(recorded_locus)
+            .map_or(recorded_locus, String::as_str);
 
         let (_, outcome) = read_fixture_wire(&candidate);
         match outcome {
@@ -2123,9 +2222,20 @@ fn model_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -
         "semantic_form": form,
         "semantic_type": type_ref,
         "declaration": {"qualified_name": [qualified_name]},
+        "owner": declared_owner(),
         "dependencies": [],
         "body": {"term": "aggregate", "members": []},
     })
+}
+
+/// [`graph_node`] with the empty `aggregate` body QSpec's own self-typed
+/// scalar types carry: the usual literal body names the node's own id, so the
+/// node's derived key would depend on itself and never settle.
+fn keyable_type_node(label: &str, export: &str) -> Value {
+    let mut node = graph_node(label, export);
+    node["semantic_form"] = json!("text");
+    node["body"] = json!({"term": "aggregate", "members": []});
+    node
 }
 
 fn model_graph_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -> Value {
@@ -2242,11 +2352,13 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
 /// a self-typed scalar type `T` and a `model`/`object_type` `O`, typed by
 /// `T`, and a `state`/`frame` naming `O` as its only `dependencies` entry.
 /// `frame_body` supplies the frame's own `modifies`/`creates`/`deletes`.
-fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>)) -> Value {
+fn frame_fixture(
+    frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>),
+) -> (Value, BTreeMap<String, String>) {
     let type_ref = node_ref("pkg::T");
     let object_ref = node_ref("pkg::O");
     let (modifies, creates, deletes) = frame_body(&object_ref);
-    let type_node = graph_node("pkg::T", "T");
+    let type_node = keyable_type_node("pkg::T", "T");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     let frame = frame_node(
         "pkg::Frame",
@@ -2256,7 +2368,9 @@ fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec
         creates,
         deletes,
     );
-    valid_envelope_over(vec![type_node, object_node, frame])
+    let mut envelope = valid_envelope_over(vec![type_node, object_node, frame]);
+    let renames = rekey_stale(&mut envelope);
+    (envelope, renames)
 }
 
 fn read_frame_fixture(envelope: &Value) -> Read {
@@ -2271,7 +2385,7 @@ fn read_frame_fixture(envelope: &Value) -> Read {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn frame_body_membership_against_dependencies_is_admitted() {
-    let envelope = frame_fixture(|object| {
+    let (envelope, _) = frame_fixture(|object| {
         (
             vec![modifies_field(object, "value")],
             vec![object.clone()],
@@ -2300,7 +2414,7 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
     let field_digest = hex("pkg::F");
     let type_ref = node_ref("pkg::T");
     let object_ref = node_ref("pkg::O");
-    let type_node = graph_node("pkg::T", "T");
+    let type_node = keyable_type_node("pkg::T", "T");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     // `F` is never declared as a dependency of this frame, only named in
     // `modifies`.
@@ -2312,7 +2426,8 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
         vec![],
         vec![],
     );
-    let envelope = valid_envelope_over(vec![type_node, object_node, frame]);
+    let mut envelope = valid_envelope_over(vec![type_node, object_node, frame]);
+    rekey_stale(&mut envelope);
     let outcome = read_frame_fixture(&envelope);
     match &outcome {
         Read::Refused(outer @ V2ReadRefusal::Envelope { refusal, .. }) => {
@@ -2338,13 +2453,13 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn frame_entry_of_an_ineligible_kind_refuses_as_invalid_model_binding() {
-    let object_digest = hex("pkg::O");
-    let envelope = frame_fixture(|object| {
+    let (envelope, renames) = frame_fixture(|object| {
         // `object` (`model`/`object_type`) is declared, but a `relationship`
         // kind entry admits only a `relation`/`relationship` node, never
         // `model`/`object_type`.
         (vec![modifies_relationship(object)], vec![], vec![])
     });
+    let object_digest = renames[&hex("pkg::O")].clone();
     let outcome = read_frame_fixture(&envelope);
     match &outcome {
         Read::Refused(outer @ V2ReadRefusal::Envelope { refusal, .. }) => {

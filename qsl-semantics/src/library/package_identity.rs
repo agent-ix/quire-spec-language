@@ -44,16 +44,20 @@ const NODE_REQUIRED: [&str; 7] = [
     "body",
 ];
 
+/// `owner` is the node's structural owner (QSpec FR-322 "Owner member
+/// schema"), whose closed shape IR's reader validates before this one runs.
+///
 /// `declaration` is the projection node's own name member (checked-package-v2
 /// README.md's "Declarations" section): a named, source-declared node carries
 /// `declaration: {qualified_name}` exactly when it has a declaration source
 /// occurrence. On a nominal node it must equal the nominal
 /// `qualified_declaration`, and every export resolves only through this
 /// member, never through `nominal_identity_preimage` directly.
-const NODE_OPTIONAL: [&str; 3] = [
+const NODE_OPTIONAL: [&str; 4] = [
     "recursion_group",
     "nominal_identity_preimage",
     "declaration",
+    "owner",
 ];
 
 /// Why an identity preimage is structurally malformed.
