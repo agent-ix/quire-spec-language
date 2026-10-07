@@ -722,7 +722,7 @@ fn model_views(
         packages,
         limits.intake,
     )
-        .map_err(|_| fault("model-reconsistent-admission"))?;
+    .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
         let records = read_records(&package_ref.identity, &document)

@@ -2313,9 +2313,7 @@ fn spine_model_without(removed: &[&str]) -> String {
 /// when given). Returns the emission, its wire, the document's digest and
 /// the read.
 fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Value, String, Read) {
-    let packages = qsl_semantics::model::intake::package_input(
-        [SPINE_MODEL_DOCUMENT],
-    );
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -2358,9 +2356,7 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
 #[test]
 fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let unit = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
-    let packages = qsl_semantics::model::intake::package_input(
-        [SPINE_MODEL_DOCUMENT],
-    );
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
     let declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     assert_eq!(declarations.models.len(), 1);
@@ -2497,9 +2493,7 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
 fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
     const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
     let unknown = UNIT.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
-    let packages = qsl_semantics::model::intake::package_input(
-        [SPINE_MODEL_DOCUMENT],
-    );
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
@@ -2605,9 +2599,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
     let selections = unit_selections(UNIT);
     let limited = qsl_semantics::model::intake::admit_unit(
         &selections,
-        &qsl_semantics::model::intake::package_input(
-            [SPINE_MODEL_DOCUMENT],
-        ),
+        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
         qsl_semantics::model::accounting::ModelNormalizationLimits {
             declaration_records: 1,
             ..Default::default()
@@ -2634,9 +2626,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         }
     }
     let cyclic = serde_json::to_vec(&cyclic).unwrap();
-    let packages = qsl_semantics::model::intake::package_input(
-        [cyclic.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };

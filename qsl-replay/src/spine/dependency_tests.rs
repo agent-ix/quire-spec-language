@@ -840,9 +840,7 @@ fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_refere
 #[test]
 fn an_imported_name_whose_signature_is_package_dependent_refuses() {
     let (document, model_digest) = spine_model();
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let body = format!(
         "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{model_digest}\";\n\
          record R {{ datum: Int[0, 9]; }}\n\

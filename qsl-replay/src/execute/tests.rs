@@ -223,14 +223,9 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
     )
     .expect("the unit parses")
     .into_value();
-    let models = crate::spine::select(
-        &parsed,
-        &packages,
-        limits.model,
-        &cancel,
-    )
-    .expect("the unit selects")
-    .into_value();
+    let models = crate::spine::select(&parsed, &packages, limits.model, &cancel)
+        .expect("the unit selects")
+        .into_value();
     let checked = crate::spine::check(
         &parsed,
         &models,
@@ -545,12 +540,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
          model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
     );
-    let compiled = spine(
-        &source,
-        &package_input(
-            [document.as_slice()],
-        ),
-    );
+    let compiled = spine(&source, &package_input([document.as_slice()]));
     let wire = || {
         request(
             source.as_bytes(),

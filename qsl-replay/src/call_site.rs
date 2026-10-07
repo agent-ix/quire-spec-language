@@ -903,9 +903,7 @@ mod tests {
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             UNIT.as_bytes(),
-            &qsl_semantics::model::intake::package_input(
-                [],
-            ),
+            &qsl_semantics::model::intake::package_input([]),
             &DependencyInput::default(),
             crate::spine::SpineLimits::default(),
         )

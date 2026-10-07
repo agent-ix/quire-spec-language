@@ -631,13 +631,8 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             &cancel,
         )?
         .into_value();
-        let models = front_end::select(
-            &parsed,
-            &request.packages,
-            request.limits.model,
-            &cancel,
-        )?
-        .into_value();
+        let models = front_end::select(&parsed, &request.packages, request.limits.model, &cancel)?
+            .into_value();
         let checked = front_end::check(
             &parsed,
             &models,

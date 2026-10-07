@@ -228,9 +228,7 @@ impl Fixture {
 
 /// `document`'s `sha256-jcs` digest, as `intake::package_input` keys it.
 fn document_digest(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input(
-        [document],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -244,9 +242,7 @@ fn modelled(
     document: &'static [u8],
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
-    let packages = qsl_semantics::model::intake::package_input(
-        [document],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document]);
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);

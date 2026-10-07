@@ -608,10 +608,9 @@ fn complete(
     )
     .map_err(failure)?
     .into_value();
-    let models =
-        qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
-            .map_err(failure)?
-            .into_value();
+    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(failure)?
+        .into_value();
     let checked = qsl_replay::spine::check(
         &parsed,
         &models,

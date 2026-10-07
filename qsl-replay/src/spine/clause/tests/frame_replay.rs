@@ -35,9 +35,7 @@ pub(super) struct Unit {
 }
 
 pub(super) fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
-    let packages = qsl_semantics::model::intake::package_input(
-        [domain_document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]);
     let compiled = compose(
         source(),
         IDENTITY,

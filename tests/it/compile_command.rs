@@ -705,9 +705,7 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
-        &qsl_semantics::model::intake::package_input(
-            [document.as_slice()],
-        ),
+        &qsl_semantics::model::intake::package_input([document.as_slice()]),
         &qsl_replay::spine::DependencyInput::default(),
     )
     .unwrap();

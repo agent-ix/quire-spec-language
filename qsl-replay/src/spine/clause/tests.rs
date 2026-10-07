@@ -173,9 +173,7 @@ fn domain_document() -> Vec<u8> {
 /// `NoCycle` and the `Function`-selection fixtures.
 fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -1213,9 +1211,7 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
 #[test]
 fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let model_selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: PACKAGE_IDENTITY.to_owned(),
         version: "1.0.0".to_owned(),
@@ -1639,9 +1635,7 @@ fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
 fn config_version_unit_and_packages_for(
     document: Vec<u8>,
 ) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -2887,9 +2881,7 @@ fn config_version_step3_domain_document() -> Vec<u8> {
 /// The package provision holding [`config_version_step3_domain_document`]
 /// and nothing else.
 fn config_version_step3_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
-    qsl_semantics::model::intake::package_input(
-        [config_version_step3_domain_document().as_slice()],
-    )
+    qsl_semantics::model::intake::package_input([config_version_step3_domain_document().as_slice()])
 }
 
 /// The hex model digest of [`config_version_step3_packages`]'s one document.

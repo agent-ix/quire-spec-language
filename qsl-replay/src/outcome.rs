@@ -822,14 +822,9 @@ mod tests {
         let parsed = parse(&request, limits.source, &cancel)
             .expect("parses")
             .into_value();
-        let models = select(
-            &parsed,
-            &BTreeMap::new(),
-            limits.model,
-            &cancel,
-        )
-        .expect("selects")
-        .into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+            .expect("selects")
+            .into_value();
         let checked = check(
             &parsed,
             &models,
@@ -1202,14 +1197,9 @@ mod tests {
         let parsed = parse(&request, limits.source, &live)
             .expect("parses")
             .into_value();
-        let models = select(
-            &parsed,
-            &BTreeMap::new(),
-            limits.model,
-            &live,
-        )
-        .expect("selects")
-        .into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+            .expect("selects")
+            .into_value();
         let cancelled = Cancel::new();
         cancelled.cancel(CancelCause::Requested);
         let result = check(

@@ -218,13 +218,7 @@ impl DeepInput {
             &cancel,
         )?
         .into_value();
-        let models = select(
-            &parsed,
-            &BTreeMap::new(),
-            limits.model,
-            &cancel,
-        )?
-        .into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)?.into_value();
         let checked = check(
             &parsed,
             &models,

@@ -903,9 +903,7 @@ fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompile
 /// I1's package input: every entry the byte provision carries under a
 /// `sha256-jcs` digest (QC-1). A state document there is keyed by its raw
 /// bytes' digest, which no model selection names.
-fn domain_packages(
-    request: &ReplayRequest,
-) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
+fn domain_packages(request: &ReplayRequest) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
     package_input(
         request
             .byte_provision()

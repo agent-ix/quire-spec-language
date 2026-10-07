@@ -18,11 +18,11 @@ use super::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::checking::DomainType;
 use crate::linking::composed::models::BoundDeclaration;
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration};
-use qsl_semantics::model::refusal::ModelRefusalCause;
 use qsl_semantics::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, PopulationRecord, ValueTypeRef,
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::refusal::ModelRefusalCause;
 
 /// `Model.profile` of a domain-package model: the Semantic IR contract its
 /// document is admitted under (FR-056).
@@ -253,27 +253,22 @@ pub(super) fn verify_document(
 ) -> Result<(), Error> {
     work.bytes(bytes.len())?;
     let offered = BTreeMap::from([(selection.digest, bytes.to_vec())]);
-    qsl_semantics::model::intake::admit(
-        selection,
-        SHA256_JCS_DIGEST_DOMAIN,
-        &offered,
-        intake,
-    )
-    .map(|_| ())
-    .map_err(|refusal| match refusal.cause {
-        // A reached `intake.input_bytes` is the caller's limit, not a
-        // malformed model.
-        ModelRefusalCause::IntakeLimitExceeded { bound, .. } => {
-            Error::Incomplete(super::Exhaustion {
-                dimension: Dimension::PayloadBytes,
-                used: 0,
-                requested: bytes.len(),
-                limit: usize::try_from(bound).unwrap_or(usize::MAX),
-                locus: None,
-            })
-        }
-        _ => Error::Invalid(Invalid::Model),
-    })
+    qsl_semantics::model::intake::admit(selection, SHA256_JCS_DIGEST_DOMAIN, &offered, intake)
+        .map(|_| ())
+        .map_err(|refusal| match refusal.cause {
+            // A reached `intake.input_bytes` is the caller's limit, not a
+            // malformed model.
+            ModelRefusalCause::IntakeLimitExceeded { bound, .. } => {
+                Error::Incomplete(super::Exhaustion {
+                    dimension: Dimension::PayloadBytes,
+                    used: 0,
+                    requested: bytes.len(),
+                    limit: usize::try_from(bound).unwrap_or(usize::MAX),
+                    locus: None,
+                })
+            }
+            _ => Error::Invalid(Invalid::Model),
+        })
 }
 
 /// Whether `population` covers the object type `object` (FR-153): one of

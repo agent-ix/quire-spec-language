@@ -6307,11 +6307,9 @@ mod tests {
                 "[".repeat(depth),
                 "]".repeat(depth)
             );
-            let document = PackageDocument::parse(
-                text.as_bytes(),
-                qsl_foundation::IntakeLimits::default(),
-            )
-            .expect("a deep document reads");
+            let document =
+                PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
+                    .expect("a deep document reads");
             drop(document);
         });
     }

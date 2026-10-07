@@ -617,18 +617,14 @@ fn select_models(
     cancel: &Cancel,
 ) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
-    admit_unit_with_cancel(
-        &parsed.unit.selections().models,
-        packages,
-        limits,
-        cancel,
+    admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel).map_err(
+        |refusal| {
+            Box::new(CompileRefusal::Intake {
+                region: region(raw, refusal.span),
+                refusal,
+            })
+        },
     )
-    .map_err(|refusal| {
-        Box::new(CompileRefusal::Intake {
-            region: region(raw, refusal.span),
-            refusal,
-        })
-    })
 }
 
 /// E4 over one checked package, refusing a wire that would omit nodes: a

@@ -85,13 +85,7 @@ fn chain_of(
 ) -> Result<Chain, FrontEndFailure> {
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
-    let models = select(
-        &parsed,
-        packages,
-        limits.model,
-        &cancel,
-    )?
-    .into_value();
+    let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
     let checked = check(
         &parsed,
         &models,
@@ -514,14 +508,9 @@ fn parsed_declarations(count: usize) -> (ParsedSource, AdmittedModels, SpineLimi
     let parsed = parse(&request(source.as_bytes()), limits.source, &live)
         .expect("the generated unit parses")
         .into_value();
-    let models = select(
-        &parsed,
-        &BTreeMap::new(),
-        limits.model,
-        &live,
-    )
-    .expect("a unit with no model selects nothing")
-    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+        .expect("a unit with no model selects nothing")
+        .into_value();
     (parsed, models, limits)
 }
 
@@ -610,14 +599,9 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
     let parsed = parse(&request(source.as_bytes()), limits.source, &live)
         .expect("the sum parses")
         .into_value();
-    let models = select(
-        &parsed,
-        &BTreeMap::new(),
-        limits.model,
-        &live,
-    )
-    .expect("a unit with no model selects nothing")
-    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+        .expect("a unit with no model selects nothing")
+        .into_value();
     let unit = (parsed, models, limits);
     let total = charges_of(|cancel| {
         check(
@@ -644,22 +628,13 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
 #[trace("TC-757", "FR-276-AC-2")]
 #[test]
 fn a_cancel_inside_select_stops_within_one_charge() {
-    let packages = qsl_semantics::model::intake::package_input(
-        [MODEL_DOCUMENT.as_bytes()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
     let limits = SpineLimits::default();
     let live = Cancel::new();
     let parsed = parse(&request(MODEL_FIXTURE.as_bytes()), limits.source, &live)
         .expect("the model fixture parses")
         .into_value();
-    let run = |cancel: &Cancel| {
-        select(
-            &parsed,
-            &packages,
-            limits.model,
-            cancel,
-        )
-    };
+    let run = |cancel: &Cancel| select(&parsed, &packages, limits.model, cancel);
     let total = charges_of(run);
     assert!(total > 2, "select made only {total} charges");
     let at = total / 2;
@@ -678,14 +653,17 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 #[trace("TC-732", "FR-260-AC-4")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
-    let packages =
-        qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
     let mut limits = SpineLimits::default();
     let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
     limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
-    let parsed = parse(&request(MODEL_FIXTURE.as_bytes()), limits.source, &Cancel::new())
-        .expect("the model fixture parses")
-        .into_value();
+    let parsed = parse(
+        &request(MODEL_FIXTURE.as_bytes()),
+        limits.source,
+        &Cancel::new(),
+    )
+    .expect("the model fixture parses")
+    .into_value();
     let Err(StageFailure::Limit(exceeded)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
@@ -795,9 +773,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
-    let packages = qsl_semantics::model::intake::package_input(
-        [MODEL_DOCUMENT.as_bytes()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
     let model = chain_of(
         MODEL_FIXTURE.as_bytes(),
         &packages,
@@ -875,13 +851,8 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("the model fixture parses")
         .into_value();
     let missing = refusal(
-        select(
-            &parsed,
-            &BTreeMap::new(),
-            limits.model,
-            &live,
-        )
-        .expect_err("no document is supplied"),
+        select(&parsed, &BTreeMap::new(), limits.model, &live)
+            .expect_err("no document is supplied"),
     );
     assert_eq!(missing.stage(), SpineStage::Intake);
     let region = missing.region().expect("the refusal is located");
@@ -899,14 +870,9 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
     let parsed = parse(&request(ill_typed.as_bytes()), limits.source, &live)
         .expect("the ill-typed unit parses")
         .into_value();
-    let models = select(
-        &parsed,
-        &BTreeMap::new(),
-        limits.model,
-        &live,
-    )
-    .expect("a unit with no model selects nothing")
-    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+        .expect("a unit with no model selects nothing")
+        .into_value();
     let refused = refusal(
         check(
             &parsed,
@@ -970,13 +936,8 @@ fn each_operation_reports_the_work_of_its_own_stages() {
     assert_eq!(parse_work.s3, 0);
     let parsed = parsed.into_value();
 
-    let models = select(
-        &parsed,
-        &BTreeMap::new(),
-        limits.model,
-        &cancel,
-    )
-    .expect("a unit with no model selects nothing");
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("a unit with no model selects nothing");
     assert_eq!(models.work().s1, 0);
     let models = models.into_value();
 
@@ -1134,9 +1095,7 @@ fn parse_names_the_source_limit_field_it_reached() {
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input(
-        [MODEL_DOCUMENT.as_bytes()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
     let live = Cancel::new();
     let parsed = parse(
         &request(MODEL_FIXTURE.as_bytes()),
@@ -1150,12 +1109,7 @@ fn select_names_the_model_limit_field_it_reached() {
         move |value: u64| {
             let mut limits = ModelNormalizationLimits::default();
             edit(&mut limits, value);
-            reached(select(
-                parsed,
-                packages,
-                limits,
-                &Cancel::new(),
-            ))
+            reached(select(parsed, packages, limits, &Cancel::new()))
         }
     };
     assert_field(
@@ -1431,9 +1385,7 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn check_names_the_type_environment_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input(
-        [MODEL_DOCUMENT.as_bytes()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
     let model = chain_of(
         MODEL_FIXTURE.as_bytes(),
         &packages,
@@ -1651,14 +1603,9 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
     let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
         .expect("the unit parses")
         .into_value();
-    let models = select(
-        &parsed,
-        &BTreeMap::new(),
-        limits.model,
-        &live,
-    )
-    .expect("a unit with no model selects nothing")
-    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
+        .expect("a unit with no model selects nothing")
+        .into_value();
     let run = |lock: &LockEvidence| {
         check(
             &parsed,

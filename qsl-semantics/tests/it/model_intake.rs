@@ -953,9 +953,8 @@ fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
          recursion limit, or this test proves nothing"
     );
 
-    let records = read_records(package_identity, &parse_document(text.as_bytes())).expect(
-        "depth 150 is past serde_json's own recursion limit and reads clean, not a panic",
-    );
+    let records = read_records(package_identity, &parse_document(text.as_bytes()))
+        .expect("depth 150 is past serde_json's own recursion limit and reads clean, not a panic");
     assert_eq!(records.len(), 1);
 }
 
@@ -1029,9 +1028,7 @@ fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
             assert!(
                 matches!(
                     refusal.cause,
-                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
-                        ..
-                    }
+                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { .. }
                 ),
                 "{refusal:?}"
             );
@@ -1089,15 +1086,14 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
                 )]),
                 serde_json::json!([]),
             );
-            let text = document.to_string().replace("\"types\":[]", &format!("\"types\":{types}"));
+            let text = document
+                .to_string()
+                .replace("\"types\":[]", &format!("\"types\":{types}"));
             let parsed = PackageDocument::parse(text.as_bytes(), unbounded())
                 .expect("the cyclic document reads");
-            let refusals = read_records(package_identity, &parsed)
-                .expect_err("a composite cycle refuses");
-            let closing = format!(
-                "ix://{package_identity}/relationship/C{}-has-C0",
-                count - 1
-            );
+            let refusals =
+                read_records(package_identity, &parsed).expect_err("a composite cycle refuses");
+            let closing = format!("ix://{package_identity}/relationship/C{}-has-C0", count - 1);
             let names_it = refusals.iter().any(|refusal| {
                 refusal.detail.contains("COMPOSITE_CYCLE")
                     && matches!(

@@ -93,9 +93,7 @@ const CLAUSES: &[(&str, &str)] = &[
 /// The `witness` unit's text, selecting the `Config` domain package.
 fn witness_unit_text() -> String {
     let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -203,9 +201,7 @@ fn clause_request(
 ) -> ClauseRunRequest {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
     let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let mut request = config_version_request_for(
         witness_unit_text(),
         packages,
@@ -234,9 +230,7 @@ fn evaluate(
     work_units: u64,
 ) -> (AdmittedObservations, ClauseEvaluation, Meter) {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
-    let packages = qsl_semantics::model::intake::package_input(
-        [unit.domain_document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]);
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");
     let invocations = BTreeMap::new();

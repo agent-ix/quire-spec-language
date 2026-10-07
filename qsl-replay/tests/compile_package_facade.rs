@@ -196,9 +196,7 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let packages = package_input(
-        [document.as_slice()],
-    );
+    let packages = package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };

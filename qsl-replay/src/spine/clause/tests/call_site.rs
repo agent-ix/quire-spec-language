@@ -58,9 +58,7 @@ fn operation_site(
 /// no clause names `probe`.
 fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     let document = config_version_step3_domain_document();
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -276,9 +274,7 @@ fn call_site_refuses_an_operation_no_clause_names() {
 #[test]
 fn call_site_locates_a_state_clause_by_name() {
     let (unit, document) = two_operation_unit(true);
-    let packages = qsl_semantics::model::intake::package_input(
-        [document.as_slice()],
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let compiled = compose(
         source(),
         "call-site.native",
