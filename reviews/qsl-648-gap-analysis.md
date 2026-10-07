@@ -37,3 +37,12 @@ Examined:
 ## Verdict
 
 One medium and one low finding. The reader-side round trip is a real, divergence-sensitive oracle. The producer-side serialization clause of FR-033-AC-6 has no test. Mergeable once FND-001 is fixed in this PR. FND-002 is due as soon as the AC exists in `spec/`.
+
+## Dispositions
+
+Round 1, reviewed at 67237309027c179ed07aceb9ba4ccab01a42f5b0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 88502cb52. `src/lowering/wire.rs` `integer_members_serialize_as_decimal_strings` now drives QSL's serializer at the i64 extremes, i64::MAX+1, u64::MAX and both i128 extremes, and asserts exact `minimum`/`maximum`/`value` strings. The integration test feeds the same spellings to IR's strict package reader. IR exposes only a whole-package strict reader, so splitting serialize (unit) from reconstruct (integration) over identical strings covers both halves of the AC. Acceptable. |
+| FND-002 | fixed | 88502cb52. `#[trace("TC-912", "FR-033-AC-6")]` added. It dangles until #655 lands the AC and TC-912. No local gate fails on that. |

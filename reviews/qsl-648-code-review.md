@@ -48,3 +48,20 @@ Examined:
 ## Verdict
 
 One high, one medium and two low findings. The widening itself is mechanical and correct, and the IR-facing sites now compare in i128 without lossy casts. FND-001 is a spec claim the code now violates (FR-041's denominator ceiling), and its tests were removed rather than adapted. Not mergeable until FND-001 and FND-002 are fixed in this PR. FND-003 and FND-004 are small and belong in the same fix round.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The new test `a_rational_literal_wider_than_the_protocol_wire_is_refused_before_emission` claims in its doc comment that the type check refuses `rational(1, 2^63)` with `LiteralDomain`. It asserts only that some declaration is refused, so a refusal for any other reason, in either unit, passes. Assert the `LiteralDomain` cause on `Bounded` at the literal's span. FND-004 does not need this test (the guard is unreachable), so it earns its place only as an FR-041 ceiling check on literals, and that needs the cause asserted. Otherwise delete it. | tests/it/native_numeric_domain_emission.rs:149-184 |
+
+## Dispositions
+
+Round 1, reviewed at 67237309027c179ed07aceb9ba4ccab01a42f5b0. Full `cargo test --locked --test it`: 878 passed, 2 ignored; `--lib lowering::wire`: 2 passed.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 672373090 (lower.rs refusal; tests restored in 88502cb52). IR's `RationalType::new(.., 0)` yields IR's own `InvalidNumericBounds`, message "rational numerator or denominator bounds are invalid" (true for a too-large ceiling), IR's rational-bounds path, and QSL's scalar-occurrence span. This is sound, not misleading. A struct literal is possible (`ir::Diagnostic` fields are public), but it would copy IR's private path constant, so the indirection is the lesser cost. types.rs restored the i64 `NumericDomain` narrowing. |
+| FND-002 | fixed | 88502cb52 |
+| FND-003 | fixed | 88502cb52 |
+| FND-004 | rejected | After FND-001, model numerators are i64 and denominators are <= i64::MAX, so a normalized in-domain rational always fits i64 and the guard is unreachable from source. It is not ceremony to delete: `ExactRational::new` takes i64, so an i128 -> i64 conversion is required, and the fallible form mapped to `NumericDomain` is the correct idiom (the alternatives are a panic or a truncating cast). Testing it would need a forged TypeReport, so no test. |
