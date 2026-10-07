@@ -1262,7 +1262,6 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let admitted_universe = qsl_semantics::model::observation::population_universe_for(
         std::slice::from_ref(&model_selection),
         &packages,
-        qsl_foundation::IntakeLimits::default(),
         limits,
         node_effective,
     )
@@ -3243,7 +3242,6 @@ fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evalu
         package.graph(),
         clause,
         &packages,
-        qsl_foundation::IntakeLimits::default(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &provisions,
         &selection,
@@ -3289,7 +3287,6 @@ fn a_postcondition_with_only_a_pre_observation_faults() {
         package.graph(),
         clause,
         &packages,
-        qsl_foundation::IntakeLimits::default(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &Provisions {
             snapshots: &snapshots,

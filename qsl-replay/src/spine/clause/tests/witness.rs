@@ -244,7 +244,6 @@ fn evaluate(
         graph,
         declaration,
         &packages,
-        qsl_foundation::IntakeLimits::default(),
         ModelNormalizationLimits::default(),
         &Provisions {
             snapshots: &snapshots,
