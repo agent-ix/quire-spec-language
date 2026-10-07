@@ -1524,7 +1524,7 @@ mod tests {
         assert_eq!(document["diagnostics"][0]["message"], compile.to_string());
 
         // A call-stage refusal: S6a, its code.
-        let missing = run_source(FIXTURE, "nowhere", &Cancel::new());
+        let missing = run_source(FIXTURE, "nope", &Cancel::new());
         let document = json_of(&OutcomeDocument::from_run(&missing));
         assert_eq!(document["last_stage"], "S6a");
         assert_eq!(document["category"], "refusal");
@@ -1553,25 +1553,23 @@ mod tests {
         assert_eq!(document["last_stage"], Value::Null);
         assert_eq!(document["diagnostics"][0]["code"], "cancelled");
         assert_eq!(document["diagnostics"][0]["cause"], "requested");
-    }
 
-    /// FR-286-AC-6: a driver's failure before any operation runs, an
-    /// unsupported engine, is a `new` document with the existing
-    /// `unsupported_construct` code and exits 21.
-    #[trace("TC-770", "FR-286-AC-6")]
-    #[test]
-    fn a_driver_side_unsupported_engine_document_exits_21() {
-        let document = OutcomeDocument::new(Operation::Execute, None, Category::Unsupported)
+        // A driver's unbuilt engine: `unimplemented_capability`, not
+        // `unsupported_construct`, unsupported, no stage, exit 21.
+        let driver = OutcomeDocument::new(Operation::Execute, None, Category::Unsupported)
             .with_diagnostics(vec![OutcomeDiagnostic::new(
                 None,
-                Code::UnsupportedConstruct.as_str(),
+                Code::UnimplementedCapability.as_str(),
                 None,
-                "the engine is not supported",
+                "the AOT engine is not built",
             )]);
-        assert_eq!(document.category().exit_code(), 21);
-        let json = json_of(&document);
-        assert_eq!(json["category"], "unsupported");
-        assert_eq!(json["diagnostics"][0]["code"], "unsupported_construct");
-        assert_eq!(Code::UnsupportedConstruct.category(), Category::Unsupported);
+        assert_eq!(driver.category().exit_code(), 21);
+        let document = json_of(&driver);
+        assert_eq!(document["category"], "unsupported");
+        assert_eq!(document["last_stage"], Value::Null);
+        assert_eq!(
+            document["diagnostics"][0]["code"],
+            "unimplemented_capability"
+        );
     }
 }

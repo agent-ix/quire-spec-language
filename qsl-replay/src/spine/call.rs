@@ -278,9 +278,11 @@ impl RunRefusal {
     /// The stage FR-100's refusal table names: the wrapped compile
     /// refusal's own stage, or `call` for every refusal this module raises
     /// itself, including [`Self::Fault`] (the internal-failure envelope's
-    /// own stage is `call`, FR-100).
-    pub fn stage(&self) -> &'static str {
-        match self {
+    /// own stage is `call`, FR-100). A cancel has no stage (FR-286: its
+    /// `last_stage` is null whichever stage it stopped), so this is `None`
+    /// for [`Self::Cancelled`].
+    pub fn stage(&self) -> Option<&'static str> {
+        Some(match self {
             Self::Compile(refusal) => refusal.stage().as_str(),
             Self::MissingDeclaration { .. }
             | Self::UnsupportedResult { .. }
@@ -288,9 +290,9 @@ impl RunRefusal {
             | Self::DuplicateArgument { .. }
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. }
-            | Self::Fault(_)
-            | Self::Cancelled(_) => "call",
-        }
+            | Self::Fault(_) => "call",
+            Self::Cancelled(_) => return None,
+        })
     }
 
     /// The catalog code. For [`Self::Fault`] this is always

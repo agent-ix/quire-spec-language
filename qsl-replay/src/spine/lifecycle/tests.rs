@@ -30,7 +30,9 @@ use super::{
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
+use crate::outcome::OutcomeDocument;
 use crate::request::StageLimits;
+use crate::spine::RunRefusal;
 use crate::spine::{
     default_accounting, CompileRefusal, DependencyInput, SpineLimits, SpineStage, SuppliedLibrary,
     DEFAULT_WORK_UNITS,
@@ -757,6 +759,80 @@ fn a_cancelled_call_is_incomplete_and_exits_22() {
         let category = CallFailure::Cancelled(cause).category();
         assert_eq!(category, Category::Incomplete);
         assert_eq!(category.exit_code(), 22);
+    }
+}
+
+/// FR-100-AC-12 (TC-452 step 5): `spine::run` over `seven`, cancelled mid-run
+/// (`Requested` at the last front-end charge, `Deadline` at the first S6a
+/// charge) returns `RunRefusal::Cancelled` with the handle's cause, never a
+/// fault, and `from_run` writes it incomplete, exit 22, no stage.
+#[trace("TC-452", "FR-100-AC-12")]
+#[test]
+fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
+    let run_under = |cancel: &Cancel| {
+        crate::spine::run(
+            identity(),
+            "unit.native",
+            FIXTURE.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &crate::spine::Call {
+                function: "seven".to_owned(),
+                arguments: Vec::new(),
+                accounting: default_accounting(DEFAULT_WORK_UNITS),
+            },
+            cancel,
+        )
+    };
+    let front_end = charges_of(|cancel| {
+        let limits = SpineLimits::default();
+        let parsed = parse(&request(FIXTURE.as_bytes()), limits.source, cancel)?.into_value();
+        let models = select(&parsed, &BTreeMap::new(), limits.model, cancel)?.into_value();
+        let checked = check(
+            &parsed,
+            &models,
+            &DependencyInput::default(),
+            &LockEvidence::default(),
+            limits,
+            cancel,
+        )?
+        .into_value();
+        package(&checked, PackageLimits::default(), cancel).map(|_| ())
+    });
+    let total = charges_of(run_under);
+    assert!(
+        total > front_end,
+        "S6a charges at least once: {front_end} of {total}"
+    );
+
+    for (at, cause, spelling) in [
+        (front_end, CancelCause::Requested, "requested"),
+        (front_end + 1, CancelCause::Deadline, "deadline"),
+    ] {
+        let gate = gated(Some(at));
+        let result = gate.run(cause, run_under);
+        gate.assert_stopped_at(at);
+        let refusal = result.as_ref().err().map(AsRef::as_ref);
+        assert!(
+            matches!(refusal, Some(RunRefusal::Cancelled(seen)) if *seen == cause),
+            "charge {at}: {refusal:?}"
+        );
+        assert_eq!(
+            result.as_ref().unwrap_err().category(),
+            Category::Incomplete
+        );
+        assert_eq!(result.as_ref().unwrap_err().stage(), None);
+        let document = OutcomeDocument::from_run(&result);
+        assert_eq!(document.category().exit_code(), 22);
+        let json: serde_json::Value =
+            serde_json::from_slice(&document.to_bytes().expect("encodes")).expect("is JSON");
+        assert_eq!(json["category"], "incomplete");
+        assert_eq!(json["last_stage"], serde_json::Value::Null);
+        assert_eq!(json["result"], serde_json::Value::Null);
+        assert_eq!(json["diagnostics"].as_array().map(Vec::len), Some(1));
+        assert_eq!(json["diagnostics"][0]["code"], "cancelled");
+        assert_eq!(json["diagnostics"][0]["cause"], spelling);
     }
 }
 
