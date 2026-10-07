@@ -847,7 +847,7 @@ fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompile
         .check_unit_owner(&labels(source))
         .map_err(ReplayRefusal::DependencyInput)?;
     let bytes = provided(source)?;
-    let packages = domain_packages(request, limits);
+    let packages = domain_packages(request);
     // Rule 4: the recompile.
     let compiled = run_spine(
         &labels(source),
@@ -905,7 +905,6 @@ fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompile
 /// bytes' digest, which no model selection names.
 fn domain_packages(
     request: &ReplayRequest,
-    limits: &CallerLimits,
 ) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
     package_input(
         request

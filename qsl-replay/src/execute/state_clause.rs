@@ -211,7 +211,7 @@ pub fn replay_state_clause(
         source: labels(source),
         extraction: None,
     };
-    let packages = domain_packages(&request, &limits);
+    let packages = domain_packages(&request);
     // FR-106 reads every document only from the byte provision, by its
     // `sha256-jcs` digest.
     let documents: BTreeMap<[u8; 32], Vec<u8>> = request

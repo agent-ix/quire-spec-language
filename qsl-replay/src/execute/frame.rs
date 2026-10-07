@@ -228,7 +228,7 @@ pub fn replay_frame(
         source: labels(source),
         extraction: None,
     };
-    let packages = domain_packages(&request, &limits);
+    let packages = domain_packages(&request);
     // FR-106 reads the invocation and its snapshots only from the byte
     // provision, by their `sha256-jcs` digests.
     let documents: BTreeMap<[u8; 32], Vec<u8>> = request
