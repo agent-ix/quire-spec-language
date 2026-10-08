@@ -706,9 +706,12 @@ fn spine_model() -> (Vec<u8>, String) {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(&document)
-        .unwrap()
-        .jcs_digest();
+    let digest = qsl_semantics::model::intake::PackageDocument::parse(
+        &document,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .unwrap()
+    .jcs_digest();
     (document, qsl_semantics::model::key::hex(&digest))
 }
 

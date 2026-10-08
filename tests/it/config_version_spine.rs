@@ -543,7 +543,6 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         let limits_a = (
             request_a.limits,
             request_a.observation_limits,
-            request_a.model_limits,
             request_a.accounting,
         );
         let report_a = run_clause(request_a).unwrap();
@@ -551,7 +550,6 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         let limits_b = (
             request_b.limits,
             request_b.observation_limits,
-            request_b.model_limits,
             request_b.accounting,
         );
         let report_b = run_clause(request_b).unwrap();

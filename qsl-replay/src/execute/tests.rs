@@ -531,7 +531,9 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let jcs = PackageDocument::parse(&document).unwrap().jcs_digest();
+    let jcs = PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
+        .unwrap()
+        .jcs_digest();
     let hex: String = jcs.iter().map(|byte| format!("{byte:02x}")).collect();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\

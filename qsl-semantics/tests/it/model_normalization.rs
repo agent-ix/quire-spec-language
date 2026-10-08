@@ -833,6 +833,7 @@ fn n01_exact_limits_complete_and_the_charge_totals_match_ground_truth() {
         work_units: 19,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
+        intake: qsl_foundation::IntakeLimits::default(),
     };
     let (outcome, meter) = normalize_with_meter(&fixture_f1(), exact);
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
@@ -859,6 +860,7 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
         work_units: 18,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
+        intake: qsl_foundation::IntakeLimits::default(),
     };
     match normalize(&fixture_f1(), limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
@@ -2132,6 +2134,7 @@ fn f1_deep_parallel_generalization_bounds_enumeration_instead_of_exploding() {
         work_units: 1,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
+        intake: qsl_foundation::IntakeLimits::default(),
     };
     let start = std::time::Instant::now();
     let outcome = normalize(&domain_package, tight);

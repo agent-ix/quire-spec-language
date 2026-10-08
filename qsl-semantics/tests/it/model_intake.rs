@@ -60,7 +60,8 @@ use sha2::{Digest, Sha256};
 
 /// Parses test document bytes through intake's one parse.
 fn parse_document(bytes: &[u8]) -> PackageDocument {
-    PackageDocument::parse(bytes).expect("the test document parses as JSON")
+    PackageDocument::parse(bytes, qsl_foundation::IntakeLimits::default())
+        .expect("the test document parses as JSON")
 }
 
 /// Resolves to the checked-out `agent-ix-extraction-frontend` git
@@ -105,6 +106,66 @@ fn fcd_fixtures_dir() -> &'static Path {
             .expect("a package manifest_path has a parent directory")
             .join("fixtures")
     })
+}
+
+/// FR-260-AC-1 (TC-730 step 2), on a 512 KiB stack: every corpus domain
+/// package FR-056's tests admit still admits under the `sha256-jcs` digest
+/// it had. The digests are SHA-256 over each document's RFC 8785 text,
+/// computed outside this crate; the architecture document is the one FCD's
+/// real lift produces at the pinned rev (68ace480).
+#[trace("TC-730", "FR-260-AC-1")]
+#[test]
+fn every_corpus_package_admits_under_its_recorded_digest() {
+    on_a_small_stack(|| {
+        let fixtures = fcd_fixtures_dir();
+        let architecture = lift_document(
+            &fixtures.join("architecture"),
+            &[
+                fixtures.join("modules/fixture-domain"),
+                fixtures.join("modules/fixture-edges"),
+                fixtures.join("modules/fixture-systems"),
+            ],
+        )
+        .expect("FCD's real architecture fixture lifts cleanly");
+        let corpus: [(&str, Vec<u8>, &str); 3] = [
+            (
+                "spine-model",
+                include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json").to_vec(),
+                "5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd",
+            ),
+            (
+                "systems-interface",
+                include_bytes!("../../../tests/fixtures/systems-interface.semantic-ir.json")
+                    .to_vec(),
+                "47b316eca571f39b6f9d4592940e8c6467c3874d91d7c86faa1379ab95b5cf72",
+            ),
+            (
+                "architecture",
+                architecture,
+                "aed361978b4f0fcc5b7ca5d7dfc95abb32023913d563f9a08101065e6ef48ee0",
+            ),
+        ];
+        for (name, bytes, recorded) in corpus {
+            let mut digest = [0_u8; 32];
+            for (index, byte) in digest.iter_mut().enumerate() {
+                *byte = u8::from_str_radix(&recorded[2 * index..2 * index + 2], 16).unwrap();
+            }
+            let package: Value = serde_json::from_slice(&bytes).unwrap();
+            let offered = DomainPackageRef {
+                identity: package["package"]["identity"].as_str().unwrap().to_owned(),
+                version: package["package"]["version"].as_str().unwrap().to_owned(),
+                digest,
+            };
+            let by_digest = BTreeMap::from([(digest, bytes)]);
+            let admitted = admit(
+                &offered,
+                SHA256_JCS_DIGEST_DOMAIN,
+                &by_digest,
+                qsl_foundation::IntakeLimits::default(),
+            );
+            assert!(admitted.is_ok(), "{name}: {:?}", admitted.err());
+        }
+    });
 }
 
 #[trace("TC-145", "FR-056-AC-1")]
@@ -154,10 +215,13 @@ fn lifts_the_architecture_bundle_and_admits_it() {
         version: version.clone(),
         digest: actual_digest,
     };
-    let (admitted, admitted_document) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-        .expect(
-            "a selection matching the lifted package's own identity/version/digest is admitted",
-        );
+    let (admitted, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a selection matching the lifted package's own identity/version/digest is admitted");
     assert_eq!(admitted.identity, identity);
     assert_eq!(admitted.version, version);
     assert_eq!(admitted_document.tree(), &package);
@@ -751,9 +815,13 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         version: "1.0.0".to_owned(),
         digest,
     };
-    let (package_ref, admitted_document) =
-        admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-            .expect("a matching selection admits");
+    let (package_ref, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a matching selection admits");
 
     let records = read_records(package_identity, &admitted_document)
         .expect("a QSpec-conformant document reads with no refusals");
@@ -897,26 +965,16 @@ fn charges_normalize_record_once_per_intake_declaration() {
     }
 }
 
-/// H3 (PR #200 review): `agent-ix-semantic-ir`'s own `json::MAX_DEPTH` is
-/// 200; `serde_json::from_slice`'s default recursion limit is 128.
-/// `validate_with_semantic_ir` parses (and, via `decide`, schema-validates)
-/// document bytes through the former; `read_records` used to re-parse the
-/// same bytes with the latter, under the assumption that a prior successful
-/// parse meant a second, plain `serde_json::from_slice` would always
-/// succeed too. That assumption was false for any document nested between
-/// 129 and 200 deep: real, validator-accepted input (achievable
+/// H3 (PR #200 review): `serde_json::from_slice`'s default recursion limit
+/// is 128. `read_records` used to re-parse the validated bytes with it,
+/// which would panic on a document nested past 128 (achievable
 /// schema-legally inside a producer extension's own free-form `payload`,
-/// which this test exercises at depth 150) that the old
-/// `serde_json::from_slice(document).expect(...)` would panic on instead of
-/// refusing.
+/// which this test exercises at depth 150). It reads the one tree
+/// `PackageDocument::parse` built, which has no depth bound (FR-260).
 ///
-/// This is confirmed two ways: directly, a plain `serde_json::from_str` on
-/// this exact document's bytes fails with "recursion limit exceeded"
-/// (asserted below, so this test is not vacuous); and end to end,
-/// `read_records` -- which no longer parses at all, reading the one tree
-/// `PackageDocument::parse` built under `agent-ix-semantic-ir`'s own
-/// 200-deep bound -- reads this document clean rather than
-/// aborting the process.
+/// A plain `serde_json::from_str` on this exact document's bytes fails with
+/// "recursion limit exceeded" (asserted below, so this test is not vacuous),
+/// and `read_records` reads the document clean.
 #[test]
 fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
     let package_identity = "acme/orders";
@@ -955,11 +1013,161 @@ fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
          recursion limit, or this test proves nothing"
     );
 
-    let records = read_records(package_identity, &parse_document(text.as_bytes())).expect(
-        "depth 150 is within agent-ix-semantic-ir's own 200-deep bound and reads clean, \
-         not a panic",
-    );
+    let records = read_records(package_identity, &parse_document(text.as_bytes()))
+        .expect("depth 150 is past serde_json's own recursion limit and reads clean, not a panic");
     assert_eq!(records.len(), 1);
+}
+
+/// Runs `body` on a thread with a 512 KiB stack and fails if it overflows.
+fn on_a_small_stack(body: impl FnOnce() + Send + 'static) {
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(body)
+        .expect("the test thread spawns")
+        .join()
+        .expect("the body does not overflow the stack");
+}
+
+/// No byte limit: the tests below feed documents of many megabytes.
+fn unbounded() -> qsl_foundation::IntakeLimits {
+    qsl_foundation::IntakeLimits::default().with_input_bytes(u64::MAX)
+}
+
+/// FR-260-AC-1 (TC-730 step 1): a package whose declarations are valid and
+/// which holds an array nested 100,000 deep at a member the semantic-IR
+/// schema does not admit is admitted by FR-154, read by FR-056's reader and
+/// refused by the reader-refusal rule on a 512 KiB stack: no declaration, the
+/// `agent-ix-semantic-ir` diagnostic retained, no `resource_exhausted` cause
+/// and no depth named.
+#[trace("TC-730", "FR-260-AC-1")]
+#[test]
+fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
+    on_a_small_stack(|| {
+        const DEPTH: usize = 100_000;
+        let package_identity = "acme/orders";
+        let widget = format!("ix://{package_identity}/Widget");
+        let mut document = wire_envelope(
+            package_identity,
+            serde_json::json!([wire_construct(
+                package_identity,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                &widget,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [],
+                    "operations": [],
+                    "bogus": "@@DEEP@@",
+                    "origin": {"source": {
+                        "sourceIdentity": "ix://acme/orders/spec",
+                        "path": "spec/Widget.md",
+                        "startLine": 3,
+                        "startColumn": 5,
+                    }},
+                }),
+            )]),
+        );
+        document["extensions"] = serde_json::json!([]);
+        let deep = format!("{}0{}", "[".repeat(DEPTH), "]".repeat(DEPTH));
+        let text = document.to_string().replace("\"@@DEEP@@\"", &deep);
+        let bytes = text.into_bytes();
+        let parsed = PackageDocument::parse(&bytes, unbounded()).expect("the deep document reads");
+        let refusals = read_records(package_identity, &parsed)
+            .expect_err("a member the schema does not admit refuses");
+        assert!(!refusals.is_empty());
+        for refusal in &refusals {
+            assert_ne!(
+                refusal.code,
+                qsl_foundation::diagnostic::Code::ResourceExhausted,
+                "{refusal:?}"
+            );
+            assert!(
+                matches!(
+                    refusal.cause,
+                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { .. }
+                ),
+                "{refusal:?}"
+            );
+        }
+        // The retained diagnostic names the member's IR node, artifact id
+        // and span.
+        let named = refusals.iter().any(|refusal| {
+            refusal.detail.contains("agent-ix-semantic-ir refused")
+                && matches!(
+                    &refusal.cause,
+                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                        node,
+                        artifact: Some(artifact),
+                        span: Some(span),
+                    } if *node == widget
+                        && artifact == "ix://acme/orders/spec"
+                        && (span.start.line, span.start.column) == (3, 5)
+                )
+        });
+        assert!(named, "{refusals:?}");
+        drop(parsed);
+    });
+}
+
+/// FR-260-AC-3 (TC-731): a package whose composite types form a cycle of 300
+/// types, and one of 100,000 types, are each refused with semantic-IR's
+/// composite-cycle refusal on a 512 KiB stack.
+#[trace("TC-731", "FR-260-AC-3")]
+#[test]
+fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
+    on_a_small_stack(|| {
+        let package_identity = "acme/orders";
+        for count in [300_usize, 100_000] {
+            let origin = r#"{"generated":{"generatorIdentity":"ix://acme/orders/gen","generatorVersion":"1.0.0","inputIdentities":["ix://acme/orders/gen"]}}"#;
+            let mut types = String::from("[");
+            for position in 0..count {
+                let next = (position + 1) % count;
+                let this = format!("ix://{package_identity}/C{position}");
+                let target = format!("ix://{package_identity}/C{next}");
+                if position > 0 {
+                    types.push(',');
+                }
+                types.push_str(&format!(
+                    r#"{{"identity":"{this}","displayName":"C","kind":{{"module":"{package_identity}","name":"object_type"}},"roles":[],"origin":{origin},"constraints":[],"extensions":[],"unknownPolicy":"reject","supertypes":[],"fields":[],"operations":[],"relationships":[{{"category":"structural","composite":true,"direction":"source-to-target","identity":"ix://{package_identity}/relationship/C{position}-has-C{next}","origin":{origin},"sourceEnd":{{"multiplicity":{{"lower":0,"ordered":false,"unique":false}},"role":"owner","type":"{this}"}},"targetEnd":{{"multiplicity":{{"lower":1,"upper":1,"ordered":false,"unique":false}},"type":"{target}"}}}}]}}"#
+                ));
+            }
+            types.push(']');
+            let document = wire_envelope(
+                package_identity,
+                serde_json::json!([wire_construct(
+                    package_identity,
+                    "object_type",
+                    meaning::OBJECT_TYPE,
+                    serde_json::json!({}),
+                )]),
+                serde_json::json!([]),
+            );
+            let text = document
+                .to_string()
+                .replace("\"types\":[]", &format!("\"types\":{types}"));
+            let parsed = PackageDocument::parse(text.as_bytes(), unbounded())
+                .expect("the cyclic document reads");
+            let refusals =
+                read_records(package_identity, &parsed).expect_err("a composite cycle refuses");
+            let closing = format!("ix://{package_identity}/relationship/C{}-has-C0", count - 1);
+            let names_it = refusals.iter().any(|refusal| {
+                refusal.detail.contains("COMPOSITE_CYCLE")
+                    && matches!(
+                        &refusal.cause,
+                        qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                            node,
+                            ..
+                        } if *node == closing
+                    )
+            });
+            assert!(names_it, "{count} types: {refusals:?}");
+            drop(parsed);
+        }
+    });
 }
 
 /// ADR-010 OBS-006 / ADR-013 O-03 (#213 S-2's own adverse test, named but not
@@ -978,7 +1186,13 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     };
     let bytes_by_digest = BTreeMap::new();
 
-    let refusal = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest).expect_err(
+    let refusal = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect_err(
         "a selection naming the quire/native pseudo-package never admits, \
          regardless of what bytes it would otherwise resolve to",
     );
@@ -1030,6 +1244,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
         &[first, second],
         SHA256_JCS_DIGEST_DOMAIN,
         &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
     )
     .expect_err("a second selection of the same domain-package identity never admits");
     assert_eq!(
@@ -1134,8 +1349,13 @@ fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
         version: "1.0.0".to_owned(),
         digest,
     };
-    let (_, admitted_document) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-        .expect("a matching selection admits");
+    let (_, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a matching selection admits");
 
     let refusals = read_records(package_identity, &admitted_document)
         .expect_err("a systems part carrying an operation refuses, broken frame or not");

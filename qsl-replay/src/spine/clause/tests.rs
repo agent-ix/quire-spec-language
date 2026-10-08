@@ -699,7 +699,6 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
 }
@@ -1227,6 +1226,7 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         std::slice::from_ref(&model_selection),
         qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
         &packages,
+        qsl_foundation::IntakeLimits::default(),
     )
     .expect("the fixture package admits cleanly");
     let (package_ref, package_document) =
@@ -1691,7 +1691,6 @@ fn config_version_request_for(
         expected_package_id: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
-        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         accounting: default_accounting(1_000_000),
     }
 }

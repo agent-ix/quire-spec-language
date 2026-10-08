@@ -407,6 +407,7 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::LibraryArtifactBytes
             | Setting::LibrarySingleArtifactBytes
             | Setting::IdentityInputBytes
+            | Setting::IntakeInputBytes
             | Setting::ReplayInputBytes
             | Setting::I2InputBytes
             | Setting::I2Nodes

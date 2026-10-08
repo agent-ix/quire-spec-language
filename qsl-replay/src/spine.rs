@@ -250,6 +250,7 @@ impl CompileRefusal {
                 | Setting::LibraryDependencyEdges
                 | Setting::LibraryArtifactBytes
                 | Setting::LibrarySingleArtifactBytes
+                | Setting::IntakeInputBytes
                 | Setting::I2InputBytes
                 | Setting::I2Nodes
                 | Setting::I2Edges

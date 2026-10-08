@@ -396,7 +396,8 @@ fn domain_model<'a>(
         .get(&ref_key(artifact))
         .ok_or(Error::Invalid(Invalid::Dependency))?;
     same_ref(artifact, dependency.artifact, work)?;
-    domain::verify_document(selection, dependency.bytes, work)?;
+    let intake = work.limits.intake;
+    domain::verify_document(selection, dependency.bytes, intake, work)?;
     let locus = domain::locus(domain, dependency.bytes.len(), work)?;
     let mut exports = BTreeMap::new();
     for export in domain::exports(domain.package, work)? {

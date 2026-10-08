@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.2.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=68c0acba2390eb1593cc003d0a3e144638540a86#68c0acba2390eb1593cc003d0a3e144638540a86"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=68ace480f5c9793290386010563f85896789e61d#68ace480f5c9793290386010563f85896789e61d"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -18,7 +18,7 @@ dependencies = [
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.1.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=68c0acba2390eb1593cc003d0a3e144638540a86#68c0acba2390eb1593cc003d0a3e144638540a86"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=68ace480f5c9793290386010563f85896789e61d#68ace480f5c9793290386010563f85896789e61d"
 
 [[package]]
 name = "agent-ix-semantic-schema"
@@ -1659,7 +1659,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?rev=e0ada80708fe73469923a9d6c2263cfebc0087a0#e0ada80708fe73469923a9d6c2263cfebc0087a0"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#e0ada80708fe73469923a9d6c2263cfebc0087a0"
 dependencies = [
  "quire-canonical",
  "quire-exact",

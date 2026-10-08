@@ -47,9 +47,3 @@ Tag the tests `#[trace("TC-730", "FR-260-AC-1")]`, `#[trace("TC-730", "FR-260-AC
 - Step 4: both views build and the `serde_json` view drops with no stack
   overflow; the failing leaf's failure is returned; the shallow views equal
   the expected trees, members in document order and numbers by lexeme.
-
-## Status
-
-Step 4 is implemented. Steps 1 and 2 (FR-260-AC-1) are planned: intake still
-refuses a document nested 200 or more deep as a depth limit until Filament
-AGE-2224 removes the semantic-IR crate's recursion.

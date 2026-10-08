@@ -287,6 +287,7 @@ fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
         &offered,
         SHA256_JCS_DIGEST_DOMAIN,
         &BTreeMap::from([(digest, bytes.clone())]),
+        qsl_foundation::IntakeLimits::default(),
     )
     .expect("the selection matches the lifted package");
     let records = read_records(&selection.identity, &document)

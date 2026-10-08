@@ -716,8 +716,13 @@ fn model_views(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<ModelView>, AdmissionFailure> {
-    let admitted = admit_selections(model_selections, SHA256_JCS_DIGEST_DOMAIN, packages)
-        .map_err(|_| fault("model-reconsistent-admission"))?;
+    let admitted = admit_selections(
+        model_selections,
+        SHA256_JCS_DIGEST_DOMAIN,
+        packages,
+        limits.intake,
+    )
+    .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
         let records = read_records(&package_ref.identity, &document)

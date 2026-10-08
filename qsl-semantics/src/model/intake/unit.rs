@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::selection::{ModelDigest, ModelSelection};
-use qsl_foundation::{Code, Span};
+use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
 
 use super::{admit_located, read_records, PackageDocument};
@@ -73,19 +73,26 @@ pub struct UnitIntakeRefusal {
     pub cause: UnitIntakeCause,
 }
 
+/// No byte limit: how [`package_input`] reads a document to key it.
+const UNBOUNDED: IntakeLimits = IntakeLimits {
+    input_bytes: u64::MAX,
+};
+
 /// The package input FR-056 names: each supplied domain package document
 /// keyed by its `sha256-jcs` digest. A document that does not parse is keyed
 /// by the SHA-256 of its raw bytes, the digest FR-154 check 3 takes of such
 /// bytes, so a selection of it refuses at admission rather than as a
-/// missing package. Each document is parsed here to key it and again when a
-/// selection admits it.
+/// missing package. Each document is parsed here to key it, under no byte
+/// limit, and again when a selection admits it under the caller's
+/// `intake.input_bytes`, so a document over that limit refuses naming it
+/// and is never mistaken for a missing package.
 pub fn package_input<'a>(
     documents: impl IntoIterator<Item = &'a [u8]>,
 ) -> BTreeMap<[u8; 32], Vec<u8>> {
     documents
         .into_iter()
         .map(|bytes| {
-            let digest = PackageDocument::parse(bytes)
+            let digest = PackageDocument::parse(bytes, UNBOUNDED)
                 .map_or_else(|_| raw_bytes_digest(bytes), |document| document.jcs_digest);
             (digest, bytes.to_vec())
         })
@@ -136,6 +143,7 @@ pub fn admit_unit_with_cancel(
         |(_, offered_ref)| offered_ref,
         SHA256_JCS_DIGEST_DOMAIN,
         packages,
+        limits.intake,
     )
     .map_err(|((selection, _), refusal)| {
         refuse(
