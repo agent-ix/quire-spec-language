@@ -90,6 +90,7 @@ settings! {
     LibraryDependencyEdges => "library.dependency_edges", "library resolution", EdgeCount;
     LibraryArtifactBytes => "library.artifact_bytes", "library resolution", InputBytes;
     LibrarySingleArtifactBytes => "library.single_artifact_bytes", "library resolution", InputBytes;
+    IntakeInputBytes => "intake.input_bytes", "I1 semantic-IR intake", InputBytes;
     IdentityInputBytes => "identity.input_bytes", "identity encoding", InputBytes;
     ReplayInputBytes => "replay.input_bytes", "replay envelope readers", InputBytes;
     I2InputBytes => "i2.input_bytes", "I2 v2 reader", InputBytes;

@@ -231,19 +231,12 @@ mod tests {
             .unwrap_or_else(|| panic!("no limits type reports {setting}"))
     }
 
-    /// The marker FR-255's table puts on a row whose setting is not in the
-    /// code yet (FR-255 Status).
-    const PENDING: &str = "(pending QSL-487)";
-
     /// One row of FR-255's setting table.
     struct Row {
         name: String,
         stage: String,
         kind: String,
         default: String,
-        /// The table marks the row "(pending QSL-487)": its setting lands
-        /// with a later ticket, so the code has no setting for it yet.
-        pending: bool,
     }
 
     const SPEC: &str = include_str!(
@@ -278,7 +271,6 @@ mod tests {
                     stage: cells[1].to_owned(),
                     kind: cells[2].to_owned(),
                     default: cells[4].to_owned(),
-                    pending: cells[3].contains(PENDING),
                 }
             })
             .collect()
@@ -322,18 +314,7 @@ mod tests {
             .collect();
         let distinct: BTreeSet<Setting> = reported.iter().copied().collect();
         assert_eq!(distinct.len(), reported.len(), "a setting is mapped twice");
-        let all_rows = spec_table();
-        let (pending, table): (Vec<Row>, Vec<Row>) =
-            all_rows.into_iter().partition(|row| row.pending);
-        // A pending row is one the code has no setting for; a row with a
-        // setting must drop the marker.
-        for row in &pending {
-            assert!(
-                Setting::from_name(&row.name).is_none(),
-                "{} has a setting: drop its \"(pending QSL-487)\" marker",
-                row.name
-            );
-        }
+        let table = spec_table();
         let accounting = accounting_table();
         let table_names: BTreeSet<&str> = table
             .iter()
@@ -417,6 +398,7 @@ mod tests {
         mapped.set_bound(Setting::S3Nodes, 32);
         mapped.set_bound(Setting::S3InputBytes, 33);
         mapped.set_bound(Setting::S3WorkUnits, 34);
+        mapped.set_bound(Setting::IntakeInputBytes, 35);
         let built = CallerLimits {
             spine: SpineLimits {
                 source: qsl_cst::Limits::default()
@@ -439,6 +421,10 @@ mod tests {
                     .with_occurrences(22)
                     .with_diagnostics(23)
                     .with_work(24),
+                model: qsl_semantics::model::accounting::ModelNormalizationLimits {
+                    intake: qsl_foundation::IntakeLimits::default().with_input_bytes(35),
+                    ..SpineLimits::default().model
+                },
                 ..SpineLimits::default()
             },
             library: LibraryLimits::default()
@@ -516,11 +502,7 @@ mod tests {
     #[test]
     fn unconfigured_limits_are_at_the_published_defaults() {
         let defaults = CallerLimits::from_operands([]).unwrap();
-        let table: Vec<Row> = spec_table()
-            .into_iter()
-            .filter(|row| !row.pending)
-            .collect();
-        let accounting = accounting_table();
+        let table: Vec<Row> = spec_table();
         assert_eq!(table.len(), Setting::ALL.len());
         for row in table {
             let setting = Setting::from_name(&row.name).expect("a table name is a setting");
@@ -531,6 +513,7 @@ mod tests {
                 row.name
             );
         }
+        let accounting = accounting_table();
         assert_eq!(accounting.len(), AccountingSetting::ALL.len());
         for (name, default) in accounting {
             assert_eq!(

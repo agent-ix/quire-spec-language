@@ -200,9 +200,6 @@ pub struct ClauseRunRequest {
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The limits admission re-normalizes the unit's domain packages under
-    /// (see `qsl_semantics::model::observation`'s own module doc).
-    pub model_limits: ModelNormalizationLimits,
     /// The evaluation meter's accounting limits (FR-100's `accounting` object).
     pub accounting: ScalarLimits,
 }
