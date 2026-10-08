@@ -535,7 +535,7 @@ fn tc_905_encoding_work_is_linear_in_depth() {
 }
 
 /// FR-070-AC-13 (QSL-647): the value text's length is counted from the
-/// finished bytes without building the text. A text of 1,000,000 `;`
+/// finished bytes. A text of 1,000,000 `;`
 /// characters is 1,000,026 JCS bytes and 3,000,026 escaped; `value_text_len`
 /// returns the escaped length, equal to `to_value_text`'s, while the only
 /// bytes it holds are the JCS bytes: no buffer the encoder holds reaches
@@ -543,7 +543,7 @@ fn tc_905_encoding_work_is_linear_in_depth() {
 /// available; the held buffers are read from the encoder's pieces.)
 #[trace("TC-905", "FR-070-AC-13")]
 #[test]
-fn tc_905_value_text_len_counts_without_building_the_text() {
+fn tc_905_value_text_len_counts_from_the_finished_bytes() {
     let value = WitnessValue::Text(";".repeat(1_000_000));
     assert_eq!(value.value_text_len(), 3_000_026);
     assert_eq!(value.to_value_text().unwrap().len(), 3_000_026);
