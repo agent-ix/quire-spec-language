@@ -95,6 +95,7 @@ impl LimitKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LimitExceeded {
     setting: Setting,
+    kind: LimitKind,
     configured_bound: u64,
     actual: u128,
     /// Boxed: a `Locus` names a source reference or a digest and pointer,
@@ -107,6 +108,12 @@ impl LimitExceeded {
     /// `configured_bound`, where the stage's counter reached `actual`, with
     /// no locus yet. The limit kind is the setting's.
     ///
+    /// # Panics
+    ///
+    /// When `setting` is an accounting budget ([`Setting::is_accounting`]):
+    /// a reached budget settles `Incomplete` and is never a stage limit, so
+    /// no producer constructs one here.
+    ///
     /// `actual` is the value the refused step would have taken the counter
     /// to: the measured size for input bytes and node count, the edge count
     /// the refused step would have reached for edge count, and the
@@ -114,8 +121,12 @@ impl LimitExceeded {
     /// budget. It is wider than the bound because a cumulative total of two
     /// `u64` counters can exceed `u64::MAX`.
     pub const fn new(setting: Setting, configured_bound: u64, actual: u128) -> Self {
+        let Some(kind) = setting.kind() else {
+            panic!("an accounting budget settles Incomplete, not stage_limit_exceeded");
+        };
         Self {
             setting,
+            kind,
             configured_bound,
             actual,
             locus: None,
@@ -137,7 +148,7 @@ impl LimitExceeded {
 
     /// The limit that was reached.
     pub const fn kind(&self) -> LimitKind {
-        self.setting.kind()
+        self.kind
     }
 
     /// The configured bound of that limit.
@@ -273,9 +284,9 @@ mod tests {
     #[trace("TC-427", "FR-096-AC-2", "TC-428", "FR-096-AC-7")]
     #[test]
     fn limit_exceeded_reports_stage_limit_exceeded_per_setting() {
-        for setting in Setting::ALL.iter().copied() {
+        for setting in Setting::ALL.iter().copied().filter(|s| !s.is_accounting()) {
             let exceeded = LimitExceeded::new(setting, 10, 11);
-            let cause = setting.kind().catalog_cause();
+            let cause = setting.kind().expect("a stage setting").catalog_cause();
             let code = exceeded.catalog_code();
             assert_eq!(code, CatalogCode::new("stage_limit_exceeded", cause));
             assert_eq!(category_of(&code), Some(Category::Incomplete));

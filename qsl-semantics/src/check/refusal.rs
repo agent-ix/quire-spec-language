@@ -416,7 +416,17 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::I2Diagnostics
             | Setting::I2WorkUnits
             | Setting::ExploreStates
-            | Setting::ExploreTransitions => Err(setting),
+            | Setting::ExploreTransitions
+            | Setting::AccountingIntegerBits
+            | Setting::AccountingDecimalDigits
+            | Setting::AccountingScaleExpansion
+            | Setting::AccountingTextInputBytes
+            | Setting::AccountingTextScalars
+            | Setting::AccountingNormalizedScalars
+            | Setting::AccountingUnitEdges
+            | Setting::AccountingValueOccurrences
+            | Setting::AccountingWorkUnits
+            | Setting::AccountingResultUnits => Err(setting),
         }
     }
 }
@@ -896,7 +906,9 @@ impl CheckCause {
                 | Obligation::NonemptyReduction { .. },
             ) => Some("unproved-range"),
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
-            Self::ResourceExhausted(cause) => Some(cause.kind.setting().kind().catalog_cause()),
+            Self::ResourceExhausted(cause) => {
+                cause.kind.setting().kind().map(|kind| kind.catalog_cause())
+            }
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
@@ -904,9 +916,9 @@ impl CheckCause {
             Self::InternalFault(_) | Self::Identity(IdentityRefusal::NonCanonical) => {
                 Some("established-invariant-broken")
             }
-            Self::Identity(IdentityRefusal::InputBytes { .. }) => {
-                Some(Setting::IdentityInputBytes.kind().catalog_cause())
-            }
+            Self::Identity(IdentityRefusal::InputBytes { .. }) => Setting::IdentityInputBytes
+                .kind()
+                .map(|kind| kind.catalog_cause()),
             Self::Identity(IdentityRefusal::Allocation { .. }) => Some("allocation-failed"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None

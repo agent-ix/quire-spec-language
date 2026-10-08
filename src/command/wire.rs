@@ -6,6 +6,7 @@ use crate::runtime::{
     ExecutionSelection, InvocationRef, ObjectIdentity, ObservationSelection, SnapshotRef,
 };
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
+use qsl_foundation::Setting;
 use quire_contract_model as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -103,24 +104,76 @@ fn deserialize_objects_opt<'de, D: serde::Deserializer<'de>, T: serde::Deseriali
 }
 
 /// The `call` member of a `1-draft` native-run/1 request (FR-100): which
-/// function to call, its arguments, and an optional `work_units` limit.
+/// function to call, its arguments, and an optional closed `accounting`
+/// object. A top-level `work_units` is no member: `deny_unknown_fields`
+/// refuses it.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Call {
     pub function: String,
     #[serde(deserialize_with = "deserialize_objects")]
     pub arguments: Vec<Argument>,
-    /// FR-100: a JSON integer from 0 to `u64::MAX` when present. A present
-    /// `null` is not admitted: unlike `from_object_opt`/
-    /// `deserialize_objects_opt` (wrapped so `#[serde(default)]` alone
-    /// covers absence), this deserializes `u64` directly -- so serde only
-    /// ever calls it for a present key, and a present `null` fails `u64`'s
-    /// own visitor rather than silently becoming the default.
-    #[serde(default, deserialize_with = "work_units")]
-    pub work_units: Option<u64>,
+    /// FR-100: the call's accounting limits by counter name; absent is `{}`.
+    #[serde(default, deserialize_with = "from_object")]
+    pub accounting: Accounting,
 }
 
-fn work_units<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
+/// The `accounting` member of a [`Call`] (FR-100): any subset of the ten
+/// `quire.value.accounting/v1` counters, each a JSON integer from 0 to
+/// `u64::MAX`. A member that names no counter, or is named twice, refuses at
+/// decode (serde's derive rejects both).
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Accounting {
+    #[serde(default, deserialize_with = "counter")]
+    integer_bits: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    decimal_digits: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    scale_expansion: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    text_input_bytes: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    text_scalars: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    normalized_scalars: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    unit_edges: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    value_occurrences: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    work_units: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    result_units: Option<u64>,
+}
+
+impl Accounting {
+    /// The counters the object names, as their settings with their bounds.
+    pub fn entries(&self) -> impl Iterator<Item = (Setting, u64)> {
+        [
+            (Setting::AccountingIntegerBits, self.integer_bits),
+            (Setting::AccountingDecimalDigits, self.decimal_digits),
+            (Setting::AccountingScaleExpansion, self.scale_expansion),
+            (Setting::AccountingTextInputBytes, self.text_input_bytes),
+            (Setting::AccountingTextScalars, self.text_scalars),
+            (
+                Setting::AccountingNormalizedScalars,
+                self.normalized_scalars,
+            ),
+            (Setting::AccountingUnitEdges, self.unit_edges),
+            (Setting::AccountingValueOccurrences, self.value_occurrences),
+            (Setting::AccountingWorkUnits, self.work_units),
+            (Setting::AccountingResultUnits, self.result_units),
+        ]
+        .into_iter()
+        .filter_map(|(setting, bound)| bound.map(|bound| (setting, bound)))
+    }
+}
+
+/// A present counter is a JSON integer from 0 to `u64::MAX`. This
+/// deserializes `u64` directly, so serde calls it only for a present key and
+/// a present `null` fails `u64`'s own visitor rather than becoming absent.
+fn counter<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
     u64::deserialize(decoder).map(Some)
 }
 

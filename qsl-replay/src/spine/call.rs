@@ -180,9 +180,16 @@ pub struct CallIncomplete {
 
 impl CallIncomplete {
     /// The `Call::accounting` field that raises this bound: the exhausted
-    /// counter's `quire.value.accounting/v1` member name.
+    /// counter's `quire.value.accounting/v1` member name, which is also its
+    /// setting's name.
     pub fn limits_field(&self) -> &'static str {
         self.record.limit_kind.as_str()
+    }
+
+    /// The setting that raises this bound at every entry point (FR-255
+    /// Behavior 9): the exhausted counter's.
+    pub fn setting(&self) -> qsl_foundation::Setting {
+        crate::limits::AccountingLimits::setting_of(self.record.limit_kind)
     }
 
     /// The counter at the failed charge: what the counter would have

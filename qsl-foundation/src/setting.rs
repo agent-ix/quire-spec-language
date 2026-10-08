@@ -8,6 +8,11 @@
 //! [`LimitKind`] its outcome reports, so a producer of a limit outcome names
 //! the setting and gets its kind from the same row.
 //!
+//! The ten accounting budgets of a call (`integer_bits` to `result_units`)
+//! are settings too, named by their bare counter name. They are not stage
+//! limits: a reached budget settles `Incomplete`, so [`Setting::kind`] is
+//! `None` for them.
+//!
 //! A limits type reports its fields through [`SettingLimits`]: each field has
 //! exactly one setting, and [`SettingLimits::set_bound`] changes that field
 //! and nothing else. Every bound is used as given, with no ceiling.
@@ -17,7 +22,7 @@ use crate::diagnostic::LimitKind;
 /// Declares [`Setting`] and its table from one list, so a name, its stage and
 /// its limit kind are written once.
 macro_rules! settings {
-    ($($variant:ident => $name:literal, $stage:literal, $kind:ident;)+) => {
+    ($($variant:ident => $name:literal, $stage:literal, $kind:expr;)+) => {
         /// A configurable resource limit's stable setting name (FR-255).
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Setting {
@@ -47,11 +52,14 @@ macro_rules! settings {
                 }
             }
 
-            /// The limit kind an outcome for this setting reports.
+            /// The limit kind a `stage_limit_exceeded` outcome for this
+            /// setting reports, or `None` for an accounting budget: a
+            /// reached budget settles `Incomplete` and is not a stage
+            /// limit, so the catalog has no kind for it.
             #[must_use]
-            pub const fn kind(self) -> LimitKind {
+            pub const fn kind(self) -> Option<LimitKind> {
                 match self {
-                    $(Self::$variant => LimitKind::$kind,)+
+                    $(Self::$variant => $kind,)+
                 }
             }
         }
@@ -59,48 +67,57 @@ macro_rules! settings {
 }
 
 settings! {
-    S1InputBytes => "s1.input_bytes", "S1", InputBytes;
-    S1Tokens => "s1.tokens", "S1", TokenCount;
-    S1Nodes => "s1.nodes", "S1", NodeCount;
-    S1WorkUnits => "s1.work_units", "S1", WorkBudget;
-    S3Nodes => "s3.nodes", "S3", NodeCount;
-    S3InputBytes => "s3.input_bytes", "S3", InputBytes;
-    S3WorkUnits => "s3.work_units", "S3", WorkBudget;
-    S3DecimalScale => "s3.decimal_scale", "S3 assembly", WorkBudget;
-    EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", EdgeCount;
-    EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", WorkBudget;
-    ModelDeclarationRecords => "model.declaration_records", "model normalization", NodeCount;
-    ModelDerivationFacts => "model.derivation_facts", "model normalization", NodeCount;
-    ModelEffectiveDeclarations => "model.effective_declarations", "model normalization", NodeCount;
-    ModelDispatchCandidates => "model.dispatch_candidates", "model normalization", NodeCount;
-    ModelHashedBytes => "model.hashed_bytes", "model normalization", InputBytes;
-    ModelWorkUnits => "model.work_units", "model normalization", WorkBudget;
-    ModelAncestorSteps => "model.ancestor_steps", "model normalization", EdgeCount;
-    ModelFamilySteps => "model.family_steps", "model normalization", EdgeCount;
-    AdmissionPopulationMembers => "admission.population_members", "population admission", NodeCount;
-    AdmissionWorkUnits => "admission.work_units", "population admission", WorkBudget;
-    AdmissionAncestorSteps => "admission.ancestor_steps", "population admission", EdgeCount;
-    ObservationInputBytes => "observation.input_bytes", "observation admission", InputBytes;
-    ObservationObjects => "observation.objects", "observation admission", NodeCount;
-    ObservationValues => "observation.values", "observation admission", NodeCount;
-    DependencyLibraries => "dependency.libraries", "S4 source resolution", NodeCount;
-    DependencyImportEdges => "dependency.import_edges", "S4 source resolution", EdgeCount;
-    DependencySourceBytes => "dependency.source_bytes", "S4 source resolution", InputBytes;
-    LibraryDefinitions => "library.definitions", "library resolution", NodeCount;
-    LibraryDependencyEdges => "library.dependency_edges", "library resolution", EdgeCount;
-    LibraryArtifactBytes => "library.artifact_bytes", "library resolution", InputBytes;
-    LibrarySingleArtifactBytes => "library.single_artifact_bytes", "library resolution", InputBytes;
-    IntakeInputBytes => "intake.input_bytes", "I1 semantic-IR intake", InputBytes;
-    IdentityInputBytes => "identity.input_bytes", "identity encoding", InputBytes;
-    ReplayInputBytes => "replay.input_bytes", "replay envelope readers", InputBytes;
-    I2InputBytes => "i2.input_bytes", "I2 v2 reader", InputBytes;
-    I2Nodes => "i2.nodes", "I2 v2 reader", NodeCount;
-    I2Edges => "i2.edges", "I2 v2 reader", EdgeCount;
-    I2Occurrences => "i2.occurrences", "I2 v2 reader", OccurrenceCount;
-    I2Diagnostics => "i2.diagnostics", "I2 v2 reader", DiagnosticCount;
-    I2WorkUnits => "i2.work_units", "I2 v2 reader", WorkBudget;
-    ExploreStates => "explore.states", "exploration", NodeCount;
-    ExploreTransitions => "explore.transitions", "exploration", EdgeCount;
+    S1InputBytes => "s1.input_bytes", "S1", Some(LimitKind::InputBytes);
+    S1Tokens => "s1.tokens", "S1", Some(LimitKind::TokenCount);
+    S1Nodes => "s1.nodes", "S1", Some(LimitKind::NodeCount);
+    S1WorkUnits => "s1.work_units", "S1", Some(LimitKind::WorkBudget);
+    S3Nodes => "s3.nodes", "S3", Some(LimitKind::NodeCount);
+    S3InputBytes => "s3.input_bytes", "S3", Some(LimitKind::InputBytes);
+    S3WorkUnits => "s3.work_units", "S3", Some(LimitKind::WorkBudget);
+    S3DecimalScale => "s3.decimal_scale", "S3 assembly", Some(LimitKind::WorkBudget);
+    EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", Some(LimitKind::EdgeCount);
+    EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", Some(LimitKind::WorkBudget);
+    ModelDeclarationRecords => "model.declaration_records", "model normalization", Some(LimitKind::NodeCount);
+    ModelDerivationFacts => "model.derivation_facts", "model normalization", Some(LimitKind::NodeCount);
+    ModelEffectiveDeclarations => "model.effective_declarations", "model normalization", Some(LimitKind::NodeCount);
+    ModelDispatchCandidates => "model.dispatch_candidates", "model normalization", Some(LimitKind::NodeCount);
+    ModelHashedBytes => "model.hashed_bytes", "model normalization", Some(LimitKind::InputBytes);
+    ModelWorkUnits => "model.work_units", "model normalization", Some(LimitKind::WorkBudget);
+    ModelAncestorSteps => "model.ancestor_steps", "model normalization", Some(LimitKind::EdgeCount);
+    ModelFamilySteps => "model.family_steps", "model normalization", Some(LimitKind::EdgeCount);
+    AdmissionPopulationMembers => "admission.population_members", "population admission", Some(LimitKind::NodeCount);
+    AdmissionWorkUnits => "admission.work_units", "population admission", Some(LimitKind::WorkBudget);
+    AdmissionAncestorSteps => "admission.ancestor_steps", "population admission", Some(LimitKind::EdgeCount);
+    ObservationInputBytes => "observation.input_bytes", "observation admission", Some(LimitKind::InputBytes);
+    ObservationObjects => "observation.objects", "observation admission", Some(LimitKind::NodeCount);
+    ObservationValues => "observation.values", "observation admission", Some(LimitKind::NodeCount);
+    DependencyLibraries => "dependency.libraries", "S4 source resolution", Some(LimitKind::NodeCount);
+    DependencyImportEdges => "dependency.import_edges", "S4 source resolution", Some(LimitKind::EdgeCount);
+    DependencySourceBytes => "dependency.source_bytes", "S4 source resolution", Some(LimitKind::InputBytes);
+    LibraryDefinitions => "library.definitions", "library resolution", Some(LimitKind::NodeCount);
+    LibraryDependencyEdges => "library.dependency_edges", "library resolution", Some(LimitKind::EdgeCount);
+    LibraryArtifactBytes => "library.artifact_bytes", "library resolution", Some(LimitKind::InputBytes);
+    LibrarySingleArtifactBytes => "library.single_artifact_bytes", "library resolution", Some(LimitKind::InputBytes);
+    IdentityInputBytes => "identity.input_bytes", "identity encoding", Some(LimitKind::InputBytes);
+    ReplayInputBytes => "replay.input_bytes", "replay envelope readers", Some(LimitKind::InputBytes);
+    I2InputBytes => "i2.input_bytes", "I2 v2 reader", Some(LimitKind::InputBytes);
+    I2Nodes => "i2.nodes", "I2 v2 reader", Some(LimitKind::NodeCount);
+    I2Edges => "i2.edges", "I2 v2 reader", Some(LimitKind::EdgeCount);
+    I2Occurrences => "i2.occurrences", "I2 v2 reader", Some(LimitKind::OccurrenceCount);
+    I2Diagnostics => "i2.diagnostics", "I2 v2 reader", Some(LimitKind::DiagnosticCount);
+    I2WorkUnits => "i2.work_units", "I2 v2 reader", Some(LimitKind::WorkBudget);
+    ExploreStates => "explore.states", "exploration", Some(LimitKind::NodeCount);
+    ExploreTransitions => "explore.transitions", "exploration", Some(LimitKind::EdgeCount);
+    AccountingIntegerBits => "integer_bits", "S6a accounting", None;
+    AccountingDecimalDigits => "decimal_digits", "S6a accounting", None;
+    AccountingScaleExpansion => "scale_expansion", "S6a accounting", None;
+    AccountingTextInputBytes => "text_input_bytes", "S6a accounting", None;
+    AccountingTextScalars => "text_scalars", "S6a accounting", None;
+    AccountingNormalizedScalars => "normalized_scalars", "S6a accounting", None;
+    AccountingUnitEdges => "unit_edges", "S6a accounting", None;
+    AccountingValueOccurrences => "value_occurrences", "S6a accounting", None;
+    AccountingWorkUnits => "work_units", "S6a accounting", None;
+    AccountingResultUnits => "result_units", "S6a accounting", None;
 }
 
 impl Setting {
@@ -111,6 +128,15 @@ impl Setting {
             .iter()
             .copied()
             .find(|setting| setting.name() == name)
+    }
+}
+
+impl Setting {
+    /// Whether this is one of the ten accounting budgets
+    /// (`quire.value.accounting/v1` counters), which have no limit kind.
+    #[must_use]
+    pub const fn is_accounting(self) -> bool {
+        self.kind().is_none()
     }
 }
 
@@ -207,6 +233,34 @@ mod tests {
                 "{setting}"
             );
         }
+    }
+
+    #[test]
+    fn accounting_names_are_bare_counters_with_no_limit_kind() {
+        for counter in [
+            "integer_bits",
+            "decimal_digits",
+            "scale_expansion",
+            "text_input_bytes",
+            "text_scalars",
+            "normalized_scalars",
+            "unit_edges",
+            "value_occurrences",
+            "work_units",
+            "result_units",
+        ] {
+            let setting = Setting::from_name(counter).expect(counter);
+            assert!(setting.is_accounting(), "{counter}");
+            assert_eq!(setting.kind(), None, "{counter}");
+        }
+        assert_eq!(
+            Setting::ALL.iter().filter(|s| s.is_accounting()).count(),
+            10
+        );
+        assert!(Setting::ALL
+            .iter()
+            .filter(|s| !s.is_accounting())
+            .all(|s| s.name().contains('.')));
     }
 
     #[test]

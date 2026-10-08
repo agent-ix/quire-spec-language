@@ -396,7 +396,7 @@ impl ValueIdentity {
             package_id: wire.package_id.clone(),
             function: wire.selected_function.clone(),
             source: wire.source.clone(),
-            limits: wire.accounting_limits,
+            limits: wire.effective_accounting_limits(),
             generated: generated.clone(),
         }
     }
