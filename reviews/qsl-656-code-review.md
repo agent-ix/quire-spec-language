@@ -152,3 +152,28 @@ Round 2, reviewed at ab1e899e5462eafe9ed43597c1b642411b070173.
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-005 | still-open | quire-driver origin/main 5cddd5f6 is unchanged: LimitOverrides(Vec<(Setting, u64)>) is still built from parse_operands, which returns Vec<(SettingName, u64)>; no driver adaptation exists |
+
+## Dispositions (round 3)
+
+Round 3, reviewed at c4f25693ab96f3c87f2f5161ff4a26cc448904a4 (fix commits
+0d81c68d7, f240df480 and c4f25693a on ab1e899e5). Read only, no build.
+After the fixes, the QSL-656 diff against main 70ddb73c holds the same
+added and removed lines as the reviewed diff at 477c0d40d against its old
+base, in every source and spec file. The only differences are the intended
+adaptations:
+- `&Cancel::new()` in the AC-7 test.
+- The three-argument `for_request` call in decode.
+- The FR-100-AC-13 renumbering in FR-100, TC-914, `spec/tests.md` and
+  `src/command.rs`.
+- One `let accounting` line moved inside a `limits.rs` test.
+- The new `SettingName::Stage` match in the `qsl-semantics` intake test.
+
+No change from main is dropped. This round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | still-open | quire-driver origin/main 5cddd5f6 (fresh fetch) still builds LimitOverrides(Vec<(Setting, u64)>) from parse_operands (src/limits.rs:20,25); no open quire-driver PR adapts it. The driver adaptation must land with this merge |
+| FND-006 | fixed | 0d81c68d7 |
+| FND-007 | fixed | 0d81c68d7 |
+| FND-008 | fixed | 0d81c68d7 |
+| FND-009 | fixed | 0d81c68d7 |
