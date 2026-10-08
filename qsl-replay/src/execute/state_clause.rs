@@ -168,7 +168,11 @@ pub fn replay_state_clause(
     replay_limits: ReplayLimits,
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
+    let limits = super::request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {

@@ -155,7 +155,11 @@ fn settle(
     replay_limits: ReplayLimits,
 ) -> Result<ValueParityResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::ValueParity)?;
