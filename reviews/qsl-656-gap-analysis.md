@@ -82,3 +82,24 @@ Changes requested (one medium, test only). The behavior is implemented
 correctly, and every new or changed criterion has a tagged test with a
 strong oracle. FND-001 adds an assertion that pins `ValueIdentity::sent` to
 the effective limits. FND-002 is a one-word spec fix.
+
+## Dispositions
+
+Round 1, reviewed at b76b7a9c249a496564565a80606867be62af3da9 (fix commits
+8c7fce235, be3fa8072, b76b7a9c2 on 0d34c5742; `git diff 0d34c574..b76b7a9c2`).
+This round adds no new finding to this artifact. The verification was by
+reading, with no build.
+
+- FND-001: the AC-11 test now builds `ValueIdentity::sent` for both wires.
+  It asserts `sent_whole == sent_split` and `sent_split.limits == effective`,
+  and that each report's `claim()` equals its sent identity. If
+  `scalar.rs:399` were reverted to `wire.accounting_limits`, `sent_split.limits`
+  would hold `work_units` 12345 and `value_occurrences` 67, not the effective
+  values. Both the equality with `sent_whole` and `== effective` would then
+  fail, in both runs. The test now pins the site.
+- FND-002: Behavior 6 now reads "When `<name>` is in neither table".
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8c7fce235 |
+| FND-002 | fixed | 8c7fce235 |
