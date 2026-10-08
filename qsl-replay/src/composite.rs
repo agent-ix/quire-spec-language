@@ -212,7 +212,7 @@ impl CompositeIdentity {
             + self
                 .harness_bounds
                 .iter()
-                .map(|bound| crate::witness::finite_bound_bytes(&bound.bound))
+                .map(|bound| crate::witness::finite_bound_bytes(bound.bound()))
                 .sum::<usize>()
             + match &self.evidence {
                 CompositeEvidence::Falsified(falsified) => falsified

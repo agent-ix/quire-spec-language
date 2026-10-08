@@ -39,9 +39,10 @@ use quire_contract_model::{
 use serde_json::{json, Value};
 
 use ix_trace_rs::trace;
+use qsl_foundation::bound::DomainKind;
 use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::{classify_extent, ClaimExtent, DomainKind};
+use qsl_semantics::family::{classify_extent, ClaimExtent};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey, Presence,
     ValueType,

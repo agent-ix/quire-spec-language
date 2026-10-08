@@ -487,8 +487,10 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    per-registration refusal under FR-290,
    `invalid_capability`/`invalid-domains`. That
    descriptor is CG's own descriptor for the Process variant, not
-   `qsl_route::BackendDescriptor`, which holds only (kind, mode). It never
-   calls the plugin.
+   `qsl_route::BackendDescriptor`, which holds the admitted (kind, mode)
+   pairs and the admitted `domains`. CG reads those `domains` through
+   `BackendDescriptor::domains()` for FR-290's domain-kind routing step, which
+   is CG's. It never calls the plugin.
 2. **Identity is data in the variant.** The plugin's `BackendId` sits inside
    `Process(BackendId)`; it is never a new kind. `from_identity` keeps mapping
    the built-in static identities to their own kinds. CG settles a descriptor

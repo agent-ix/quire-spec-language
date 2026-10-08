@@ -158,7 +158,7 @@ pub(super) fn parity_preimage(
                 let bounds = claim
                     .harness_bounds
                     .iter()
-                    .filter(|bound| match &bound.domain {
+                    .filter(|bound| match bound.domain() {
                         DomainKey::Node { node, .. } => node == parameter,
                         DomainKey::Population { .. } => false,
                     })

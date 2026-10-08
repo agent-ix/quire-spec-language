@@ -1071,7 +1071,7 @@ mod envelope_tests {
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use ix_trace_rs::trace;
-    use qsl_foundation::bound::ProofBound;
+    use qsl_foundation::bound::{DomainKind, ProofBound};
     use quire_exact::Identifier;
 
     fn digest(byte: u8) -> [u8; 32] {
@@ -1121,17 +1121,21 @@ mod envelope_tests {
                 "finite-state".to_owned(),
             )]),
             run_limits: Some(scalar_limits(64)),
-            declared_domains: Some(vec![DeclaredDomain::new(ProofBound {
-                domain: DomainKey::Node {
-                    node: WireNodeId::from_digest(digest(6)),
-                    path: Vec::new(),
-                },
-                bound: FiniteBound::integer_range(
-                    quire_exact::Integer::from(0_i64),
-                    quire_exact::Integer::from(u64::from(u32::MAX)),
+            declared_domains: Some(vec![DeclaredDomain::new(
+                ProofBound::new(
+                    DomainKey::Node {
+                        node: WireNodeId::from_digest(digest(6)),
+                        path: Vec::new(),
+                    },
+                    Some(DomainKind::Integer),
+                    FiniteBound::integer_range(
+                        quire_exact::Integer::from(0_i64),
+                        quire_exact::Integer::from(u64::from(u32::MAX)),
+                    )
+                    .expect("a non-empty range"),
                 )
-                .expect("a non-empty range"),
-            })]),
+                .unwrap(),
+            )]),
             backend: Some("kani-backend-1".to_owned()),
             trace_position: Some(Some(TracePosition::new("frame-0".to_owned()))),
             source: Some(ReplaySource::Witness(
@@ -1213,14 +1217,22 @@ mod envelope_tests {
             path: vec![0],
         };
         packet.declared_domains = Some(vec![
-            DeclaredDomain::new(ProofBound {
-                domain: whole.clone(),
-                bound: FiniteBound::cardinality(8),
-            }),
-            DeclaredDomain::new(ProofBound {
-                domain: element.clone(),
-                bound: FiniteBound::depth(3).unwrap(),
-            }),
+            DeclaredDomain::new(
+                ProofBound::new(
+                    whole.clone(),
+                    Some(DomainKind::Collection),
+                    FiniteBound::cardinality(8),
+                )
+                .unwrap(),
+            ),
+            DeclaredDomain::new(
+                ProofBound::new(
+                    element.clone(),
+                    Some(DomainKind::Recursive),
+                    FiniteBound::depth(3).unwrap(),
+                )
+                .unwrap(),
+            ),
         ]);
         let envelope =
             WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
@@ -1396,13 +1408,17 @@ mod envelope_tests {
     #[test]
     fn tc_181_a_long_declared_domain_path_counts_toward_the_bound() {
         let domain = |path: Vec<u32>| {
-            DeclaredDomain::new(ProofBound {
-                domain: DomainKey::Node {
-                    node: WireNodeId::from_digest(digest(6)),
-                    path,
-                },
-                bound: FiniteBound::cardinality(8),
-            })
+            DeclaredDomain::new(
+                ProofBound::new(
+                    DomainKey::Node {
+                        node: WireNodeId::from_digest(digest(6)),
+                        path,
+                    },
+                    Some(DomainKind::Collection),
+                    FiniteBound::cardinality(8),
+                )
+                .unwrap(),
+            )
         };
         let mut short = full_packet(0);
         short.declared_domains = Some(vec![domain(vec![0])]);

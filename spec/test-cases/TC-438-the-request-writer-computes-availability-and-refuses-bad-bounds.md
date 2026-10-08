@@ -10,7 +10,8 @@ relationships:
 
 ## Description
 
-Verify the O-20 request writer (`qsl_route::request`). Scope: FR-097-AC-3, FR-097-AC-4.
+Verify the O-20 request writer (`qsl_route::request`). Scope: FR-097-AC-3, FR-097-AC-4
+and FR-097-AC-9 (kind emission).
 
 ## Test Procedure
 
@@ -20,6 +21,8 @@ Verify the O-20 request writer (`qsl_route::request`). Scope: FR-097-AC-3, FR-09
 3. Submit, each on a fresh writer: a bounded claim with and without bounds;
    an unknown key; a loop domain with and without a bound for it; a
    mismatched bound kind; an empty set.
+4. Write a bounded item over a `population`, an `integer` and a `recursive`
+   domain, with a cardinality, an integer range and a depth bound.
 
 ## Expected Results
 
@@ -30,6 +33,9 @@ Verify the O-20 request writer (`qsl_route::request`). Scope: FR-097-AC-3, FR-09
 - Step 3: `NoUnboundedDomain`, `UnknownDomain`, `UnboundableDomain`,
   `KindMismatch` and `MissingDomain` respectively, each
   `invalid_runtime_input`/`invalid-value`, and nothing is written.
+- Step 4: each emitted proof bound carries a kind, `population`, `integer`
+  and `recursive` respectively, and each kind's `finite_kind` equals its
+  bound's kind.
 
 ## Status
 

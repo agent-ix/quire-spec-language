@@ -10,12 +10,14 @@
 //! and are planned under #213.
 
 use ix_trace_rs::trace;
+use qsl_foundation::bound::DomainKind;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, ProviderOrigin,
-    RegistrationCause, Registry,
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, DomainsDefect, ManifestDigest, Mode,
+    ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
+use std::collections::BTreeSet;
 
 fn candidate(id: &str) -> Candidate {
     Candidate::new(BackendId::new(id))
@@ -31,6 +33,7 @@ fn admit(
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
+        Some(&["collection", "integer"]),
     )
 }
 
@@ -130,6 +133,7 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
+        Some(&["collection"]),
     )
     .expect_err("an absent mode is never defaulted");
     assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
@@ -282,4 +286,159 @@ fn every_non_supported_disposition_gets_no_target_and_blocks_no_other_item() {
         route(&dispositions),
         [Some(&first), None, None, None, Some(&second)]
     );
+}
+
+fn admit_domains(
+    advertised: &[(Option<&str>, &str)],
+    domains: Option<&[&str]>,
+) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
+    BackendDescriptor::admit(
+        candidate("plug"),
+        ProviderOrigin::Process,
+        ManifestDigest::from_digest([4; 32]),
+        advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
+        domains,
+    )
+}
+
+const BOUNDED: &[(Option<&str>, &str)] = &[(Some("value-validity"), "bounded")];
+
+fn assert_invalid_domains(refusal: qsl_route::RegistrationRefusal, defect: DomainsDefect) {
+    assert_eq!(refusal.identity().as_str(), "plug");
+    assert_eq!(refusal.cause(), &RegistrationCause::InvalidDomains(defect));
+    assert_eq!(refusal.catalog_code().code(), "invalid_capability");
+    assert_eq!(refusal.catalog_code().cause(), "invalid-domains");
+}
+
+/// FR-057-AC-12: a registration that advertises `bounded` with no
+/// `domains` refuses `invalid-domains`; one advertising only `unbounded`
+/// is admitted with or without them.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn absent_domains_refuse_only_a_bounded_registration() {
+    let refusal = admit_domains(BOUNDED, None).expect_err("bounded needs domains");
+    assert_invalid_domains(refusal, DomainsDefect::Absent);
+
+    let unbounded: &[(Option<&str>, &str)] = &[(Some("value-validity"), "unbounded")];
+    let without = admit_domains(unbounded, None).expect("unbounded-only may omit domains");
+    assert_eq!(without.domains(), None);
+    let with = admit_domains(unbounded, Some(&["integer"])).expect("and may state them");
+    assert_eq!(
+        with.domains()
+            .map(|kinds| kinds.iter().copied().collect::<Vec<_>>()),
+        Some(vec![DomainKind::Integer])
+    );
+}
+
+/// FR-057-AC-12: an empty `domains` refuses `invalid-domains`.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn empty_domains_refuse() {
+    let refusal = admit_domains(BOUNDED, Some(&[])).expect_err("empty domains");
+    assert_invalid_domains(refusal, DomainsDefect::Empty);
+}
+
+/// FR-057-AC-12: a non-boundable kind, and an unknown label, refuse
+/// `invalid-domains` carrying the received bytes.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn non_boundable_or_unknown_domain_kinds_refuse() {
+    for label in ["quantity", "loop", "infinite-trace", "Collection"] {
+        let refusal = admit_domains(BOUNDED, Some(&["integer", label])).expect_err(label);
+        assert_invalid_domains(refusal, DomainsDefect::NotBoundable(label.to_owned()));
+    }
+}
+
+/// FR-057-AC-12: a repeated kind refuses `invalid-domains`; the four
+/// boundable kinds are admitted and kept.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn repeated_domain_kinds_refuse_and_the_boundable_four_are_kept() {
+    let refusal =
+        admit_domains(BOUNDED, Some(&["integer", "integer"])).expect_err("a repeated kind");
+    assert_invalid_domains(refusal, DomainsDefect::Repeated(DomainKind::Integer));
+
+    let admitted = admit_domains(
+        BOUNDED,
+        Some(&["recursive", "population", "integer", "collection"]),
+    )
+    .expect("the four boundable kinds");
+    assert_eq!(admitted.domains().map(|kinds| kinds.len()), Some(4));
+}
+
+/// FR-057-AC-12: a present, malformed `domains` refuses `invalid-domains`
+/// for any registration, an unbounded-only one included.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn malformed_domains_refuse_an_unbounded_only_registration() {
+    let unbounded: &[(Option<&str>, &str)] = &[(Some("value-validity"), "unbounded")];
+    let cases: [(&[&str], DomainsDefect); 7] = [
+        (&[], DomainsDefect::Empty),
+        (
+            &["quantity"],
+            DomainsDefect::NotBoundable("quantity".to_owned()),
+        ),
+        (&["bogus"], DomainsDefect::NotBoundable("bogus".to_owned())),
+        (&["loop"], DomainsDefect::NotBoundable("loop".to_owned())),
+        (
+            &["infinite-trace"],
+            DomainsDefect::NotBoundable("infinite-trace".to_owned()),
+        ),
+        (
+            &["Collection"],
+            DomainsDefect::NotBoundable("Collection".to_owned()),
+        ),
+        (
+            &["integer", "integer"],
+            DomainsDefect::Repeated(DomainKind::Integer),
+        ),
+    ];
+    for (domains, defect) in cases {
+        let refusal = admit_domains(unbounded, Some(domains)).expect_err("malformed domains");
+        assert_invalid_domains(refusal, defect);
+    }
+}
+
+/// FR-057-AC-12: `domains` is checked after every advertised pair, so an
+/// unknown mode with empty `domains` refuses `unknown-mode`.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn a_pair_defect_is_reported_before_a_domains_defect() {
+    let refusal = admit_domains(&[(Some("value-validity"), "finite")], Some(&[]))
+        .expect_err("an unknown mode and empty domains");
+    assert_eq!(
+        refusal.cause(),
+        &RegistrationCause::UnknownMode(Some("finite".to_owned()))
+    );
+}
+
+/// FR-057-AC-12: `BackendDescriptor::new` applies the same `domains` rules
+/// as `admit`: a typed set cannot build a descriptor `admit` would refuse.
+#[test]
+#[trace("TC-155", "FR-057-AC-12")]
+fn the_typed_constructor_applies_the_same_domains_rules() {
+    let build = |advertises: Mode, domains: Option<BTreeSet<DomainKind>>| {
+        BackendDescriptor::new(
+            candidate("plug"),
+            ProviderOrigin::Process,
+            ManifestDigest::from_digest([4; 32]),
+            [(Capability::ValueValidity, advertises)],
+            domains,
+        )
+    };
+    let refused = |result: Result<BackendDescriptor, qsl_route::RegistrationRefusal>, defect| {
+        assert_invalid_domains(result.expect_err("refused"), defect)
+    };
+    refused(build(Mode::Bounded, None), DomainsDefect::Absent);
+    refused(
+        build(Mode::Unbounded, Some(BTreeSet::new())),
+        DomainsDefect::Empty,
+    );
+    refused(
+        build(Mode::Bounded, Some(BTreeSet::from([DomainKind::Quantity]))),
+        DomainsDefect::NotBoundable("quantity".to_owned()),
+    );
+    build(Mode::Unbounded, None).expect("unbounded-only may omit domains");
+    build(Mode::Bounded, Some(BTreeSet::from([DomainKind::Integer])))
+        .expect("a boundable set on a bounded descriptor");
 }

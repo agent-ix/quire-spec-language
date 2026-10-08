@@ -12,7 +12,10 @@
 //! `#[cfg(test)]` module in `src/lib.rs`, which already imports only the
 //! canonical `Capability` type -- there is no second type to scan for).
 
+use std::collections::BTreeSet;
+
 use ix_trace_rs::trace;
+use qsl_foundation::bound::DomainKind;
 use qsl_foundation::digest::ByteDigest;
 use qsl_route::{
     BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
@@ -34,7 +37,9 @@ fn backend(
         ProviderOrigin::Linked,
         digest(seed),
         advertises,
+        Some(BTreeSet::from([DomainKind::Collection])),
     )
+    .expect("a well-formed descriptor")
 }
 
 /// A candidate outcome's backend ids, in the order the registry returns
@@ -895,6 +900,7 @@ mod tc_282_duplicate_backend_identity {
                     ProviderOrigin::Linked,
                     d2,
                     [(Some("value-validity"), Some("finite"))],
+                    Some(&["collection"]),
                 )
                 .expect_err("`finite` is not an FR-290 mode")
             };
