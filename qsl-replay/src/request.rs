@@ -16,14 +16,13 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire,
 };
 use crate::limits::CallerLimits;
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
-use qsl_foundation::BackendId;
 use qsl_foundation::Code;
 use qsl_foundation::IntakeLimits;
 use qsl_foundation::Setting;
@@ -55,9 +54,9 @@ impl StateEnvironment {
 /// name (FR-255) to the bound the proving run configured, so a request never
 /// silently substitutes QSL's own compiled-in defaults for the proving run's
 /// actual limits (TC-185). A setting with no entry runs at its published
-/// default. Decode admits only settings of FR-255's table other than
-/// `replay.input_bytes` and `format.output_bytes` (neither is a replay
-/// stage operation).
+/// default. Decode admits every setting of FR-255's tables other than
+/// `replay.input_bytes`. An entry named for an accounting counter replaces
+/// the request's accounting limit for that counter (FR-255 Behavior 10).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StageLimits(BTreeMap<Setting, u64>);
 
@@ -73,17 +72,12 @@ impl StageLimits {
     }
 
     /// Reads the wire entries, refusing the first whose name is no setting
-    /// of FR-255's table or is `replay.input_bytes` or `format.output_bytes`.
+    /// of FR-255's tables or is `replay.input_bytes`.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
         let mut limits = BTreeMap::new();
         for (name, bound) in entries {
             match Setting::from_name(&name) {
-                Some(setting)
-                    if !matches!(
-                        setting,
-                        Setting::ReplayInputBytes | Setting::FormatOutputBytes
-                    ) =>
-                {
+                Some(setting) if setting != Setting::ReplayInputBytes => {
                     limits.insert(setting, bound);
                 }
                 _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
@@ -193,7 +187,7 @@ pub struct ReplayRequest {
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
     obligation_identity: ObligationIdentity,
-    backend: BackendId,
+    backend: Backend,
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
@@ -239,14 +233,16 @@ impl ReplayRequest {
         self.obligation_identity
     }
     /// The backend that produced the originating counterexample.
-    pub fn backend(&self) -> &BackendId {
+    pub fn backend(&self) -> &Backend {
         &self.backend
     }
     /// The scalar environment the replay starts from.
     pub fn state_environment(&self) -> &StateEnvironment {
         &self.state_environment
     }
-    /// The accounting limits the replay run itself is charged against.
+    /// The accounting limits the replay run itself is charged against: the
+    /// wire's `accounting_limits` with each counter its `stage_limits` names
+    /// replaced by the entry (FR-255 Behavior 10).
     pub fn accounting_limits(&self) -> ScalarLimits {
         self.accounting_limits
     }
@@ -263,6 +259,22 @@ impl ReplayRequest {
     /// recompilation input's bytes (FR-071-AC-2).
     pub fn byte_provision(&self) -> &ByteProvision {
         &self.byte_provision
+    }
+}
+
+impl ReplayRequestWire {
+    /// The accounting limits the replay runs under and any identity binds
+    /// (FR-255 Behavior 10): `accounting_limits` with each counter a
+    /// `stage_limits` entry names replaced by the entry's bound. Computed
+    /// here once; [`ReplayRequest::accounting_limits`] returns it, so the
+    /// split between the two members never reaches a claim.
+    pub fn effective_accounting_limits(&self) -> ScalarLimits {
+        crate::limits::AccountingLimits::with_entries(
+            self.accounting_limits,
+            self.stage_limits
+                .iter()
+                .filter_map(|(name, bound)| Setting::from_name(name).map(|s| (s, *bound))),
+        )
     }
 }
 
@@ -299,8 +311,9 @@ pub struct ReplayRequestWire {
     /// The accounting limits the replay run itself is charged against.
     pub accounting_limits: ScalarLimits,
     /// The stage limits copied from the proving run: setting name (FR-255)
-    /// to bound. Decode refuses a name that is no setting of the table, and
-    /// `replay.input_bytes` and `format.output_bytes`.
+    /// to bound. Decode refuses a name that is no setting of either table,
+    /// and `replay.input_bytes`. A name that is an accounting counter
+    /// replaces that counter of `accounting_limits`.
     pub stage_limits: BTreeMap<String, u64>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
@@ -437,8 +450,7 @@ pub enum ReplayRequestRefusal {
         index: usize,
     },
     /// A `stage_limits` entry names no setting of FR-255's table, or names
-    /// `replay.input_bytes` or `format.output_bytes`, which a request does
-    /// not carry
+    /// `replay.input_bytes`, which a request does not carry
     /// (`invalid_runtime_input`/`unknown-member`, FR-263 B2).
     #[error("invalid_runtime_input/unknown-member: stage_limits entry `{name}` is not a setting a request carries")]
     StageLimitEntry {
@@ -623,6 +635,9 @@ impl ReplayRequest {
         if wire.backend.is_empty() {
             return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
+        // Once, before the wire is taken apart: this is the value the call
+        // runs under and any claim binds (FR-255 Behavior 10).
+        let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
         let intake = CallerLimits::for_request(&stage_limits, limits)
             .spine
@@ -732,9 +747,9 @@ impl ReplayRequest {
             source: wire.source,
             profile_selections: wire.profile_selections,
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
-            backend: BackendId::new(wire.backend),
+            backend: Backend::new(wire.backend),
             state_environment: wire.state_environment,
-            accounting_limits: wire.accounting_limits,
+            accounting_limits,
             stage_limits,
             declared_domains: wire.declared_domains,
             byte_provision,
@@ -771,7 +786,7 @@ impl ReplayRequest {
             selected_function: self.selected_function.clone(),
             source: self.source.clone(),
             obligation_identity: *self.obligation_identity.as_bytes(),
-            backend: self.backend.as_str().to_owned(),
+            backend: self.backend.identity().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
@@ -901,25 +916,6 @@ mod tests {
 
         let other = ReplayRequest::decode(wire(1000), crate::ReplayLimits::default()).unwrap();
         assert_ne!(request, other);
-    }
-
-    /// Trace: TC-721, FR-255-AC-4
-    #[trace("TC-721", "FR-255-AC-4")]
-    #[test]
-    fn replay_wire_refuses_limits_of_operations_it_does_not_run() {
-        for name in ["replay.input_bytes", "format.output_bytes"] {
-            let mut request = wire(999);
-            request.stage_limits.insert(name.to_owned(), 7);
-            let refusal = ReplayRequest::decode(request, ReplayLimits::default())
-                .expect_err("a replay request cannot carry a non-stage setting");
-            assert_eq!(
-                refusal,
-                ReplayRequestRefusal::StageLimitEntry {
-                    name: name.to_owned()
-                },
-                "{name}"
-            );
-        }
     }
 
     /// A `dependencies` entry over one `fill`-byte source under `identity`.
@@ -1231,7 +1227,7 @@ mod tests {
         let mut spaced = wire(1);
         spaced.backend = " kani ".to_owned();
         let request = ReplayRequest::decode(spaced, crate::ReplayLimits::default()).unwrap();
-        assert_eq!(request.backend().as_str(), " kani ");
+        assert_eq!(request.backend().identity(), " kani ");
     }
 
     /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field
