@@ -116,3 +116,39 @@ reading, with no build.
 | FND-002 | fixed | 8c7fce235 |
 | FND-003 | fixed | 8c7fce235 |
 | FND-004 | fixed | b76b7a9c2 |
+
+## New findings (disposition pass 2)
+
+Round 2 reviews ab1e899e5462eafe9ed43597c1b642411b070173, the rebase onto
+main 70ddb73c (after #663 and #664) plus fix commit ab1e899e5. The
+QSL-656 diff against main at ab1e899e5 was compared file by file with the
+QSL-656 diff at 477c0d40d. Six files differ. In three of them the rebase
+reverted main's own changes. This was found by reading, with no build.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | The rebase deletes main's `IntakeInputBytes => "intake.input_bytes", "I1 semantic-IR intake", InputBytes;` row from the `settings!` table. The head still references `Setting::IntakeInputBytes` in `qsl-foundation/src/intake_limits.rs:37,42` and `qsl-replay/src/spine.rs:253`, so qsl-foundation does not compile at ab1e899e5. FR-255's table still lists `intake.input_bytes`. Fix: restore main's row after `LibrarySingleArtifactBytes`. | qsl-foundation/src/setting.rs:92-93; qsl-foundation/src/intake_limits.rs:37,42; qsl-replay/src/spine.rs:253 |
+| FND-007 | high | The rebase restores `pub model_limits: ModelNormalizationLimits` on `ClauseRunRequest`, a field main removed (main reads `request.limits.model`). Every `ClauseRunRequest { .. }` literal at the head omits it: `qsl-replay/src/spine/clause/tests.rs:688,1680,...` and `examples/config-version/spine.rs:380`. Those are missing-field compile errors, and the field would be dead. Fix: take main's struct and keep only the doc-comment change ("FR-100's `accounting` object"). | qsl-replay/src/spine/clause.rs:222-226 |
+| FND-008 | high | The FR-255-AC-7 test `a_reached_budget_set_by_operand_names_its_setting` calls `run(...)` with seven arguments. After #663, `spine::run` takes an eighth, `cancel: &Cancel`, and every other call in the same module passes `&Cancel::new()`. qsl-replay's test target does not compile. Fix: pass `&Cancel::new()`. | qsl-replay/src/outcome.rs:1194-1202; qsl-replay/src/spine/call.rs:339-348 |
+| FND-009 | medium | The rebase reverts main's FR-255 test changes in `limits.rs`. It re-adds the `(pending QSL-487)` row machinery (`PENDING`, `Row.pending`, the partition and the pending filter), which main deleted once QSL-487 landed. It also deletes main's `IntakeInputBytes` builder case (`mapped.set_bound(Setting::IntakeInputBytes, 35)` and the `model.intake` builder), so after FND-006, FR-255-AC-3's builder test no longer covers `intake.input_bytes`. Fix: take main's test bodies and re-apply only the accounting changes. | qsl-replay/src/limits.rs:236-246,419 |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at ab1e899e5462eafe9ed43597c1b642411b070173.
+
+- FND-001 to FND-004 stay fixed after the rebase. The range-diff shows
+  that 7149a594b and 5d77325d4 carry 0d34c5742's and 8c7fce235's changes,
+  and that c1133eefa equals b76b7a9c2. Their conflict resolutions are what
+  introduced FND-006, FND-007 and FND-009. ab1e899e5 passes the effective accounting limits to
+  the new `CallerLimits::for_request` call in `ReplayRequest::decode`.
+  That call keeps only `.spine.model.intake`, so the accounting argument
+  does not change its result. Passing the effective value is the only
+  correct choice (FR-255-AC-11).
+- FND-005: quire-driver `origin/main` is still 5cddd5f6, after a fresh
+  fetch. Its `src/limits.rs:20,25` still builds
+  `LimitOverrides(Vec<(Setting, u64)>)` from `parse_operands`, and no
+  adaptation has landed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | still-open | quire-driver origin/main 5cddd5f6 is unchanged: LimitOverrides(Vec<(Setting, u64)>) is still built from parse_operands, which returns Vec<(SettingName, u64)>; no driver adaptation exists |
