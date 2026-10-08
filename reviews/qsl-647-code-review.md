@@ -46,3 +46,22 @@ Gates run at the head (release, through locked-build.sh): `cargo test -p qsl-rep
 ## Verdict
 
 One high, one medium and one low finding. The decode side (span-based order check) is correct and is the part of the ticket that is done. The encode side replaces depth-multiplied encoding for nested sets with depth-multiplied copying for every nested composite, a 100x to 200x regression on the TC-736 tests. Not mergeable until FND-001 and FND-002 are fixed; FND-003 should be fixed with them.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | Every value without a set or bag now pays the per-node pieces machinery that only sets need: a `Vec<u8>` shell, a `Vec<Piece>` and its `Piece::Bytes` vectors per node, a pointer-keyed `HashMap` over the whole tree, and a `cut` pass, in both `to_value_text` and `value_text_len`. Main streamed set-free values through one `Writer` with no per-node allocation. The author's release timings (pre-rebase, the encoder is unchanged by the rebase) show the cost on the TC-736 set-free list: `tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack` 1.34 s vs 1.17 s on main, and `tc_736_a_100000_long_list_replays_under_the_raised_input_bound` 2.64 s vs 1.83 s (44% slower). The work is linear, so this is a constant factor, not a correctness defect. One fix: build pieces only for set and bag elements (where sorting needs finished bytes) and stream everything else through one `Writer`, writing a sorted set's elements from their pieces. | qsl-replay/src/witness/value_text.rs:308-359, qsl-replay/src/witness/value_text.rs:557-588 |
+| FND-005 | medium | The last assertion of `tc_905_the_element_order_check_reads_spans`, commented "A bad collection nested inside a good one is found", cannot fail if nested collections go unchecked. The outer set is `[a, bad]` with `a` = `{"type":"text","value":"a"}` and `bad` = `{"elements":[...],"type":"set"}`; `bad` starts `{"e`, which sorts below `a`'s `{"t`, so the outer set is itself out of order and refuses `Elements` on its own. A scan that checked only the outermost collection passes this test. The span scan is new code, so its nested path is untested. Fix: put the bad set second inside a correctly ordered outer set (for example `[bad, a]`, or an outer bag/ordered-set), and assert the good outer alone decodes. | qsl-replay/src/witness/value_text/tests.rs:569-574 |
+
+## Dispositions
+
+Round 1, reviewed at `2d987b0db83e89b0c60a5dd344cae16c8911e919`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6cce4788: `splice` is gone. `encode_pieces` encodes each value's shell once and `cut` turns it into `Piece::Bytes` literals and `Piece::Child(id)` references into an arena, so no child's bytes are copied into an ancestor; output is a single `Chunks` walk, and set/bag elements are sorted by `compare` over their pieces in place. Every step is linear in the output (sort comparisons stop at the first differing byte). The author's release timings at the pieces encoder (log q647b, before the rebase; the rebase changed nothing under `qsl-replay/src/witness/`): 1.34 s, 2.64 s and 46.66 s against main's 1.17 s, 1.83 s and 46.36 s, down from 207 s, 394 s and 334 s. Not re-measured after the rebase onto a360ae02; the remaining constant-factor cost is FND-004. |
+| FND-002 | fixed | 6cce4788: the test is now `tc_905_encoding_work_is_linear_in_depth`. `Work` counts every byte the shell writer produces plus every byte `compare` looks at, there is no splice copy left to miss, and the test requires work at depth 10,000 to be at most 3x work at depth 5,000 (a depth-multiplied encoder gives about 4x) and within 3x the output, over nested sets, options and sequences. |
+| FND-003 | fixed | 6cce4788: with FND-001 fixed the measure is linear; `value_text_len` counts the escaped length over the pieces without building the escaped `String`. It still builds the pieces (the unescaped bytes) to count them; that cost is part of FND-004. |
+| FND-004 | still-open | New this round (see New findings); no fix yet. |
+| FND-005 | still-open | New this round (see New findings); no fix yet. |

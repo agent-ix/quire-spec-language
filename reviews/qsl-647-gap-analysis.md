@@ -37,3 +37,21 @@ Examined:
 ## Verdict
 
 Two medium findings, both on traceability. The decode refusal coverage (FR-070-AC-9) is intact. Not mergeable until both are fixed, together with SR-1380.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The PR adds FR-070-AC-13 to TC-905 in spec/tests.md and tags `tc_905_encoding_work_is_linear_in_depth` with `#[trace("TC-905", "FR-070-AC-13")]`, but TC-905 itself is unchanged: its Scope line (line 20) lists FR-070-AC-8, AC-9, AC-11 and AC-12 only, its Test Procedure has no step for the work bound, its Expected Results say nothing about it, and its tag list (lines 72-74) omits FR-070-AC-13. The test case that is said to verify AC-13 does not describe how. Fix: add FR-070-AC-13 to Scope, a step (encode nested sets, options and sequences at depth d and 2d, count work, check the ratio and the output bound, check `value_text_len` equals the text's length), its expected result, and the tag. | spec/test-cases/TC-905-composite-witness-value-text-decodes-and-refuses.md:20, spec/test-cases/TC-905-composite-witness-value-text-decodes-and-refuses.md:72-74 |
+| FND-004 | medium | FR-070-AC-13 bounds "the counted work" but never says what is counted. The test counts bytes the shell writer produces plus bytes compared while sorting; another implementer could count nodes visited, allocations or copies, and get a different ratio for the same encoder. The bound is only as strong as that choice (a copy the counter omits is invisible, which was SR-1380 FND-002's failure). Its last sentence, "The value text's length is counted without building the text", is not checked by any test; the test only checks `value_text_len` equals the text's length. Fix: state what is counted (every byte written into an encoding buffer or copied between buffers, plus every byte compared to order set and bag elements), and either drop the last sentence or state it as a checkable property. | spec/functional/FR-070-implement-typed-counterexample-witness-envelope.md:242 |
+
+## Dispositions
+
+Round 1, reviewed at `2d987b0db83e89b0c60a5dd344cae16c8911e919`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6cce4788: the two tests are renamed and retagged. `tc_905_the_element_order_check_reads_spans` is `#[trace("TC-905", "FR-070-AC-9")]`, which is what it checks (set, bag and ordered-set order and distinctness refusals). The work-bound test is `tc_905_encoding_work_is_linear_in_depth` with `#[trace("TC-905", "FR-070-AC-13")]`. Neither claims FR-263-AC-1 any more. |
+| FND-002 | fixed | 6cce4788: FR-070-AC-13 now states the work bound over nested sets, options and sequences, and the work-bound test traces to it. TC-905's own text was not updated (FND-003) and the AC leaves "counted work" undefined (FND-004). |
+| FND-003 | still-open | New this round (see New findings); no fix yet. |
+| FND-004 | still-open | New this round (see New findings); no fix yet. |
