@@ -58,3 +58,12 @@ on the QSL side, so QSL-639 cannot be closed on this PR alone.
 - Reverse gap: none. The diff adds no behavior.
 - Stubs and coverage inflation: none in the diff.
 - Semantic review: skipped (no opt-in).
+
+## Dispositions
+
+Round 1, reviewed at af5dbca824c7668c7ce32acc0de08ddda26fde77.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Moved to QSL-658, a child of QSL-639. The QSL observation reader cannot admit an Option nested more than one level deep: `admit_form` in `qsl-semantics/src/model/observation/document.rs` has no Option arm, and a model document cannot declare a nested-Option field type. Admission therefore needs new spec and new behavior, which is outside this adaptation PR. QSL-658's scope covers the spec, iterative admission, the FR-261-AC-3 100,000-deep admission test, and removal of the "waits on QSL-639" notes in FR-261 and TC-733. Those notes stay until then. Corollary: QSL-639 closes on the kernel half only. |
+

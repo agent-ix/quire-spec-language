@@ -59,3 +59,14 @@ Gates at 5ec9b043d (via `locked-build.sh`):
 - `cargo check --locked --workspace --all-targets` (committed lock): FAIL, exit 101: E0308 at qsl-semantics/src/check/check.rs:2251 and :2416, `expected Arc<CollectionType>, found Box<CollectionType>`. Re-resolving to current quire-exact main 6a36ff4b, without #10, fails the same way.
 - `cargo check --workspace --all-targets` with a command-line `--config` path patch of quire-exact to #10's code (worktree at 4ed4195, whose source is identical to 9ea9b679; 4ed4195 adds only review files). The worktree `Cargo.lock` was restored afterwards: PASS, exit 0
 - `cargo clippy --workspace --all-targets -- -D warnings`, same patch: PASS, exit 0, 0 warnings (`Finished dev profile ... in 1m 27s`)
+
+## Dispositions
+
+Round 1, reviewed at af5dbca824c7668c7ce32acc0de08ddda26fde77.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Fixed at the merge step, by design. `Cargo.lock` at af5dbca82 still resolves quire-exact to efd4a228. In the merge batch, after quire-exact #10 merges, the lead commits `cargo update -p quire-exact` on this branch, and the batch `make ci` runs on that lock. The PR is not mergeable without that lock commit. |
+| FND-002 | fixed | af5dbca82. `check.rs` uses the imported `Arc` at :227, :351 and :357. `std::sync::Arc` now appears only in the `use` at :49. |
+| FND-003 | fixed | af5dbca82. Both tests build the type with `ValueType::option(..)`, and the two test-only `use std::sync::Arc;` imports are removed. |
+
