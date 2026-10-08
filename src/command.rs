@@ -990,6 +990,7 @@ fn run_complete(
         &dependencies,
         qsl_replay::spine::SpineLimits::default(),
         &spine_call,
+        &quire_exact::Cancel::new(),
     )
     .map_err(|refusal| match *refusal {
         qsl_replay::spine::RunRefusal::Compile(compile_refusal) => {

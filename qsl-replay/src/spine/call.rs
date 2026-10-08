@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::diagnostic::StageFailure;
 use qsl_foundation::diagnostic::{
     CatalogCode, Category, Code, InternalFault, Locus, RefusalRecord,
 };
@@ -29,7 +30,8 @@ use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
-    Cancel, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType,
+    Cancel, CancelCause, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value,
+    ValueType,
 };
 use quire_semantic_value::location::Location;
 
@@ -266,15 +268,21 @@ pub enum RunRefusal {
     /// exit 30.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
+    /// The caller's [`Cancel`] stopped the run at one of its stages or at
+    /// S6a (ADR-029 LC-3): category incomplete, exit 22, no call outcome.
+    #[error("the run was cancelled: {0:?}")]
+    Cancelled(CancelCause),
 }
 
 impl RunRefusal {
     /// The stage FR-100's refusal table names: the wrapped compile
     /// refusal's own stage, or `call` for every refusal this module raises
     /// itself, including [`Self::Fault`] (the internal-failure envelope's
-    /// own stage is `call`, FR-100).
-    pub fn stage(&self) -> &'static str {
-        match self {
+    /// own stage is `call`, FR-100). A cancel has no stage (FR-286: its
+    /// `last_stage` is null whichever stage it stopped), so this is `None`
+    /// for [`Self::Cancelled`].
+    pub fn stage(&self) -> Option<&'static str> {
+        Some(match self {
             Self::Compile(refusal) => refusal.stage().as_str(),
             Self::MissingDeclaration { .. }
             | Self::UnsupportedResult { .. }
@@ -283,7 +291,8 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. }
             | Self::Fault(_) => "call",
-        }
+            Self::Cancelled(_) => return None,
+        })
     }
 
     /// The catalog code. For [`Self::Fault`] this is always
@@ -298,6 +307,7 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
             Self::Fault(_) => Code::RuntimeInvariant,
+            Self::Cancelled(_) => Code::Cancelled,
         }
     }
 
@@ -311,6 +321,14 @@ impl RunRefusal {
 /// Compile `bytes` through the spine and call `call`'s named function with
 /// its arguments, under `call`'s accounting limits. Returns the compiled
 /// package's `package_id` and the call's outcome (FR-100).
+///
+/// `cancel` is the caller's handle (ADR-029: every operation takes one): a
+/// cancel stops the run at its next charge, whichever stage it is in, as
+/// [`RunRefusal::Cancelled`].
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the request's fields are the signature FR-100 names; the caller's cancel handle is the eighth"
+)]
 pub fn run(
     source: SourceIdentity,
     path: &str,
@@ -319,11 +337,14 @@ pub fn run(
     dependencies: &DependencyInput,
     limits: SpineLimits,
     call: &Call,
+    cancel: &Cancel,
 ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
-    let cancel = Cancel::new();
-    let refusal = |failure| match front_end::refusal_or_fault(failure) {
-        Ok(refusal) => Box::new(RunRefusal::Compile(refusal)),
-        Err(fault) => Box::new(RunRefusal::Fault(fault)),
+    let refusal = |failure| match failure {
+        StageFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
+        other => match front_end::refusal_or_fault(other) {
+            Ok(refusal) => Box::new(RunRefusal::Compile(refusal)),
+            Err(fault) => Box::new(RunRefusal::Fault(fault)),
+        },
     };
     let parsed = front_end::parse(
         &front_end::ParseRequest {
@@ -332,11 +353,11 @@ pub fn run(
             bytes,
         },
         limits.source,
-        &cancel,
+        cancel,
     )
     .map_err(refusal)?
     .into_value();
-    let models = front_end::select(&parsed, packages, limits.model, &cancel)
+    let models = front_end::select(&parsed, packages, limits.model, cancel)
         .map_err(refusal)?
         .into_value();
     let checked = front_end::check(
@@ -345,11 +366,11 @@ pub fn run(
         dependencies,
         &super::LockEvidence::default(),
         limits,
-        &cancel,
+        cancel,
     )
     .map_err(refusal)?
     .into_value();
-    let emitted = front_end::package(&checked, front_end::PackageLimits::default(), &cancel)
+    let emitted = front_end::package(&checked, front_end::PackageLimits::default(), cancel)
         .map_err(refusal)?
         .into_value();
     let package_id = emitted.package().package_id();
@@ -364,9 +385,12 @@ pub fn run(
             objects: &ObjectEnvironment::default(),
         },
         call.accounting,
-        &cancel,
+        cancel,
     )
-    .map_err(convert_call_failure)?;
+    .map_err(|failure| match failure {
+        qsl_eval::value::CallFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
+        other => convert_call_failure(other),
+    })?;
     // FND-016: the unit's and every resolved library's source, reused
     // exactly as the check already read them (FR-100: a locus is resolved
     // over "the `Source` whose reference equals the region's reference").
@@ -536,9 +560,9 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
             "spine-run-supplies-admitted-name-and-arity",
         ))),
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
-        // `run` makes its own handle and gives it to `execute`, but shares it
-        // with nobody, so nothing cancels it: a cancellation here is a broken
-        // invariant.
+        // A clause run makes its own handle and shares it with nobody, so
+        // nothing cancels it: a cancellation here is a broken invariant.
+        // `run` takes the caller's handle and maps a cancel itself.
         CallFailure::Cancelled(_) => Box::new(RunRefusal::Fault(InternalFault::new(
             "call",
             "cancelled-without-a-shared-handle",

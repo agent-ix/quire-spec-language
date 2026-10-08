@@ -43,6 +43,7 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &DependencyInput::default(),
         SpineLimits::default(),
         call,
+        &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
 }
@@ -76,6 +77,7 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &Cancel::new(),
     )
     .unwrap();
     assert_eq!(package_id, compiled.emitted.package_id());
@@ -104,6 +106,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &Cancel::new(),
     )
     .unwrap()
     .1;
@@ -148,7 +151,7 @@ fn tc_451_step_2_wrong_value_kind_names_position() {
         ("px", arg("p", 1)),
     ] {
         let refusal = run_fixture(FIXTURE, &call(function, vec![argument])).unwrap_err();
-        assert_eq!(refusal.stage(), "call");
+        assert_eq!(refusal.stage(), Some("call"));
         assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
         assert!(
             matches!(*refusal, RunRefusal::WrongValueKind { position: 0 }),
@@ -172,7 +175,7 @@ fn tc_451_step_3_argument_binding_names_the_parameter() {
     let unbound = run_fixture(FIXTURE, &call("id", Vec::new())).unwrap_err();
     assert!(matches!(*unbound, RunRefusal::UnboundParameter { ref parameter } if parameter == "x"));
     for refusal in [unknown, duplicate, unbound] {
-        assert_eq!(refusal.stage(), "call");
+        assert_eq!(refusal.stage(), Some("call"));
         assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
     }
 }
@@ -203,7 +206,7 @@ fn fnd_010_unbound_parameter_is_reported_before_an_earlier_wrong_kind() {
 fn tc_451_step_5_function_shape_and_lookup() {
     for name in ["nope", "module.seven", "", "seven.", "7x"] {
         let refusal = run_fixture(FIXTURE, &call(name, Vec::new())).unwrap_err();
-        assert_eq!(refusal.stage(), "call");
+        assert_eq!(refusal.stage(), Some("call"));
         assert_eq!(refusal.code(), Code::MissingDeclaration);
         assert!(
             matches!(*refusal, RunRefusal::MissingDeclaration { ref function } if function == name),
@@ -211,7 +214,7 @@ fn tc_451_step_5_function_shape_and_lookup() {
         );
     }
     let corner = run_fixture(FIXTURE, &call("corner", vec![arg("p", 0)])).unwrap_err();
-    assert_eq!(corner.stage(), "call");
+    assert_eq!(corner.stage(), Some("call"));
     assert_eq!(corner.code(), Code::UnsupportedConstruct);
     assert!(
         matches!(*corner, RunRefusal::UnsupportedResult { ref function } if function == "corner")
@@ -226,7 +229,7 @@ fn tc_451_step_5_function_shape_and_lookup() {
 fn tc_451_step_6_compile_refusals_carry_their_own_stage() {
     const SYNTAX_ERROR: &str = "language \"ix:native\" edition \"1-draft\";\nfunction (";
     let refusal = run_fixture(SYNTAX_ERROR, &call("f", Vec::new())).unwrap_err();
-    assert_eq!(refusal.stage(), "source");
+    assert_eq!(refusal.stage(), Some("source"));
     assert_eq!(refusal.code(), Code::InvalidSyntax);
 
     const ILL_TYPED: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -234,7 +237,7 @@ fn tc_451_step_6_compile_refusals_carry_their_own_stage() {
         type Digit = Int[0, 9];\n\
         function inv using v(x: Digit): Boolean pure { 1 / x > 0 }\n";
     let refusal = run_fixture(ILL_TYPED, &call("inv", vec![arg("x", 1)])).unwrap_err();
-    assert_eq!(refusal.stage(), "check");
+    assert_eq!(refusal.stage(), Some("check"));
     assert_eq!(refusal.code(), Code::IllTyped);
 }
 
@@ -265,6 +268,7 @@ fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunR
         &DependencyInput::default(),
         limits,
         call,
+        &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
 }

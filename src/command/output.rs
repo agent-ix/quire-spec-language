@@ -262,7 +262,11 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
             },
         ),
         RunCause::SpineRun(refusal) => (
-            types::Stage::SpineRun(refusal.stage()),
+            // A cancel has no stage (FR-286); the command never cancels its
+            // own handle, so the envelope names the request that owns it.
+            refusal
+                .stage()
+                .map_or(types::Stage::Request, types::Stage::SpineRun),
             match refusal.as_ref() {
                 qsl_replay::spine::RunRefusal::MissingDeclaration { function }
                 | qsl_replay::spine::RunRefusal::UnsupportedResult { function } => {
@@ -278,7 +282,8 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                         position: *position,
                     }
                 }
-                qsl_replay::spine::RunRefusal::Compile(_) => types::Details::None,
+                qsl_replay::spine::RunRefusal::Compile(_)
+                | qsl_replay::spine::RunRefusal::Cancelled(_) => types::Details::None,
                 qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {
                     stage: fault.stage(),
                     invariant: fault.invariant(),

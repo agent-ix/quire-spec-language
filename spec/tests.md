@@ -218,7 +218,7 @@ names different artifacts in each.
 | TC-491 | library::bundle links a complete-V1 bundle and refuses each closure, facet and limit defect | Integration | P1 | FR-111-AC-1, FR-111-AC-2, FR-111-AC-3, FR-111-AC-4, FR-111-AC-5, FR-111-AC-6, FR-111-AC-7 | ✅ |
 | TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | 🚧 |
 | TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ |
-| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9 | ✅ |
+| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9, FR-100-AC-12 | ✅ |
 | TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 |
 | TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 |
 | TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 |
@@ -567,7 +567,7 @@ names different artifacts in each.
 | TC-768 | Core operations read no ambient input and write nothing to the process streams | Integration | P1 | FR-284-AC-2, FR-284-AC-3, FR-284-AC-4 | 🚧 |
 | TC-785 | The compile command is the composition of the front-end operations | Unit | P1 | FR-027-AC-11 | 🚧 |
 | TC-786 | run's exit statuses come from the exit function, with undefined at 10 | Unit | P1 | FR-100-AC-10, FR-100-AC-11 | ✅ |
-| TC-770 | Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only | Unit | P1 | FR-286-AC-1, FR-286-AC-2, FR-286-AC-3, FR-286-AC-4, FR-286-AC-5, FR-357-AC-12 | 🚧 |
+| TC-770 | Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only | Unit | P1 | FR-286-AC-1, FR-286-AC-2, FR-286-AC-3, FR-286-AC-4, FR-286-AC-5, FR-286-AC-6, FR-357-AC-12 | 🚧 |
 | TC-771 | QSL builds no binary, and command is a library operation that writes nothing | Integration | P1 | FR-287-AC-1, FR-287-AC-2 | 🚧 |
 | TC-769 | The exit function maps every category and multi-item outcome, with undefined at 10 | Unit | P1 | FR-285-AC-1, FR-285-AC-2, FR-285-AC-3, FR-285-AC-4, FR-285-AC-5 | 🚧 |
 | TC-776 | analyze requests and records have one canonical form that changes only with key members | Unit | P1 | FR-292-AC-1, FR-292-AC-2, FR-292-AC-3 | 🚧 |

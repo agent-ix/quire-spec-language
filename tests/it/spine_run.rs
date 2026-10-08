@@ -807,6 +807,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 arguments,
                 accounting: default_accounting(work_units),
             },
+            &quire_exact::Cancel::new(),
         );
         let category = match direct {
             Ok((_, outcome)) => outcome.category(),

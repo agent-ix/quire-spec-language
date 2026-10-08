@@ -36,7 +36,7 @@ use crate::proof_result::{
 use crate::result::ReplayResult;
 use crate::spine::{
     CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
-    FrontEndFailure, SpineStage,
+    FrontEndFailure, RunRefusal, SpineStage,
 };
 use crate::ReplayRefusal;
 
@@ -651,28 +651,40 @@ impl OutcomeDocument {
                 )
                 .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(&refusal)])
             }
-            StageFailure::Cancelled(cause) => Self::new(operation, None, Category::Incomplete)
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    Some(match cause {
-                        CancelCause::Requested => "requested",
-                        CancelCause::Deadline => "deadline",
-                    }),
-                    Code::Cancelled.as_str(),
-                    None,
-                    "the operation was cancelled",
-                )]),
-            StageFailure::Fault(fault) => Self::new(operation, None, fault.category())
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    Some(fault.catalog_code().cause()),
-                    fault.catalog_code().code(),
-                    None,
-                    format!(
-                        "internal invariant {} broken in {}",
-                        fault.invariant(),
-                        fault.stage()
-                    ),
-                )]),
+            StageFailure::Cancelled(cause) => Self::cancelled(operation, *cause),
+            StageFailure::Fault(fault) => Self::faulted(operation, fault),
         }
+    }
+
+    /// The document of a cancelled `operation`: incomplete, at no stage, with
+    /// the cancel's cause as the diagnostic's.
+    fn cancelled(operation: Operation, cause: CancelCause) -> Self {
+        Self::new(operation, None, Category::Incomplete).with_diagnostics(vec![
+            OutcomeDiagnostic::new(
+                Some(match cause {
+                    CancelCause::Requested => "requested",
+                    CancelCause::Deadline => "deadline",
+                }),
+                Code::Cancelled.as_str(),
+                None,
+                "the operation was cancelled",
+            ),
+        ])
+    }
+
+    /// The document of an `operation` that hit a broken internal invariant:
+    /// internal failure, at no stage, with the fault's catalog code.
+    fn faulted(operation: Operation, fault: &qsl_foundation::diagnostic::InternalFault) -> Self {
+        Self::new(operation, None, fault.category()).with_diagnostics(vec![OutcomeDiagnostic::new(
+            Some(fault.catalog_code().cause()),
+            fault.catalog_code().code(),
+            None,
+            format!(
+                "internal invariant {} broken in {}",
+                fault.invariant(),
+                fault.stage()
+            ),
+        )])
     }
 
     /// The document of a `replay` outcome: a settled arm's category at S8,
@@ -733,6 +745,44 @@ impl OutcomeDocument {
             }
         }
         document
+    }
+
+    /// The document of a `run`: a call that ran is [`Self::from_call`]'s
+    /// document plus the compiled package's `package_id`; a refusal is an
+    /// `execute` document at the stage it reached with the refusal's
+    /// category and one diagnostic; a cancel is incomplete; a fault is
+    /// internal failure with its catalog code.
+    pub fn from_run(result: &Result<(PackageId, CallOutcome), Box<RunRefusal>>) -> Self {
+        match result {
+            Ok((package_id, outcome)) => Self::from_call(outcome)
+                .with_artifacts(vec![OutcomeArtifact::package_id(package_id)]),
+            Err(refusal) => match refusal.as_ref() {
+                RunRefusal::Compile(compile) => Self::new(
+                    Operation::Execute,
+                    Some(compile.stage().into()),
+                    refusal.category(),
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(compile)]),
+                RunRefusal::Cancelled(cause) => Self::cancelled(Operation::Execute, *cause),
+                RunRefusal::Fault(fault) => Self::faulted(Operation::Execute, fault),
+                RunRefusal::MissingDeclaration { .. }
+                | RunRefusal::UnsupportedResult { .. }
+                | RunRefusal::UnknownParameter { .. }
+                | RunRefusal::DuplicateArgument { .. }
+                | RunRefusal::UnboundParameter { .. }
+                | RunRefusal::WrongValueKind { .. } => Self::new(
+                    Operation::Execute,
+                    Some(OutcomeStage::S6a),
+                    refusal.category(),
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    None,
+                    refusal.code().as_str(),
+                    None,
+                    refusal.to_string(),
+                )]),
+            },
+        }
     }
 
     /// The document's bytes: the same document gives the same bytes.
@@ -1141,6 +1191,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &call,
+            &Cancel::new(),
         )
         .expect("seven runs");
         assert_eq!(
@@ -1169,6 +1220,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &starved,
+            &Cancel::new(),
         )
         .expect("seven runs");
         assert_eq!(
@@ -1377,5 +1429,152 @@ mod tests {
         assert_eq!(document["category"], "internal-failure");
         assert_eq!(document["last_stage"], Value::Null);
         assert_eq!(document["diagnostics"][0]["code"], "runtime_invariant");
+    }
+
+    fn run_source(
+        text: &str,
+        function: &str,
+        cancel: &Cancel,
+    ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+        run(
+            SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            "unit.native",
+            text.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &Call {
+                function: function.to_owned(),
+                arguments: Vec::new(),
+                accounting: default_accounting(1_000_000),
+            },
+            cancel,
+        )
+    }
+
+    /// FR-286-AC-6: `from_run` over each arm of `spine::run`'s result.
+    #[trace("TC-770", "FR-286-AC-6")]
+    #[test]
+    fn from_run_documents_every_arm() {
+        // Completed: the call's document plus the package's `package_id`.
+        let completed = run_source(FIXTURE, "seven", &Cancel::new());
+        let (package_id, call_outcome) = completed.as_ref().expect("seven runs");
+        let document = json_of(&OutcomeDocument::from_run(&completed));
+        assert_eq!(
+            document,
+            json!({
+                "format": "quire-outcome/1",
+                "operation": "execute",
+                "last_stage": "S6a",
+                "category": "success",
+                "items": [],
+                "diagnostics": [],
+                "artifacts": [{"kind": "package_id", "id": package_id.hex()}],
+                "result": {"kind": "completed", "value": {"kind": "integer", "decimal": "7"}},
+            })
+        );
+        assert_eq!(
+            document["result"],
+            json_of(&OutcomeDocument::from_call(call_outcome))["result"]
+        );
+
+        // Undefined: the call's undefined result, still with the artifact.
+        let undefined = Ok((
+            *package_id,
+            CallOutcome::Undefined {
+                reason: "division-by-zero",
+            },
+        ));
+        let document = json_of(&OutcomeDocument::from_run(&undefined));
+        assert_eq!(document["category"], "undefined");
+        assert_eq!(
+            document["result"],
+            json!({"kind": "undefined", "reason": "division-by-zero"})
+        );
+        assert_eq!(document["artifacts"].as_array().map(Vec::len), Some(1));
+
+        // Refused call: its catalog code and cause as one diagnostic.
+        let refused = Ok((
+            *package_id,
+            CallOutcome::Refused(CallRefusal::Family {
+                code: CatalogCode::new("ill_typed", "type-mismatch"),
+                location: None,
+            }),
+        ));
+        let document = json_of(&OutcomeDocument::from_run(&refused));
+        assert_eq!(document["category"], "refusal");
+        assert_eq!(document["diagnostics"][0]["code"], "ill_typed");
+        assert_eq!(document["diagnostics"][0]["cause"], "type-mismatch");
+
+        // Compile refusal: the stage it reached and its own diagnostic.
+        let refusal = run_source(ILL_TYPED, "inv", &Cancel::new());
+        let Err(boxed) = &refusal else {
+            panic!("the source does not type");
+        };
+        let RunRefusal::Compile(compile) = boxed.as_ref() else {
+            panic!("a compile refusal");
+        };
+        let document = json_of(&OutcomeDocument::from_run(&refusal));
+        assert_eq!(document["operation"], "execute");
+        assert_eq!(document["last_stage"], "S3");
+        assert_eq!(document["category"], "refusal");
+        assert_eq!(document["artifacts"], json!([]));
+        assert_eq!(document["diagnostics"].as_array().map(Vec::len), Some(1));
+        assert_eq!(document["diagnostics"][0]["code"], "ill_typed");
+        assert_eq!(document["diagnostics"][0]["message"], compile.to_string());
+
+        // A call-stage refusal: S6a, its code.
+        let missing = run_source(FIXTURE, "nope", &Cancel::new());
+        let document = json_of(&OutcomeDocument::from_run(&missing));
+        assert_eq!(document["last_stage"], "S6a");
+        assert_eq!(document["category"], "refusal");
+        assert_eq!(document["diagnostics"][0]["code"], "missing_declaration");
+
+        // Fault: internal failure with its catalog code, at no stage.
+        let fault = InternalFault::new("call", "broken");
+        let code = fault.catalog_code();
+        let faulted = Err(Box::new(RunRefusal::Fault(fault)));
+        let document = json_of(&OutcomeDocument::from_run(&faulted));
+        assert_eq!(document["category"], "internal-failure");
+        assert_eq!(document["last_stage"], Value::Null);
+        assert_eq!(document["diagnostics"][0]["code"], code.code());
+        assert_eq!(document["diagnostics"][0]["cause"], code.cause());
+
+        // Cancelled: incomplete at no stage, naming the cause.
+        let cancel = Cancel::new();
+        cancel.cancel(CancelCause::Requested);
+        let cancelled = run_source(FIXTURE, "seven", &cancel);
+        assert!(matches!(
+            cancelled.as_ref().err().map(AsRef::as_ref),
+            Some(RunRefusal::Cancelled(CancelCause::Requested))
+        ));
+        let document = json_of(&OutcomeDocument::from_run(&cancelled));
+        assert_eq!(document["category"], "incomplete");
+        assert_eq!(document["last_stage"], Value::Null);
+        assert_eq!(document["diagnostics"][0]["code"], "cancelled");
+        assert_eq!(document["diagnostics"][0]["cause"], "requested");
+
+        // A driver's unbuilt engine: `unimplemented_capability`, not
+        // `unsupported_construct`, unsupported, no stage, exit 21.
+        let driver = OutcomeDocument::new(Operation::Execute, None, Category::Unsupported)
+            .with_diagnostics(vec![OutcomeDiagnostic::new(
+                None,
+                Code::UnimplementedCapability.as_str(),
+                None,
+                "the AOT engine is not built",
+            )]);
+        assert_eq!(
+            Code::UnimplementedCapability.category(),
+            Category::Unsupported
+        );
+        assert_eq!(Code::UnimplementedCapability.category().exit_code(), 21);
+        assert_eq!(driver.category().exit_code(), 21);
+        let document = json_of(&driver);
+        assert_eq!(document["category"], "unsupported");
+        assert_eq!(document["last_stage"], Value::Null);
+        assert_eq!(
+            document["diagnostics"][0]["code"],
+            "unimplemented_capability"
+        );
     }
 }
