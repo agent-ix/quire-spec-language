@@ -103,3 +103,21 @@ reading, with no build.
 | --- | --- | --- |
 | FND-001 | fixed | 8c7fce235 |
 | FND-002 | fixed | 8c7fce235 |
+
+## New findings (disposition pass 2)
+
+Round 2 reviews ab1e899e5462eafe9ed43597c1b642411b070173, the rebase onto
+main 70ddb73c. Main's #663 added a new FR-100-AC-12 (cancel during
+`spine::run`), so the rebase renumbered this PR's accounting criterion to
+FR-100-AC-13 in FR-100 and TC-914. The tag was not renumbered with it.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | `call_accounting_reaches_the_call_as_its_limits` is still tagged `#[trace("TC-914", "FR-100-AC-12")]` (doc comment "FR-100-AC-12:"), and the TC-914 row in `spec/tests.md` still lists FR-100-AC-12. FR-100-AC-12 is now main's cancel criterion (TC-452), so the matrix binds an accounting test to the cancel AC, and FR-100-AC-13 has no tagged test. Fix: retag the test and its doc comment to FR-100-AC-13, and change the TC-914 row in `spec/tests.md` to FR-100-AC-13. | src/command.rs:1120-1124; spec/tests.md:547 |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at ab1e899e5462eafe9ed43597c1b642411b070173. FND-001 and
+FND-002 stay fixed after the rebase: the TC-914 AC-11 `sent` assertions
+and Behavior 6's "in neither table" are unchanged. No row is due this
+round.
