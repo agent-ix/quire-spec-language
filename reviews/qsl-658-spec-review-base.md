@@ -41,3 +41,20 @@ The direction matches the approved scope and ADR-030 D-4.10. The criterion is no
 It does not match on the "one below the document's value count" clause (FND-001) or on "at that field" (FND-002). TC-733 also prescribes a third run the test doesn't make (FND-003). FR-261 and TC-733 pass `quire validate`.
 
 Two medium findings and two low. **Not mergeable until FND-001 to FND-004 are fixed.** All four are wording fixes, plus at most one assertion line for FND-002.
+
+## Dispositions
+
+Round 1, reviewed at b07de986944877971977ec0ddeaa3c8e39607ccc.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 71625d81 |
+| FND-002 | fixed | 71625d81 |
+| FND-003 | still-open | The two runs are now described, but TC-733's step 3 expected result still says "after the whole value is read and counted". The test does not assert that: the 50,001 count shows only that the count walk passes 50,000 levels before any judgement. Delete the phrase. |
+| FND-004 | fixed | 71625d81 |
+
+- **FND-001.** AC-3, TC-733 step 3 and its expected result now give `observation.values` at 50,000, bound 50,000 and count reached 50,001. That is exactly what the test asserts. No "one below the document" text remains in spec/ or the test file.
+- **FND-002.** The test now asserts `judged.fields["field"] == "parent"`. I checked this against the code, not by running it. The fixture puts the deep value at `fields.parent` (`run_tc465_current_text`). Check 6.5 refuses a declared field whose raw form does not match with `.with("field", name)` (`document.rs:1296-1301`), so the field is `parent`. The batch `make ci` is the run that proves it.
+- **FND-004.** The TC-733 Description no longer says "admit deep documents".
+
+**Not mergeable until FND-003 is fixed.** The fix deletes six words from TC-733.

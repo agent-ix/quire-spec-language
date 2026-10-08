@@ -32,3 +32,14 @@ The wording otherwise matches the body:
 - with the limits raised the result is `wrong-value-kind`
 
 The comment carries the same "one below" mismatch as FR-261-AC-3 (SR-1383 FND-001). Fix both together. No test logic changed, so no build is needed to review this. **Not mergeable until FND-001 and FND-002 are fixed.**
+
+## Dispositions
+
+Round 1, reviewed at b07de986944877971977ec0ddeaa3c8e39607ccc.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 71625d81 |
+| FND-002 | fixed | 71625d81 |
+
+The doc comment now describes the two runs the body makes: the raised limits giving `wrong-value-kind` at the field, and the 50,000 bound refusing with count 50,001. It no longer says "one below" or "again". Every finding reads fixed.

@@ -40,6 +40,6 @@ Tag the tests `#[trace("TC-733", "FR-261-AC-1")]`, `#[trace("TC-733", "FR-261-AC
   with the first malformed byte's offset; and the not-an-object defect.
 - Step 2: the digest is read and admission proceeds to FR-106's later
   checks; under the other digest, `stale_dependency`/`content-mismatch`.
-- Step 3: refused `invalid_runtime_input`/`wrong-value-kind` at the field,
-  after the whole value is read and counted; then refused naming
+- Step 3: refused `invalid_runtime_input`/`wrong-value-kind` at the field;
+  then refused naming
   `observation.values`, bound 50,000 and the count reached, 50,001.
