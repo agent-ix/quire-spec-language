@@ -1700,6 +1700,7 @@ mod tests {
                 &DependencyInput::default(),
                 SpineLimits::default(),
                 &call,
+                &Cancel::new(),
             )
             .expect("seven runs");
             json_of(&OutcomeDocument::from_call(&outcome))["result"].clone()
