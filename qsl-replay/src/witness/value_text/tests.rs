@@ -538,8 +538,8 @@ fn tc_905_encoding_work_is_linear_in_depth() {
 /// finished bytes without building the text. A text of 1,000,000 `;`
 /// characters is 1,000,026 JCS bytes and 3,000,026 escaped; `value_text_len`
 /// returns the escaped length, equal to `to_value_text`'s, while the only
-/// bytes it holds are the JCS bytes: no buffer it makes reaches the escaped
-/// length. (The crate forbids `unsafe`, so a counting allocator is not
+/// bytes it holds are the JCS bytes: no buffer the encoder holds reaches
+/// the escaped length. (The crate forbids `unsafe`, so a counting allocator is not
 /// available; the held buffers are read from the encoder's pieces.)
 #[trace("TC-905", "FR-070-AC-13")]
 #[test]
