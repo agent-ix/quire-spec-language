@@ -666,7 +666,7 @@ impl ReplayRequest {
         // runs under and any claim binds (FR-255 Behavior 10).
         let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
-        let intake = CallerLimits::for_request(&stage_limits, limits)
+        let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)
             .spine
             .model
             .intake;
