@@ -113,3 +113,9 @@ Round 1, reviewed at be49d0e576454f5620fc611e037316bf255aedd0 (fix commits 9f771
 | FND-007 | fixed | 4b1e37f63. Both new `#[allow(clippy::too_many_arguments)]` are removed. The intake bound rides `ModelNormalizationLimits`, so `admit_current_snapshot` and `admit_clause_observations` keep their original arity. |
 | FND-008 | fixed | 4b1e37f63. `#[derive(Debug, Clone)]` is removed from `PackageDocument`. A hand-written `Debug` prints only `jcs_digest` (intake.rs:307-313). |
 | FND-009 | fixed | 4b1e37f63. `quire-semantic-value` is `branch = "main"` (Cargo.toml:15). Cargo.lock resolves the same commit e0ada807 through `?branch=main`. |
+
+Round 2, reviewed at 3ebac1553ddf7ef1a6b0d1a1ba3c48dfde439208 (fix commits be49d0e57..3ebac1553).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-010 | fixed | acb417817 + 3ebac1553. The public field `ClauseRunRequest.model_limits` is removed. `run_clause` passes `request.limits.model` to `CompiledRun` and `run_function`, so a public caller has one copy, `limits.model.intake`. `CompiledRun.model_limits` stays `pub(crate)`, and `replay_frame` and `replay_state_clause` fill it from `limits.spine.model`, which is the same value their compile uses. The cargo fmt commit f2f6f2e57 touches 27 files. A token-level comparison shows it changes only whitespace, trailing commas, single-expression closure braces and one import order. All 27 files are already in this PR's diff. |
