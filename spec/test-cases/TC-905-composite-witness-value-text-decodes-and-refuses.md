@@ -15,9 +15,12 @@ value text into a `WitnessValue` tree. The tree keeps every slot, option,
 element, member, declaration identity and leaf exactly as written, beside an
 unchanged scalar entry. Transcript escaping keeps text holding `;`, `>>>`,
 `%` and `<` inside its entry. Each malformed entry refuses `Malformed`,
-naming the parameter.
+naming the parameter. Encoding a witness value does work proportional to
+its output at any depth, and the value text's length is counted without
+building the text.
 
-Scope: FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12.
+Scope: FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12,
+FR-070-AC-13.
 
 ## Test Procedure
 
@@ -68,10 +71,22 @@ otherwise.
 
 4. Decode a transcript with a `Q` entry for node id `0a…` followed by a `Q`
    entry for node id `0b…`, then the same two entries in the other order.
+5. Build three value shapes at depths 5,000 and 10,000, on a thread with a
+   512 KiB stack: nested sets (each level a set of the next level and the
+   text `leaf`), nested options (each level a present option of the next
+   level) and nested sequences (each level a sequence of the next level and
+   the integer `1`). Encode each and record its counted work (the bytes the
+   encoder's JCS writer produces plus the bytes compared while ordering set
+   and bag elements) and its output (the value's JCS bytes before transcript
+   escaping). Then write the depth-5,000 nested sets as a value text, decode
+   it, and write the decoded value again.
+6. Take a text value of 1,000,000 `;` characters. Call `value_text_len`,
+   recording every allocation it makes, then call `to_value_text`.
 
 Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
-`#[trace("TC-905", "FR-070-AC-9")]`, `#[trace("TC-905", "FR-070-AC-11")]`
-and `#[trace("TC-905", "FR-070-AC-12")]`.
+`#[trace("TC-905", "FR-070-AC-9")]`, `#[trace("TC-905", "FR-070-AC-11")]`,
+`#[trace("TC-905", "FR-070-AC-12")]` and
+`#[trace("TC-905", "FR-070-AC-13")]`.
 
 ## Expected Results
 
@@ -90,7 +105,17 @@ and `#[trace("TC-905", "FR-070-AC-12")]`.
   returned.
 - Step 4: the ascending transcript decodes. The other order refuses
   `DecodeRefusal::EntryOrder` naming the `0a…` entry, with no value.
+- Step 5: for each shape, the counted work at depth 5,000 is at least its
+  output's bytes; the counted work at depth 10,000 is at most three times
+  the counted work at depth 5,000, and at most three times its own output's
+  bytes. The nested sets' `value_text_len` equals the length of their value
+  text, the text decodes on that stack, and the decoded value
+  writes the same text.
+- Step 6: `value_text_len` returns 3,000,026, `to_value_text` returns a text
+  of 3,000,026 bytes, and every allocation `value_text_len` made is smaller
+  than 3,000,026 bytes.
 
 ## Status
 
-Passed locally, `qsl-replay/src/witness/value_text/tests.rs`.
+Steps 1 to 5 pass locally, `qsl-replay/src/witness/value_text/tests.rs`.
+Step 6 has no test yet.
