@@ -108,6 +108,66 @@ fn fcd_fixtures_dir() -> &'static Path {
     })
 }
 
+/// FR-260-AC-1 (TC-730 step 2), on a 512 KiB stack: every corpus domain
+/// package FR-056's tests admit still admits under the `sha256-jcs` digest
+/// it had. The digests are SHA-256 over each document's RFC 8785 text,
+/// computed outside this crate; the architecture document is the one FCD's
+/// real lift produces at the pinned rev (68ace480).
+#[trace("TC-730", "FR-260-AC-1")]
+#[test]
+fn every_corpus_package_admits_under_its_recorded_digest() {
+    on_a_small_stack(|| {
+        let fixtures = fcd_fixtures_dir();
+        let architecture = lift_document(
+            &fixtures.join("architecture"),
+            &[
+                fixtures.join("modules/fixture-domain"),
+                fixtures.join("modules/fixture-edges"),
+                fixtures.join("modules/fixture-systems"),
+            ],
+        )
+        .expect("FCD's real architecture fixture lifts cleanly");
+        let corpus: [(&str, Vec<u8>, &str); 3] = [
+            (
+                "spine-model",
+                include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json").to_vec(),
+                "5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd",
+            ),
+            (
+                "systems-interface",
+                include_bytes!("../../../tests/fixtures/systems-interface.semantic-ir.json")
+                    .to_vec(),
+                "47b316eca571f39b6f9d4592940e8c6467c3874d91d7c86faa1379ab95b5cf72",
+            ),
+            (
+                "architecture",
+                architecture,
+                "aed361978b4f0fcc5b7ca5d7dfc95abb32023913d563f9a08101065e6ef48ee0",
+            ),
+        ];
+        for (name, bytes, recorded) in corpus {
+            let mut digest = [0_u8; 32];
+            for (index, byte) in digest.iter_mut().enumerate() {
+                *byte = u8::from_str_radix(&recorded[2 * index..2 * index + 2], 16).unwrap();
+            }
+            let package: Value = serde_json::from_slice(&bytes).unwrap();
+            let offered = DomainPackageRef {
+                identity: package["package"]["identity"].as_str().unwrap().to_owned(),
+                version: package["package"]["version"].as_str().unwrap().to_owned(),
+                digest,
+            };
+            let by_digest = BTreeMap::from([(digest, bytes)]);
+            let admitted = admit(
+                &offered,
+                SHA256_JCS_DIGEST_DOMAIN,
+                &by_digest,
+                qsl_foundation::IntakeLimits::default(),
+            );
+            assert!(admitted.is_ok(), "{name}: {:?}", admitted.err());
+        }
+    });
+}
+
 #[trace("TC-145", "FR-056-AC-1")]
 #[test]
 fn lifts_the_architecture_bundle_and_admits_it() {

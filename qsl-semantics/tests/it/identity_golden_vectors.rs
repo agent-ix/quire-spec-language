@@ -373,52 +373,6 @@ fn domain_package_digest_matches_its_golden_vector() {
     ));
 }
 
-/// FR-260-AC-1 (TC-730 step 2): every corpus domain package this repository
-/// carries still admits under the `sha256-jcs` digest it had. The digests
-/// are SHA-256 over each document's RFC 8785 text, computed outside this
-/// crate.
-#[trace("TC-730", "FR-260-AC-1")]
-#[test]
-fn every_corpus_package_admits_under_its_recorded_digest() {
-    let corpus: [(&str, &[u8], &str); 2] = [
-        (
-            "acme/orders",
-            include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json"),
-            "5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd",
-        ),
-        (
-            "acme/systems",
-            include_bytes!("../../../tests/fixtures/systems-interface.semantic-ir.json"),
-            "47b316eca571f39b6f9d4592940e8c6467c3874d91d7c86faa1379ab95b5cf72",
-        ),
-    ];
-    for (_, bytes, digest) in corpus {
-        let digest = digest_bytes(digest);
-        let document = std::str::from_utf8(bytes).expect("a corpus document is UTF-8");
-        let package: Value = serde_json::from_str(document).unwrap();
-        let identity = package["package"]["identity"].as_str().unwrap().to_owned();
-        let version = package["package"]["version"].as_str().unwrap().to_owned();
-        let offered = DomainPackageRef {
-            identity,
-            version,
-            digest,
-        };
-        let by_digest = BTreeMap::from([(digest, bytes.to_vec())]);
-        let admitted = admit(
-            &offered,
-            SHA256_JCS_DIGEST_DOMAIN,
-            &by_digest,
-            qsl_foundation::IntakeLimits::default(),
-        );
-        assert!(
-            admitted.is_ok(),
-            "{:?}: {:?}",
-            offered.identity,
-            admitted.err()
-        );
-    }
-}
-
 /// The one changed digest: an integral number spelled `1.0` or `1e2`.
 /// Intake now admits the document under the digest of its RFC 8785 text
 /// (`1`, `100`), and no longer under the digest of `serde_json`'s
