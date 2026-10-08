@@ -45,7 +45,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::bound::{DomainKey, FiniteBoundKind};
+use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{InternalFault, Setting};
@@ -53,42 +53,6 @@ use quire_exact::{NodeKey, ValueType};
 
 use crate::check::Capability;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
-
-/// The kind of one unbounded domain (ADR-014 §4's table).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum DomainKind {
-    /// A collection type with no cardinality bound.
-    Collection,
-    /// A population with no declared maximum.
-    Population,
-    /// `Integer` with no range.
-    Integer,
-    /// A recursive record or tuple type (QSpec FR-143), at its first
-    /// position on the path.
-    Recursive,
-    /// A loop admitted with an invariant and a well-founded variant and no
-    /// finite maximum (QSpec FR-228-AC-5).
-    Loop,
-    /// A temporal formula under `quire.temporal.infinite-trace/v1`. A finite
-    /// prefix never proves infinite satisfaction (QSpec FR-161).
-    InfiniteTrace,
-    /// A quantity type: its magnitude is an unbounded `Rational`, and no
-    /// finite bound ranges over it.
-    Quantity,
-}
-
-impl DomainKind {
-    /// The [`FiniteBoundKind`] a proof bound for this domain must have, or
-    /// `None` when no finite bound can stand for it.
-    pub const fn finite_kind(self) -> Option<FiniteBoundKind> {
-        match self {
-            Self::Collection | Self::Population => Some(FiniteBoundKind::Cardinality),
-            Self::Integer => Some(FiniteBoundKind::IntegerRange),
-            Self::Recursive => Some(FiniteBoundKind::Depth),
-            Self::Loop | Self::InfiniteTrace | Self::Quantity => None,
-        }
-    }
-}
 
 /// The non-empty set of an item's unbounded domains, each with its kind,
 /// in [`DomainKey`] order.
@@ -352,6 +316,7 @@ fn child<'t>(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use qsl_foundation::bound::FiniteBoundKind;
     use qsl_foundation::diagnostic::LimitKind;
     use quire_exact::{
         CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, Presence,

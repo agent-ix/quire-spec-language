@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify the F `bound` types are non-empty by construction and ordered
-deterministically. Scope: FR-097-AC-1.
+deterministically, and `DomainKind`'s FR-331 wire spellings exact. Scope:
+FR-097-AC-1 and FR-097-AC-9 (wire spellings).
 
 ## Test Procedure
 
@@ -22,6 +23,8 @@ deterministically. Scope: FR-097-AC-1.
    (m2, 0).
 3. Build `IntervalKey::new(3, 2, …)`, then keys that differ in one component
    each.
+4. Write each of the seven `DomainKind`s to its wire label and read it back;
+   read `Collection` and `infinite_trace`.
 
 ## Expected Results
 
@@ -32,6 +35,9 @@ deterministically. Scope: FR-097-AC-1.
   population (m1, 0) < (m1, 1) < (m2, 0).
 - Step 3: the inverted key refuses; keys that differ in lower, upper or clock
   binding are unequal.
+- Step 4: each kind writes as `collection`, `population`, `integer`,
+  `recursive`, `loop`, `infinite-trace` or `quantity` and reads back to
+  itself; `Collection` and `infinite_trace` read as no kind.
 
 ## Status
 

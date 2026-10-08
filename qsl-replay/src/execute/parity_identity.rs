@@ -64,12 +64,12 @@ impl BoundEntries {
     pub fn new(bounds: Vec<ProofBound>) -> Result<Self, IdentityEncodeError> {
         let mut keyed = bounds
             .into_iter()
-            .map(|bound| Ok((encoded_key(&bound.domain)?, bound)))
+            .map(|bound| Ok((encoded_key(bound.domain())?, bound)))
             .collect::<Result<Vec<_>, IdentityEncodeError>>()?;
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
         if let Some(pair) = keyed.windows(2).find(|pair| pair[0].0 == pair[1].0) {
             return Err(IdentityEncodeError::DuplicateKey {
-                key: pair[0].1.domain.to_string(),
+                key: pair[0].1.domain().to_string(),
             });
         }
         Ok(Self(keyed.into_iter().map(|(_, bound)| bound).collect()))
@@ -256,9 +256,9 @@ fn domain<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, domain: &Domain) -> Resu
             for entry in bounds.entries() {
                 writer.begin_object()?;
                 writer.name("bound")?;
-                bound(writer, &entry.bound)?;
+                bound(writer, entry.bound())?;
                 writer.name("key")?;
-                KeyEncode(&entry.domain).encode_into(writer)?;
+                KeyEncode(entry.domain()).encode_into(writer)?;
                 writer.end_object()?;
             }
             writer.end_array()?;
@@ -340,6 +340,7 @@ impl Encode for ParityPreimage {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use qsl_foundation::bound::DomainKind;
     use qsl_foundation::ByteDigest;
     use quire_exact::{Integer, Role};
 
@@ -356,18 +357,19 @@ mod tests {
             identity: OperandIdentity::GraphChild(node()),
             domain: Domain::Bounds(
                 BoundEntries::new(vec![
-                    ProofBound {
-                        domain: key(vec![0]),
-                        bound: FiniteBound::cardinality(3),
-                    },
-                    ProofBound {
-                        domain: key(vec![0, 0]),
-                        bound: FiniteBound::integer_range(
-                            Integer::from(0_i64),
-                            Integer::from(9_i64),
-                        )
-                        .unwrap(),
-                    },
+                    ProofBound::new(
+                        key(vec![0]),
+                        Some(DomainKind::Collection),
+                        FiniteBound::cardinality(3),
+                    )
+                    .unwrap(),
+                    ProofBound::new(
+                        key(vec![0, 0]),
+                        Some(DomainKind::Integer),
+                        FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))
+                            .unwrap(),
+                    )
+                    .unwrap(),
                 ])
                 .unwrap(),
             ),
@@ -476,9 +478,13 @@ mod tests {
     #[trace("TC-904", "FR-357-AC-19")]
     #[test]
     fn bound_entries_order_by_the_encoded_key_and_refuse_a_repeat() {
-        let bound = |path: Vec<u32>| ProofBound {
-            domain: key(path),
-            bound: FiniteBound::cardinality(1),
+        let bound = |path: Vec<u32>| {
+            ProofBound::new(
+                key(path),
+                Some(DomainKind::Collection),
+                FiniteBound::cardinality(1),
+            )
+            .unwrap()
         };
         let entries =
             BoundEntries::new(vec![bound(vec![2]), bound(vec![10]), bound(vec![0])]).unwrap();
@@ -487,7 +493,7 @@ mod tests {
             .iter()
             .map(|entry| {
                 entry
-                    .domain
+                    .domain()
                     .to_string()
                     .rsplit('/')
                     .next()

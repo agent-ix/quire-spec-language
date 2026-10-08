@@ -16,11 +16,12 @@ use qsl_eval::simulation::{
     explore_request, replay, sample_request, Expansion, ExpansionStop, Limit, Limits, NotSimulated,
     Outcome, ReplayError, StopReason, Trace, TransitionSystem,
 };
+use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::{CatalogCode, CatalogCoded, IdentityLimits, InternalFault};
-use qsl_semantics::family::{ClassifyFailure, DomainKind};
+use qsl_semantics::family::ClassifyFailure;
 use quire_canonical::{Document, FixedShape};
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;

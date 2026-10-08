@@ -3,11 +3,11 @@
 //! item per requirement record of a checked package, with no
 //! caller-supplied item list.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
-use qsl_foundation::bound::{DomainKey, FiniteBound};
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
 use qsl_foundation::digest::{ByteDigest, WireNodeId};
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -19,7 +19,6 @@ use qsl_route::{
     ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
-use qsl_semantics::family::DomainKind;
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -71,7 +70,9 @@ fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
         ProviderOrigin::Linked,
         ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [advertises],
+        Some(BTreeSet::from([DomainKind::Collection])),
     )
+    .expect("a well-formed descriptor")
 }
 
 /// A registry holding the one backend `kani`, advertising `kind` bounded.

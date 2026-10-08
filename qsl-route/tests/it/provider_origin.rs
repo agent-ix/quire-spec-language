@@ -3,7 +3,10 @@
 //! and two registrations of one identity that differ only in origin
 //! conflict.
 
+use std::collections::BTreeSet;
+
 use ix_trace_rs::trace;
+use qsl_foundation::bound::DomainKind;
 use qsl_route::{
     BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
     ProviderOrigin, RegistrationCause, Registry,
@@ -20,7 +23,9 @@ fn kani(origin: ProviderOrigin) -> BackendDescriptor {
         origin,
         manifest_digest(),
         [(Capability::OperationContract, Mode::Bounded)],
+        Some(BTreeSet::from([DomainKind::Collection])),
     )
+    .expect("a well-formed descriptor")
 }
 
 /// FR-288-AC-5: the origin the host supplies is the one the descriptor
@@ -40,6 +45,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
         ProviderOrigin::Process,
         manifest_digest(),
         [(Some("value-validity"), Some("bounded"))],
+        Some(&["collection"]),
     )
     .expect("a well-formed manifest is admitted");
     assert_eq!(admitted.origin(), ProviderOrigin::Process);

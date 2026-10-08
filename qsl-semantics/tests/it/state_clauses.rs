@@ -15,12 +15,13 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::DomainKey;
+use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind, Observation,
     WrongSnapshotCause,
 };
-use qsl_semantics::family::{ClaimExtent, DomainKind};
+use qsl_semantics::family::ClaimExtent;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};

@@ -6,9 +6,9 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    call_site, DeclaredDomain, DependencyInput, DomainKey, EmptyFiniteBound, EmptyInterval,
-    FiniteBound, FiniteBoundKind, Identifier, Integer, IntegerInterval, ProofBound, QualifiedName,
-    SourceIdentity,
+    call_site, DeclaredDomain, DependencyInput, DomainKey, DomainKind, EmptyFiniteBound,
+    EmptyInterval, FiniteBound, FiniteBoundKind, Identifier, Integer, IntegerInterval, ProofBound,
+    QualifiedName, SourceIdentity,
 };
 
 /// A unit of one Boolean predicate `p` of one parameter `x`.
@@ -42,13 +42,17 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
 
     let bound = FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))
         .expect("[0, 9] is not empty");
-    let declared = DeclaredDomain::new(ProofBound {
-        domain: DomainKey::Node {
-            node: parameter,
-            path: Vec::new(),
-        },
-        bound: bound.clone(),
-    });
+    let declared = DeclaredDomain::new(
+        ProofBound::new(
+            DomainKey::Node {
+                node: parameter,
+                path: Vec::new(),
+            },
+            Some(DomainKind::Integer),
+            bound.clone(),
+        )
+        .unwrap(),
+    );
     assert_eq!(
         declared.domain(),
         &DomainKey::Node {

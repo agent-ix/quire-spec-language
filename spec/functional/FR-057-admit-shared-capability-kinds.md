@@ -236,9 +236,9 @@ consumes this type and defines no second capability vocabulary.
 
 QSL reads no provider-manifest bytes. The driver reads a backend's FR-331
 provider manifest, writes the FR-331 `manifest`, and registers the backend
-with two values from it: the backend identity and the advertised (kind,
-mode) labels exactly as stated
-(ADR-013 C-28).
+with three values from it, each exactly as stated: the backend identity, the
+advertised (kind, mode) labels, and the manifest's `domains`, present or
+absent (ADR-013 C-28).
 
 When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
@@ -248,12 +248,33 @@ If a backend advertises an absent or unknown kind, or a mode other than
 registration with `invalid_capability` (`absent-kind`, `unknown-kind` or
 `unknown-mode`), keyed by backend identity; the refused registration
 contributes nothing, and any registration already held under that identity
-stands. A second registration under an identity the registry already holds
+stands.
+
+If a backend's `domains` is present and malformed, then the registry SHALL
+refuse that backend's registration with `invalid_capability`/`invalid-domains`,
+whatever (kind, mode) pairs it advertises. `domains` is malformed when it is
+empty, holds a label that is not one of the four boundable FR-331 domain kinds
+`collection`, `population`, `integer` and `recursive` (a non-boundable kind such
+as `quantity` and a label not byte-equal to any FR-331 kind both count, and the
+refusal names the received bytes), or repeats a kind. If a backend's `domains` is
+absent, then the registry SHALL refuse its registration with
+`invalid_capability`/`invalid-domains` only when it advertises a `bounded` pair;
+a registration advertising only `unbounded` pairs is admitted without
+`domains`. The registry SHALL judge `domains` after every advertised pair, so a
+registration with both a pair defect and a `domains` defect refuses with the
+pair's cause. An `invalid-domains` refusal is keyed by backend identity and
+leaves a held registration standing, as the kind/mode causes do. An admitted
+registration's descriptor SHALL keep its admitted `domains`, which
+quire-contract-codegen reads through `BackendDescriptor::domains()` for FR-290's
+domain-kind routing step. That routing step is quire-contract-codegen's, not
+QSL's.
+
+A second registration under an identity the registry already holds
 is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
 quire-specification FR-290 "Candidate set and negotiation"): an equal
 descriptor repeats harmlessly, and an unequal one conflicts, refusing the
 identity once with `invalid_capability`/`duplicate-backend` and withdrawing
-the registration already held -- unlike the kind/mode causes above,
+the registration already held -- unlike the kind/mode and `domains` causes above,
 this refusal does not leave the earlier registration standing.
 
 For each admitted item, the registry SHALL compute the candidate set under the
@@ -360,6 +381,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item, except the row for refinement between two operation contracts or state models, whose proof route no V1 ticket owns (ADR-017 RF-1); an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
 | FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration is an inapplicable capability naming the state family, and its declaration's body still reaches its family checker. | Test (TC-115) |
+| FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |
 
 ## Dependencies
 
@@ -413,10 +435,12 @@ backed by TC-115 (`tests/it/composed_admission_stages.rs`).
 
 The layer-R `route` crate adds registration from advertised labels
 (`qsl_route::BackendDescriptor::admit`, refusing `absent-kind`,
-`unknown-kind` and `unknown-mode` keyed by backend identity) and the routing
+`unknown-kind`, `unknown-mode` and `invalid-domains` keyed by backend
+identity, and keeping the admitted `domains` on the descriptor) and the routing
 step (`qsl_route::routing`), which takes settled dispositions as data and
 gives a target only to a `supported` item. FR-057-AC-6 and FR-057-AC-8 are
-backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`); FR-057-AC-8's
+backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`), and
+FR-057-AC-12 by TC-155 step 7 in the same file; FR-057-AC-8's
 malformed-mode case is additionally backed by TC-447's
 `tc_282_duplicate_backend_identity::db_07_a_malformed_registration_never_reaches_the_registry`
 (`qsl-route/tests/it/route_registry.rs`).

@@ -452,7 +452,7 @@ impl Positions {
     ) -> Result<BTreeMap<&'b DomainKey, &'b FiniteBound>, ReplayRefusal> {
         let mut by_key: BTreeMap<&DomainKey, &FiniteBound> = BTreeMap::new();
         for bound in bounds {
-            let key = &bound.domain;
+            let key = bound.domain();
             if by_key.contains_key(key) {
                 return Err(refuse(ParityBoundRefusal::HarnessDuplicate {
                     key: key.clone(),
@@ -464,15 +464,15 @@ impl Positions {
                 }));
             };
             let expected = position.authored.kind();
-            if expected != Some(bound.bound.kind()) {
+            if expected != Some(bound.bound().kind()) {
                 return Err(refuse(ParityBoundRefusal::HarnessKind {
                     key: key.clone(),
                     expected,
-                    supplied: bound.bound.kind(),
+                    supplied: bound.bound().kind(),
                 }));
             }
             if let (Authored::Variants(admitted), FiniteBound::Variants { members }) =
-                (&position.authored, &bound.bound)
+                (&position.authored, bound.bound())
             {
                 if let Some(variant) = members.iter().find(|member| !admitted.contains(member)) {
                     return Err(refuse(ParityBoundRefusal::HarnessUnknownVariant {
@@ -481,7 +481,7 @@ impl Positions {
                     }));
                 }
             }
-            by_key.insert(key, &bound.bound);
+            by_key.insert(key, bound.bound());
         }
         Ok(by_key)
     }

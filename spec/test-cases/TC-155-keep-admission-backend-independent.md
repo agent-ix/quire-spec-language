@@ -15,8 +15,9 @@ input, that registration admits advertised (kind, mode) pairs under the same
 rules, that candidate sets follow the FR-290 rule independently of registration
 order, and that routing consumes settled dispositions as data. Negotiation
 itself is quire-contract-codegen's and is not run here; its settlements are
-supplied as fixture records shaped like `negotiate_*` output. Scope:
-FR-057-AC-5, FR-057-AC-6 and FR-057-AC-8.
+supplied as fixture records shaped like `negotiate_*` output. Registration
+also judges each backend's `domains`. Scope: FR-057-AC-5, FR-057-AC-6,
+FR-057-AC-8 and FR-057-AC-12.
 
 ## Test Procedure
 
@@ -40,6 +41,13 @@ FR-057-AC-5, FR-057-AC-6 and FR-057-AC-8.
    `operation-contract` `unsupported` with its empty-candidate warning. Route
    them.
 6. Repeat steps 4 and 5 with the same backends registered in reverse order.
+7. Register, once advertising a `bounded` pair and once advertising only
+   `unbounded` pairs, a backend whose `domains` is absent, empty,
+   [`quantity`], [`loop`], [`infinite-trace`], [`Collection`], or
+   [`integer`, `integer`]. Register one advertising an unknown mode with an
+   empty `domains`. Register one advertising a `bounded` pair with
+   `domains` [`collection`, `population`, `integer`, `recursive`] and read its
+   descriptor's `domains()`.
 
 ## Expected Results
 
@@ -63,4 +71,12 @@ FR-057-AC-5, FR-057-AC-6 and FR-057-AC-8.
   `operation-contract` item gets no target and no artifact, is not a refusal,
   and nothing is pending after routing returns.
 - Step 6: candidate sets and the route are the same as in steps 4 and 5.
+- Step 7: absent `domains` refuses `invalid_capability`/`invalid-domains`
+  for the `bounded` registration and is admitted for the `unbounded`-only
+  one. Every present, malformed `domains` refuses
+  `invalid_capability`/`invalid-domains`, keyed by backend identity, for both
+  registrations; the refusals for `quantity`, `loop`, `infinite-trace` and
+  `Collection` name those bytes. The unknown-mode registration refuses
+  `unknown-mode`, not `invalid-domains`. The last registration is admitted,
+  and `domains()` returns the four kinds.
 - Assertions compare typed codes, causes and identities, never message text.

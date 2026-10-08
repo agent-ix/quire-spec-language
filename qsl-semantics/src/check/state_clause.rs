@@ -36,10 +36,11 @@ use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::{Capability, Scope};
 use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
-    DomainKind, FamilyContract, Requirements,
+    FamilyContract, Requirements,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
+use qsl_foundation::bound::DomainKind;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::location::Location;

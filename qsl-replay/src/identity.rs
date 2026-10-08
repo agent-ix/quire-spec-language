@@ -285,16 +285,16 @@ impl DeclaredDomain {
     /// crate's root, so a client builds one through `qsl_replay` alone:
     ///
     /// ```
-    /// use qsl_replay::{DeclaredDomain, DomainKey, FiniteBound, Integer, ProofBound, WireNodeId};
+    /// use qsl_replay::{
+    ///     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, WireNodeId,
+    /// };
     ///
     /// let parameter = WireNodeId::from_digest([7; 32]);
     /// let bound = FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))?;
-    /// let declared = DeclaredDomain::new(ProofBound {
-    ///     domain: DomainKey::Node { node: parameter, path: Vec::new() },
-    ///     bound,
-    /// });
+    /// let domain = DomainKey::Node { node: parameter, path: Vec::new() };
+    /// let declared = DeclaredDomain::new(ProofBound::new(domain, Some(DomainKind::Integer), bound)?);
     /// assert_eq!(declared.domain(), &DomainKey::Node { node: parameter, path: Vec::new() });
-    /// # Ok::<(), qsl_replay::EmptyFiniteBound>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(bound: ProofBound) -> Self {
         Self(bound)
@@ -302,12 +302,12 @@ impl DeclaredDomain {
 
     /// The domain key: what the domain is a domain of.
     pub fn domain(&self) -> &DomainKey {
-        &self.0.domain
+        self.0.domain()
     }
 
     /// The declared finite domain.
     pub fn bound(&self) -> &FiniteBound {
-        &self.0.bound
+        self.0.bound()
     }
 
     /// The whole proof bound.
