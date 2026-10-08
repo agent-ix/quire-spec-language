@@ -46,6 +46,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 mod typing;
 
@@ -223,7 +224,7 @@ pub struct PackageDeclarations {
     /// the document. `None` for a unit that is its own document. `Arc`
     /// so `regions()` shares one map rather than cloning the document and
     /// body text on every call.
-    pub embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
+    pub embedding: Option<Arc<qsl_foundation::source_map::SourceMap>>,
     /// The `UnitGraph` the assembler admitted over the unit's dimension and
     /// unit declarations (FR-091). Empty when the unit declares none.
     pub units: quire_semantic_value::unit::UnitGraph,
@@ -347,13 +348,12 @@ pub struct Scope {
 /// of an import chain.
 impl Drop for Scope {
     fn drop(&mut self) {
-        let mut pending: Vec<std::sync::Arc<super::CheckedGraph>> =
-            std::mem::take(&mut self.imports)
-                .into_values()
-                .map(|import| import.graph)
-                .collect();
+        let mut pending: Vec<Arc<super::CheckedGraph>> = std::mem::take(&mut self.imports)
+            .into_values()
+            .map(|import| import.graph)
+            .collect();
         while let Some(graph) = pending.pop() {
-            if let Ok(mut graph) = std::sync::Arc::try_unwrap(graph) {
+            if let Ok(mut graph) = Arc::try_unwrap(graph) {
                 pending.extend(
                     std::mem::take(&mut graph.scope.imports)
                         .into_values()
@@ -2236,7 +2236,7 @@ impl<'a> Typer<'a> {
         source: &Node,
         binder: &str,
         location: &Location,
-    ) -> Result<(Slot, Box<CollectionType>), CheckRefusal> {
+    ) -> Result<(Slot, Arc<CollectionType>), CheckRefusal> {
         let ValueType::Collection(source_type) = &source.value_type else {
             return Err(mismatch(location));
         };
@@ -2255,7 +2255,7 @@ impl<'a> Typer<'a> {
     fn query(
         &mut self,
         query: BinderQuery,
-        (slot, source_type): (Slot, Box<CollectionType>),
+        (slot, source_type): (Slot, Arc<CollectionType>),
         source: Node,
         body: Node,
         location: &Location,
@@ -2390,7 +2390,7 @@ impl<'a> Typer<'a> {
         (accumulator, binder): (&str, &str),
         source: &Node,
         location: &Location,
-    ) -> Result<(Slot, Slot, Box<CollectionType>), CheckRefusal> {
+    ) -> Result<(Slot, Slot, Arc<CollectionType>), CheckRefusal> {
         let ValueType::Collection(source_type) = &source.value_type else {
             return Err(mismatch(location));
         };

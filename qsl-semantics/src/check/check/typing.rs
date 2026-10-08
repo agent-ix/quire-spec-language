@@ -17,6 +17,7 @@
 //! that typer's.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use super::{
     catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
@@ -300,7 +301,7 @@ struct QueryFrame<'e> {
     location: Location,
     /// The typed source, the binder's slot and the source's collection
     /// type, once the source is typed.
-    source: Option<(Node, Slot, Box<CollectionType>)>,
+    source: Option<(Node, Slot, Arc<CollectionType>)>,
 }
 
 /// `fold<A>(acc, x in c: step, identity: i)` or `reduce<A>(acc, x in c:
@@ -326,7 +327,7 @@ enum AccumulateStage {
         source: Node,
         accumulator: Slot,
         binder: Slot,
-        source_type: Box<CollectionType>,
+        source_type: Arc<CollectionType>,
     },
     Identity(Fold),
 }
@@ -337,7 +338,7 @@ struct Fold {
     step: Node,
     accumulator: Slot,
     binder: Slot,
-    source_type: Box<CollectionType>,
+    source_type: Arc<CollectionType>,
     /// Whether the step is in the FR-145 set-and-bag catalog.
     catalogued: bool,
 }

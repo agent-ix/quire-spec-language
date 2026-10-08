@@ -1543,9 +1543,7 @@ fn population_refused_as_option_payload() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = Expression::convert(
-        crate::support::type_form::type_form(&ValueType::Option(Box::new(ValueType::Population(
-            Some(3),
-        )))),
+        crate::support::type_form::type_form(&ValueType::option(ValueType::Population(Some(3)))),
         Expression::boolean(true),
     );
     let refusal = check_refusal(&package, &parameters, &expression);

@@ -196,7 +196,7 @@ fn the_configversion_state_clauses_check() {
         attribute_types.contains(&&version_number_type),
         "self.versionNumber: Int[0, 1000]: {attribute_types:?}"
     );
-    let parent_type = ValueType::Option(Box::new(ValueType::Reference(parent_order.context())));
+    let parent_type = ValueType::option(ValueType::Reference(parent_order.context()));
     assert!(
         attribute_types.contains(&&parent_type),
         "self.parent: Option<Reference<Config::ConfigVersion>>: {attribute_types:?}"
