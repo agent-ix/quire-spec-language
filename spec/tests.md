@@ -535,7 +535,7 @@ names different artifacts in each.
 | TC-902 | Core entry points and maybe_grow sites run 100,000 deep on a small stack | Unit | P1 | FR-356-AC-5, FR-356-AC-6 | 🚧 |
 | TC-903 | A deep-input fuzz target drives the parser and the checker | Property | P1 | FR-356-AC-7 | 🚧 |
 | TC-904 | Scalar-parity claims replay to diverged, agrees, refused and faulted outcomes, and never to Refuted | Unit | P1 | FR-357-AC-1, FR-357-AC-2, FR-357-AC-3, FR-357-AC-4, FR-357-AC-5, FR-357-AC-6, FR-357-AC-7, FR-357-AC-8, FR-357-AC-9, FR-357-AC-10, FR-357-AC-11, FR-357-AC-13, FR-357-AC-14, FR-357-AC-15, FR-357-AC-16, FR-357-AC-17, FR-357-AC-18, FR-357-AC-19 | ✅ |
-| TC-905 | A witness value text decodes exactly for every composite and leaf family, and each malformed form refuses | Unit | P1 | FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12 | ✅ |
+| TC-905 | A witness value text decodes exactly for every composite and leaf family, and each malformed form refuses | Unit | P1 | FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12, FR-070-AC-13 | ✅ |
 | TC-906 | Composite and leaf-family arguments replay, and refuse by kind, by domain and at the request's limits | Unit | P1 | FR-098-AC-8, FR-098-AC-9, FR-098-AC-10 | 🚧 |
 | TC-907 | A composite equality-parity claim settles Diverged, Agrees or refused when falsified, and by rows V-1 to V-5 when verified | Unit | P1 | FR-358-AC-1, FR-358-AC-2, FR-358-AC-3, FR-358-AC-4, FR-358-AC-5, FR-358-AC-6, FR-358-AC-7, FR-358-AC-8 | 🚧 |
 | TC-908 | The replay facade compiles QSL source to the checked-package bytes the spine emits | Integration | P2 | FR-060-AC-5, FR-060-AC-6, FR-060-AC-7 | ✅ |

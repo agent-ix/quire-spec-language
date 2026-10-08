@@ -455,3 +455,153 @@ fn tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack() {
         drop(value);
     });
 }
+
+/// `depth` nested sets, each holding the next one and a text leaf, so every
+/// level has two elements to order.
+fn nested_sets(depth: usize) -> WitnessValue {
+    let mut value = WitnessValue::Set(vec![WitnessValue::Text("leaf".to_owned()), int(0)]);
+    for _ in 1..depth {
+        value = WitnessValue::Set(vec![value, WitnessValue::Text("leaf".to_owned())]);
+    }
+    value
+}
+
+/// The work `value` takes to encode, and the length of its output.
+fn work_of(value: &WitnessValue) -> (u64, usize) {
+    let (arena, work) = super::encode_pieces(value).unwrap();
+    let length = super::Chunks::new(&arena, 0).map(<[u8]>::len).sum();
+    (work.written + work.compared, length)
+}
+
+/// A value of a given nesting depth.
+type Shape = fn(usize) -> WitnessValue;
+
+fn nested_options(depth: usize) -> WitnessValue {
+    let mut value = int(0);
+    for _ in 0..depth {
+        value = WitnessValue::Option(Some(Box::new(value)));
+    }
+    value
+}
+
+fn nested_sequences(depth: usize) -> WitnessValue {
+    let mut value = int(0);
+    for _ in 0..depth {
+        value = WitnessValue::Sequence(vec![value, int(1)]);
+    }
+    value
+}
+
+/// FR-070-AC-13 (QSL-647): encoding does work proportional to the output, at
+/// any depth. Doubling the depth of nested sets, nested options and nested
+/// sequences doubles the work (a ratio near 2); an encoder that copies each
+/// subtree into every ancestor would quadruple it. The text decodes, order
+/// check included, on a 512 KiB stack and round-trips.
+#[trace("TC-905", "FR-070-AC-13")]
+#[test]
+fn tc_905_encoding_work_is_linear_in_depth() {
+    on_small_stack(|| {
+        const DEPTH: usize = 5_000;
+        let shapes: [(&str, Shape); 3] = [
+            ("sets", nested_sets),
+            ("options", nested_options),
+            ("sequences", nested_sequences),
+        ];
+        for (name, build) in shapes {
+            let (single, single_len) = work_of(&build(DEPTH));
+            let (double, double_len) = work_of(&build(2 * DEPTH));
+            assert!(
+                single >= single_len as u64,
+                "{name}: work counts at least the output"
+            );
+            assert!(
+                double <= 3 * single,
+                "{name}: work {single} at depth {DEPTH} became {double} at {}",
+                2 * DEPTH
+            );
+            assert!(
+                double <= 3 * double_len as u64,
+                "{name}: work {double} for {double_len} bytes of output"
+            );
+        }
+        let value = nested_sets(DEPTH);
+        let text = value.to_value_text().unwrap();
+        assert_eq!(value.value_text_len(), text.len());
+        let decoded = WitnessValue::from_value_text(&text).unwrap();
+        assert_eq!(decoded.to_value_text().unwrap(), text);
+        drop(decoded);
+        drop(value);
+    });
+}
+
+/// FR-070-AC-13 (QSL-647): the value text's length is counted from the
+/// finished bytes. A text of 1,000,000 `;`
+/// characters is 1,000,026 JCS bytes and 3,000,026 escaped; `value_text_len`
+/// returns the escaped length, equal to `to_value_text`'s, while the only
+/// bytes it holds are the JCS bytes: no buffer the encoder holds reaches
+/// the escaped length. (The crate forbids `unsafe`, so a counting allocator is not
+/// available; the held buffers are read from the encoder's pieces.)
+#[trace("TC-905", "FR-070-AC-13")]
+#[test]
+fn tc_905_value_text_len_counts_from_the_finished_bytes() {
+    let value = WitnessValue::Text(";".repeat(1_000_000));
+    assert_eq!(value.value_text_len(), 3_000_026);
+    assert_eq!(value.to_value_text().unwrap().len(), 3_000_026);
+    let (arena, _) = super::encode_pieces(&value).unwrap();
+    let held: Vec<usize> = arena
+        .iter()
+        .flatten()
+        .map(|piece| match piece {
+            super::Piece::Bytes(bytes) => bytes.capacity(),
+            super::Piece::Child(_) => 0,
+        })
+        .collect();
+    assert_eq!(arena.len(), 1);
+    assert!(held.iter().sum::<usize>() >= 1_000_026);
+    assert!(
+        held.iter().all(|capacity| *capacity < 3_000_026),
+        "a buffer reached the escaped length: {held:?}"
+    );
+}
+
+/// FR-070-AC-9 (QSL-647): the decode order check still refuses out-of-order
+/// and duplicate elements found by span, in a nested set, a bag and an
+/// ordered set.
+#[trace("TC-905", "FR-070-AC-9")]
+#[test]
+fn tc_905_the_element_order_check_reads_spans() {
+    let text = |value: &str| format!(r#"{{"type":"text","value":"{value}"}}"#);
+    let a = text("a");
+    let b = text("b");
+    let collection = |kind: &str, elements: &[&str]| {
+        format!(r#"{{"elements":[{}],"type":"{kind}"}}"#, elements.join(","))
+    };
+    let decodes = |json: &str| WitnessValue::from_value_text(json).map(|_| ());
+    assert_eq!(decodes(&collection("set", &[&a, &b])), Ok(()));
+    assert_eq!(decodes(&collection("bag", &[&a, &a, &b])), Ok(()));
+    assert_eq!(decodes(&collection("ordered-set", &[&b, &a])), Ok(()));
+    assert_eq!(
+        decodes(&collection("set", &[&b, &a])),
+        Err(EntryFault::Elements)
+    );
+    assert_eq!(
+        decodes(&collection("set", &[&a, &a])),
+        Err(EntryFault::Elements)
+    );
+    assert_eq!(
+        decodes(&collection("bag", &[&b, &a])),
+        Err(EntryFault::Elements)
+    );
+    assert_eq!(
+        decodes(&collection("ordered-set", &[&a, &a])),
+        Err(EntryFault::Elements)
+    );
+    // A bad collection nested inside a correctly ordered one is found. The
+    // bad set starts `{"elements"`, below `a`'s `{"type"`, so the outer
+    // elements [bad, a] are in order and only the nested path can trip.
+    let bad = collection("set", &[&b, &a]);
+    let outer = collection("set", &[&bad, &a]);
+    let sound = collection("set", &[&collection("set", &[&a, &b]), &a]);
+    assert_eq!(decodes(&sound), Ok(()));
+    assert_eq!(decodes(&outer), Err(EntryFault::Elements));
+}
