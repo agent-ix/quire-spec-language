@@ -16,7 +16,7 @@ use super::*;
 use crate::proof_result::{InconclusiveCause, TerminalValue};
 use crate::request::StateEnvironment;
 use crate::result::{InputSettlement, WitnessSettlement};
-use crate::scalar::ScalarOutcome;
+use crate::scalar::{ScalarOutcome, ValueIdentity};
 use crate::spine::{compose, ComposedUnit, SpineLimits, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
@@ -1712,8 +1712,14 @@ fn tc_914_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges()
         ] {
             split.stage_limits.insert(name.to_owned(), bound);
         }
+        let sent_whole = ValueIdentity::sent(&whole, &integer(4));
+        let sent_split = ValueIdentity::sent(&split, &integer(4));
+        assert_eq!(sent_whole, sent_split, "work_units {work_units}");
+        assert_eq!(sent_split.limits, effective);
         let whole = replay_value_parity(whole, integer(4), ReplayLimits::default());
         let split = replay_value_parity(split, integer(4), ReplayLimits::default());
+        assert_eq!(whole.claim(), &sent_whole);
+        assert_eq!(split.claim(), &sent_split);
         assert_eq!(whole.claim(), split.claim(), "work_units {work_units}");
         assert_eq!(whole.claim().limits, effective);
         assert_eq!(
@@ -3069,8 +3075,12 @@ fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
     );
     let request =
         ReplayRequest::decode(wire, ReplayLimits::default()).expect("the request decodes");
-    let limits = request_limits(request.stage_limits(), ReplayLimits::default())
-        .expect("the request's limits");
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        ReplayLimits::default(),
+    )
+    .expect("the request's limits");
     let recompiled = recompile(&request, &limits).expect("the byte provision recompiles");
     assert_eq!(
         recompiled.emitted.package().package_id(),

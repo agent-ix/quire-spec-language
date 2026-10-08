@@ -1908,10 +1908,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         assert_eq!(expected.setting(), setting);
         assert_eq!(
             expected.catalog_code(),
-            CatalogCode::new(
-                "stage_limit_exceeded",
-                setting.kind().expect("a stage setting").catalog_cause()
-            )
+            CatalogCode::new("stage_limit_exceeded", setting.kind().catalog_cause())
         );
         // The setting named in the outcome raises that limit, by name.
         let mut raised = limits;

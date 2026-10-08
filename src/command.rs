@@ -20,7 +20,7 @@ use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
 use qsl_foundation::serde_object::Object;
-use qsl_foundation::{ByteDigest, Code, Diagnostic, SettingLimits, Source};
+use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
 use quire_contract_model as ir;
 use std::{
     fs::File,

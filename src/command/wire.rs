@@ -6,7 +6,7 @@ use crate::runtime::{
     ExecutionSelection, InvocationRef, ObjectIdentity, ObservationSelection, SnapshotRef,
 };
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
-use qsl_foundation::Setting;
+use qsl_foundation::AccountingSetting;
 use quire_contract_model as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -149,21 +149,21 @@ pub(super) struct Accounting {
 
 impl Accounting {
     /// The counters the object names, as their settings with their bounds.
-    pub fn entries(&self) -> impl Iterator<Item = (Setting, u64)> {
+    pub fn entries(&self) -> impl Iterator<Item = (AccountingSetting, u64)> {
         [
-            (Setting::AccountingIntegerBits, self.integer_bits),
-            (Setting::AccountingDecimalDigits, self.decimal_digits),
-            (Setting::AccountingScaleExpansion, self.scale_expansion),
-            (Setting::AccountingTextInputBytes, self.text_input_bytes),
-            (Setting::AccountingTextScalars, self.text_scalars),
+            (AccountingSetting::IntegerBits, self.integer_bits),
+            (AccountingSetting::DecimalDigits, self.decimal_digits),
+            (AccountingSetting::ScaleExpansion, self.scale_expansion),
+            (AccountingSetting::TextInputBytes, self.text_input_bytes),
+            (AccountingSetting::TextScalars, self.text_scalars),
             (
-                Setting::AccountingNormalizedScalars,
+                AccountingSetting::NormalizedScalars,
                 self.normalized_scalars,
             ),
-            (Setting::AccountingUnitEdges, self.unit_edges),
-            (Setting::AccountingValueOccurrences, self.value_occurrences),
-            (Setting::AccountingWorkUnits, self.work_units),
-            (Setting::AccountingResultUnits, self.result_units),
+            (AccountingSetting::UnitEdges, self.unit_edges),
+            (AccountingSetting::ValueOccurrences, self.value_occurrences),
+            (AccountingSetting::WorkUnits, self.work_units),
+            (AccountingSetting::ResultUnits, self.result_units),
         ]
         .into_iter()
         .filter_map(|(setting, bound)| bound.map(|bound| (setting, bound)))

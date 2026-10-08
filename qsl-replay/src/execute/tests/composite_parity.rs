@@ -202,7 +202,12 @@ impl Unit {
         );
         wire.declared_domains = domains;
         let decoded = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).unwrap();
-        let limits = request_limits(decoded.stage_limits(), ReplayLimits::default()).unwrap();
+        let limits = request_limits(
+            decoded.stage_limits(),
+            decoded.accounting_limits(),
+            ReplayLimits::default(),
+        )
+        .unwrap();
         let compiled = recompile(&decoded, &limits).unwrap();
         let site = locate(
             &compiled,
@@ -1077,7 +1082,12 @@ fn prepared(
 ) {
     let wire = unit.wire(function, claim, vec![]);
     let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
-    let limits = request_limits(request.stage_limits(), ReplayLimits::default()).unwrap();
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        ReplayLimits::default(),
+    )
+    .unwrap();
     let compiled = recompile(&request, &limits).unwrap();
     let site = locate(
         &compiled,
