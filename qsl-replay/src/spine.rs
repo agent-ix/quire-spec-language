@@ -266,17 +266,7 @@ impl CompileRefusal {
                 | Setting::ObservationValues
                 | Setting::ReplayInputBytes
                 | Setting::ExploreStates
-                | Setting::ExploreTransitions
-                | Setting::AccountingIntegerBits
-                | Setting::AccountingDecimalDigits
-                | Setting::AccountingScaleExpansion
-                | Setting::AccountingTextInputBytes
-                | Setting::AccountingTextScalars
-                | Setting::AccountingNormalizedScalars
-                | Setting::AccountingUnitEdges
-                | Setting::AccountingValueOccurrences
-                | Setting::AccountingWorkUnits
-                | Setting::AccountingResultUnits => SpineStage::Emit,
+                | Setting::ExploreTransitions => SpineStage::Emit,
             },
         }
     }

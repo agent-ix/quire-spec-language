@@ -39,5 +39,7 @@ pub use diagnostic::{
 pub use digest::ByteDigest;
 pub use identity_limits::{IdentityLimits, DEFAULT_IDENTITY_INPUT_BYTES};
 pub use request_index::RequestIndex;
-pub use setting::{Setting, SettingLimits, UsageCause, UsageRefusal};
+pub use setting::{
+    AccountingSetting, Setting, SettingLimits, SettingName, UsageCause, UsageRefusal,
+};
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, SourceLabel, Span, Spanned};
