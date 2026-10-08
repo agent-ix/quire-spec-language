@@ -137,7 +137,7 @@ pub fn replay_value_parity(
         package_id: wire.package_id.clone(),
         function: wire.selected_function.clone(),
         source: wire.source.clone(),
-        limits: wire.accounting_limits,
+        limits: wire.effective_accounting_limits(),
         generated,
     };
     let result = match settle(wire, &claim, replay_limits) {

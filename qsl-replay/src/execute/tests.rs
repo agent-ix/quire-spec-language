@@ -1682,6 +1682,51 @@ fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses_for_a_valu
     assert!(matches!(report.result(), ValueParityResult::Agrees { .. }));
 }
 
+/// FR-255-AC-11 (TC-914): two requests that reach the same effective
+/// accounting limits, one wholly in `accounting_limits` and one with
+/// `work_units` and `value_occurrences` only as `stage_limits` entries over
+/// other values, give the same claim identity, settlement and charges, with
+/// limits that fit and with `work_units` too small.
+#[trace("TC-914", "FR-255-AC-11")]
+#[test]
+fn tc_914_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges() {
+    for work_units in [UNLIMITED.work_units, 0] {
+        let effective = ScalarLimits {
+            work_units,
+            value_occurrences: 1_000_000,
+            ..UNLIMITED
+        };
+        let mut whole = parity("inc", 3);
+        whole.accounting_limits = effective;
+        let mut split = parity("inc", 3);
+        split.accounting_limits = ScalarLimits {
+            work_units: 12_345,
+            value_occurrences: 67,
+            ..effective
+        };
+        for (name, bound) in [
+            ("work_units", effective.work_units),
+            ("value_occurrences", effective.value_occurrences),
+        ] {
+            split.stage_limits.insert(name.to_owned(), bound);
+        }
+        let whole = replay_value_parity(whole, integer(4), ReplayLimits::default());
+        let split = replay_value_parity(split, integer(4), ReplayLimits::default());
+        assert_eq!(whole.claim(), split.claim(), "work_units {work_units}");
+        assert_eq!(whole.claim().limits, effective);
+        assert_eq!(
+            format!("{:?}", whole.result()),
+            format!("{:?}", split.result()),
+            "work_units {work_units}"
+        );
+        if work_units == 0 {
+            assert!(matches!(whole.result(), ValueParityResult::Incomplete(_)));
+        } else {
+            assert!(matches!(whole.result(), ValueParityResult::Agrees { .. }));
+        }
+    }
+}
+
 /// FR-357-AC-1: an integer function whose generated value differs from
 /// QSL's `f(b)`, and one whose generated value stands where QSL's outcome is
 /// out of range, each settle `Diverged` with both outcomes and the
