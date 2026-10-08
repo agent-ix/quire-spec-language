@@ -168,6 +168,11 @@ pub enum Code {
     /// 8785 spelling (FR-056, FR-106), or a checked-package/v2 wire's bytes
     /// are not RFC 8785 bytes.
     NoncanonicalWire,
+    /// QSpec FR-271: valid complete-V1 meaning the selected producer does not
+    /// implement (a driver asked for an AOT or JIT engine it has not built).
+    /// Distinct from [`Self::UnsupportedConstruct`], a source form the
+    /// selected profile prohibits. Category unsupported, exit 21.
+    UnimplementedCapability,
 }
 
 impl Code {
@@ -222,6 +227,7 @@ impl Code {
             Self::DuplicateSelection => "duplicate_selection",
             Self::StageLimitExceeded => "stage_limit_exceeded",
             Self::NoncanonicalWire => "noncanonical_wire",
+            Self::UnimplementedCapability => "unimplemented_capability",
         }
     }
 
@@ -276,6 +282,7 @@ impl Code {
             Self::DuplicateSelection,
             Self::StageLimitExceeded,
             Self::NoncanonicalWire,
+            Self::UnimplementedCapability,
         ]
     }
 
@@ -308,7 +315,10 @@ impl Code {
     pub fn is_unsupported(self) -> bool {
         matches!(
             self,
-            Self::UnsupportedProjection | Self::UnsupportedConstruct | Self::UnknownRequiredFeature
+            Self::UnsupportedProjection
+                | Self::UnsupportedConstruct
+                | Self::UnknownRequiredFeature
+                | Self::UnimplementedCapability
         )
     }
 
