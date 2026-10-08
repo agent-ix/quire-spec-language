@@ -58,3 +58,11 @@ Round 1, reviewed at b07de986944877971977ec0ddeaa3c8e39607ccc.
 - **FND-004.** The TC-733 Description no longer says "admit deep documents".
 
 **Not mergeable until FND-003 is fixed.** The fix deletes six words from TC-733.
+
+Round 2, reviewed at 3aeabf1e3c1e1f705accfbb84243bca0e361fc56.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 3aeabf1e |
+
+TC-733's step 3 expected result no longer claims the whole value is read before judging. It now reads: wrong-value-kind at the field, then the `observation.values` refusal at bound 50,000 with count 50,001. Every clause is one the test asserts. Every finding now reads fixed. **Mergeable.**
