@@ -71,7 +71,9 @@ fn model_fixture(body: &str) -> Fixture {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let digest = PackageDocument::parse(&document).unwrap().jcs_digest();
+    let digest = PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
+        .unwrap()
+        .jcs_digest();
     let hex = qsl_semantics::model::key::hex(&digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\

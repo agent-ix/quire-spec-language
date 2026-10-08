@@ -317,7 +317,13 @@ fn refusal_under(raw: &str, digest: [u8; 32]) -> Option<ModelRefusal> {
         digest,
     };
     let bytes = BTreeMap::from([(digest, raw.as_bytes().to_vec())]);
-    admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes).err()
+    admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .err()
 }
 
 /// `raw`, offered under `digest`, refuses `noncanonical_wire` with cause
@@ -352,6 +358,7 @@ fn digest_bytes(hex: &str) -> [u8; 32] {
 /// 3): taken over the RFC 8785 text of the parsed document, not the raw
 /// bytes, so a whitespace/order variant admits under the canonical digest.
 #[trace("TC-145", "FR-056-AC-2")]
+#[trace("TC-730", "FR-260-AC-1")]
 #[test]
 fn domain_package_digest_matches_its_golden_vector() {
     let parsed: Value = serde_json::from_str(DOCUMENT_RAW).unwrap();

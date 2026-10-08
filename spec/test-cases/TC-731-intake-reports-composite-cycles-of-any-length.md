@@ -28,8 +28,4 @@ Tag the tests `#[trace("TC-731", "FR-260-AC-3")]`.
 ## Expected Results
 
 - Steps 1 and 2: each is refused with semantic-IR's composite-cycle refusal
-  naming every type on the cycle.
-
-## Status
-
-Planned.
+  naming the relationship that closes the cycle.

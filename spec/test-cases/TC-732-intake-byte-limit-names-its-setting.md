@@ -29,7 +29,3 @@ Tag the tests `#[trace("TC-732", "FR-260-AC-4")]`.
   input-bytes limit, bound `B`, actual `B + 1` and setting
   `intake.input_bytes`.
 - Step 2: each run judges the document on its content.
-
-## Status
-
-Planned.

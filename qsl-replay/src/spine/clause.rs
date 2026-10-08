@@ -219,9 +219,6 @@ pub struct ClauseRunRequest {
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The limits admission re-normalizes the unit's domain packages under
-    /// (see `qsl_semantics::model::observation`'s own module doc).
-    pub model_limits: ModelNormalizationLimits,
     /// The evaluation meter's accounting limits (FR-100's `work_units`).
     pub accounting: ScalarLimits,
 }
@@ -687,7 +684,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         ClauseRunSelection::Clause(ref selection) => {
             let run = CompiledRun {
                 packages: &request.packages,
-                model_limits: request.model_limits,
+                model_limits: request.limits.model,
                 provisions: Provisions {
                     snapshots: &request.snapshots,
                     invocations: &request.invocations,
@@ -718,7 +715,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref snapshot,
         } => run_function(
             &request.packages,
-            request.model_limits,
+            request.limits.model,
             &request.snapshots,
             request.observation_limits,
             request.accounting,
@@ -739,7 +736,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         } => Ok(run_frame(
             &CompiledRun {
                 packages: &request.packages,
-                model_limits: request.model_limits,
+                model_limits: request.limits.model,
                 provisions: Provisions {
                     snapshots: &request.snapshots,
                     invocations: &request.invocations,
@@ -766,7 +763,8 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
 pub(crate) struct CompiledRun<'a> {
     /// FR-056's package input.
     pub(crate) packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
-    /// The limits admission re-normalizes the domain packages under.
+    /// The limits admission re-reads (`intake.input_bytes`) and
+    /// re-normalizes the domain packages under.
     pub(crate) model_limits: ModelNormalizationLimits,
     /// FR-106's snapshot and invocation provisions.
     pub(crate) provisions: Provisions<'a>,

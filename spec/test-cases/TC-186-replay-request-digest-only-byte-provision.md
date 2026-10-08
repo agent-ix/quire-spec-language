@@ -64,7 +64,8 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
    `quire.profile.unknown/v1`, with a byte-provision entry whose bytes do
    not match its digest.
 9. Decode a request with a `sha256-jcs` byte-provision entry holding a
-   repeated member name, then one holding arrays nested 1,000 deep. Map an
+   repeated member name, then one longer than the request's
+   `intake.input_bytes` (4). Map an
    allocation failure of 4096 requested bytes from intake's read of such an
    entry. Decode entries holding `18446744073709551616` at `/package/count`
    and `0.1000000000000000000001` at `/a~1b/0`.
@@ -92,10 +93,9 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
   (`quire.profile.unknown/v1`) and its role
   (`replay.semantic_profile_selections`).
 - Step 9: the repeated-name entry refuses
-  `invalid_model_binding`/`malformed-declaration`; the deep entry, which
-  intake refuses at one of its limits, refuses
-  `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its
-  bound; the allocation failure refuses
+  `invalid_model_binding`/`malformed-declaration`; the entry over `intake.input_bytes`
+  refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit,
+  its bound (4) and its size; the allocation failure refuses
   `resource_exhausted`/`allocation-failed` carrying 4096; the two number
   entries refuse `noncanonical_wire`, `inexact-integer` at
   `/package/count` and `inexact-number` at `/a~1b/0`, each keeping its

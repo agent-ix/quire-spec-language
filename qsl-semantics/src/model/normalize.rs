@@ -3206,6 +3206,7 @@ mod tests {
                 work_units: 16_777_216,
                 ancestor_steps: 16_777_216,
                 family_steps: 16_777_216,
+                intake: qsl_foundation::IntakeLimits::default(),
             }
         );
         let NormalizeOutcome::Completed(view) =

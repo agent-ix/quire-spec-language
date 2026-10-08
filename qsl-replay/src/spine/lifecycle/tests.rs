@@ -647,6 +647,33 @@ fn a_cancel_inside_select_stops_within_one_charge() {
     gate.assert_stopped_at(at);
 }
 
+/// FR-260-AC-4 (FR-056-AC-2): a model document one byte over the caller's
+/// `intake.input_bytes` is a reached limit through `select` naming that
+/// setting, its bound and the document's size, never a missing package.
+#[trace("TC-732", "FR-260-AC-4")]
+#[test]
+fn select_names_the_intake_limit_for_an_oversize_document() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let mut limits = SpineLimits::default();
+    let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
+    limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
+    let parsed = parse(
+        &request(MODEL_FIXTURE.as_bytes()),
+        limits.source,
+        &Cancel::new(),
+    )
+    .expect("the model fixture parses")
+    .into_value();
+    let Err(StageFailure::Limit(exceeded)) =
+        select(&parsed, &packages, limits.model, &Cancel::new())
+    else {
+        panic!("a document over the intake limit is a reached limit");
+    };
+    assert_eq!(exceeded.setting(), Setting::IntakeInputBytes);
+    assert_eq!(exceeded.configured_bound(), size - 1);
+    assert_eq!(exceeded.actual(), u128::from(size));
+}
+
 /// FR-276-AC-2 for `package`: the emitter polls the handle at entry and at
 /// every node it writes.
 #[trace("TC-757", "FR-276-AC-2")]

@@ -33,4 +33,4 @@ Tag the tests `#[trace("TC-722", "FR-256-AC-1")]`.
 
 ## Status
 
-Planned.
+Passed locally: `qsl-cst/tests/it/deep_sources.rs`.

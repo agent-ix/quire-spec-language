@@ -22,6 +22,7 @@ pub mod bound;
 pub mod diagnostic;
 pub mod digest;
 pub mod identity_limits;
+pub mod intake_limits;
 pub mod json_number;
 pub mod request_index;
 pub mod selection;
@@ -38,6 +39,7 @@ pub use diagnostic::{
 };
 pub use digest::ByteDigest;
 pub use identity_limits::{IdentityLimits, DEFAULT_IDENTITY_INPUT_BYTES};
+pub use intake_limits::{IntakeLimits, DEFAULT_INTAKE_INPUT_BYTES};
 pub use request_index::RequestIndex;
 pub use setting::{Setting, SettingLimits, UsageCause, UsageRefusal};
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, SourceLabel, Span, Spanned};
