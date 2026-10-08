@@ -1360,7 +1360,12 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
                 .expect("a well-formed operand")
                 .spine;
             let entries: StageLimits = [(setting, value)].into_iter().collect();
-            let by_request = CallerLimits::for_request(&entries, ReplayLimits::default()).spine;
+            let by_request = CallerLimits::for_request(
+                &entries,
+                crate::limits::AccountingLimits::default().0,
+                ReplayLimits::default(),
+            )
+            .spine;
             [by_operand, by_request]
         }
     };
