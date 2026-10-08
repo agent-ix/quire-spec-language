@@ -80,8 +80,9 @@ otherwise.
    and bag elements) and its output (the value's JCS bytes before transcript
    escaping). Then write the depth-5,000 nested sets as a value text, decode
    it, and write the decoded value again.
-6. Take a text value of 1,000,000 `;` characters. Call `value_text_len`,
-   recording every allocation it makes, then call `to_value_text`.
+6. Take a text value of 1,000,000 `;` characters. Call `value_text_len`
+   and `to_value_text`, then encode the value and read the buffers of its
+   finished pieces.
 
 Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
 `#[trace("TC-905", "FR-070-AC-9")]`, `#[trace("TC-905", "FR-070-AC-11")]`,
@@ -112,10 +113,10 @@ Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
   text, the text decodes on that stack, and the decoded value
   writes the same text.
 - Step 6: `value_text_len` returns 3,000,026, `to_value_text` returns a text
-  of 3,000,026 bytes, and every allocation `value_text_len` made is smaller
-  than 3,000,026 bytes.
+  of 3,000,026 bytes, and the encoding is one finished value whose buffers
+  together hold at least 1,000,026 bytes, each with a capacity smaller than
+  3,000,026 bytes.
 
 ## Status
 
-Steps 1 to 5 pass locally, `qsl-replay/src/witness/value_text/tests.rs`.
-Step 6 passes.
+Passed locally, `qsl-replay/src/witness/value_text/tests.rs`.
