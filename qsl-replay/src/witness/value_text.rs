@@ -332,9 +332,15 @@ fn encode_pieces(root: &WitnessValue) -> Result<(Vec<Vec<Piece>>, Work), Canonic
                     keyed.push((child, index));
                 }
                 let mut compared = 0;
-                keyed.sort_by(|(left, _), (right, _)| compare(&arena, *left, *right, &mut compared));
+                keyed
+                    .sort_by(|(left, _), (right, _)| compare(&arena, *left, *right, &mut compared));
                 work.compared = work.compared.saturating_add(compared);
-                Some(keyed.into_iter().map(|(_, index)| index).collect::<Vec<_>>())
+                Some(
+                    keyed
+                        .into_iter()
+                        .map(|(_, index)| index)
+                        .collect::<Vec<_>>(),
+                )
             }
             _ => None,
         };
