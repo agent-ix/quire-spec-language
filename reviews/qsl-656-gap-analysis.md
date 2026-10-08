@@ -121,3 +121,16 @@ Round 2, reviewed at ab1e899e5462eafe9ed43597c1b642411b070173. FND-001 and
 FND-002 stay fixed after the rebase: the TC-914 AC-11 `sent` assertions
 and Behavior 6's "in neither table" are unchanged. No row is due this
 round.
+
+## Dispositions (round 3)
+
+Round 3, reviewed at c4f25693ab96f3c87f2f5161ff4a26cc448904a4. FR-100-AC-12
+(cancel) is bound to TC-452: the FR-100 table, TC-452's scope and the
+`#[trace("TC-452", "FR-100-AC-12")]` test in `spine/lifecycle/tests.rs`
+all agree. FR-100-AC-13 (accounting) is bound to TC-914: the FR-100 table,
+TC-914's scope, the `spec/tests.md` TC-914 row and the
+`#[trace("TC-914", "FR-100-AC-13")]` tag in `src/command.rs` all agree.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 0d81c68d7 |
