@@ -168,7 +168,7 @@ these names through the same operand grammar as the stage settings
    driver CLI calls with those operands: given a list of `<name>=<value>`
    operands, where `<name>` is a setting name from either table and `<value>` a
    non-negative decimal integer, it SHALL return the stages' limits with each
-   named limit at that value. When `<name>` is not in the table, `<value>` is
+   named limit at that value. When `<name>` is in neither table, `<value>` is
    not a non-negative decimal integer, or one name is given twice, it SHALL
    return a usage refusal that names the operand, and no stage runs.
 7. **Absent settings take their defaults.** When a caller does not

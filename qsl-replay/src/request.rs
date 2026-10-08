@@ -25,7 +25,7 @@ use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::Code;
 use qsl_foundation::IntakeLimits;
-use qsl_foundation::Setting;
+use qsl_foundation::{AccountingSetting, Setting, SettingName};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
@@ -58,46 +58,70 @@ impl StateEnvironment {
 /// `replay.input_bytes`. An entry named for an accounting counter replaces
 /// the request's accounting limit for that counter (FR-255 Behavior 10).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct StageLimits(BTreeMap<Setting, u64>);
+pub struct StageLimits {
+    stages: BTreeMap<Setting, u64>,
+    accounting: BTreeMap<AccountingSetting, u64>,
+}
 
 impl StageLimits {
-    /// The entries as `(setting, bound)`, in setting order.
+    /// The stage entries as `(setting, bound)`, in setting order.
     pub fn iter(&self) -> impl Iterator<Item = (Setting, u64)> + '_ {
-        self.0.iter().map(|(setting, bound)| (*setting, *bound))
+        self.stages
+            .iter()
+            .map(|(setting, bound)| (*setting, *bound))
     }
 
-    /// The bound the request gives `setting`, if it carries an entry.
+    /// The accounting-counter entries as `(setting, bound)`, in table order.
+    pub fn accounting_entries(&self) -> impl Iterator<Item = (AccountingSetting, u64)> + '_ {
+        self.accounting
+            .iter()
+            .map(|(setting, bound)| (*setting, *bound))
+    }
+
+    /// The bound the request gives the stage `setting`, if it carries an
+    /// entry.
     pub fn bound(&self, setting: Setting) -> Option<u64> {
-        self.0.get(&setting).copied()
+        self.stages.get(&setting).copied()
     }
 
     /// Reads the wire entries, refusing the first whose name is no setting
     /// of FR-255's tables or is `replay.input_bytes`.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
-        let mut limits = BTreeMap::new();
+        let mut limits = Self::default();
         for (name, bound) in entries {
-            match Setting::from_name(&name) {
-                Some(setting) if setting != Setting::ReplayInputBytes => {
-                    limits.insert(setting, bound);
+            match SettingName::from_name(&name) {
+                Some(SettingName::Stage(setting)) if setting != Setting::ReplayInputBytes => {
+                    limits.stages.insert(setting, bound);
+                }
+                Some(SettingName::Accounting(setting)) => {
+                    limits.accounting.insert(setting, bound);
                 }
                 _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
             }
         }
-        Ok(Self(limits))
+        Ok(limits)
     }
 
     /// The entries as wire `name -> bound`.
     fn to_wire(&self) -> BTreeMap<String, u64> {
-        self.0
+        let stages = self
+            .stages
             .iter()
-            .map(|(setting, bound)| (setting.name().to_owned(), *bound))
-            .collect()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound));
+        let accounting = self
+            .accounting
+            .iter()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound));
+        stages.chain(accounting).collect()
     }
 }
 
 impl FromIterator<(Setting, u64)> for StageLimits {
     fn from_iter<T: IntoIterator<Item = (Setting, u64)>>(entries: T) -> Self {
-        Self(entries.into_iter().collect())
+        Self {
+            stages: entries.into_iter().collect(),
+            accounting: BTreeMap::new(),
+        }
     }
 }
 
@@ -271,9 +295,12 @@ impl ReplayRequestWire {
     pub fn effective_accounting_limits(&self) -> ScalarLimits {
         crate::limits::AccountingLimits::with_entries(
             self.accounting_limits,
-            self.stage_limits
-                .iter()
-                .filter_map(|(name, bound)| Setting::from_name(name).map(|s| (s, *bound))),
+            self.stage_limits.iter().filter_map(|(name, bound)| {
+                match SettingName::from_name(name) {
+                    Some(SettingName::Accounting(setting)) => Some((setting, *bound)),
+                    _ => None,
+                }
+            }),
         )
     }
 }

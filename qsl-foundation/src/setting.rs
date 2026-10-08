@@ -8,11 +8,6 @@
 //! [`LimitKind`] its outcome reports, so a producer of a limit outcome names
 //! the setting and gets its kind from the same row.
 //!
-//! The ten accounting budgets of a call (`integer_bits` to `result_units`)
-//! are settings too, named by their bare counter name. They are not stage
-//! limits: a reached budget settles `Incomplete`, so [`Setting::kind`] is
-//! `None` for them.
-//!
 //! A limits type reports its fields through [`SettingLimits`]: each field has
 //! exactly one setting, and [`SettingLimits::set_bound`] changes that field
 //! and nothing else. Every bound is used as given, with no ceiling.
@@ -22,7 +17,7 @@ use crate::diagnostic::LimitKind;
 /// Declares [`Setting`] and its table from one list, so a name, its stage and
 /// its limit kind are written once.
 macro_rules! settings {
-    ($($variant:ident => $name:literal, $stage:literal, $kind:expr;)+) => {
+    ($($variant:ident => $name:literal, $stage:literal, $kind:ident;)+) => {
         /// A configurable resource limit's stable setting name (FR-255).
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Setting {
@@ -52,14 +47,11 @@ macro_rules! settings {
                 }
             }
 
-            /// The limit kind a `stage_limit_exceeded` outcome for this
-            /// setting reports, or `None` for an accounting budget: a
-            /// reached budget settles `Incomplete` and is not a stage
-            /// limit, so the catalog has no kind for it.
+            /// The limit kind an outcome for this setting reports.
             #[must_use]
-            pub const fn kind(self) -> Option<LimitKind> {
+            pub const fn kind(self) -> LimitKind {
                 match self {
-                    $(Self::$variant => $kind,)+
+                    $(Self::$variant => LimitKind::$kind,)+
                 }
             }
         }
@@ -67,57 +59,47 @@ macro_rules! settings {
 }
 
 settings! {
-    S1InputBytes => "s1.input_bytes", "S1", Some(LimitKind::InputBytes);
-    S1Tokens => "s1.tokens", "S1", Some(LimitKind::TokenCount);
-    S1Nodes => "s1.nodes", "S1", Some(LimitKind::NodeCount);
-    S1WorkUnits => "s1.work_units", "S1", Some(LimitKind::WorkBudget);
-    S3Nodes => "s3.nodes", "S3", Some(LimitKind::NodeCount);
-    S3InputBytes => "s3.input_bytes", "S3", Some(LimitKind::InputBytes);
-    S3WorkUnits => "s3.work_units", "S3", Some(LimitKind::WorkBudget);
-    S3DecimalScale => "s3.decimal_scale", "S3 assembly", Some(LimitKind::WorkBudget);
-    EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", Some(LimitKind::EdgeCount);
-    EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", Some(LimitKind::WorkBudget);
-    ModelDeclarationRecords => "model.declaration_records", "model normalization", Some(LimitKind::NodeCount);
-    ModelDerivationFacts => "model.derivation_facts", "model normalization", Some(LimitKind::NodeCount);
-    ModelEffectiveDeclarations => "model.effective_declarations", "model normalization", Some(LimitKind::NodeCount);
-    ModelDispatchCandidates => "model.dispatch_candidates", "model normalization", Some(LimitKind::NodeCount);
-    ModelHashedBytes => "model.hashed_bytes", "model normalization", Some(LimitKind::InputBytes);
-    ModelWorkUnits => "model.work_units", "model normalization", Some(LimitKind::WorkBudget);
-    ModelAncestorSteps => "model.ancestor_steps", "model normalization", Some(LimitKind::EdgeCount);
-    ModelFamilySteps => "model.family_steps", "model normalization", Some(LimitKind::EdgeCount);
-    AdmissionPopulationMembers => "admission.population_members", "population admission", Some(LimitKind::NodeCount);
-    AdmissionWorkUnits => "admission.work_units", "population admission", Some(LimitKind::WorkBudget);
-    AdmissionAncestorSteps => "admission.ancestor_steps", "population admission", Some(LimitKind::EdgeCount);
-    ObservationInputBytes => "observation.input_bytes", "observation admission", Some(LimitKind::InputBytes);
-    ObservationObjects => "observation.objects", "observation admission", Some(LimitKind::NodeCount);
-    ObservationValues => "observation.values", "observation admission", Some(LimitKind::NodeCount);
-    DependencyLibraries => "dependency.libraries", "S4 source resolution", Some(LimitKind::NodeCount);
-    DependencyImportEdges => "dependency.import_edges", "S4 source resolution", Some(LimitKind::EdgeCount);
-    DependencySourceBytes => "dependency.source_bytes", "S4 source resolution", Some(LimitKind::InputBytes);
-    LibraryDefinitions => "library.definitions", "library resolution", Some(LimitKind::NodeCount);
-    LibraryDependencyEdges => "library.dependency_edges", "library resolution", Some(LimitKind::EdgeCount);
-    LibraryArtifactBytes => "library.artifact_bytes", "library resolution", Some(LimitKind::InputBytes);
-    LibrarySingleArtifactBytes => "library.single_artifact_bytes", "library resolution", Some(LimitKind::InputBytes);
-    IdentityInputBytes => "identity.input_bytes", "identity encoding", Some(LimitKind::InputBytes);
-    ReplayInputBytes => "replay.input_bytes", "replay envelope readers", Some(LimitKind::InputBytes);
-    I2InputBytes => "i2.input_bytes", "I2 v2 reader", Some(LimitKind::InputBytes);
-    I2Nodes => "i2.nodes", "I2 v2 reader", Some(LimitKind::NodeCount);
-    I2Edges => "i2.edges", "I2 v2 reader", Some(LimitKind::EdgeCount);
-    I2Occurrences => "i2.occurrences", "I2 v2 reader", Some(LimitKind::OccurrenceCount);
-    I2Diagnostics => "i2.diagnostics", "I2 v2 reader", Some(LimitKind::DiagnosticCount);
-    I2WorkUnits => "i2.work_units", "I2 v2 reader", Some(LimitKind::WorkBudget);
-    ExploreStates => "explore.states", "exploration", Some(LimitKind::NodeCount);
-    ExploreTransitions => "explore.transitions", "exploration", Some(LimitKind::EdgeCount);
-    AccountingIntegerBits => "integer_bits", "S6a accounting", None;
-    AccountingDecimalDigits => "decimal_digits", "S6a accounting", None;
-    AccountingScaleExpansion => "scale_expansion", "S6a accounting", None;
-    AccountingTextInputBytes => "text_input_bytes", "S6a accounting", None;
-    AccountingTextScalars => "text_scalars", "S6a accounting", None;
-    AccountingNormalizedScalars => "normalized_scalars", "S6a accounting", None;
-    AccountingUnitEdges => "unit_edges", "S6a accounting", None;
-    AccountingValueOccurrences => "value_occurrences", "S6a accounting", None;
-    AccountingWorkUnits => "work_units", "S6a accounting", None;
-    AccountingResultUnits => "result_units", "S6a accounting", None;
+    S1InputBytes => "s1.input_bytes", "S1", InputBytes;
+    S1Tokens => "s1.tokens", "S1", TokenCount;
+    S1Nodes => "s1.nodes", "S1", NodeCount;
+    S1WorkUnits => "s1.work_units", "S1", WorkBudget;
+    S3Nodes => "s3.nodes", "S3", NodeCount;
+    S3InputBytes => "s3.input_bytes", "S3", InputBytes;
+    S3WorkUnits => "s3.work_units", "S3", WorkBudget;
+    S3DecimalScale => "s3.decimal_scale", "S3 assembly", WorkBudget;
+    EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", EdgeCount;
+    EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", WorkBudget;
+    ModelDeclarationRecords => "model.declaration_records", "model normalization", NodeCount;
+    ModelDerivationFacts => "model.derivation_facts", "model normalization", NodeCount;
+    ModelEffectiveDeclarations => "model.effective_declarations", "model normalization", NodeCount;
+    ModelDispatchCandidates => "model.dispatch_candidates", "model normalization", NodeCount;
+    ModelHashedBytes => "model.hashed_bytes", "model normalization", InputBytes;
+    ModelWorkUnits => "model.work_units", "model normalization", WorkBudget;
+    ModelAncestorSteps => "model.ancestor_steps", "model normalization", EdgeCount;
+    ModelFamilySteps => "model.family_steps", "model normalization", EdgeCount;
+    AdmissionPopulationMembers => "admission.population_members", "population admission", NodeCount;
+    AdmissionWorkUnits => "admission.work_units", "population admission", WorkBudget;
+    AdmissionAncestorSteps => "admission.ancestor_steps", "population admission", EdgeCount;
+    ObservationInputBytes => "observation.input_bytes", "observation admission", InputBytes;
+    ObservationObjects => "observation.objects", "observation admission", NodeCount;
+    ObservationValues => "observation.values", "observation admission", NodeCount;
+    DependencyLibraries => "dependency.libraries", "S4 source resolution", NodeCount;
+    DependencyImportEdges => "dependency.import_edges", "S4 source resolution", EdgeCount;
+    DependencySourceBytes => "dependency.source_bytes", "S4 source resolution", InputBytes;
+    LibraryDefinitions => "library.definitions", "library resolution", NodeCount;
+    LibraryDependencyEdges => "library.dependency_edges", "library resolution", EdgeCount;
+    LibraryArtifactBytes => "library.artifact_bytes", "library resolution", InputBytes;
+    LibrarySingleArtifactBytes => "library.single_artifact_bytes", "library resolution", InputBytes;
+    IdentityInputBytes => "identity.input_bytes", "identity encoding", InputBytes;
+    ReplayInputBytes => "replay.input_bytes", "replay envelope readers", InputBytes;
+    I2InputBytes => "i2.input_bytes", "I2 v2 reader", InputBytes;
+    I2Nodes => "i2.nodes", "I2 v2 reader", NodeCount;
+    I2Edges => "i2.edges", "I2 v2 reader", EdgeCount;
+    I2Occurrences => "i2.occurrences", "I2 v2 reader", OccurrenceCount;
+    I2Diagnostics => "i2.diagnostics", "I2 v2 reader", DiagnosticCount;
+    I2WorkUnits => "i2.work_units", "I2 v2 reader", WorkBudget;
+    ExploreStates => "explore.states", "exploration", NodeCount;
+    ExploreTransitions => "explore.transitions", "exploration", EdgeCount;
 }
 
 impl Setting {
@@ -131,18 +113,111 @@ impl Setting {
     }
 }
 
-impl Setting {
-    /// Whether this is one of the ten accounting budgets
-    /// (`quire.value.accounting/v1` counters), which have no limit kind.
-    #[must_use]
-    pub const fn is_accounting(self) -> bool {
-        self.kind().is_none()
-    }
-}
-
 impl std::fmt::Display for Setting {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(self.name())
+    }
+}
+
+/// The ten accounting budgets of a call (`quire.value.accounting/v1`
+/// counters), each named by its bare counter name (FR-255's accounting
+/// table). They are settings but not stage limits: a reached budget settles
+/// `Incomplete`, so they have no [`LimitKind`] and are not [`Setting`]s,
+/// which keeps every `stage_limit_exceeded` producer total over its kind.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccountingSetting {
+    /// `integer_bits`.
+    IntegerBits,
+    /// `decimal_digits`.
+    DecimalDigits,
+    /// `scale_expansion`.
+    ScaleExpansion,
+    /// `text_input_bytes`.
+    TextInputBytes,
+    /// `text_scalars`.
+    TextScalars,
+    /// `normalized_scalars`.
+    NormalizedScalars,
+    /// `unit_edges`.
+    UnitEdges,
+    /// `value_occurrences`.
+    ValueOccurrences,
+    /// `work_units`.
+    WorkUnits,
+    /// `result_units`.
+    ResultUnits,
+}
+
+impl AccountingSetting {
+    /// Every accounting setting, in FR-255's accounting-table order.
+    pub const ALL: [Self; 10] = [
+        Self::IntegerBits,
+        Self::DecimalDigits,
+        Self::ScaleExpansion,
+        Self::TextInputBytes,
+        Self::TextScalars,
+        Self::NormalizedScalars,
+        Self::UnitEdges,
+        Self::ValueOccurrences,
+        Self::WorkUnits,
+        Self::ResultUnits,
+    ];
+
+    /// The counter's bare name, such as `work_units`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::IntegerBits => "integer_bits",
+            Self::DecimalDigits => "decimal_digits",
+            Self::ScaleExpansion => "scale_expansion",
+            Self::TextInputBytes => "text_input_bytes",
+            Self::TextScalars => "text_scalars",
+            Self::NormalizedScalars => "normalized_scalars",
+            Self::UnitEdges => "unit_edges",
+            Self::ValueOccurrences => "value_occurrences",
+            Self::WorkUnits => "work_units",
+            Self::ResultUnits => "result_units",
+        }
+    }
+}
+
+impl std::fmt::Display for AccountingSetting {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+/// Any name the settings operation and a request's `stage_limits` accept:
+/// a stage [`Setting`] or an [`AccountingSetting`]. A stage name holds a
+/// `.` and an accounting name holds none, so no name is both.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SettingName {
+    /// A stage limit.
+    Stage(Setting),
+    /// An accounting budget.
+    Accounting(AccountingSetting),
+}
+
+impl SettingName {
+    /// The setting named `name` in either table, or `None`.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Setting::from_name(name).map(Self::Stage).or_else(|| {
+            AccountingSetting::ALL
+                .iter()
+                .copied()
+                .find(|setting| setting.name() == name)
+                .map(Self::Accounting)
+        })
+    }
+
+    /// The setting's name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Stage(setting) => setting.name(),
+            Self::Accounting(setting) => setting.name(),
+        }
     }
 }
 
@@ -182,8 +257,8 @@ pub struct UsageRefusal {
     pub cause: UsageCause,
 }
 
-/// Parse the `<name>=<value>` operands of the settings operation into
-/// settings and bounds, in operand order.
+/// Parse the `<name>=<value>` operands of the settings operation (a name of
+/// either FR-255 table) into settings and bounds, in operand order.
 ///
 /// # Errors
 ///
@@ -192,8 +267,8 @@ pub struct UsageRefusal {
 /// of at most `u64::MAX`, or names a setting an earlier operand named.
 pub fn parse_operands<'a>(
     operands: impl IntoIterator<Item = &'a str>,
-) -> Result<Vec<(Setting, u64)>, UsageRefusal> {
-    let mut parsed: Vec<(Setting, u64)> = Vec::new();
+) -> Result<Vec<(SettingName, u64)>, UsageRefusal> {
+    let mut parsed: Vec<(SettingName, u64)> = Vec::new();
     for operand in operands {
         let refuse = |cause| UsageRefusal {
             operand: operand.to_owned(),
@@ -202,7 +277,8 @@ pub fn parse_operands<'a>(
         let (name, value) = operand
             .split_once('=')
             .ok_or_else(|| refuse(UsageCause::NotAnAssignment))?;
-        let setting = Setting::from_name(name).ok_or_else(|| refuse(UsageCause::UnknownSetting))?;
+        let setting =
+            SettingName::from_name(name).ok_or_else(|| refuse(UsageCause::UnknownSetting))?;
         let bound = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
             value
                 .parse::<u64>()
@@ -220,7 +296,7 @@ pub fn parse_operands<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_operands, Setting, UsageCause};
+    use super::{parse_operands, AccountingSetting, Setting, SettingName, UsageCause};
 
     #[test]
     fn names_are_distinct_and_round_trip() {
@@ -236,38 +312,28 @@ mod tests {
     }
 
     #[test]
-    fn accounting_names_are_bare_counters_with_no_limit_kind() {
-        for counter in [
-            "integer_bits",
-            "decimal_digits",
-            "scale_expansion",
-            "text_input_bytes",
-            "text_scalars",
-            "normalized_scalars",
-            "unit_edges",
-            "value_occurrences",
-            "work_units",
-            "result_units",
-        ] {
-            let setting = Setting::from_name(counter).expect(counter);
-            assert!(setting.is_accounting(), "{counter}");
-            assert_eq!(setting.kind(), None, "{counter}");
+    fn accounting_names_are_bare_counters_in_neither_stage_table_nor_a_stage_name() {
+        for counter in AccountingSetting::ALL {
+            assert_eq!(Setting::from_name(counter.name()), None, "{counter}");
+            assert_eq!(
+                SettingName::from_name(counter.name()),
+                Some(SettingName::Accounting(counter))
+            );
+            assert!(!counter.name().contains('.'));
         }
-        assert_eq!(
-            Setting::ALL.iter().filter(|s| s.is_accounting()).count(),
-            10
-        );
         assert!(Setting::ALL
             .iter()
-            .filter(|s| !s.is_accounting())
-            .all(|s| s.name().contains('.')));
+            .all(|setting| setting.name().contains('.')));
     }
 
     #[test]
     fn operands_parse_in_order_and_refuse_the_first_bad_one() {
         assert_eq!(
             parse_operands(["s3.nodes=5", "s1.tokens=0"]),
-            Ok(vec![(Setting::S3Nodes, 5), (Setting::S1Tokens, 0)])
+            Ok(vec![
+                (SettingName::Stage(Setting::S3Nodes), 5),
+                (SettingName::Stage(Setting::S1Tokens), 0)
+            ])
         );
         for (operand, cause) in [
             ("s9.nodes=1", UsageCause::UnknownSetting),
