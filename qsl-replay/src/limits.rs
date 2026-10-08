@@ -365,7 +365,6 @@ mod tests {
             assert_eq!(setting.stage(), row.stage, "{}", row.name);
             let kind = setting
                 .kind()
-                .expect("a stage setting has a limit kind")
                 .catalog_cause()
                 .trim_end_matches("-exceeded")
                 .replace('-', " ");
