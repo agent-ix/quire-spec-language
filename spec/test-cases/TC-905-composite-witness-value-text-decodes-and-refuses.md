@@ -16,8 +16,8 @@ element, member, declaration identity and leaf exactly as written, beside an
 unchanged scalar entry. Transcript escaping keeps text holding `;`, `>>>`,
 `%` and `<` inside its entry. Each malformed entry refuses `Malformed`,
 naming the parameter. Encoding a witness value does work proportional to
-its output at any depth, and the value text's length is counted without
-building the text.
+its output at any depth, and the value text's length is counted from the
+encoder's finished bytes.
 
 Scope: FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12,
 FR-070-AC-13.
