@@ -118,4 +118,4 @@ Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
 ## Status
 
 Steps 1 to 5 pass locally, `qsl-replay/src/witness/value_text/tests.rs`.
-Step 6 has no test yet.
+Step 6 passes.

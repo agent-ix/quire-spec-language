@@ -534,6 +534,36 @@ fn tc_905_encoding_work_is_linear_in_depth() {
     });
 }
 
+/// FR-070-AC-13 (QSL-647): the value text's length is counted from the
+/// finished bytes without building the text. A text of 1,000,000 `;`
+/// characters is 1,000,026 JCS bytes and 3,000,026 escaped; `value_text_len`
+/// returns the escaped length, equal to `to_value_text`'s, while the only
+/// bytes it holds are the JCS bytes: no buffer it makes reaches the escaped
+/// length. (The crate forbids `unsafe`, so a counting allocator is not
+/// available; the held buffers are read from the encoder's pieces.)
+#[trace("TC-905", "FR-070-AC-13")]
+#[test]
+fn tc_905_value_text_len_counts_without_building_the_text() {
+    let value = WitnessValue::Text(";".repeat(1_000_000));
+    assert_eq!(value.value_text_len(), 3_000_026);
+    assert_eq!(value.to_value_text().unwrap().len(), 3_000_026);
+    let (arena, _) = super::encode_pieces(&value).unwrap();
+    let held: Vec<usize> = arena
+        .iter()
+        .flatten()
+        .map(|piece| match piece {
+            super::Piece::Bytes(bytes) => bytes.capacity(),
+            super::Piece::Child(_) => 0,
+        })
+        .collect();
+    assert_eq!(arena.len(), 1);
+    assert!(held.iter().sum::<usize>() >= 1_000_026);
+    assert!(
+        held.iter().all(|capacity| *capacity < 3_000_026),
+        "a buffer reached the escaped length: {held:?}"
+    );
+}
+
 /// FR-070-AC-9 (QSL-647): the decode order check still refuses out-of-order
 /// and duplicate elements found by span, in a nested set, a bag and an
 /// ordered set.
