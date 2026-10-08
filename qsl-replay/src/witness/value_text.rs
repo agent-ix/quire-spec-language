@@ -301,16 +301,55 @@ fn compare(
     }
 }
 
-/// The finished bytes of `root` as pieces in an arena, built bottom-up: each
-/// value's shell is encoded once into its own pieces that name its children,
-/// so no value's bytes are copied into an ancestor. Set and bag elements are
+/// `value`'s JCS bytes in one streaming pass of one writer, children
+/// expanded in place. Sets and bags inside are written in their given order,
+/// so a caller uses this only for a value with none.
+fn encode_flat(value: &WitnessValue) -> Result<Vec<u8>, CanonicalError> {
+    let mut bytes = Vec::new();
+    {
+        let mut writer = Writer::new(&mut bytes, Limits::new(u64::MAX));
+        let mut tasks = vec![Task::Value(value)];
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Name(name) => writer.name(name)?,
+                Task::Str(text) => writer.string(text)?,
+                Task::Owned(text) => writer.string(&text)?,
+                Task::Bool(flag) => writer.bool(flag)?,
+                Task::Null => writer.null()?,
+                Task::BeginObject => writer.begin_object()?,
+                Task::EndObject => writer.end_object()?,
+                Task::BeginArray => writer.begin_array()?,
+                Task::EndArray => writer.end_array()?,
+                Task::Slot(slot) => match slot {
+                    WitnessSlot::Present(child) => tasks.push(Task::Value(child)),
+                    WitnessSlot::Absent => tasks.push(Task::Null),
+                    WitnessSlot::Null => {
+                        push_in_order(&mut tasks, object(vec![tag("null")], Vec::new()));
+                    }
+                },
+                Task::Value(child) => push_in_order(&mut tasks, value_steps(child, None)),
+            }
+        }
+        writer.finish()?;
+    }
+    Ok(bytes)
+}
+
+/// The finished bytes of `root` as pieces in an arena. A value with no set
+/// or bag below it is streamed through one writer in one pass. Only a set or
+/// bag, and each value on the path from the root to one, is built bottom-up:
+/// its shell is encoded once into pieces that name its children, so no
+/// value's bytes are copied into an ancestor, and the set's elements are
 /// ordered by comparing their finished bytes in place.
 fn encode_pieces(root: &WitnessValue) -> Result<(Vec<Vec<Piece>>, Work), CanonicalError> {
     let mut preorder = Vec::new();
-    let mut pending = vec![root];
-    while let Some(value) = pending.pop() {
+    let mut parents = Vec::new();
+    let mut pending = vec![(root, usize::MAX)];
+    while let Some((value, parent)) = pending.pop() {
+        let id = preorder.len();
         preorder.push(value);
-        pending.extend(value.children());
+        parents.push(parent);
+        pending.extend(value.children().into_iter().map(|child| (child, id)));
     }
     let ids: HashMap<*const WitnessValue, usize> = preorder
         .iter()
@@ -320,10 +359,37 @@ fn encode_pieces(root: &WitnessValue) -> Result<(Vec<Vec<Piece>>, Work), Canonic
     let missing = || CanonicalError::Internal {
         invariant: "a child is finished before its parent",
     };
+    // Whether a set or bag sits at or below each value.
+    let mut has_set: Vec<bool> = preorder
+        .iter()
+        .map(|value| matches!(value, WitnessValue::Set(_) | WitnessValue::Bag(_)))
+        .collect();
+    for id in (1..preorder.len()).rev() {
+        let below = has_set.get(id).copied().unwrap_or(false);
+        let parent = parents.get(id).copied().unwrap_or(usize::MAX);
+        if let Some(flag) = has_set.get_mut(parent) {
+            *flag |= below;
+        }
+    }
     let mut arena: Vec<Vec<Piece>> = Vec::new();
     arena.resize_with(preorder.len(), Vec::new);
     let mut work = Work::default();
     for (id, value) in preorder.iter().enumerate().rev() {
+        let sets_below = has_set.get(id).copied().unwrap_or(false);
+        if !sets_below {
+            // Part of a set-free subtree: its top is written in one pass,
+            // and everything under it is skipped.
+            let parent = parents.get(id).copied().unwrap_or(usize::MAX);
+            if parent != usize::MAX && !has_set.get(parent).copied().unwrap_or(false) {
+                continue;
+            }
+            let bytes = encode_flat(value)?;
+            work.written = work
+                .written
+                .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+            *arena.get_mut(id).ok_or_else(missing)? = vec![Piece::Bytes(bytes)];
+            continue;
+        }
         let order = match value {
             WitnessValue::Set(elements) | WitnessValue::Bag(elements) => {
                 let mut keyed = Vec::with_capacity(elements.len());

@@ -566,10 +566,12 @@ fn tc_905_the_element_order_check_reads_spans() {
         decodes(&collection("ordered-set", &[&a, &a])),
         Err(EntryFault::Elements)
     );
-    // A bad collection nested inside a good one is found.
+    // A bad collection nested inside a correctly ordered one is found. The
+    // bad set starts `{"elements"`, below `a`'s `{"type"`, so the outer
+    // elements [bad, a] are in order and only the nested path can trip.
     let bad = collection("set", &[&b, &a]);
-    assert_eq!(
-        decodes(&collection("set", &[&a, &bad])),
-        Err(EntryFault::Elements)
-    );
+    let outer = collection("set", &[&bad, &a]);
+    let sound = collection("set", &[&collection("set", &[&a, &b]), &a]);
+    assert_eq!(decodes(&sound), Ok(()));
+    assert_eq!(decodes(&outer), Err(EntryFault::Elements));
 }
