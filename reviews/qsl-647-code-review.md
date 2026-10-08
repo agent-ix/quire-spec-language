@@ -65,3 +65,10 @@ Round 1, reviewed at `2d987b0db83e89b0c60a5dd344cae16c8911e919`.
 | FND-003 | fixed | 6cce4788: with FND-001 fixed the measure is linear; `value_text_len` counts the escaped length over the pieces without building the escaped `String`. It still builds the pieces (the unescaped bytes) to count them; that cost is part of FND-004. |
 | FND-004 | still-open | New this round (see New findings); no fix yet. |
 | FND-005 | still-open | New this round (see New findings); no fix yet. |
+
+Round 2, reviewed at `db471524f23aea363f960b34e273f578443eb5f5`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 503a20e3: `encode_pieces` marks each value with a set or bag at or below it; every maximal set-free subtree is written by `encode_flat`, one `Writer` pass over an explicit task stack (no native recursion), into a single `Piece::Bytes`, and only sets, bags and their ancestors get shells and pieces. Work stays linear. The author's release timings (log q647h, taken with this encoder just before the rebase onto 70ddb73c, which changed nothing under `qsl-replay/src/witness/` or the timed tests' files): 1.15 s, 1.95 s and 45.03 s against main's 1.17 s, 1.83 s and 46.36 s. |
+| FND-005 | fixed | 503a20e3: the nested case is now an outer set `[bad, a]` that is in order (`{"e` sorts below `{"t`), so only the nested set can refuse, plus a sound control `[set[a, b], a]` that must decode. A scan of only the outermost collection now fails the test. |

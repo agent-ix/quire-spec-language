@@ -45,6 +45,12 @@ Two medium findings, both on traceability. The decode refusal coverage (FR-070-A
 | FND-003 | medium | The PR adds FR-070-AC-13 to TC-905 in spec/tests.md and tags `tc_905_encoding_work_is_linear_in_depth` with `#[trace("TC-905", "FR-070-AC-13")]`, but TC-905 itself is unchanged: its Scope line (line 20) lists FR-070-AC-8, AC-9, AC-11 and AC-12 only, its Test Procedure has no step for the work bound, its Expected Results say nothing about it, and its tag list (lines 72-74) omits FR-070-AC-13. The test case that is said to verify AC-13 does not describe how. Fix: add FR-070-AC-13 to Scope, a step (encode nested sets, options and sequences at depth d and 2d, count work, check the ratio and the output bound, check `value_text_len` equals the text's length), its expected result, and the tag. | spec/test-cases/TC-905-composite-witness-value-text-decodes-and-refuses.md:20, spec/test-cases/TC-905-composite-witness-value-text-decodes-and-refuses.md:72-74 |
 | FND-004 | medium | FR-070-AC-13 bounds "the counted work" but never says what is counted. The test counts bytes the shell writer produces plus bytes compared while sorting; another implementer could count nodes visited, allocations or copies, and get a different ratio for the same encoder. The bound is only as strong as that choice (a copy the counter omits is invisible, which was SR-1380 FND-002's failure). Its last sentence, "The value text's length is counted without building the text", is not checked by any test; the test only checks `value_text_len` equals the text's length. Fix: state what is counted (every byte written into an encoding buffer or copied between buffers, plus every byte compared to order set and bag elements), and either drop the last sentence or state it as a checkable property. | spec/functional/FR-070-implement-typed-counterexample-witness-envelope.md:242 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-070-AC-13 still claims "The value text's length is counted from the finished bytes without building the text", and TC-905's Description repeats it, but none of the AC's stated checks can fail if `value_text_len` builds the text. The test reads the buffers of `encode_pieces`, not what `value_text_len` allocates, so `value_text_len` written as `self.to_value_text().map_or(usize::MAX, \|t\| t.len())` passes every condition in AC-13 and TC-905 step 6. The crate forbids `unsafe`, so a counting allocator is not available to check the claim directly. Fix: make the clause say only what is checked ("counted from the encoder's finished bytes: for a text value of ...") in FR-070-AC-13 and TC-905's Description, or accept the clause as an unverified design statement. | spec/functional/FR-070-implement-typed-counterexample-witness-envelope.md:242, spec/test-cases/TC-905-composite-witness-value-text-decodes-and-refuses.md:18-20, qsl-replay/src/witness/value_text/tests.rs:545-565 |
+
 ## Dispositions
 
 Round 1, reviewed at `2d987b0db83e89b0c60a5dd344cae16c8911e919`.
@@ -55,3 +61,11 @@ Round 1, reviewed at `2d987b0db83e89b0c60a5dd344cae16c8911e919`.
 | FND-002 | fixed | 6cce4788: FR-070-AC-13 now states the work bound over nested sets, options and sequences, and the work-bound test traces to it. TC-905's own text was not updated (FND-003) and the AC leaves "counted work" undefined (FND-004). |
 | FND-003 | still-open | New this round (see New findings); no fix yet. |
 | FND-004 | still-open | New this round (see New findings); no fix yet. |
+
+Round 2, reviewed at `db471524f23aea363f960b34e273f578443eb5f5`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 3f5c6e90 and 9197ee57: TC-905 Scope lists FR-070-AC-13; step 5 (work at depths 5,000 and 10,000 over nested sets, options and sequences on a 512 KiB stack, then a round trip) and step 6 (the 1,000,000 `;` text) are in the procedure with matching expected results, and the tag list includes `#[trace("TC-905", "FR-070-AC-13")]`. Both AC-13 tests carry that tag. |
+| FND-004 | fixed | 3f5c6e90 and fc0307fb: FR-070-AC-13 defines the counted work as the bytes the JCS writer produces plus the bytes compared while ordering set and bag elements, and the output as the JCS bytes before escaping, which is exactly what `Work` counts. The shapes, depths and bounds it states are the ones `tc_905_encoding_work_is_linear_in_depth` asserts. The last sentence is now stated as checks `tc_905_value_text_len_counts_without_building_the_text` makes (3,000,026; one finished value; buffers at least 1,000,026; each capacity below 3,000,026). Those checks do not establish the clause they follow; that residue is FND-005. |
+| FND-005 | still-open | New this round (see New findings); no fix yet. |
