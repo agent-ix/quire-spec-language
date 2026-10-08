@@ -59,3 +59,9 @@ Round 1, reviewed at 0ae852bf192acfd086f7bf7c0d2db2596be2fecd (spec half 71423c5
 | FND-003 | fixed | 0ae852bf1: the vacuous test is deleted. Its replacement block asserts the new code's spelling and `last_stage` null. |
 | FND-004 | fixed | 0ae852bf1: `RunRefusal::stage()` returns `Option<&'static str>`, `None` for `Cancelled`. src/command/output.rs maps `None` to `types::Stage::Request`. I accept that: the envelope type has no stageless variant, the CLI passes a fresh `Cancel` it never cancels, and `Request` is the existing pre-stage label. |
 | FND-005 | deferred | Low. Add the assertion in a follow-up or the next touch of TC-470 or TC-769. Not merge-blocking: the mapping is correct at 0ae852bf1. |
+
+Round 2, reviewed at a37d1ab407fa5c423cac151457ba339d05964da5.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | a37d1ab40: `from_run_documents_every_arm` (TC-770, FR-286-AC-6) asserts `Code::UnimplementedCapability.category() == Category::Unsupported` and that category's exit code is 21. |
