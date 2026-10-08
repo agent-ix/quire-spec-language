@@ -3526,12 +3526,13 @@ fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
     assert_tc465_refused(other, "stale_dependency", "content-mismatch");
 }
 
-/// FR-261-AC-3 (TC-733 step 3), the reader's part: a field value nested
-/// 100,000 levels deep is read on a 512 KiB stack and counted as
-/// `observation.values` as it is walked. One below the document's value
-/// count refuses naming `observation.values`, its bound and the count
-/// reached; raising the setting through `ObservationLimits`' builder lets
-/// admission through to the field's own content check.
+/// FR-261-AC-3 (TC-733 step 3): on a 512 KiB stack (the harness admits on
+/// one), a field value nested 100,000 levels deep is read, counted as
+/// `observation.values` as it is walked and judged on its content. With the
+/// limits raised the field's declared type refuses it as `wrong-value-kind`
+/// at that field. With `observation.values` at 50,000, which the nested
+/// value alone crosses, it refuses naming `observation.values`, bound 50,000
+/// and the count reached, 50,001.
 #[trace("TC-733", "FR-261-AC-3")]
 #[test]
 fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
@@ -3557,7 +3558,11 @@ fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
         record.fields.get("actual").map(String::as_str),
         Some("50001")
     );
-    assert_tc465_refused(counted(raised), "invalid_runtime_input", "wrong-value-kind");
+    let judged = assert_tc465_refused(counted(raised), "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        judged.fields.get("field").map(String::as_str),
+        Some("parent")
+    );
 }
 
 /// Row 4 (check 1.3): the snapshot's bytes edited, kept under the original
