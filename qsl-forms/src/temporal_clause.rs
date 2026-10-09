@@ -98,14 +98,23 @@ fn expression_form(cst: &LosslessCst, node: &CstNode) -> Result<ExpressionForm, 
     Ok(ExpressionForm { expression, spans })
 }
 
-/// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind is
-/// `weak` (FR-362) and an unwritten granularity stays `None`, for S3 to
-/// read as `whole` (FR-123).
+/// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind or
+/// granularity stays `None`, for S3 to read as `weak` (FR-129) or `whole`
+/// (FR-123).
 fn fairness_form(
     cst: &LosslessCst,
     constraint: &CstNode,
 ) -> Result<FairnessConstraintForm, FormsRefusal> {
     let constraint_items = items(cst, constraint);
+    let kind = match (
+        has_token(&constraint_items, b"weak"),
+        has_token(&constraint_items, b"strong"),
+    ) {
+        (true, false) => Some(FairnessKind::Weak),
+        (false, true) => Some(FairnessKind::Strong),
+        (false, false) => None,
+        (true, true) => return Err(unexpected(constraint)),
+    };
     let granularity = match (
         has_token(&constraint_items, b"whole"),
         has_token(&constraint_items, b"each"),
@@ -116,11 +125,7 @@ fn fairness_form(
         (true, true) => return Err(unexpected(constraint)),
     };
     Ok(FairnessConstraintForm {
-        kind: if has_token(&constraint_items, b"strong") {
-            FairnessKind::Strong
-        } else {
-            FairnessKind::Weak
-        },
+        kind,
         operation: name_form(
             cst,
             only(&constraint_items, Production::QualifiedName, constraint)?,

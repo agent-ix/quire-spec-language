@@ -378,19 +378,19 @@ fn fairness_constraints_build_their_kind_granularity_operation_and_span() {
         fairness,
         [
             (
-                FairnessKind::Weak,
+                None,
                 None,
                 "Config::ConfigVersion::attemptUpdate",
                 constraints[0]
             ),
             (
-                FairnessKind::Strong,
+                Some(FairnessKind::Strong),
                 Some(FairnessGranularity::Each),
                 "Config::ConfigVersion::reset",
                 constraints[1]
             ),
             (
-                FairnessKind::Weak,
+                Some(FairnessKind::Weak),
                 Some(FairnessGranularity::Whole),
                 "Config::ConfigVersion::tick",
                 constraints[2]

@@ -2663,7 +2663,7 @@ pub enum ActivationForm {
 /// A fairness constraint's kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FairnessKind {
-    /// `weak`, or no kind written.
+    /// `weak`.
     Weak,
     /// `strong`.
     Strong,
@@ -2682,8 +2682,8 @@ pub enum FairnessGranularity {
 /// (FR-325 "Outputs"). The operation stays a spelled, unresolved name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FairnessConstraintForm {
-    /// The constraint's kind.
-    pub kind: FairnessKind,
+    /// The constraint's kind; `None` when none is written.
+    pub kind: Option<FairnessKind>,
     /// The operation name.
     pub operation: NameForm,
     /// The granularity; `None` when none is written.

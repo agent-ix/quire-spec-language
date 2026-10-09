@@ -44,9 +44,9 @@ Tag the tests `#[trace("TC-835", "FR-325-AC-n")]`.
   no diagnostic.
 - Step 3: an S1 parse diagnostic at `x`'s span and no form.
 - Step 4: equal forms under `PartialEq` and equal `Debug` renderings.
-- Step 5: (`Weak`, `None`, `attemptUpdate`), (`Strong`, `Some(Each)`,
-  `reset`) and (`Weak`, `Some(Whole)`, `tick`), in source order, each span
-  covering its own `fair … ;` constraint.
+- Step 5: (`None`, `None`, `attemptUpdate`), (`Some(Strong)`, `Some(Each)`,
+  `reset`) and (`Some(Weak)`, `Some(Whole)`, `tick`), in source order, each
+  span covering its own `fair … ;` constraint.
 - Step 6: one fairness form, then capture forms `before` (`Int[0, 1000]`,
   `p.value`) and `parent` (`Config::ConfigVersion`, `p.parent`) in source
   order, each span covering its own `capture … ;`; the formula forms are

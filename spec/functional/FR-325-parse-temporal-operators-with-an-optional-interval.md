@@ -51,7 +51,7 @@ profile.
   references, its `over` parameter, its activation, its fairness constraint
   forms (FR-123), its capture forms and a `TemporalFormulaForm` tree. Each
   fairness form is `FairnessConstraintForm{kind, granularity, operation,
-  span}` with `kind: FairnessKind::{Weak, Strong}`, `granularity:
+  span}` with `kind: Option<FairnessKind::{Weak, Strong}>`, `granularity:
   Option<FairnessGranularity::{Whole, Each}>`, the operation's qualified
   name as written and the constraint's span. Each capture form is
   `CaptureForm{parameter, value, span}`: the capture's name and declared
@@ -64,9 +64,10 @@ profile.
 ## Behavior
 
 - S2 SHALL build one fairness form per `fair` constraint, in source order
-  (QSpec FR-362's `fairness` production). An unwritten kind SHALL build
-  `Weak`, and an unwritten granularity SHALL build `None`, which S3 reads as
-  `whole` (FR-123).
+  (QSpec FR-362's `fairness` production). A written kind SHALL build
+  `Some` of that kind, `Weak` or `Strong`, and an unwritten kind SHALL
+  build `None`, which S3 reads as `weak` (FR-129). An unwritten
+  granularity SHALL build `None`, which S3 reads as `whole` (FR-123).
 - S2 SHALL build one capture form per `capture`, in source order (the
   QSpec shared grammar's `capture` production, which FR-362's
   `temporal-clause` places after the fairness constraints). The capture's
@@ -95,7 +96,7 @@ profile.
 | FR-325-AC-2 | `holds(p) until holds(q)`, `holds(p) since[2,4] holds(q)` and `eventually[3,*] holds(p)` parse; their operator forms hold `None`, `Some{2, Finite(4)}` and `Some{3, Open}`. `eventually[5,3] holds(p)` parses to `Some{5, Finite(3)}` with no S1 or S2 diagnostic. | Test (TC-835) |
 | FR-325-AC-3 | `eventually[0,x] holds(p)` fails at S1 with a parse diagnostic located at `x`'s span, and no S2 form is built. | Test (TC-835) |
 | FR-325-AC-4 | Two units that differ only in the selected profile identity, one selecting the infinite-trace profile and one the event-position false-extension profile, padded so their headers have equal length and the clause starts at the same byte offset, build equal S2 forms for the clause, compared by `PartialEq` and by their `Debug` rendering. | Test (TC-835) |
-| FR-325-AC-5 | A clause whose body holds `fair Config::ConfigVersion::attemptUpdate;`, `fair strong each Config::ConfigVersion::reset;` and `fair weak whole Config::ConfigVersion::tick;` before its formula builds three fairness forms in that order: (`Weak`, `None`, `Config::ConfigVersion::attemptUpdate`), (`Strong`, `Some(Each)`, `Config::ConfigVersion::reset`) and (`Weak`, `Some(Whole)`, `Config::ConfigVersion::tick`), each with the span of its own constraint. | Test (TC-835) |
+| FR-325-AC-5 | A clause whose body holds `fair Config::ConfigVersion::attemptUpdate;`, `fair strong each Config::ConfigVersion::reset;` and `fair weak whole Config::ConfigVersion::tick;` before its formula builds three fairness forms in that order: (`None`, `None`, `Config::ConfigVersion::attemptUpdate`), (`Some(Strong)`, `Some(Each)`, `Config::ConfigVersion::reset`) and (`Some(Weak)`, `Some(Whole)`, `Config::ConfigVersion::tick`), each with the span of its own constraint. | Test (TC-835) |
 | FR-325-AC-6 | A clause over `(p: Config::ConfigVersion)` whose body holds `fair Config::ConfigVersion::tick;`, then `capture before: Int[0, 1000] = p.value;` and `capture parent: Config::ConfigVersion = p.parent;`, then its formula, builds one fairness form and two capture forms in that order: `before` with type `Int[0, 1000]` and value `p.value`, and `parent` with type `Config::ConfigVersion` and value `p.parent`, each with the span of its own capture; its formula form equals, up to spans, the formula form of the same clause with the two captures removed. | Test (TC-835) |
 
 ## Dependencies
