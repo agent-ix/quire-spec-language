@@ -97,7 +97,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `Completed`, Rejected by a test whose `undefined` is set | `measured` | `completed` | `rejected`, cause `UndefinedEvaluation{where, cause}` | `Measured{decision: Rejected, …}` | violation |
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` by a limit | `incomplete` | `limit-reached{limit, value, setting}` | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
-| `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled` | none | `Incomplete(Cancelled)` (ADR-018 V-7) | incomplete |
+| `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled` | none | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
 | `Unsupported`; an EN-4 refusal | `unsupported` | `unsupported` | none | `Unsupported(cause)` | unsupported |
 
 - The record SHALL carry no FR-242 truth value and no FR-243 settlement

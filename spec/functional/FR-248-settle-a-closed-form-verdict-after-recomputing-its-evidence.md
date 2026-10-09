@@ -87,7 +87,7 @@ The FR-331 terminal record of the claim.
 | `Miss` that the checker agrees with | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | `SufficientTestFailed` that the checker agrees with | `inconclusive` | `unsettled` | `Inconclusive(SufficientTestFailed)` | inconclusive |
 | any outcome the checker disagrees with | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
-| `Stopped` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` or `Incomplete(Cancelled)` (ADR-018 V-7) | incomplete |
+| `Stopped` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` or `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
 
 - `analysis` SHALL be `FixedPriorityRta`, `EdfQpa` or `AmcRtb`.
 - The record SHALL carry the evidence, and its obligation identity binds

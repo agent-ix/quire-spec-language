@@ -453,7 +453,7 @@ faults maps to `failed`, as for a Kani counterexample. `InconclusiveCause` gains
 inconclusive. A model-check run stopped by
 a run limit, including `max_automaton_states`, maps to incomplete with
 `LimitReached{limit, value, setting}`, written `limit-reached`; a cancelled
-run maps to incomplete with `Cancelled`, written `cancelled` (ADR-018 V-7).
+run maps to incomplete with `Cancelled{source}`, written `cancelled{source}` (ADR-018 V-7).
 
 Amended by ADR-028 (exact probabilistic checking). The proof column also
 takes the verdicts of the exact probabilistic engine EN-5 (ADR-028 XV-6):

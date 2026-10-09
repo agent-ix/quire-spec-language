@@ -69,6 +69,8 @@ QSL supplies their types and categories.
   and initial-state snapshots, and the item.
 - For `Violated`: the FR-072 result of replaying its counterexample
   (FR-128), or the `ReplayRefusal` that stopped it.
+- For a cancelled run: the cancellation identity the caller supplied with
+  its `Cancel` handle.
 
 ## Outputs
 
@@ -94,7 +96,8 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 // ComponentCertificate, ProofCertificate: FR-339.
 // IncompleteCause gains LimitReached { limit: ModelCheckLimit, value: u64, setting: RequestSetting },
 //   QSpec FR-331's limit-reached; setting names the request member that raises it.
-//   Cancelled, written cancelled (QSpec FR-408-AC-8).
+//   Cancelled { source: CancelSource }, written cancelled{source} (QSpec FR-331),
+//   source the cancellation identity the caller supplied, kept exactly.
 ```
 
 The certificate types and checkers are FR-338's and FR-339's.
@@ -120,7 +123,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | `Stopped{cause: ResourceExhausted, limit: Some(ReachedLimit{limit, value})}`, a limit reached | `incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` | incomplete |
-| V-7 | `Stopped{cause: Cancelled, limit: None}` | `incomplete` | `unavailable` | `Incomplete(Cancelled)`, written `cancelled` | incomplete |
+| V-7 | `Stopped{cause: Cancelled, limit: None}` | `incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` | incomplete |
 
 - When an outcome is `Violated`, the settlement map SHALL settle it `refuted`
   only through its replay.
@@ -198,7 +201,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-1 | Each row of the map settles its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states: `Holds{Exhaustive}` with an accepted certificate, settling `Proved{Exhaustive, Certified}`; a reproduced `Violated`; `BoundReached{depth: 2}` carrying depth 2 and method `explicit-state`; `Undecided(UndecidedSuccessor)`; `Undecided(NoInitialState)`; `Stopped{ResourceExhausted, {MaxStates, 2}}` settling `Incomplete(LimitReached{MaxStates, 2, max_states})` naming `max_states`, value 2. | Test (TC-522) |
 | FR-127-AC-2 | `TerminalValue::category` maps `Proved{Checks{0}}` to inconclusive `KaniVacuousProof`; `Proved{Checks{1}}`, `Proved{Exhaustive, Certified}`, `Proved{BoundedComplete{depth: 5}}` and `Proved{Inductive{depth: 2}}` to success; `Inconclusive` with `BoundReached{1}`, `InductionNotClosed{2}`, `UndecidedSuccessor` and `NoInitialState` to inconclusive. | Test (TC-522) |
 | FR-127-AC-3 | FR-126-AC-1's weak `each` outcome settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success. Its counterexample under the constraint with no granularity settles `refuted` only after FR-128 replay reproduces it. The same counterexample with one post-state digest altered settles `inconclusive`, `ReplayRefused`; replayed in an envelope for the weak `each` clause, whose fairness it fails, it settles `inconclusive`, `ReplayParity`, since EN-1 builds only fair lassos; with its last step removed, so the loop does not close, it settles `inconclusive`, `ReplayRefused`; one whose formula evaluates `true` on replay settles `inconclusive`, `ReplayParity`. A replay that returns `InternalFault` settles `failed`, category failed. | Test (TC-522) |
-| FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles `incomplete`, `unavailable`, `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`, category incomplete, its record naming `max_automaton_states` with value 50 as the member that raises it; a cancelled run settles `incomplete`, `Incomplete(Cancelled)`, written `cancelled`; every record, AC-3's proof included, states the three limits used and whether one was reached; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
+| FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles `incomplete`, `unavailable`, `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`, category incomplete, its record naming `max_automaton_states` with value 50 as the member that raises it; a cancelled run settles `incomplete`, `Incomplete(Cancelled{source})`, written `cancelled{source}` with the caller's cancellation identity; every record, AC-3's proof included, states the three limits used and whether one was reached; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
 | FR-127-AC-5 | FR-126-AC-3's deadlock-freedom violation settles `refuted` after replay, with a record whose counterexample `kind` is `Deadlock`, and the record's obligation identity differs from the authored claims' over the same subject. | Test (TC-522) |
 | FR-127-AC-6 | FR-126-AC-9's undefined-evaluation counterexample settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, after FR-128 replay reproduces it, and the record's counterexample carries `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`. The same payload with its cause changed to another undefined reason settles `inconclusive`, `ReplayParity`. | Test (TC-538) |
 
