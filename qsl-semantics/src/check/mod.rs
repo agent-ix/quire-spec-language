@@ -825,6 +825,11 @@ impl PackageDeclarations {
             .iter()
             .map(|function| function.spans().cloned())
             .collect();
+        let function_parameter_spans: Vec<_> = self
+            .functions
+            .iter()
+            .map(|function| function.parameter_spans().map(<[_]>::to_vec))
+            .collect();
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
@@ -1246,10 +1251,9 @@ impl PackageDeclarations {
                         kind: *kind,
                         location: &locations[index],
                         parameters: &signature.parameters,
-                        parameter_spans: self
-                            .functions
+                        parameter_spans: function_parameter_spans
                             .get(index)
-                            .and_then(FunctionDeclaration::parameter_spans),
+                            .and_then(|spans| spans.as_deref()),
                         result: &signature.result,
                         body: body.body.root(),
                         body_slots: &body.slot_names,

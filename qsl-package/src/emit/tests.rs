@@ -3385,10 +3385,10 @@ fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
     );
     let emission = emit_checked(&package).expect("source parameters have real regions");
     let wire = wire(&emission);
-    let parameters: BTreeSet<&Value> = nodes(&wire)
+    let parameters: BTreeSet<&str> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "parameter")
-        .map(|node| &node["node_id"])
+        .map(|node| node["node_id"].as_str().unwrap())
         .collect();
     assert_eq!(
         parameters.len(),
@@ -3400,7 +3400,7 @@ fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|entry| parameters.contains(&entry["node_id"]))
+        .filter(|entry| parameters.contains(entry["node_id"].as_str().unwrap()))
     {
         assert_eq!(entry["role"], "expression");
         let regions = entry["regions"].as_array().unwrap();
