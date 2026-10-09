@@ -220,7 +220,10 @@ impl ItemCause {
     fn inconclusive(cause: &ReportedInconclusiveCause) -> Self {
         let mut item = Self::kind(cause.as_str());
         match cause {
-            ReportedInconclusiveCause::Cause(InconclusiveCause::CertificateRejected { rule, at }) => {
+            ReportedInconclusiveCause::Cause(InconclusiveCause::CertificateRejected {
+                rule,
+                at,
+            }) => {
                 item.rule = Some(*rule);
                 item.certificate_at = Some(*at);
             }
@@ -1260,21 +1263,25 @@ mod tests {
                 (QueryPart::Base, "base"),
                 (QueryPart::Step, "step"),
             ] {
-                let item = record(2, TerminalValue::Inconclusive(
-                    InconclusiveCause::CertificateRejected {
-                        rule, at: CertificateLocus::Query { part },
-                    }
-                ));
-                let document = OutcomeDocument::settled(
-                    Operation::Prove, Some(OutcomeStage::S8), vec![item],
+                let item = record(
+                    2,
+                    TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                        rule,
+                        at: CertificateLocus::Query { part },
+                    }),
                 );
+                let document =
+                    OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), vec![item]);
                 let written: Value = serde_json::from_slice(&document.to_bytes().unwrap()).unwrap();
-                assert_eq!(written["items"], json!([{
-                    "request_index": 2,
-                    "result": "inconclusive",
-                    "cause": {"kind": "certificate-rejected", "rule": expected_rule, "at": expected_part},
-                    "category": "inconclusive",
-                }]));
+                assert_eq!(
+                    written["items"],
+                    json!([{
+                        "request_index": 2,
+                        "result": "inconclusive",
+                        "cause": {"kind": "certificate-rejected", "rule": expected_rule, "at": expected_part},
+                        "category": "inconclusive",
+                    }])
+                );
             }
         }
     }
@@ -1287,19 +1294,30 @@ mod tests {
         for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
             for index in [0, 7, u64::MAX] {
                 let at = CertificateLocus::ProofStep { part, index };
-                let item = record(2, TerminalValue::Inconclusive(
-                    InconclusiveCause::CertificateRejected {
-                        rule: CertificateRule::ProofStepInvalid, at,
-                    }
-                ));
+                let item = record(
+                    2,
+                    TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                        rule: CertificateRule::ProofStepInvalid,
+                        at,
+                    }),
+                );
                 assert_eq!(item.category(), Category::Inconclusive);
                 assert_eq!(item.cause.as_ref().unwrap().certificate_at, Some(at));
-                let document = OutcomeDocument::settled(
-                    Operation::Prove, Some(OutcomeStage::S8), vec![item],
+                let document =
+                    OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), vec![item]);
+                let failure = document
+                    .to_bytes()
+                    .expect_err("an unowned proof-step spelling must not produce bytes");
+                assert!(
+                    failure
+                        .to_string()
+                        .contains("no wire spelling for a proof-step certificate locus"),
+                    "{failure}"
                 );
-                let failure = document.to_bytes().expect_err("an unowned proof-step spelling must not produce bytes");
-                assert!(failure.to_string().contains("no wire spelling for a proof-step certificate locus"), "{failure}");
-                assert_eq!(document.items()[0].cause.as_ref().unwrap().certificate_at, Some(at));
+                assert_eq!(
+                    document.items()[0].cause.as_ref().unwrap().certificate_at,
+                    Some(at)
+                );
             }
         }
     }
