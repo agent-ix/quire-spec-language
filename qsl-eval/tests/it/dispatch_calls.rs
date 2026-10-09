@@ -1697,7 +1697,6 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
 
 /// QSpec TC-196 D01's G/S2 diamond, evaluated at the invariant's A-static
 /// call site. Effective identities come from the normalized declarations.
-/// Trace: ix://agent-ix/quire-specification/FR-151-AC-8
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
 #[test]
 fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
@@ -1775,16 +1774,18 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
     )
     .expect("the real diamond must link through the checked dispatch bridge");
     declarations.types = types.clone();
-    declarations.functions.push(FunctionDeclaration::new(
-        "echo",
-        vec![(
-            "r".to_owned(),
-            crate::support::type_form::named_type_form("A"),
-        )],
-        crate::support::type_form::named_type_form("A"),
-        None,
-        Expression::name("r".to_owned()),
-    ));
+    for (function, receiver) in [("echo", "A"), ("echoC", "C")] {
+        declarations.functions.push(FunctionDeclaration::new(
+            function,
+            vec![(
+                "r".to_owned(),
+                crate::support::type_form::named_type_form(receiver),
+            )],
+            crate::support::type_form::named_type_form(receiver),
+            None,
+            Expression::name("r".to_owned()),
+        ));
+    }
     let graph = declarations.check(CheckingLimits::default()).unwrap();
     let parameters = vec![("self".to_owned(), ValueType::Reference(a))];
     let invariant = Expression::binary(
@@ -1857,12 +1858,25 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
     ] {
         let mut meter = Meter::new(SCALAR_UNLIMITED);
         assert!(matches!(
-            package.evaluate(&c_static, vec![argument], &objects, &mut meter),
+            package.evaluate(&c_static, vec![argument.clone()], &objects, &mut meter),
             Err(CallFailure::Input(InputRefusal::WrongValueKind {
                 parameter: 0
             }))
         ));
         assert!(meter.admitted_charges().is_empty());
+        let mut call_meter = Meter::new(SCALAR_UNLIMITED);
+        assert!(matches!(
+            package.call(
+                &QualifiedName::unqualified("echoC").unwrap(),
+                vec![argument],
+                &objects,
+                &mut call_meter
+            ),
+            Err(CallFailure::Input(InputRefusal::WrongValueKind {
+                parameter: 0
+            }))
+        ));
+        assert!(call_meter.admitted_charges().is_empty());
     }
     let mut missing_meter = Meter::new(SCALAR_UNLIMITED);
     assert!(matches!(
@@ -1877,6 +1891,19 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
         }))
     ));
     assert!(missing_meter.admitted_charges().is_empty());
+    let mut missing_call_meter = Meter::new(SCALAR_UNLIMITED);
+    assert!(matches!(
+        package.call(
+            &QualifiedName::unqualified("echo").unwrap(),
+            vec![Value::Reference(receiver_reference(d, "missing"))],
+            &objects,
+            &mut missing_call_meter
+        ),
+        Err(CallFailure::Input(InputRefusal::DanglingReference {
+            parameter: 0
+        }))
+    ));
+    assert!(missing_call_meter.admitted_charges().is_empty());
 
     for (actual, identity, body) in [(d, "d1", 2_i64), (c, "c1", 1_i64)] {
         let reference = receiver_reference(actual, identity);

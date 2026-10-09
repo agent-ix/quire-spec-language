@@ -572,6 +572,150 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     assert_eq!(refusal.code(), Code::MissingImport);
 }
 
+/// Top-level reference replay uses the recompiled model's conformance and
+/// retains the actual reference identity. Nested references remain exact.
+#[trace("TC-906", "QSpec-TC-196", "QSpec-FR-151")]
+#[test]
+fn replay_reference_admission_matches_runtime_and_preserves_actual_type() {
+    use qsl_eval::value::CheckedPackageEvaluation;
+    use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId};
+
+    let document = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .unwrap();
+    let model_identity = PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
+        .unwrap()
+        .jcs_digest();
+    let model_reference = DigestRecord::mint(DigestDomain::Sha256Jcs, model_identity);
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         function same using v(r: Reference<M::Widget>, g: Reference<M::Gadget>): Boolean pure {{ not (r = g) }}\n\
+         function gadget using v(r: Reference<M::Gadget>): Boolean pure {{ false }}\n\
+         function rock using v(r: Reference<M::Rock>): Boolean pure {{ false }}\n\
+         function nested using v(r: Option<Reference<M::Widget>>): Boolean pure {{ false }}\n",
+        model_reference.hex(),
+    );
+    let compiled = spine(&source, &package_input([document.as_slice()]));
+    let declared = |function: &str| {
+        let ValueType::Reference(id) = compiled
+            .package
+            .graph()
+            .callable(function)
+            .unwrap()
+            .parameters[0]
+            .1
+        else {
+            panic!("{function} declares a reference parameter");
+        };
+        id
+    };
+    let widget = declared("same");
+    let gadget = declared("gadget");
+    let rock = declared("rock");
+    assert!(compiled
+        .package
+        .graph()
+        .scope()
+        .types()
+        .conforms(gadget, widget));
+    let reference = |id: EffectiveId, identity: &str| WitnessValue::Reference {
+        universe: [1; 32],
+        object_type: *id.as_bytes(),
+        identity: identity.as_bytes().to_vec(),
+    };
+    let wire = |function: &str, values: Vec<WitnessValue>| {
+        let assignments = values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| CanonicalAssignment {
+                parameter: parameter(&compiled, function, index),
+                value,
+            })
+            .collect();
+        let mut wire = request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&[function]),
+            ReplaySource::Input(assignments),
+        );
+        wire.byte_provision.push((
+            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+            model_reference.hex(),
+            document.clone(),
+        ));
+        wire
+    };
+    // Baseline proves that source/model recompile, request joining and
+    // exact-reference conversion reach the real replay executor.
+    let baseline = replay(
+        wire(
+            "same",
+            vec![reference(widget, "w1"), reference(gadget, "g1")],
+        ),
+        ReplayLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(baseline.value(), Some(EvaluatedValue::Boolean(true)));
+    let actual = ObjectReference::new(
+        UniverseId::from_digest([1; 32]),
+        gadget,
+        ObjectId::new("g1").unwrap(),
+    );
+    let mut runtime_meter = Meter::new(UNLIMITED);
+    let runtime = compiled
+        .package
+        .call(
+            &qsl_eval::value::QualifiedName::unqualified("same").unwrap(),
+            vec![Value::Reference(actual.clone()), Value::Reference(actual)],
+            &ObjectEnvironment::default().with_unresolved_references(),
+            &mut runtime_meter,
+        )
+        .unwrap();
+    assert!(matches!(
+        runtime.outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+    ));
+    let replayed = replay(
+        wire(
+            "same",
+            vec![reference(gadget, "g1"), reference(gadget, "g1")],
+        ),
+        ReplayLimits::default(),
+    )
+    .expect("a conforming actual reference must replay as admitted by runtime call");
+    assert_eq!(replayed.value(), Some(EvaluatedValue::Boolean(false)));
+    assert_eq!(
+        replayed.charges().work_units,
+        runtime_meter.consumed(LimitKind::WorkUnits)
+    );
+    assert_eq!(
+        replayed.charges().result_units,
+        runtime_meter.consumed(LimitKind::ResultUnits)
+    );
+
+    for (function, value) in [
+        ("gadget", reference(widget, "w1")),
+        ("gadget", reference(rock, "r1")),
+        ("gadget", WitnessValue::Boolean(true)),
+        (
+            "nested",
+            WitnessValue::Option(Some(Box::new(reference(gadget, "g1")))),
+        ),
+    ] {
+        let mut invalid = wire(function, vec![value]);
+        invalid.accounting_limits.work_units = 0;
+        assert!(matches!(
+            replay(invalid, ReplayLimits::default()),
+            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+                parameter: 0
+            }))
+        ));
+    }
+}
+
 /// FR-098-AC-4, TC-166 step 3: a well-formed selection naming no function
 /// node refuses `UnknownFunction`, naming the exact selection and the
 /// recompiled package -- an undeclared name, a name equal to `small` but for
