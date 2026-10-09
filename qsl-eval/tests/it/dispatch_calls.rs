@@ -1798,7 +1798,7 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
     // Positive boundary control: all admission, checking and evaluation
     // setup is valid before the actual subtype vector is attempted.
     let mut baseline = Meter::new(SCALAR_UNLIMITED);
-    assert_eq!(
+    assert!(matches!(
         evaluated(
             package
                 .evaluate(
@@ -1810,7 +1810,7 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
                 .unwrap()
         ),
         Outcome::Completed(Value::Boolean(true))
-    );
+    ));
 
     for (actual, identity, body) in [(d, "d1", 2_i64), (c, "c1", 1_i64)] {
         let mut body_meter = Meter::new(SCALAR_UNLIMITED);
@@ -1822,10 +1822,10 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
                 &mut body_meter,
             )
             .expect("a conforming actual receiver must bind at the A-static call site");
-        assert_eq!(
-            evaluated(evaluation),
-            Outcome::Completed(Value::Integer(body.into()))
-        );
+        match evaluated(evaluation) {
+            Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(body)),
+            other => panic!("expected {identity}'s dispatched body {body}, got {other:?}"),
+        }
         for limit in if actual == d { vec![6, 5, 1] } else { vec![6] } {
             let mut meter = Meter::new(ScalarLimits {
                 work_units: limit,
@@ -1882,7 +1882,20 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
                 ),
                 _ => unreachable!("only QSpec D01's limits are used"),
             };
-            assert_eq!(evaluated(evaluation), expected, "{identity} at {limit}");
+            match (evaluated(evaluation), expected) {
+                (
+                    Outcome::Completed(Value::Boolean(actual)),
+                    Outcome::Completed(Value::Boolean(expected)),
+                ) => {
+                    assert_eq!(actual, expected, "{identity} at {limit}");
+                }
+                (Outcome::Incomplete(actual), Outcome::Incomplete(expected)) => {
+                    assert_eq!(actual, expected, "{identity} at {limit}");
+                }
+                (actual, expected) => {
+                    panic!("{identity} at {limit}: expected {expected:?}, got {actual:?}")
+                }
+            }
             assert_eq!(meter.admitted_charges(), admitted);
             assert_eq!(meter.consumed(LimitKind::WorkUnits), work);
             assert_eq!(meter.consumed(LimitKind::ResultUnits), results);
