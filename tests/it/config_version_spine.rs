@@ -463,40 +463,6 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
     }
 }
 
-/// The two variants of a [`ClauseRunSelection`] compared for equality.
-/// `ClauseRunSelection` itself carries no `PartialEq` (its `Function`
-/// variant's `ClauseArgument`/`ClauseArgumentValue` don't either), so this
-/// compares the `Clause` variant's own `PartialEq` and the `Function`
-/// variant's `name`/`snapshot` (both `PartialEq`) plus its `arguments` by
-/// `Debug` text -- a test-only comparator, not a reason to add derives to
-/// production types nothing else needs them for.
-fn selections_match(
-    a: &qsl_replay::spine::ClauseRunSelection,
-    b: &qsl_replay::spine::ClauseRunSelection,
-) -> bool {
-    use qsl_replay::spine::ClauseRunSelection::{Clause, Function};
-    match (a, b) {
-        (Clause(a), Clause(b)) => a == b,
-        (
-            Function {
-                name: name_a,
-                arguments: arguments_a,
-                snapshot: snapshot_a,
-            },
-            Function {
-                name: name_b,
-                arguments: arguments_b,
-                snapshot: snapshot_b,
-            },
-        ) => {
-            name_a == name_b
-                && snapshot_a == snapshot_b
-                && format!("{arguments_a:?}") == format!("{arguments_b:?}")
-        }
-        _ => false,
-    }
-}
-
 /// FR-108-AC-4 (TC-469 step 4): generating the corpus twice gives identical
 /// files (bidirectionally: same file sets, not just every file in the first
 /// generation present in the second -- SR-768 FND-003), running every one of
@@ -583,12 +549,6 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
             "{}",
             case.id()
         );
-        assert_eq!(
-            report_a.source_digest,
-            report_b.source_digest,
-            "{}",
-            case.id()
-        );
         assert_eq!(report_a.package_id, report_b.package_id, "{}", case.id());
         assert_eq!(
             report_a.usage.admission_consumed,
@@ -609,72 +569,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
             case.id()
         );
 
-        // Provenance names the source digest, package_id, the domain
-        // package's own sha256-jcs digest, every observation's identity
-        // and digest, the selection and the limits -- verified as content
-        // (not vacuously present) and as agreeing between the two runs, so
-        // the case is fixed by its inputs (FR-108-AC-4).
-        assert!(!report_a.source_digest.is_empty(), "{}", case.id());
-        assert_eq!(
-            report_a.provenance.documents,
-            report_b.provenance.documents,
-            "{}",
-            case.id()
-        );
-        assert_eq!(
-            report_a.provenance.extraction,
-            report_b.provenance.extraction,
-            "{}",
-            case.id()
-        );
-        assert!(
-            selections_match(
-                &report_a.provenance.selection,
-                &report_b.provenance.selection
-            ),
-            "{}: {:?} vs {:?}",
-            case.id(),
-            report_a.provenance.selection,
-            report_b.provenance.selection
-        );
         assert_eq!(limits_a, limits_b, "{}", case.id());
-        assert_eq!(
-            report_a.provenance.model_selections,
-            report_b.provenance.model_selections,
-            "{}",
-            case.id()
-        );
-        if matches!(case, Case::MissingModel) {
-            assert!(
-                report_a.provenance.model_selections.is_empty(),
-                "{}: no package to name",
-                case.id()
-            );
-        } else {
-            assert!(
-                report_a
-                    .provenance
-                    .model_selections
-                    .iter()
-                    .any(|selection| selection.identity == spine::PACKAGE_IDENTITY
-                        && qsl_semantics::model::key::hex(&selection.digest)
-                            == spine::model_digest_hex()),
-                "{}: {:?}",
-                case.id(),
-                report_a.provenance.model_selections
-            );
-        }
-        if matches!(
-            report_a.disposition.stage(),
-            ClauseRunStage::Evaluate | ClauseRunStage::Admit
-        ) && !matches!(case, Case::Dangling)
-        {
-            assert!(
-                !report_a.provenance.documents.is_empty(),
-                "{}: an admitted case names every observation it read",
-                case.id()
-            );
-        }
 
         // A request carrying spine `compile`'s own emitted `package_id`
         // gives the same report (FR-032-AC-4's package half). Only cases
@@ -702,7 +597,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
 mod extraction {
     use super::{build, run_clause, Case, ClauseRunRequest};
     use ix_trace_rs::trace;
-    use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+    use qsl_foundation::{Source, SourceIdentity};
 
     const QUIRE_PACKAGE: &str = "example/config-version-spine";
 
@@ -724,9 +619,9 @@ mod extraction {
         )
     }
 
-    /// The extracted body's own text and digest for `case`'s already-built
-    /// `request`'s unit source.
-    fn extracted(case: Case, request: &ClauseRunRequest) -> (qsl_source::ExtractedSource, String) {
+    /// The I3 extracted body of `case`'s already-built `request`'s unit
+    /// source.
+    fn extracted(case: Case, request: &ClauseRunRequest) -> qsl_source::ExtractedSource {
         let qsl_replay::spine::ClauseRunSource::Program { bytes, .. } = &request.source else {
             unreachable!("fixtures always build a Program source")
         };
@@ -761,7 +656,7 @@ mod extraction {
             qsl_source::Limits::default(),
         )
         .unwrap_or_else(|err| panic!("{}: the unit fence extracts: {err:?}", case.id()));
-        (extracted, markdown)
+        extracted
     }
 
     /// FR-108-AC-5 (TC-469 step 5).
@@ -772,7 +667,7 @@ mod extraction {
         for &case in crate::support::config_version::CASES {
             let path = directory.path().join(case.id());
             let direct_request = build(&path, case);
-            let (extracted, markdown) = extracted(case, &direct_request);
+            let extracted = extracted(case, &direct_request);
             let direct_report = run_clause(build(&path, case)).unwrap();
 
             let mut extracted_request = build(&path, case);
@@ -794,30 +689,6 @@ mod extraction {
             assert_eq!(
                 extracted_report.disposition.truth(),
                 direct_report.disposition.truth(),
-                "{}",
-                case.id()
-            );
-            assert_ne!(
-                extracted_report.provenance.source,
-                direct_report.provenance.source,
-                "{}",
-                case.id()
-            );
-            assert_ne!(
-                extracted_report.source_digest,
-                direct_report.source_digest,
-                "{}",
-                case.id()
-            );
-            let origin = extracted_report
-                .provenance
-                .extraction
-                .as_ref()
-                .unwrap_or_else(|| panic!("{}: extraction origin present", case.id()));
-            assert_eq!(origin.identity, original_identity(case), "{}", case.id());
-            assert_eq!(
-                origin.digest,
-                ByteDigest::of(markdown.as_bytes()),
                 "{}",
                 case.id()
             );

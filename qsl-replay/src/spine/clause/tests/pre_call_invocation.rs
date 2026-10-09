@@ -115,13 +115,7 @@ fn run_invocation(
     request
         .invocations
         .insert(invocation.digest, invocation_bytes);
-    let report = run_clause(request).expect("a well-formed request always reports");
-    assert_eq!(
-        report.provenance.documents,
-        [invocation, pre],
-        "the run reads the invocation and its pre snapshot, and no post snapshot"
-    );
-    report
+    run_clause(request).expect("a well-formed request always reports")
 }
 
 /// `ParentPresent` selected by `PreCall` over the invocation's pre

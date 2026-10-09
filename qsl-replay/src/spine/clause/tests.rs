@@ -726,17 +726,13 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
 
 /// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
 /// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`, and
-/// a cyclic chain to `Completed(Boolean(false))`; both carry the source
-/// digest, `package_id`, model selection, selection and the one snapshot's
-/// identity and digest in their provenance
-/// (`FR-109-run-a-state-clause-through-the-spine.md:149,81-84`).
+/// a cyclic chain to `Completed(Boolean(false))`; both carry the
+/// compiled `package_id` and the usage
+/// (`FR-109-run-a-state-clause-through-the-spine.md:149`).
 #[trace("TC-468", "FR-109-AC-1", "FR-109-AC-6")]
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
-    let (request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-    // `request` compiles exactly this unit text (`request`'s own builder).
-    let (unit, _) = unit_and_packages();
-    let expected_digest = qsl_foundation::ByteDigest::of(unit.as_bytes()).to_string();
+    let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -754,23 +750,11 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
 
-    // Provenance: source digest, package_id, model selection, selection and
-    // the one snapshot's identity and digest.
-    assert_eq!(report.source_digest, expected_digest);
     assert!(report.package_id.is_some());
     assert!(
-        !report.provenance.model_selections.is_empty(),
-        "the model selection the compiled package resolved is reported"
+        report.usage.evaluation_admissions > 0,
+        "the evaluation meter's charges are reported"
     );
-    match &report.provenance.selection {
-        super::ClauseRunSelection::Clause(selection) => {
-            assert_eq!(selection.name, "NoCycle");
-        }
-        other => panic!("expected the Clause selection back, got {other:?}"),
-    }
-    assert_eq!(report.provenance.documents, [label]);
-    assert_eq!(report.provenance.source, source());
-    assert_eq!(report.provenance.extraction, None, "no I3 source was used");
 }
 
 /// TC-468 (FR-109-AC-1): the violating-parent case (a cycle) reports
@@ -806,7 +790,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     let report_one = run_clause(request_one).expect("a well-formed request always reports");
     let report_two = run_clause(request_two).expect("a well-formed request always reports");
 
-    assert_eq!(report_one.source_digest, report_two.source_digest);
     assert_eq!(report_one.package_id, report_two.package_id);
     assert_eq!(
         report_one.disposition.truth(),
@@ -819,14 +802,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     assert_eq!(
         report_one.disposition.category().exit_code(),
         report_two.disposition.category().exit_code()
-    );
-    assert_eq!(
-        report_one.provenance.documents,
-        report_two.provenance.documents
-    );
-    assert_eq!(
-        report_one.provenance.model_selections.len(),
-        report_two.provenance.model_selections.len()
     );
     assert_eq!(
         report_one.usage.evaluation_admissions,
@@ -1090,10 +1065,7 @@ fn run_clause_refuses_an_empty_source() {
 
 /// TC-468 step 2 (FR-109-AC-2): no domain package bytes supplied for the
 /// unit's `model` declaration refuses at stage `compile`,
-/// `missing_import`/`missing-selection`, exit 20, with no snapshot in
-/// provenance (FR-109-AC-2's own worked example: a compile-stage failure
-/// never read a document, so `provenance.documents` stays empty --
-/// `FR-109-run-a-state-clause-through-the-spine.md:81-84`).
+/// `missing_import`/`missing-selection`, exit 20, with no `package_id`.
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
@@ -1128,10 +1100,7 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert!(
-        report.provenance.documents.is_empty(),
-        "a compile-stage failure never read a document"
-    );
+    assert_eq!(report.package_id, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -3439,8 +3408,7 @@ fn tc466_step3_completes_true_when_the_denied_charge_is_never_made() {
 #[cfg(feature = "quire-extraction")]
 mod extracted {
     use super::*;
-    use crate::spine::ExtractionOrigin;
-    use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+    use qsl_foundation::{Source, SourceIdentity};
 
     const QUIRE_PACKAGE: &str = "example/clause-run";
 
@@ -3461,10 +3429,6 @@ mod extracted {
             "# Clause run document\n\n## Invariants\n\n### no_cycle\n```{language}\n{unit}```\n\n\
              ### unselected\n```ix:native\nopaque body remains unparsed\n```\n"
         )
-    }
-
-    fn original_text() -> String {
-        original_text_in("ix:native")
     }
 
     /// `qsl_source::extract`'s verified body of the `ix:native` `no_cycle`
@@ -3494,26 +3458,16 @@ mod extracted {
         .expect("the no_cycle fence extracts")
     }
 
-    fn expected_origin() -> ExtractionOrigin {
-        ExtractionOrigin {
-            identity: original_identity(),
-            digest: ByteDigest::of(original_text().as_bytes()),
-        }
-    }
-
     /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
     /// is an I3 extracted source compiles the extracted body and reports
-    /// `success` as the program source does; its provenance names the
-    /// body's identity and digest as the source, and the original
-    /// document's identity and digest as the extraction.
+    /// `success` as the program source does, with the body's `package_id`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
-    fn run_clause_compiles_an_extracted_body_and_reports_its_original() {
-        let (mut request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    fn run_clause_compiles_an_extracted_body() {
+        let (mut request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
         let (unit, packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
-        let body_digest = body.digest();
         assert_eq!(
             body.text(),
             unit.trim_end_matches('\n'),
@@ -3538,34 +3492,20 @@ mod extracted {
         assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
         assert_eq!(report.disposition.truth(), Some(true));
         assert_eq!(report.disposition.category().exit_code(), 0);
-        assert_eq!(report.source_digest, body_digest.to_string());
-        assert_eq!(report.provenance.source, body_identity());
-        assert_eq!(report.provenance.extraction, Some(expected_origin()));
-        assert_ne!(
-            report
-                .provenance
-                .extraction
-                .as_ref()
-                .map(|origin| origin.digest),
-            Some(body_digest),
-            "the original's digest is the document's, not the body's"
-        );
-        assert_eq!(report.provenance.documents, [label]);
         assert_eq!(report.package_id, Some(body_package_id));
     }
 
     /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
     /// `violation`, and a compile refusal over an I3 source (no domain
-    /// package supplied) still reports the extraction's original.
+    /// package supplied) reports stage `compile` with no `package_id`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
-    fn run_clause_reports_the_extraction_original_on_violation_and_compile_refusal() {
+    fn run_clause_reports_a_violation_and_a_compile_refusal_over_an_extracted_body() {
         let (mut violating, _) = no_cycle_request(&[("a", Some("b")), ("b", Some("a"))]);
         violating.source = ClauseRunSource::Extracted(extracted());
         let report = run_clause(violating).expect("a well-formed request always reports");
         assert_eq!(report.disposition.truth(), Some(false));
         assert_eq!(report.disposition.category().exit_code(), 10);
-        assert_eq!(report.provenance.extraction, Some(expected_origin()));
 
         let (mut missing, _) = no_cycle_request(&[("a", None)]);
         missing.source = ClauseRunSource::Extracted(extracted());
@@ -3573,22 +3513,18 @@ mod extracted {
         let report = run_clause(missing).expect("a well-formed request always reports");
         assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
         assert_eq!(report.package_id, None);
-        assert_eq!(report.provenance.source, body_identity());
-        assert_eq!(report.provenance.extraction, Some(expected_origin()));
-        assert!(report.provenance.documents.is_empty());
     }
 }
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
 /// a language other than `ix:native` reports stage `compile`, `refusal`,
-/// `unknown_language`, exit 20, with no `package_id` and the extraction's
-/// original still in provenance -- the same refusal the root crate's
+/// `unknown_language`, exit 20, with no `package_id` -- the same refusal the root crate's
 /// `mapped::compile` gives that fence.
 #[cfg(feature = "quire-extraction")]
 #[trace("TC-468", "FR-109-AC-6")]
 #[test]
 fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
-    use extracted::{body_identity, extracted_in, original_identity, original_text_in};
+    use extracted::extracted_in;
     let (mut request, _) = no_cycle_request(&[("a", None)]);
     let source = extracted_in("ix:formal");
     assert_eq!(source.language(), "ix:formal");
@@ -3612,15 +3548,6 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
     );
     assert_eq!(report.disposition.category().exit_code(), 20);
     assert_eq!(report.package_id, None);
-    assert_eq!(report.provenance.source, body_identity());
-    assert_eq!(
-        report.provenance.extraction,
-        Some(crate::spine::ExtractionOrigin {
-            identity: original_identity(),
-            digest: qsl_foundation::ByteDigest::of(original_text_in("ix:formal").as_bytes()),
-        })
-    );
-    assert!(report.provenance.documents.is_empty());
 }
 
 // ---------------------------------------------------------------------------

@@ -17,12 +17,11 @@ use std::collections::BTreeMap;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::ByteDigest;
 use qsl_semantics::check::CheckedOperationFrame;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
 
-use super::{charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
+use super::{charges, domain_packages, one_source, recompile, wire_id, ReplayRefusal};
 use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -30,8 +29,8 @@ use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
-    check_frame, resolve_frame, CallOutcome, CallValue, ClauseDisposition, ClauseRunSelection,
-    CompiledRun, OperationName, UnitProvenance,
+    check_frame, resolve_frame, CallOutcome, CallValue, ClauseDisposition, CompiledRun, FrameCheck,
+    OperationName,
 };
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
@@ -214,20 +213,6 @@ pub fn replay_frame(
 
     // `recompile` already required exactly one source, provided.
     let source = one_source(request.source_digests())?;
-    let bytes = request
-        .byte_provision()
-        .get(source.digest())
-        .ok_or_else(|| {
-            ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "decoded-request-byte-provision-complete",
-            ))
-        })?;
-    let unit = UnitProvenance {
-        digest: ByteDigest::of(bytes).to_string(),
-        source: labels(source),
-        extraction: None,
-    };
     let packages = domain_packages(&request);
     // FR-106 reads the invocation and its snapshots only from the byte
     // provision, by their `sha256-jcs` digests.
@@ -251,15 +236,10 @@ pub fn replay_frame(
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         package_id,
-        unit: &unit,
         sources: &sources,
-        model_selections: graph.model_selections().to_vec(),
-        selection: ClauseRunSelection::Frame {
-            operation,
-            invocation: payload.invocation.clone(),
-        },
     };
-    let report = check_frame(&run, context, operation_frame, &payload.invocation);
+    let FrameCheck { report, documents } =
+        check_frame(&run, context, operation_frame, &payload.invocation);
 
     let (replayed, value, found) = match report.disposition {
         ClauseDisposition::FrameViolation(witness) => (
@@ -304,13 +284,12 @@ pub fn replay_frame(
             )))
         }
     };
-    let [invocation, pre, post] = <[DocumentRef; 3]>::try_from(report.provenance.documents)
-        .map_err(|_| {
-            ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "an-evaluated-frame-check-read-three-documents",
-            ))
-        })?;
+    let [invocation, pre, post] = <[DocumentRef; 3]>::try_from(documents).map_err(|_| {
+        ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "an-evaluated-frame-check-read-three-documents",
+        ))
+    })?;
     let proved = Verdict::from_category(Category::Violation);
     let charges = charges(report.usage.evaluation_consumed.iter().copied());
     // The frame check reports no evaluation location, so the result cites
