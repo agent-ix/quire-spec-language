@@ -1725,8 +1725,7 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
         [],
         ["A", "B", "C", "D"].into_iter().map(|name| {
             let id = view_type(&view, &format!("model.{name}"));
-            ObjectTypeDeclaration::new(id, name, vec![])
-                .with_supertypes(supertypes[&id].clone())
+            ObjectTypeDeclaration::new(id, name, vec![]).with_supertypes(supertypes[&id].clone())
         }),
     )
     .unwrap();
@@ -1738,7 +1737,10 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
         clauses.member.insert(key.clone(), "size".to_owned());
         clauses.parameters.insert(
             key.clone(),
-            vec![("self".to_owned(), ValueType::Reference(view_type(&view, &format!("model.{owner}"))))],
+            vec![(
+                "self".to_owned(),
+                ValueType::Reference(view_type(&view, &format!("model.{owner}"))),
+            )],
         );
         clauses.result.insert(key.clone(), count.clone());
         clauses.own_body.insert(key, Expression::integer(body));
@@ -1767,54 +1769,117 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
         Expression::integer(1_i64),
     );
     let check = |expression: &Expression| {
-        graph.check_clause_expression(
-            parameters.clone(), expression, None, ClauseKind::Invariant,
-            CheckMode::Kernel, CheckingLimits::default(),
-        ).unwrap()
+        graph
+            .check_clause_expression(
+                parameters.clone(),
+                expression,
+                None,
+                ClauseKind::Invariant,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap()
     };
     let checked = check(&invariant);
     let selected_body = check(&dispatch_expression());
     let package = CheckedPackage::link(graph);
-    let objects = ObjectEnvironment::new(ObjectClosure::new(
-        &types,
-        [(receiver_reference(a, "a1"), vec![]),
-         (receiver_reference(c, "c1"), vec![]),
-         (receiver_reference(d, "d1"), vec![])],
-        &[],
-    ).unwrap());
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [
+                (receiver_reference(a, "a1"), vec![]),
+                (receiver_reference(c, "c1"), vec![]),
+                (receiver_reference(d, "d1"), vec![]),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
     // Positive boundary control: all admission, checking and evaluation
     // setup is valid before the actual subtype vector is attempted.
     let mut baseline = Meter::new(SCALAR_UNLIMITED);
-    assert_eq!(evaluated(package.evaluate(&checked,
-        vec![Value::Reference(receiver_reference(a, "a1"))], &objects, &mut baseline,
-    ).unwrap()), Outcome::Completed(Value::Boolean(true)));
+    assert_eq!(
+        evaluated(
+            package
+                .evaluate(
+                    &checked,
+                    vec![Value::Reference(receiver_reference(a, "a1"))],
+                    &objects,
+                    &mut baseline,
+                )
+                .unwrap()
+        ),
+        Outcome::Completed(Value::Boolean(true))
+    );
 
     for (actual, identity, body) in [(d, "d1", 2_i64), (c, "c1", 1_i64)] {
         let mut body_meter = Meter::new(SCALAR_UNLIMITED);
-        let evaluation = package.evaluate(&selected_body,
-            vec![Value::Reference(receiver_reference(actual, identity))],
-            &objects, &mut body_meter,
-        ).expect("a conforming actual receiver must bind at the A-static call site");
-        assert_eq!(evaluated(evaluation), Outcome::Completed(Value::Integer(body.into())));
-        for limit in if actual == d { vec![6, 5, 1] } else { vec![6] } {
-            let mut meter = Meter::new(ScalarLimits { work_units: limit, ..SCALAR_UNLIMITED });
-            let evaluation = package.evaluate(&checked,
+        let evaluation = package
+            .evaluate(
+                &selected_body,
                 vec![Value::Reference(receiver_reference(actual, identity))],
-                &objects, &mut meter,
-            ).expect("actual receiver admission must reach runtime dispatch");
-            let charges = [ChargePoint::DispatchSelect, ChargePoint::FunctionCall,
-                ChargePoint::OrderingOperands, ChargePoint::OrderingArithmetic,
-                ChargePoint::OrderingResultRetain];
+                &objects,
+                &mut body_meter,
+            )
+            .expect("a conforming actual receiver must bind at the A-static call site");
+        assert_eq!(
+            evaluated(evaluation),
+            Outcome::Completed(Value::Integer(body.into()))
+        );
+        for limit in if actual == d { vec![6, 5, 1] } else { vec![6] } {
+            let mut meter = Meter::new(ScalarLimits {
+                work_units: limit,
+                ..SCALAR_UNLIMITED
+            });
+            let evaluation = package
+                .evaluate(
+                    &checked,
+                    vec![Value::Reference(receiver_reference(actual, identity))],
+                    &objects,
+                    &mut meter,
+                )
+                .expect("actual receiver admission must reach runtime dispatch");
+            let charges = [
+                ChargePoint::DispatchSelect,
+                ChargePoint::FunctionCall,
+                ChargePoint::OrderingOperands,
+                ChargePoint::OrderingArithmetic,
+                ChargePoint::OrderingResultRetain,
+            ];
             let (expected, admitted, work, results, occurrences) = match limit {
-                6 => (Outcome::Completed(Value::Boolean(true)), &charges[..], 6, 1, 2),
-                5 => (Outcome::Incomplete(Incomplete {
-                    limit_kind: LimitKind::WorkUnits, limit: 5, consumed: 5,
-                    next_charge: 1_i64.into(), charge_point: ChargePoint::OrderingResultRetain,
-                }), &charges[..4], 5, 0, 2),
-                1 => (Outcome::Incomplete(Incomplete {
-                    limit_kind: LimitKind::WorkUnits, limit: 1, consumed: 0,
-                    next_charge: 2_i64.into(), charge_point: ChargePoint::DispatchSelect,
-                }), &charges[..0], 0, 0, 0),
+                6 => (
+                    Outcome::Completed(Value::Boolean(true)),
+                    &charges[..],
+                    6,
+                    1,
+                    2,
+                ),
+                5 => (
+                    Outcome::Incomplete(Incomplete {
+                        limit_kind: LimitKind::WorkUnits,
+                        limit: 5,
+                        consumed: 5,
+                        next_charge: 1_i64.into(),
+                        charge_point: ChargePoint::OrderingResultRetain,
+                    }),
+                    &charges[..4],
+                    5,
+                    0,
+                    2,
+                ),
+                1 => (
+                    Outcome::Incomplete(Incomplete {
+                        limit_kind: LimitKind::WorkUnits,
+                        limit: 1,
+                        consumed: 0,
+                        next_charge: 2_i64.into(),
+                        charge_point: ChargePoint::DispatchSelect,
+                    }),
+                    &charges[..0],
+                    0,
+                    0,
+                    0,
+                ),
                 _ => unreachable!("only QSpec D01's limits are used"),
             };
             assert_eq!(evaluated(evaluation), expected, "{identity} at {limit}");
