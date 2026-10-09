@@ -194,8 +194,8 @@ the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker
 re-exploration. Each is a layer-6 entry beside `replay`. It recompiles the
 package and checks the certificate with its own code, reading nothing from
 the engine's search but the certificate. The engines that produce
-certificates are outside the core. An `analyze` `proved` counts only once
-its in-core checker accepts the certificate. The core's crates are:
+certificates are outside the core. An `analyze` `proved` is `certified`
+only once its in-core checker accepts the certificate. The core's crates are:
 
 - in QSL: `qsl-foundation`,
   `qsl-cst`, `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package`,
@@ -816,7 +816,7 @@ The owner ruled on the five questions the draft left open (RU-1 to RU-5) on
 | ID | Question | Ruling | Rationale | Where it lands |
 | --- | --- | --- | --- | --- |
 | RU-1 | The exit code for O-16 undefined | **Exit 10.** Machine output still labels each item `undefined`; a proof item never settles undefined (the reconciliation References records) | An undefined claim did not hold, which is a logical outcome, and QSpec FR-301 has no separate code. The item label keeps it distinct from a violation | CB-4 |
-| RU-2 | Whether `analyze` is in the qualified core | **Inside, through its certificate checkers only**: the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker (ADR-028 CE-*) and closure checks such as ADR-022's trap re-exploration. The engines stay outside. A `proved` counts only once the in-core checker accepts its certificate | A checker reads only the certificate and recomputes it with its own code, so it is small enough to qualify, and it makes the engine's soundness irrelevant to the verdict | LC-1, CB-2, CB-3, OP-2 |
+| RU-2 | Whether `analyze` is in the qualified core | **Inside, through its certificate checkers only**: the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker (ADR-028 CE-*) and closure checks such as ADR-022's trap re-exploration. The engines stay outside. A `proved` is `certified` only once the in-core checker accepts its certificate | A checker reads only the certificate and recomputes it with its own code, so it is small enough to qualify, and it makes the engine's soundness irrelevant to the verdict | LC-1, CB-2, CB-3, OP-2 |
 | RU-3 | Which engines `analyze` covers | **QSL's in-process engines only.** SMT engines are IR's backend and run through the driver | QSL has no SMT code; the SMT backend negotiates and runs like any other provider under `prove` | OP-2 |
 | RU-4 | Whether plugins need kernel confinement | **The plugin rights model is deleted.** No rights declarations and no confinement. A plugin's `proved` stays labelled `trusted` | A user installs the plugin, so it is trusted like any program they install. A `proved` from it still cannot be replayed | PL-1, PL-7 |
 | RU-5 | Whether plugin results are cached | **No.** | The host cannot show that a third-party run is a function of the cache key | CA-5 |

@@ -73,7 +73,7 @@ byte provision; limits and `&Cancel`.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-298-AC-1 | The text rendering of FR-286-AC-2's refusal is one line `<path>:<line>:<column>: ill_typed: <message>`, whose line and column are those of the region's first byte in the provided source; without the source bytes it shows the source digest and byte offsets. | Test (TC-783) |
-| FR-298-AC-2 | The text rendering of FR-281-AC-2's counterexample is a table with one row per parameter name and value; FR-283-AC-2's lasso renders as numbered positions with the loop start marked; FR-290-AC-1's record shows `proved` with `trusted` beside it; a 1 MiB text value renders as FR-073's bounded descriptor. | Test (TC-783) |
+| FR-298-AC-2 | The text rendering of FR-281-AC-2's counterexample is a table with one row per parameter name and value; FR-283-AC-2's lasso renders as numbered positions with the loop start marked; FR-290-AC-1's plugin, `analyze` and Kani records show `proved` with `trusted`, `certified` and `certified` beside it, and FR-281-AC-4's record with `uncertified`; a 1 MiB text value renders as FR-073's bounded descriptor. | Test (TC-783) |
 | FR-298-AC-3 | The DOT rendering of an FR-120 state-graph view has one node per retained state and one edge per retained transition, and `dot` for the package view refuses naming the view and the form. | Test (TC-783) |
 | FR-298-AC-4 | With the text renderer swapped for a test renderer that uppercases every line, the JSON bytes of every AC-1 to AC-3 outcome and view are unchanged. | Test (TC-783) |
 

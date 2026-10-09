@@ -73,7 +73,7 @@ refuted, with its trap evidence.
 
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
-| V-1 | `Holds(certificate)` and the checker accepts | `proved` | `closed-scope` | `Proved{basis: ZoneCertified}` | success |
+| V-1 | `Holds(certificate)` and the checker accepts | `proved` | `closed-scope` | `Proved{basis: ZoneCertified, certification: Certified}` | success |
 
 | V-4 | `Violated` whose replay reproduces, `kind` `Formula` or `Deadlock` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
@@ -102,7 +102,7 @@ refuted, with its trap evidence.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-235-AC-1 | Each table row maps its input to the stated `TerminalValue`, FR-360 label, FR-243 basis and O-16 category; `ZoneCertified`, `ClosedForm{FixedPriorityRta}` and `BoundedSolver{…}` each map to success. | Test (TC-690) |
-| FR-235-AC-2 | `Settles` over `Rpc` with `T = 4 ms`, decided by the zone search, settles `proved`, `Proved{ZoneCertified}`; the same outcome with one certificate node removed settles `inconclusive`, `CertificateRejected`.  `NoLateReply` over the same subject also settles `Proved{ZoneCertified}`. | Test (TC-690) |
+| FR-235-AC-2 | `Settles` over `Rpc` with `T = 4 ms`, decided by the zone search, settles `proved`, `Proved{ZoneCertified, Certified}`; the same outcome with one certificate node removed settles `inconclusive`, `CertificateRejected`.  `NoLateReply` over the same subject also settles `Proved{ZoneCertified, Certified}`. | Test (TC-690) |
 | FR-235-AC-3 | `NoLateReply` with `T = 3 ms` settles `refuted` only after FR-237's replay reproduces; with the `timeout` step's delay changed to `5/2` the replay refuses and the item settles `inconclusive`. The strict-guard variant's time-lock-freedom item settles `refuted`, basis `closed-scope`, with a counterexample whose `kind` is `TimeLock`. | Test (TC-690) |
 | FR-235-AC-4 | FR-232-AC-3's `Stall` claim settles `inconclusive`, `NoAdmittedBehaviour`; FR-234-AC-3's punctual liveness claim settles `unsupported`, `PunctualInterval`; a zone search stopped by `max_symbolic_states` settles `incomplete`, `limit-reached`, naming the limit. | Test (TC-690) |
 | FR-235-AC-5 | FR-239-AC-5's outcome settles `refuted`, `decisive-counterexample`, category violation, cause `UndefinedEvaluation{where, cause: division-by-zero}` with `where` at position 2, time stamp 2, after FR-237's replay reproduces it; the time-locked variant's `Undecided(NoAdmittedBehaviour)` settles `inconclusive`, `NoAdmittedBehaviour`. | Test (TC-710) |

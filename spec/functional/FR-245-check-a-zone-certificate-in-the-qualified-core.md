@@ -100,7 +100,7 @@ pub struct CertificateCheckLimits {
   overflow and in agreement with a reference implementation on bounded
   dimensions.
 - **Verdict fit.** `Accepted` SHALL let the item settle
-  `Proved{basis: ZoneCertified}`; `Rejected` SHALL settle it
+  `Proved{basis: ZoneCertified, certification: Certified}`; `Rejected` SHALL settle it
   `inconclusive`, `CertificateRejected`; `Stopped` SHALL settle it V-7
   (FR-235).
 - The checker SHALL read no path, environment variable, clock or search

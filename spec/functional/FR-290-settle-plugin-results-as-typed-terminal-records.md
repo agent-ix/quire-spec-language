@@ -106,8 +106,6 @@ One QSL terminal record per routed item.
 - When an `analyze` engine with no qualified-core certificate checker
   reports a proof, QSL shall settle the item `proved` with the
   certification `uncertified` and the engine's name.
-- QSL shall settle no `proved` record of a native engine or a plugin
-  without a certification.
 - The terminal record type shall hold a Kani `proved` that CG's C-09 map
   settles with the certification `certified`.
 
