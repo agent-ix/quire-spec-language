@@ -1360,7 +1360,7 @@ pub mod fixtures {
             what: String::new(),
         },
         IntakeMissingDeclaration => ModelRefusalCause::IntakeMissingDeclaration {
-            node: String::new(), reference: String::new(), origin: serde_json::json!({}), path: JsonPointer::root(),
+            node: String::new(), reference: String::new(), origin: serde_json::json!({}), path: qsl_foundation::diagnostic::JsonPointer::root(),
         },
         FrameEntryMissing => ModelRefusalCause::FrameEntryMissing {
             node: String::new(),
