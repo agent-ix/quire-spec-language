@@ -300,7 +300,7 @@ names different artifacts in each.
 | TC-537 | An undefined claim evaluation refutes in the explicit-state model checker | Integration | P1 | FR-125-AC-6, FR-126-AC-9 | 🚧 |
 | TC-538 | An undefined-evaluation counterexample settles refuted with its cause | Unit | P1 | FR-127-AC-6 | 🚧 |
 | TC-539 | Replay reproduces an undefined claim evaluation at its position | Integration | P1 | FR-128-AC-5, FR-128-AC-6 | 🚧 |
-| TC-835 | S2 parses temporal operators with an optional interval, independent of profile | Unit | P1 | FR-325-AC-1, FR-325-AC-2, FR-325-AC-3, FR-325-AC-4 | 🚧 |
+| TC-835 | S2 parses temporal operators with an optional interval, independent of profile | Unit | P1 | FR-325-AC-1, FR-325-AC-2, FR-325-AC-3, FR-325-AC-4, FR-325-AC-5, FR-325-AC-6 | 🚧 |
 | TC-836 | S3 admits temporal operators by the unit's temporal profile and records the requirement | Unit | P1 | FR-326-AC-1, FR-326-AC-2, FR-326-AC-3, FR-326-AC-4, FR-326-AC-5 | 🚧 |
 | TC-837 | S6a evaluates a temporal clause over a finite trace with typed positions and metered work | Unit | P1 | FR-327-AC-1, FR-327-AC-2, FR-327-AC-3, FR-327-AC-4 | 🚧 |
 | TC-838 | S6a evaluates an infinite-trace clause three-valued over a finite prefix | Unit | P1 | FR-328-AC-1, FR-328-AC-2, FR-328-AC-3, FR-328-AC-4 | 🚧 |
