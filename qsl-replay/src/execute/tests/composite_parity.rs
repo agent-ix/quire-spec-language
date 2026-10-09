@@ -904,6 +904,32 @@ fn text_leaf_is_tested(
         claim.operator,
     )
     .expect("the Text equality is in the checked function");
+    let parameters: Vec<_> = site
+        .operands
+        .iter()
+        .map(|operand| {
+            let crate::execute::composite_site::Operand::Parameter { node, value_type } = operand
+            else {
+                panic!("the Text equality compares two parameters");
+            };
+            (*node, value_type)
+        })
+        .collect();
+    let positions =
+        super::super::composite_domain::derive(&parameters, unit.compiled.checked.package(), 10)
+            .unwrap();
+    assert!(!positions.covered(&positions.harness(&bounds).unwrap()));
+    for (parameter, _) in &parameters {
+        let mut with_length = bounds.clone();
+        with_length.push(bound(*parameter, &[1], FiniteBound::cardinality(4)));
+        let key = DomainKey::Node {
+            node: *parameter,
+            path: vec![1],
+        };
+        assert!(matches!(positions.harness(&with_length),
+            Err(ReplayRefusal::ParityBound(ref cause)) if matches!(cause.as_ref(),
+                ParityBoundRefusal::HarnessKind { key: found, expected: None, .. } if found == &key)));
+    }
     wire.obligation_identity =
         *parity_obligation(&parity_preimage(&unit.compiled, &site, &claim).unwrap())
             .unwrap()
