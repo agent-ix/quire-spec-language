@@ -9,6 +9,52 @@
 
 use super::*;
 use qsl_semantics::check::CheckedBody;
+use std::fmt::{self, Write};
+
+/// Counts complete debug output without retaining its bytes.
+#[derive(Default)]
+struct DebugByteCount {
+    bytes: usize,
+}
+
+impl Write for DebugByteCount {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.bytes = self
+            .bytes
+            .checked_add(text.len())
+            .expect("the debug byte count fits usize");
+        Ok(())
+    }
+}
+
+/// The sink counts every UTF-8 byte across formatted fragments and characters.
+#[trace("TC-725", "FR-258-AC-1")]
+#[test]
+fn debug_sink_counts_complete_output_without_retaining_it() {
+    let mut sink = DebugByteCount::default();
+    write!(&mut sink, "{} {:?}", "é", [1, 23]).expect("formatting completes");
+    sink.write_str("").expect("an empty fragment succeeds");
+    sink.write_char('界').expect("a character succeeds");
+    assert_eq!(sink.bytes, 13, "all UTF-8 bytes are counted");
+}
+
+/// A formatter's failure stays observable even though the sink accepts all bytes.
+#[trace("TC-725", "FR-258-AC-1")]
+#[test]
+fn debug_sink_preserves_a_formatters_error() {
+    struct FailingDebug;
+
+    impl fmt::Debug for FailingDebug {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("prefix")?;
+            Err(fmt::Error)
+        }
+    }
+
+    let mut sink = DebugByteCount::default();
+    assert_eq!(write!(&mut sink, "{:?}", FailingDebug), Err(fmt::Error));
+    assert_eq!(sink.bytes, 6, "the bytes before the error are counted");
+}
 
 /// The stack every step runs on.
 const STACK: usize = 512 * 1024;
@@ -118,7 +164,13 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
                         .eq(semantic_clone.nodes().map(|node| (node.key(), node.body()))),
                     "{label}: the lowered graph equals its clone"
                 );
-                assert!(!format!("{package:?}").is_empty());
+                let mut debug = DebugByteCount::default();
+                write!(&mut debug, "{package:?}")
+                    .unwrap_or_else(|error| panic!("{label}: debug formatting completes: {error}"));
+                assert!(
+                    debug.bytes > 0,
+                    "{label}: the package debug output is nonempty"
+                );
                 assert!(!format!("{body_clone:?}").is_empty());
                 drop(semantic_clone);
                 drop(body_clone);
