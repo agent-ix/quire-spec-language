@@ -11,13 +11,14 @@ use qsl_forms::{
 };
 use qsl_foundation::{SourceIdentity, Span};
 
-/// The header's temporal profile line, with `version` padded so every
-/// profile identity gives the header the same byte length.
+/// The header selecting the temporal profile `profile`, with the model's
+/// `version` padded so every profile identity gives the header the same
+/// byte length.
 fn header(profile: &str, padding: usize) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile t = \"{profile}\" version \"{}\" digest \"d\";\n\
-         model Config = \"example/config-version\" version \"1\" digest \"d\";\n",
+         profile t = \"{profile}\";\n\
+         model Config = \"example/config-version\" version \"1{}\" digest \"d\";\n",
         "v".repeat(padding)
     )
 }
