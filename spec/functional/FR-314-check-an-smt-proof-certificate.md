@@ -73,6 +73,11 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 `ProductState(ProductStateRef)` for FR-338 and FR-339, and
 `Query { part }` or `ProofStep { part, index: u64 }` here, `part` being
 `Unrolling`, `Base` or `Step`.
+A step's `index`, and `Unverifiable`'s `step`, is the zero-based position
+of its command in that part's proof, in text order. QSpec FR-331 writes
+`Query { part }` as the part's name, `unrolling`, `base` or `step`, and
+`ProofStep { part, index }` as `{part, index}`, `index` the canonical
+decimal string of the `u64`.
 
 ## Outputs
 

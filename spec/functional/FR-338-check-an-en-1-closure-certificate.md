@@ -69,6 +69,9 @@ pub fn check_closure(request: &CertificateRequest<'_>, certificate: &ClosureCert
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
 
+QSpec FR-331 writes `at` for the `Query` and `ProofStep` loci only, in
+FR-314's spelling; `ProductState` has no wire spelling.
+
 ## Outputs
 
 - `Ok(())` when the certificate is accepted.
