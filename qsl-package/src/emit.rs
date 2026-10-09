@@ -331,7 +331,15 @@ impl BodyNames {
 
 /// A node's recorded occurrences, each with the location `check` recorded
 /// it at.
-type Recorded<'g> = Vec<(CheckedOccurrence, &'g Location)>;
+type Recorded<'g> = Vec<(CheckedOccurrence, RecordedLocation<'g>)>;
+
+/// Parameters retain their own source regions; expression sites use the
+/// expression-location converter. An unlocated parameter never takes its
+/// enclosing body's region.
+enum RecordedLocation<'g> {
+    Expression(&'g Location),
+    Parameter(Option<SourceRegion>),
+}
 
 /// One checked node, read for the wire.
 struct Candidate<'g> {
@@ -749,6 +757,11 @@ fn recorded_occurrences(
             role: occurrence_role(key, &origin)?,
             ordinal: origin.ordinal(),
         };
+        let location = if graph.parameter_span(key, &origin).is_some() {
+            RecordedLocation::Parameter(graph.occurrence_region(key, &origin))
+        } else {
+            RecordedLocation::Expression(location)
+        };
         by_node.entry(key).or_default().push((occurrence, location));
     }
     Ok(by_node)
@@ -766,13 +779,16 @@ fn source_map(
         for (occurrence, location) in &candidate.occurrences {
             // FR-322 regions are non-empty half-open intervals: an empty
             // region places the occurrence nowhere.
-            let region = regions(location)
-                .filter(|region| region.start() < region.end())
-                .ok_or_else(|| EmitRefusal::UnlocatedOccurrence {
-                    node: candidate.node.key(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                })?;
+            let region = match location {
+                RecordedLocation::Expression(location) => regions(location),
+                RecordedLocation::Parameter(region) => region.clone(),
+            }
+            .filter(|region| region.start() < region.end())
+            .ok_or_else(|| EmitRefusal::UnlocatedOccurrence {
+                node: candidate.node.key(),
+                role: occurrence.role.clone(),
+                ordinal: occurrence.ordinal,
+            })?;
             let source = source_artifact(region.source());
             sources.insert(source.clone());
             entries.push(CheckedSourceMapEntry {

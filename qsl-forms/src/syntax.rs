@@ -1732,6 +1732,8 @@ pub struct FunctionDeclaration {
     /// The form's byte spans (FR-091-AC-10), when it was read from a source
     /// unit. A declaration built by hand or synthesized (FR-151) has none.
     spans: Option<DeclarationSpans>,
+    /// Each parameter's complete declaration span, when read from source.
+    parameter_spans: Option<Vec<Span>>,
     /// The `using` alias as written, when the declaration was read from a
     /// source unit (FR-091-AC-2). A declaration built by hand has none.
     using: Option<UsingAlias>,
@@ -1779,6 +1781,7 @@ impl FunctionDeclaration {
             kind: DeclarationKind::Function,
             callable_by_name: true,
             spans: None,
+            parameter_spans: None,
             using: None,
         }
     }
@@ -1827,6 +1830,7 @@ impl FunctionDeclaration {
             kind: DeclarationKind::Function,
             callable_by_name: false,
             spans: None,
+            parameter_spans: None,
             using: None,
         }
     }
@@ -1875,6 +1879,36 @@ impl FunctionDeclaration {
         self.spans
             .as_ref()
             .filter(|spans| spans.fit(&self.body, self.measure.as_ref()).is_ok())
+    }
+
+    /// Attach each parameter's complete declaration span in parameter order.
+    /// Every span must lie inside this declaration and contain the declared
+    /// type's span. Source-less declarations carry no parameter spans.
+    pub fn with_parameter_spans(mut self, spans: Vec<Span>) -> Result<Self, SpansMismatch> {
+        let declaration = self
+            .spans()
+            .ok_or(SpansMismatch::OutsideDeclaration)?
+            .declaration;
+        if spans.len() != self.parameters.len()
+            || spans.iter().zip(&self.parameters).any(|(span, (_, ty))| {
+                span.start < declaration.start
+                    || span.end > declaration.end
+                    || span.start >= span.end
+                    || span.start > ty.span.start
+                    || span.end < ty.span.end
+            })
+        {
+            return Err(SpansMismatch::OutsideDeclaration);
+        }
+        self.parameter_spans = Some(spans);
+        Ok(self)
+    }
+
+    /// Each source parameter's declaration span, in parameter order.
+    pub fn parameter_spans(&self) -> Option<&[Span]> {
+        self.parameter_spans
+            .as_deref()
+            .filter(|spans| spans.len() == self.parameters.len())
     }
 }
 
