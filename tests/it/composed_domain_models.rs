@@ -949,8 +949,8 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
                 ("many", "Boolean", "0..*"),
                 ("some", "Boolean", "1..3"),
                 ("single", "Boolean", "1"),
-                ("optional_single", "Boolean", "1"),
-                ("required_zero", "Boolean", "0..1"),
+                ("optionalone", "Boolean", "1"),
+                ("requiredzero", "Boolean", "0..1"),
                 ("unordered", "Boolean", "0..1"),
             ],
         );
@@ -973,7 +973,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
             .next()
             .unwrap()
             .to_owned();
-        field["presence"] = if matches!(name.as_str(), "maybe" | "optional_single") {
+        field["presence"] = if matches!(name.as_str(), "maybe" | "optionalone") {
             "optional"
         } else {
             "required"
@@ -994,8 +994,8 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
          predicate Many using S (g: M::Gauge): Boolean {{ let many = g.many in true }}\n\
          predicate Some using S (g: M::Gauge): Boolean {{ let some = g.some in true }}\n\
          predicate Single using S (g: M::Gauge): Boolean {{ g.single }}\n\
-         predicate OptionalSingle using S (g: M::Gauge): Boolean {{ present(g.optional_single) }}\n\
-         predicate RequiredZero using S (g: M::Gauge): Boolean {{ let zero = g.required_zero in true }}\n\
+         predicate OptionalSingle using S (g: M::Gauge): Boolean {{ present(g.optionalone) }}\n\
+         predicate RequiredZero using S (g: M::Gauge): Boolean {{ let zero = g.requiredzero in true }}\n\
          predicate Unordered using S (g: M::Gauge): Boolean {{ let zero = g.unordered in true }}\n\
          predicate Nested using S (o: M::Outer): Boolean {{ o.inner.ok }}\n",
         profile.identity,

@@ -3380,8 +3380,8 @@ fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
 #[test]
 fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
     let (text, package) = package_from_text(
-        "function first using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n\
-         function second using v(a: Boolean, b: Boolean): Boolean pure { not a and b }\n",
+        "function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n\
+         function other using v(a: Boolean, b: Boolean): Boolean pure { not a and b }\n",
     );
     let emission = emit_checked(&package).expect("source parameters have real regions");
     let wire = wire(&emission);
