@@ -80,7 +80,7 @@ refuted, with its trap evidence.
 | V-10 | `Violated` with `kind: TimeLock` whose replay reproduces | `refuted` | `closed-scope` | `Refuted` | violation |
 | V-6 | `Holds(certificate)` and the checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected)` | inconclusive |
 | V-6 | `Undecided(NoAdmittedBehaviour)` or `Undecided(LassoNotConcretized)`; a replay that settles `inconclusive` or refuses | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
-| V-7 | `Stopped(cause, limit)`; a certificate check a budget stopped | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
+| V-7 | `Stopped(cause, limit)`; a certificate check a budget stopped | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 | V-8 | `PunctualInterval` or `StopwatchRequired` disposition; no candidate | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
 - A `Holds(certificate)` outcome SHALL settle `proved` only after

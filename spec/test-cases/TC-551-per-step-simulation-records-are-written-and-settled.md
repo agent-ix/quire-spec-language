@@ -38,6 +38,6 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 2: no `StepSimulationRecord`; one refinement record each.
 - Step 3: every record lists `CasInv`; `CasInv`'s own record is present; the
   `Initial` identity differs from step 1's.
-- Step 4: `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}}`;
+- Step 4: `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate;
   `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`;
   `unsupported`.

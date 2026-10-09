@@ -76,14 +76,14 @@ FR-243 basis, O-16 category and method.
 
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
-| V-1 | `Holds{Exhaustive}` or `Holds{Reduced{…}}` (copy-swap named, FR-174), proof basis `exhaustive` or `reduced` (QSpec FR-399), whose certificate check is `Accepted` | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` or `Proved{basis: Reduced{…}}` | success |
-| V-3 | SMT `k`-inductive for HP-2 with a safety body | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}}` | success |
+| V-1 | `Holds{Exhaustive}` or `Holds{Reduced{…}}` (copy-swap named, FR-174), proof basis `exhaustive` or `reduced` (QSpec FR-399), whose certificate check is `Accepted` | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}` or `Proved{basis: Reduced{…}, certification: Certified}` | success |
+| V-3 | SMT `k`-inductive for HP-2 with a safety body | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}, certification: Uncertified}` | success |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with an `Undefined` counterexample (QSpec FR-400) whose replay reproduces the undefined value at `trace_position` (FR-183) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
 | V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, at}`, ADR-018 PC-2); SMT `InductionNotClosed{depth}`; `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
-| V-7 | `Stopped(ResourceExhausted, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184) | `incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
-| V-7 | `Stopped(Cancelled, None)` | `incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
+| V-7 | `Stopped(ResourceExhausted, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
+| V-7 | `Stopped(Cancelled, None)` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
 - A `Violated` outcome SHALL settle `refuted` only through its replay.
@@ -121,7 +121,7 @@ FR-243 basis, O-16 category and method.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-182-AC-1 | Each input row maps to its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states, `MatchUndetermined` and `VacuousMatch` each to inconclusive. | Test (TC-607) |
-| FR-182-AC-2 | ADR-023 §8.1's leaky refutation settles `refuted`, `decisive-counterexample`, only after FR-183 replay reproduces it; the secure proof settles `proved`, `closed-scope`, `Exhaustive`, and under copy-swap `Reduced` naming `CopySwap`. §8.2's leaky `Opaque` refutation settles `refuted`, `decisive-counterexample`. | Test (TC-607) |
+| FR-182-AC-2 | ADR-023 §8.1's leaky refutation settles `refuted`, `decisive-counterexample`, only after FR-183 replay reproduces it; the secure proof settles `proved`, `closed-scope`, `Exhaustive`, `Certified`, and under copy-swap `Reduced` naming `CopySwap`, `Certified`. §8.2's leaky `Opaque` refutation settles `refuted`, `decisive-counterexample`. | Test (TC-607) |
 | FR-182-AC-3 | FR-176-AC-2's vacuous match settles `inconclusive`, `VacuousMatch`; FR-177-AC-4's run settles `incomplete`, `LimitReached`, naming `max_witness_set` and its value; FR-179-AC-3's tuple-limited run names `max_relation_tuples`; FR-173-AC-2's HP-4 clauses settle `unsupported`, `unsupported-requested-capability`. | Test (TC-607) |
 | FR-182-AC-4 | FR-179-AC-3's `max_depth` run settles `inconclusive`, `BoundReached{depth: 1}`, execution `completed`, truth `pending`, with a record stating the HP-1 reading of the bound. | Test (TC-607) |
 | FR-182-AC-5 | FR-179-AC-4's outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-183 replay reproduces the undefined value at its tuple, with a record carrying `UndefinedEvaluation` naming that tuple, its two executions and the division-by-zero cause; it never settles `proved`. | Test (TC-610) |

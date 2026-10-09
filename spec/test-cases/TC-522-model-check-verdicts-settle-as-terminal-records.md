@@ -28,7 +28,9 @@ Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
    evaluates `true` on replay; one whose replay returns `InternalFault`
    through a replay stand-in.
 4. Settle FR-126-AC-6's `max_automaton_states` run and FR-126-AC-5's
-   `max_depth` 2 and evaluation-meter runs.
+   `max_depth` 2 and evaluation-meter runs; then a run whose `Cancel`
+   handle is cancelled with `CancelCause::Requested`, and one cancelled with
+   `CancelCause::Deadline`.
 5. Settle FR-126-AC-3's deadlock-freedom violation with its replay.
 6. Settle FR-338-AC-1's TP-1 proof with its certificate, and with
    FR-338-AC-2's `(1, 0)`-removed certificate.
@@ -59,7 +61,10 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
   `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`,
   the record stating the three limits used;
   `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth
-  `pending`; a limit-reached record naming `EvaluationMeter`, value 0.
+  `pending`; a limit-reached record naming `EvaluationMeter`, value 0;
+  `incomplete`, `Incomplete(Cancelled{Requested})`, written
+  `cancelled{source: "requested"}`, and `Incomplete(Cancelled{Deadline})`,
+  written `cancelled{source: "deadline"}`.
 - Step 5: `refuted` with a counterexample of `kind: Deadlock`, and an
   obligation identity distinct from the authored claims'.
 - Step 6: `Proved{Exhaustive, Certified}`; `inconclusive`,

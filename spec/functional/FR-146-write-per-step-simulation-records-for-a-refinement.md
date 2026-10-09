@@ -114,8 +114,10 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   (ADR-018 EN-2) with the `check_step` edge monitor (ADR-020 RE-3); a
   refutation from it SHALL settle `refuted` only through FR-145's replay.
 - QSL SHALL settle an RE-2 record's backend outcome as V-3 `Proved{basis:
-  Inductive{depth: 1}}` with basis `decisive-witness` when the obligation
-  holds, and as V-6 `Inconclusive(InductionNotClosed{depth: 1})` when it
+  Inductive{depth: 1}, certification}` with basis `decisive-witness` when the
+  obligation holds, `Certified` when FR-314 verifies the backend's proof
+  certificate and `Uncertified` when it is absent or unverifiable (ADR-018
+  PC-6), and as V-6 `Inconclusive(InductionNotClosed{depth: 1})` when it
   fails from a pre-state that satisfies the hypotheses. A backend
   counterexample for an RE-2 record SHALL settle
   `Inconclusive(InductionNotClosed{depth: 1})` and never `refuted`.
@@ -127,7 +129,7 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
 | FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the concrete package's invariant clauses (none) as hypotheses. With the `commitB` row changed to `-> any` it writes none. | Test (TC-551) |
 | FR-146-AC-2 | `RegisterHistory` (FR-138) and `Coin` with `side` hidden (FR-141-AC-4) write no `StepSimulationRecord`; each still writes its refinement record. | Test (TC-551) |
 | FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record, and the `Initial` record's obligation identity differs from the one without `CasInv`. | Test (TC-551) |
-| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}}`; for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
+| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` with a certificate FR-314 verifies; for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
 
 ## Dependencies
 

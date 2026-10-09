@@ -98,13 +98,13 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 
 | Outcome | FR-331 value | FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
-| Exact value on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}}` | success |
-| Sound interval on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}}` | success |
+| Exact value on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}, certification: Certified}` | success |
+| Sound interval on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}, certification: Certified}` | success |
 | Bound fails, witness replays | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | Undefined evaluation at a state of positive probability, `Undefined` path replays | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | Interval straddles at the budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(PrecisionBudget{…})` | incomplete |
 | Another limit reached | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
-| Cancelled through the `Cancel` handle | `incomplete`, `cancelled` | `unavailable` | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
+| Cancelled through the `Cancel` handle | `incomplete`, `cancelled{source}` | `unavailable` | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
 | Certificate rejected; replay disagrees or refuses | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})`, `Inconclusive(ReplayParity)`, `Inconclusive(ReplayRefused)` | inconclusive |
 | `NotMarkov`, `ZeroWeightComponent`, a timed cause (FR-204) | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
@@ -123,7 +123,7 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-203-AC-1 | §15.2 at `5 ms` settles `proved`, `closed-scope`, `Proved{ExactValue{24233/25000}}`, success, with one entry. §15.1 with `max_rational_bits` 1,024 settles `Proved{ValueBounds{…, BackwardInduction{64}}}`. §15.4's `Deliver` settles `refuted`, `decisive-counterexample`, after FR-202's replay, with an entry marked `Min`. | Test (TC-638) |
+| FR-203-AC-1 | §15.2 at `5 ms` settles `proved`, `closed-scope`, `Proved{ExactValue{24233/25000}, Certified}`, success, with one entry. §15.1 with `max_rational_bits` 1,024 settles `Proved{ValueBounds{…, BackwardInduction{64}}, Certified}`. §15.4's `Deliver` settles `refuted`, `decisive-counterexample`, after FR-202's replay, with an entry marked `Min`. | Test (TC-638) |
 | FR-203-AC-2 | FR-197-AC-4's straddling run settles `Incomplete(PrecisionBudget{lower, upper})` with `lower < 99/100 < upper`. §15.3's per-window claim with `max_states` 1,000 stops before the product completes and no partial evidence settles it: `Incomplete(ResourceExhausted)` naming `limits.max_states` and 1,000. A request omitting every limit runs with the defaults above. | Test (TC-638) |
 | FR-203-AC-3 | FR-201-AC-1's rejected certificate settles `inconclusive`, `CertificateRejected`; FR-202-AC-2's prefix-duplicated path set settles `inconclusive`, `ReplayParity`; FR-199-AC-3's zero-weight variant settles `unsupported`, `ZeroWeightComponent`. None of these records carries a `measured` value. | Test (TC-638) |
 | FR-203-AC-4 | A request whose proof summary holds AC-1's two proofs counts 2 proved items. `P95` with and without stated confidence parameters have different obligation identities, and the same claim requested with `exact` and with a changed `precision_bits` has one obligation identity. | Test (TC-638) |

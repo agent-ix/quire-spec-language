@@ -96,8 +96,9 @@ swap.
   permuted state is repeated until the concrete tuple closes, at most the
   order of that permutation. The result is an ordinary
   `HyperCounterexample` (FR-183) with its traces in quantifier order.
-- A proof under copy-swap SHALL settle `Proved{basis: Reduced{reductions}}`
-  with `CopySwap{classes}` among its reductions; a refutation SHALL name no
+- A proof under copy-swap SHALL settle `Proved{basis: Reduced{reductions},
+  certification: Certified}` with `CopySwap{classes}` among its reductions,
+  once FR-163's checker accepts its certificate; a refutation SHALL name no
   reduction (ADR-023 CS-5).
 - The copy group adds no obligation identity member: it is a function of
   the checked clause.
