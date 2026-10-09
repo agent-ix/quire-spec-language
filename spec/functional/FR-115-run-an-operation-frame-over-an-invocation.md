@@ -51,9 +51,8 @@ clause under test.
 
 ## Outputs
 
-- A `ClauseRunReport` (FR-109) whose provenance holds the operation, the
-  identity of its frame node, and the identity and digest of the invocation
-  and both snapshots.
+- A `ClauseRunReport` (FR-109): the frame run's disposition, the compiled
+  package's `package_id`, and usage.
 
 ## Behavior
 
@@ -101,7 +100,7 @@ clause under test.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-115-AC-1 | Over the ConfigVersion unit and package (FR-108 fixtures), `Frame { operation: Config::ConfigVersion::attemptUpdate, invocation: changed-version }`, whose post changes only `child.versionNumber`, reports `evaluate`, `success`, `truth: true`, exit 0, with the frame node's identity and the three document identities in its provenance. | Test (TC-514) |
+| FR-115-AC-1 | Over the ConfigVersion unit and package (FR-108 fixtures), `Frame { operation: Config::ConfigVersion::attemptUpdate, invocation: changed-version }`, whose post changes only `child.versionNumber`, reports `evaluate`, `success`, `truth: true`, exit 0, with the compiled package's `package_id`. | Test (TC-514) |
 | FR-115-AC-2 | The forbidden-parent-change invocation (post sets `child.parent` absent) reports `evaluate`, `violation`, `truth: false`, exit 10, with a frame witness naming `child`, `parent` and the frame's `modifies` (`versionNumber`), cause `frame_violation`/`unauthorized-change`. A post that adds an object to `config_history` reports `violation` with a witness naming its creation. An invocation declaring `created: [child]` reports `evaluate`, `refusal`, `population_delta_mismatch`/`delta-disagreement`, exit 20. | Test (TC-514) |
 | FR-115-AC-3 | Stale identity: an expected `package_id` from another unit reports stage `compile`, `stale_dependency`, naming both; invocation bytes edited under their selected digest report stage `admit`, `stale_dependency`/`content-mismatch`; an invocation whose `model` digest differs reports `invalid_model_binding`/`wrong-model-selection`; an invocation of operation `probe` reports `wrong_snapshot`/`wrong-invocation`. None reaches `evaluate`. | Test (TC-514) |
 | FR-115-AC-4 | `Frame { operation: Config::ConfigVersion::missing }`, `Frame` on an operation no clause or attempt names, `Frame` on `Nope::ConfigVersion::attemptUpdate` (an alias no `model` declaration binds) and `Frame` on `Config::Missing::attemptUpdate` (a type the selected package does not declare) each report stage `select`, `missing_declaration`/`missing-name`. An invocation whose pre snapshot is absent from the provision reports `admit`, `incomplete`, `unavailable_observation`, not a violation. | Test (TC-514) |
