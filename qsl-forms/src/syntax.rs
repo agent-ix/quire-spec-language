@@ -18,7 +18,7 @@ use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
 
-use super::spans::{DeclarationSpans, SpansMismatch};
+use super::spans::{DeclarationSpans, ExpressionSpans, SpansMismatch};
 
 /// A builtin type keyword a [`TypeForm`] can be headed by, other than a
 /// collection kind (see [`TypeFormHead::Collection`]). Closed: `check`'s
@@ -2494,6 +2494,224 @@ impl ProtocolDeclarationForm {
     }
 }
 
+/// A temporal operator: a connective or a unary or binary temporal operator
+/// of a `temporal` clause's formula (FR-325). Closed: S3 matches it
+/// exhaustively.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TemporalOperator {
+    /// `not`.
+    Not,
+    /// `and`.
+    And,
+    /// `or`.
+    Or,
+    /// `implies`.
+    Implies,
+    /// `eventually`.
+    Eventually,
+    /// `always`.
+    Always,
+    /// `once`.
+    Once,
+    /// `historically`.
+    Historically,
+    /// `until`.
+    Until,
+    /// `release`.
+    Release,
+    /// `since`.
+    Since,
+    /// `triggered`.
+    Triggered,
+}
+
+/// The upper bound of an [`IntervalForm`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntervalUpper {
+    /// `[a, b]`: the bound `b`.
+    Finite(u64),
+    /// `[a, *]`.
+    Open,
+}
+
+/// An operator's `[a, b]` or `[a, *]` interval, as written: S2 builds an
+/// interval with `a > b` and refuses nothing about it, because whether an
+/// interval is admitted, required or well-ordered is S3's decision
+/// (FR-325, FR-326).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IntervalForm {
+    /// The lower bound `a`.
+    pub lower: u64,
+    /// The upper bound.
+    pub upper: IntervalUpper,
+    /// The span of the whole bracketed interval.
+    pub span: Span,
+}
+
+/// The index of one node of a [`TemporalFormulaForm`] arena. Minted only by
+/// the arena that holds the node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TemporalNodeId(pub(crate) usize);
+
+impl TemporalNodeId {
+    /// The node's position in its arena.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// A Boolean expression with the span of each of its nodes: a `holds(e)`
+/// operand or an activation's `when (e)` condition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConditionForm {
+    /// The expression.
+    pub expression: Expression,
+    /// The span of each expression node.
+    pub spans: ExpressionSpans,
+}
+
+/// One operator node of a temporal formula (FR-325 "Outputs").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalOperatorForm {
+    /// Which operator.
+    pub operator: TemporalOperator,
+    /// The operator's interval; `None` when it is written with none.
+    pub interval: Option<IntervalForm>,
+    /// The operands in source order: one for a unary operator, two for a
+    /// binary one.
+    pub operands: Vec<TemporalNodeId>,
+    /// The span of the whole operator application, operands included.
+    pub span: Span,
+    /// The span of the operator's own token.
+    pub operator_span: Span,
+}
+
+/// One node of a temporal formula.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalNodeForm {
+    /// `true` or `false`.
+    Constant {
+        /// The constant.
+        value: bool,
+        /// The constant's span.
+        span: Span,
+    },
+    /// `holds(e)`.
+    Holds {
+        /// The state condition.
+        condition: ConditionForm,
+        /// The span of the whole `holds(e)`.
+        span: Span,
+    },
+    /// An operator applied to its operands.
+    Operator(TemporalOperatorForm),
+}
+
+/// A temporal formula: an arena of nodes naming their operands by id, so
+/// building, comparing, cloning and dropping one never recurses however
+/// deep the formula (ADR-030 D-4.2).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalFormulaForm {
+    nodes: Vec<TemporalNodeForm>,
+    root: TemporalNodeId,
+}
+
+impl TemporalFormulaForm {
+    pub(crate) fn new(nodes: Vec<TemporalNodeForm>, root: TemporalNodeId) -> Self {
+        Self { nodes, root }
+    }
+
+    /// The formula's root node.
+    pub fn root(&self) -> TemporalNodeId {
+        self.root
+    }
+
+    /// The node `id` names, or `None` when `id` is not this arena's.
+    pub fn node(&self, id: TemporalNodeId) -> Option<&TemporalNodeForm> {
+        self.nodes.get(id.0)
+    }
+
+    /// Every node, in arena order.
+    pub fn nodes(&self) -> &[TemporalNodeForm] {
+        &self.nodes
+    }
+}
+
+/// A `( name : Type )` parameter as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParameterForm {
+    /// The parameter name.
+    pub name: DeclaredName,
+    /// The declared type, as spelled.
+    pub value_type: TypeForm,
+}
+
+/// A temporal clause's activation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ActivationForm {
+    /// `on origin`.
+    Origin,
+    /// `on each (p: T) [when (e)]`.
+    Each {
+        /// The activation parameter.
+        parameter: ParameterForm,
+        /// The `when` condition, when written.
+        when: Option<ConditionForm>,
+    },
+}
+
+/// A fairness constraint's kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessKind {
+    /// `weak`, or no kind written.
+    Weak,
+    /// `strong`.
+    Strong,
+}
+
+/// A fairness constraint's granularity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessGranularity {
+    /// `whole`.
+    Whole,
+    /// `each`.
+    Each,
+}
+
+/// One `fair [kind] [granularity] Operation;` constraint, as written
+/// (FR-325 "Outputs"). The operation stays a spelled, unresolved name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FairnessConstraintForm {
+    /// The constraint's kind.
+    pub kind: FairnessKind,
+    /// The operation name.
+    pub operation: NameForm,
+    /// The granularity; `None` when none is written.
+    pub granularity: Option<FairnessGranularity>,
+    /// The span of the whole constraint.
+    pub span: Span,
+}
+
+/// A `temporal` clause (FR-325, ADR-011 M-3b, ADR-012 TemporalTrace
+/// family). S2 resolves nothing and selects no meaning: the profile alias,
+/// the `over` type and each fairness operation stay spelled, and an
+/// operator's interval is never judged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalClauseForm {
+    /// The declared clause name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `over (p: T)` parameter.
+    pub over: ParameterForm,
+    /// The activation.
+    pub activation: ActivationForm,
+    /// The fairness constraints in source order.
+    pub fairness: Vec<FairnessConstraintForm>,
+    /// The formula.
+    pub formula: TemporalFormulaForm,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -2518,6 +2736,9 @@ pub enum DeclarationForm {
     StateClause(Box<StateClauseForm>),
     /// A `protocol` declaration (FR-112).
     Protocol(ProtocolDeclarationForm),
+    /// A `temporal` clause (FR-325), boxed for the same reason as
+    /// [`Self::Function`].
+    Temporal(Box<TemporalClauseForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

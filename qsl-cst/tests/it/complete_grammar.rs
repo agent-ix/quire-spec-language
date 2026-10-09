@@ -63,6 +63,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalClause,
     Production::Activation,
     Production::Capture,
+    Production::Fairness,
     Production::Interval,
     Production::TemporalExpression,
     Production::TemporalImplication,
