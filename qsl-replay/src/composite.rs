@@ -18,7 +18,9 @@ use quire_semantic_value::declaration::EqualityOperator;
 
 use crate::execute::ReplayRefusal;
 use crate::identity::ObligationIdentity;
-use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
+use crate::proof_result::{
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, TerminalValue,
+};
 use crate::scalar::{OperandRefusal, ScalarAgreement};
 use crate::witness::WitnessValue;
 
@@ -384,9 +386,15 @@ impl VerifiedShadowResult {
             Self::Incomplete { .. } => {
                 TerminalValue::Incomplete(IncompleteCause::ResourceExhausted)
             }
-            Self::Vacuous => TerminalValue::Proved { success_checks: 0 },
+            Self::Vacuous => TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Certified,
+            },
             Self::Proved { success_checks } => TerminalValue::Proved {
-                success_checks: *success_checks,
+                basis: ProofBasis::Checks {
+                    success_checks: *success_checks,
+                },
+                certification: Certification::Certified,
             },
             Self::Tested => TerminalValue::Tested,
             Self::Refused(refusal) => TerminalValue::from_replay_refusal(refusal),
