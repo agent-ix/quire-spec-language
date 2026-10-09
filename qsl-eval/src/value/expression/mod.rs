@@ -177,8 +177,8 @@ fn validate(
         // comparison is this QSL-layer check (FR-089-AC-5), not a
         // generic-admission side effect. `Population<T>[N]` is reachable
         // only as a bare parameter type (FR-153's own restriction), so this
-        // is the one call site that needs to special-case it: every other
-        // reference parameters use the checked environment's admitted
+        // is the one call site that needs to special-case it. Reference
+        // parameters use the checked environment's admitted
         // conformance graph; other types still use kernel admission.
         if let (ValueType::Population(maximum), Value::Population(population_id)) =
             (value_type, argument)
