@@ -450,6 +450,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnsuppliedImport { identity } => {
             format!("`import \"{identity}\"` names a library no dependency input supplies")
         }
+        AssemblyCause::UnimplementedTemporalClause { name } => {
+            format!("the `temporal` clause `{name}` is not checked yet")
+        }
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }

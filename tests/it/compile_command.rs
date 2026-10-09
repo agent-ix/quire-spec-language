@@ -570,13 +570,11 @@ fn each_spine_stage_refusal_reports_its_stage_and_code() {
             None,
         ),
         (
-            "temporal Due using v over (view: M::Node) clock \"c\" on origin { always[0,1] holds(true) }\n",
+            "synthesis Syn using v grammar M::G domain M::D satisfies { true };\n",
             "forms",
             "unsupported_construct",
             21,
-            Some(
-                "temporal Due using v over (view: M::Node) clock \"c\" on origin { always[0,1] holds(true) }",
-            ),
+            Some("synthesis Syn using v grammar M::G domain M::D satisfies { true };"),
         ),
         (
             "function f using v(p: Nope): Int[0, 9] pure { 1 }\n",

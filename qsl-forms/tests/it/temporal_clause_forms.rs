@@ -5,9 +5,9 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, ActivationForm, DeclarationForm, FairnessGranularity, FairnessKind, IntervalForm,
-    IntervalUpper, ParsedUnit, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
-    TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    build_unit, ActivationForm, DeclarationForm, FairnessGranularity, FairnessKind, FormsCause,
+    IntervalForm, IntervalUpper, ParsedUnit, TemporalClauseForm, TemporalFormulaForm,
+    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -376,5 +376,31 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
             .map(|id| operator(form, *id).interval.map(|i| i.upper))
             .collect::<Vec<_>>(),
         [Some(IntervalUpper::Finite(5)), Some(IntervalUpper::Open)]
+    );
+}
+
+/// A `capture` has no form yet: the clause refuses as an unrepresented
+/// construct at the capture's span rather than being built without it.
+#[trace("TC-835", "FR-325-AC-1")]
+#[test]
+fn a_capture_refuses_as_an_unrepresented_construct_at_its_span() {
+    let capture = "capture v: Boolean = true;";
+    let text = clause_source(&header(INFINITE, 0), &format!("{capture} holds(v)"));
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let refusal = build_unit(&parsed).expect_err("a capture has no form");
+    let start = text.find(capture).expect("the capture is in the source");
+    assert_eq!(
+        refusal.cause,
+        FormsCause::UnrepresentedConstruct {
+            production: qsl_cst::Production::Capture
+        }
+    );
+    assert_eq!(
+        refusal.span,
+        Some(Span {
+            start,
+            end: start + capture.len()
+        })
     );
 }

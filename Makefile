@@ -368,13 +368,6 @@ arch-lint-qualified-core:
 # `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
 arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-qualified-core
 
-# The whole 30,000-input parser differential against
-# tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first
-# 1,000 inputs of each family; this runs all of them.
-.PHONY: test-differential
-test-differential:
-	cargo test --locked --test it parser_differential -- --include-ignored
-
 # The committed performance benchmarks (`qsl-bench/`), one
 # criterion bench per axis, each runnable by name. `make bench` runs all
 # six; `make bench-probe` prints the counts, refusal boundaries and one-shot
