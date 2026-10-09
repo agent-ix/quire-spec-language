@@ -755,6 +755,7 @@ fn tc_907_anything_short_of_covering_is_tested() {
             "{what}"
         );
     };
+    text_leaf_is_tested(&unit, exhausted, &tested);
     let variants = |members: &[&str]| {
         FiniteBound::variants(members.iter().map(|member| (*member).to_owned())).unwrap()
     };
@@ -813,7 +814,27 @@ fn tc_907_anything_short_of_covering_is_tested() {
         "a partial variant set",
     );
 
-    // Length bounds do not cover a Text leaf's whole declared domain.
+    // A recursive position with no declared domain is never covered. (The
+    // `K<T>` cases of AC-4 and AC-5 wait on a source form for an unbounded
+    // collection type: the grammar takes only `K<T>[min, max]`.)
+    let mut bounds = Vec::new();
+    for index in 0..2 {
+        let parameter = unit.parameter("h", index);
+        bounds.push(bound(parameter, &[], FiniteBound::depth(3).unwrap()));
+        bounds.push(bound(parameter, &[0], range(0, 9)));
+    }
+    tested(
+        settle(&unit, "h", bounds, vec![], exhausted),
+        "an undeclared depth",
+    );
+}
+
+/// Length bounds do not cover a Text leaf's whole declared domain.
+fn text_leaf_is_tested(
+    unit: &Unit,
+    exhausted: VerifiedShadow,
+    tested: &impl Fn(VerifiedShadowReport, &str),
+) {
     let record = unit
         .compiled
         .checked
@@ -868,27 +889,32 @@ fn tc_907_anything_short_of_covering_is_tested() {
     let bounds: Vec<_> = (0..2)
         .map(|index| bound(unit.parameter("t", index), &[0], range(0, 9)))
         .collect();
-    let report = settle(&unit, "t", bounds.clone(), vec![], exhausted);
+    let claim = unit.claim("t", EqualityOperator::Equal, bounds.clone());
+    let mut wire = request(
+        unit.source.as_bytes(),
+        unit.compiled.emitted.package().package_id(),
+        name(&["t"]),
+        ReplaySource::Input(vec![]),
+    );
+    let site = locate(
+        &unit.compiled,
+        &name(&["t"]),
+        claim.node,
+        &claim.occurrence,
+        claim.operator,
+    )
+    .expect("the Text equality is in the checked function");
+    wire.obligation_identity =
+        *parity_obligation(&parity_preimage(&unit.compiled, &site, &claim).unwrap())
+            .unwrap()
+            .as_bytes();
+    let report = settle_verified_shadow(wire, claim, exhausted, ReplayLimits::default());
     assert_eq!(report.claim().harness_bounds, bounds);
     assert_eq!(
         report.claim().evidence,
         crate::composite::CompositeEvidence::Verified(exhausted)
     );
     tested(report, "a Text leaf with both integer positions covered");
-
-    // A recursive position with no declared domain is never covered. (The
-    // `K<T>` cases of AC-4 and AC-5 wait on a source form for an unbounded
-    // collection type: the grammar takes only `K<T>[min, max]`.)
-    let mut bounds = Vec::new();
-    for index in 0..2 {
-        let parameter = unit.parameter("h", index);
-        bounds.push(bound(parameter, &[], FiniteBound::depth(3).unwrap()));
-        bounds.push(bound(parameter, &[0], range(0, 9)));
-    }
-    tested(
-        settle(&unit, "h", bounds, vec![], exhausted),
-        "an undeclared depth",
-    );
 }
 
 /// FR-358-AC-6 (TC-907 step 6): rows V-1 to V-3.
