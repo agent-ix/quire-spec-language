@@ -129,7 +129,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | V-7 | `NoDecision` with `end` `Stopped(cause, limit)`; `NoDecision` with `end` `Completed` and open causes only `MaxDepth` under partial-order reduction (ADR-021 RV-5); `Stopped(ResourceExhausted, WitnessSamples)` (FR-166); a certificate check a limit stopped; a trap replay a limit stopped (FR-170) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
 | V-8 | No candidate discharges the form | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
-- `TerminalValue::category` SHALL map `Proved{basis: Witness{…}}` to
+- `TerminalValue::category` SHALL map `Proved{basis: Witness{…}, certification}` to
   success, with either certification.
 
 ### State-graph certificate (ADR-022 GC-1 to GC-4)
@@ -207,7 +207,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-169-AC-1 | Each input row maps to its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states; `Proved{basis: Witness{sources}}` maps to success. | Test (TC-594) |
+| FR-169-AC-1 | Each input row maps to its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states; `Proved{basis: Witness{sources}, certification: Certified}` maps to success. | Test (TC-594) |
 | FR-169-AC-2 | ADR-022 §7.1's `ReachesTwo` under default limits settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}, certification: Certified}`, success, and its record names the seed and trace index of each walk; with `witness_samples` 0 it settles the same label and basis with sources `[Explored]` and a record naming exploration. `ReachesThree` settles `refuted`, `closed-scope`, after its trap replays. | Test (TC-594) |
 | FR-169-AC-3 | §7.2's `CanStillWin` settles `refuted`, `closed-scope` (V-10); its `from` variant `proved`, `closed-scope`, `Proved{Exhaustive, Certified}` (V-1). §7.3's `InOneWay` settles `refuted`, `decisive-counterexample` (V-4). | Test (TC-594) |
 | FR-169-AC-4 | FR-168-AC-4's trap settles `refuted` (V-10) and its `NoDecision` settles `inconclusive`, `BoundReached{depth: 3}`, execution `completed`, truth `pending`, and its record states horizon 3 as a method parameter, not among the limits. A run stopped by `max_states` settles `incomplete`, `LimitReached`, naming `max_states` and its value; an undecided node with no decisive evidence settles `inconclusive`, `UndecidedSuccessor`; a subject with no initial state settles `inconclusive`, `NoInitialState`. | Test (TC-594) |

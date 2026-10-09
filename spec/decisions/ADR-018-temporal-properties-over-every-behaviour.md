@@ -104,7 +104,7 @@ basis axes. QSpec FR-243's bases are `closed-scope`, `decisive-witness`,
 `decisive-counterexample`, `unsettled` and `unavailable`.
 
 QSL's result vocabulary is ADR-013 O-16's eight categories and
-`qsl_replay::TerminalValue` (`Proved{success_checks}`, `Tested`, `Refuted`,
+`qsl_replay::TerminalValue` (`Proved{basis, certification}`, `Tested`, `Refuted`,
 `Declined`, `Unsupported`, `Incomplete`, `Failed`, and the `Inconclusive`
 variant ADR-013 C-09 adds), with `InconclusiveCause`
 (`KaniVacuousProof`, `ReplayParity`, `ReplayRefused`) and `IncompleteCause`
@@ -410,7 +410,7 @@ on such states. The reachable product has 15 states: 9 with `q0` and 6 with
 **Verdict under `fair weak each`.** `upd(b)` is enabled at every state of
 both SCCs and taken in neither, so FA-4 rejects both. No fair accepting cycle
 exists for `c = b`; `c = a` is symmetric. The item settles `proved`, basis
-`closed-scope`, `TerminalValue::Proved{basis: Exhaustive}` (V-1), over this
+`closed-scope`, `TerminalValue::Proved{basis: Exhaustive, certification: Certified}` (V-1), over this
 subject.
 
 **Verdict under `fair weak whole`.** The constraint is `attemptUpdate` as a
@@ -503,7 +503,8 @@ checkers and the settlement map, and already depends on layer 5.
    and the worked example as its first conformance vector. EN-1 emits a
    certificate with every proof, and the settlement map settles a safety
    proof only through `check_closure` and a liveness proof only through
-   `check_components`, so an EN-1 `Exhaustive` proof is always `Certified`.
+   `check_components`, so an unconstrained EN-1 `Exhaustive` proof, whose
+   closure or component certificate the core checks, is always `Certified`.
 
 ### 8. What QSpec must specify
 
@@ -535,7 +536,7 @@ evaluation (RU-5), on 2026-10-01.
 | RU-3 | Whether EN-1 reports reachable terminal states | **Deadlocks are reported by default, as TLC does, with a per-model opt-out.** | A successor-free state that the author did not intend is usually a missing operation or a precondition that is too strong. Stutter extension alone absorbs it silently: every safety claim holds on the stuck tail, and only a claim about progress notices. Reporting it once per subject, as its own item, leaves every claim's verdict equal to its SM-1 truth. A model that halts on purpose in some states and can get stuck in others marks its intended terminal states, so the report survives for the others | §10, DL-1 to DL-7 |
 | RU-4 | Whether interval operators may appear inside infinite-trace formulas | **Mixed formulas are admitted**, for example `always (fail implies eventually always[0,10] healthy)`, and so is an `[a,*]` interval under infinite-trace (IV-1) | That formula states recovery stability: after every failure the system eventually stays healthy for ten consecutive steps. A bounded `on each` clause states a bounded response at each activation and cannot put a bounded operator under an unbounded `eventually`; its false-extension also reads a terminal state differently from stutter extension. Mixed formulas cost automaton size that grows with interval length, which §11 states and limits | §11, IV-1 to IV-7; ADR-014 TR-3, A-2 and A-4, amended with this record |
 | RU-5 | How an engine settles a claim that evaluates undefined in some state | **Refuted**, cause `UndefinedEvaluation{where, cause}`, in every proof engine. Replay reproduces the undefined value at `where`. No new result kind | The Dafny and TLA+ well-definedness reading: an undefined claim does not hold. The refutation is decisive and replays without the engine, and the existing vocabulary carries it, so ADR-013 O-16 and QSpec FR-360 stay as they are | §1 UE-1 to UE-6; SM-5, CX-1, CX-3, DL-4 |
-| RU-6 | How a proof settles when its engine has no core certificate checker | **`proved`, labelled `uncertified` for a first-party engine or solver, `trusted` for a third-party plugin; a proof the qualified core produced or checked, a Kani proof included, is labelled `certified`.** It is never `inconclusive`. EN-1's proofs carry certificates that core checkers verify, so an EN-1 `Exhaustive` proof settles only `certified`; a symmetry- or partial-order-reduced proof (ADR-021 RV-1) and a refinement proof resting on a half with no checker (ADR-020 CT-4) are `uncertified`; a copy-swap-reduced hyper proof, which the core's product-closure checker checks (ADR-023 HX-7), is `certified` | The certificate makes the engine's soundness irrelevant where a checker exists; where none exists the proof still stands, and the label says so | PC-1 to PC-5, LA-3 |
+| RU-6 | How a proof settles when its engine has no core certificate checker | **`proved`, labelled `uncertified` for a first-party engine or solver, `trusted` for a third-party plugin; a proof the qualified core produced or checked, a Kani proof included, is labelled `certified`.** It is never `inconclusive`. EN-1's proofs carry certificates that core checkers verify, so an unconstrained EN-1 `Exhaustive` proof, whose closure or component certificate the core checks, settles only `certified`; a symmetry- or partial-order-reduced proof (ADR-021 RV-1), a proof under a state constraint (ADR-021, FR-160) and a refinement proof resting on a half with no checker, its liveness half (ADR-020 CT-4), are `uncertified`; a copy-swap-reduced hyper proof, which the core's product-closure checker checks (ADR-023 HX-7), is `certified` | The certificate makes the engine's soundness irrelevant where a checker exists; where none exists the proof still stands, and the label says so | PC-1 to PC-5, LA-3 |
 | RU-7 | How an undefined guard or `terminal when` settles | **Refuted**, cause `UndefinedEvaluation{where, cause}`, never a disabled step | A model whose own expressions are undefined on a reachable state does not satisfy the claim, as RU-5 reads an undefined claim | UE-6, DL-5, DL-7 |
 
 ### 10. Deadlocks

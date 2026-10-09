@@ -318,7 +318,7 @@ successors `upd(a)` and `upd(b)`.
 `(0, 0)` takes `upd(a)` (first in canonical order, to `d = 1`) twice:
 `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`. Instance `c = b` is the same with
 `upd(b)`. Each instance settles `proved`, `decisive-witness`,
-`Proved{basis: Witness{sources}}` (V-9), after GX-2 replays two steps and evaluates
+`Proved{basis: Witness{sources}, certification: Certified}` (V-9), once GC-2's checker accepts its certificate, after GX-2 replays two steps and evaluates
 `c.versionNumber = 2` true at the last node. With phase 0 on, as by
 default, a walk from `(0, 0)` that reaches `va = 2` is the instance's
 witness, with source `Sampled` and that walk's seed and trace index, and the
@@ -426,7 +426,7 @@ as an EN-1 counterexample does.
 | ID | Repository | Change |
 | --- | --- | --- |
 | DS-1 | QSL | S3: the three claim forms (SG-1 to SG-3) and their form record, the state-only predicate check (GM-3), the fairness refusal (GM-7). The request writer: the deadlock-freedom item for subjects of state-graph items (GM-8). Layer A `qsl-analyze`, `model_check`: node labelling, phase 0 sampling (GE-2), backward reachability, path counting, open-node tracking (GM-6), canonical evidence (§3), the GR-1 rows in the pre-check. `qsl-replay`: `ProofBasis::Witness`, `GraphEvidence`, `ReplaySource::ModelGraph` and its result arm with GX-2 to GX-4. The EN-1 manifest's state-graph forms. |
-| DS-2 | CG | The EN-1 `negotiate_*` arm reads the state-graph form; an SMT arm discharges SG-1 only. `Proved{basis: Witness{sources}}` in the outcome map. |
+| DS-2 | CG | The EN-1 `negotiate_*` arm reads the state-graph form; an SMT arm discharges SG-1 only. `Proved{basis: Witness{sources}, certification: Certified}` in the outcome map, once `check_state_graph` accepts the certificate. |
 | DS-3 | IR | SG-1 path search in the SMT encoding (GE-3), after IR admits state nodes (ADR-018 DS-3). |
 | DS-4 | Driver | Runs a state-graph item routed to EN-1 in process and runs E9 for its evidence. |
 | DS-5 | QSpec | §9. |

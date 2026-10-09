@@ -409,7 +409,8 @@ such SCC some `begin`, `commit` or `retry` constraint is enabled at every
 state and taken in none. At `value` 2, `inc` is disabled at the mapped state,
 so `F_A` admits stuttering there. The
 item settles `proved`, basis `closed-scope`, `TerminalValue::Proved{basis:
-Exhaustive}` (ADR-018 V-1). By CO-3, an abstract claim such as `always
+Exhaustive, certification: Uncertified}` (ADR-018 V-1), since its liveness
+half has no core checker (CT-4). By CO-3, an abstract claim such as `always
 eventually holds(c.value = 2)`, proved over the abstract subject's stutter
 closure under `fair weak each Spec::Counter::inc`, holds for the concrete
 subject under `F_C` read through `map`, recorded as QSpec specifies (CO-5).

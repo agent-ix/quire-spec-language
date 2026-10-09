@@ -19,8 +19,8 @@ relationships:
 ## Description
 
 `qsl-replay`'s `check_smt_proof` SHALL accept an `SmtProofCertificate` that
-comes with an SMT `Proved{BoundedComplete{depth}}` or
-`Proved{Inductive{depth}}` result exactly when every query it carries is
+comes with an SMT backend's `BoundedComplete{depth}` or
+`Inductive{depth}` proof, before it settles, exactly when every query it carries is
 the query FR-315 encodes for the item at that depth and every proof it
 carries refutes its query using only checked Alethe rules (ADR-018 PC-6,
 LA-3). FR-127's settlement map runs the check: a proof whose certificate it

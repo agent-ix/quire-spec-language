@@ -34,7 +34,7 @@ Tag the tests `#[trace("TC-594", "FR-169-AC-n")]`.
 ## Expected Results
 
 - Step 1: each row's `TerminalValue`, label, basis and category as FR-169's
-  table states; `Proved{Witness{…}}` maps to success.
+  table states; `Proved{Witness{…}, Certified}` maps to success.
 - Step 2: `proved`, `decisive-witness`, `Witness{[Sampled(…)]}`, `Certified`, success,
   with seed and trace index in the record; the same with `[Explored]` and a
   record naming exploration; `refuted`, `closed-scope`.

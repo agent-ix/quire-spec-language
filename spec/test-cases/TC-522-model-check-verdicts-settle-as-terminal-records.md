@@ -50,8 +50,8 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 
 - Step 1: each row exactly as FR-127's table; depth 2 and method
   `explicit-state` on V-5; the limit-reached record names `max_states`, value 2, setting `max_states`.
-- Step 2: inconclusive `KaniVacuousProof`; success four times; inconclusive
-  four times.
+- Step 2: inconclusive `KaniVacuousProof`; success five times, each value
+  keeping its certification; inconclusive four times.
 - Step 3: `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success;
   `refuted`, `decisive-counterexample`, violation; `inconclusive`,
   `ReplayRefused`; `inconclusive`, `ReplayParity` (the unfair lasso);

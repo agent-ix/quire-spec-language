@@ -44,5 +44,5 @@ Tag the tests `#[trace("TC-613", "<AC id>")]`.
 - Step 2: `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`.
 - Step 3: `Witnessed` with `Sampled` sources; `end` `Completed`, no open
   node, 9 explored nodes.
-- Step 4: `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}}`,
+- Step 4: `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}, certification: Certified}`,
   and the record names a completed exploration.

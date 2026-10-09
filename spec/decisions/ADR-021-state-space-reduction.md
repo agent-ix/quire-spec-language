@@ -350,7 +350,7 @@ Every verdict is one of ADR-018 V-1 to V-8.
 
 | ID | Rule |
 | --- | --- |
-| RV-1 | **A reduced proof is its own technique.** A run that completes with symmetry or POR applied and finds no counterexample settles `proved`, basis `closed-scope`, proof basis `reduced` (QSpec FR-385), `TerminalValue::Proved{basis: ProofBasis::Reduced{reductions}, certification: Uncertified}`, O-16 success. It is labelled `uncertified` (ADR-018 PC-1, RU-6): FR-338's closure certificate and FR-339's component certificate do not cover a symmetry- or partial-order-reduced graph, and the core has no checker for such a proof. A copy-swap-reduced hyper proof is checked by ADR-023 HX-7's product-closure checker and is `Certified`. `reductions` lists each applied reduction with its parameters and its PT-2 row: `Symmetry{groups}`, each group a population with its key classes, and the binding stabiliser per orbit (SYM-6); `PartialOrder{proviso: BreadthFirstRevisit}`. `Reduced` is never `Exhaustive`, and a consumer that counts proofs counts it as its own technique, with the subject's universes, the groups and the footprint scopes as its bounds. A run with only a state constraint that reaches no boundary state settles `Proved{basis: Exhaustive}`, with the constraint in the terminal record's method. |
+| RV-1 | **A reduced proof is its own technique.** A run that completes with symmetry or POR applied and finds no counterexample settles `proved`, basis `closed-scope`, proof basis `reduced` (QSpec FR-385), `TerminalValue::Proved{basis: ProofBasis::Reduced{reductions}, certification: Uncertified}`, O-16 success. It is labelled `uncertified` (ADR-018 PC-1, RU-6): FR-338's closure certificate and FR-339's component certificate do not cover a symmetry- or partial-order-reduced graph, and the core has no checker for such a proof. A copy-swap-reduced hyper proof is checked by ADR-023 HX-7's product-closure checker and is `Certified`. `reductions` lists each applied reduction with its parameters and its PT-2 row: `Symmetry{groups}`, each group a population with its key classes, and the binding stabiliser per orbit (SYM-6); `PartialOrder{proviso: BreadthFirstRevisit}`. `Reduced` is never `Exhaustive`, and a consumer that counts proofs counts it as its own technique, with the subject's universes, the groups and the footprint scopes as its bounds. A run with only a state constraint that reaches no boundary state settles `Proved{basis: Exhaustive, certification: Uncertified}`, with the constraint in the terminal record's method. |
 | RV-2 | **`ReductionNotPreserving{reduction, form}`.** A new `InconclusiveCause`: a selected reduction's PT-2 row reads "no" for the claim's form or fairness set. Settled in the pre-check; no expansion runs. |
 | RV-3 | **`SymmetryBroken{population, cause}`.** A new `InconclusiveCause`, with `cause` `InitialStatesNotClosed{initial, generator}` (SYM-4). Settled in the pre-check. An identity-observing form never reaches a run: S3 refuses it on an annotated population (SYM-8), and a request on an unannotated population refuses (SYM-2). |
 | RV-4 | **`ConstraintReached{boundary_states}`.** A new `InconclusiveCause`: the run completed with no counterexample and reached at least one boundary state. It takes precedence over `BoundReached` when both apply. |
@@ -450,7 +450,7 @@ back).
   `va = 1` is rejected the same way.
 
 No fair accepting SCC exists, so the instance settles `proved`,
-`Proved{basis: Reduced{[Symmetry{…}]}}`, over 30 product states, the same
+`Proved{basis: Reduced{[Symmetry{…}]}, certification: Uncertified}`, over 30 product states, the same
 verdict ADR-018 §6 gives unreduced, where EN-1 explores 135.
 
 **A refutation under `each`.** The claim `eventually always
@@ -518,7 +518,7 @@ a`. Only `bump(a)` writes a location the atom reads, so `bump(b)` and
 
 Every behaviour ends in the terminal state `(2,2,2)`, where `a.v = 2`, so no
 accepting cycle exists. The instance settles `proved`,
-`Proved{basis: Reduced{[PartialOrder{BreadthFirstRevisit}]}}`; the instances
+`Proved{basis: Reduced{[PartialOrder{BreadthFirstRevisit}]}, certification: Uncertified}`; the instances
 `x = b` and `x = c` reduce the same way with the roles exchanged. The
 model declares no `terminal` member, so the request adds the deadlock-freedom
 item (ADR-018 DL-3). Both searches reach `(2,2,2)`, which has no successor,
@@ -622,7 +622,7 @@ end, D, 1)` and `(F, end, D, 2)` under `q1`, joined by `duplicate` and `lose`.
 Both states are fully expanded under `q1` (the proviso, since each reaches
 the other). `right`'s class is enabled at both and never taken in the SCC, so
 ADR-018 FA-4 rejects it. The item settles `proved`, `Proved{basis:
-Reduced{[PartialOrder{BreadthFirstRevisit}]}}`, the verdict the unreduced
+Reduced{[PartialOrder{BreadthFirstRevisit}]}, certification: Uncertified}`, the verdict the unreduced
 product gives.
 
 **Verdict with `scheduling adversarial`.** The fairness set is empty, PT-2's
@@ -820,7 +820,7 @@ identity-observing forms (SYM-8), and the read footprint of each operation
 | QS-3 | Symmetry: the `symmetric` population annotation and its authoring-time refusal of identity-observing forms (SYM-3, SYM-8), the request opt-in on annotated populations only (SYM-1, SYM-2), generator closure of initial states (SYM-4), binding orbits and stabilisers (SYM-6), and `each` fairness on the annotated quotient (AQ-1 to AQ-7) | QSpec FR-381, FR-382 and FR-384 |
 | QS-4 | Receiver-scoped `modifies` entries: surface syntax, QSpec FR-013 semantics, the scope member of the checked-package v2 frame entry; read footprint derivation, membership locations and the enabling footprint `R(t)` (POR-1, POR-4, POR-7) | QSpec FR-013, FR-340 and FR-383 |
 | QS-5 | The normative preservation table (PT-2) | QSpec FR-385 |
-| QS-6 | Verdicts: `Reduced` in the FR-331 terminal record with its reductions and rows; `ReductionNotPreserving`, `SymmetryBroken`, `ConstraintReached` onto QSpec FR-360 and FR-243 (`inconclusive`, `unsettled`) as wire causes `reduction-not-preserving`, `symmetry-broken` and `constraint-reached`, and `Reduced` as proof basis `reduced` beside `exhaustive`; a POR run to its horizon as `reduction-horizon` and a limit reached under any reduction as `limit-reached` (RV-5); a reduced proof labelled `uncertified` (RV-1); the reduced-versus-unreduced agreement requirement (RV-10) | QSpec FR-385, FR-331, FR-360 |
+| QS-6 | Verdicts: `Reduced` in the FR-331 terminal record with its reductions and rows; `ReductionNotPreserving`, `SymmetryBroken`, `ConstraintReached` onto QSpec FR-360 and FR-243 (`inconclusive`, `unsettled`) as wire causes `reduction-not-preserving`, `symmetry-broken` and `constraint-reached`, and `Reduced` as proof basis `reduced` beside `exhaustive`; a POR run to its horizon as `reduction-horizon` and a limit reached under any reduction as `limit-reached` (RV-5); a symmetry- or partial-order-reduced proof labelled `uncertified` (RV-1); the reduced-versus-unreduced agreement requirement (RV-10) | QSpec FR-385, FR-331, FR-360 |
 | QS-7 | Counterexamples from a reduced search are concrete model traces (EI-6), so QSpec FR-181-AC-5 and the counterexample contract need no new trace kind | QSpec FR-181, the counterexample contract |
 | QS-8 | Stuttering invariance of the infinite-trace grammar: confirm `since` and `triggered` are non-strict, as `until` is | QSpec FR-161 |
 | QS-9 | Provider advertisement of reductions; negotiation never drops or adds one | QSpec FR-290 and the provider manifest contract |

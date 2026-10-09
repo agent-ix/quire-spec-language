@@ -122,11 +122,11 @@ backs.
   (`content-mismatch`) refusals each with its own cause, two
   `ScalarIdentity::Occurrence` refusals, and `ScalarIdentity::Obligation`
   naming both digests. Each report carries the full claim.
-- Step 4: `Proved { success_checks: 4 }`, success, for each (row V-4).
+- Step 4: `Proved { basis: Checks { success_checks: 4 }, certification: Certified }`, success, for each (row V-4).
 - Step 5: `Tested`, success and never `Proved`, for each (row V-5).
 - Step 6: `Failed` for both `refinement: Disagreed` calls (row V-1);
   `Incomplete(ResourceExhausted)` for both `CeilingReached` calls (row
-  V-2); then `Proved { success_checks: 0 }`, inconclusive, cause
+  V-2); then `Proved { basis: Checks { success_checks: 0 }, certification: Certified }`, inconclusive, cause
   `kani_vacuous_proof` (row V-3).
 - Step 7: each refuses with no settlement row, at 4 checks and at 0, naming
   the key.
