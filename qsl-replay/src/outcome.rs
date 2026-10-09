@@ -225,7 +225,7 @@ impl ItemCause {
                 at,
             }) => {
                 item.rule = Some(*rule);
-                item.certificate_at = Some(*at);
+                item.certificate_at = Some(at.clone());
             }
             ReportedInconclusiveCause::Cause(
                 InconclusiveCause::BoundReached { depth }
@@ -1298,11 +1298,11 @@ mod tests {
                     2,
                     TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
                         rule: CertificateRule::ProofStepInvalid,
-                        at,
+                        at: at.clone(),
                     }),
                 );
                 assert_eq!(item.category(), Category::Inconclusive);
-                assert_eq!(item.cause.as_ref().unwrap().certificate_at, Some(at));
+                assert_eq!(item.cause.as_ref().unwrap().certificate_at, Some(at.clone()));
                 let document =
                     OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), vec![item]);
                 let failure = document

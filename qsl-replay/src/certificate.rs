@@ -53,7 +53,7 @@ pub enum CertificateRule {
 /// locus retains its part and index, but serialization refuses it because
 /// FR-331 defines no lossless string spelling for that payload.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CertificateLocus {
     /// The query whose encoding or certificate shape failed.
     Query {
