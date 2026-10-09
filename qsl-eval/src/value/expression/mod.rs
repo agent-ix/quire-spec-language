@@ -21,6 +21,7 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::declaration::TypeEnvironment;
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::Evaluation;
@@ -159,6 +160,7 @@ pub struct FrameEvaluation {
 /// argument-type matching would otherwise have already ruled out at every
 /// nested call site.
 fn validate(
+    types: &TypeEnvironment,
     parameters: &[(String, ValueType)],
     arguments: &[Value],
     objects: &ObjectEnvironment,
@@ -175,8 +177,9 @@ fn validate(
         // comparison is this QSL-layer check (FR-089-AC-5), not a
         // generic-admission side effect. `Population<T>[N]` is reachable
         // only as a bare parameter type (FR-153's own restriction), so this
-        // is the one call site that needs to special-case it: every other
-        // parameter type still goes through kernel `admits()` unchanged.
+        // is the one call site that needs to special-case it. Reference
+        // parameters use the checked environment's admitted
+        // conformance graph; other types still use kernel admission.
         if let (ValueType::Population(maximum), Value::Population(population_id)) =
             (value_type, argument)
         {
@@ -186,7 +189,7 @@ fn validate(
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter });
             }
-        } else if !value_type.admits(argument) {
+        } else if !types.admits(value_type, argument) {
             return Err(InputRefusal::WrongValueKind { parameter });
         }
         let mut pending = vec![argument];
@@ -592,7 +595,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .graph()
             .callable(name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        validate(callable.parameters, &arguments, objects)?;
+        validate(
+            self.graph().scope().types(),
+            callable.parameters,
+            &arguments,
+            objects,
+        )?;
         // FR-062/FR-065: this family's own `evaluate` hook
         // (`s6a::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
@@ -620,7 +628,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
-        validate(expression.parameters(), &arguments, objects)?;
+        validate(
+            self.graph().scope().types(),
+            expression.parameters(),
+            &arguments,
+            objects,
+        )?;
         Machine::new(
             self.graph().scope(),
             self.graph(),

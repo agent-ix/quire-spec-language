@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-196 D06-D08: the checked-layer/runtime half of FR-151 dispatch calls
+//! QSpec TC-196 D01 and D06-D08: runtime FR-151 dispatch calls
 //! that `tests/model_dispatch.rs`'s D01-D05 (link-time linking) explicitly
 //! do not cover — `dispatch.select` evaluation with effective-precondition
 //! decision (D06), the clause-kind restriction on a dispatched
@@ -1681,6 +1681,297 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
     }
 }
 
+/// QSpec TC-196 D01's G/S2 diamond, evaluated at the invariant's A-static
+/// call site. Effective identities come from the normalized declarations.
+/// Trace: ix://agent-ix/quire-specification/FR-151-AC-8
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
+#[test]
+fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
+    use qsl_semantics::model::domain_package::ScalarTypeRecord;
+    use quire_exact::{ChargePoint, Incomplete};
+
+    let count = ValueType::Int(IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap());
+    let mut records = vec![
+        object_type_record("model.A", vec![]),
+        object_type_record("model.B", vec!["model.A"]),
+        object_type_record("model.C", vec!["model.A"]),
+        object_type_record("model.D", vec!["model.B", "model.C"]),
+        DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key: DeclarationKey::fixture("model.Count"),
+            lower: 0,
+            upper: 9,
+        }),
+    ];
+    for (key, owner, redefines) in [
+        ("model.A.size", "model.A", None),
+        ("model.B.size", "model.B", Some("model.A.size")),
+    ] {
+        let DomainPackageRecord::OperationMember(mut operation) =
+            operation_record(key, owner, true, redefines)
+        else {
+            panic!("operation_record must construct an operation");
+        };
+        operation.result.as_mut().unwrap().value_type =
+            ValueTypeRef::Package(DeclarationKey::fixture("model.Count"));
+        records.push(DomainPackageRecord::OperationMember(operation));
+    }
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.d01"), records);
+    let view = bridge_view(&domain_package);
+    let a = view_type(&view, "model.A");
+    let c = view_type(&view, "model.C");
+    let d = view_type(&view, "model.D");
+    let supertypes = object_type_supertypes(&view).unwrap();
+    let types = TypeEnvironment::new(
+        [],
+        ["A", "B", "C", "D"].into_iter().map(|name| {
+            let id = view_type(&view, &format!("model.{name}"));
+            ObjectTypeDeclaration::new(id, name, vec![]).with_supertypes(supertypes[&id].clone())
+        }),
+    )
+    .unwrap();
+    assert!(types.conforms(d, a));
+    assert!(types.conforms(c, a));
+    let mut clauses = OperationClauses::default();
+    for (owner, body) in [("A", 1_i64), ("B", 2_i64)] {
+        let key = DeclarationKey::fixture(format!("model.{owner}.size"));
+        clauses.member.insert(key.clone(), "size".to_owned());
+        clauses.parameters.insert(
+            key.clone(),
+            vec![(
+                "self".to_owned(),
+                ValueType::Reference(view_type(&view, &format!("model.{owner}"))),
+            )],
+        );
+        clauses.result.insert(key.clone(), count.clone());
+        clauses.own_body.insert(key, Expression::integer(body));
+    }
+    let root = DispatchRoot {
+        key: DeclarationKey::fixture("model.A.size"),
+        closure: GeneralizationClosure::Closed,
+    };
+    let mut link_meter =
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let mut declarations = checked_dispatch_operation(
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        &mut link_meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .expect("the real diamond must link through the checked dispatch bridge");
+    declarations.types = types.clone();
+    declarations.functions.push(FunctionDeclaration::new(
+        "echo",
+        vec![(
+            "r".to_owned(),
+            crate::support::type_form::named_type_form("A"),
+        )],
+        crate::support::type_form::named_type_form("A"),
+        None,
+        Expression::name("r".to_owned()),
+    ));
+    let graph = declarations.check(CheckingLimits::default()).unwrap();
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a))];
+    let invariant = Expression::binary(
+        BinaryOperator::GreaterOrEqual,
+        dispatch_expression(),
+        Expression::integer(1_i64),
+    );
+    let check = |expression: &Expression| {
+        graph
+            .check_clause_expression(
+                parameters.clone(),
+                expression,
+                None,
+                ClauseKind::Invariant,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap()
+    };
+    let checked = check(&invariant);
+    let selected_body = check(&dispatch_expression());
+    let c_static = graph
+        .check_clause_expression(
+            vec![("self".to_owned(), ValueType::Reference(c))],
+            &invariant,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let package = CheckedPackage::link(graph);
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [
+                (receiver_reference(a, "a1"), vec![]),
+                (
+                    receiver_reference(view_type(&view, "model.B"), "b1"),
+                    vec![],
+                ),
+                (receiver_reference(c, "c1"), vec![]),
+                (receiver_reference(d, "d1"), vec![]),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
+    // Positive boundary control: all admission, checking and evaluation
+    // setup is valid before the actual subtype vector is attempted.
+    let mut baseline = Meter::new(SCALAR_UNLIMITED);
+    assert!(matches!(
+        evaluated(
+            package
+                .evaluate(
+                    &checked,
+                    vec![Value::Reference(receiver_reference(a, "a1"))],
+                    &objects,
+                    &mut baseline,
+                )
+                .unwrap()
+        ),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+
+    for argument in [
+        Value::Reference(receiver_reference(a, "a1")),
+        Value::Reference(receiver_reference(view_type(&view, "model.B"), "b1")),
+        Value::Integer(1_i64.into()),
+    ] {
+        let mut meter = Meter::new(SCALAR_UNLIMITED);
+        assert!(matches!(
+            package.evaluate(&c_static, vec![argument], &objects, &mut meter),
+            Err(CallFailure::Input(InputRefusal::WrongValueKind {
+                parameter: 0
+            }))
+        ));
+        assert!(meter.admitted_charges().is_empty());
+    }
+    let mut missing_meter = Meter::new(SCALAR_UNLIMITED);
+    assert!(matches!(
+        package.evaluate(
+            &checked,
+            vec![Value::Reference(receiver_reference(d, "missing"))],
+            &objects,
+            &mut missing_meter,
+        ),
+        Err(CallFailure::Input(InputRefusal::DanglingReference {
+            parameter: 0
+        }))
+    ));
+    assert!(missing_meter.admitted_charges().is_empty());
+
+    for (actual, identity, body) in [(d, "d1", 2_i64), (c, "c1", 1_i64)] {
+        let reference = receiver_reference(actual, identity);
+        let mut call_meter = Meter::new(SCALAR_UNLIMITED);
+        match evaluated(
+            package
+                .call(
+                    &QualifiedName::unqualified("echo").unwrap(),
+                    vec![Value::Reference(reference.clone())],
+                    &objects,
+                    &mut call_meter,
+                )
+                .unwrap(),
+        ) {
+            Outcome::Completed(Value::Reference(returned)) => assert_eq!(returned, reference),
+            other => panic!("echo must preserve the actual reference, got {other:?}"),
+        }
+        assert_eq!(call_meter.admitted_charges(), &[ChargePoint::FunctionCall]);
+        let mut body_meter = Meter::new(SCALAR_UNLIMITED);
+        let evaluation = package
+            .evaluate(
+                &selected_body,
+                vec![Value::Reference(receiver_reference(actual, identity))],
+                &objects,
+                &mut body_meter,
+            )
+            .expect("a conforming actual receiver must bind at the A-static call site");
+        match evaluated(evaluation) {
+            Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(body)),
+            other => panic!("expected {identity}'s dispatched body {body}, got {other:?}"),
+        }
+        for limit in if actual == d { vec![6, 5, 1] } else { vec![6] } {
+            let mut meter = Meter::new(ScalarLimits {
+                work_units: limit,
+                ..SCALAR_UNLIMITED
+            });
+            let evaluation = package
+                .evaluate(
+                    &checked,
+                    vec![Value::Reference(receiver_reference(actual, identity))],
+                    &objects,
+                    &mut meter,
+                )
+                .expect("actual receiver admission must reach runtime dispatch");
+            let charges = [
+                ChargePoint::DispatchSelect,
+                ChargePoint::FunctionCall,
+                ChargePoint::OrderingOperands,
+                ChargePoint::OrderingArithmetic,
+                ChargePoint::OrderingResultRetain,
+            ];
+            let (expected, admitted, work, results, occurrences) = match limit {
+                6 => (
+                    Outcome::Completed(Value::Boolean(true)),
+                    &charges[..],
+                    6,
+                    1,
+                    2,
+                ),
+                5 => (
+                    Outcome::Incomplete(Incomplete {
+                        limit_kind: LimitKind::WorkUnits,
+                        limit: 5,
+                        consumed: 5,
+                        next_charge: 1_i64.into(),
+                        charge_point: ChargePoint::OrderingResultRetain,
+                    }),
+                    &charges[..4],
+                    5,
+                    0,
+                    2,
+                ),
+                1 => (
+                    Outcome::Incomplete(Incomplete {
+                        limit_kind: LimitKind::WorkUnits,
+                        limit: 1,
+                        consumed: 0,
+                        next_charge: 2_i64.into(),
+                        charge_point: ChargePoint::DispatchSelect,
+                    }),
+                    &charges[..0],
+                    0,
+                    0,
+                    0,
+                ),
+                _ => unreachable!("only QSpec D01's limits are used"),
+            };
+            match (evaluated(evaluation), expected) {
+                (
+                    Outcome::Completed(Value::Boolean(actual)),
+                    Outcome::Completed(Value::Boolean(expected)),
+                ) => {
+                    assert_eq!(actual, expected, "{identity} at {limit}");
+                }
+                (Outcome::Incomplete(actual), Outcome::Incomplete(expected)) => {
+                    assert_eq!(actual, expected, "{identity} at {limit}");
+                }
+                (actual, expected) => {
+                    panic!("{identity} at {limit}: expected {expected:?}, got {actual:?}")
+                }
+            }
+            assert_eq!(meter.admitted_charges(), admitted);
+            assert_eq!(meter.consumed(LimitKind::WorkUnits), work);
+            assert_eq!(meter.consumed(LimitKind::ResultUnits), results);
+            assert_eq!(meter.consumed(LimitKind::ValueOccurrences), occurrences);
+        }
+    }
+}
+
 /// ADR-013 O-05: the bridge keys each object type by the effective
 /// identity `model` computed over the view -- the identity a `Reference<T>`
 /// value's type component carries -- never a caller-supplied key. `B`'s
@@ -1777,21 +2068,8 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// `.check()` succeeds and whose evaluator runs `self.size()` for an `A`
 /// receiver through the real bridge-built table.
 ///
-/// This does not also evaluate a `B` receiver through the *same* checked
-/// call site: [`quire_exact::ValueType::admits`] requires a
-/// `Value::Reference`'s own `object_type()` to exactly equal a checked
-/// parameter's declared `Reference<T>`, with no subtype allowance, so no
-/// top-level parameter binding can carry a `B` instance where the checked
-/// declaration says `Reference<A>` — the same boundary
-/// `qsl-eval/tests/it/model_reference_queries.rs` documents as "the `TypeEnvironment`
-/// island" for `allInstances`/`lookup`. Resolving a dispatch call's receiver
-/// against its instance's most-specific type end to end needs that same
-/// identity bridge (`crate::value::model_query`) or an equivalent, which is
-/// FR-152/FR-153/#131 territory, not this bridge's. The `d06_*`/`d08_*` tests
-/// above already prove `dispatch.select`'s own per-subtype table lookup
-/// (`DispatchTable::linked_for`) works once a receiver's most-specific type
-/// is in hand; this test proves the *bridge* assembles a real multi-candidate
-/// table and functions array correctly (`value_occurrences == 2`, below).
+/// The D01 test above additionally evaluates actual D and C receivers at
+/// an A-static call site using the normalized diamond's conformance graph.
 #[trace("QSpec-TC-196")]
 #[test]
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
