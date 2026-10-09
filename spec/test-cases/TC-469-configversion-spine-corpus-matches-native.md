@@ -45,9 +45,10 @@ all under `ParentOrder` with self `child`.
    and compare.
 5. With `--features quire-extraction`, embed each case's unit in a
    `rules.md` fence, extract it through `qsl-source`, and run the extracted
-   source.
+   source. Independently compile the extracted body's bytes under its body
+   identity with a direct `spine::compile` call.
 6. Independently re-derive the unit's `package_id` via a direct `spine::
-   compile` call, compare it with every report's, and read the emitted
+   compile` call, compare it with every direct run's report, and read the emitted
    package bytes through QSpec's I04 `read`.
 
 Extend `tests/it/config_version.rs`'s `expected()` with the four new cases
@@ -65,9 +66,11 @@ incomplete: false }` twice). Tag the tests `#[trace("TC-469",
 - Step 4: identical files; identical reports, each holding the
   disposition, the `package_id` and the usage; the `package_id`-selected
   runs give the same reports.
-- Step 5: each extracted run's disposition and `package_id` equal the
-  direct run's.
-- Step 6: every report carries that `package_id`, and the bytes admit
+- Step 5: each extracted run's stage, category, truth and exit code equal
+  the direct run's, and its `package_id` equals the one a direct
+  `spine::compile` of the extracted body's bytes under its body identity
+  emits.
+- Step 6: every direct run's report carries that `package_id`, and the bytes admit
   through I04 `read`.
 
 ## Status
