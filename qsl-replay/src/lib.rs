@@ -31,8 +31,9 @@
 mod bounds;
 mod call_site;
 mod compile;
-// Crate-private until `check_zone_certificate` (FR-245) calls it; until then
-// only its own tests and Kani harnesses reach it.
+// The facade exports the rejection vocabulary. Zone arithmetic stays
+// crate-private until `check_zone_certificate` (FR-245) calls it; its tests
+// and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
     reason = "the zone certificate checker is its first caller and has not landed yet"
