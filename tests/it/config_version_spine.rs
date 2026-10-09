@@ -667,6 +667,19 @@ mod extraction {
             let path = directory.path().join(case.id());
             let direct_request = build(&path, case);
             let extracted = extracted(case, &direct_request);
+            // The extracted body's own package_id: what a direct compile of
+            // its bytes under its body identity emits, independent of the
+            // run (`None` where compile refuses).
+            let body = extracted.map().body();
+            let body_package_id = crate::support::front_end::emitted(
+                body.identity().clone(),
+                body.path(),
+                body.text().as_bytes(),
+                &direct_request.packages,
+                &direct_request.dependencies,
+            )
+            .ok()
+            .map(|emitted| emitted.package().package_id());
             let direct_report = run_clause(build(&path, case)).unwrap();
 
             let mut extracted_request = build(&path, case);
@@ -692,8 +705,14 @@ mod extraction {
                 case.id()
             );
             assert_eq!(
+                extracted_report.disposition.category(),
+                direct_report.disposition.category(),
+                "{}",
+                case.id()
+            );
+            assert_eq!(
                 extracted_report.package_id,
-                direct_report.package_id,
+                body_package_id,
                 "{}",
                 case.id()
             );
