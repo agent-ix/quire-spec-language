@@ -623,10 +623,7 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
     })
 }
 
-#[trace("TC-145", "FR-056-AC-1", "FR-056-AC-5")]
-#[test]
-fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
-    use qsl_semantics::model::admitted::AdmittedPackage;
+fn original_document() -> (Value, Value, Value) {
     let package_identity = "test/origins";
     let owner = "ix://test/origins/A";
     let target = "ix://test/origins/B";
@@ -674,6 +671,15 @@ fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
             ),
         ]),
     );
+    (document, source_origin, relationship_origin)
+}
+
+#[trace("TC-145", "FR-056-AC-1", "FR-056-AC-5")]
+#[test]
+fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
+    use qsl_semantics::model::admitted::AdmittedPackage;
+    let package_identity = "test/origins";
+    let (document, source_origin, relationship_origin) = original_document();
     let bytes = serde_json::to_vec(&document).unwrap();
     let parsed = parse_document(&bytes);
     let package = read_domain_package(
@@ -712,11 +718,16 @@ fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
             declaration.key
         );
     }
-    let mut missing = document.clone();
+}
+
+#[trace("TC-145", "FR-056-AC-5")]
+#[test]
+fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
+    let (mut missing, _, relationship_origin) = original_document();
     missing["types"][0]["relationships"][0]["targetEnd"]["type"] =
         "ix://test/origins/Missing".into();
     let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
-    let refusals = read_records(package_identity, &parsed)
+    let refusals = read_records("test/origins", &parsed)
         .expect_err("an absent relationship target admits no declarations");
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, qsl_foundation::Code::MissingDeclaration);

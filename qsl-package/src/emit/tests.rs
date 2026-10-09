@@ -3385,10 +3385,10 @@ fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
     );
     let emission = emit_checked(&package).expect("source parameters have real regions");
     let wire = wire(&emission);
-    let parameters: BTreeSet<&str> = nodes(&wire)
+    let parameters: Vec<&Value> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "parameter")
-        .map(|node| node["node_id"].as_str().unwrap())
+        .map(|node| &node["node_id"])
         .collect();
     assert_eq!(
         parameters.len(),
@@ -3396,11 +3396,12 @@ fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
         "equal parameter content shares a key across functions"
     );
     let mut slices = Vec::new();
+    let mut ranges = Vec::new();
     for entry in wire["source_map"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|entry| parameters.contains(entry["node_id"].as_str().unwrap()))
+        .filter(|entry| parameters.contains(&&entry["node_id"]))
     {
         assert_eq!(entry["role"], "expression");
         let regions = entry["regions"].as_array().unwrap();
@@ -3413,6 +3414,7 @@ fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
         let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
         let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
         slices.push(&text[start..end]);
+        ranges.push((start, end));
     }
     slices.sort();
     assert_eq!(
@@ -3428,6 +3430,20 @@ fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
             "b: Boolean"
         ]
     );
+    let mut expected_ranges = Vec::new();
+    for declaration in ["a: Boolean", "b: Boolean"] {
+        expected_ranges.extend(
+            text.match_indices(declaration)
+                .map(|(start, matched)| (start, start + matched.len())),
+        );
+    }
+    for (body, offsets) in [("{ a and b }", [2, 8]), ("{ not a and b }", [6, 12])] {
+        let start = text.find(body).unwrap();
+        expected_ranges.extend(offsets.map(|offset| (start + offset, start + offset + 1)));
+    }
+    ranges.sort();
+    expected_ranges.sort();
+    assert_eq!(ranges, expected_ranges);
     let read = read_back(&emission);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }
