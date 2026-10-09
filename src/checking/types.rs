@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model as ir;
-use quire_exact::Presence;
 
 use crate::native_model::{NativeModel, ObjectRole, ScalarKind, ScalarRole, ScalarSite, Unit};
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
@@ -86,10 +85,7 @@ impl<'a> DomainType<'a> {
             return DomainField::Missing;
         };
         match domain_value_type(self.package, &field.value_type, field.multiplicity) {
-            Some(ty) => DomainField::Typed(match field.presence {
-                Presence::Required => ty,
-                Presence::Optional => NativeType::Option(Box::new(ty)),
-            }),
+            Some(ty) => DomainField::Typed(ty),
             None => DomainField::Unrepresented,
         }
     }
