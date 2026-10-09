@@ -574,21 +574,21 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     sources.push(checked.source().clone());
     sources.extend(checked.libraries().iter().cloned());
 
+    let run = CompiledRun {
+        packages: &request.packages,
+        model_limits: request.limits.model,
+        provisions: Provisions {
+            snapshots: &request.snapshots,
+            invocations: &request.invocations,
+        },
+        observation_limits: request.observation_limits,
+        accounting: request.accounting,
+        package,
+        package_id,
+        sources: &sources,
+    };
     match request.selection {
         ClauseRunSelection::Clause(ref selection) => {
-            let run = CompiledRun {
-                packages: &request.packages,
-                model_limits: request.limits.model,
-                provisions: Provisions {
-                    snapshots: &request.snapshots,
-                    invocations: &request.invocations,
-                },
-                observation_limits: request.observation_limits,
-                accounting: request.accounting,
-                package,
-                package_id,
-                sources: &sources,
-            };
             let Some(clause) = package.graph().state_clause(&selection.name) else {
                 return Ok(run.report(ClauseDisposition::MissingName {
                     name: selection.name.clone(),
@@ -600,39 +600,11 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref name,
             ref arguments,
             ref snapshot,
-        } => run_function(
-            &request.packages,
-            request.limits.model,
-            &request.snapshots,
-            request.observation_limits,
-            request.accounting,
-            package,
-            package_id,
-            name,
-            arguments,
-            snapshot,
-            &sources,
-        ),
+        } => run_function(&run, name, arguments, snapshot),
         ClauseRunSelection::Frame {
             ref operation,
             ref invocation,
-        } => Ok(run_frame(
-            &CompiledRun {
-                packages: &request.packages,
-                model_limits: request.limits.model,
-                provisions: Provisions {
-                    snapshots: &request.snapshots,
-                    invocations: &request.invocations,
-                },
-                observation_limits: request.observation_limits,
-                accounting: request.accounting,
-                package,
-                package_id,
-                sources: &sources,
-            },
-            operation,
-            invocation,
-        )),
+        } => Ok(run_frame(&run, operation, invocation)),
     }
 }
 
@@ -946,21 +918,21 @@ pub(crate) fn check_frame(
     FrameCheck { report, documents }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_function(
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    model_limits: ModelNormalizationLimits,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    observation_limits: ObservationLimits,
-    accounting: ScalarLimits,
-    package: &qsl_package::CheckedPackage,
-    package_id: PackageId,
+    run: &CompiledRun<'_>,
     name: &str,
     arguments: &[ClauseArgument],
     snapshot: &DocumentRef,
-    sources: &[Source],
 ) -> Result<ClauseRunReport, ClauseRunRefusal> {
     use qsl_eval::value::CheckedPackageEvaluation;
+    let packages = run.packages;
+    let model_limits = run.model_limits;
+    let snapshots = run.provisions.snapshots;
+    let observation_limits = run.observation_limits;
+    let accounting = run.accounting;
+    let package = run.package;
+    let package_id = run.package_id;
+    let sources = run.sources;
     let report = |disposition: ClauseDisposition| ClauseRunReport {
         basis: undecided_basis(&disposition),
         witness: None,

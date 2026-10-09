@@ -591,8 +591,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
 
 /// FR-108-AC-5 (TC-469 step 5): with `quire-extraction`, each case's unit
 /// embedded in a Markdown fence and run through the I3 adapter gives the
-/// direct run's disposition, a different source identity and digest, and
-/// the extraction's original identity and digest in its provenance.
+/// direct run's disposition and `package_id`.
 #[cfg(feature = "quire-extraction")]
 mod extraction {
     use super::{build, run_clause, Case, ClauseRunRequest};
@@ -689,6 +688,12 @@ mod extraction {
             assert_eq!(
                 extracted_report.disposition.truth(),
                 direct_report.disposition.truth(),
+                "{}",
+                case.id()
+            );
+            assert_eq!(
+                extracted_report.package_id,
+                direct_report.package_id,
                 "{}",
                 case.id()
             );

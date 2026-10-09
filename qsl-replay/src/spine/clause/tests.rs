@@ -733,6 +733,20 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
     let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    // The package `compose` emits for this unit on its own, independent of
+    // the run.
+    let (unit, packages) = unit_and_packages();
+    let expected_package_id = compose(
+        source(),
+        "clause-run.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the unit compiles")
+    .emitted
+    .package_id();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -750,7 +764,7 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
 
-    assert!(report.package_id.is_some());
+    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         report.usage.evaluation_admissions > 0,
         "the evaluation meter's charges are reported"
