@@ -1690,7 +1690,7 @@ fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
     use qsl_semantics::model::domain_package::ScalarTypeRecord;
     use quire_exact::{ChargePoint, Incomplete};
 
-    let count = ValueType::Int(IntegerInterval::new(0_i64, 9_i64).unwrap());
+    let count = ValueType::Int(IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap());
     let mut records = vec![
         object_type_record("model.A", vec![]),
         object_type_record("model.B", vec!["model.A"]),
