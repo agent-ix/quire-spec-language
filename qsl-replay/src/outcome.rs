@@ -1302,7 +1302,10 @@ mod tests {
                     }),
                 );
                 assert_eq!(item.category(), Category::Inconclusive);
-                assert_eq!(item.cause.as_ref().unwrap().certificate_at, Some(at.clone()));
+                assert_eq!(
+                    item.cause.as_ref().unwrap().certificate_at,
+                    Some(at.clone())
+                );
                 let document =
                     OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), vec![item]);
                 let failure = document
