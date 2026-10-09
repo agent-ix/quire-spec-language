@@ -513,6 +513,9 @@ struct Unit {
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
+    /// Each `temporal` clause's form, in source order, for the
+    /// TemporalTrace `check` to read.
+    temporal_clauses: Vec<qsl_forms::TemporalClauseForm>,
 }
 
 impl Unit {
@@ -527,6 +530,7 @@ impl Unit {
             declared: BTreeMap::new(),
             state_clauses: Vec::new(),
             protocols: Vec::new(),
+            temporal_clauses: Vec::new(),
         };
         for form in forms {
             match form.into_form() {
@@ -557,6 +561,7 @@ impl Unit {
                 }
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
+                DeclarationForm::Temporal(clause) => unit.temporal_clauses.push(*clause),
             }
         }
         unit
@@ -1731,6 +1736,7 @@ impl PackageDeclarations {
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
         package.protocols = unit.protocols;
+        package.temporal_clauses = unit.temporal_clauses;
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.imports = qualified;
