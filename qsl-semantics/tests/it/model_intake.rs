@@ -710,6 +710,24 @@ fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
             declaration.key
         );
     }
+    let mut missing = document.clone();
+    missing["types"][0]["relationships"][0]["targetEnd"]["type"] =
+        "ix://test/origins/Missing".into();
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals = read_records(package_identity, &parsed)
+        .expect_err("an absent relationship target admits no declarations");
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    assert_eq!(
+        refusals[0].cause,
+        qsl_semantics::model::normalize::ModelRefusalCause::IntakeMissingDeclaration {
+            node: "ix://test/origins/A/related".into(),
+            reference: "ix://test/origins/Missing".into(),
+            origin: relationship_origin,
+            path: "/types/0/relationships/0/targetEnd/type".parse().unwrap(),
+        }
+    );
 }
 
 /// (b): a hand-written Semantic IR 2.0.0 document using QSpec's own identity

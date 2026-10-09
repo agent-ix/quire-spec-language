@@ -1403,6 +1403,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
         .map(|located| {
+            if let Some(refusal) = missing_reader_reference(document, located) {
+                return refusal;
+            }
             let node = if located.owner.is_empty() {
                 "$".to_owned()
             } else {
@@ -1425,6 +1428,44 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// Translate only the reader's typed unresolved-reference codes, using its
+/// actual pointer and the selected document. Diagnostic prose never selects
+/// a cause or supplies a declaration identity.
+fn missing_reader_reference(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    if located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
+        && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
+    {
+        return None;
+    }
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let reference = document.tree.pointer(pointer)?.as_str()?;
+    let package = document.tree.get("package")?.get("identity")?.as_str()?;
+    // A malformed native or foreign identity is not a missing declaration
+    // of this selected package.
+    type_identity_segment(package, reference)?;
+    let mut owner_pointer = pointer;
+    let origin = loop {
+        let owner = document.tree.pointer(owner_pointer)?;
+        if owner.get("identity").and_then(Value::as_str) == Some(located.owner.as_str()) {
+            break owner.get("origin")?.clone();
+        }
+        owner_pointer = owner_pointer.rsplit_once('/')?.0;
+    };
+    Some(ModelRefusal {
+        code: Code::MissingDeclaration,
+        cause: ModelRefusalCause::IntakeMissingDeclaration {
+            node: located.owner.clone(),
+            reference: reference.to_owned(),
+            origin,
+            path: pointer.parse().ok()?,
+        },
+        detail: format!("{pointer}: {reference:?} names no declaration of this domain package"),
+    })
 }
 
 /// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
