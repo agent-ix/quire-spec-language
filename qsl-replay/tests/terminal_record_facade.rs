@@ -168,14 +168,17 @@ fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade()
             })
             .collect(),
     };
-    let read = read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
+    let read =
+        read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
     assert_eq!(read.len(), values.len());
     for (envelope, cause) in read.iter().zip(&values) {
         assert_eq!(envelope.category(), Category::Inconclusive);
         assert_eq!(envelope.record().value(), &TerminalValue::Inconclusive(cause.clone()));
-        assert_eq!(envelope.inconclusive_cause(), Some(&ReportedInconclusiveCause::Cause(cause.clone())));
+        assert_eq!(
+            envelope.inconclusive_cause(),
+            Some(&ReportedInconclusiveCause::Cause(cause.clone()))
+        );
     }
-}
 }
 
 /// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
