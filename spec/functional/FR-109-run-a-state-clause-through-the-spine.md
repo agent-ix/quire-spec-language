@@ -192,8 +192,3 @@ Implemented, except AC-7's `UndefinedEvaluation{cause}` record (the undefined ev
 category `undefined` and exit 10 are implemented). The I3 extracted-source input is
 `ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
 feature.
-
-## References
-
-- Linear QSL-460 (deleting `ClauseRunProvenance` and
-  `ClauseRunReport::source_digest` from the code).
