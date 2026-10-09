@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model as ir;
+use quire_exact::Presence;
 
 use crate::native_model::{NativeModel, ObjectRole, ScalarKind, ScalarRole, ScalarSite, Unit};
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
@@ -85,7 +86,10 @@ impl<'a> DomainType<'a> {
             return DomainField::Missing;
         };
         match domain_value_type(self.package, &field.value_type, field.multiplicity) {
-            Some(ty) => DomainField::Typed(ty),
+            Some(ty) => DomainField::Typed(match field.presence {
+                Presence::Required => ty,
+                Presence::Optional => NativeType::Option(Box::new(ty)),
+            }),
             None => DomainField::Unrepresented,
         }
     }
@@ -116,11 +120,12 @@ pub(crate) fn domain_value_type<'a>(
     };
     match (multiplicity.lower, multiplicity.upper) {
         (1, Some(1)) => Some(leaf),
-        (0, Some(1)) => Some(NativeType::Option(Box::new(leaf))),
-        (0, Some(maximum)) => Some(NativeType::Sequence {
-            element: Box::new(leaf),
-            maximum: u32::try_from(maximum).ok()?,
-        }),
+        (0, Some(maximum)) if multiplicity.ordered && !multiplicity.unique => {
+            Some(NativeType::Sequence {
+                element: Box::new(leaf),
+                maximum: u32::try_from(maximum).ok()?,
+            })
+        }
         _ => None,
     }
 }

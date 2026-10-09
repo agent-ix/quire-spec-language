@@ -10,6 +10,7 @@
 //! keeps a default-feature build from compiling them at all.
 
 mod complete_value_lock;
+mod field_presence;
 mod identity_golden_vectors;
 mod ieee_profiles;
 mod import_view_names;
