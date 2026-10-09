@@ -48,7 +48,9 @@ use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::intake::{admit, lift_document, meaning, read_records, PackageDocument};
+use qsl_semantics::model::intake::{
+    admit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
+};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 use qsl_semantics::model::systems::{
@@ -619,6 +621,95 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
             }
         },
     })
+}
+
+#[trace("TC-145", "FR-056-AC-1", "FR-056-AC-5")]
+#[test]
+fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
+    use qsl_semantics::model::admitted::AdmittedPackage;
+    let package_identity = "test/origins";
+    let owner = "ix://test/origins/A";
+    let target = "ix://test/origins/B";
+    let source_origin = serde_json::json!({"source": {
+        "sourceIdentity": "ix://authored/model/A", "path": "model/A.md",
+        "startLine": 12, "startColumn": 3, "endLine": 15, "endColumn": 9,
+    }});
+    let relationship_origin = serde_json::json!({"source": {
+        "sourceIdentity": "ix://authored/model/A", "path": "model/A.md",
+        "startLine": 30, "startColumn": 2, "endLine": 30, "endColumn": 57,
+    }});
+    let relationship = serde_json::json!({
+        "identity": "ix://test/origins/A/related", "category": "structural", "composite": false,
+        "direction": "source-to-target", "origin": relationship_origin,
+        "sourceEnd": {"role": "related", "type": owner, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
+        "targetEnd": {"type": target, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
+    });
+    let kind = serde_json::json!({"module": package_identity, "name": "thing"});
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([wire_construct(
+            package_identity,
+            "thing",
+            meaning::OBJECT_TYPE,
+            serde_json::json!({})
+        )]),
+        serde_json::json!([
+            wire_type(
+                owner,
+                kind.clone(),
+                serde_json::json!({
+                    "origin": source_origin, "fields": [wire_field("ix://test/origins/A/id", "id", "ix://quire/native/Boolean")],
+                    "identityFields": ["ix://test/origins/A/id"], "supertypes": [], "operations": [], "relationships": [relationship],
+                })
+            ),
+            wire_type(
+                target,
+                kind,
+                serde_json::json!({
+                    "fields": [wire_field("ix://test/origins/B/id", "id", "ix://quire/native/Boolean")],
+                    "identityFields": ["ix://test/origins/B/id"], "supertypes": [], "operations": [], "relationships": [],
+                })
+            ),
+        ]),
+    );
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let parsed = parse_document(&bytes);
+    let package = read_domain_package(
+        DomainPackageRef {
+            identity: package_identity.into(),
+            version: "1.0.0".into(),
+            digest: parsed.jcs_digest(),
+        },
+        &parsed,
+    )
+    .expect("a complete valid source document reads");
+    let package =
+        AdmittedPackage::admit(package, &mut default_meter()).expect("all declarations admit");
+    assert_eq!(package.len(), 5);
+    let declaration = package.declaration("A").unwrap();
+    let original = declaration
+        .original
+        .expect("source declaration retains provenance");
+    assert_eq!(original.meaning.as_deref(), Some(meaning::OBJECT_TYPE));
+    assert_eq!(original.origin, source_origin);
+    assert_eq!(original.member_name, None);
+    let relationship = package.member(declaration.key, "related").unwrap();
+    let original = relationship
+        .original
+        .expect("relationship retains its own source");
+    assert_eq!(original.meaning, None);
+    assert_eq!(original.member_name.as_deref(), Some("related"));
+    assert_eq!(original.origin, relationship_origin);
+    let generated = package.declaration("B").unwrap().original.unwrap();
+    assert_eq!(generated.origin, document["types"][1]["origin"]);
+    assert!(generated.origin.get("source").is_none());
+    for declaration in package.declarations() {
+        assert!(
+            declaration.original.is_some(),
+            "no admitted original loses its provenance: {:?}",
+            declaration.key
+        );
+    }
 }
 
 /// (b): a hand-written Semantic IR 2.0.0 document using QSpec's own identity

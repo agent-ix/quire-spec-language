@@ -15,9 +15,9 @@ use qsl_foundation::selection::{ModelDigest, ModelSelection};
 use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
 
-use super::{admit_located, read_records, PackageDocument};
+use super::{admit_located, read_domain_package, PackageDocument};
 use crate::model::accounting::{Incomplete, ModelNormalizationLimits};
-use crate::model::domain_package::{DomainPackage, DomainPackageRef};
+use crate::model::domain_package::DomainPackageRef;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_with_cancel, EffectiveView, NormalizeOutcome, Refusals};
 
@@ -154,16 +154,12 @@ pub fn admit_unit_with_cancel(
     admitted
         .into_iter()
         .map(|((selection, _), package_ref, document)| {
-            let records = read_records(&package_ref.identity, &document).map_err(|refusals| {
+            let package = read_domain_package(package_ref, &document).map_err(|refusals| {
                 let cause = Refusals::try_from(refusals)
                     .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);
                 refuse(selection, cause)
             })?;
-            let view = match normalize_with_cancel(
-                &DomainPackage::new(package_ref, records),
-                limits,
-                cancel,
-            ) {
+            let view = match normalize_with_cancel(&package, limits, cancel) {
                 NormalizeOutcome::Completed(view) => view,
                 NormalizeOutcome::Refused(refusals) => {
                     return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))
