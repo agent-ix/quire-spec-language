@@ -435,11 +435,13 @@ Amended by ADR-018 §1 (temporal model checking). The proof column also takes
 the verdicts of the temporal model-check engines (ADR-018 V-1 to V-8):
 `TerminalValue::Proved` carries a `ProofBasis` (`Checks{success_checks}` for
 Kani, `Exhaustive`, `BoundedComplete{depth}`, `Inductive{depth}`) and a
-`certification: Option<Certification>` (`Certified` when a core checker
-accepted an EN-1 closure or component certificate, `Uncertified` from a
-native engine with no checked certificate, `Trusted` from a third-party
-plugin, and none for a Kani proof, whose prove path is in the qualified core,
-or for an SMT proof whose certificate FR-314 accepted; ADR-018 PC-1, PC-6),
+`certification: Certification`, exactly one value on every `Proved`
+(`Certified` when the qualified core produced or checked the proof: a core
+checker accepted its certificate, an EN-1 closure or component certificate
+or an SMT certificate FR-314 verified, or it is a Kani proof, whose prove
+path is in the qualified core; `Uncertified` from a first-party engine or
+solver whose proof no core checker re-checked; `Trusted` from a third-party
+plugin; ADR-018 PC-1, PC-6),
 and every basis maps to success except `Checks{0}`, which maps to inconclusive with
 `kani_vacuous_proof` as above. A model counterexample whose E9 replay settles
 `ReproducedWithEvaluatedWitness` maps to `refuted`; one whose replay settles

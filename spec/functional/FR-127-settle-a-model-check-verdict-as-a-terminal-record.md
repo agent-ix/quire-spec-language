@@ -82,9 +82,9 @@ pub enum ProofBasis {
     Inductive { depth: u64 },
 }
 
-pub enum Certification { Certified, Uncertified, Trusted }
+pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 
-// TerminalValue::Proved { basis: ProofBasis, certification: Option<Certification> }
+// TerminalValue::Proved { basis: ProofBasis, certification: Certification }
 // InconclusiveCause gains:
 //   BoundReached { depth: u64 }, InductionNotClosed { depth: u64 },
 //   UndecidedSuccessor, NoInitialState,
@@ -163,15 +163,15 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 - For an SMT `BoundedComplete` or `Inductive` result that CG's SMT map
   hands it, the settlement map SHALL run FR-314's `check_smt_proof` on the
   result's `SmtProofCertificate` and settle `proved` with
-  `certification: None` when it returns `Verified`,
+  `certification: Certified` when it returns `Verified`,
   `Inconclusive(CertificateRejected{rule, state})` when it rejects, and
-  `proved` with `Some(Uncertified)` when it returns `Unverifiable` or the
+  `proved` with `Uncertified` when it returns `Unverifiable` or the
   result carries no certificate (ADR-018 PC-6). A proof from any other
   native engine with no core certificate checker SHALL
-  carry `Some(Uncertified)`; one from a third-party plugin SHALL
-  carry `Some(Trusted)`; a Kani `Checks` proof, from the qualified core's
-  prove path, SHALL carry `None`. Each settles `proved` and maps to success
-  (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
+  carry `Uncertified`; one from a third-party plugin SHALL
+  carry `Trusted`; a Kani `Checks` proof, from the qualified core's
+  prove path, SHALL carry `Certified`. Every `Proved` carries exactly one
+  certification; each settles `proved` and maps to success (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
   map (ADR-018 DS-2) construct the values of their backends; this
   settlement map covers QSL's native engine, EN-1, and the SMT certificate
   check.
@@ -187,7 +187,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
   0}}` to inconclusive with `KaniVacuousProof`, and every other `Proved`
   basis, `Exhaustive`, `BoundedComplete{depth}` and `Inductive{depth}`, to
   success.
-- `TerminalValue::category` SHALL map `Proved` with either certification
+- `TerminalValue::category` SHALL map `Proved` with any certification
   as its basis maps, and `Inconclusive` with each of the new causes,
   `CertificateRejected` included, to inconclusive, and `Unsupported(cause)` to unsupported.
 
@@ -204,7 +204,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 
 | FR-127-AC-7 | FR-338-AC-1's TP-1 proof with its accepted certificate settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; with FR-338-AC-2's `(1, 0)`-removed certificate it settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{SuccessorMissing, (1, 0)})`. | Test (TC-522) |
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
-| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, None}`, `Proved{BoundedComplete{depth: 5}, Some(Uncertified)}`, `Proved{Inductive{depth: 2}, Some(Uncertified)}` and a plugin's `Proved{Exhaustive, Some(Trusted)}`, as CG's maps construct them, each read `proved` with category success, never `inconclusive`; the Kani one carries no label. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
+| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Certified}`, `Proved{BoundedComplete{depth: 5}, Certified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}`, `Proved{Inductive{depth: 2}, Uncertified}` and a plugin's `Proved{Exhaustive, Trusted}`, as CG's maps and the settlement map construct them, each read `proved` with category success, never `inconclusive`, and each keeps its one certification. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
 
 ## Dependencies

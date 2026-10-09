@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify `analyze` over QSL's layer-A engines: a certificate-checked proof, a replayed counterexample, and an item no engine accepts.
+Verify `analyze` over QSL's layer-A engines: a `certified` proof, a replayed counterexample, and an item no engine accepts.
 
 Scope: FR-281-AC-1 to FR-281-AC-3.
 

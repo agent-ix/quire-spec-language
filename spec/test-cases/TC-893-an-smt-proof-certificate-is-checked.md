@@ -34,7 +34,7 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: both accepted; `proved`, success, no certification label.
+- Step 1: both accepted; `proved`, `Certified`, success.
 - Step 2: `QueryMismatch` at `Unrolling`; `ProofStepInvalid` at that step;
   `NotRefutation`; `ProofStepInvalid` at the
   `Step` step; `ShapeMismatch`; each `inconclusive`,

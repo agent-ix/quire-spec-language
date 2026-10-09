@@ -38,8 +38,8 @@ Text forms:
   (FR-001).
 - A counterexample renders as a table of parameter names and values.
 - A trace renders as numbered positions with the loop marked.
-- A `proved` record that carries the `trusted` label renders the label
-  beside the verdict.
+- A `proved` record renders its certification, `certified`, `uncertified`
+  or `trusted`, beside the verdict.
 - Bulk content renders as a bounded descriptor (FR-073).
 
 DOT is available for the state-graph and trace views.

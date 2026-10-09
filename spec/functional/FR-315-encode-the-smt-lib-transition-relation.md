@@ -26,7 +26,7 @@ byte for byte under the canonical printing below.
 
 ## Use case
 
-A verification operator gets an SMT proof labelled without `uncertified`.
+A verification operator gets an SMT proof labelled `certified`.
 That label means the core checked the solver's refutation of a query the
 core itself encoded, which works only when the backend that asked the
 solver used the same encoding the core rebuilds.

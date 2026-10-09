@@ -34,10 +34,11 @@ Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
    FR-338-AC-2's `(1, 0)`-removed certificate.
 7. Settle FR-339-AC-1's weak `each` proof with its certificate, and with
    FR-339-AC-2's `upd(a)` witness.
-8. Read the label and category of `Proved{Checks{3}, None}`,
-   `Proved{BoundedComplete{depth: 5}, Some(Uncertified)}`,
-   `Proved{Inductive{depth: 2}, Some(Uncertified)}` and
-   `Proved{Exhaustive, Some(Trusted)}`, and the category of
+8. Read the label and category of `Proved{Checks{3}, Certified}`,
+   `Proved{BoundedComplete{depth: 5}, Certified}`,
+   `Proved{BoundedComplete{depth: 5}, Uncertified}`,
+   `Proved{Inductive{depth: 2}, Uncertified}` and
+   `Proved{Exhaustive, Trusted}`, and the category of
    `Inconclusive(CertificateRejected)`.
 9. Settle a replay result with cause `Verdicts`.
 
@@ -65,6 +66,6 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
   `CertificateRejected{SuccessorMissing, (1, 0)}`.
 - Step 7: `Proved{Exhaustive, Certified}`; `inconclusive`,
   `CertificateRejected{WitnessFails}` at `{(*, 0, q1)}`'s first state.
-- Step 8: `proved`, success, four times, labelled none, `Uncertified`,
-  `Uncertified` and `Trusted`; inconclusive.
+- Step 8: `proved`, success, five times, labelled `Certified`, `Certified`,
+  `Uncertified`, `Uncertified` and `Trusted`; inconclusive.
 - Step 9: `inconclusive`, `ReplayParity`, written `replay-parity`.
