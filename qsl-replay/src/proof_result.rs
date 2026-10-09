@@ -346,7 +346,8 @@ impl TerminalValue {
             }
             | Self::Inconclusive(_) => Category::Inconclusive,
             Self::Proved {
-                basis: ProofBasis::Checks { .. }
+                basis:
+                    ProofBasis::Checks { .. }
                     | ProofBasis::Exhaustive
                     | ProofBasis::BoundedComplete { .. }
                     | ProofBasis::Inductive { .. },
@@ -663,7 +664,10 @@ mod tests {
     #[test]
     fn proof_reader_preserves_every_basis_and_required_certification() {
         let bases = [
-            (ProofBasis::Checks { success_checks: 0 }, Category::Inconclusive),
+            (
+                ProofBasis::Checks { success_checks: 0 },
+                Category::Inconclusive,
+            ),
             (ProofBasis::Checks { success_checks: 1 }, Category::Success),
             (ProofBasis::Checks { success_checks: 3 }, Category::Success),
             (ProofBasis::Exhaustive, Category::Success),
@@ -679,7 +683,10 @@ mod tests {
         ];
         for (basis, category) in bases {
             for (certification, spelling) in certifications {
-                let value = TerminalValue::Proved { basis, certification };
+                let value = TerminalValue::Proved {
+                    basis,
+                    certification,
+                };
                 let source = BackendProviderSource {
                     backend_identity: "proof-provider".to_owned(),
                     items: vec![TerminalRecord::new(RequestIndex::new(0), value.clone())],
@@ -688,12 +695,17 @@ mod tests {
                     .expect("the complete proof record admits");
                 assert_eq!(envelopes.len(), 1);
                 let envelope = &envelopes[0];
-                assert_eq!(envelope.category(), category, "{basis:?}, {certification:?}");
+                assert_eq!(
+                    envelope.category(),
+                    category,
+                    "{basis:?}, {certification:?}"
+                );
                 assert_eq!(envelope.record().value(), &value);
                 let TerminalValue::Proved {
                     basis: retained_basis,
                     certification: retained_certification,
-                } = envelope.record().value() else {
+                } = envelope.record().value()
+                else {
                     panic!("the reader must retain Proved");
                 };
                 assert_eq!(*retained_basis, basis);
@@ -712,8 +724,14 @@ mod tests {
     #[test]
     fn temporal_inconclusive_causes_keep_depth_and_exact_category() {
         for (cause, spelling) in [
-            (InconclusiveCause::BoundReached { depth: 1 }, "bound-reached"),
-            (InconclusiveCause::InductionNotClosed { depth: 2 }, "induction-not-closed"),
+            (
+                InconclusiveCause::BoundReached { depth: 1 },
+                "bound-reached",
+            ),
+            (
+                InconclusiveCause::InductionNotClosed { depth: 2 },
+                "induction-not-closed",
+            ),
             (InconclusiveCause::UndecidedSuccessor, "undecided-successor"),
             (InconclusiveCause::NoInitialState, "no-initial-state"),
         ] {
@@ -729,9 +747,14 @@ mod tests {
             assert_eq!(envelopes.len(), 1);
             assert_eq!(envelopes[0].category(), Category::Inconclusive);
             assert_eq!(envelopes[0].record(), &source.items[0]);
-            assert_eq!(envelopes[0].inconclusive_cause(),
-                Some(&ReportedInconclusiveCause::Cause(cause)));
-            assert_eq!(envelopes[0].inconclusive_cause().unwrap().as_str(), spelling);
+            assert_eq!(
+                envelopes[0].inconclusive_cause(),
+                Some(&ReportedInconclusiveCause::Cause(cause))
+            );
+            assert_eq!(
+                envelopes[0].inconclusive_cause().unwrap().as_str(),
+                spelling
+            );
         }
     }
 
@@ -749,7 +772,18 @@ mod tests {
             Some(EvaluatedValue::Boolean(true)),
             WitnessCheck::Agrees(None),
             Vec::new(),
-            quire_exact::ScalarLimits::default(),
+            quire_exact::ScalarLimits {
+                integer_bits: 0,
+                decimal_digits: 0,
+                scale_expansion: 0,
+                text_input_bytes: 0,
+                text_scalars: 0,
+                normalized_scalars: 0,
+                unit_edges: 0,
+                value_occurrences: 0,
+                work_units: 0,
+                result_units: 0,
+            },
         );
         assert_eq!(replay.settlement(), WitnessSettlement::Inconclusive);
         let expected = DisagreementCause::Verdicts { proved, replayed };
@@ -768,10 +802,16 @@ mod tests {
         let envelopes = read_backend_provider_envelope(&source, ReplayLimits::default()).unwrap();
         assert_eq!(envelopes.len(), 1);
         assert_eq!(envelopes[0].category(), Category::Inconclusive);
-        assert_eq!(envelopes[0].inconclusive_cause(), Some(
-            &ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(expected))
-        ));
-        assert_eq!(envelopes[0].inconclusive_cause().unwrap().as_str(), "replay-parity");
+        assert_eq!(
+            envelopes[0].inconclusive_cause(),
+            Some(&ReportedInconclusiveCause::Cause(
+                InconclusiveCause::ReplayParity(expected)
+            ))
+        );
+        assert_eq!(
+            envelopes[0].inconclusive_cause().unwrap().as_str(),
+            "replay-parity"
+        );
     }
 
     #[trace("TC-522", "FR-127-AC-4")]
@@ -783,7 +823,8 @@ mod tests {
                 backend_identity: "model-provider".to_owned(),
                 items: vec![TerminalRecord::new(RequestIndex::new(0), value.clone())],
             };
-            let envelopes = read_backend_provider_envelope(&input, ReplayLimits::default()).unwrap();
+            let envelopes =
+                read_backend_provider_envelope(&input, ReplayLimits::default()).unwrap();
             assert_eq!(envelopes.len(), 1);
             assert_eq!(envelopes[0].category(), Category::Incomplete);
             assert_eq!(envelopes[0].record().value(), &value);
