@@ -100,6 +100,8 @@ mod refusal;
 mod region;
 mod settings;
 mod state_clause;
+mod state_model;
+pub use state_model::StateModelRefusal;
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
@@ -1907,6 +1909,21 @@ impl CheckedGraph {
             &mut nodes,
             clause_kind,
         );
+        let mut meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = crate::family::DiagnosticSink::default();
+        let mut scopes = crate::family::ScopeStack::default();
+        let stage_limits = crate::family::StageLimits {
+            input_bytes: u64::MAX,
+            node_count: limits.nodes(),
+        };
+        let mut cx = crate::family::CheckContext::new(
+            &self.scope,
+            stage_limits,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let mut typer = typer.with_context(cx.reborrow(&self.scope));
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {

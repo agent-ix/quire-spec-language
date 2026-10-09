@@ -923,7 +923,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
         let mut stack = vec![root.root()];
         while let Some(expression) = stack.pop() {
             match expression.node() {
-                ExprNode::Convert { target, .. } | ExprNode::AllInstances { target, .. } => {
+                ExprNode::Convert { target, .. } => {
                     forms.push(target.clone());
                 }
                 ExprNode::Accumulate {
@@ -961,6 +961,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Flatten(_)
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
+                | ExprNode::AllInstances { .. }
                 | ExprNode::Lookup { .. }
                 | ExprNode::Dispatch { .. }
                 | ExprNode::Pre(_)

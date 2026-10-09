@@ -120,7 +120,7 @@ impl FamilyKind {
     /// seam probe alone, since it would compile even under `--cfg
     /// seam_probe`).
     #[deny(clippy::wildcard_enum_match_arm)]
-    pub(crate) const fn catalog_code_prefix(self) -> &'static str {
+    pub const fn catalog_code_prefix(self) -> &'static str {
         match self {
             Self::Value => "value",
             Self::StateModel => "state-model",

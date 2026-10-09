@@ -780,6 +780,7 @@ impl std::fmt::Display for Category {
 pub struct CatalogCode {
     code: &'static str,
     cause: &'static str,
+    prefix: Option<&'static str>,
 }
 
 impl CatalogCode {
@@ -787,7 +788,22 @@ impl CatalogCode {
     /// the catalog spells them (ADR-013 R-07: a typed-cause-to-code
     /// conversion never invents a code the catalog does not define).
     pub const fn new(code: &'static str, cause: &'static str) -> Self {
-        Self { code, cause }
+        Self {
+            code,
+            cause,
+            prefix: None,
+        }
+    }
+
+    /// Attribute the rendered pair without changing its published raw fields.
+    pub const fn with_prefix(mut self, prefix: &'static str) -> Self {
+        self.prefix = Some(prefix);
+        self
+    }
+
+    /// The producing family's rendering prefix, when attributed.
+    pub const fn prefix(&self) -> Option<&'static str> {
+        self.prefix
     }
 
     /// The catalog's top-level code, e.g. `"runtime_invariant"`.
@@ -804,6 +820,9 @@ impl CatalogCode {
 
 impl std::fmt::Display for CatalogCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(prefix) = self.prefix {
+            write!(f, "{prefix}/")?;
+        }
         write!(f, "{}/{}", self.code, self.cause)
     }
 }
@@ -1192,6 +1211,20 @@ pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
     /// This cause's [`UndefinedRecord`]; its O-16 category is always
     /// `Category::Undefined`.
     fn undefined_record(&self) -> UndefinedRecord;
+
+    /// The producing family's prefix, separate from the published reason.
+    fn catalog_prefix(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Render ownership and the unchanged catalog reason together.
+    fn catalog_code(&self) -> String {
+        let record = self.undefined_record();
+        match self.catalog_prefix() {
+            Some(prefix) => format!("{prefix}/{}", record.reason),
+            None => record.reason.to_string(),
+        }
+    }
 }
 
 /// ADR-013 O-16: the closed reason set of the

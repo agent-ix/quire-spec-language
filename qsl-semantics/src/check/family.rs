@@ -566,7 +566,7 @@ fn encode_expression(
             }
             ExprNode::AllInstances { target, population } => {
                 out.write_str("all-instances");
-                encode_value_type(out, &targets.resolve(target)?);
+                measure_model_target(out, target);
                 pending.push(expr.at(*population));
             }
             ExprNode::Lookup {
@@ -576,7 +576,7 @@ fn encode_expression(
                 absence,
             } => {
                 out.write_str("lookup");
-                encode_value_type(out, &targets.resolve(target)?);
+                measure_model_target(out, target);
                 out.write_str(absence_mode_tag(*absence));
                 pending.extend([expr.at(*population), expr.at(*reference)]);
             }
@@ -621,6 +621,37 @@ fn encode_expression(
         pending[first..].reverse();
     }
     Ok(())
+}
+
+/// Measure authored model targets without resolving their S3 question.
+fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) {
+    use qsl_forms::{BuiltinType, TypeFormHead};
+    let mut pending = vec![root];
+    while let Some(form) = pending.pop() {
+        out.write_str(match &form.head {
+            TypeFormHead::Name(name) => name,
+            TypeFormHead::Collection(kind) => collection_kind_tag(*kind),
+            TypeFormHead::Population => "Population",
+            TypeFormHead::Builtin(builtin) => match builtin {
+                BuiltinType::Boolean => "Boolean",
+                BuiltinType::Integer => "Integer",
+                BuiltinType::Int => "Int",
+                BuiltinType::Rational => "Rational",
+                BuiltinType::Decimal => "Decimal",
+                BuiltinType::Float32 => "Float32",
+                BuiltinType::Float64 => "Float64",
+                BuiltinType::Text => "Text",
+                BuiltinType::Option => "Option",
+                BuiltinType::Reference => "Reference",
+            },
+        });
+        out.write_u64(quire_exact::length_amount(form.arguments.len()));
+        out.write_u64(quire_exact::length_amount(form.bounds.len()));
+        for bound in &form.bounds {
+            out.write_str(bound);
+        }
+        pending.extend(form.arguments.iter().rev());
+    }
 }
 
 /// Measure one function declaration's parsed size: its name,
@@ -1098,6 +1129,7 @@ pub(crate) struct CheckedDeclarationBody {
 pub(crate) fn check_declaration_body(
     input: &ValueDeclarations<'_>,
     form: &FunctionDeclaration,
+    cx: &mut crate::family::CheckContext<'_, Scope>,
 ) -> Result<CheckedDeclarationBody, CheckRefusal> {
     let mut nodes = input.nodes_used;
     // The declaration's resolved parameter and result types; `form`'s own
@@ -1112,7 +1144,8 @@ pub(crate) fn check_declaration_body(
         form.clause_kind(),
     )
     .with_cancel(input.cancel)
-    .with_complete_value(input.complete_value);
+    .with_complete_value(input.complete_value)
+    .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, parameters, input.location)?;
     typer.check_declared_type(result, input.location)?;
     let body = typer.check_as(&form.body, result, input.location)?;
@@ -1136,7 +1169,8 @@ pub(crate) fn check_declaration_body(
                 ClauseKind::Body,
             )
             .with_cancel(input.cancel)
-            .with_complete_value(input.complete_value);
+            .with_complete_value(input.complete_value)
+            .with_context(cx.reborrow(input.scope));
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             let measure = measure_typer.infer(measure, None, input.measure_location)?;
             measure_slot_names = measure_typer.slot_names().to_vec();
@@ -1544,7 +1578,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // entry point (`Self::Checked` itself carries it -- PR #303 review,
         // finding N3 -- not a side-channel `Cell` `cx.declarations()`
         // would otherwise have to expose).
-        let checked_body = check_declaration_body(declarations, form);
+        let checked_body =
+            check_declaration_body(declarations, form, &mut cx.reborrow(declarations.scope));
         // PR #303 review, finding 11: this diagnostic is recorded only once
         // `check_declaration_body` has actually succeeded, not beforehand --
         // an earlier version logged "checked function declaration" right
@@ -2032,6 +2067,23 @@ pub(crate) mod checking_tests {
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
     use quire_exact::Meter;
+
+    fn check_declaration_body(
+        input: &ValueDeclarations<'_>,
+        form: &FunctionDeclaration,
+    ) -> Result<CheckedDeclarationBody, CheckRefusal> {
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(
+            input.scope,
+            limits(),
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        super::check_declaration_body(input, form, &mut cx)
+    }
 
     /// A call of `name` over `arguments`, typed through the typer's `Call`
     /// arm: [`Application::resolve`], each argument's check, then

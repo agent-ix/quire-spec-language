@@ -1379,7 +1379,7 @@ impl<'a> Typer<'a> {
         &mut self,
         frame: Box<DispatchArgumentsFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
-    ) -> Step<'e, 'r> {
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let index = frame.typed.len();
         let operation = frame.operation;
         match (
@@ -1389,11 +1389,11 @@ impl<'a> Typer<'a> {
             (Some(argument), Some(parameter)) => {
                 let location = frame.location.child(index + 1);
                 frames.push(Frame::DispatchArguments(frame));
-                Step::Descend(Goal::Expect(
+                Ok(Step::Descend(Goal::Expect(
                     argument,
                     Expected::Argument(Cow::Borrowed(parameter)),
                     location,
-                ))
+                )))
             }
             _ => {
                 let DispatchArgumentsFrame {
@@ -1403,16 +1403,16 @@ impl<'a> Typer<'a> {
                     typed,
                     ..
                 } = *frame;
-                Step::Typed(node(
-                    NodeKind::Dispatch {
-                        receiver: self.push(receiver),
-                        table: operation.table,
+                let receiver = self.push(receiver);
+                self.model_node(
+                    super::super::state_model::Form::Dispatch {
+                        receiver,
                         operation: operation_index,
                         arguments: typed,
                     },
-                    operation.result.clone(),
                     &location,
-                ))
+                )
+                .map(Step::Typed)
             }
         }
     }
@@ -1500,7 +1500,7 @@ impl<'a> Typer<'a> {
             Frame::Contains(frame) => self.accept_contains(frame, typed, frames),
             Frame::Lookup(mut frame) => match frame.population.take() {
                 None => {
-                    Self::lookup_population(&typed)?;
+                    self.lookup_population(&typed)?;
                     let reference_location = frame.location.child(1);
                     let reference = frame.reference;
                     frame.population = Some(typed);
@@ -1530,7 +1530,7 @@ impl<'a> Typer<'a> {
                 let (operation_index, operation) =
                     self.dispatch_operation(&typed, member, arguments.len(), &location)?;
                 let count = arguments.len();
-                Ok(self.dispatch_arguments(
+                self.dispatch_arguments(
                     Box::new(DispatchArgumentsFrame {
                         receiver: typed,
                         operation_index,
@@ -1540,11 +1540,11 @@ impl<'a> Typer<'a> {
                         typed: Vec::with_capacity(count),
                     }),
                     frames,
-                ))
+                )
             }
             Frame::DispatchArguments(mut frame) => {
                 frame.typed.push(self.push(typed));
-                Ok(self.dispatch_arguments(frame, frames))
+                self.dispatch_arguments(frame, frames)
             }
         }
     }

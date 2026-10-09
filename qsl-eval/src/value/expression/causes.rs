@@ -237,7 +237,9 @@ impl From<ModelRefusal> for ModelQueryRefusal {
 
 impl CatalogCoded for ModelQueryRefusal {
     fn catalog_code(&self) -> CatalogCode {
-        self.cause.catalog_code()
+        self.cause
+            .catalog_code()
+            .with_prefix(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
     }
 
     /// FR-096's key table rows for this cause (`absent-key` and
@@ -279,6 +281,9 @@ pub(crate) enum StateModelUndefined {
 }
 
 impl UndefinedCoded for StateModelUndefined {
+    fn catalog_prefix(&self) -> Option<&'static str> {
+        Some(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
+    }
     fn undefined_record(&self) -> UndefinedRecord {
         match self {
             Self::PreconditionFalse(failure) => UndefinedRecord {
@@ -441,7 +446,7 @@ mod tests {
         };
         let expected = refusal.catalog_code();
         let carried = ModelQueryRefusal::from(refusal);
-        assert_eq!(carried.catalog_code(), expected);
+        assert_eq!(carried.catalog_code(), expected.with_prefix("state-model"));
         assert_eq!(
             expected,
             CatalogCode::new("cardinality_out_of_bound", "above-maximum")
