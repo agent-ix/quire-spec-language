@@ -87,25 +87,36 @@ fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade()
     let values = [
         TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
             rule: CertificateRule::QueryMismatch,
-            at: CertificateLocus::Query { part: QueryPart::Unrolling },
+            at: CertificateLocus::Query {
+                part: QueryPart::Unrolling,
+            },
         }),
         TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
             rule: CertificateRule::ProofStepInvalid,
-            at: CertificateLocus::ProofStep { part: QueryPart::Step, index: u64::MAX },
+            at: CertificateLocus::ProofStep {
+                part: QueryPart::Step,
+                index: u64::MAX,
+            },
         }),
     ];
     let source = BackendProviderSource {
         backend_identity: "certificate-provider".to_owned(),
-        items: values.iter().enumerate().map(|(index, value)|
-            TerminalRecord::new(RequestIndex::new(index), value.clone())
-        ).collect(),
+        items: values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| TerminalRecord::new(RequestIndex::new(index), value.clone()))
+            .collect(),
     };
-    let read = read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
+    let read =
+        read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
     assert_eq!(read.len(), values.len());
     for (envelope, value) in read.iter().zip(&values) {
         assert_eq!(envelope.category(), Category::Inconclusive);
         assert_eq!(envelope.record().value(), value);
-        assert_eq!(envelope.inconclusive_cause(), value.inconclusive_cause().as_ref());
+        assert_eq!(
+            envelope.inconclusive_cause(),
+            value.inconclusive_cause().as_ref()
+        );
     }
 }
 

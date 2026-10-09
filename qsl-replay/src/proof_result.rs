@@ -794,7 +794,10 @@ mod tests {
                 for at in [
                     CertificateLocus::Query { part },
                     CertificateLocus::ProofStep { part, index: 0 },
-                    CertificateLocus::ProofStep { part, index: u64::MAX },
+                    CertificateLocus::ProofStep {
+                        part,
+                        index: u64::MAX,
+                    },
                 ] {
                     let cause = InconclusiveCause::CertificateRejected { rule, at };
                     let input = source(vec![TerminalRecord::new(
@@ -806,10 +809,14 @@ mod tests {
                     assert_eq!(read.len(), 1);
                     assert_eq!(read[0].category(), Category::Inconclusive);
                     assert_eq!(read[0].record(), &input.items[0]);
-                    assert_eq!(read[0].inconclusive_cause(), Some(
-                        &ReportedInconclusiveCause::Cause(cause)
-                    ));
-                    assert_eq!(read[0].inconclusive_cause().unwrap().as_str(), "certificate-rejected");
+                    assert_eq!(
+                        read[0].inconclusive_cause(),
+                        Some(&ReportedInconclusiveCause::Cause(cause))
+                    );
+                    assert_eq!(
+                        read[0].inconclusive_cause().unwrap().as_str(),
+                        "certificate-rejected"
+                    );
                 }
             }
         }
