@@ -9,6 +9,8 @@
 //! 2.0.0 document bytes against a selection and reads an admitted
 //! document's IR nodes into these records.
 
+use std::collections::BTreeMap;
+
 use crate::model::key::DeclarationKey;
 use quire_canonical::FixedShape;
 use quire_exact::{OrderingOperator, Presence};
@@ -612,14 +614,40 @@ pub struct DomainPackage {
     pub model_selection: DomainPackageRef,
     /// The domain package's records, in the producer's declared order.
     pub records: Vec<DomainPackageRecord>,
+    /// Original intake provenance, separate from normalized identities.
+    pub(crate) originals: BTreeMap<DeclarationKey, OriginalDeclaration>,
+}
+
+/// An original declaration's authored provenance. The FCD origin is
+/// retained whole: generated origins have no source span, and source
+/// origins retain their path and optional end coordinates unchanged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalDeclaration {
+    /// The exact construct meaning for a type or population. Members carry
+    /// no meaning id under QSpec FR-208.
+    pub meaning: Option<String>,
+    /// The original FCD origin object, without fabricated byte positions.
+    pub origin: serde_json::Value,
+    /// A member's declared name. Type and population nodes have none.
+    pub member_name: Option<String>,
 }
 
 impl DomainPackage {
-    /// A domain package over `records`, selected under `model_selection`.
+    /// A synthetic domain package over `records`, selected under
+    /// `model_selection`. This constructor receives no source document and
+    /// supplies no authored provenance. Intake callers use
+    /// [`crate::model::intake::read_domain_package`] to retain it.
     pub fn new(model_selection: DomainPackageRef, records: Vec<DomainPackageRecord>) -> Self {
         Self {
             model_selection,
             records,
+            originals: BTreeMap::new(),
         }
+    }
+
+    /// The original intake provenance of `key`, or none for a synthetic
+    /// record that was constructed without a source document.
+    pub fn original(&self, key: &DeclarationKey) -> Option<&OriginalDeclaration> {
+        self.originals.get(key)
     }
 }

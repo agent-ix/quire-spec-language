@@ -35,11 +35,9 @@ use ix_trace_rs::trace;
 use qsl_foundation::{Source, SourceIdentity};
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
-use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, PortDirection,
-};
+use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, PortDirection};
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::intake::{admit, lift_document, read_records};
+use qsl_semantics::model::intake::{admit, lift_document, read_domain_package};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::systems::{
     check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome,
@@ -290,10 +288,10 @@ fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
         qsl_foundation::IntakeLimits::default(),
     )
     .expect("the selection matches the lifted package");
-    let records = read_records(&selection.identity, &document)
+    let package = read_domain_package(selection, &document)
         .expect("every IR node of the edited bundle reads with no refusal");
     let package = AdmittedPackage::admit(
-        DomainPackage::new(selection, records),
+        package,
         &mut Meter::new(ModelNormalizationLimits::default()),
     )
     .expect("every declaration classifies with no refusal");
