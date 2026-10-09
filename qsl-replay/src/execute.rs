@@ -754,6 +754,8 @@ pub(crate) fn run_spine(
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+
     let cancel = Cancel::new();
     let refusal = |failure| match spine::refusal_or_fault(failure) {
         Ok(refusal) => ReplayRefusal::Recompile(refusal),
@@ -773,16 +775,15 @@ pub(crate) fn run_spine(
     let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check(
-        &parsed,
-        &models,
-        dependencies,
-        &spine::LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    // Compile and replay select the Text law implemented by the same
+    // definition catalog that supplies the emitted package's lock.
+    let text_profile = DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference();
+    let lock = spine::LockEvidence::default().with_text_profile(text_profile);
+    let checked = spine::check(&parsed, &models, dependencies, &lock, limits, &cancel)
+        .map_err(refusal)?
+        .into_value();
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();

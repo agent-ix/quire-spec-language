@@ -145,5 +145,4 @@ backs.
 Passed locally for steps 1 to 12. The `k` cases of steps 4 and 5 have no
 source form (the grammar takes only `K<T>[min, max]`), so the unbounded
 `K<T>` position derivation and coverage are tested directly, over each of
-`Sequence`, `Set`, `Bag` and `OrderedSet`. The `Text` leaf of step 5 uses a
-rational leaf until text-profile selection exists (QSL-646).
+`Sequence`, `Set`, `Bag` and `OrderedSet`.

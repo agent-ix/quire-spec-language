@@ -30,18 +30,57 @@ const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
      function h using v(a: List, b: List): Boolean pure { a = b }\n\
      enum Color { Red, Green, Blue }\n\
      function c using v(a: Color, b: Color): Boolean pure { a = b }\n\
-     record R { x: Int[0, 9]; label: Rational[0, 9; 1, 9]; }\n\
+     record R { x: Int[0, 9]; label: Text[0, 4; nfc]; }\n\
      function t using v(a: R, b: R): Boolean pure { a = b }\n\
      function d using v(a: Q, b: Q): Boolean pure { (a = b) and (a = b) }\n";
 
 struct Unit {
     source: String,
-    compiled: ComposedUnit,
+    compiled: Recompiled,
 }
 
 fn unit() -> Unit {
+    use crate::spine::{
+        check, package, parse, select, DependencyInput, LockEvidence, ParseRequest,
+    };
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_exact::Cancel;
+
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}{UNIT}");
-    let compiled = spine(&source, &BTreeMap::new());
+    let identity = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &identity,
+            path: IDENTITY,
+            bytes: source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("the unit parses")
+    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("the unit selects")
+        .into_value();
+    let text_profile = DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference();
+    let checked = check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &LockEvidence::default().with_text_profile(text_profile),
+        limits,
+        &cancel,
+    )
+    .expect("the selected Text law checks")
+    .into_value();
+    let emitted = package(&checked, crate::spine::PackageLimits::default(), &cancel)
+        .expect("the unit emits")
+        .into_value();
+    let compiled = Recompiled { checked, emitted };
     Unit { source, compiled }
 }
 
@@ -80,12 +119,15 @@ fn outcome(equal: bool, pair_count: u64) -> EqualityOutcome {
 
 impl Unit {
     fn parameter(&self, function: &str, index: usize) -> WireNodeId {
-        parameter(&self.compiled, function, index)
+        let package = self.compiled.checked.package();
+        let callable = package.graph().callable(function).expect("declared");
+        let keys = callable_parameter_keys(package, &callable).unwrap();
+        WireNodeId::from_digest(*keys[index].as_bytes())
     }
 
     /// The claimed equality node in `function`'s body.
     fn node(&self, function: &str) -> WireNodeId {
-        let graph = self.compiled.package.graph();
+        let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
         let found = semantic
@@ -100,7 +142,7 @@ impl Unit {
     /// The `index`th occurrence (in the package's own order) of `function`'s
     /// equality node in the function's body.
     fn occurrence_n(&self, function: &str, index: usize) -> quire_exact::Origin {
-        let graph = self.compiled.package.graph();
+        let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
         let key = semantic
@@ -124,7 +166,7 @@ impl Unit {
     }
 
     fn record_id(&self, name: &str) -> WireNodeId {
-        let types = self.compiled.package.graph().scope().types();
+        let types = self.compiled.checked.package().graph().scope().types();
         let record = types
             .composites()
             .find(|declaration| declaration.name() == name)
@@ -196,7 +238,7 @@ impl Unit {
     ) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            self.compiled.emitted.package_id(),
+            self.compiled.emitted.package().package_id(),
             name(&[function]),
             ReplaySource::Input(vec![]),
         );
@@ -528,7 +570,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
 
     let mut edited = request(
         edited_source.as_bytes(),
-        unit.compiled.emitted.package_id(),
+        unit.compiled.emitted.package().package_id(),
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -713,6 +755,7 @@ fn tc_907_anything_short_of_covering_is_tested() {
             "{what}"
         );
     };
+    text_leaf_is_tested(&unit, exhausted, &tested);
     let variants = |members: &[&str]| {
         FiniteBound::variants(members.iter().map(|member| (*member).to_owned())).unwrap()
     };
@@ -771,12 +814,6 @@ fn tc_907_anything_short_of_covering_is_tested() {
         "a partial variant set",
     );
 
-    // A rational leaf (a text leaf needs a text-profile lock the spine test harness does not carry); its whole declared domain cannot be shown covered.
-    let bounds = (0..2)
-        .map(|index| bound(unit.parameter("t", index), &[0], range(0, 9)))
-        .collect();
-    tested(settle(&unit, "t", bounds, vec![], exhausted), "a text leaf");
-
     // A recursive position with no declared domain is never covered. (The
     // `K<T>` cases of AC-4 and AC-5 wait on a source form for an unbounded
     // collection type: the grammar takes only `K<T>[min, max]`.)
@@ -790,6 +827,120 @@ fn tc_907_anything_short_of_covering_is_tested() {
         settle(&unit, "h", bounds, vec![], exhausted),
         "an undeclared depth",
     );
+}
+
+/// Length bounds do not cover a Text leaf's whole declared domain.
+fn text_leaf_is_tested(
+    unit: &Unit,
+    exhausted: VerifiedShadow,
+    tested: &impl Fn(VerifiedShadowReport, &str),
+) {
+    let record = unit
+        .compiled
+        .checked
+        .package()
+        .graph()
+        .scope()
+        .types()
+        .composites()
+        .find(|declaration| declaration.name() == "R")
+        .unwrap();
+    let quire_semantic_value::declaration::CompositeShape::Record(fields) = record.shape() else {
+        panic!("R must be a record");
+    };
+    assert_eq!(fields[0].name(), "x");
+    assert_eq!(
+        fields[0].value_type(),
+        &quire_exact::ValueType::Int(quire_exact::IntegerInterval::spanning(
+            Integer::from(0_i64),
+            Integer::from(9_i64)
+        ))
+    );
+    assert_eq!(fields[1].name(), "label");
+    assert_eq!(
+        fields[1].value_type(),
+        &quire_exact::ValueType::Text(
+            quire_exact::TextType::new(0, 4, quire_exact::TextProfile::Nfc).unwrap()
+        )
+    );
+    for index in 0..2 {
+        let parameter = unit.parameter("t", index);
+        let integer = super::super::composite_domain::derive(
+            &[(parameter, fields[0].value_type())],
+            unit.compiled.checked.package(),
+            10,
+        )
+        .unwrap();
+        let drawn = [bound(parameter, &[], range(0, 9))];
+        assert!(integer.covered(&integer.harness(&drawn).unwrap()));
+        let text = super::super::composite_domain::derive(
+            &[(parameter, fields[1].value_type())],
+            unit.compiled.checked.package(),
+            10,
+        )
+        .unwrap();
+        assert!(!text.covered(&text.harness(&[]).unwrap()));
+        let length = [bound(parameter, &[], FiniteBound::cardinality(4))];
+        assert!(
+            matches!(text.harness(&length), Err(ReplayRefusal::ParityBound(ref cause))
+            if matches!(cause.as_ref(), ParityBoundRefusal::HarnessKind { expected: None, .. }))
+        );
+    }
+    let bounds: Vec<_> = (0..2)
+        .map(|index| bound(unit.parameter("t", index), &[0], range(0, 9)))
+        .collect();
+    let claim = unit.claim("t", EqualityOperator::Equal, bounds.clone());
+    let mut wire = request(
+        unit.source.as_bytes(),
+        unit.compiled.emitted.package().package_id(),
+        name(&["t"]),
+        ReplaySource::Input(vec![]),
+    );
+    let site = locate(
+        &unit.compiled,
+        &name(&["t"]),
+        claim.node,
+        &claim.occurrence,
+        claim.operator,
+    )
+    .expect("the Text equality is in the checked function");
+    let parameters: Vec<_> = site
+        .operands
+        .iter()
+        .map(|operand| {
+            let crate::execute::composite_site::Operand::Parameter { node, value_type } = operand
+            else {
+                panic!("the Text equality compares two parameters");
+            };
+            (*node, value_type)
+        })
+        .collect();
+    let positions =
+        super::super::composite_domain::derive(&parameters, unit.compiled.checked.package(), 10)
+            .unwrap();
+    assert!(!positions.covered(&positions.harness(&bounds).unwrap()));
+    for (parameter, _) in &parameters {
+        let mut with_length = bounds.clone();
+        with_length.push(bound(*parameter, &[1], FiniteBound::cardinality(4)));
+        let key = DomainKey::Node {
+            node: *parameter,
+            path: vec![1],
+        };
+        assert!(matches!(positions.harness(&with_length),
+            Err(ReplayRefusal::ParityBound(ref cause)) if matches!(cause.as_ref(),
+                ParityBoundRefusal::HarnessKind { key: found, expected: None, .. } if found == &key)));
+    }
+    wire.obligation_identity =
+        *parity_obligation(&parity_preimage(&unit.compiled, &site, &claim).unwrap())
+            .unwrap()
+            .as_bytes();
+    let report = settle_verified_shadow(wire, claim, exhausted, ReplayLimits::default());
+    assert_eq!(report.claim().harness_bounds, bounds);
+    assert_eq!(
+        report.claim().evidence,
+        crate::composite::CompositeEvidence::Verified(exhausted)
+    );
+    tested(report, "a Text leaf with both integer positions covered");
 }
 
 /// FR-358-AC-6 (TC-907 step 6): rows V-1 to V-3.
@@ -993,7 +1144,7 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
     let edited = unit.source.replace("[0, 3]; }", "[0, 4]; }");
     let mut wire = request(
         edited.as_bytes(),
-        unit.compiled.emitted.package_id(),
+        unit.compiled.emitted.package().package_id(),
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -1030,7 +1181,7 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
     ] {
         let unbounded = ValueType::collection(CollectionType::new(kind, element.clone(), None));
         let parameter = WireNodeId::from_digest([5; 32]);
-        let package = &unit.compiled.package;
+        let package = unit.compiled.checked.package();
         let positions = || derive(&[(parameter, &unbounded)], package, 1_000).unwrap();
         let harness = vec![
             bound(parameter, &[], FiniteBound::cardinality(5)),
