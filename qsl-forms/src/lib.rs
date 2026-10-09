@@ -41,17 +41,17 @@ pub use dispatch::{
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
     Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm,
-    BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, ConditionForm,
+    BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, CaptureForm, ClauseKind,
     DeclarationForm, DeclarationKind, DeclaredClauseKind, DeclaredName, DimensionForm,
     DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId,
-    ExprNode, ExprRef, Expression, ExpressionBuilder, FairnessConstraintForm, FairnessGranularity,
-    FairnessKind, FieldInitializer, FunctionDeclaration, IntervalForm, IntervalUpper, NameForm,
-    ParameterForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
-    RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged,
-    Spellings, StateClauseForm, StateClauseKind, TemporalClauseForm, TemporalFormulaForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TermOperator,
-    TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm, FairnessConstraintForm,
+    FairnessGranularity, FairnessKind, FieldInitializer, FunctionDeclaration, IntervalForm,
+    IntervalUpper, NameForm, ParameterForm, ProtocolBodyForm, ProtocolConstructForm,
+    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
+    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TemporalClauseForm,
+    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    TermOperator, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

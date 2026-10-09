@@ -5,9 +5,9 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, ActivationForm, DeclarationForm, FairnessGranularity, FairnessKind, FormsCause,
+    build_unit, ActivationForm, BuiltinType, DeclarationForm, FairnessGranularity, FairnessKind,
     IntervalForm, IntervalUpper, ParsedUnit, TemporalClauseForm, TemporalFormulaForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TypeFormHead,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -300,31 +300,33 @@ fn a_bound_that_is_not_a_u64_fails_at_s1_at_the_bound() {
     );
 }
 
-/// FR-325-AC-4 (TC-835 step 4): one unit's text builds byte-equal forms
-/// when it selects the infinite-trace profile and when it selects the
-/// event-position false-extension profile, with the clause's activation,
-/// fairness constraints and bounded and unbounded intervals all in it.
+/// FR-325-AC-4 (TC-835 step 4): two units that differ only in the selected
+/// profile identity, with equal-length headers, build equal clause forms,
+/// compared by `PartialEq` and by their `Debug` rendering.
 #[trace("TC-835", "FR-325-AC-4")]
 #[test]
 fn the_clause_forms_are_the_same_under_every_profile_selection() {
     let padding = EVENT_POSITION.len() - INFINITE.len();
-    let body = "fair Config::ConfigVersion::attemptUpdate; \
-                fair strong each Config::ConfigVersion::reset; \
-                fair weak whole Config::ConfigVersion::tick; \
-                eventually[0,5] holds(p.value = 3) and always[1,*] holds(true)";
     let source = |header: &str| {
         format!(
             "{header}temporal C using t over (p: Config::ConfigVersion) clock \"steps\" \
-             on each (q: Config::ConfigVersion) when (q.value = 1) {{ {body} }}\n"
+             on each (q: Config::ConfigVersion) when (q.value = 1) {{ \
+             eventually[0,5] holds(p.value = 3) and always[1,*] holds(true) }}\n"
         )
     };
-    let infinite = build(&source(&header(INFINITE, padding)));
-    let event_position = build(&source(&header(EVENT_POSITION, 0)));
+    let infinite_text = source(&header(INFINITE, padding));
+    let event_position_text = source(&header(EVENT_POSITION, 0));
+    assert_eq!(
+        infinite_text.find("temporal C"),
+        event_position_text.find("temporal C")
+    );
+    let infinite = build(&infinite_text);
+    let event_position = build(&event_position_text);
 
     assert_eq!(clause(&infinite), clause(&event_position));
     assert_eq!(
-        format!("{:?}", infinite.forms()),
-        format!("{:?}", event_position.forms())
+        format!("{:?}", clause(&infinite)),
+        format!("{:?}", clause(&event_position))
     );
 
     let built = clause(&infinite);
@@ -335,37 +337,6 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
     };
     assert_eq!(parameter.name.name, "q");
     assert!(when.is_some());
-    let fairness: Vec<_> = built
-        .fairness
-        .iter()
-        .map(|constraint| {
-            (
-                constraint.kind,
-                constraint.granularity,
-                constraint.operation.name.as_str(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        fairness,
-        [
-            (
-                FairnessKind::Weak,
-                None,
-                "Config::ConfigVersion::attemptUpdate"
-            ),
-            (
-                FairnessKind::Strong,
-                Some(FairnessGranularity::Each),
-                "Config::ConfigVersion::reset"
-            ),
-            (
-                FairnessKind::Weak,
-                Some(FairnessGranularity::Whole),
-                "Config::ConfigVersion::tick"
-            ),
-        ]
-    );
     let form = &built.formula;
     let conjunction = operator(form, form.root());
     assert_eq!(conjunction.operator, TemporalOperator::And);
@@ -379,28 +350,134 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
     );
 }
 
-/// A `capture` has no form yet: the clause refuses as an unrepresented
-/// construct at the capture's span rather than being built without it.
-#[trace("TC-835", "FR-325-AC-1")]
+/// FR-325-AC-5 (TC-835 step 5): three fairness constraints before the
+/// formula build three fairness forms in source order, each with the span
+/// of its own constraint.
+#[trace("TC-835", "FR-325-AC-5")]
 #[test]
-fn a_capture_refuses_as_an_unrepresented_construct_at_its_span() {
-    let capture = "capture v: Boolean = true;";
-    let text = clause_source(&header(INFINITE, 0), &format!("{capture} holds(v)"));
-    let parsed = parse(&text);
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let refusal = build_unit(&parsed).expect_err("a capture has no form");
-    let start = text.find(capture).expect("the capture is in the source");
+fn fairness_constraints_build_their_kind_granularity_operation_and_span() {
+    let constraints = [
+        "fair Config::ConfigVersion::attemptUpdate;",
+        "fair strong each Config::ConfigVersion::reset;",
+        "fair weak whole Config::ConfigVersion::tick;",
+    ];
+    let (text, unit) = formula_unit(&format!("{} holds(p)", constraints.join(" ")));
+    let fairness: Vec<_> = clause(&unit)
+        .fairness
+        .iter()
+        .map(|constraint| {
+            (
+                constraint.kind,
+                constraint.granularity,
+                constraint.operation.name.as_str(),
+                slice(&text, constraint.span),
+            )
+        })
+        .collect();
     assert_eq!(
-        refusal.cause,
-        FormsCause::UnrepresentedConstruct {
-            production: qsl_cst::Production::Capture
-        }
+        fairness,
+        [
+            (
+                FairnessKind::Weak,
+                None,
+                "Config::ConfigVersion::attemptUpdate",
+                constraints[0]
+            ),
+            (
+                FairnessKind::Strong,
+                Some(FairnessGranularity::Each),
+                "Config::ConfigVersion::reset",
+                constraints[1]
+            ),
+            (
+                FairnessKind::Weak,
+                Some(FairnessGranularity::Whole),
+                "Config::ConfigVersion::tick",
+                constraints[2]
+            ),
+        ]
+    );
+}
+
+/// One node of a formula without its spans: the operator, the interval
+/// bounds and the operand ids, or the constant or `holds` expression.
+fn without_spans(form: &TemporalFormulaForm) -> Vec<String> {
+    form.nodes()
+        .iter()
+        .map(|node| match node {
+            TemporalNodeForm::Constant { value, .. } => format!("{value}"),
+            TemporalNodeForm::Holds { condition, .. } => format!("{:?}", condition.expression),
+            TemporalNodeForm::Operator(operator) => format!(
+                "{:?} {:?} {:?}",
+                operator.operator,
+                operator.interval.map(|i| (i.lower, i.upper)),
+                operator.operands
+            ),
+        })
+        .collect()
+}
+
+/// FR-325-AC-6 (TC-835 step 6): captures after the fairness constraints
+/// build capture forms in source order with their declared type, value and
+/// own span, and leave the formula form unchanged up to spans.
+#[trace("TC-835", "FR-325-AC-6")]
+#[test]
+fn captures_build_their_type_value_and_span_beside_an_unchanged_formula() {
+    let fair = "fair Config::ConfigVersion::tick;";
+    let before = "capture before: Int[0, 1000] = p.value;";
+    let parent = "capture parent: Config::ConfigVersion = p.parent;";
+    let formula = "always (holds(p.value = 1) implies eventually[0,3] holds(p.value = 2))";
+    let (text, unit) = formula_unit(&format!("{fair} {before} {parent} {formula}"));
+    let (_, bare) = formula_unit(&format!("{fair} {formula}"));
+    let built = clause(&unit);
+
+    assert_eq!(built.fairness.len(), 1);
+    let [first, second] = &built.captures[..] else {
+        panic!("two captures: {:?}", built.captures);
+    };
+    assert_eq!(first.parameter.name.name, "before");
+    assert_eq!(slice(&text, first.span), before);
+    assert_eq!(slice(&text, first.parameter.name.span), "before");
+    assert_eq!(second.parameter.name.name, "parent");
+    assert_eq!(slice(&text, second.span), parent);
+    assert_eq!(slice(&text, second.parameter.name.span), "parent");
+    assert!(matches!(
+        first.parameter.value_type.head,
+        TypeFormHead::Builtin(BuiltinType::Int)
+    ));
+    assert_eq!(first.parameter.value_type.bounds, ["0", "1000"]);
+    assert_eq!(
+        second.parameter.value_type.head,
+        TypeFormHead::Name("Config::ConfigVersion".into())
     );
     assert_eq!(
-        refusal.span,
-        Some(Span {
-            start,
-            end: start + capture.len()
-        })
+        slice(
+            &text,
+            first
+                .value
+                .spans
+                .span(first.value.spans.root())
+                .expect("a root span")
+        ),
+        "p.value"
+    );
+    assert_eq!(
+        slice(
+            &text,
+            second
+                .value
+                .spans
+                .span(second.value.spans.root())
+                .expect("a root span")
+        ),
+        "p.parent"
+    );
+    assert_ne!(first.value.expression, second.value.expression);
+
+    assert!(clause(&bare).captures.is_empty());
+    assert_eq!(built.fairness.len(), clause(&bare).fairness.len());
+    assert_eq!(
+        without_spans(&built.formula),
+        without_spans(&clause(&bare).formula)
     );
 }

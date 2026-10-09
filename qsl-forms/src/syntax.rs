@@ -2560,10 +2560,10 @@ impl TemporalNodeId {
     }
 }
 
-/// A Boolean expression with the span of each of its nodes: a `holds(e)`
-/// operand or an activation's `when (e)` condition.
+/// An expression with the span of each of its nodes: a `holds(e)` operand,
+/// an activation's `when (e)` condition or a capture's value.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConditionForm {
+pub struct ExpressionForm {
     /// The expression.
     pub expression: Expression,
     /// The span of each expression node.
@@ -2599,7 +2599,7 @@ pub enum TemporalNodeForm {
     /// `holds(e)`.
     Holds {
         /// The state condition.
-        condition: ConditionForm,
+        condition: ExpressionForm,
         /// The span of the whole `holds(e)`.
         span: Span,
     },
@@ -2656,7 +2656,7 @@ pub enum ActivationForm {
         /// The activation parameter.
         parameter: ParameterForm,
         /// The `when` condition, when written.
-        when: Option<ConditionForm>,
+        when: Option<ExpressionForm>,
     },
 }
 
@@ -2692,6 +2692,18 @@ pub struct FairnessConstraintForm {
     pub span: Span,
 }
 
+/// One `capture name: Type = value;` of a temporal clause, as written
+/// (FR-325 "Outputs"): S2 resolves neither the type nor the value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaptureForm {
+    /// The captured name and its declared type.
+    pub parameter: ParameterForm,
+    /// The value expression.
+    pub value: ExpressionForm,
+    /// The span of the whole capture, `;` included.
+    pub span: Span,
+}
+
 /// A `temporal` clause (FR-325, ADR-011 M-3b, ADR-012 TemporalTrace
 /// family). S2 resolves nothing and selects no meaning: the profile alias,
 /// the `over` type and each fairness operation stay spelled, and an
@@ -2708,6 +2720,8 @@ pub struct TemporalClauseForm {
     pub activation: ActivationForm,
     /// The fairness constraints in source order.
     pub fairness: Vec<FairnessConstraintForm>,
+    /// The captures in source order.
+    pub captures: Vec<CaptureForm>,
     /// The formula.
     pub formula: TemporalFormulaForm,
 }

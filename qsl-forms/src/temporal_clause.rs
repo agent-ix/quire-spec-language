@@ -14,26 +14,22 @@ use qsl_foundation::Span;
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
-    ActivationForm, ConditionForm, DeclarationForm, FairnessConstraintForm, FairnessGranularity,
-    FairnessKind, IntervalForm, IntervalUpper, ParameterForm, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
-    UsingAlias,
+    ActivationForm, CaptureForm, DeclarationForm, ExpressionForm, FairnessConstraintForm,
+    FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper, ParameterForm,
+    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    TemporalOperatorForm, UsingAlias,
 };
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
-    tokens_of, type_form, unexpected, unrepresented, Item,
+    tokens_of, type_form, unexpected, Item,
 };
 
 /// `temporal Name using p over (x: T) clock "c" activation { fairness*
-/// formula }` (FR-325 "Outputs"). A `capture` has no form yet: it refuses
-/// as an unrepresented construct rather than being dropped.
+/// captures formula }` (FR-325 "Outputs").
 pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let clause_items = items(cst, node);
-    if let Some(capture) = nodes_of(&clause_items, Production::Capture).first() {
-        return Err(unrepresented(Production::Capture, capture.span()));
-    }
     // `temporal Name using p ...`: the clause's own name and its `using`
     // alias are its only two direct identifier tokens.
     let [_, alias] = tokens_of(&clause_items, TokenKind::Identifier)[..] else {
@@ -47,13 +43,17 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
             parameter: parameter_form(cst, parameter)?,
             when: nodes_of(&activation_items, Production::Expression)
                 .first()
-                .map(|condition| condition_form(cst, condition))
+                .map(|condition| expression_form(cst, condition))
                 .transpose()?,
         },
     };
     let fairness = nodes_of(&clause_items, Production::Fairness)
         .into_iter()
         .map(|constraint| fairness_form(cst, constraint))
+        .collect::<Result<_, _>>()?;
+    let captures = nodes_of(&clause_items, Production::Capture)
+        .into_iter()
+        .map(|capture| capture_form(cst, capture))
         .collect::<Result<_, _>>()?;
     let formula = only(&clause_items, Production::TemporalExpression, node)?;
     Ok(DeclarationForm::Temporal(Box::new(TemporalClauseForm {
@@ -65,6 +65,7 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
         over: parameter_form(cst, only(&clause_items, Production::Parameter, node)?)?,
         activation,
         fairness,
+        captures,
         formula: formula_form(cst, formula)?,
     })))
 }
@@ -81,10 +82,20 @@ fn parameter_form(cst: &LosslessCst, parameter: &CstNode) -> Result<ParameterFor
     })
 }
 
+/// `capture name: Type = value ;`.
+fn capture_form(cst: &LosslessCst, capture: &CstNode) -> Result<CaptureForm, FormsRefusal> {
+    let capture_items = items(cst, capture);
+    Ok(CaptureForm {
+        parameter: parameter_form(cst, only(&capture_items, Production::Parameter, capture)?)?,
+        value: expression_form(cst, only(&capture_items, Production::Expression, capture)?)?,
+        span: capture.span(),
+    })
+}
+
 /// One `Expression` node as a condition with its spans.
-fn condition_form(cst: &LosslessCst, node: &CstNode) -> Result<ConditionForm, FormsRefusal> {
+fn expression_form(cst: &LosslessCst, node: &CstNode) -> Result<ExpressionForm, FormsRefusal> {
     let (expression, spans) = expression(cst, node)?;
-    Ok(ConditionForm { expression, spans })
+    Ok(ExpressionForm { expression, spans })
 }
 
 /// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind is
@@ -423,7 +434,7 @@ impl<'c> Formula<'c> {
             [Item::Token(holds), Item::Token(_), Item::Node(condition), Item::Token(_)]
                 if holds.spelling() == b"holds" =>
             {
-                let condition = condition_form(self.cst, condition)?;
+                let condition = expression_form(self.cst, condition)?;
                 self.add(
                     TemporalNodeForm::Holds {
                         condition,
