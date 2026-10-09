@@ -90,14 +90,19 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 // InconclusiveCause gains:
 //   BoundReached { depth: u64 }, InductionNotClosed { depth: u64 },
 //   UndecidedSuccessor, NoInitialState,
-//   CertificateRejected { rule: CertificateRule, state: CertificateLocus }
+//   CertificateRejected { rule: CertificateRule, at: CertificateLocus },
+//   written certificate-rejected{rule, at} (QSpec FR-331)
 
 // ProductStateRef, ClosureCertificate, CertificateRule: FR-338.
 // ComponentCertificate, ProofCertificate: FR-339.
 // IncompleteCause gains LimitReached { limit: ModelCheckLimit, value: u64, setting: RequestSetting },
 //   QSpec FR-331's limit-reached; setting names the request member that raises it.
-//   Cancelled { source: CancelSource }, written cancelled{source} (QSpec FR-331),
-//   source the cancellation identity the caller supplied, kept exactly.
+//   Cancelled { source: CancelSource }, written cancelled{source} (QSpec FR-331).
+
+// The cancellation identity the caller supplied with its `Cancel` handle:
+// nonempty UTF-8 text, kept byte for byte, as QSpec FR-331's `source`
+// admits any nonempty text.
+pub struct CancelSource(String);
 ```
 
 The certificate types and checkers are FR-338's and FR-339's.
@@ -113,7 +118,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
 | V-1 | `Holds{Exhaustive}` whose certificate the core checker accepts | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}` | success |
-| V-6 | `Holds{Exhaustive}` whose certificate the core checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, state})` | inconclusive |
+| V-6 | `Holds{Exhaustive}` whose certificate the core checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})` | inconclusive |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` (FR-128) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
@@ -159,7 +164,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 - Before settling `Holds{Exhaustive}` the settlement map SHALL run the
   core checker for its certificate, `check_closure` or `check_components`,
   and settle `Proved{Exhaustive, Certified}` when it accepts and
-  `Inconclusive(CertificateRejected{rule, state})` when it rejects.
+  `Inconclusive(CertificateRejected{rule, at})` when it rejects.
 - The checkers SHALL be FR-338's `check_closure` and FR-339's
   `check_components`; a rejection names the rule and the product state at
   which it failed.
@@ -167,7 +172,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
   hands it, the settlement map SHALL run FR-314's `check_smt_proof` on the
   result's `SmtProofCertificate` and settle `proved` with
   `certification: Certified` when it returns `Verified`,
-  `Inconclusive(CertificateRejected{rule, state})` when it rejects, and
+  `Inconclusive(CertificateRejected{rule, at})` when it rejects, and
   `proved` with `Uncertified` when it returns `Unverifiable` or the
   result carries no certificate (ADR-018 PC-6). A proof from any other
   native engine with no core certificate checker SHALL

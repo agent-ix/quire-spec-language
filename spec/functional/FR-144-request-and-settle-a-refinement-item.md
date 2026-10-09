@@ -113,7 +113,7 @@ beside it as a separate item.
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
   `proved` only after FR-149's checker accepts its certificate; a rejection
-  SHALL settle V-6 `CertificateRejected{rule, state}` (ADR-018 PC-2), and a checker stopped by a limit
+  SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
   V-7 naming the limit (ADR-020 CT-3).
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's
   `Certified` label when every half was certified. A `proved` with a

@@ -53,7 +53,7 @@ pub enum CertificateRule {
     WitnessFails, QueryMismatch, ShapeMismatch,
     ProofStepInvalid, NotRefutation,
 }
-pub struct CertificateRejection { pub rule: CertificateRule, pub state: CertificateLocus }
+pub struct CertificateRejection { pub rule: CertificateRule, pub at: CertificateLocus }   // wire certificate-rejected{rule, at}
 pub enum CertificateLocus {
     ProductState(ProductStateRef),
     Query { part: QueryPart },
@@ -72,7 +72,7 @@ every order in which the states are materialized.
 ## Outputs
 
 - `Ok(())` when the certificate is accepted.
-- `CertificateRejection{rule, state}` naming the first rule that failed
+- `CertificateRejection{rule, at}` naming the first rule that failed
   and the product state it failed at.
 
 ## Behavior

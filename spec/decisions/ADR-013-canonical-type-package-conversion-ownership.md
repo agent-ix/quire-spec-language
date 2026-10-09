@@ -449,7 +449,7 @@ and every basis maps to success except `Checks{0}`, which maps to inconclusive w
 refuses maps to `inconclusive` with `replay_refused`, and one whose replay
 faults maps to `failed`, as for a Kani counterexample. `InconclusiveCause` gains
 `BoundReached{depth}`, `InductionNotClosed{depth}`, `UndecidedSuccessor`,
-`NoInitialState` and `CertificateRejected{rule, state}`, each in category
+`NoInitialState` and `CertificateRejected{rule, at}`, each in category
 inconclusive. A model-check run stopped by
 a run limit, including `max_automaton_states`, maps to incomplete with
 `LimitReached{limit, value, setting}`, written `limit-reached`; a cancelled

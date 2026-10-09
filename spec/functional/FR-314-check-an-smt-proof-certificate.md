@@ -25,7 +25,7 @@ the query FR-315 encodes for the item at that depth and every proof it
 carries refutes its query using only checked Alethe rules (ADR-018 PC-6,
 LA-3). FR-127's settlement map runs the check: a proof whose certificate it
 verifies settles `proved`, `Certified`; one it shows wrong
-settles `inconclusive`, `CertificateRejected{rule, state}`; one it cannot
+settles `inconclusive`, `CertificateRejected{rule, at}`; one it cannot
 verify because a step uses an unchecked rule settles `proved`,
 `Uncertified`, as an SMT proof that arrives with no certificate does.
 
@@ -69,7 +69,7 @@ pub enum SmtProofCheck {
 
 FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 `ProofStepInvalid` and `NotRefutation`, and
-`CertificateRejection.state` is a `CertificateLocus`:
+`CertificateRejection.at` is a `CertificateLocus`:
 `ProductState(ProductStateRef)` for FR-338 and FR-339, and
 `Query { part }` or `ProofStep { part, index: u64 }` here, `part` being
 `Unrolling`, `Base` or `Step`.
@@ -77,7 +77,7 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 ## Outputs
 
 - `Ok(())` when the certificate is accepted.
-- `CertificateRejection{rule, state}` naming the first rule that failed
+- `CertificateRejection{rule, at}` naming the first rule that failed
   and where.
 
 ## Behavior
