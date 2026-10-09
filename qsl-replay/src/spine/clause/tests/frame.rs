@@ -143,19 +143,12 @@ fn a_frame_respecting_invocation_succeeds() {
     let input = changed_version();
     // The package `compose` emits for the request's unit on its own,
     // independent of the run.
-    let ClauseRunSource::Program {
-        identity,
-        path,
-        bytes,
-    } = &input.request.source
-    else {
-        panic!("the fixture builds a Program source");
-    };
+    let (unit, packages) = config_version_unit_and_packages();
     let expected_package_id = compose(
-        identity.clone(),
-        path,
-        bytes,
-        &input.request.packages,
+        source(),
+        "clause-run-config-version.native",
+        unit.as_bytes(),
+        &packages,
         &DependencyInput::default(),
         SpineLimits::default(),
     )
