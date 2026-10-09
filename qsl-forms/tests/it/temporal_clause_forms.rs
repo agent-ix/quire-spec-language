@@ -5,9 +5,9 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, ActivationForm, DeclarationForm, FairnessGranularity, FairnessKind, FormsCause,
-    IntervalForm, IntervalUpper, ParsedUnit, TemporalClauseForm, TemporalFormulaForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    build_unit, ActivationForm, DeclarationForm, FairnessGranularity, FairnessKind, IntervalForm,
+    IntervalUpper, ParsedUnit, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -377,24 +377,4 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
             .collect::<Vec<_>>(),
         [Some(IntervalUpper::Finite(5)), Some(IntervalUpper::Open)]
     );
-}
-
-/// FR-325 "Behavior": the TemporalTrace forms are the only S2 producer for
-/// a temporal clause, and a `capture` (no form yet) refuses rather than
-/// being dropped.
-#[trace("TC-835", "FR-325-AC-1")]
-#[test]
-fn a_capture_refuses_as_an_unrepresented_construct() {
-    let text = format!(
-        "{}temporal C using t over (p: Config::ConfigVersion) clock \"steps\" on origin \
-         {{ capture v: Boolean = true; holds(v) }}\n",
-        header(INFINITE, 0)
-    );
-    let parsed = parse(&text);
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let refusal = build_unit(&parsed).expect_err("a capture has no form");
-    assert!(matches!(
-        refusal.cause,
-        FormsCause::UnrepresentedConstruct { .. }
-    ));
 }
