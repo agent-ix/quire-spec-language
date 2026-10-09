@@ -17,7 +17,6 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::ByteDigest;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{
@@ -26,7 +25,7 @@ use qsl_semantics::model::observation::{
 };
 use quire_exact::Identifier;
 
-use super::{consumed, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
+use super::{consumed, domain_packages, one_source, recompile, wire_id, ReplayRefusal};
 use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -36,7 +35,7 @@ use crate::result::{
 };
 use crate::spine::{
     check_clause_admitted, convert_outcome, CallOutcome, CallRefusal, CallValue, ClauseCheck,
-    ClauseDisposition, ClauseRunSelection, CompiledRun, UnitProvenance,
+    ClauseDisposition, CompiledRun,
 };
 use crate::witness::{ReplaySource, StateClauseCounterexample};
 use crate::WitnessEnvelope;
@@ -197,20 +196,6 @@ pub fn replay_state_clause(
 
     // `recompile` already required exactly one source, provided.
     let source = one_source(request.source_digests())?;
-    let bytes = request
-        .byte_provision()
-        .get(source.digest())
-        .ok_or_else(|| {
-            ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "decoded-request-byte-provision-complete",
-            ))
-        })?;
-    let unit = UnitProvenance {
-        digest: ByteDigest::of(bytes).to_string(),
-        source: labels(source),
-        extraction: None,
-    };
     let packages = domain_packages(&request);
     // FR-106 reads every document only from the byte provision, by its
     // `sha256-jcs` digest.
@@ -241,13 +226,11 @@ pub fn replay_state_clause(
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         package_id,
-        unit: &unit,
         sources: &sources,
-        model_selections: graph.model_selections().to_vec(),
-        selection: ClauseRunSelection::Clause(selection.clone()),
     };
     let ClauseCheck {
         report,
+        documents: read_documents,
         observations,
         mut meter,
     } = check_clause_admitted(&run, clause, &selection);
@@ -325,7 +308,7 @@ pub fn replay_state_clause(
             clause_node: envelope.clause_node(),
             occurrence_key: envelope.occurrence_key().clone(),
             observation: payload.observation.clone(),
-            documents: report.provenance.documents,
+            documents: read_documents,
             range_violations,
         });
     }
@@ -388,7 +371,7 @@ pub fn replay_state_clause(
         clause_node: envelope.clause_node(),
         occurrence_key: envelope.occurrence_key().clone(),
         observation: payload.observation.clone(),
-        documents: report.provenance.documents,
+        documents: read_documents,
         range_violations: Vec::new(),
     })
 }

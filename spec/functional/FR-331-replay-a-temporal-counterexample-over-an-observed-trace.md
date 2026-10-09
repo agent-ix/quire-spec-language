@@ -145,6 +145,5 @@ Specified; not yet implemented.
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
 - QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8).
 - QSpec FR-364's observed arm (the wire form for a counterexample over a
-  supplied trace; Linear STD-147); Linear QSL-460 (deleting `ClauseRunProvenance` and
-  `ClauseRunReport::source_digest` from the code).
+  supplied trace; Linear STD-147).
 - QSpec FR-362 (the missing fairness premise).

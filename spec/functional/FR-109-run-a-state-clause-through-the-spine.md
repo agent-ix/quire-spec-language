@@ -93,8 +93,7 @@ selection, admission or evaluation result is a report.
   not supplied) and SHALL admit and evaluate nothing.
 - If the unit is an I3 extracted source whose declared language is not
   `ix:native`, then the entry SHALL report stage `compile`, category
-  `refusal`, `unknown_language`, carrying the extraction's original identity
-  and digest, and SHALL compile, admit and evaluate nothing. This is the
+  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing. This is the
   refusal the CLI's extracted-clause join gives the same fence.
 - If an expected `package_id` is given and the recompiled one differs, then
   the entry SHALL report stage `compile`, category `refusal`,
@@ -189,13 +188,7 @@ selection, admission or evaluation result is a report.
 
 ## Status
 
-Implemented, except the report's members FR-109 no longer lists and
-AC-7's `UndefinedEvaluation{cause}` record (the undefined evaluation's
+Implemented, except AC-7's `UndefinedEvaluation{cause}` record (the undefined evaluation's
 category `undefined` and exit 10 are implemented). The I3 extracted-source input is
 `ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
 feature.
-
-## References
-
-- Linear QSL-460 (deleting `ClauseRunProvenance` and
-  `ClauseRunReport::source_digest` from the code).

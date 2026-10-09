@@ -47,8 +47,8 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `evaluate`, `success`, `truth: true`, exit 0; provenance holds the
-  frame node's identity and the three document identities and digests.
+- Step 1: `evaluate`, `success`, `truth: true`, exit 0; the report's
+  `package_id` is the compiled package's.
 - Step 2: `evaluate`, `violation`, `truth: false`, exit 10, with a frame
   witness naming `child`, `parent` and the frame's `modifies`, cause
   `frame_violation`/`unauthorized-change`; `violation` with a witness naming

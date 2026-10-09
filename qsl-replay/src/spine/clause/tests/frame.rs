@@ -120,45 +120,6 @@ fn changed_version() -> FrameInput {
     )
 }
 
-/// The identity of the one `state`/`frame` node the compiled unit emits.
-fn emitted_frame_identity() -> NodeKey {
-    let (unit, packages) = config_version_unit_and_packages();
-    let compiled = compose(
-        source(),
-        "frame.native",
-        unit.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("the ConfigVersion unit compiles");
-    let wire: serde_json::Value =
-        serde_json::from_slice(compiled.emitted.bytes()).expect("the emitted package is JSON");
-    let frames: Vec<&serde_json::Value> = wire["semantic_graph"]["nodes"]
-        .as_array()
-        .expect("the package lists its nodes")
-        .iter()
-        .filter(|node| node["semantic_form"] == "frame")
-        .collect();
-    let [frame] = frames[..] else {
-        panic!("one frame node: {frames:#?}");
-    };
-    let digest = frame["node_id"]["digest"]
-        .as_str()
-        .expect("a node id digest");
-    let identity = compiled
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .map(|node| node.key())
-        .find(|key| {
-            qsl_foundation::digest::WireNodeId::from_digest(*key.as_bytes()).to_string() == digest
-        })
-        .expect("the emitted frame node is a node of the checked graph");
-    identity
-}
-
 pub(super) fn run(input: FrameInput) -> super::super::ClauseRunReport {
     run_clause(input.request).expect("a well-formed request always reports")
 }
@@ -175,18 +136,27 @@ fn admit_record(report: &super::super::ClauseRunReport) -> &AdmissionRecord {
 
 /// TC-514 step 1 (FR-115-AC-1): changed-version, whose post changes only
 /// `child.versionNumber`, reports `evaluate`, `success`, `truth: true`,
-/// exit 0, with the frame node's identity and the three documents in its
-/// provenance.
+/// exit 0.
 #[trace("TC-514", "FR-115-AC-1")]
 #[test]
-fn a_frame_respecting_invocation_succeeds_with_its_provenance() {
+fn a_frame_respecting_invocation_succeeds() {
     let input = changed_version();
-    let expected_documents = vec![
-        input.invocation.clone(),
-        input.pre.clone(),
-        input.post.clone(),
-    ];
+    // The package `compose` emits for the request's unit on its own,
+    // independent of the run.
+    let (unit, packages) = config_version_unit_and_packages();
+    let expected_package_id = compose(
+        source(),
+        "clause-run-config-version.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the ConfigVersion unit compiles")
+    .emitted
+    .package_id();
     let report = run(input);
+    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         matches!(
             report.disposition,
@@ -204,8 +174,6 @@ fn a_frame_respecting_invocation_succeeds_with_its_provenance() {
     );
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
-    assert_eq!(report.provenance.frame, Some(emitted_frame_identity()));
-    assert_eq!(report.provenance.documents, expected_documents);
 }
 
 /// TC-514 step 2 (FR-115-AC-2): forbidden-parent-change (post sets
@@ -508,7 +476,6 @@ fn an_unknown_or_unnamed_operation_refuses_at_select() {
                 .category()
                 .exit_code()
         );
-        assert_eq!(report.provenance.frame, None);
     }
 }
 
