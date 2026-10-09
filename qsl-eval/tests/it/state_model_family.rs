@@ -25,7 +25,8 @@ use qsl_semantics::model::population::{
     PopulationMember,
 };
 use quire_exact::{
-    CollectionKind, EffectiveId, Meter, ObjectId, ObjectReference, Outcome, Value, ValueType,
+    CollectionKind, EffectiveId, FieldValue, Meter, ObjectId, ObjectReference, Outcome, Value,
+    ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldRef;
@@ -74,7 +75,7 @@ fn view() -> EffectiveView {
     let bytes = model_document();
     let document = qsl_semantics::model::intake::PackageDocument::parse(
         &bytes,
-        qsl_semantics::model::accounting::IntakeLimits {
+        qsl_foundation::IntakeLimits {
             input_bytes: u64::MAX,
         },
     )
@@ -354,8 +355,8 @@ fn objects(
             (
                 reference.clone(),
                 vec![
-                    (FieldRef::new(a, "flag"), Value::Boolean(true)),
-                    (FieldRef::new(a, "next"), Value::Reference(reference)),
+                    ("flag", FieldValue::Present(Value::Boolean(true))),
+                    ("next", FieldValue::Present(Value::Reference(reference))),
                 ],
             )
         });
