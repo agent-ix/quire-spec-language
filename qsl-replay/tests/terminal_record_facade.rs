@@ -79,6 +79,36 @@ fn terminal_records_are_built_and_read_through_the_facade_alone() {
     );
 }
 
+#[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+#[test]
+fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade() {
+    use qsl_replay::{CertificateLocus, CertificateRule, QueryPart};
+
+    let values = [
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query { part: QueryPart::Unrolling },
+        }),
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ProofStepInvalid,
+            at: CertificateLocus::ProofStep { part: QueryPart::Step, index: u64::MAX },
+        }),
+    ];
+    let source = BackendProviderSource {
+        backend_identity: "certificate-provider".to_owned(),
+        items: values.iter().enumerate().map(|(index, value)|
+            TerminalRecord::new(RequestIndex::new(index), value.clone())
+        ).collect(),
+    };
+    let read = read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
+    assert_eq!(read.len(), values.len());
+    for (envelope, value) in read.iter().zip(&values) {
+        assert_eq!(envelope.category(), Category::Inconclusive);
+        assert_eq!(envelope.record().value(), value);
+        assert_eq!(envelope.inconclusive_cause(), value.inconclusive_cause().as_ref());
+    }
+}
+
 /// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
 /// is a `ReplayRefusal::Fault`, and `TerminalValue::from_replay_refusal`
 /// settles it `Failed` (an internal failure), never `Inconclusive`.

@@ -9,6 +9,7 @@
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
+use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
 use crate::identity::Backend;
 use crate::result::DisagreementCause;
@@ -212,6 +213,13 @@ pub enum InconclusiveCause {
     UndecidedSuccessor,
     /// The subject supplies no initial state.
     NoInitialState,
+    /// The core rejected a certificate, retaining its failing rule and locus.
+    CertificateRejected {
+        /// The check rule that failed.
+        rule: CertificateRule,
+        /// Where the rule failed.
+        at: CertificateLocus,
+    },
     /// `replay_parity`: the counterexample's E9 replay settled
     /// `inconclusive`, so the reason travels with the cause.
     ReplayParity(DisagreementCause),
@@ -237,6 +245,7 @@ impl InconclusiveCause {
             Self::InductionNotClosed { .. } => "induction-not-closed",
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
+            Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
@@ -250,7 +259,8 @@ impl InconclusiveCause {
             Self::BoundReached { .. }
             | Self::InductionNotClosed { .. }
             | Self::UndecidedSuccessor
-            | Self::NoInitialState => 0,
+            | Self::NoInitialState
+            | Self::CertificateRejected { .. } => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -760,6 +770,48 @@ mod tests {
                 envelopes[0].inconclusive_cause().unwrap().as_str(),
                 spelling
             );
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+    #[test]
+    fn certificate_rejections_keep_every_rule_and_complete_typed_locus() {
+        use crate::certificate::QueryPart;
+
+        for rule in [
+            CertificateRule::InitialMissing,
+            CertificateRule::SuccessorMissing,
+            CertificateRule::BadState,
+            CertificateRule::NotPartition,
+            CertificateRule::BackwardEdge,
+            CertificateRule::WitnessFails,
+            CertificateRule::QueryMismatch,
+            CertificateRule::ShapeMismatch,
+            CertificateRule::ProofStepInvalid,
+            CertificateRule::NotRefutation,
+        ] {
+            for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
+                for at in [
+                    CertificateLocus::Query { part },
+                    CertificateLocus::ProofStep { part, index: 0 },
+                    CertificateLocus::ProofStep { part, index: u64::MAX },
+                ] {
+                    let cause = InconclusiveCause::CertificateRejected { rule, at };
+                    let input = source(vec![TerminalRecord::new(
+                        RequestIndex::new(4),
+                        TerminalValue::Inconclusive(cause.clone()),
+                    )]);
+                    let read = read_backend_provider_envelope(&input, ReplayLimits::default())
+                        .expect("the complete typed certificate rejection admits");
+                    assert_eq!(read.len(), 1);
+                    assert_eq!(read[0].category(), Category::Inconclusive);
+                    assert_eq!(read[0].record(), &input.items[0]);
+                    assert_eq!(read[0].inconclusive_cause(), Some(
+                        &ReportedInconclusiveCause::Cause(cause)
+                    ));
+                    assert_eq!(read[0].inconclusive_cause().unwrap().as_str(), "certificate-rejected");
+                }
+            }
         }
     }
 
