@@ -36,7 +36,7 @@ const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
 
 struct Unit {
     source: String,
-    compiled: ComposedUnit,
+    compiled: Recompiled,
 }
 
 fn unit() -> Unit {
@@ -80,11 +80,7 @@ fn unit() -> Unit {
     let emitted = package(&checked, crate::spine::PackageLimits::default(), &cancel)
         .expect("the unit emits")
         .into_value();
-    let compiled = ComposedUnit {
-        source: checked.source().clone(),
-        package: checked.package().clone(),
-        emitted: emitted.package().clone(),
-    };
+    let compiled = Recompiled { checked, emitted };
     Unit { source, compiled }
 }
 
@@ -123,12 +119,15 @@ fn outcome(equal: bool, pair_count: u64) -> EqualityOutcome {
 
 impl Unit {
     fn parameter(&self, function: &str, index: usize) -> WireNodeId {
-        parameter(&self.compiled, function, index)
+        let package = self.compiled.checked.package();
+        let callable = package.graph().callable(function).expect("declared");
+        let keys = callable_parameter_keys(package, &callable).unwrap();
+        WireNodeId::from_digest(*keys[index].as_bytes())
     }
 
     /// The claimed equality node in `function`'s body.
     fn node(&self, function: &str) -> WireNodeId {
-        let graph = self.compiled.package.graph();
+        let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
         let found = semantic
@@ -143,7 +142,7 @@ impl Unit {
     /// The `index`th occurrence (in the package's own order) of `function`'s
     /// equality node in the function's body.
     fn occurrence_n(&self, function: &str, index: usize) -> quire_exact::Origin {
-        let graph = self.compiled.package.graph();
+        let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
         let key = semantic
@@ -167,7 +166,7 @@ impl Unit {
     }
 
     fn record_id(&self, name: &str) -> WireNodeId {
-        let types = self.compiled.package.graph().scope().types();
+        let types = self.compiled.checked.package().graph().scope().types();
         let record = types
             .composites()
             .find(|declaration| declaration.name() == name)
@@ -239,7 +238,7 @@ impl Unit {
     ) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            self.compiled.emitted.package_id(),
+            self.compiled.emitted.package().package_id(),
             name(&[function]),
             ReplaySource::Input(vec![]),
         );
@@ -571,7 +570,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
 
     let mut edited = request(
         edited_source.as_bytes(),
-        unit.compiled.emitted.package_id(),
+        unit.compiled.emitted.package().package_id(),
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -817,7 +816,8 @@ fn tc_907_anything_short_of_covering_is_tested() {
     // Length bounds do not cover a Text leaf's whole declared domain.
     let record = unit
         .compiled
-        .package
+        .checked
+        .package()
         .graph()
         .scope()
         .types()
@@ -846,7 +846,7 @@ fn tc_907_anything_short_of_covering_is_tested() {
         let parameter = unit.parameter("t", index);
         let integer = super::super::composite_domain::derive(
             &[(parameter, fields[0].value_type())],
-            &unit.compiled.package,
+            unit.compiled.checked.package(),
             10,
         )
         .unwrap();
@@ -854,7 +854,7 @@ fn tc_907_anything_short_of_covering_is_tested() {
         assert!(integer.covered(&integer.harness(&drawn).unwrap()));
         let text = super::super::composite_domain::derive(
             &[(parameter, fields[1].value_type())],
-            &unit.compiled.package,
+            unit.compiled.checked.package(),
             10,
         )
         .unwrap();
@@ -1092,7 +1092,7 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
     let edited = unit.source.replace("[0, 3]; }", "[0, 4]; }");
     let mut wire = request(
         edited.as_bytes(),
-        unit.compiled.emitted.package_id(),
+        unit.compiled.emitted.package().package_id(),
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -1129,7 +1129,7 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
     ] {
         let unbounded = ValueType::collection(CollectionType::new(kind, element.clone(), None));
         let parameter = WireNodeId::from_digest([5; 32]);
-        let package = &unit.compiled.package;
+        let package = unit.compiled.checked.package();
         let positions = || derive(&[(parameter, &unbounded)], package, 1_000).unwrap();
         let harness = vec![
             bound(parameter, &[], FiniteBound::cardinality(5)),
