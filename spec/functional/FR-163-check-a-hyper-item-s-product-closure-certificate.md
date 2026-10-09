@@ -92,8 +92,8 @@ pub enum ProductClosureCheck {
 }
 ```
 
-The checker uses FR-338's `CertificateRejection{rule, state}`; `Rejected`
-settles ADR-018 PC-2's `CertificateRejected{rule, state}`. It reuses
+The checker uses FR-338's `CertificateRejection{rule, at}`; `Rejected`
+settles ADR-018 PC-2's `CertificateRejected{rule, at}`. It reuses
 FR-338's `InitialMissing` (a missing initial product state),
 `SuccessorMissing` (a missing successor), `NotPartition` (components that
 do not partition the members), `BackwardEdge` (an edge from a component to
@@ -155,7 +155,7 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
   or search location, and its result SHALL be a function of the
   certificate, the request and the limits.
 - **Settlement.** FR-182 SHALL settle `proved`, `Certified` only on
-  `Accepted`, V-6 `CertificateRejected{rule, state}` on `Rejected`, and V-7
+  `Accepted`, V-6 `CertificateRejected{rule, at}` on `Rejected`, and V-7
   on `Stopped`.
 
 ## Acceptance Criteria

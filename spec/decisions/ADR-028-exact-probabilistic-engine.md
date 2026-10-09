@@ -227,8 +227,8 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 
 | Outcome | ADR-018 kind | FR-331 value | FR-243 basis | `TerminalValue` | O-16 category | What the checker reads |
 | --- | --- | --- | --- | --- | --- | --- |
-| Exact value on the claim's side of the threshold, equality counting for a non-strict bound | V-1 style | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}}` | success | An exact certificate (CE-3) over the re-enumerated product |
-| Sound interval on the claim's side | V-1 style | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}}` | success | A lower or upper certificate (CE-3) |
+| Exact value on the claim's side of the threshold, equality counting for a non-strict bound | V-1 style | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}, certification: Certified}` | success | An exact certificate (CE-3) over the re-enumerated product |
+| Sound interval on the claim's side | V-1 style | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}, certification: Certified}` | success | A lower or upper certificate (CE-3) |
 | Bound fails over every scheduler | V-4 | `refuted` | `decisive-counterexample` | `Refuted` | violation | Witness scheduler and its path set or subsystem certificate (WS-3, WS-4) |
 | Bound fails under a workload | V-4 | `refuted` | `decisive-counterexample` | `Refuted` | violation | Path set or subsystem certificate |
 | Interval straddles the threshold at the budget | V-7 | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(PrecisionBudget{lower, upper})` | incomplete | Nothing; the caller raises the budget and reruns |

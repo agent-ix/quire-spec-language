@@ -194,8 +194,8 @@ the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker
 re-exploration. Each is a layer-6 entry beside `replay`. It recompiles the
 package and checks the certificate with its own code, reading nothing from
 the engine's search but the certificate. The engines that produce
-certificates are outside the core. An `analyze` `proved` counts only once
-its in-core checker accepts the certificate. The core's crates are:
+certificates are outside the core. An `analyze` `proved` is `certified`
+only once its in-core checker accepts the certificate. The core's crates are:
 
 - in QSL: `qsl-foundation`,
   `qsl-cst`, `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package`,
@@ -371,13 +371,14 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
   `incomplete` with the cause kept.
 - **Who settles.** QSL settles the terminal records of its native engines,
   and of third-party plugins (PL-5), in layer 6 `qsl-replay`: the
-  certificate check, the replay of a counterexample and the trust basis. CG
+  certificate check, the replay of a counterexample and the certification. CG
   keeps the C-09 map that settles a Kani outcome with its E9 replay result
   (ADR-013 C-09), and the orchestrating driver runs it (ADR-011 T-13).
-- **Three bases.** A native-engine proof is `certificate-checked` once its
-  core checker accepts, or `uncertified` when no core checker exists (RU-6).
-  A plugin proof is `trusted` (RU-4). A Kani `proved` carries no trust
-  label: the Kani prove path is part of the qualified core (CB-2).
+- **One certification per proof.** Every `proved` carries exactly one
+  certification (ADR-018 PC-1). A native-engine proof is `certified` once
+  its core checker accepts, or `uncertified` when no core checker exists
+  (RU-6). A plugin proof is `trusted` (RU-4). A Kani `proved` is
+  `certified`: the Kani prove path is part of the qualified core (CB-2).
 - **Inside `prove`.** QSL publishes a provider manifest for each engine. When
   negotiation routes an item to one, the driver calls `analyze` in process as
   that provider, so the two paths produce the same record.
@@ -504,7 +505,7 @@ variant for process providers, `BackendKind::Process(BackendId)`. Rulings:
    process provider: the driver's plugin host runs the PV-3 process adapter.
    CG has no terminal step: the driver reads the FR-331 result with the typed
    reader and settles per PL-7 (`refuted` only through S6a replay; `proved`
-   keeps the basis label trusted). Each CG arm for `Process` is a typed
+   carries the certification `trusted`). Each CG arm for `Process` is a typed
    pass-through or empty output, never a panic.
 4. **Disposition from the manifest alone.** A `Process(id)` item settles
    under QSpec FR-290's "Single-candidate arm", whose step 2 is the
@@ -594,7 +595,7 @@ kills the process.
 - **Trusted proofs.** A plugin's `proved` result cannot be replayed and has
   no in-core certificate checker. The
   terminal record keeps the result `proved`, names the plugin's `BackendId`,
-  and carries the basis label `trusted`. A renderer shows the label beside
+  and carries the certification `trusted`. A renderer shows the label beside
   the verdict.
 
 ### 6. Cache
@@ -815,7 +816,7 @@ The owner ruled on the five questions the draft left open (RU-1 to RU-5) on
 | ID | Question | Ruling | Rationale | Where it lands |
 | --- | --- | --- | --- | --- |
 | RU-1 | The exit code for O-16 undefined | **Exit 10.** Machine output still labels each item `undefined`; a proof item never settles undefined (the reconciliation References records) | An undefined claim did not hold, which is a logical outcome, and QSpec FR-301 has no separate code. The item label keeps it distinct from a violation | CB-4 |
-| RU-2 | Whether `analyze` is in the qualified core | **Inside, through its certificate checkers only**: the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker (ADR-028 CE-*) and closure checks such as ADR-022's trap re-exploration. The engines stay outside. A `proved` counts only once the in-core checker accepts its certificate | A checker reads only the certificate and recomputes it with its own code, so it is small enough to qualify, and it makes the engine's soundness irrelevant to the verdict | LC-1, CB-2, CB-3, OP-2 |
+| RU-2 | Whether `analyze` is in the qualified core | **Inside, through its certificate checkers only**: the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker (ADR-028 CE-*) and closure checks such as ADR-022's trap re-exploration. The engines stay outside. A `proved` is `certified` only once the in-core checker accepts its certificate | A checker reads only the certificate and recomputes it with its own code, so it is small enough to qualify, and it makes the engine's soundness irrelevant to the verdict | LC-1, CB-2, CB-3, OP-2 |
 | RU-3 | Which engines `analyze` covers | **QSL's in-process engines only.** SMT engines are IR's backend and run through the driver | QSL has no SMT code; the SMT backend negotiates and runs like any other provider under `prove` | OP-2 |
 | RU-4 | Whether plugins need kernel confinement | **The plugin rights model is deleted.** No rights declarations and no confinement. A plugin's `proved` stays labelled `trusted` | A user installs the plugin, so it is trusted like any program they install. A `proved` from it still cannot be replayed | PL-1, PL-7 |
 | RU-5 | Whether plugin results are cached | **No.** | The host cannot show that a third-party run is a function of the cache key | CA-5 |

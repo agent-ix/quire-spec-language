@@ -243,7 +243,7 @@ returns with it, as ADR-018 PC-1 to PC-5 state for temporal proofs.
 | --- | --- |
 | GC-1 | **Certificate.** With V-9 or V-1 from an unreduced exploration, EN-1 returns a `StateGraphCertificate`: the explored model states as sorted `quire.simulation.state-key/v1` digests; for SG-1 and SG-2, each state's distance `d` to the nearest `P` node, for every state from which `P` is reachable; for SG-3, each node of `H` with its path count and its position in a reverse topological order of `H`. |
 | GC-2 | **Check.** `check_state_graph`, a layer-6 entry in `qsl-replay` beside ADR-018 PC-5's checkers, recompiles the package, re-admits the subject and recomputes with its own code. It accepts when: every initial state is in the closure and every successor of a closure state is in it (ADR-018 PC-3's closure rule, with no automaton component); no claim predicate is undefined at a closure state; for SG-1 every initial state, and for SG-2 every state where `Q` holds, has a rank, a rank 0 state satisfies `P`, and a rank `d > 0` state has a successor ranked `d - 1`; for SG-3 every edge of `H` goes to an earlier node in the order, a `Y` node counts 1, every other node counts the sum of its `H` successors saturated at 2, and every node where `X` holds counts 1. The closure holds every reachable state, so an accepted certificate also establishes well-definedness (RU-5). |
-| GC-3 | **Verdict path.** The certificate leaves S6c over ADR-018's E11 with its result, and the item settles `proved`, `Certified` only after the checker accepts. A rejection settles `inconclusive`, `CertificateRejected{rule, state}` (ADR-018 PC-2); a check a limit stops settles V-7, naming the limit. |
+| GC-3 | **Verdict path.** The certificate leaves S6c over ADR-018's E11 with its result, and the item settles `proved`, `Certified` only after the checker accepts. A rejection settles `inconclusive`, `CertificateRejected{rule, at}` (ADR-018 PC-2); a check a limit stops settles V-7, naming the limit. |
 | GC-4 | **Uncertified proofs.** A V-1 under a reduction has no core certificate checker: it settles `proved`, labelled `Uncertified` (ADR-018 PC-1, RU-6). Trap and path-pair refutations need no certificate: replay re-establishes them (GX-3, GX-4). |
 
 V-5 for a state-graph claim means: the search completed to depth `k` and
@@ -318,7 +318,7 @@ successors `upd(a)` and `upd(b)`.
 `(0, 0)` takes `upd(a)` (first in canonical order, to `d = 1`) twice:
 `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`. Instance `c = b` is the same with
 `upd(b)`. Each instance settles `proved`, `decisive-witness`,
-`Proved{basis: Witness{sources}}` (V-9), after GX-2 replays two steps and evaluates
+`Proved{basis: Witness{sources}, certification: Certified}` (V-9), once GC-2's checker accepts its certificate, after GX-2 replays two steps and evaluates
 `c.versionNumber = 2` true at the last node. With phase 0 on, as by
 default, a walk from `(0, 0)` that reaches `va = 2` is the instance's
 witness, with source `Sampled` and that walk's seed and trace index, and the
@@ -426,7 +426,7 @@ as an EN-1 counterexample does.
 | ID | Repository | Change |
 | --- | --- | --- |
 | DS-1 | QSL | S3: the three claim forms (SG-1 to SG-3) and their form record, the state-only predicate check (GM-3), the fairness refusal (GM-7). The request writer: the deadlock-freedom item for subjects of state-graph items (GM-8). Layer A `qsl-analyze`, `model_check`: node labelling, phase 0 sampling (GE-2), backward reachability, path counting, open-node tracking (GM-6), canonical evidence (§3), the GR-1 rows in the pre-check. `qsl-replay`: `ProofBasis::Witness`, `GraphEvidence`, `ReplaySource::ModelGraph` and its result arm with GX-2 to GX-4. The EN-1 manifest's state-graph forms. |
-| DS-2 | CG | The EN-1 `negotiate_*` arm reads the state-graph form; an SMT arm discharges SG-1 only. `Proved{basis: Witness{sources}}` in the outcome map. |
+| DS-2 | CG | The EN-1 `negotiate_*` arm reads the state-graph form; an SMT arm discharges SG-1 only. `Proved{basis: Witness{sources}, certification: Certified}` in the outcome map, once `check_state_graph` accepts the certificate. |
 | DS-3 | IR | SG-1 path search in the SMT encoding (GE-3), after IR admits state nodes (ADR-018 DS-3). |
 | DS-4 | Driver | Runs a state-graph item routed to EN-1 in process and runs E9 for its evidence. |
 | DS-5 | QSpec | §9. |

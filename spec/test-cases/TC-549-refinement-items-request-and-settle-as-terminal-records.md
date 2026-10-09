@@ -38,13 +38,14 @@ Tag the tests `#[trace("TC-549", "FR-144-AC-n")]`.
 
 - Step 1: one `temporal-satisfaction` record, `Refinement{liveness: true}`,
   then `false`, routed to the explicit-state provider; a concrete deadlock-freedom item and no abstract one; none with `terminal any`.
-- Step 2: `proved`, `closed-scope`, both halves `Proved{Exhaustive}`;
-  `refuted`, `decisive-counterexample`, safety `Proved{Exhaustive}`,
+- Step 2: `proved`, `closed-scope`, `Uncertified`, safety half
+  `Proved{Exhaustive, Certified}`, liveness half `Proved{Exhaustive, Uncertified}`;
+  `refuted`, `decisive-counterexample`, safety `Proved{Exhaustive, Certified}`,
   liveness `Refuted`.
 - Step 3: `inconclusive`, `Inconclusive(MappingUndetermined)`; `refuted`,
   `decisive-counterexample`, cause `UndefinedEvaluation`;
   `unsupported`, `Unsupported(unsupported-requested-capability)`, safety
-  `Proved{Exhaustive}` on the record.
+  `Proved{Exhaustive, Certified}` on the record.
 - Step 4: `Inconclusive(ReplayParity)`; `Inconclusive(ReplayRefused)`.
 - Step 5: different obligation identities; the second settles `refuted` with
   `InitialNotAbstract`.

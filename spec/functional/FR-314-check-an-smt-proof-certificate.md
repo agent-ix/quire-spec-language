@@ -19,13 +19,13 @@ relationships:
 ## Description
 
 `qsl-replay`'s `check_smt_proof` SHALL accept an `SmtProofCertificate` that
-comes with an SMT `Proved{BoundedComplete{depth}}` or
-`Proved{Inductive{depth}}` result exactly when every query it carries is
+comes with an SMT backend's `BoundedComplete{depth}` or
+`Inductive{depth}` proof, before it settles, exactly when every query it carries is
 the query FR-315 encodes for the item at that depth and every proof it
 carries refutes its query using only checked Alethe rules (ADR-018 PC-6,
 LA-3). FR-127's settlement map runs the check: a proof whose certificate it
-verifies settles `proved` with no certification label; one it shows wrong
-settles `inconclusive`, `CertificateRejected{rule, state}`; one it cannot
+verifies settles `proved`, `Certified`; one it shows wrong
+settles `inconclusive`, `CertificateRejected{rule, at}`; one it cannot
 verify because a step uses an unchecked rule settles `proved`,
 `Uncertified`, as an SMT proof that arrives with no certificate does.
 
@@ -33,7 +33,7 @@ verify because a step uses an unchecked rule settles `proved`,
 
 A verification operator relies on a bounded-complete or inductive proof
 from an SMT solver. The solver sits outside the qualified core, so the
-proof loses its `uncertified` label only after the core checks the
+proof is labelled `certified` only after the core checks the
 solver's own proof objects against the queries the core itself encodes.
 
 ## Inputs
@@ -69,7 +69,7 @@ pub enum SmtProofCheck {
 
 FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 `ProofStepInvalid` and `NotRefutation`, and
-`CertificateRejection.state` is a `CertificateLocus`:
+`CertificateRejection.at` is a `CertificateLocus`:
 `ProductState(ProductStateRef)` for FR-338 and FR-339, and
 `Query { part }` or `ProofStep { part, index: u64 }` here, `part` being
 `Unrolling`, `Base` or `Step`.
@@ -77,7 +77,7 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 ## Outputs
 
 - `Ok(())` when the certificate is accepted.
-- `CertificateRejection{rule, state}` naming the first rule that failed
+- `CertificateRejection{rule, at}` naming the first rule that failed
   and where.
 
 ## Behavior
@@ -130,7 +130,7 @@ command. Every other rule is unchecked.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-314-AC-1 | Accepted vectors: over the `Counter` subject under event-position false-extension, the TP-2 `on origin` claim `always[0,3] holds(c.value <= 3)` proved `BoundedComplete{depth: 3}`, at its horizon 3 (ADR-018 V-2), with an Alethe certificate whose unrolling query is FR-315's encoding at depth 3 and whose proof refutes it with checked rules, is accepted; `always holds(c.value <= 3)` proved `Inductive{depth: 1}` with base and step queries FR-315 encodes at depth 1, each refuted with checked rules, is accepted. Each item settles `proved`, success, with no certification label. | Test (TC-893) |
+| FR-314-AC-1 | Accepted vectors: over the `Counter` subject under event-position false-extension, the TP-2 `on origin` claim `always[0,3] holds(c.value <= 3)` proved `BoundedComplete{depth: 3}`, at its horizon 3 (ADR-018 V-2), with an Alethe certificate whose unrolling query is FR-315's encoding at depth 3 and whose proof refutes it with checked rules, is accepted; `always holds(c.value <= 3)` proved `Inductive{depth: 1}` with base and step queries FR-315 encodes at depth 1, each refuted with checked rules, is accepted. Each item settles `proved`, `Certified`, success. | Test (TC-893) |
 | FR-314-AC-2 | Rejected vectors: AC-1's bounded certificate with its query encoded at depth 2 is rejected `QueryMismatch` at `Unrolling`; with one step's premise replaced by a later step, `ProofStepInvalid` at that step; with its last step removed so the proof ends short of the empty clause, `NotRefutation`. AC-1's inductive certificate with an invalid step proof is rejected `ProofStepInvalid` at that `Step` step, and a `BoundedComplete` certificate offered for the `Inductive` basis is rejected `ShapeMismatch`. Each settles `inconclusive`, `CertificateRejected`. Unverifiable vector: AC-1's bounded certificate with one step's rule replaced by `hole`, or by `lia_generic`, and no other defect returns `Unverifiable` at that step and settles `proved`, `Uncertified`, the same as the bounded result with no certificate. | Test (TC-893) |
 
 ## Dependencies

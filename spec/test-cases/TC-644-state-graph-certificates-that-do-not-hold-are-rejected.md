@@ -12,7 +12,7 @@ relationships:
 
 Verify each rejection rule of `check_state_graph`: a missing successor, a
 broken or missing rank, an undefined predicate, a broken count and a broken
-order, each settling `CertificateRejected{rule, state}`, and a check that a
+order, each settling `CertificateRejected{rule, at}`, and a check that a
 limit stops.
 
 Scope: FR-169-AC-10.
@@ -41,5 +41,5 @@ Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`.
 - Step 3: `CountBroken` at the node with two paths; `OrderBroken`.
 - Step 4: stopped, naming `max_states` and 2.
 - Step 5: each rejection settles `inconclusive`,
-  `CertificateRejected{rule, state}`, never `proved`; step 4 settles
+  `CertificateRejected{rule, at}`, never `proved`; step 4 settles
   `failed`, naming `max_states`.

@@ -93,12 +93,13 @@ beside it as a separate item.
 
 - The item's value SHALL be:
   - the safety half's value when the safety half is not `Holds`;
-  - `Proved{basis: Exhaustive}` when the safety half holds and `liveness`
-    is `None`;
+  - `Proved{basis: Exhaustive, certification: Certified}` when the safety
+    half holds, FR-149 accepts its certificate and `liveness` is `None`;
   - the liveness half's value when it is `Checked`;
   - `Unsupported(unsupported-requested-capability)` when it is
     `Unsupported`, with the record carrying the safety half's value
-    `Proved{basis: Exhaustive}` beside it (ADR-020 AX-5).
+    `Proved{basis: Exhaustive, certification: Certified}` beside it (ADR-020
+    AX-5).
 - Each half's value SHALL come from FR-127's map, with
   `Undecided(MappingUndetermined)` settling V-6 `inconclusive`,
   `Inconclusive(MappingUndetermined)`, and an `UndefinedEvaluation`
@@ -113,7 +114,7 @@ beside it as a separate item.
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
   `proved` only after FR-149's checker accepts its certificate; a rejection
-  SHALL settle V-6 `CertificateRejected{rule, state}` (ADR-018 PC-2), and a checker stopped by a limit
+  SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
   V-7 naming the limit (ADR-020 CT-3).
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's
   `Certified` label when every half was certified. A `proved` with a
@@ -125,8 +126,8 @@ beside it as a separate item.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-144-AC-1 | `CasRefinesCounter` writes one requirement record (`temporal-satisfaction`, `PropertyForm::Refinement{liveness: true}`); with its `ensure` row removed, `liveness: false`. The record routes to the explicit-state provider. The request carries the concrete subject's deadlock-freedom item and none for the abstract subject; with `terminal any` on `Impl::Counter` it carries none. | Test (TC-549) |
-| FR-144-AC-2 | `CasRefinesCounter` settles `proved`, `closed-scope`, `Proved{basis: Exhaustive}`, method `explicit-state`, both halves `Proved{basis: Exhaustive}`. The divergence variant settles `refuted`, `decisive-counterexample`, after its lasso replays, with safety half `Proved{basis: Exhaustive}` and liveness half `Refuted`. | Test (TC-549) |
-| FR-144-AC-3 | FR-142-AC-4's `writes` variant settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive; FR-142-AC-6's `only` variant settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive}` on the record. | Test (TC-549) |
+| FR-144-AC-2 | `CasRefinesCounter` settles `proved`, `closed-scope`, `Proved{basis: Exhaustive, certification: Uncertified}`, method `explicit-state`, safety half `Proved{basis: Exhaustive, certification: Certified}` and liveness half `Proved{basis: Exhaustive, certification: Uncertified}`. The divergence variant settles `refuted`, `decisive-counterexample`, after its lasso replays, with safety half `Proved{basis: Exhaustive, certification: Certified}` and liveness half `Refuted`. | Test (TC-549) |
+| FR-144-AC-3 | FR-142-AC-4's `writes` variant settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive; FR-142-AC-6's `only` variant settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive, certification: Certified}` on the record. | Test (TC-549) |
 | FR-144-AC-4 | The lost-update refinement whose counterexample is replayed with its recorded failure changed to `AbstractStepRejected{position: 3, …}` settles `inconclusive`, `Inconclusive(ReplayParity)`, never `refuted`; replayed with an `initial` index of 1 over its one-snapshot subject, it settles `inconclusive`, `Inconclusive(ReplayRefused)`. | Test (TC-549) |
 | FR-144-AC-5 | Two `CasRefinesCounter` requests that differ only in the abstract subject's initial snapshots (`value` 0 and `value` 1) have different obligation identities; the second settles `refuted` with `InitialNotAbstract`. | Test (TC-549) |
 | FR-144-AC-6 | FR-140-AC-5's incomplete `items` row settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)` (wire cause `mapping-undetermined`), never `refuted`; FR-141-AC-7's undefined argument settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. | Test (TC-555) |

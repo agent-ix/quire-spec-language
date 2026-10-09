@@ -25,7 +25,7 @@ Tag the tests `#[trace("TC-774", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: the plugin record is `proved` with the provider's `BackendId` and basis `trusted`; the `analyze` record's basis is `certificate-checked`, naming the EN-5 checker; the test engine's record is `proved` with basis `uncertified`, naming that engine; the Kani record is `proved` with no trust label.
+- Step 1: the plugin record is `proved` with the provider's `BackendId` and certification `trusted`; the `analyze` record's certification is `certified`, naming the EN-5 checker; the test engine's record is `proved` with certification `uncertified`, naming that engine; the Kani record is `proved` with certification `certified`.
 - Step 2: `refuted`; `inconclusive` with cause `replay_parity`; `inconclusive` with cause `replay_refused`.
 - Step 3: no record is built from the body, and the items settle as FR-291 states.
-- Step 4: the plugin text shows `proved` with `trusted` beside it and the JSON holds basis `trusted`; the `uncertified` text shows `proved` with `uncertified` beside it; the Kani text shows `proved` with no label.
+- Step 4: the plugin text shows `proved` with `trusted` beside it and the JSON holds certification `trusted`; the `uncertified` text shows `proved` with `uncertified` beside it; the Kani text shows `proved` with `certified` beside it.

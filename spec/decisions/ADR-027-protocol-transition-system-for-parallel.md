@@ -398,7 +398,7 @@ are s0, s1, s2, s3 and, after both branches, two join-pending states (`c.v`
 2 and 3), two finish-pending states and two states whose instance finished and was
 removed: ten states and nine transitions. Both terminal states hold no live
 instance, so the deadlock-freedom
-item settles `proved`, `Proved{basis: Exhaustive}` (ADR-018 V-1), and
+item settles `proved`, `Proved{basis: Exhaustive, certification: Certified}` (ADR-018 V-1), and
 `eventually holds(k.v = 3)` settles `refuted` with the finished behaviour
 through `c.v = 2`, since `B` after `A` leaves 2.
 

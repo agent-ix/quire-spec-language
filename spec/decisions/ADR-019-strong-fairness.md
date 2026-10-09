@@ -217,7 +217,7 @@ and is enabled at `(0, q1)`, so `S` fails FS-2 (c) with `B = {acq(1)}`. The
 refinement removes `R = {(0, q1)}`. `fair({(2, q1)})` finds one trivial SCC,
 with no edge, and rejects it. No fair accepting cycle exists. The item
 settles `proved`, basis `closed-scope`, `TerminalValue::Proved{basis:
-Exhaustive}` (V-1), over this subject. The lasso above is unfair under this
+Exhaustive, certification: Certified}` (V-1), over this subject. The lasso above is unfair under this
 premise: `acq(1)` is enabled at position 0 and never taken, so replay refuses
 it (FS-8).
 

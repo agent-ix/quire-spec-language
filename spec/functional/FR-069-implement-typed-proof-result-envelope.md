@@ -55,7 +55,7 @@ an FR-331 terminal value.
 - A backend result `tested` SHALL remain `tested`. Only a Kani run with at
   least one SUCCESS check maps to `proved`.
 - A Kani run whose obligation has zero SUCCESS checks SHALL stay
-  `Proved { success_checks: 0 }` (ADR-013 C-09: no separate vacuous variant,
+  `Proved { basis: Checks { success_checks: 0 }, certification: Certified }` (ADR-013 C-09: no separate vacuous variant,
   no `NonZero` count) and map to `inconclusive` with the typed cause
   `kani_vacuous_proof`, never to `proved`'s `success` (ADR-013 O-16 proof
   column).

@@ -36,7 +36,7 @@ zone search, and each engine later added to layer A. Those records own each
 engine's semantics; this requirement owns the operation that runs them and
 settles their results.
 
-A `proved` result is `certificate-checked` once the engine's certificate
+A `proved` result is `certified` once the engine's certificate
 checker in the qualified core accepts its certificate (FR-282). A proof from
 a native engine with no core checker is `proved`, labelled `uncertified` (FR-290). A counterexample counts only
 after S6a replay reproduces it.
@@ -75,14 +75,15 @@ the evaluation was undefined as its counterexample.
   settle that item `unsupported` with a typed cause that names the claim
   kind.
 - When an engine reports a proof with a certificate, `analyze` shall run the
-  engine's certificate checker (FR-282) and settle the item `proved` only if
-  the checker accepts the certificate.
+  engine's certificate checker (FR-282) and settle the item `proved`, with
+  the certification `certified`, only if the checker accepts the
+  certificate.
 - If the certificate checker rejects the certificate, then `analyze` shall
   settle the item `inconclusive` with cause `CertificateRejected` and the
   checker's typed rejection.
 - If an engine reports a proof and the qualified core holds no certificate
   checker for that engine, then `analyze` shall settle the item `proved`,
-  category success, with the trust basis `uncertified` naming the engine.
+  category success, with the certification `uncertified` naming the engine.
 - When an engine reports a counterexample, `analyze` shall replay it through
   layer-6 `replay` (FR-098) and settle the item `refuted` only if the replay
   reproduces it.
@@ -107,7 +108,7 @@ the evaluation was undefined as its counterexample.
 | FR-281-AC-1 | Over a finite probabilistic model, an EN-5 item claiming a reachability probability bound that holds settles `proved` with category success after the EN-5 certificate checker accepts its certificate, and the record carries the certificate. | Test (TC-762) |
 | FR-281-AC-2 | Over a finite model whose invariant one transition breaks, an EN-1 item claiming that invariant settles `refuted`, the record carries the counterexample, and replaying that counterexample through `replay` reproduces it. | Test (TC-762) |
 | FR-281-AC-3 | A request of three items, one whose claim kind no layer-A engine advertises, one an engine proves and one an engine refutes, returns exactly three records, the first `unsupported` with a cause naming the claim kind. | Test (TC-762) |
-| FR-281-AC-4 | With the test engine's certificate altered in one member before checking, the item settles `inconclusive` with cause `CertificateRejected`; with a test engine that reports a proof and has no certificate checker, the item settles `proved`, category success, with the basis `uncertified` naming that engine. | Test (TC-763) |
+| FR-281-AC-4 | With the test engine's certificate altered in one member before checking, the item settles `inconclusive` with cause `CertificateRejected`; with a test engine that reports a proof and has no certificate checker, the item settles `proved`, category success, with the certification `uncertified` naming that engine. | Test (TC-763) |
 | FR-281-AC-5 | With a test engine that reports a counterexample replay does not reproduce, the item settles `inconclusive` with cause `replay_parity`; with one whose counterexample names a parameter the function lacks, `inconclusive` with cause `replay_refused`. | Test (TC-763) |
 | FR-281-AC-6 | The AC-1 item with its engine's state budget set to 1 settles `incomplete` with the state-budget cause. | Test (TC-763) |
 | FR-281-AC-7 | Over a finite model with one reachable state at which the invariant `100 / x > 0` divides by zero, an EN-1 item claiming that invariant settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names that state and whose `cause` is `division-by-zero`; replay reproduces the undefined value at that state, the record carries no `undefined` label, and FR-285 maps the outcome to exit 10. | Test (TC-763) |

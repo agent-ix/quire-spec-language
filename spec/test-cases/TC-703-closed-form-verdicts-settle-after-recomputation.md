@@ -27,7 +27,7 @@ Tag the tests `#[trace("TC-703", "FR-248-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Proved{ClosedForm{FixedPriorityRta}}` with the fixpoints, `Proved{ClosedForm{EdfQpa}}`; `refuted` with evidence for both.
+- Step 1: `Proved{ClosedForm{FixedPriorityRta}, Certified}` with the fixpoints, `Proved{ClosedForm{EdfQpa}, Certified}`; `refuted` with evidence for both.
 - Step 2: `inconclusive`, `ReplayParity`, both. The job-2 evidence: `inconclusive`, `ReplayParity`, naming job 1; the job-0 evidence: `refuted`.
-- Step 3: `Proved{ClosedForm{AmcRtb}}`; `inconclusive`, `SufficientTestFailed`.
+- Step 3: `Proved{ClosedForm{AmcRtb}, Certified}`; `inconclusive`, `SufficientTestFailed`.
 - Step 4: `content-mismatch` naming both identities; FR-098's refusal.

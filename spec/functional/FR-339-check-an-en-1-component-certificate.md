@@ -66,7 +66,7 @@ constraint, in FR-123's order.
 ## Outputs
 
 - `Ok(())` when the certificate is accepted.
-- FR-338's `CertificateRejection{rule, state}` otherwise.
+- FR-338's `CertificateRejection{rule, at}` otherwise.
 
 ## Behavior
 

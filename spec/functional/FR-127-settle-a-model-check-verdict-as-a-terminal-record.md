@@ -69,6 +69,8 @@ QSL supplies their types and categories.
   and initial-state snapshots, and the item.
 - For `Violated`: the FR-072 result of replaying its counterexample
   (FR-128), or the `ReplayRefusal` that stopped it.
+- For a cancelled run: the `CancelCause` its `Cancel` handle carries
+  (FR-276).
 
 ## Outputs
 
@@ -82,19 +84,21 @@ pub enum ProofBasis {
     Inductive { depth: u64 },
 }
 
-pub enum Certification { Certified, Uncertified, Trusted }
+pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 
-// TerminalValue::Proved { basis: ProofBasis, certification: Option<Certification> }
+// TerminalValue::Proved { basis: ProofBasis, certification: Certification }
 // InconclusiveCause gains:
 //   BoundReached { depth: u64 }, InductionNotClosed { depth: u64 },
 //   UndecidedSuccessor, NoInitialState,
-//   CertificateRejected { rule: CertificateRule, state: CertificateLocus }
+//   CertificateRejected { rule: CertificateRule, at: CertificateLocus },
+//   written certificate-rejected{rule, at} (QSpec FR-331)
 
 // ProductStateRef, ClosureCertificate, CertificateRule: FR-338.
 // ComponentCertificate, ProofCertificate: FR-339.
 // IncompleteCause gains LimitReached { limit: ModelCheckLimit, value: u64, setting: RequestSetting },
 //   QSpec FR-331's limit-reached; setting names the request member that raises it.
-//   Cancelled, written cancelled (QSpec FR-408-AC-8).
+//   Cancelled { source: CancelCause }, written cancelled{source} (QSpec FR-331),
+//   source the CancelCause wire name: requested or deadline (FR-276).
 ```
 
 The certificate types and checkers are FR-338's and FR-339's.
@@ -110,7 +114,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
 | V-1 | `Holds{Exhaustive}` whose certificate the core checker accepts | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}` | success |
-| V-6 | `Holds{Exhaustive}` whose certificate the core checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, state})` | inconclusive |
+| V-6 | `Holds{Exhaustive}` whose certificate the core checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})` | inconclusive |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` (FR-128) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
@@ -119,8 +123,8 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::UnfairLasso` (FR-131), an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
-| V-7 | `Stopped{cause: ResourceExhausted, limit: Some(ReachedLimit{limit, value})}`, a limit reached | `incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` | incomplete |
-| V-7 | `Stopped{cause: Cancelled, limit: None}` | `incomplete` | `unavailable` | `Incomplete(Cancelled)`, written `cancelled` | incomplete |
+| V-7 | `Stopped{cause: ResourceExhausted, limit: Some(ReachedLimit{limit, value})}`, a limit reached | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` | incomplete |
+| V-7 | `Stopped{cause: Cancelled, limit: None}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` | incomplete |
 
 - When an outcome is `Violated`, the settlement map SHALL settle it `refuted`
   only through its replay.
@@ -156,22 +160,22 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 - Before settling `Holds{Exhaustive}` the settlement map SHALL run the
   core checker for its certificate, `check_closure` or `check_components`,
   and settle `Proved{Exhaustive, Certified}` when it accepts and
-  `Inconclusive(CertificateRejected{rule, state})` when it rejects.
+  `Inconclusive(CertificateRejected{rule, at})` when it rejects.
 - The checkers SHALL be FR-338's `check_closure` and FR-339's
   `check_components`; a rejection names the rule and the product state at
   which it failed.
 - For an SMT `BoundedComplete` or `Inductive` result that CG's SMT map
   hands it, the settlement map SHALL run FR-314's `check_smt_proof` on the
   result's `SmtProofCertificate` and settle `proved` with
-  `certification: None` when it returns `Verified`,
-  `Inconclusive(CertificateRejected{rule, state})` when it rejects, and
-  `proved` with `Some(Uncertified)` when it returns `Unverifiable` or the
+  `certification: Certified` when it returns `Verified`,
+  `Inconclusive(CertificateRejected{rule, at})` when it rejects, and
+  `proved` with `Uncertified` when it returns `Unverifiable` or the
   result carries no certificate (ADR-018 PC-6). A proof from any other
   native engine with no core certificate checker SHALL
-  carry `Some(Uncertified)`; one from a third-party plugin SHALL
-  carry `Some(Trusted)`; a Kani `Checks` proof, from the qualified core's
-  prove path, SHALL carry `None`. Each settles `proved` and maps to success
-  (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
+  carry `Uncertified`; one from a third-party plugin SHALL
+  carry `Trusted`; a Kani `Checks` proof, from the qualified core's
+  prove path, SHALL carry `Certified`. Every `Proved` carries exactly one
+  certification; each settles `proved` and maps to success (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
   map (ADR-018 DS-2) construct the values of their backends; this
   settlement map covers QSL's native engine, EN-1, and the SMT certificate
   check.
@@ -184,10 +188,10 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 ### Categories of every proof value
 
 - `TerminalValue::category` SHALL map `Proved{basis: Checks{success_checks:
-  0}}` to inconclusive with `KaniVacuousProof`, and every other `Proved`
+  0}, certification: Certified}` to inconclusive with `KaniVacuousProof`, and every other `Proved`
   basis, `Exhaustive`, `BoundedComplete{depth}` and `Inductive{depth}`, to
   success.
-- `TerminalValue::category` SHALL map `Proved` with either certification
+- `TerminalValue::category` SHALL map `Proved` with any certification
   as its basis maps, and `Inconclusive` with each of the new causes,
   `CertificateRejected` included, to inconclusive, and `Unsupported(cause)` to unsupported.
 
@@ -196,15 +200,15 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-127-AC-1 | Each row of the map settles its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states: `Holds{Exhaustive}` with an accepted certificate, settling `Proved{Exhaustive, Certified}`; a reproduced `Violated`; `BoundReached{depth: 2}` carrying depth 2 and method `explicit-state`; `Undecided(UndecidedSuccessor)`; `Undecided(NoInitialState)`; `Stopped{ResourceExhausted, {MaxStates, 2}}` settling `Incomplete(LimitReached{MaxStates, 2, max_states})` naming `max_states`, value 2. | Test (TC-522) |
-| FR-127-AC-2 | `TerminalValue::category` maps `Proved{Checks{0}}` to inconclusive `KaniVacuousProof`; `Proved{Checks{1}}`, `Proved{Exhaustive, Certified}`, `Proved{BoundedComplete{depth: 5}}` and `Proved{Inductive{depth: 2}}` to success; `Inconclusive` with `BoundReached{1}`, `InductionNotClosed{2}`, `UndecidedSuccessor` and `NoInitialState` to inconclusive. | Test (TC-522) |
+| FR-127-AC-2 | `TerminalValue::category` maps `Proved{Checks{0}, Certified}` to inconclusive `KaniVacuousProof`; `Proved{Checks{1}, Certified}`, `Proved{Exhaustive, Certified}`, `Proved{BoundedComplete{depth: 5}, Certified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}` and `Proved{Inductive{depth: 2}, Uncertified}` to success; `Inconclusive` with `BoundReached{1}`, `InductionNotClosed{2}`, `UndecidedSuccessor` and `NoInitialState` to inconclusive. | Test (TC-522) |
 | FR-127-AC-3 | FR-126-AC-1's weak `each` outcome settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success. Its counterexample under the constraint with no granularity settles `refuted` only after FR-128 replay reproduces it. The same counterexample with one post-state digest altered settles `inconclusive`, `ReplayRefused`; replayed in an envelope for the weak `each` clause, whose fairness it fails, it settles `inconclusive`, `ReplayParity`, since EN-1 builds only fair lassos; with its last step removed, so the loop does not close, it settles `inconclusive`, `ReplayRefused`; one whose formula evaluates `true` on replay settles `inconclusive`, `ReplayParity`. A replay that returns `InternalFault` settles `failed`, category failed. | Test (TC-522) |
-| FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles `incomplete`, `unavailable`, `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`, category incomplete, its record naming `max_automaton_states` with value 50 as the member that raises it; a cancelled run settles `incomplete`, `Incomplete(Cancelled)`, written `cancelled`; every record, AC-3's proof included, states the three limits used and whether one was reached; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
+| FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles FR-360 `failed`, execution `resource-incomplete`, result `incomplete`, `unavailable`, `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`, category incomplete, its record naming `max_automaton_states` with value 50 as the member that raises it; a cancelled run settles `incomplete`, `Incomplete(Cancelled{source})`, written `cancelled{source}`, `source` `requested` for a caller's cancellation and `deadline` for a deadline; every record, AC-3's proof included, states the three limits used and whether one was reached; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
 | FR-127-AC-5 | FR-126-AC-3's deadlock-freedom violation settles `refuted` after replay, with a record whose counterexample `kind` is `Deadlock`, and the record's obligation identity differs from the authored claims' over the same subject. | Test (TC-522) |
 | FR-127-AC-6 | FR-126-AC-9's undefined-evaluation counterexample settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, after FR-128 replay reproduces it, and the record's counterexample carries `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`. The same payload with its cause changed to another undefined reason settles `inconclusive`, `ReplayParity`. | Test (TC-538) |
 
 | FR-127-AC-7 | FR-338-AC-1's TP-1 proof with its accepted certificate settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; with FR-338-AC-2's `(1, 0)`-removed certificate it settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{SuccessorMissing, (1, 0)})`. | Test (TC-522) |
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
-| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, None}`, `Proved{BoundedComplete{depth: 5}, Some(Uncertified)}`, `Proved{Inductive{depth: 2}, Some(Uncertified)}` and a plugin's `Proved{Exhaustive, Some(Trusted)}`, as CG's maps construct them, each read `proved` with category success, never `inconclusive`; the Kani one carries no label. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
+| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Certified}`, `Proved{BoundedComplete{depth: 5}, Certified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}`, `Proved{Inductive{depth: 2}, Uncertified}` and a plugin's `Proved{Exhaustive, Trusted}`, as CG's maps and the settlement map construct them, each read `proved` with category success, never `inconclusive`, and each keeps its one certification. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
 
 ## Dependencies

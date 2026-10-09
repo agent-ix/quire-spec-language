@@ -27,7 +27,7 @@ Tag the tests `#[trace("TC-763", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: the item settles `inconclusive` with cause `CertificateRejected`.
-- Step 2: the item settles `proved`, category success, with the basis `uncertified` naming the engine.
+- Step 2: the item settles `proved`, category success, with the certification `uncertified` naming the engine.
 - Step 3: the first settles `inconclusive` with cause `replay_parity`; the second `inconclusive` with cause `replay_refused` and the refusal's catalog code.
 - Step 4: the item settles `incomplete` with the state-budget cause.
 - Step 5: the item settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names the state with `x` 0 and whose `cause` is `division-by-zero`; replay reproduces the undefined value; the record carries no `undefined` label; the exit code is 10.
