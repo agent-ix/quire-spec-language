@@ -645,14 +645,16 @@ fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
         "targetEnd": {"type": target, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
     });
     let kind = serde_json::json!({"module": package_identity, "name": "thing"});
+    let mut construct = wire_construct(
+        package_identity,
+        "thing",
+        meaning::OBJECT_TYPE,
+        serde_json::json!({"fields": "required", "identityFields": "required"}),
+    );
+    construct["construct"]["identity"] = "identified".into();
     let document = wire_envelope(
         package_identity,
-        serde_json::json!([wire_construct(
-            package_identity,
-            "thing",
-            meaning::OBJECT_TYPE,
-            serde_json::json!({})
-        )]),
+        serde_json::json!([construct]),
         serde_json::json!([
             wire_type(
                 owner,
