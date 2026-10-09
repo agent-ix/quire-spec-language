@@ -437,9 +437,7 @@ parity preimage through `parity_obligation` and runs the operand membership
 checks. A composite literal operand and an operand with no declared maximum
 are defined in O-09's parity preimage text, and each has a test.
 
-Two parts of the acceptance criteria are open. The `K<T>` cases of
+The `K<T>` cases of
 FR-358-AC-4 and AC-5 are tested on the derivation and coverage seam, over
 each of `Sequence`, `Set`, `Bag` and `OrderedSet`, not through a source
-function, because the grammar takes only `K<T>[min, max]`. The `Text` leaf of
-FR-358-AC-5 is tested with a rational leaf until text-profile selection
-exists (QSL-646).
+function, because the grammar takes only `K<T>[min, max]`.
