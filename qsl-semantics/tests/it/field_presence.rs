@@ -21,14 +21,20 @@ fn key(name: &str) -> DeclarationKey {
     }
 }
 
-fn index(parent: Presence, child: Presence, upper: u64, proves_presence: bool) -> ModelIndex {
+fn index(
+    parent: Presence,
+    child: Presence,
+    lower: u64,
+    upper: u64,
+    proves_presence: bool,
+) -> ModelIndex {
     let field = |name: &str, owner: &str, presence| {
         DomainPackageRecord::FieldMember(FieldMemberRecord {
             key: key(name),
             owner: key(owner),
             value_type: ValueTypeRef::Native(NativeValueType::Boolean),
             multiplicity: Multiplicity {
-                lower: 1,
+                lower,
                 upper: Some(upper),
                 ordered: true,
                 unique: false,
@@ -76,7 +82,7 @@ fn index(parent: Presence, child: Presence, upper: u64, proves_presence: bool) -
 fn optional_to_required_needs_a_fact_independently_of_multiplicity() {
     for upper in [1, 3] {
         let result = check_field_refinement_obligation(
-            &index(Presence::Optional, Presence::Required, upper, false),
+            &index(Presence::Optional, Presence::Required, 1, upper, false),
             &key("Child/x"),
             &key("Parent/x"),
         )
@@ -96,7 +102,7 @@ fn optional_to_required_needs_a_fact_independently_of_multiplicity() {
         ] {
             assert_eq!(
                 check_field_refinement_obligation(
-                    &index(parent, child, upper, fact),
+                    &index(parent, child, 1, upper, fact),
                     &key("Child/x"),
                     &key("Parent/x")
                 )
@@ -104,5 +110,21 @@ fn optional_to_required_needs_a_fact_independently_of_multiplicity() {
                 ConformanceOutcome::Compatible
             );
         }
+    }
+}
+
+#[trace("FR-082-AC-8")]
+#[test]
+fn unchanged_presence_and_multiplicity_require_no_presence_fact() {
+    for (presence, lower, upper) in [(Presence::Required, 0, 1), (Presence::Optional, 1, 1)] {
+        assert_eq!(
+            check_field_refinement_obligation(
+                &index(presence, presence, lower, upper, false),
+                &key("Child/x"),
+                &key("Parent/x")
+            )
+            .unwrap(),
+            ConformanceOutcome::Compatible
+        );
     }
 }

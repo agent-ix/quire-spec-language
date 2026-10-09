@@ -97,8 +97,9 @@ impl<'a> DomainType<'a> {
 
 /// The native type of a domain value typed `value_type` with `multiplicity`,
 /// or `None` when it has none here: a native value type other than
-/// `Boolean`, a domain value type, or a multiplicity other than `1`, `0..1`
-/// or `0..n`.
+/// `Boolean`, a domain value type, or a multiplicity other than `[1,1]`
+/// or a bounded, ordered, non-unique `[0,n]` collection. Field presence is
+/// applied separately by [`DomainType::field`].
 pub(crate) fn domain_value_type<'a>(
     package: &'a AdmittedPackage,
     value_type: &ValueTypeRef,
