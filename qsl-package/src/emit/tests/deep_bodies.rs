@@ -32,7 +32,8 @@ impl Write for DebugByteCount {
 #[test]
 fn debug_sink_counts_complete_output_without_retaining_it() {
     let mut sink = DebugByteCount::default();
-    write!(&mut sink, "{} {:?}", "é", [1, 23]).expect("formatting completes");
+    let text = "é";
+    write!(&mut sink, "{text} {:?}", [1, 23]).expect("formatting completes");
     sink.write_str("").expect("an empty fragment succeeds");
     sink.write_char('界').expect("a character succeeds");
     assert_eq!(sink.bytes, 13, "all UTF-8 bytes are counted");
