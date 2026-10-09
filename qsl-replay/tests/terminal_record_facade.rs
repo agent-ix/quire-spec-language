@@ -8,8 +8,9 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     read_backend_provider_envelope, std001_code, BackendProviderSource, CallSiteRefusal, Category,
-    Certification, Code, DeclineCode, InconclusiveCause, InternalFault, ProofBasis, ProofRefusalCause, ReplayRefusal,
-    ReportedInconclusiveCause, RequestIndex, Std001Code, TerminalRecord, TerminalValue,
+    Certification, Code, DeclineCode, InconclusiveCause, InternalFault, ProofBasis,
+    ProofRefusalCause, ReplayRefusal, ReportedInconclusiveCause, RequestIndex, Std001Code,
+    TerminalRecord, TerminalValue,
 };
 
 /// Each record is keyed by the `RequestIndex` it was built with, a declined
