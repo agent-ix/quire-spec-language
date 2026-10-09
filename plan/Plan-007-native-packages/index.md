@@ -12,4 +12,3 @@ okf_version: "0.1"
 - [Task-016 construction and identity](tasks/Task-016-package-construction.md).
 - [Task-017 verified reconstruction](tasks/Task-017-package-reconstruction.md).
 - [Task-018 workflow qualification](tasks/Task-018-package-qualification.md).
-- [Plan history](log.md).

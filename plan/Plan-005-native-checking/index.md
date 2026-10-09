@@ -14,4 +14,3 @@ okf_version: "0.1"
 - [Task-009](tasks/Task-009-native-checker.md) — native types and guarded proofs.
 - [Task-010](tasks/Task-010-checker-qualification.md) — reviews and handoff.
 - [Task-034](tasks/Task-034-sequence-admission.md) — ruling amendment: sequence declaration ceiling.
-- [Log](log.md) — actual lifecycle events.
