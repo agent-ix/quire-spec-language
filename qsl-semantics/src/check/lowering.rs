@@ -326,6 +326,8 @@ pub(crate) struct FunctionInput<'a> {
     pub(crate) location: &'a Location,
     /// The parameters in order.
     pub(crate) parameters: &'a [(String, ValueType)],
+    /// Source parameter declaration spans, separate from the body location.
+    pub(crate) parameter_spans: Option<&'a [qsl_foundation::Span]>,
     /// The declared result type.
     pub(crate) result: &'a ValueType,
     /// The checked body.
@@ -457,6 +459,7 @@ pub(crate) struct Lowered {
     /// Each binder's parameter node, by the binding node's location and
     /// the slot it binds: the roots a claim's extent is keyed by.
     pub(crate) binders: BTreeMap<BinderSite, NodeKey>,
+    pub(crate) parameter_spans: BTreeMap<(NodeKey, OccurrenceOrigin), qsl_foundation::Span>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -519,6 +522,9 @@ pub(crate) struct Lowering<'a> {
     binders: BTreeMap<BinderSite, NodeKey>,
     /// Binders whose parameter node is a draft, recorded once it is keyed.
     draft_binders: Vec<(BinderSite, NodeKey)>,
+    /// Authored function parameters, located by the same binder site whose
+    /// node is resolved when a recursion group settles.
+    parameter_spans: BTreeMap<BinderSite, qsl_foundation::Span>,
     /// Each keyed recursion-group member by the key its content would have
     /// outside the group (its body naming the members' keys, `recursion`
     /// `null`): a node built later with that content is the member (FR-092,
@@ -1358,6 +1364,7 @@ impl<'a> Lowering<'a> {
             draft_occurrences: Vec::new(),
             binders: BTreeMap::new(),
             draft_binders: Vec::new(),
+            parameter_spans: BTreeMap::new(),
             rebuilt_members: BTreeMap::new(),
             group_of: BTreeMap::new(),
             group_regions: BTreeMap::new(),
@@ -1404,11 +1411,32 @@ impl<'a> Lowering<'a> {
                     .record(*key, OccurrenceRole::Generated, at.clone());
             }
         }
+        let mut parameter_sites: BTreeMap<(NodeKey, Location), qsl_foundation::Span> = self
+            .parameter_spans
+            .iter()
+            .filter_map(|(site, span)| {
+                self.binders
+                    .get(site)
+                    .map(|key| ((*key, site.binder.clone()), *span))
+            })
+            .collect();
+        let parameter_spans = self
+            .occurrences
+            .iter()
+            .filter_map(|(key, origin, location)| {
+                // The declaration occurrence precedes reads of its parameter;
+                // removing the site assigns its span to that one occurrence only.
+                parameter_sites
+                    .remove(&(key, location.clone()))
+                    .map(|span| ((key, origin), span))
+            })
+            .collect();
         Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
             functions: self.functions,
             binders: self.binders,
+            parameter_spans,
         }
     }
 
@@ -2578,6 +2606,15 @@ impl<'a> Lowering<'a> {
             let target = function.population_targets.get(level).copied().flatten();
             let type_key = self.binder_type(value_type, target, function.location)?;
             let key = self.parameter(name, level, type_key, function.location)?;
+            if let Some(span) = function.parameter_spans.and_then(|spans| spans.get(level)) {
+                self.parameter_spans.insert(
+                    BinderSite {
+                        binder: function.location.clone(),
+                        slot: level,
+                    },
+                    *span,
+                );
+            }
             self.record(type_key, OccurrenceRole::Type, function.location.clone());
             self.record_binder(
                 BinderSite {

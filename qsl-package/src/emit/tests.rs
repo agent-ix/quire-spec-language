@@ -3376,6 +3376,78 @@ fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     (text, CheckedPackage::link(graph))
 }
 
+#[trace("TC-416", "FR-093-AC-9")]
+#[test]
+fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
+    let (text, package) = package_from_text(
+        "function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n\
+         function other using v(a: Boolean, b: Boolean): Boolean pure { not a and b }\n",
+    );
+    let emission = emit_checked(&package).expect("source parameters have real regions");
+    let wire = wire(&emission);
+    let parameters: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "parameter")
+        .map(|node| &node["node_id"])
+        .collect();
+    assert_eq!(
+        parameters.len(),
+        2,
+        "equal parameter content shares a key across functions"
+    );
+    let mut slices = Vec::new();
+    let mut ranges = Vec::new();
+    for entry in wire["source_map"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| parameters.contains(&&entry["node_id"]))
+    {
+        assert_eq!(entry["role"], "expression");
+        let regions = entry["regions"].as_array().unwrap();
+        assert_eq!(regions.len(), 1);
+        let region = &regions[0];
+        assert_eq!(
+            region["source"],
+            serde_json::to_value(source_artifact(package.graph().source())).unwrap()
+        );
+        let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+        let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+        slices.push(&text[start..end]);
+        ranges.push((start, end));
+    }
+    slices.sort();
+    assert_eq!(
+        slices,
+        [
+            "a",
+            "a",
+            "a: Boolean",
+            "a: Boolean",
+            "b",
+            "b",
+            "b: Boolean",
+            "b: Boolean"
+        ]
+    );
+    let mut expected_ranges = Vec::new();
+    for declaration in ["a: Boolean", "b: Boolean"] {
+        expected_ranges.extend(
+            text.match_indices(declaration)
+                .map(|(start, matched)| (start, start + matched.len())),
+        );
+    }
+    for (body, offsets) in [("{ a and b }", [2, 8]), ("{ not a and b }", [6, 12])] {
+        let start = text.find(body).unwrap();
+        expected_ranges.extend(offsets.map(|offset| (start + offset, start + offset + 1)));
+    }
+    ranges.sort();
+    expected_ranges.sort();
+    assert_eq!(ranges, expected_ranges);
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
 /// The source text each `generated` source-map entry of `node` covers.
 fn generated_texts<'t>(wire: &Value, text: &'t str, node: &Value) -> Vec<&'t str> {
     wire["source_map"]

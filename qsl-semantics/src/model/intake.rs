@@ -46,11 +46,11 @@ use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
 
 use crate::model::domain_package::{
-    AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
-    Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
+    AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
+    EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord,
+    OperationEffect, OperationMemberRecord, OperationParameterRecord, OperationResult,
+    OriginalDeclaration, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -1403,6 +1403,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
         .map(|located| {
+            if let Some(refusal) = missing_reader_reference(document, located) {
+                return refusal;
+            }
             let node = if located.owner.is_empty() {
                 "$".to_owned()
             } else {
@@ -1425,6 +1428,44 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// Translate only the reader's typed unresolved-reference codes, using its
+/// actual pointer and the selected document. Diagnostic prose never selects
+/// a cause or supplies a declaration identity.
+fn missing_reader_reference(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    if located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
+        && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
+    {
+        return None;
+    }
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let reference = document.tree.pointer(pointer)?.as_str()?;
+    let package = document.tree.get("package")?.get("identity")?.as_str()?;
+    // A malformed native or foreign identity is not a missing declaration
+    // of this selected package.
+    type_identity_segment(package, reference)?;
+    let mut owner_pointer = pointer;
+    let origin = loop {
+        let owner = document.tree.pointer(owner_pointer)?;
+        if owner.get("identity").and_then(Value::as_str) == Some(located.owner.as_str()) {
+            break owner.get("origin")?.clone();
+        }
+        owner_pointer = owner_pointer.rsplit_once('/')?.0;
+    };
+    Some(ModelRefusal {
+        code: Code::MissingDeclaration,
+        cause: ModelRefusalCause::IntakeMissingDeclaration {
+            node: located.owner.clone(),
+            reference: reference.to_owned(),
+            origin,
+            path: pointer.parse().ok()?,
+        },
+        detail: format!("{pointer}: {reference:?} names no declaration of this domain package"),
+    })
 }
 
 /// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
@@ -2998,6 +3039,90 @@ pub fn read_records(
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
     validate_with_semantic_ir(document)?;
     read_nodes(package_identity, &document.tree)
+}
+
+/// Read an admitted document with every declaration's original construct
+/// meaning and FCD origin. No origin is inferred from a key or another
+/// declaration, and no metadata enters a normalization preimage.
+pub fn read_domain_package(
+    selection: DomainPackageRef,
+    document: &PackageDocument,
+) -> Result<DomainPackage, Vec<ModelRefusal>> {
+    let records = read_records(&selection.identity, document)?;
+    let meanings = meaning_index(&document.tree).map_err(|refusal| vec![refusal])?;
+    let mut originals = BTreeMap::new();
+    let mut refusals = Vec::new();
+    for array in ["types", "populations"] {
+        for (position, node) in document
+            .tree
+            .get(array)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let at = format!("$.{array}[{position}]");
+            let ctx = NodeCtx::new(node, &at);
+            let result = (|| {
+                let identity = ctx.str_field("identity")?;
+                let kind = ctx.kind_key()?;
+                let meaning = meanings
+                    .get(&(kind.0.to_owned(), kind.1.to_owned()))
+                    .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?;
+                let origin = node
+                    .get("origin")
+                    .ok_or_else(|| ctx.malformed("origin: missing"))?;
+                originals.insert(
+                    declaration_key(&selection.identity, identity),
+                    OriginalDeclaration {
+                        meaning: Some(meaning.clone()),
+                        origin: origin.clone(),
+                        member_name: None,
+                    },
+                );
+                for members in ["fields", "operations", "relationships", "clauses"] {
+                    for (member_position, member) in node
+                        .get(members)
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        let member_at = format!("{at}.{members}[{member_position}]");
+                        let member_ctx = NodeCtx::new(member, &member_at);
+                        let member_identity = member_ctx.str_field("identity")?;
+                        let name =
+                            member_identity_name(identity, member_identity).ok_or_else(|| {
+                                member_ctx.malformed("identity: has no declared member name")
+                            })?;
+                        let origin = member
+                            .get("origin")
+                            .ok_or_else(|| member_ctx.malformed("origin: missing"))?;
+                        originals.insert(
+                            declaration_key(&selection.identity, member_identity),
+                            OriginalDeclaration {
+                                meaning: None,
+                                origin: origin.clone(),
+                                member_name: Some(name.to_owned()),
+                            },
+                        );
+                    }
+                }
+                Ok::<_, ModelRefusal>(())
+            })();
+            if let Err(refusal) = result {
+                refusals.push(refusal);
+            }
+        }
+    }
+    if !refusals.is_empty() {
+        return Err(refusals);
+    }
+    Ok(DomainPackage {
+        model_selection: selection,
+        records,
+        originals,
+    })
 }
 
 /// [`read_records`]'s per-node reader over a document

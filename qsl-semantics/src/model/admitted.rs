@@ -17,7 +17,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::accounting::{Incomplete, Meter};
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, OriginalDeclaration,
+};
 use crate::model::intake::{member_identity_name, type_identity_segment};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -73,6 +75,8 @@ pub struct Declaration<'a> {
     pub record: &'a DomainPackageRecord,
     /// The declaration's kind.
     pub kind: DeclarationKind,
+    /// Authored intake provenance; absent only for source-less synthetic records.
+    pub original: Option<&'a OriginalDeclaration>,
 }
 
 /// A classified domain package, indexed by FR-154 identity form.
@@ -268,6 +272,7 @@ impl AdmittedPackage {
             key: record.key(),
             record,
             kind: self.kind(record),
+            original: self.package.original(record.key()),
         }
     }
 
