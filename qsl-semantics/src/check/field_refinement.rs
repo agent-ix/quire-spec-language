@@ -233,7 +233,7 @@ pub fn check_field_refinement_obligation(
     let narrows_presence =
         redefined.presence == Presence::Optional && redefining.presence == Presence::Required;
 
-    if same_type && !raises_lower && !narrows_presence {
+    if same_type && !raises_lower {
         // No narrowing at all (or a narrower upper bound only, which this
         // rung treats under `no-proof-form` below, matching FR-151's
         // "an upper bound on a collection" example).
