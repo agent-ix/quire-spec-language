@@ -1422,7 +1422,6 @@ impl<'a> Lowering<'a> {
                     .map(|key| ((*key, site.binder.clone()), *span))
             })
             .collect();
-        parameter_sites.clear();
         let parameter_spans = self
             .occurrences
             .iter()
