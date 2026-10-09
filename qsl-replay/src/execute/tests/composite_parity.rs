@@ -30,7 +30,7 @@ const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
      function h using v(a: List, b: List): Boolean pure { a = b }\n\
      enum Color { Red, Green, Blue }\n\
      function c using v(a: Color, b: Color): Boolean pure { a = b }\n\
-     record R { x: Int[0, 9]; label: Rational[0, 9; 1, 9]; }\n\
+     record R { x: Int[0, 9]; label: Text[0, 4; nfc]; }\n\
      function t using v(a: R, b: R): Boolean pure { a = b }\n\
      function d using v(a: Q, b: Q): Boolean pure { (a = b) and (a = b) }\n";
 
@@ -40,8 +40,51 @@ struct Unit {
 }
 
 fn unit() -> Unit {
+    use crate::spine::{
+        check, package, parse, select, DependencyInput, LockEvidence, ParseRequest,
+    };
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_exact::Cancel;
+
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}{UNIT}");
-    let compiled = spine(&source, &BTreeMap::new());
+    let identity = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &identity,
+            path: IDENTITY,
+            bytes: source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("the unit parses")
+    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("the unit selects")
+        .into_value();
+    let text_profile = DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference();
+    let checked = check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &LockEvidence::default().with_text_profile(text_profile),
+        limits,
+        &cancel,
+    )
+    .expect("the selected Text law checks")
+    .into_value();
+    let emitted = package(&checked, crate::spine::PackageLimits::default(), &cancel)
+        .expect("the unit emits")
+        .into_value();
+    let compiled = ComposedUnit {
+        source: checked.source().clone(),
+        package: checked.package().clone(),
+        emitted: emitted.package().clone(),
+    };
     Unit { source, compiled }
 }
 
@@ -771,11 +814,67 @@ fn tc_907_anything_short_of_covering_is_tested() {
         "a partial variant set",
     );
 
-    // A rational leaf (a text leaf needs a text-profile lock the spine test harness does not carry); its whole declared domain cannot be shown covered.
-    let bounds = (0..2)
+    // Length bounds do not cover a Text leaf's whole declared domain.
+    let record = unit
+        .compiled
+        .package
+        .graph()
+        .scope()
+        .types()
+        .composites()
+        .find(|declaration| declaration.name() == "R")
+        .unwrap();
+    let quire_semantic_value::declaration::CompositeShape::Record(fields) = record.shape() else {
+        panic!("R must be a record");
+    };
+    assert_eq!(fields[0].name(), "x");
+    assert_eq!(
+        fields[0].value_type(),
+        &quire_exact::ValueType::Int(quire_exact::IntegerInterval::spanning(
+            Integer::from(0),
+            Integer::from(9)
+        ))
+    );
+    assert_eq!(fields[1].name(), "label");
+    assert_eq!(
+        fields[1].value_type(),
+        &quire_exact::ValueType::Text(
+            quire_exact::TextType::new(0, 4, quire_exact::TextProfile::Nfc).unwrap()
+        )
+    );
+    for index in 0..2 {
+        let parameter = unit.parameter("t", index);
+        let integer = super::super::composite_domain::derive(
+            &[(parameter, fields[0].value_type())],
+            &unit.compiled.package,
+            10,
+        )
+        .unwrap();
+        let drawn = [bound(parameter, &[], range(0, 9))];
+        assert!(integer.covered(&integer.harness(&drawn).unwrap()));
+        let text = super::super::composite_domain::derive(
+            &[(parameter, fields[1].value_type())],
+            &unit.compiled.package,
+            10,
+        )
+        .unwrap();
+        assert!(!text.covered(&text.harness(&[]).unwrap()));
+        let length = [bound(parameter, &[], FiniteBound::cardinality(4))];
+        assert!(
+            matches!(text.harness(&length), Err(ReplayRefusal::ParityBound(ref cause))
+            if matches!(cause.as_ref(), ParityBoundRefusal::HarnessKind { expected: None, .. }))
+        );
+    }
+    let bounds: Vec<_> = (0..2)
         .map(|index| bound(unit.parameter("t", index), &[0], range(0, 9)))
         .collect();
-    tested(settle(&unit, "t", bounds, vec![], exhausted), "a text leaf");
+    let report = settle(&unit, "t", bounds.clone(), vec![], exhausted);
+    assert_eq!(report.claim().harness_bounds, bounds);
+    assert_eq!(
+        report.claim().evidence,
+        crate::composite::CompositeEvidence::Verified(exhausted)
+    );
+    tested(report, "a Text leaf with both integer positions covered");
 
     // A recursive position with no declared domain is never covered. (The
     // `K<T>` cases of AC-4 and AC-5 wait on a source form for an unbounded
