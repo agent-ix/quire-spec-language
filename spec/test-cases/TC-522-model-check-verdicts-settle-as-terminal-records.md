@@ -70,7 +70,7 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 - Step 6: `Proved{Exhaustive, Certified}`; `inconclusive`,
   `CertificateRejected{SuccessorMissing, (1, 0)}`.
 - Step 7: `Proved{Exhaustive, Certified}`; `inconclusive`,
-  `CertificateRejected{WitnessFails}` at `{(*, 0, q1)}`'s first state.
+  `CertificateRejected{WitnessFails, at}`, `at` `{(*, 0, q1)}`'s first state.
 - Step 8: `proved`, success, five times, labelled `Certified`, `Certified`,
   `Uncertified`, `Uncertified` and `Trusted`; inconclusive.
 - Step 9: `inconclusive`, `ReplayParity`, written `replay-parity`.
