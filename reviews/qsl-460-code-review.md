@@ -82,3 +82,43 @@ line, FND-002) in this PR.
 | FND-003 | low | FR-109's Status still reads "Implemented, except the report's members FR-109 no longer lists ...". This PR deletes those members, so the exception is now false. Fix: drop that clause from Status. | spec/functional/FR-109-run-a-state-clause-through-the-spine.md:192 |
 | FND-004 | low | The doc comment on `mod extraction` still says the I3 run gives "a different source identity and digest, and the extraction's original identity and digest in its provenance". The PR deleted those assertions; the test now checks the disposition only. Fix: describe what it checks (FR-108-AC-5: the direct run's disposition and package_id). | tests/it/config_version_spine.rs:592-595 |
 | FND-005 | low | `run_function` keeps 11 parameters behind `#[allow(clippy::too_many_arguments)]`. With `unit`, `model_selections`, `selection` and `selection_documents` gone, its remaining inputs are the fields of `CompiledRun` (packages, model limits, snapshot provision, observation limits, accounting, package, package_id, sources), which the Clause and Frame arms already build. Passing `&CompiledRun` would drop the allow and the duplicated parameter list. | qsl-replay/src/spine/clause.rs:949-962,600-614 |
+
+## Dispositions
+
+Round 1, reviewed at 99b1da34e5e13181c51f7cb69d29cae479b02d0c (fix commits
+6602dbd3a, 7f1dfd837, 95cab5e7b, ebaa1c737, 64e7af96e and 99b1da34e on
+0605565cd; `git diff 0605565c..99b1da34e`). Read only, no build. This round
+adds no new finding.
+
+- FND-001: FR-115 Outputs and FR-115-AC-1 now state FR-109's report: the
+  disposition, the compiled package's `package_id`, and usage. TC-514
+  step 1 expects the compiled `package_id`. `a_frame_respecting_invocation_succeeds`
+  (still tagged TC-514 / FR-115-AC-1) asserts
+  `report.package_id == Some(compose(..).emitted.package_id())` from an
+  independent `compose` of the request's unit (ebaa1c737). A re-grep of
+  `spec/` at 99b1da34e finds no text requiring the deleted provenance:
+  `ClauseRunProvenance`, `ExtractionOrigin`, a report `source_digest`, "in
+  its provenance", or "original identity and digest". FR-116 and FR-122
+  are untouched by the PR. FR-116-AC-1 still requires the three document
+  identities and digests on the frame replay result, and the code keeps
+  them through `FrameCheck::documents`.
+- FND-002: FR-109's `unknown_language` bullet no longer carries the
+  extraction origin.
+- FND-003: FR-109 Status keeps only the AC-7 exception. The three QSL-460
+  reference lines are deleted from FR-108, FR-109 and FR-331 (95cab5e7b).
+- FND-004: still open. The `mod extraction` doc comment now reads
+  "gives the direct run's disposition and `package_id`". After the spec
+  ruling (64e7af96e), the test asserts the direct run's stage, category,
+  truth and exit code, and the extracted body's own `package_id` from an
+  independent compile, which is not the direct run's.
+- FND-005: `run_function(run: &CompiledRun<'_>, name, arguments, snapshot)`
+  drops the `too_many_arguments` allow. `run_clause` now builds one
+  `CompiledRun` for all three arms.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6602dbd3a |
+| FND-002 | fixed | 6602dbd3a |
+| FND-003 | fixed | 6602dbd3a |
+| FND-004 | still-open | The doc comment at tests/it/config_version_spine.rs:592-594 says the I3 run gives "the direct run's disposition and `package_id`", but after 64e7af96e FR-108-AC-5 and the test check the extracted body's own package_id (a direct compile under the body identity), not the direct run's. Reword it to: the direct run's stage, category, truth and exit code, and the extracted body's own package_id |
+| FND-005 | fixed | 7f1dfd837 |

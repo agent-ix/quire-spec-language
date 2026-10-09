@@ -591,7 +591,9 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
 
 /// FR-108-AC-5 (TC-469 step 5): with `quire-extraction`, each case's unit
 /// embedded in a Markdown fence and run through the I3 adapter gives the
-/// direct run's disposition and `package_id`.
+/// direct run's stage, category, truth and exit code, plus the extracted
+/// body's own `package_id` (the id of an independent compile under the body
+/// identity).
 #[cfg(feature = "quire-extraction")]
 mod extraction {
     use super::{build, run_clause, Case, ClauseRunRequest};

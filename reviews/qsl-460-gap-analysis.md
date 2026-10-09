@@ -58,3 +58,38 @@ is the spec conflict recorded in SR-2447 FND-001.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-108-AC-5 requires the Markdown (I3) run of each case to give "the direct run's disposition and `package_id`", and TC-469 step 5 expects the same. `tc_469_step_5_markdown_run_matches_the_direct_run_via_i3` compares exit code, stage and truth only and never the `package_id`. The PR edited this test and deleted its remaining identity checks (source digest, extraction origin), so the AC's `package_id` half has no oracle. Fix: assert `extracted_report.package_id == direct_report.package_id` per case (if it differs because the body's identity enters the package, that is a spec/code conflict to surface, not a reason to skip the assertion). | tests/it/config_version_spine.rs:662-697; spec/functional/FR-108-run-the-configversion-spine-corpus.md:134 |
 | FND-002 | low | FR-109-AC-1's unit test asserts only `report.package_id.is_some()`, not that it is the compiled `package_id` the AC names. TC-469 step 6 covers the healthy-parent corpus case, so this is a weak local oracle, not an unchecked AC. Fix: compare with `compose(...).emitted.package_id()` as the AC-6 extracted test does. | qsl-replay/src/spine/clause/tests.rs:753 |
+
+## Dispositions
+
+Round 1, reviewed at 99b1da34e5e13181c51f7cb69d29cae479b02d0c. Read only, no
+build. This round adds no new finding.
+
+- FND-001: the spec author's ruling (64e7af96e) rewrites FR-108-AC-5 and
+  TC-469 step 5. The I3 run gives the direct run's stage, category, truth
+  and exit code, and the `package_id` that a direct `spine::compile` of
+  the extracted body's bytes under its body identity emits. The ruling
+  follows the FRs it cites:
+  - FR-001: a source's identity gives its declarations their owner and so
+    the `package_id`.
+  - FR-032-AC-4: native and extracted executions "agree on logical outcomes
+    while retaining their distinct source/package identities".
+  - FR-109-AC-6: the extracted run reports "the `package_id` its extracted
+    body compiles to".
+  - The old AC-5 wording ("the direct run's ... `package_id`") contradicted
+    all three.
+
+  `tc_469_step_5_markdown_run_matches_the_direct_run_via_i3` computes
+  `body_package_id` with `support::front_end::emitted` (staged
+  parse/select/check/compile under `body.identity()`, independent of
+  `run_clause`). It asserts `extracted_report.package_id == body_package_id`
+  per case, and adds a category assertion to the stage, truth and exit-code
+  ones. FR-108-AC-6 and step 6 now name the direct-run reports, which
+  matches the ruling.
+- FND-002: `run_clause_evaluates_a_clause_selection` asserts
+  `report.package_id == Some(expected)` from an independent `compose` of
+  the unit.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 99b1da34e |
+| FND-002 | fixed | 7f1dfd837 |
