@@ -645,7 +645,10 @@ fn tc_907_a_covering_harness_proves() {
         );
         assert_eq!(
             report.terminal_value(),
-            TerminalValue::Proved { success_checks: 4 }
+            TerminalValue::Proved {
+                basis: crate::ProofBasis::Checks { success_checks: 4 },
+                certification: crate::Certification::Certified,
+            }
         );
         assert_eq!(report.terminal_value().category(), Category::Success);
     };
@@ -833,7 +836,10 @@ fn tc_907_refinement_and_a_vacuous_run_settle_before_coverage() {
     );
     assert!(matches!(report.result(), VerifiedShadowResult::Vacuous));
     let terminal = report.terminal_value();
-    assert_eq!(terminal, TerminalValue::Proved { success_checks: 0 });
+    assert_eq!(terminal, TerminalValue::Proved {
+        basis: crate::ProofBasis::Checks { success_checks: 0 },
+        certification: crate::Certification::Certified,
+    });
     assert_eq!(terminal.category(), Category::Inconclusive);
     assert_eq!(
         terminal.vacuous_proof_cause(),

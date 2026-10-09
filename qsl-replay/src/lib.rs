@@ -85,8 +85,8 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
-    IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
+    read_backend_provider_envelope, BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet,
+    IncompleteCause, InconclusiveCause, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
