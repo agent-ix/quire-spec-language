@@ -18,13 +18,17 @@ use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
 use quire_exact::CancelCause;
+use serde::Serialize;
 
 /// FR-127: how a proof established its claim, independently of certification.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ProofBasis {
     /// Kani's completed SUCCESS checks; zero denotes a vacuous proof.
+    #[serde(rename = "bounded-proof")]
     Checks {
         /// Number of completed SUCCESS checks.
+        #[serde(rename = "checks")]
         success_checks: u32,
     },
     /// Every reachable product state was explored.
@@ -42,7 +46,8 @@ pub enum ProofBasis {
 }
 
 /// ADR-018 PC-1: who stands behind a proved result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Certification {
     /// The qualified core produced or checked the proof.
     Certified,

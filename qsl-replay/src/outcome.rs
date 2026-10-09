@@ -31,7 +31,8 @@ use quire_exact::CancelCause;
 use serde::{Serialize, Serializer};
 
 use crate::proof_result::{
-    DeclineCode, InconclusiveCause, ReportedInconclusiveCause, TerminalRecord, TerminalValue,
+    Certification, DeclineCode, IncompleteCause, InconclusiveCause, ProofBasis,
+    ReportedInconclusiveCause, TerminalRecord, TerminalValue,
 };
 use crate::result::ReplayResult;
 use crate::spine::{
@@ -166,6 +167,18 @@ pub struct ItemCause {
     code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parity: Option<ParityReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    depth: Option<u64>,
+    #[serde(serialize_with = "cancel_source", skip_serializing_if = "Option::is_none")]
+    source: Option<CancelCause>,
+}
+
+fn cancel_source<S: Serializer>(source: &Option<CancelCause>, serializer: S) -> Result<S::Ok, S::Error> {
+    match source {
+        Some(CancelCause::Requested) => serializer.serialize_str("requested"),
+        Some(CancelCause::Deadline) => serializer.serialize_str("deadline"),
+        None => serializer.serialize_none(),
+    }
 }
 
 impl ItemCause {
@@ -176,6 +189,8 @@ impl ItemCause {
             cause: None,
             code: None,
             parity: None,
+            depth: None,
+            source: None,
         }
     }
 
@@ -192,6 +207,12 @@ impl ItemCause {
     fn inconclusive(cause: &ReportedInconclusiveCause) -> Self {
         let mut item = Self::kind(cause.as_str());
         match cause {
+            ReportedInconclusiveCause::Cause(InconclusiveCause::BoundReached { depth }
+                | InconclusiveCause::InductionNotClosed { depth }) => {
+                item.depth = Some(*depth);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::UndecidedSuccessor
+                | InconclusiveCause::NoInitialState) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
                 item.parity = Some(ParityReason {
@@ -218,6 +239,10 @@ pub struct OutcomeItem {
     request_index: usize,
     result: ItemLabel,
     cause: Option<ItemCause>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    basis: Option<ProofBasis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    certification: Option<Certification>,
     #[serde(serialize_with = "category_str")]
     category: Category,
 }
@@ -228,7 +253,8 @@ impl OutcomeItem {
     pub fn from_terminal(record: &TerminalRecord) -> Self {
         let value = record.value();
         let (result, cause) = match value {
-            TerminalValue::Proved { success_checks: 0 } | TerminalValue::Inconclusive(_) => (
+            TerminalValue::Proved { basis: ProofBasis::Checks { success_checks: 0 }, .. }
+            | TerminalValue::Inconclusive(_) => (
                 ItemLabel::Inconclusive,
                 value
                     .inconclusive_cause()
@@ -252,14 +278,33 @@ impl OutcomeItem {
                 Some(ItemCause::kind(cause.as_str())),
             ),
             TerminalValue::Incomplete(cause) => {
-                (ItemLabel::Incomplete, Some(ItemCause::kind(cause.as_str())))
+                let mut item = ItemCause::kind(cause.as_str());
+                match cause {
+                    IncompleteCause::Cancelled { source } => item.source = Some(*source),
+                    IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
+                }
+                (ItemLabel::Incomplete, Some(item))
             }
             TerminalValue::Failed => (ItemLabel::Failed, None),
+        };
+        let (basis, certification) = match value {
+            TerminalValue::Proved { basis, certification } => {
+                if result == ItemLabel::Proved {
+                    (Some(*basis), Some(*certification))
+                } else {
+                    (None, None)
+                }
+            }
+            TerminalValue::Tested | TerminalValue::Refuted | TerminalValue::Declined { .. }
+            | TerminalValue::Unsupported(_) | TerminalValue::Incomplete(_)
+            | TerminalValue::Inconclusive(_) | TerminalValue::Failed => (None, None),
         };
         Self {
             request_index: record.request_index().get(),
             result,
             cause,
+            basis,
+            certification,
             category: value.category(),
         }
     }
@@ -275,6 +320,8 @@ impl OutcomeItem {
             request_index: request_index.get(),
             result: ItemLabel::Refuted,
             cause: Some(ItemCause::undefined_evaluation(at, cause)),
+            basis: None,
+            certification: None,
             category: Category::Violation,
         }
     }
@@ -994,7 +1041,10 @@ mod tests {
                     0,
                     TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
                 ),
-                record(1, TerminalValue::Proved { success_checks: 3 }),
+                record(1, TerminalValue::Proved {
+                    basis: ProofBasis::Checks { success_checks: 3 },
+                    certification: Certification::Certified,
+                }),
                 record(2, TerminalValue::Refuted),
             ],
         );
@@ -1002,7 +1052,7 @@ mod tests {
             r#"{"format":"quire-outcome/1","operation":"analyze","last_stage":"S6c","#,
             r#""category":"unsupported","items":["#,
             r#"{"request_index":0,"result":"unsupported","cause":{"kind":"solver-absent"},"category":"unsupported"},"#,
-            r#"{"request_index":1,"result":"proved","cause":null,"category":"success"},"#,
+            r#"{"request_index":1,"result":"proved","cause":null,"basis":{"type":"bounded-proof","checks":3},"certification":"certified","category":"success"},"#,
             r#"{"request_index":2,"result":"refuted","cause":null,"category":"violation"}"#,
             r#"],"diagnostics":[],"artifacts":[],"result":null}"#
         );
@@ -1020,7 +1070,10 @@ mod tests {
     #[trace("TC-770", "FR-286-AC-3")]
     #[test]
     fn a_vacuous_proof_is_inconclusive_never_proved() {
-        let item = serde_json::to_value(record(4, TerminalValue::Proved { success_checks: 0 }))
+        let item = serde_json::to_value(record(4, TerminalValue::Proved {
+            basis: ProofBasis::Checks { success_checks: 0 },
+            certification: Certification::Certified,
+        }))
             .expect("serializes");
         assert_eq!(
             item,
@@ -1031,6 +1084,103 @@ mod tests {
                 "category": "inconclusive",
             })
         );
+    }
+
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+    #[test]
+    fn proof_wire_keeps_exact_basis_and_certification_only_on_proved() {
+        let bases = [
+            (ProofBasis::Checks { success_checks: 3 }, json!({"type": "bounded-proof", "checks": 3})),
+            (ProofBasis::Exhaustive, json!({"type": "exhaustive"})),
+            (ProofBasis::BoundedComplete { depth: 5 }, json!({"type": "bounded-complete", "depth": 5})),
+            (ProofBasis::Inductive { depth: 2 }, json!({"type": "inductive", "depth": 2})),
+        ];
+        for (basis, expected_basis) in bases {
+            for (certification, expected_certification) in [
+                (Certification::Certified, "certified"),
+                (Certification::Uncertified, "uncertified"),
+                (Certification::Trusted, "trusted"),
+            ] {
+                let document = OutcomeDocument::settled(
+                    Operation::Prove,
+                    Some(OutcomeStage::S8),
+                    vec![record(6, TerminalValue::Proved { basis, certification })],
+                );
+                let written: Value = serde_json::from_slice(&document.to_bytes().unwrap()).unwrap();
+                assert_eq!(written["items"], json!([{
+                    "request_index": 6,
+                    "result": "proved",
+                    "cause": null,
+                    "basis": expected_basis,
+                    "certification": expected_certification,
+                    "category": "success",
+                }]));
+            }
+        }
+        for value in [
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Trusted,
+            },
+            TerminalValue::Tested,
+            TerminalValue::Refuted,
+            TerminalValue::Failed,
+        ] {
+            let written = serde_json::to_value(record(0, value)).unwrap();
+            assert!(written.get("certification").is_none(), "{written}");
+            assert!(written.get("basis").is_none(), "{written}");
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-4")]
+    #[test]
+    fn temporal_cause_wire_keeps_depth_and_cancellation_source() {
+        for (value, cause, category) in [
+            (TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 1 }),
+                json!({"kind": "bound-reached", "depth": 1}), "inconclusive"),
+            (TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 2 }),
+                json!({"kind": "induction-not-closed", "depth": 2}), "inconclusive"),
+            (TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor),
+                json!({"kind": "undecided-successor"}), "inconclusive"),
+            (TerminalValue::Inconclusive(InconclusiveCause::NoInitialState),
+                json!({"kind": "no-initial-state"}), "inconclusive"),
+            (TerminalValue::Incomplete(IncompleteCause::Cancelled { source: CancelCause::Requested }),
+                json!({"kind": "cancelled", "source": "requested"}), "incomplete"),
+            (TerminalValue::Incomplete(IncompleteCause::Cancelled { source: CancelCause::Deadline }),
+                json!({"kind": "cancelled", "source": "deadline"}), "incomplete"),
+        ] {
+            let written = serde_json::to_value(record(3, value)).unwrap();
+            assert_eq!(written, json!({
+                "request_index": 3,
+                "result": category,
+                "cause": cause,
+                "category": category,
+            }));
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-10", "FR-072-AC-2")]
+    #[test]
+    fn replay_verdict_disagreement_writes_exact_replay_parity() {
+        let proved = Verdict::from_category(Category::Violation);
+        let replayed = Verdict::from_category(Category::Success);
+        let replay = crate::WitnessArmResult::settle(
+            proved, replayed, Category::Success,
+            Some(EvaluatedValue::Boolean(true)), WitnessCheck::Agrees(None),
+            Vec::new(), default_accounting(0),
+        );
+        assert_eq!(replay.disagreement(), Some(&DisagreementCause::Verdicts { proved, replayed }));
+        let written = serde_json::to_value(record(0, TerminalValue::Inconclusive(
+            InconclusiveCause::ReplayParity(replay.disagreement().unwrap().clone())
+        ))).unwrap();
+        assert_eq!(written, json!({
+            "request_index": 0,
+            "result": "inconclusive",
+            "cause": {"kind": "replay-parity", "parity": {
+                "reason": "verdicts", "proved": "violation", "replayed": "success",
+            }},
+            "category": "inconclusive",
+        }));
     }
 
     /// Each terminal cause is written in its FR-331 spelling, with its
@@ -1051,8 +1201,8 @@ mod tests {
                 json!({"result": "declined", "cause": {"kind": "invalid-input", "code": "ill_typed"}, "category": "refusal"}),
             ),
             (
-                TerminalValue::Incomplete(IncompleteCause::Cancelled),
-                json!({"result": "incomplete", "cause": {"kind": "cancelled"}, "category": "incomplete"}),
+                TerminalValue::Incomplete(IncompleteCause::Cancelled { source: CancelCause::Requested }),
+                json!({"result": "incomplete", "cause": {"kind": "cancelled", "source": "requested"}, "category": "incomplete"}),
             ),
             (
                 TerminalValue::Incomplete(IncompleteCause::ResourceExhausted),
@@ -1282,7 +1432,10 @@ mod tests {
             Operation::Prove,
             Some(OutcomeStage::S8),
             vec![
-                record(0, TerminalValue::Proved { success_checks: 1 }),
+                record(0, TerminalValue::Proved {
+                    basis: ProofBasis::Checks { success_checks: 1 },
+                    certification: Certification::Certified,
+                }),
                 record(1, TerminalValue::Refuted),
                 record(2, declined),
                 record(3, TerminalValue::Incomplete(IncompleteCause::TimedOut)),
