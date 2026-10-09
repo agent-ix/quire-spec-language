@@ -141,7 +141,29 @@ fn admit_record(report: &super::super::ClauseRunReport) -> &AdmissionRecord {
 #[test]
 fn a_frame_respecting_invocation_succeeds() {
     let input = changed_version();
+    // The package `compose` emits for the request's unit on its own,
+    // independent of the run.
+    let ClauseRunSource::Program {
+        identity,
+        path,
+        bytes,
+    } = &input.request.source
+    else {
+        panic!("the fixture builds a Program source");
+    };
+    let expected_package_id = compose(
+        identity.clone(),
+        path,
+        bytes,
+        &input.request.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the ConfigVersion unit compiles")
+    .emitted
+    .package_id();
     let report = run(input);
+    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         matches!(
             report.disposition,
