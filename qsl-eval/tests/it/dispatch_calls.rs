@@ -1681,6 +1681,151 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
     }
 }
 
+/// QSpec TC-196 D01's G/S2 diamond, evaluated at the invariant's A-static
+/// call site. Effective identities come from the normalized declarations.
+/// Trace: ix://agent-ix/quire-specification/FR-151-AC-8
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
+#[test]
+fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
+    use qsl_semantics::model::domain_package::ScalarTypeRecord;
+    use quire_exact::{ChargePoint, Incomplete};
+
+    let count = ValueType::Int(IntegerInterval::new(0_i64, 9_i64).unwrap());
+    let mut records = vec![
+        object_type_record("model.A", vec![]),
+        object_type_record("model.B", vec!["model.A"]),
+        object_type_record("model.C", vec!["model.A"]),
+        object_type_record("model.D", vec!["model.B", "model.C"]),
+        DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key: DeclarationKey::fixture("model.Count"),
+            lower: 0,
+            upper: 9,
+        }),
+    ];
+    for (key, owner, redefines) in [
+        ("model.A.size", "model.A", None),
+        ("model.B.size", "model.B", Some("model.A.size")),
+    ] {
+        let DomainPackageRecord::OperationMember(mut operation) =
+            operation_record(key, owner, true, redefines)
+        else {
+            panic!("operation_record must construct an operation");
+        };
+        operation.result.as_mut().unwrap().value_type =
+            ValueTypeRef::Package(DeclarationKey::fixture("model.Count"));
+        records.push(DomainPackageRecord::OperationMember(operation));
+    }
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.d01"), records);
+    let view = bridge_view(&domain_package);
+    let a = view_type(&view, "model.A");
+    let c = view_type(&view, "model.C");
+    let d = view_type(&view, "model.D");
+    let supertypes = object_type_supertypes(&view).unwrap();
+    let types = TypeEnvironment::new(
+        [],
+        ["A", "B", "C", "D"].into_iter().map(|name| {
+            let id = view_type(&view, &format!("model.{name}"));
+            ObjectTypeDeclaration::new(id, name, vec![])
+                .with_supertypes(supertypes[&id].clone())
+        }),
+    )
+    .unwrap();
+    assert!(types.conforms(d, a));
+    assert!(types.conforms(c, a));
+    let mut clauses = OperationClauses::default();
+    for (owner, body) in [("A", 1_i64), ("B", 2_i64)] {
+        let key = DeclarationKey::fixture(format!("model.{owner}.size"));
+        clauses.member.insert(key.clone(), "size".to_owned());
+        clauses.parameters.insert(
+            key.clone(),
+            vec![("self".to_owned(), ValueType::Reference(view_type(&view, &format!("model.{owner}"))))],
+        );
+        clauses.result.insert(key.clone(), count.clone());
+        clauses.own_body.insert(key, Expression::integer(body));
+    }
+    let root = DispatchRoot {
+        key: DeclarationKey::fixture("model.A.size"),
+        closure: GeneralizationClosure::Closed,
+    };
+    let mut link_meter =
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let mut declarations = checked_dispatch_operation(
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        &mut link_meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .expect("the real diamond must link through the checked dispatch bridge");
+    declarations.types = types.clone();
+    let graph = declarations.check(CheckingLimits::default()).unwrap();
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a))];
+    let invariant = Expression::binary(
+        BinaryOperator::GreaterOrEqual,
+        dispatch_expression(),
+        Expression::integer(1_i64),
+    );
+    let check = |expression: &Expression| {
+        graph.check_clause_expression(
+            parameters.clone(), expression, None, ClauseKind::Invariant,
+            CheckMode::Kernel, CheckingLimits::default(),
+        ).unwrap()
+    };
+    let checked = check(&invariant);
+    let selected_body = check(&dispatch_expression());
+    let package = CheckedPackage::link(graph);
+    let objects = ObjectEnvironment::new(ObjectClosure::new(
+        &types,
+        [(receiver_reference(a, "a1"), vec![]),
+         (receiver_reference(c, "c1"), vec![]),
+         (receiver_reference(d, "d1"), vec![])],
+        &[],
+    ).unwrap());
+    // Positive boundary control: all admission, checking and evaluation
+    // setup is valid before the actual subtype vector is attempted.
+    let mut baseline = Meter::new(SCALAR_UNLIMITED);
+    assert_eq!(evaluated(package.evaluate(&checked,
+        vec![Value::Reference(receiver_reference(a, "a1"))], &objects, &mut baseline,
+    ).unwrap()), Outcome::Completed(Value::Boolean(true)));
+
+    for (actual, identity, body) in [(d, "d1", 2_i64), (c, "c1", 1_i64)] {
+        let mut body_meter = Meter::new(SCALAR_UNLIMITED);
+        let evaluation = package.evaluate(&selected_body,
+            vec![Value::Reference(receiver_reference(actual, identity))],
+            &objects, &mut body_meter,
+        ).expect("a conforming actual receiver must bind at the A-static call site");
+        assert_eq!(evaluated(evaluation), Outcome::Completed(Value::Integer(body.into())));
+        for limit in if actual == d { vec![6, 5, 1] } else { vec![6] } {
+            let mut meter = Meter::new(ScalarLimits { work_units: limit, ..SCALAR_UNLIMITED });
+            let evaluation = package.evaluate(&checked,
+                vec![Value::Reference(receiver_reference(actual, identity))],
+                &objects, &mut meter,
+            ).expect("actual receiver admission must reach runtime dispatch");
+            let charges = [ChargePoint::DispatchSelect, ChargePoint::FunctionCall,
+                ChargePoint::OrderingOperands, ChargePoint::OrderingArithmetic,
+                ChargePoint::OrderingResultRetain];
+            let (expected, admitted, work, results, occurrences) = match limit {
+                6 => (Outcome::Completed(Value::Boolean(true)), &charges[..], 6, 1, 2),
+                5 => (Outcome::Incomplete(Incomplete {
+                    limit_kind: LimitKind::WorkUnits, limit: 5, consumed: 5,
+                    next_charge: 1_i64.into(), charge_point: ChargePoint::OrderingResultRetain,
+                }), &charges[..4], 5, 0, 2),
+                1 => (Outcome::Incomplete(Incomplete {
+                    limit_kind: LimitKind::WorkUnits, limit: 1, consumed: 0,
+                    next_charge: 2_i64.into(), charge_point: ChargePoint::DispatchSelect,
+                }), &charges[..0], 0, 0, 0),
+                _ => unreachable!("only QSpec D01's limits are used"),
+            };
+            assert_eq!(evaluated(evaluation), expected, "{identity} at {limit}");
+            assert_eq!(meter.admitted_charges(), admitted);
+            assert_eq!(meter.consumed(LimitKind::WorkUnits), work);
+            assert_eq!(meter.consumed(LimitKind::ResultUnits), results);
+            assert_eq!(meter.consumed(LimitKind::ValueOccurrences), occurrences);
+        }
+    }
+}
+
 /// ADR-013 O-05: the bridge keys each object type by the effective
 /// identity `model` computed over the view -- the identity a `Reference<T>`
 /// value's type component carries -- never a caller-supplied key. `B`'s
