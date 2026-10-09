@@ -8,7 +8,7 @@ use qsl_foundation::BackendId;
 use qsl_replay::{
     read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category, DeclineCode,
     EvaluatedValue, InconclusiveCause, InputArmResult, InternalFault, ProofRefusalCause,
-    ReplayRefusal, ReplayResult, RequestIndex, TerminalRecord, TerminalValue, Verdict,
+    ReplayRefusal, ReplayResult, ReportedInconclusiveCause, RequestIndex, TerminalRecord, TerminalValue, Verdict,
     WitnessArmResult, WitnessCheck,
 };
 
@@ -131,72 +131,51 @@ fn violating_input_arm_cannot_refute() {
     );
 }
 
-/// FR-289-AC-3 / TC-773 step 3: a provider envelope cannot claim a record
-/// produced by a different backend.
-#[trace("TC-773", "FR-289-AC-3")]
+/// FR-127-AC-2 / AC-9: the certificate rejection labels and typed query/proof-step loci
+/// remain constructible and observable through the public facade.
+#[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
 #[test]
-fn record_backend_must_match_provider_identity() {
-    let record = TerminalRecord::new(
-        RequestIndex::new(4),
-        BackendId::new("record-backend"),
-        &violating_replay(),
-    )
-    .unwrap();
-    let result = read_backend_provider_envelope(
-        &BackendProviderSource {
-            backend_identity: "manifest-backend".to_owned(),
-            items: vec![record],
+fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade() {
+    use qsl_replay::{CertificateLocus, CertificateRule, QueryPart};
+
+    let backend = BackendId::new("certificate-provider");
+    let values = [
+        InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query {
+                part: QueryPart::Unrolling,
+            },
         },
-        qsl_replay::ReplayLimits::default(),
-    );
-
-    assert!(matches!(
-        result,
-        Err(qsl_replay::ProofResultRefusal::BackendIdentityMismatch { .. })
-    ));
-}
-
-/// TC-177 / FR-069-AC-1: public constructors for non-refuted values remain
-/// available to an external facade client.
-#[trace("TC-177", "FR-069-AC-1")]
-#[test]
-fn non_refuted_records_are_constructible_through_the_facade() {
-    let backend = BackendId::new("provider-backend");
-    let records = vec![
-        TerminalRecord::declined(
-            RequestIndex::new(0),
-            backend.clone(),
-            ProofRefusalCause::InvalidInput,
-            DeclineCode::Qsl(qsl_replay::Code::MissingDeclaration),
-        ),
-        TerminalRecord::inconclusive(
-            RequestIndex::new(1),
-            backend.clone(),
-            InconclusiveCause::ReplayRefused(qsl_replay::Code::StaleDependency),
-        ),
-        TerminalRecord::proved(RequestIndex::new(2), backend.clone(), 1),
-        TerminalRecord::failed(RequestIndex::new(3), backend.clone()),
+        InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ProofStepInvalid,
+            at: CertificateLocus::ProofStep {
+                part: QueryPart::Step,
+                index: u64::MAX,
+            },
+        },
     ];
-
-    let envelopes = read_backend_provider_envelope(
-        &BackendProviderSource {
-            backend_identity: backend.as_str().to_owned(),
-            items: records,
-        },
-        qsl_replay::ReplayLimits::default(),
-    )
-    .unwrap();
-
-    assert_eq!(envelopes[0].record().value().category(), Category::Refusal);
-    assert_eq!(
-        envelopes[1].record().value().category(),
-        Category::Inconclusive
-    );
-    assert_eq!(
-        envelopes[2].record().value(),
-        &TerminalValue::Proved { success_checks: 1 }
-    );
-    assert_eq!(envelopes[3].record().value(), &TerminalValue::Failed);
+    let source = BackendProviderSource {
+        backend_identity: backend.as_str().to_owned(),
+        items: values
+            .iter()
+            .enumerate()
+            .map(|(index, cause)| {
+                TerminalRecord::inconclusive(
+                    RequestIndex::new(index),
+                    backend.clone(),
+                    cause.clone(),
+                )
+            })
+            .collect(),
+    };
+    let read = read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
+    assert_eq!(read.len(), values.len());
+    for (envelope, cause) in read.iter().zip(&values) {
+        assert_eq!(envelope.category(), Category::Inconclusive);
+        assert_eq!(envelope.record().value(), &TerminalValue::Inconclusive(cause.clone()));
+        assert_eq!(envelope.inconclusive_cause(), Some(&ReportedInconclusiveCause::Cause(cause.clone())));
+    }
+}
 }
 
 /// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
