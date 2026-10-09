@@ -30,6 +30,7 @@ use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::CancelCause;
 use serde::{Serialize, Serializer};
 
+use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::proof_result::{
     Certification, DeclineCode, IncompleteCause, InconclusiveCause, ProofBasis,
     ReportedInconclusiveCause, TerminalRecord, TerminalValue,
@@ -174,6 +175,10 @@ pub struct ItemCause {
         skip_serializing_if = "Option::is_none"
     )]
     source: Option<CancelCause>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule: Option<CertificateRule>,
+    #[serde(rename = "at", skip_serializing_if = "Option::is_none")]
+    certificate_at: Option<CertificateLocus>,
 }
 
 fn cancel_source<S: Serializer>(
@@ -197,6 +202,8 @@ impl ItemCause {
             parity: None,
             depth: None,
             source: None,
+            rule: None,
+            certificate_at: None,
         }
     }
 
@@ -213,6 +220,10 @@ impl ItemCause {
     fn inconclusive(cause: &ReportedInconclusiveCause) -> Self {
         let mut item = Self::kind(cause.as_str());
         match cause {
+            ReportedInconclusiveCause::Cause(InconclusiveCause::CertificateRejected { rule, at }) => {
+                item.rule = Some(*rule);
+                item.certificate_at = Some(*at);
+            }
             ReportedInconclusiveCause::Cause(
                 InconclusiveCause::BoundReached { depth }
                 | InconclusiveCause::InductionNotClosed { depth },
@@ -1224,6 +1235,72 @@ mod tests {
                     "category": category,
                 })
             );
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-9")]
+    #[test]
+    fn certificate_query_wire_keeps_every_rule_and_query_part() {
+        use crate::QueryPart;
+
+        for (rule, expected_rule) in [
+            (CertificateRule::InitialMissing, "initial-missing"),
+            (CertificateRule::SuccessorMissing, "successor-missing"),
+            (CertificateRule::BadState, "bad-state"),
+            (CertificateRule::NotPartition, "not-partition"),
+            (CertificateRule::BackwardEdge, "backward-edge"),
+            (CertificateRule::WitnessFails, "witness-fails"),
+            (CertificateRule::QueryMismatch, "query-mismatch"),
+            (CertificateRule::ShapeMismatch, "shape-mismatch"),
+            (CertificateRule::ProofStepInvalid, "proof-step-invalid"),
+            (CertificateRule::NotRefutation, "not-refutation"),
+        ] {
+            for (part, expected_part) in [
+                (QueryPart::Unrolling, "unrolling"),
+                (QueryPart::Base, "base"),
+                (QueryPart::Step, "step"),
+            ] {
+                let item = record(2, TerminalValue::Inconclusive(
+                    InconclusiveCause::CertificateRejected {
+                        rule, at: CertificateLocus::Query { part },
+                    }
+                ));
+                let document = OutcomeDocument::settled(
+                    Operation::Prove, Some(OutcomeStage::S8), vec![item],
+                );
+                let written: Value = serde_json::from_slice(&document.to_bytes().unwrap()).unwrap();
+                assert_eq!(written["items"], json!([{
+                    "request_index": 2,
+                    "result": "inconclusive",
+                    "cause": {"kind": "certificate-rejected", "rule": expected_rule, "at": expected_part},
+                    "category": "inconclusive",
+                }]));
+            }
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-9")]
+    #[test]
+    fn proof_step_wire_refuses_an_unowned_spelling_without_dropping_the_index() {
+        use crate::QueryPart;
+
+        for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
+            for index in [0, 7, u64::MAX] {
+                let at = CertificateLocus::ProofStep { part, index };
+                let item = record(2, TerminalValue::Inconclusive(
+                    InconclusiveCause::CertificateRejected {
+                        rule: CertificateRule::ProofStepInvalid, at,
+                    }
+                ));
+                assert_eq!(item.category(), Category::Inconclusive);
+                assert_eq!(item.cause.as_ref().unwrap().certificate_at, Some(at));
+                let document = OutcomeDocument::settled(
+                    Operation::Prove, Some(OutcomeStage::S8), vec![item],
+                );
+                let failure = document.to_bytes().expect_err("an unowned proof-step spelling must not produce bytes");
+                assert!(failure.to_string().contains("no wire spelling for a proof-step certificate locus"), "{failure}");
+                assert_eq!(document.items()[0].cause.as_ref().unwrap().certificate_at, Some(at));
+            }
         }
     }
 
