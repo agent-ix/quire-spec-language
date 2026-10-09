@@ -1027,7 +1027,7 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         match self.model_check(form, location)? {
-            super::state_model::Checked::Node(node) => Ok(node),
+            super::state_model::Checked::Node(node) => Ok(*node),
             _ => Err(super::state_model::fault(location)),
         }
     }

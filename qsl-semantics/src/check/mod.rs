@@ -1913,7 +1913,7 @@ impl CheckedGraph {
         let mut diagnostics = crate::family::DiagnosticSink::default();
         let mut scopes = crate::family::ScopeStack::default();
         let stage_limits = crate::family::StageLimits {
-            input_bytes: u64::MAX,
+            input_bytes: limits.input_bytes(),
             node_count: limits.nodes(),
         };
         let mut cx = crate::family::CheckContext::new(

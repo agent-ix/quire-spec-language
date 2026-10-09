@@ -811,9 +811,10 @@ impl<'a> Typer<'a> {
                 let (source, target) = (expression.at(*source), expression.at(*target));
                 // FR-104 (ADR-012 §15.2): only a state clause has an
                 // observation to traverse.
-                if !self.in_state_clause() {
-                    return Err(ineligible(&location));
-                }
+                self.model_check(
+                    super::super::state_model::Form::ReachesContext(self.in_state_clause()),
+                    &location,
+                )?;
                 let source_location = location.child(0);
                 frames.push(Frame::Reaches(Box::new(ReachesFrame {
                     edge,

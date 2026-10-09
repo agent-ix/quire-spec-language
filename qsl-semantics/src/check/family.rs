@@ -19,10 +19,9 @@
 //! `check_declaration_body`'s own `Typer` pass (a call nested anywhere in a
 //! checked body reaches the typer's `Call` arm, which resolves it through
 //! [`Application::resolve`] and builds it through [`Application::finish`]),
-//! not through a second, separate `CheckContext`-driven entry -- see
-//! [`Application`]'s own doc for why threading `CheckContext` into every
-//! nesting step of the general `Typer` engine (not just `Call`) is out of
-//! this ticket's scope.
+//! through the same enclosing check. The typer also carries that check's
+//! shared context for nested model questions, which it forwards to
+//! `check::state_model` without constructing another context per node.
 //!
 //! **Amended, PR #282 review F4:** FR-068's move surface names `family.rs`
 //! explicitly, alongside `check`, `evaluate`, `facts`, `ir`, `refusal`,
@@ -704,8 +703,8 @@ pub struct DeclarationMetrics {
     pub(crate) work_budget: u64,
 }
 
-/// Resolves the `Convert`/`AllInstances`/`Lookup` target type forms
-/// [`measure_declaration`] measures, against the package's [`Scope`].
+/// Resolves conversion targets measured against the package's [`Scope`].
+/// Model targets are measured as authored syntax and resolved by their hook.
 pub(crate) struct TargetTypes<'a> {
     scope: &'a Scope,
     location: &'a CheckLocation,
@@ -769,7 +768,7 @@ impl<'a> TargetTypes<'a> {
 /// `CheckedGraph::check_clause_expression` (`check/mod.rs`) -- the entry
 /// every precondition, postcondition and operation body clause checks
 /// through -- builds its own `Typer` directly, with its own declaration-local
-/// `nodes` counter, and never constructs a `CheckContext` at all; it is a
+/// `nodes` counter and one enclosing shared `CheckContext`; it is a
 /// standalone public entry point on `CheckedGraph`, not something
 /// `ValueFunctionFamily::check` (or anything else reached from it) calls. An
 /// `Expression::Call` inside such a clause still reaches this same
@@ -779,16 +778,11 @@ impl<'a> TargetTypes<'a> {
 /// only the `CheckedGraph` caller that invoked `check_clause_expression`
 /// knows it happened at all.
 ///
-/// What this check does *not* do, on either path, is charge the
-/// contract's own `CheckContext` per node: that would mean threading `&mut
-/// CheckContext` through every form the typer checks, not just `Call`
-/// (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so on all
-/// nest too) -- reworking the general engine for every form it checks,
-/// which is the reimplementation-scale change FR-065-CON-1 rules out here,
-/// not a small addition to this one check. That is real, reported `Typer`
-/// entanglement, not a gap this check papers over: `Typer`'s own
-/// [`super::CheckingLimits`] node charge, made at every node it enters, is
-/// what bounds a call's own nesting.
+/// The shared context reaches nested model checks through the typer.
+/// The enclosing declaration charges its work once; the typer's
+/// [`super::CheckingLimits`] node charge at every entered node bounds
+/// nesting on both paths. Application traversal remains on the same
+/// explicit stack and does not create another per-node context or meter.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Application<'a> {
     /// A call of the declared function at index `function`.

@@ -14,25 +14,18 @@ use qsl_semantics::check::{
 use qsl_semantics::family::{FamilyKind, FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::{Meter as ModelMeter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
-use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult,
-    PopulationRecord, ValueTypeRef,
-};
+use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
 use qsl_semantics::model::intake::SelectedModel;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::model::observation::{
-    AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
-};
+use qsl_semantics::model::observation::{AdmittedObservations, DocumentRef};
 use qsl_semantics::model::population::{
     admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits, PopulationDocument,
     PopulationMember,
 };
 use quire_exact::{
-    CollectionKind, EffectiveId, Meter, ObjectId, ObjectReference, Outcome, Presence, Value,
-    ValueType,
+    CollectionKind, EffectiveId, Meter, ObjectId, ObjectReference, Outcome, Value, ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldRef;
@@ -47,60 +40,64 @@ fn key(name: &str) -> DeclarationKey {
     DeclarationKey::fixture(name)
 }
 
+fn model_document() -> Vec<u8> {
+    let source = include_str!("../../../examples/config-version/model.semantic-ir.json")
+        .replace("example/config-version", "test/orders")
+        .replace("ConfigVersion", "A")
+        .replace("config_history", "pop")
+        .replace("attemptUpdate", "ready")
+        .replace("versionNumber", "flag")
+        .replace("parent", "next");
+    let mut document: serde_json::Value = serde_json::from_str(&source).unwrap();
+    document["constructs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|node| node["kind"]["name"] != "value_type");
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|node| node["kind"]["name"] == "object_type");
+    let a = &mut document["types"][0];
+    a["fields"][0]["typeRef"] = serde_json::json!("ix://quire/native/Boolean");
+    a["fields"][1]["presence"] = serde_json::json!("required");
+    a["operations"][0]["frame"]["modifies"] = serde_json::json!([]);
+    let mut c = a.clone();
+    c["fields"] = serde_json::json!([]);
+    c["operations"] = serde_json::json!([]);
+    let c: serde_json::Value = serde_json::from_str(&c.to_string().replace(A, C)).unwrap();
+    document["types"].as_array_mut().unwrap().push(c);
+    document["populations"][0]["members"] = serde_json::json!([A]);
+    serde_json::to_vec(&document).unwrap()
+}
+
 fn view() -> EffectiveView {
-    let one = Multiplicity {
-        lower: 1,
-        upper: Some(1),
-        ordered: false,
-        unique: true,
-    };
-    let mut records: Vec<_> = [A, C]
-        .into_iter()
-        .map(|name| {
-            DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                key: key(name),
-                interface_features: None,
-                abstract_type: false,
-                supertypes: vec![],
-            })
-        })
-        .collect();
-    for (name, value_type) in [
-        ("flag", ValueTypeRef::Native(NativeValueType::Boolean)),
-        ("next", ValueTypeRef::Package(key(A))),
-    ] {
-        records.push(DomainPackageRecord::FieldMember(FieldMemberRecord {
-            key: key(&format!("{A}/{name}")),
-            owner: key(A),
-            value_type,
-            multiplicity: one,
-            presence: Presence::Required,
-            subsets: vec![],
-            redefines: None,
-        }));
-    }
-    records.push(DomainPackageRecord::OperationMember(
-        OperationMemberRecord {
-            key: key(READY),
-            owner: key(A),
-            parameters: vec![],
-            result: Some(OperationResult {
-                value_type: ValueTypeRef::Native(NativeValueType::Boolean),
-                multiplicity: one,
-            }),
-            effect: OperationEffect::default(),
-            own_postcondition_clauses: vec![],
-            has_body: true,
-            redefines: None,
+    let bytes = model_document();
+    let document = qsl_semantics::model::intake::PackageDocument::parse(
+        &bytes,
+        qsl_semantics::model::accounting::IntakeLimits {
+            input_bytes: u64::MAX,
         },
-    ));
-    records.push(DomainPackageRecord::Population(PopulationRecord {
-        key: key(POPULATION),
-        member_types: vec![key(A), key(C)],
-        extent: Extent::Closed,
-    }));
-    let package = DomainPackage::new(DomainPackageRef::fixture("SM1 model forms"), records);
-    match normalize(&package, ModelNormalizationLimits::default()) {
+    )
+    .expect("the existing Semantic IR fixture parses");
+    let selection = DomainPackageRef {
+        identity: "test/orders".to_owned(),
+        version: "1.0.0".to_owned(),
+        digest: document.jcs_digest(),
+    };
+    let mut records = qsl_semantics::model::intake::read_records(&selection.identity, &document)
+        .expect("the actual model document is admitted");
+    // Main's published bridge consumes a supplied source body. Intake
+    // intentionally does not parse operation bodies; this fixture attaches
+    // the source Body declaration below, without automatic AR1 linking.
+    for record in &mut records {
+        if let DomainPackageRecord::OperationMember(operation) = record {
+            operation.has_body = true;
+        }
+    }
+    match normalize(
+        &DomainPackage::new(selection, records),
+        ModelNormalizationLimits::default(),
+    ) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("normalization must succeed: {other:?}"),
     }
@@ -292,6 +289,10 @@ fn five_source_model_forms_have_the_declared_nodes_and_types() {
     assert_eq!(selected.receiver_type, object_type(&view));
     assert_eq!(selected.member, "ready");
     assert_eq!(selected.table, *table);
+    let table = &dispatch.dispatch_tables()[*table];
+    assert_eq!(table.candidate_count(), 1);
+    let candidate = table.linked_for(&object_type(&view)).unwrap();
+    assert_eq!(dispatch.function_state(candidate.body).unwrap().name, READY);
 }
 
 #[trace("TC-790", "FR-300-AC-2")]
@@ -344,7 +345,7 @@ fn objects(
     view: &EffectiveView,
 ) -> (ObjectEnvironment, ObjectReference, ObjectReference) {
     let a = object_type(view);
-    let universe = view.object_universe().identity();
+    let universe = view.object_universe_of(&key(A)).unwrap().identity();
     let present = ObjectReference::new(universe, a, ObjectId::new("present").unwrap());
     let absent = ObjectReference::new(universe, a, ObjectId::new("absent").unwrap());
     let world = [present.clone(), absent.clone()]
@@ -434,31 +435,7 @@ fn source_lookup_function_carries_model_refusal_and_present_control_completes() 
 fn source_state_clause_retains_false_selected_precondition_as_model_undefined() {
     for guard in [false, true] {
         let (graph, view) = graph("pre F using v on M::A::ready { self.ready() }", guard);
-        let (environment, receiver, _) = objects(&graph, &view);
-        let clause = graph.state_clause("F").unwrap().identity();
-        let observations = AdmittedObservations {
-            usage: AdmissionUsage::default(),
-            clause,
-            current: None,
-            pre: Some(Observation {
-                identity: DocumentRef {
-                    authority: "test".to_owned(),
-                    identity: "snapshot".to_owned(),
-                    revision_namespace: "fixture".to_owned(),
-                    revision: "1".to_owned(),
-                    digest: qsl_foundation::ByteDigest::of(b"SM1 snapshot").as_bytes(),
-                },
-                environment,
-                populations: BTreeMap::from([(POPULATION.to_owned(), true)]),
-                out_of_range: vec![],
-            }),
-            post: None,
-            self_object: receiver,
-            parameters: vec![],
-            result: None,
-            created: vec![],
-            deleted: vec![],
-        };
+        let observations = observations(&graph, &view);
         let package = CheckedPackage::link(graph);
         let report = package
             .evaluate_clause(
@@ -467,6 +444,7 @@ fn source_state_clause_retains_false_selected_precondition_as_model_undefined() 
                 &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
             )
             .unwrap();
+        let rendered = format!("{:?}", report.evaluation.outcome);
         if guard {
             assert!(matches!(
                 report.evaluation.outcome,
@@ -485,9 +463,118 @@ fn source_state_clause_retains_false_selected_precondition_as_model_undefined() 
                 cause.undefined_record().reason.as_str(),
                 "precondition-false"
             );
+            assert!(
+                rendered.contains("state-model/precondition-false"),
+                "{rendered}"
+            );
             assert_eq!(cause.catalog_prefix(), Some("state-model"));
             assert_eq!(cause.catalog_code(), "state-model/precondition-false");
             assert_eq!(cause.undefined_record().fields["operation"], "ready");
         }
     }
+}
+
+fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservations {
+    use qsl_semantics::model::observation::{
+        admit_observations, ClauseFacts, ClauseSelection, ClauseSelectionInput, ObservationLimits,
+        OperationFacts, Provisions, SelectedObject,
+    };
+    let model = view.model_selection();
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": "test", "identity": "sm1-snapshot",
+            "revision_namespace": "fixture", "revision": "1"
+        },
+        "observation": "pre",
+        "model": {
+            "identity": model.identity, "version": model.version,
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&model.digest))
+        },
+        "populations": [{
+            "population": POPULATION, "complete": true,
+            "objects": [{
+                "key": "present", "type": A,
+                "fields": {
+                    "flag": {"boolean": true},
+                    "next": {"reference": {"population": POPULATION, "key": "present"}}
+                }
+            }]
+        }]
+    }))
+    .unwrap();
+    let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
+    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+        .unwrap()
+        .as_bytes();
+    let snapshot = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "sm1-snapshot".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+        digest,
+    };
+    let snapshots = BTreeMap::from([(digest, bytes)]);
+    let invocations = BTreeMap::new();
+    let model_bytes = model_document();
+    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]);
+    let clause = graph.state_clause("F").unwrap();
+    let facts = ClauseFacts {
+        identity: clause.identity(),
+        kind: clause.kind(),
+        context: clause.context(),
+        operation: clause.operation().map(|operation| OperationFacts {
+            declaring: operation.declaring,
+            declaration: operation.declaration.clone(),
+        }),
+    };
+    let selection = ClauseSelection {
+        name: "F".to_owned(),
+        input: ClauseSelectionInput::PreCall {
+            snapshot,
+            self_object: SelectedObject {
+                population: POPULATION.to_owned(),
+                key: "present".to_owned(),
+            },
+            parameters: BTreeMap::new(),
+        },
+    };
+    admit_observations(
+        graph.model_selections(),
+        graph.scope().types(),
+        &facts,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Provisions {
+            snapshots: &snapshots,
+            invocations: &invocations,
+        },
+        &selection,
+        ObservationLimits::default(),
+    )
+    .expect("snapshot admission completes before the semantic assertions")
+}
+
+#[trace("FR-300-AC-2")]
+#[test]
+fn source_reaches_context_refuses_before_operand_name_resolution() {
+    let (declarations, _, _) = declarations(
+        "function F using v(): Boolean pure { reaches(missing,missing,next) }",
+        true,
+    );
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("S3 refuses context");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::StateModel(cause) = &refusal.cause else {
+        panic!("model ownership: {refusal:?}");
+    };
+    let code = cause.catalog_code().unwrap();
+    assert_eq!(
+        (code.code(), code.cause()),
+        ("ill_typed", "operator-ineligible")
+    );
+    assert_eq!(code.prefix(), Some("state-model"));
 }

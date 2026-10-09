@@ -54,6 +54,7 @@ pub(crate) enum Form {
         target_type: ValueType,
         edge: String,
     },
+    ReachesContext(bool),
     AllInstances {
         target: ValueType,
         population: NodeId,
@@ -94,7 +95,7 @@ pub(crate) struct Request {
 }
 
 pub(crate) enum Checked {
-    Node(Node),
+    Node(Box<Node>),
     Type(ValueType),
     Operation(usize),
     Admitted,
@@ -120,6 +121,7 @@ impl FamilyContract for StateModelFamily {
     type Declarations<'a> = Scope;
     type Claim = ();
 
+    #[deny(clippy::wildcard_enum_match_arm)]
     fn check<'a>(
         request: &Request,
         cx: &mut CheckContext<'a, Scope>,
@@ -136,11 +138,11 @@ impl FamilyContract for StateModelFamily {
             |at: &Location| refuse(at, CheckCause::IllTyped(IllTypedCause::OperatorIneligible));
         let missing = |name: &str| refuse(location, CheckCause::MissingName(name.to_owned()));
         let make = |kind, value_type| {
-            Checked::Node(Node {
+            Checked::Node(Box::new(Node {
                 kind,
                 value_type,
                 location: location.clone(),
-            })
+            }))
         };
         let checked = (|| -> Result<Checked, CheckRefusal> {
             Ok(match &request.form {
@@ -177,6 +179,10 @@ impl FamilyContract for StateModelFamily {
                     };
                     if !admitted { return Err(ineligible(location)); }
                     make(NodeKind::Reaches { source: *source, target: *target, edge: attribute.identity() }, ValueType::Boolean)
+                }
+                Form::ReachesContext(in_state_clause) => {
+                    if !in_state_clause { return Err(ineligible(location)); }
+                    Checked::Admitted
                 }
                 Form::AllInstances { target, population, population_type, operand_location } => {
                     let ValueType::Population(maximum) = population_type else { return Err(ineligible(operand_location)); };
@@ -228,5 +234,70 @@ impl FamilyContract for StateModelFamily {
 
     fn requirements(_checked: &Checked) -> Vec<()> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::check::family::fixtures::{empty_scope, root_location};
+    use crate::family::{DiagnosticSink, ScopeStack, StageLimits};
+    use ix_trace_rs::trace;
+
+    #[trace("FR-300-AC-1")]
+    #[test]
+    fn nested_model_hook_uses_the_enclosing_meter_sink_limits_and_scope() {
+        let scope = empty_scope();
+        let mut meter = quire_exact::Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        for _ in 0..3 {
+            meter
+                .charge(quire_exact::Charge::new(
+                    quire_exact::ChargePoint::FunctionCall,
+                ))
+                .unwrap();
+        }
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        scopes.enter("enclosing");
+        diagnostics.record(&scopes, "existing diagnostic");
+        let mut enclosing = CheckContext::new(
+            &(),
+            StageLimits {
+                input_bytes: 123,
+                node_count: 37,
+            },
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        {
+            let mut nested = enclosing.reborrow(&scope);
+            assert_eq!(nested.limits().input_bytes, 123);
+            let result = StateModelFamily::check(
+                &Request {
+                    form: Form::Population {
+                        value_type: ValueType::Population(Some(3)),
+                    },
+                    location: root_location(),
+                },
+                &mut nested,
+            )
+            .unwrap()
+            .into_value();
+            assert!(matches!(result, Checked::Admitted));
+        }
+        assert_eq!(
+            meter.admission_count(),
+            3,
+            "no replacement meter or double charge"
+        );
+        let entries = diagnostics.entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].message, "existing diagnostic");
+        assert_eq!(entries[1].scope, "enclosing");
+        assert!(entries[1]
+            .message
+            .contains("node limit=37, meter admissions=3"));
+        assert_eq!(scopes.path(), "enclosing");
     }
 }
