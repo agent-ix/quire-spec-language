@@ -322,6 +322,7 @@ pub struct CheckedGraph {
     /// declaration and function-application occurrence this package
     /// checked.
     occurrences: family::OccurrenceMap<Location>,
+    parameter_spans: BTreeMap<(quire_exact::NodeKey, quire_exact::Origin), qsl_foundation::Span>,
     /// ADR-012 §13.5, ADR-011 E7: this package's requirement records, one
     /// per claim site, keyed by the site's occurrence key. Read through
     /// [`Self::requirements`], the candidate step's own input
@@ -1276,6 +1277,10 @@ impl PackageDeclarations {
                         kind: *kind,
                         location: &locations[index],
                         parameters: &signature.parameters,
+                        parameter_spans: self
+                            .functions
+                            .get(index)
+                            .and_then(FunctionDeclaration::parameter_spans),
                         result: &signature.result,
                         body: body.body.root(),
                         body_slots: &body.slot_names,
@@ -1471,6 +1476,7 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
+        let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -1689,6 +1695,7 @@ impl PackageDeclarations {
             functions,
             dispatch_tables,
             occurrences,
+            parameter_spans,
             requirements,
             model_correspondence,
             type_nodes,
