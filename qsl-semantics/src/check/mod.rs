@@ -1902,7 +1902,7 @@ impl CheckedGraph {
     ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let mut nodes = 0_u64;
-        let mut typer = Typer::new(
+        let typer = Typer::new(
             &self.scope,
             &self.functions.signatures,
             limits,

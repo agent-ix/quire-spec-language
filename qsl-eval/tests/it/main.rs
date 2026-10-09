@@ -20,4 +20,5 @@ mod inherited_attributes;
 mod kernel_refusal_payloads;
 mod model_reference_queries;
 mod source_call;
+mod state_model_family;
 mod total_functions;

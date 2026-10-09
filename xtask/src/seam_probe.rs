@@ -528,6 +528,7 @@ fn compare_probe_builds(builds: &[ProbeBuild], checked_in: &BTreeSet<SeamLocatio
 /// build that succeeds with none), then the checked-in-list comparison
 /// itself.
 pub fn run(workspace_root: &Path) -> Result<String> {
+    let model_arms = state_model_arm_report(workspace_root)?;
     // FR-063 constraint: assert the probe build fails AND the normal build
     // succeeds -- one without the other is half a test. If `--cfg
     // seam_probe` silently stopped being applied, only checking the normal
@@ -580,9 +581,228 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     Ok(format!(
         "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe (qsl-forms: seam_probe_forms) \
          (qsl-forms, qsl-semantics, then quire-spec-language, qsl-route, qsl-eval and qsl-replay); normal builds have none: \
-         {locations}.\n",
+         {locations}.\n{model_arms}",
         checked_in.len()
     ))
+}
+
+/// FR-300: qualify the individual production StateModel arms alongside
+/// rustc's function-level exhaustiveness evidence. E0004 alone cannot
+/// distinguish two missing variants in the same function.
+pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
+    let sites = [
+        (
+            "S1 prefix",
+            "qsl-semantics/src/family/mod.rs",
+            "FamilyKind",
+            "catalog_code_prefix",
+            "Self",
+            vec!["StateModel"],
+        ),
+        (
+            "S2 hook",
+            "qsl-semantics/src/check/check/typing.rs",
+            "Typer",
+            "infer_form",
+            "ExprNode",
+            vec!["Field", "AllInstances", "Lookup", "Reaches", "Dispatch"],
+        ),
+        (
+            "S3 hook",
+            "qsl-semantics/src/check/state_model.rs",
+            "StateModelFamily",
+            "check",
+            "Form",
+            vec!["Attribute", "AllInstances", "Lookup", "Reaches", "Dispatch"],
+        ),
+    ];
+    let mut report = Vec::new();
+    let mut missing = Vec::new();
+    for (stage, file, owner, method, prefix, variants) in sites {
+        let path = workspace_root.join(file);
+        let source = fs::read_to_string(&path).map_err(|source| Error::SeamProbeReadSource {
+            path: path.clone(),
+            source,
+        })?;
+        let parsed = syn::parse_file(&source).map_err(|error| Error::SeamProbeMismatch {
+            unexpected_but_present: format!("{}: {error}", path.display()),
+            expected_but_missing: "valid production Rust syntax".to_owned(),
+        })?;
+        let mut arms = ModelArms {
+            prefix,
+            variants: BTreeSet::new(),
+            wildcard: false,
+        };
+        for item in parsed.items {
+            if let syn::Item::Impl(item) = item {
+                if crate::impl_self_name(&item.self_ty) != owner {
+                    continue;
+                }
+                for item in item.items {
+                    if let syn::ImplItem::Fn(item) = item {
+                        if item.sig.ident == method {
+                            arms.visit_block(&item.block);
+                        }
+                    }
+                }
+            }
+        }
+        for variant in variants {
+            let location =
+                format!("StateModel {stage} arm {file}::{owner}::{method}::{prefix}::{variant}");
+            if arms.variants.contains(variant) && !arms.wildcard {
+                report.push(location);
+            } else {
+                missing.push(location);
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!("{missing:?}"),
+        });
+    }
+    Ok(format!("{}\n", report.join("\n")))
+}
+
+struct ModelArms<'a> {
+    prefix: &'a str,
+    variants: BTreeSet<String>,
+    wildcard: bool,
+}
+
+#[cfg(test)]
+mod state_model_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    #[trace("TC-791", "FR-300-AC-3")]
+    #[test]
+    fn state_model_arm_report_reads_the_production_matches() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let report = state_model_arm_report(root).unwrap();
+        for stage in ["S1 prefix", "S2 hook", "S3 hook"] {
+            assert!(
+                report.contains(&format!("StateModel {stage} arm")),
+                "{report}"
+            );
+        }
+    }
+
+    #[derive(Default)]
+    struct LookupArm {
+        span: Option<proc_macro2::Span>,
+    }
+
+    impl<'ast> Visit<'ast> for LookupArm {
+        fn visit_arm(&mut self, arm: &'ast syn::Arm) {
+            if let syn::Pat::Struct(pattern) = &arm.pat {
+                let segments: Vec<_> = pattern
+                    .path
+                    .segments
+                    .iter()
+                    .map(|segment| segment.ident.to_string())
+                    .collect();
+                if segments == ["Form", "Lookup"] {
+                    self.span = Some(arm.span());
+                }
+            }
+            syn::visit::visit_arm(self, arm);
+        }
+    }
+
+    fn offset(source: &str, position: proc_macro2::LineColumn) -> usize {
+        source
+            .split_inclusive('\n')
+            .take(position.line - 1)
+            .map(str::len)
+            .sum::<usize>()
+            + position.column
+    }
+
+    #[trace("TC-791", "FR-300-AC-3")]
+    #[test]
+    fn deleting_the_actual_s3_lookup_arm_names_it_as_missing() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-semantics/src/check/check/typing.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        // Establish green on the scratch source before deleting an actual
+        // production arm; the probe's expected list is never rewritten.
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch
+            .path()
+            .join("qsl-semantics/src/check/state_model.rs");
+        let mut source = fs::read_to_string(&file).unwrap();
+        let mut arm = LookupArm::default();
+        arm.visit_file(&syn::parse_file(&source).unwrap());
+        let span = arm.span.expect("the real S3 Form::Lookup arm");
+        source.replace_range(
+            offset(&source, span.start())..offset(&source, span.end()),
+            "",
+        );
+        fs::write(file, source).unwrap();
+        let error = run(scratch.path()).expect_err("the actual seam-probe must reject deletion");
+        let message = error.to_string();
+        assert!(message.contains("expected-but-missing"), "{message}");
+        assert!(
+            message.contains("StateModel S3 hook arm")
+                && message.contains("StateModelFamily::check::Form::Lookup"),
+            "{message}"
+        );
+        eprintln!("{message}");
+    }
+}
+
+impl ModelArms<'_> {
+    fn pattern(&mut self, pattern: &syn::Pat) {
+        let path = match pattern {
+            syn::Pat::Path(pattern) => Some(&pattern.path),
+            syn::Pat::Struct(pattern) => Some(&pattern.path),
+            syn::Pat::TupleStruct(pattern) => Some(&pattern.path),
+            syn::Pat::Or(pattern) => {
+                for case in &pattern.cases {
+                    self.pattern(case);
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(path) = path {
+            if path.segments.len() == 2 && path.segments[0].ident == self.prefix {
+                self.variants.insert(path.segments[1].ident.to_string());
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for ModelArms<'_> {
+    fn visit_expr_match(&mut self, expression: &'ast syn::ExprMatch) {
+        let mut matched = ModelArms {
+            prefix: self.prefix,
+            variants: BTreeSet::new(),
+            wildcard: false,
+        };
+        for arm in &expression.arms {
+            matched.pattern(&arm.pat);
+        }
+        if !matched.variants.is_empty() {
+            self.wildcard |= expression
+                .arms
+                .iter()
+                .any(|arm| matches!(arm.pat, syn::Pat::Wild(_) | syn::Pat::Ident(_)));
+            self.variants.extend(matched.variants);
+        }
+        syn::visit::visit_expr_match(self, expression);
+    }
 }
 
 #[cfg(test)]

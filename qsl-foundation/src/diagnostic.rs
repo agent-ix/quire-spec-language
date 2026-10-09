@@ -776,11 +776,27 @@ impl std::fmt::Display for Category {
 /// consumer reads the catalog's message -- only the code, the cause and the
 /// structured fields the catalog defines for that pair. Equality is lexical
 /// on both fields, matching ADR-013 O-17's stated equality kind.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug)]
 pub struct CatalogCode {
     code: &'static str,
     cause: &'static str,
     prefix: Option<&'static str>,
+}
+
+// O-17 equality remains lexical on the published pair; ownership is
+// rendering metadata and is inspected separately through prefix().
+impl PartialEq for CatalogCode {
+    fn eq(&self, other: &Self) -> bool {
+        (self.code, self.cause) == (other.code, other.cause)
+    }
+}
+
+impl Eq for CatalogCode {}
+
+impl std::hash::Hash for CatalogCode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&(self.code, self.cause), state);
+    }
 }
 
 impl CatalogCode {
