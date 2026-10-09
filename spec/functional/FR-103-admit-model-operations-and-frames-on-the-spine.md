@@ -88,6 +88,10 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
 - Intake SHALL still shape-check the operation's `pre` and `post` expression
   texts in the domain package and SHALL NOT keep them. State clauses in the
   `1-draft` unit are the clauses this lane checks and runs.
+- Intake SHALL read an operation's `redefines` as FR-056 reads a field's:
+  the redefined member's identity, keyed in the package. Normalization checks
+  the target as it checks a field's (FR-081), and FR-082's conformance stage
+  checks the pair's axes.
 
 ## Acceptance Criteria
 
@@ -98,6 +102,7 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
 | FR-103-AC-3 | An operation with a parameter `note: Decimal` refuses `unsupported_construct`/`declaration-form` at the parameter, at I1 (intake) -- the same stage and cause a field of that type refuses at, per this FR's own Behavior ("as a field of that type does"); an operation with parameter `delta: VersionNumber` admits it typed `Int[0, 1000]`. FR-056's `value-type/v1` scalar reader is verified against both halves over the shared `ConfigVersion` fixture. The parameter type is `Decimal`, not this row's earlier `Text`: the FCD schema validator's native-scalar vocabulary has no `Text` entry (it spells the concept `String`), so `Text` cannot reach even I1 through the real pipeline, and QSL's own `NativeValueType` has no `String` variant either -- that cross-repo vocabulary gap is QSL-290, not fixed here. | Test (TC-458) |
 | FR-103-AC-4 | A package holding a record value type still refuses `UnsupportedModelMember` naming that node, with the operation admitted beside it not changing the refusal. | Test (TC-458) |
 | FR-103-AC-5 | Admission is deterministic: admitting the ConfigVersion package twice, and admitting it with its operation and population records reordered in the document, gives equal `PackageDeclarations` and equal effect key lists. | Test (TC-458) |
+| FR-103-AC-6 | TC-196's fixture H with `B/op` declaring `redefines: A/op` and R03's signature refuses at I1 with R03's conformance refusals (FR-082-AC-10). An operation whose `redefines` names no member of the package refuses at I1 with the code and cause a field whose `redefines` names the same identity refuses with. | Test |
 
 ## Dependencies
 
