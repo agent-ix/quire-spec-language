@@ -523,7 +523,7 @@ impl ProofResultEnvelope {
     /// FR-069 Behavior's typed cause: `Some` exactly when this envelope's
     /// category is `Inconclusive` -- `KaniVacuousProof` for a vacuous
     /// `Proved` (zero SUCCESS checks), or the `Inconclusive` value's own
-    /// `ReplayParity` or `ReplayRefused`; `None` for every other category.
+    /// any typed inconclusive cause; `None` for every other category.
     /// A consumer that reads `category() == Inconclusive` never re-derives
     /// the cause from [`Self::record`] itself.
     pub fn inconclusive_cause(&self) -> Option<&ReportedInconclusiveCause> {
