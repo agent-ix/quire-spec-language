@@ -852,8 +852,8 @@ fn text_leaf_is_tested(
     assert_eq!(
         fields[0].value_type(),
         &quire_exact::ValueType::Int(quire_exact::IntegerInterval::spanning(
-            Integer::from(0),
-            Integer::from(9)
+            Integer::from(0_i64),
+            Integer::from(9_i64)
         ))
     );
     assert_eq!(fields[1].name(), "label");
