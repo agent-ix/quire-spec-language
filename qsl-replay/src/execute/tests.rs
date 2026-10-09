@@ -650,14 +650,16 @@ fn replay_reference_admission_matches_runtime_and_preserves_actual_type() {
     };
     // Baseline proves that source/model recompile, request joining and
     // exact-reference conversion reach the real replay executor.
-    let baseline = replay(
+    let ReplayResult::Input(baseline) = replay(
         wire(
             "same",
             vec![reference(widget, "w1"), reference(gadget, "g1")],
         ),
         ReplayLimits::default(),
     )
-    .unwrap();
+    .unwrap() else {
+        panic!("the baseline input must settle on the input arm");
+    };
     assert_eq!(baseline.value(), Some(EvaluatedValue::Boolean(true)));
     let actual = ObjectReference::new(
         UniverseId::from_digest([1; 32]),
@@ -678,14 +680,16 @@ fn replay_reference_admission_matches_runtime_and_preserves_actual_type() {
         runtime.outcome,
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
-    let replayed = replay(
+    let ReplayResult::Input(replayed) = replay(
         wire(
             "same",
             vec![reference(gadget, "g1"), reference(gadget, "g1")],
         ),
         ReplayLimits::default(),
     )
-    .expect("a conforming actual reference must replay as admitted by runtime call");
+    .expect("a conforming actual reference must replay as admitted by runtime call") else {
+        panic!("the subtype input must settle on the input arm");
+    };
     assert_eq!(replayed.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(
         replayed.charges().work_units,
