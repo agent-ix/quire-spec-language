@@ -4,8 +4,8 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    Category, Certification, ItemLabel, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, ProofBasis, RequestIndex,
-    TerminalRecord, TerminalValue,
+    Category, Certification, ItemLabel, Operation, OutcomeDocument, OutcomeItem, OutcomeStage,
+    ProofBasis, RequestIndex, TerminalRecord, TerminalValue,
 };
 
 /// FR-286-AC-3: a `prove` document built and written through the facade
@@ -35,7 +35,10 @@ fn a_driver_writes_a_prove_document_through_the_facade() {
     assert_eq!(written["category"], "internal-failure");
     assert_eq!(written["items"][0]["result"], "proved");
     assert_eq!(written["items"][0]["certification"], "certified");
-    assert_eq!(written["items"][0]["basis"], serde_json::json!({"type": "bounded-proof", "checks": 2}));
+    assert_eq!(
+        written["items"][0]["basis"],
+        serde_json::json!({"type": "bounded-proof", "checks": 2})
+    );
     assert_eq!(written["items"][1]["result"], "failed");
     assert_eq!(document.category(), Category::InternalFailure);
     assert_eq!(document.items()[1].category(), Category::InternalFailure);

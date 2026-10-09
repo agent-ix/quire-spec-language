@@ -169,11 +169,17 @@ pub struct ItemCause {
     parity: Option<ParityReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     depth: Option<u64>,
-    #[serde(serialize_with = "cancel_source", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        serialize_with = "cancel_source",
+        skip_serializing_if = "Option::is_none"
+    )]
     source: Option<CancelCause>,
 }
 
-fn cancel_source<S: Serializer>(source: &Option<CancelCause>, serializer: S) -> Result<S::Ok, S::Error> {
+fn cancel_source<S: Serializer>(
+    source: &Option<CancelCause>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     match source {
         Some(CancelCause::Requested) => serializer.serialize_str("requested"),
         Some(CancelCause::Deadline) => serializer.serialize_str("deadline"),
@@ -207,12 +213,15 @@ impl ItemCause {
     fn inconclusive(cause: &ReportedInconclusiveCause) -> Self {
         let mut item = Self::kind(cause.as_str());
         match cause {
-            ReportedInconclusiveCause::Cause(InconclusiveCause::BoundReached { depth }
-                | InconclusiveCause::InductionNotClosed { depth }) => {
+            ReportedInconclusiveCause::Cause(
+                InconclusiveCause::BoundReached { depth }
+                | InconclusiveCause::InductionNotClosed { depth },
+            ) => {
                 item.depth = Some(*depth);
             }
-            ReportedInconclusiveCause::Cause(InconclusiveCause::UndecidedSuccessor
-                | InconclusiveCause::NoInitialState) => {}
+            ReportedInconclusiveCause::Cause(
+                InconclusiveCause::UndecidedSuccessor | InconclusiveCause::NoInitialState,
+            ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
                 item.parity = Some(ParityReason {
@@ -253,7 +262,10 @@ impl OutcomeItem {
     pub fn from_terminal(record: &TerminalRecord) -> Self {
         let value = record.value();
         let (result, cause) = match value {
-            TerminalValue::Proved { basis: ProofBasis::Checks { success_checks: 0 }, .. }
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                ..
+            }
             | TerminalValue::Inconclusive(_) => (
                 ItemLabel::Inconclusive,
                 value
@@ -288,16 +300,23 @@ impl OutcomeItem {
             TerminalValue::Failed => (ItemLabel::Failed, None),
         };
         let (basis, certification) = match value {
-            TerminalValue::Proved { basis, certification } => {
+            TerminalValue::Proved {
+                basis,
+                certification,
+            } => {
                 if result == ItemLabel::Proved {
                     (Some(*basis), Some(*certification))
                 } else {
                     (None, None)
                 }
             }
-            TerminalValue::Tested | TerminalValue::Refuted | TerminalValue::Declined { .. }
-            | TerminalValue::Unsupported(_) | TerminalValue::Incomplete(_)
-            | TerminalValue::Inconclusive(_) | TerminalValue::Failed => (None, None),
+            TerminalValue::Tested
+            | TerminalValue::Refuted
+            | TerminalValue::Declined { .. }
+            | TerminalValue::Unsupported(_)
+            | TerminalValue::Incomplete(_)
+            | TerminalValue::Inconclusive(_)
+            | TerminalValue::Failed => (None, None),
         };
         Self {
             request_index: record.request_index().get(),
@@ -1041,10 +1060,13 @@ mod tests {
                     0,
                     TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
                 ),
-                record(1, TerminalValue::Proved {
-                    basis: ProofBasis::Checks { success_checks: 3 },
-                    certification: Certification::Certified,
-                }),
+                record(
+                    1,
+                    TerminalValue::Proved {
+                        basis: ProofBasis::Checks { success_checks: 3 },
+                        certification: Certification::Certified,
+                    },
+                ),
                 record(2, TerminalValue::Refuted),
             ],
         );
@@ -1070,11 +1092,14 @@ mod tests {
     #[trace("TC-770", "FR-286-AC-3")]
     #[test]
     fn a_vacuous_proof_is_inconclusive_never_proved() {
-        let item = serde_json::to_value(record(4, TerminalValue::Proved {
-            basis: ProofBasis::Checks { success_checks: 0 },
-            certification: Certification::Certified,
-        }))
-            .expect("serializes");
+        let item = serde_json::to_value(record(
+            4,
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Certified,
+            },
+        ))
+        .expect("serializes");
         assert_eq!(
             item,
             json!({
@@ -1090,10 +1115,19 @@ mod tests {
     #[test]
     fn proof_wire_keeps_exact_basis_and_certification_only_on_proved() {
         let bases = [
-            (ProofBasis::Checks { success_checks: 3 }, json!({"type": "bounded-proof", "checks": 3})),
+            (
+                ProofBasis::Checks { success_checks: 3 },
+                json!({"type": "bounded-proof", "checks": 3}),
+            ),
             (ProofBasis::Exhaustive, json!({"type": "exhaustive"})),
-            (ProofBasis::BoundedComplete { depth: 5 }, json!({"type": "bounded-complete", "depth": 5})),
-            (ProofBasis::Inductive { depth: 2 }, json!({"type": "inductive", "depth": 2})),
+            (
+                ProofBasis::BoundedComplete { depth: 5 },
+                json!({"type": "bounded-complete", "depth": 5}),
+            ),
+            (
+                ProofBasis::Inductive { depth: 2 },
+                json!({"type": "inductive", "depth": 2}),
+            ),
         ];
         for (basis, expected_basis) in bases {
             for (certification, expected_certification) in [
@@ -1104,17 +1138,26 @@ mod tests {
                 let document = OutcomeDocument::settled(
                     Operation::Prove,
                     Some(OutcomeStage::S8),
-                    vec![record(6, TerminalValue::Proved { basis, certification })],
+                    vec![record(
+                        6,
+                        TerminalValue::Proved {
+                            basis,
+                            certification,
+                        },
+                    )],
                 );
                 let written: Value = serde_json::from_slice(&document.to_bytes().unwrap()).unwrap();
-                assert_eq!(written["items"], json!([{
-                    "request_index": 6,
-                    "result": "proved",
-                    "cause": null,
-                    "basis": expected_basis,
-                    "certification": expected_certification,
-                    "category": "success",
-                }]));
+                assert_eq!(
+                    written["items"],
+                    json!([{
+                        "request_index": 6,
+                        "result": "proved",
+                        "cause": null,
+                        "basis": expected_basis,
+                        "certification": expected_certification,
+                        "category": "success",
+                    }])
+                );
             }
         }
         for value in [
@@ -1136,26 +1179,51 @@ mod tests {
     #[test]
     fn temporal_cause_wire_keeps_depth_and_cancellation_source() {
         for (value, cause, category) in [
-            (TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 1 }),
-                json!({"kind": "bound-reached", "depth": 1}), "inconclusive"),
-            (TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 2 }),
-                json!({"kind": "induction-not-closed", "depth": 2}), "inconclusive"),
-            (TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor),
-                json!({"kind": "undecided-successor"}), "inconclusive"),
-            (TerminalValue::Inconclusive(InconclusiveCause::NoInitialState),
-                json!({"kind": "no-initial-state"}), "inconclusive"),
-            (TerminalValue::Incomplete(IncompleteCause::Cancelled { source: CancelCause::Requested }),
-                json!({"kind": "cancelled", "source": "requested"}), "incomplete"),
-            (TerminalValue::Incomplete(IncompleteCause::Cancelled { source: CancelCause::Deadline }),
-                json!({"kind": "cancelled", "source": "deadline"}), "incomplete"),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 1 }),
+                json!({"kind": "bound-reached", "depth": 1}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 2 }),
+                json!({"kind": "induction-not-closed", "depth": 2}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor),
+                json!({"kind": "undecided-successor"}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::NoInitialState),
+                json!({"kind": "no-initial-state"}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Requested,
+                }),
+                json!({"kind": "cancelled", "source": "requested"}),
+                "incomplete",
+            ),
+            (
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Deadline,
+                }),
+                json!({"kind": "cancelled", "source": "deadline"}),
+                "incomplete",
+            ),
         ] {
             let written = serde_json::to_value(record(3, value)).unwrap();
-            assert_eq!(written, json!({
-                "request_index": 3,
-                "result": category,
-                "cause": cause,
-                "category": category,
-            }));
+            assert_eq!(
+                written,
+                json!({
+                    "request_index": 3,
+                    "result": category,
+                    "cause": cause,
+                    "category": category,
+                })
+            );
         }
     }
 
@@ -1165,22 +1233,36 @@ mod tests {
         let proved = Verdict::from_category(Category::Violation);
         let replayed = Verdict::from_category(Category::Success);
         let replay = crate::WitnessArmResult::settle(
-            proved, replayed, Category::Success,
-            Some(EvaluatedValue::Boolean(true)), WitnessCheck::Agrees(None),
-            Vec::new(), default_accounting(0),
+            proved,
+            replayed,
+            Category::Success,
+            Some(EvaluatedValue::Boolean(true)),
+            WitnessCheck::Agrees(None),
+            Vec::new(),
+            default_accounting(0),
         );
-        assert_eq!(replay.disagreement(), Some(&DisagreementCause::Verdicts { proved, replayed }));
-        let written = serde_json::to_value(record(0, TerminalValue::Inconclusive(
-            InconclusiveCause::ReplayParity(replay.disagreement().unwrap().clone())
-        ))).unwrap();
-        assert_eq!(written, json!({
-            "request_index": 0,
-            "result": "inconclusive",
-            "cause": {"kind": "replay-parity", "parity": {
-                "reason": "verdicts", "proved": "violation", "replayed": "success",
-            }},
-            "category": "inconclusive",
-        }));
+        assert_eq!(
+            replay.disagreement(),
+            Some(&DisagreementCause::Verdicts { proved, replayed })
+        );
+        let written = serde_json::to_value(record(
+            0,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+                replay.disagreement().unwrap().clone(),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            written,
+            json!({
+                "request_index": 0,
+                "result": "inconclusive",
+                "cause": {"kind": "replay-parity", "parity": {
+                    "reason": "verdicts", "proved": "violation", "replayed": "success",
+                }},
+                "category": "inconclusive",
+            })
+        );
     }
 
     /// Each terminal cause is written in its FR-331 spelling, with its
@@ -1201,7 +1283,9 @@ mod tests {
                 json!({"result": "declined", "cause": {"kind": "invalid-input", "code": "ill_typed"}, "category": "refusal"}),
             ),
             (
-                TerminalValue::Incomplete(IncompleteCause::Cancelled { source: CancelCause::Requested }),
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Requested,
+                }),
                 json!({"result": "incomplete", "cause": {"kind": "cancelled", "source": "requested"}, "category": "incomplete"}),
             ),
             (
@@ -1432,10 +1516,13 @@ mod tests {
             Operation::Prove,
             Some(OutcomeStage::S8),
             vec![
-                record(0, TerminalValue::Proved {
-                    basis: ProofBasis::Checks { success_checks: 1 },
-                    certification: Certification::Certified,
-                }),
+                record(
+                    0,
+                    TerminalValue::Proved {
+                        basis: ProofBasis::Checks { success_checks: 1 },
+                        certification: Certification::Certified,
+                    },
+                ),
                 record(1, TerminalValue::Refuted),
                 record(2, declined),
                 record(3, TerminalValue::Incomplete(IncompleteCause::TimedOut)),
