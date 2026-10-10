@@ -578,14 +578,13 @@ fn record_subtype_inherits_invariant_without_an_object_universe() {
         .all(|universe| universe.root_types.is_empty()));
 }
 
-/// Cycles are refused by the bounded existing ancestry walk, not accepted as
-/// object universes or swallowed by same-meaning admission.
-/// Trace: QSpec-FR-208-AC-12
+/// FR-154 ends intake on a cycle refusal; FR-208 Generalization / AC-12
+/// requires specialization-cycle, not a generic malformed declaration.
 #[trace("QSpec-TC-235")]
 #[test]
 fn record_specialization_cycle_refuses_before_effective_view() {
     let p = "test/record-cycle";
-    let package = read_authored(&document(
+    let refusals = authored_refusals(&document(
         p,
         "1.0.0",
         vec![construct("value_record", meaning::RECORD_VALUE_TYPE)],
@@ -604,24 +603,17 @@ fn record_specialization_cycle_refuses_before_effective_view() {
             ),
         ],
     ));
-    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
-    let NormalizeOutcome::Refused(refusals) = outcome else {
-        panic!("record cycle must refuse: {outcome:?}");
-    };
-    assert_eq!(refusals.len(), 1);
-    let refusal = refusals.iter().next().expect("one cycle refusal");
-    assert_eq!(
-        refusal.code,
-        qsl_foundation::diagnostic::Code::InvalidModelBinding
-    );
-    let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle { ancestor, via } =
-        &refusal.cause
-    else {
-        panic!("expected real cycle cause: {refusal:?}");
-    };
-    let mut nodes = vec![ancestor.clone(), via.clone()];
-    nodes.sort();
-    assert_eq!(nodes, expected_keys(p, &["Amount", "TaxedAmount"]));
+    assert_eq!(refusals.len(), 2, "each cyclic declaration refuses: {refusals:?}");
+    for (refusal, (ancestor, via)) in refusals.iter().zip([
+        ("Amount", "TaxedAmount"), ("TaxedAmount", "Amount"),
+    ]) {
+        assert_eq!(refusal.code, qsl_foundation::diagnostic::Code::InvalidModelBinding);
+        let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle { ancestor: actual, via: actual_via } = &refusal.cause else {
+            panic!("expected typed intake cycle cause: {refusal:?}");
+        };
+        assert_eq!(actual, &key(p, ancestor));
+        assert_eq!(actual_via, &key(p, via));
+    }
 }
 
 fn authored_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::ModelRefusal> {
@@ -805,7 +797,7 @@ fn namespace_field_operation_quire_clause_and_supertypes_remain_refused() {
                 )
             );
         } else {
-            assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
+            assert_eq!(refusals[0].code, Code::UnsupportedConstruct, "form {form}: {:?}", refusals[0]);
             let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause
             else {
                 panic!("expected namespace declaration-form refusal");

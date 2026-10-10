@@ -1388,6 +1388,7 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// itself now admits them.
 fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<ModelRefusal>> {
     let verdict = agent_ix_semantic_ir::decide(&document.bundle);
+    let mut namespace_forms = std::collections::BTreeSet::new();
     let refusals: Vec<ModelRefusal> = verdict
         .diagnostics
         .iter()
@@ -1403,14 +1404,22 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // entry it also flags, so it is filtered out and left entirely to
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
-        .map(|located| {
+        .filter_map(|located| {
+            if let Some(refusal) = business_generalization_refusal(document, located) {
+                if let ModelRefusalCause::UnsupportedDeclarationForm { node, .. } = &refusal.cause {
+                    if !namespace_forms.insert(node.clone()) {
+                        return None;
+                    }
+                }
+                return Some(refusal);
+            }
             let node = if located.owner.is_empty() {
                 "$".to_owned()
             } else {
                 located.owner.clone()
             };
             let (artifact, span) = located_span(located);
-            malformed_declaration(
+            Some(malformed_declaration(
                 node,
                 artifact,
                 span,
@@ -1418,7 +1427,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
                     "agent-ix-semantic-ir refused this document at {} ({}): {}",
                     located.pointer, located.code, located.message
                 ),
-            )
+            ))
         })
         .collect();
     if refusals.is_empty() {
@@ -1426,6 +1435,67 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// FR-208 Generalization / AC-12: the schema gate still refuses the document,
+/// but its generic cross-reference diagnostic must retain the business rule's
+/// actual typed cause. Namespace supertype entries are not checked further.
+fn business_generalization_refusal(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    use agent_ix_semantic_ir::constructs::{CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE, UNRESOLVED_CONSTRUCT_REF};
+    let rest = located.pointer.strip_prefix("/ir/types/")?;
+    let (position, member) = rest.split_once('/')?;
+    if member != "supertypes" && !member.starts_with("supertypes/") {
+        return None;
+    }
+    let types = document.tree.get("types")?.as_array()?;
+    let node = types.get(position.parse::<usize>().ok()?)?;
+    let owner = node.get("identity")?.as_str()?;
+    if located.owner != owner {
+        return None;
+    }
+    let ctx = NodeCtx::new(node, format!("$.types[{position}]"));
+    let kind = ctx.kind_key().ok()?;
+    let meanings = meaning_index(&document.tree).ok()?;
+    let resolved = meanings.get(&(kind.0.to_owned(), kind.1.to_owned()))?;
+    if resolved == meaning::NAMESPACE
+        && [UNRESOLVED_CONSTRUCT_REF, CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE].contains(&located.code)
+        && !ctx.array_field("supertypes").ok()?.is_empty()
+    {
+        return Some(unsupported_at(node, &ctx.at, format!("{}:supertypes", meaning::NAMESPACE)));
+    }
+    if resolved != meaning::RECORD_VALUE_TYPE || located.code != SUPERTYPE_CYCLE {
+        return None;
+    }
+    // The actual declared edges, not diagnostic prose, identify the closing
+    // edge. Each node is visited once, so even a hostile cyclic graph terminates.
+    let graph: BTreeMap<&str, &Value> = types.iter().filter_map(|value| {
+        Some((value.get("identity")?.as_str()?, value))
+    }).collect();
+    let mut pending = vec![owner];
+    let mut visited = std::collections::BTreeSet::new();
+    while let Some(current) = pending.pop() {
+        if !visited.insert(current) { continue; }
+        let value = graph.get(current)?;
+        for parent in value.get("supertypes").and_then(Value::as_array).into_iter().flatten() {
+            let parent = parent.as_str()?;
+            if parent == owner {
+                let package = document.tree.get("package")?.get("identity")?.as_str()?;
+                return Some(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::SpecializationCycle {
+                        ancestor: declaration_key(package, owner),
+                        via: declaration_key(package, current),
+                    },
+                    detail: format!("{}: record generalization returns to {owner} through {current}", located.pointer),
+                });
+            }
+            pending.push(parent);
+        }
+    }
+    None
 }
 
 /// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
