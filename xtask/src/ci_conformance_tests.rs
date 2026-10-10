@@ -6,6 +6,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use ix_trace_rs::trace;
+
 const CHECKS: [(&str, &str); 12] = [
     ("check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors", "conformance: 1 of 1 QSpec operation vectors match (process double)"),
     ("check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors", "conformance: 2 nominal enum vectors match (process double)"),
@@ -22,8 +24,8 @@ const CHECKS: [(&str, &str); 12] = [
 ];
 
 // The launcher only forwards process context. All double behavior lives in Rust.
-/// Trace: FR-092-AC-8
 #[test]
+#[ignore = "Cargo process double: launched by the conformance recipe regression lane"]
 fn cargo_double() {
     let Ok(log) = std::env::var("CONFORMANCE_DOUBLE_LOG") else {
         return;
@@ -110,7 +112,7 @@ impl Recipe {
         fs::create_dir(&bin).unwrap();
         let executable = std::env::current_exe().unwrap();
         let quoted_executable = executable.to_str().unwrap().replace('\'', "'\\''");
-        fs::write(bin.join("cargo"), format!("#!/bin/sh\nexport CONFORMANCE_DOUBLE_ARGS=\"$*\"\nexec '{quoted_executable}' --exact ci_conformance_tests::cargo_double --nocapture\n")).unwrap();
+        fs::write(bin.join("cargo"), format!("#!/bin/sh\nexport CONFORMANCE_DOUBLE_ARGS=\"$*\"\nexec '{quoted_executable}' --exact ci_conformance_tests::cargo_double --ignored --nocapture\n")).unwrap();
         fs::set_permissions(bin.join("cargo"), fs::Permissions::from_mode(0o755)).unwrap();
         let checkout = root.path().join("quire-specification");
         Self::checkout(&checkout);
@@ -185,7 +187,7 @@ impl Recipe {
     }
 }
 
-/// Trace: FR-092-AC-8
+#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn local_ci_runs_all_conformance_checks_from_a_linked_worktree() {
     let recipe = Recipe::new();
@@ -198,7 +200,7 @@ fn local_ci_runs_all_conformance_checks_from_a_linked_worktree() {
     recipe.assert_calls(&recipe.checkout);
 }
 
-/// Trace: FR-092-AC-8
+#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn caller_checkout_override_is_used_and_exported() {
     let recipe = Recipe::new();
@@ -225,7 +227,7 @@ fn caller_checkout_override_is_used_and_exported() {
             "-",
             "export-probe",
         ])
-        .arg(format!("QSPEC_DIR={}", override_dir.display()))
+        .arg("QSPEC_DIR=caller checkout")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
@@ -246,7 +248,7 @@ fn caller_checkout_override_is_used_and_exported() {
     );
 }
 
-/// Trace: FR-092-AC-8
+#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn missing_empty_and_invalid_checkouts_fail_before_cargo() {
     for kind in ["missing-default", "empty", "missing-override", "invalid"] {
@@ -270,7 +272,7 @@ fn missing_empty_and_invalid_checkouts_fail_before_cargo() {
     }
 }
 
-/// Trace: FR-092-AC-8
+#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn every_required_selection_rejects_zero_ignored_skip_missing_summary_and_failure() {
     for (index, (selection, _)) in CHECKS.iter().enumerate() {
@@ -295,7 +297,7 @@ fn every_required_selection_rejects_zero_ignored_skip_missing_summary_and_failur
     }
 }
 
-/// Trace: FR-092-AC-8
+#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn operation_summary_requires_positive_vector_counts() {
     let recipe = Recipe::new();
