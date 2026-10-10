@@ -1227,7 +1227,7 @@ impl<'c> Mapping<'c> {
                         }
                     }
                     let name = text(member, node)?;
-                    let shape = if call {
+                    let shape = if call && !arguments.is_empty() {
                         Shape::Dispatch(name)
                     } else {
                         Shape::Field(name)
