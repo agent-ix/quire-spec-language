@@ -9,30 +9,37 @@ use qsl_replay::spine::DependencyInput;
 
 use crate::support::front_end::emitted;
 
-#[trace("TC-885", "FR-003-AC-9")]
-#[test]
-fn evaluator_source_call_fixture_keeps_checked_identity() {
-    // Read the actual authored fixture rather than maintaining another copy.
-    let test = syn::parse_file(include_str!("../../qsl-eval/tests/it/source_call.rs")).unwrap();
-    let source = test
+// Read actual authored literals without maintaining another source copy.
+fn source_literal(test_source: &str, name: &str) -> String {
+    syn::parse_file(test_source)
+        .unwrap()
         .items
         .into_iter()
         .find_map(|item| {
             let syn::Item::Const(item) = item else {
                 return None;
             };
-            if item.ident != "UNIT" {
+            if item.ident != name {
                 return None;
             }
             let syn::Expr::Lit(literal) = *item.expr else {
-                panic!("UNIT must be an authored source literal");
+                panic!("{name} must be an authored source literal");
             };
             let syn::Lit::Str(source) = literal.lit else {
-                panic!("UNIT must be UTF-8 source");
+                panic!("{name} must be UTF-8 source");
             };
             Some(source.value())
         })
-        .expect("the evaluator's source-call fixture exists");
+        .unwrap_or_else(|| panic!("fixture literal {name} exists"))
+}
+
+#[trace("TC-885", "FR-003-AC-9")]
+#[test]
+fn evaluator_source_call_fixture_keeps_checked_identity() {
+    let source = source_literal(
+        include_str!("../../qsl-eval/tests/it/source_call.rs"),
+        "UNIT",
+    );
     emitted(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -41,6 +48,55 @@ fn evaluator_source_call_fixture_keeps_checked_identity() {
         &DependencyInput::default(),
     )
     .expect("the source-call unit checks before and after formatting");
+}
+
+#[trace("TC-885", "FR-003-AC-9")]
+#[test]
+fn replay_composite_fixture_keeps_checked_identity() {
+    let profile = source_literal(
+        include_str!("../../qsl-replay/src/execute/tests.rs"),
+        "PROFILE",
+    );
+    let body = source_literal(
+        include_str!("../../qsl-replay/src/execute/tests/composite_parity.rs"),
+        "UNIT",
+    );
+    let source = format!("language \"ix:native\" edition \"1-draft\";\n{profile}{body}");
+    emitted(
+        SourceIdentity::new("test", "composite-parity", "fixture", "1"),
+        "composite-parity.native",
+        source.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect("the recursive-record, sequence, enum and rational fixture checks");
+}
+
+#[trace("TC-885", "FR-003-AC-9")]
+#[test]
+fn wide_integer_fixture_units_keep_checked_identity() {
+    // The repository-native TC-909 admitted vectors, including its comment
+    // between unary minus and the i128::MIN magnitude.
+    let header = source_literal(
+        include_str!("../../qsl-replay/src/spine/wide_integer_tests.rs"),
+        "HEADER",
+    );
+    for (parameter, body) in [
+        ("Int[0, 18446744073709551615]", "x >= 0"),
+        ("Int[0, 9223372036854775808]", "x >= 0"),
+        ("Int[0, 18446744073709551616]", "x >= 0"),
+        ("Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]", "x <= 170141183460469231731687303715884105727"),
+        ("Int[-170141183460469231731687303715884105728, 0]", "x >= -170141183460469231731687303715884105728"),
+        ("Int[-170141183460469231731687303715884105728, 0]", "x >= - 170141183460469231731687303715884105728"),
+        ("Int[-170141183460469231731687303715884105728, 0]", "x >= -// the minimum\n170141183460469231731687303715884105728"),
+        ("Int[-170141183460469231731687303715884105728, 0]", "x >= -170141183460469231731687303715884105727"),
+    ] {
+        let source = format!("{header}function u using v(x: {parameter}): Boolean pure {{ {body} }}\n");
+        emitted(
+            SourceIdentity::new("a", "u", "git", "1"), "unit.native", source.as_bytes(),
+            &BTreeMap::new(), &DependencyInput::default(),
+        ).unwrap_or_else(|refusal| panic!("{body}: the admitted wide-integer fixture checks: {refusal}"));
+    }
 }
 
 #[trace("TC-885", "FR-003-AC-9")]
