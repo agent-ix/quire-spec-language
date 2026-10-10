@@ -45,7 +45,7 @@ fn a_function_compiled_from_source_is_called_by_name() {
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");
@@ -103,7 +103,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");

@@ -57,7 +57,7 @@ fn run(source: &str, entry: &str, argument: i64, work_units: u64) -> (String, us
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");

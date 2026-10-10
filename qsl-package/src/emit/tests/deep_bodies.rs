@@ -58,7 +58,7 @@ fn deep_declarations(source: &str) -> PackageDeclarations {
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         forms,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the deep source assembles")
@@ -248,7 +248,7 @@ fn and_chain(levels: usize) -> Option<PackageDeclarations> {
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         forms,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .ok()

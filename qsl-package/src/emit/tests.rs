@@ -1761,7 +1761,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");
@@ -2249,7 +2249,7 @@ fn spine_compile_package() -> CheckedPackage {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, unit, qsl_semantics::model::intake::SelectedModels::default(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -2571,7 +2571,7 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect_err("no package is admitted for M");
@@ -3361,7 +3361,7 @@ fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, unit, qsl_semantics::model::intake::SelectedModels::default(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");

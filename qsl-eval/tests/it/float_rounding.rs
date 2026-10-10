@@ -53,7 +53,7 @@ fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler admits the floating type");
@@ -147,7 +147,7 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler admits both types");

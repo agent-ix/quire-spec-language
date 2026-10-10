@@ -659,7 +659,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         vec![AdmittedImport {
             identity: lib("test/geometry"),
             view,

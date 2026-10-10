@@ -51,7 +51,7 @@ fn check(declarations: &str) -> CheckedGraph {
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the unit assembles")
