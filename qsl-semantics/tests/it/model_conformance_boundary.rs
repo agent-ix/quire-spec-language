@@ -787,3 +787,55 @@ fn structural_target_eligibility_uses_the_declaring_owner_and_member_kind() {
         }
     }
 }
+
+
+/// FR150 permits subsetting and redefinition together: only redefinition
+/// replaces the target. Equal input keys from different rules are distinct
+/// facts; TC195's duplicate-path mutation repeats the same inherit rule.
+#[trace("FR-082-AC-2", "FR-082-AC-3", "QSpec-TC-196", "QSpec-TC-213")]
+#[test]
+fn one_actual_member_can_subset_and_redefine_the_same_parent() {
+    use qsl_semantics::model::accounting::{LimitKind, ModelNormalizationLimits};
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::model::key::{DeclarationKey, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET};
+    for reverse in [false, true] {
+        let bytes = document(|_| {
+            let mut child = field("B", "xb", "A", 1, Some(1), Some("A/x"));
+            child["subsets"] = json!([identity("A/x")]);
+            let mut types = vec![
+                object("A", None, vec![field("A", "x", "A", 1, Some(1), None)], vec![]),
+                object("B", Some("A"), vec![child], vec![]),
+            ];
+            if reverse { types.reverse(); }
+            types
+        });
+        let (unit, packages) = crate::model_operations::config_unit_with_body(&bytes,
+            "function noop using v(): Boolean pure { true }");
+        let built = crate::model_operations::parse_and_build(&unit);
+        let selected = admit_unit(&built.selections().models, &packages,
+            ModelNormalizationLimits::UNLIMITED).expect("different rules retain equal inputs without a duplicate-path refusal");
+        let key = |path| DeclarationKey { package: PACKAGE.to_owned(), node: identity(path) };
+        let view = &selected[0].view;
+        let owner = view.type_identities()[&key("B")];
+        let child = view.declarations().iter().find(|entry|
+            entry.preimage.original == key("B/xb")
+                && entry.preimage.owner_effective_type == Some(owner)).expect("actual child effective entry");
+        assert!(child.visible);
+        assert_eq!(child.preimage.derivation.len(), 3);
+        assert_eq!(child.preimage.derivation[0].rule, RULE_QUALIFY);
+        for rule in [RULE_REDEFINE, RULE_SUBSET] {
+            let facts: Vec<_> = child.preimage.derivation.iter().filter(|fact| fact.rule == rule).collect();
+            assert_eq!(facts.len(), 1);
+            assert_eq!(facts[0].inputs.iter().cloned().collect::<Vec<_>>(), vec![key("B/xb"), key("A/x")]);
+        }
+        let parent = view.declarations().iter().find(|entry|
+            entry.preimage.original == key("A/x")
+                && entry.preimage.owner_effective_type == Some(owner)).expect("retained replaced parent entry");
+        assert!(!parent.visible);
+        assert_eq!(parent.preimage.derivation.iter().filter(|fact| fact.rule == RULE_REDEFINE).count(), 1);
+        assert!(!parent.preimage.derivation.iter().any(|fact| fact.rule == RULE_SUBSET));
+        assert_eq!(selected.consumed(LimitKind::DeclarationRecords), 4);
+        assert_eq!(selected.consumed(LimitKind::EffectiveDeclarations), 5);
+        assert_eq!(selected.consumed(LimitKind::DerivationFacts), 9);
+    }
+}
