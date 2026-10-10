@@ -6,10 +6,9 @@ pub fn shared_binder_protocols() -> String {
         attempt_flow("First", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
     let second =
         attempt_flow("Second", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
-    let combined = format!("{first}\n{second}");
     // Both protocols are made only of fully checked parts, so
     // the whole package checks: neither refuses `Shadow`.
-    combined
+    format!("{first}\n{second}")
 }
 
 use semantics::model::accounting::ModelNormalizationLimits;
