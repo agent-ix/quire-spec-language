@@ -552,6 +552,21 @@ analysis sink is not a public ProductKey/certificate value row. The last
 equality is3=3/4*(1+3)+1/4*0.
 A certificate claiming maximum3 from deterministic policies alone fails.
 
+Observation-edge alias adverse vector: a closed-clock object has x initially0,
+f initiallyfalse and two one-shot operations, both requiring not f and setting
+f true without reset: early with x<=1, late with x>=2. There are no invariants,
+urgency or delay distributions; after f true neither operation is enabled,
+so no ordinary zero-delay cycle exists. For Reach/expected elapsed until
+x>=2, cap is3 and monitor/accumulator/deadline are actual None. Early at x1
+then UnitDelay to x2 reaches the exact running key (f=true,x2) with the
+quantity still unhit. Late at x2 reaches that **same** key through a goal
+observation edge. The late edge has terminal contribution0 for elapsed;
+the earlier pure-delay arrival has residual minimum1 (enter-idle positive
+delay, then Observe). A certificate fixing the shared public key to0 merely
+because its clock atom is true fails. No goal bit/local visit counter is
+added to ProductKey: edge-goal evaluation and distinct objective termination
+supply the checked meaning.
+
 Adverse inputs include missing/reordered/duplicate clock identities, reset
 of the deadline, wrong scale/cap, timed monitor local index, absent deadline
 for Deadline, an event-position formula wrapper for timed Deadline and

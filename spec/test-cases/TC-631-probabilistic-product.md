@@ -57,7 +57,9 @@ Fixtures: ADR-024 §7.1 and §7.2 models and claims; `Link` with `Deliver`; the 
    at threshold3 and the exact 3/4-delay,1/4-observe chain (value5),
    actual almost-sure observation progress and supremum +infinity. Reject
    a claimed maximum3 from deterministic policies and a delay-only
-   recurrent witness. Refuse every timed
+   recurrent witness. Compare the early/late one-shot operation vector:
+   equal running post-keys reached by pure delay and a goal observation
+   have different objective continuation; reject a public-key goal alias. Refuse every timed
    shape/clock/deadline negative; stop at the actual identity-byte/product
    budget and inspect the outcome.
 
@@ -94,3 +96,6 @@ Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
   observation almost surely and retains a valid infinite observation
   continuation; waiting components give supremum +infinity without
   an inadmissible attaining witness or an invented progress bound.
+  Early+delay and late share the same (f=true,x2) key; only late is a goal
+  edge, with terminal elapsed contribution0 versus the unhit residual
+  minimum1. Objective absorption supplies no fabricated key/default row.
