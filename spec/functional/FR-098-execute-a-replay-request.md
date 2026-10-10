@@ -100,6 +100,9 @@ through it, or a crate alias or glob import that reaches it.
   [FR-263](FR-263-replay-at-any-depth-under-the-request-limits.md)). An
   `s1.input_bytes` bound above `replay.input_bytes` refuses before the
   recompile.
+  Supplied admission/conversion ceilings SHALL instead use the paired
+  QSpec FR-323 typed `limits.supplied` carrier; they are not recompile
+  stage settings and SHALL NOT be passed through `stage_limits`.
 - The recompiled `package_id` SHALL equal the request's. No
   `CheckedPackage` is built from wire bytes.
 - The executor SHALL resolve the selection by name lookup in the recompiled
@@ -181,9 +184,10 @@ through it, or a crate alias or glob import that reaches it.
   `work_units`. These are `quire.value.accounting/v1` accounting limits
   (ADR-014 B-2), not stage limits, so FR-255 has no setting for them. When
   a count exceeds its limit, the replay SHALL settle, with no call, as
-  FR-277 settles `execute` reaching an accounting limit: the evaluation
-  outcome `Incomplete`, naming the counter, its configured value and the
-  count reached. FR-098 settles a call that completes no value that way:
+  FR-277 settles a pre-call accounting limit: a phase-marked
+  `Incomplete`, naming conversion, the parameter, counter, configured value,
+  successful count and denied next amount, without claiming an evaluated
+  call. FR-098 settles this no-call outcome as
   `inconclusive` with cause `NoValue`. By deliberate choice these checks
   charge nothing to the call's meter. The call then consumes the same
   charges it did in the proving run, so replay parity compares like with
@@ -192,6 +196,84 @@ through it, or a crate alias or glob import that reaches it.
   [FR-263](FR-263-replay-at-any-depth-under-the-request-limits.md) states.
   The request's measured size counts each `Input` value tree at the byte
   length of its escaped FR-070 value text.
+- Conversion SHALL retain the preceding per-argument semantic node and
+  occurrence rules unchanged (QSL-681 settlement option 1). It SHALL bound
+  helper work separately by public `supplied.conversion_work_units`, with one
+  cumulative caller-owned budget for the entire argument list. QSL helper
+  events SHALL follow the deterministic event table below. Scheduling a
+  counted step SHALL be included only for QSL witness bookkeeping, rather
+  than counted twice. Each required QSV child-scheduling event SHALL remain
+  a separate unit under FR-109; bookkeeping SHALL neither absorb nor
+  duplicate that delegated event.
+  Each helper step SHALL be admitted
+  before its work, with iterative processing and fallible storage reservation
+  before mutation, under FR-277's zero-ceiling/overflow/denied-step rules.
+  Helper units SHALL NOT become converted-node units or evaluation charges.
+- A converted node SHALL contribute exactly one unit to its argument's
+  node counter C. Declaration descriptors, type-expression nodes, cache
+  lookups, comparison steps and scratch entries SHALL NOT be converted
+  nodes. Semantic occurrence counts SHALL use the existing `occ` rule,
+  independently of whether membership trusts an admitted nested value.
+  Counts SHALL be checked before the operation that would exceed them,
+  preserving the successful per-argument prefix and denied next amount.
+- Membership and iterative type comparison SHALL use QSV's reviewed FR-109
+  value-visit/type-comparison/child-schedule/descriptor-query event sequence
+  and the initiating phase's cumulative budget: conversion when invoked
+  from conversion, admission when invoked by direct/final admission.
+  One actual event SHALL NOT debit both phases. The original caller
+  Cancel SHALL reach conversion, nested helpers, membership and the eventual
+  call. A denial SHALL preserve its owning phase and FR-277 typed payload,
+  with no later argument converted or evaluated. Union-specific event
+  integration SHALL await the reviewed QSV union declaration/member/type
+  comparison baseline; no candidate event total defines this contract.
+
+Each delegated type-comparison unit SHALL be exactly ONE compared PAIR OF
+type-chain LINKS, including the initial expected/actual pair, with no extra
+expected-type-entry charge. Neither each individual link nor an entire
+chain replaces that unit. Each supplied-family path requires FR-277 AC-6's
+reviewed helper capability and typed integration before implementation
+qualification. Decimal positive replay remains mandatory once that owning
+capability is enabled; missing IR-718/IR-719 proof is a qualification
+blocker, not a newly invented runtime refusal or unsupported result.
+
+### Conversion helper event units
+
+Conversion SHALL process arguments in declared parameter order, nodes in
+depth-first declared field/payload/element order, and materialization in
+postorder. At each scheduled step it SHALL poll original Cancel, check the
+owning budget, reserve required storage fallibly, and only then mutate
+state. A denied or cancelled step SHALL perform none of its work. Successful
+event spend SHALL be recorded only for work actually performed; a failed
+reservation retains its original measured storage/capacity cause and the
+successful prefix, never a fictitious limit.
+
+| Event | Exactly one unit before | Boundary/order |
+| --- | --- | --- |
+| Witness preflight | Reading one witness node's discriminant and validating its local shape/arity | Before resolving its declared type or visiting children; first invalid node stops all later work |
+| Descriptor inspection | One logical descriptor query for a declaration header, member or field/position under QSV FR-109 | Header before selected member/positions; declaration order; preserve logical count on cache hits and count a delegated query only once |
+| Runtime type resolution | The actual logical compared-pair-of-type-chain-links or descriptor-query steps prescribed by QSV FR-109 for that resolution, including the initial expected/actual pair | No extra entry or facade-invocation debit for the same delegated step; independently bounded type/link/registry inputs constrain unhooked internal work under FR-277 |
+| Witness materialization | Constructing one converted kernel node after its children | Postorder; no semantic evaluation charge; the same completed node counts once in the separate per-argument C counter |
+
+Retrieving a descriptor is a descriptor event, not a second runtime-type
+resolution event for that same read. Resolving a type expression reached
+from it is a separate actual step. Membership checks and structural type
+comparison SHALL retain the initiating phase's one budget owner; conversion
+SHALL not recount the same operation as resolution. Nonconstant subordinate walks (including
+leaf text/numeric validation, equality/deduplication and reference walks)
+SHALL use the logical helper events and independently bounded helper inputs
+of FR-277, with one budget owner. They SHALL NOT claim that one outer
+event bounds an unbounded internal walk. Their input/event contract SHALL be agreed with the shared
+helper owner before this contract is frozen; QSL prescribes no missing
+union descriptor signature. Semantic conversion-node counting SHALL remain
+one per converted node, independently of all such helper events.
+
+"With no charge" in this requirement's pre-call refusal rules means no
+semantic evaluation charge. Actual successful helper work before invalid
+input is discovered SHALL remain reported in its owner budget; it SHALL
+NOT produce a semantic ChargePoint or override the original refusal cause.
+
+### Refusal and settlement
+
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
   partial result: request decode refusals (FR-071), a limit above the
   reader limit, a source reference that is not one source unit, a
@@ -225,9 +307,10 @@ through it, or a crate alias or glob import that reaches it.
 | FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the replay refuses `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`), naming `test/units`, the entry's `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `ReplayRefusal::DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |
 | FR-098-AC-7 | A request whose `dependencies` entries are swapped, or repeat one identity, refuses `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value` at `/package/dependencies`) before any recompile; one carrying an extra entry no import reaches refuses `DependencySelections` after the recompile; two entries whose sources share one authority and identity refuse `ReplayRefusal::DependencyInput` (`invalid_package`/`conflicting-definition`); one lacking an entry refuses `ReplayRefusal::Recompile` carrying `missing_import`/`missing-selection` at the import; an entry naming two sources, or a definition document, refuses as a source reference that is not one source unit. None yields a verdict. | Test (TC-444) |
 | FR-098-AC-8 | Over `record Inner { a: Int[0, 9]; b?: Boolean; }`, `union Shape { Circle(Int[0, 9]), Empty }` and `record Outer { i: Inner; o: Option<Int[0, 9]>; s: Sequence<Int[0, 9]>[0, 3]; u: Shape; }`, a predicate `p(x: Outer): Boolean` replays its counterexample from an `Input` assignment and from a `Witness` entry, and each settles as AC-2 states, with the replayed call evaluating the nested values. Each of these refuses `WrongValueKind` naming position 0, before the call and with no charge: a sequence given for `o`; an `Inner` whose `name` is `Outer`'s node id; a record missing `a`, and one with an undeclared field; an absent `a`; union member `Square`; `Circle` with no component; a leaf `12` for `a`; and four elements for `s`. Over `g(v): Boolean`, whose `v` is a `Set` of a `Decimal` type with scales 0 to 2, a set holding `1.0` and `1.00` (distinct value texts, numerically equal) refuses `WrongValueKind` the same way. | Test (TC-906) |
-| FR-098-AC-9 | For the AC-8 counterexample, a request whose accounting limit `value_occurrences` is one below the argument's occurrence count makes no call and settles `inconclusive` with cause `NoValue`, carrying the outcome `Incomplete` that names `value_occurrences`, its configured value and the count reached. A request whose `work_units` is below the argument's node count settles the same way, naming `work_units`. Each replays with the limit raised to fit, and its charges equal those of a call with no pre-call check. | Test (TC-906) |
-| FR-098-AC-10 | One predicate per leaf family, each taking one parameter of that family (an enum `Color`, `Text[0, 8]`, `Rational`, a `Decimal` with scales `[0, 2]`, `Float64`, a quantity in a declared unit `m`, and a `Reference<T>`), replays its counterexample from a `Witness` entry in FR-070's witness value text and settles as AC-2 states; the reference predicate tests the reference for equality with itself and does not dereference it. Each of these refuses `WrongValueKind` naming position 0, before the call: an enum value naming another enum's declaration; a nine-scalar text; a decimal with scale 3; a `float32` for the `Float64`; a quantity in another unit; and a reference whose `object_type` is another type's. A predicate that dereferences its reference settles `inconclusive` with cause `NoValue`. | Test (TC-906) |
+| FR-098-AC-9 | For the AC-8 counterexample and TC-906's unchanged full Tree, with other bounds permitting progress, occurrence-count-minus-one and converted-node-count C-1 make no call and settle `inconclusive`/`NoValue` with conversion-phase `Incomplete` preserving the configured `value_occurrences` or `work_units` and denied count. Counts at the bound admit the argument; successful replay also requires sufficient evaluation allowance. C remains converted nodes per argument, not helper visits, and contributes zero to the evaluation Meter. Direct/replay evaluation charge sequences are equal. | Test |
+| FR-098-AC-10 | One predicate per leaf family, each taking one parameter of that family (an enum `Color`, `Text[0, 8]`, `Rational`, a `Decimal` with scales `[0, 2]`, `Float64`, a quantity in a declared unit `m`, and a `Reference<T>`), replays its counterexample from a `Witness` entry in FR-070's witness value text and settles as AC-2 states; the reference predicate tests the reference for equality with itself and does not dereference it. Positive replay requires FR-277 AC-6's reviewed capability and typed integration for the invoked helpers: Decimal remains a mandatory positive family once IR-718's reviewed capability is enabled through IR-719 and its typed mapping is approved. Missing proof blocks implementation qualification, not a runtime unsupported/invalid/limit/storage outcome. Each of these refuses `WrongValueKind` naming position 0, before the call: an enum value naming another enum's declaration; a nine-scalar text; a decimal with scale 3; a `float32` for the `Float64`; a quantity in another unit; and a reference whose `object_type` is another type's. A predicate that dereferences its reference settles `inconclusive` with cause `NoValue`. | Test |
 | FR-098-AC-11 | A proved package whose one source declares `function wide using v(x: Int[0, 18446744073709551615]): Boolean pure { x <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`, and an `Input` assignment of `x` = 18446744073709551615, carried on the replay wire as the decimal string `"18446744073709551615"`, settles `reproduced-without-witness` with the call's result `false`. The same holds for `x: Int[0, 9223372036854775808]` with body `x <= 9223372036854775807` and `x` = `"9223372036854775808"`, for `x: Int[0, 18446744073709551616]` with body `x <= 18446744073709551615` and `x` = `"18446744073709551616"`, and for `x: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` with body `x > -170141183460469231731687303715884105728` and `x` = `"-170141183460469231731687303715884105728"`. As the QSL-source stand-in for QSL-642's CG wide-range model (the u64 range CG admits under IR-624 AC35), a unit declaring `record Meter { reading: Int[0, 18446744073709551615]; }` and `function meter_over using v(m: Meter): Boolean pure { m.reading <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`. | Test (TC-913) |
+| FR-098-AC-12 | TC-906 counts the specified conversion helper events as H: H-1 denies its actual next event unspent, H permits conversion when other bounds fit. Across multiple arguments H is cumulative and independent of each argument's node C. Original Cancel, invalid input and storage/capacity failures retain their FR-277 typed phase causes and zero evaluation consumption. | Test |
 
 ## Dependencies
 
@@ -250,6 +333,11 @@ through it, or a crate alias or glob import that reaches it.
 
 ## Status
 
+QSL-681 additions and strengthened AC-9 are proposed, not implemented or
+qualified. Their independent review runs on this draft alongside the
+coordinated FR-255/ADR-014/QSL-675/QSpec projection amendments. Historical
+implementation statements below do not cover the new phase contract.
+
 Implemented. TC-444 passes locally for AC-1 to AC-5. TC-444
 also covers a predicate whose body calls another declared
 function (the QSL-22 Layer 3 exemplar's shape), confirming the S4 emitter
@@ -263,7 +351,10 @@ AC-8 to AC-10 (composite and leaf-family arguments, QSL-640) are implemented
 (`qsl_replay::replay` takes `ReplayLimits` for a raised `replay.input_bytes`): TC-906 passes
 locally for records, options, sequences, sets, enums, text, rationals,
 decimals, floats and references, the occurrence and node limits, and each
-refusal. A replay runs its call over an object environment with unresolved
+refusal. This historical status does not qualify QSL-681's bounded helper
+or typed phase additions; Decimal capability and mapping qualification
+remain blocked by FR-277 AC-6 until IR-718/IR-719 enable them. A replay runs
+its call over an object environment with unresolved
 references (`ObjectEnvironment::with_unresolved_references`): a reference
 argument is admitted by its identity, and a read through one completes no
 value (`unknown_required_feature`/`unsupported-feature`, construct
@@ -272,4 +363,3 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
 - the union cases of AC-8 and AC-9: S6a admits no union argument until QSL-503;
 - a quantity-typed parameter in source (AC-10): complete-V1 source can name no
   unit as a type (STD-113), so the quantity conversion is tested directly.
-

@@ -22,7 +22,14 @@ Scope: FR-322-AC-1, FR-322-AC-2, FR-322-AC-4.
    instrumented.
 3. Inject a scrutinee whose `VariantId` matches no arm.
 4. Evaluate a recursive sum over a `Tree` 10,000 levels deep under default
-   limits, then with `work_units` one below its total.
+   limits. Use the unchanged TC-830 step 4 Tree and QSL-503's original
+   recursive sum, with exactly the same source/value through
+   direct checked-call and public replay APIs. Independently enumerate the
+   semantic charge sequence, retaining actual charge points and amounts.
+   Set all pre-call occurrence, converted-node and helper bounds to permit
+   evaluator entry; then run evaluation `work_units` 39,996 and 39,997.
+   Establish the actual semantic total from the trace rather than assuming
+   the source-predicted 39,997 is an executed result.
 5. Run QSpec TC-265's cases (tag `QSpec-TC-265`).
 
 Tag each test `#[trace("TC-831", "<AC id>")]`.
@@ -34,10 +41,18 @@ Tag each test `#[trace("TC-831", "<AC id>")]`.
 - Step 2: `Undefined::SumOutOfDomain` both times; no arm body is evaluated;
   `f` is never called.
 - Step 3: `Err(InternalFault)` naming S6a; no refusal.
-- Step 4: completes; then `incomplete` naming `work_units` and its configured
-  value; no host stack overflow.
+- Step 4: default completion with the original fixture's independently
+  derived sum and no host stack overflow.
+  At 39,996 the evaluator is entered and denies the final actual arithmetic
+  charge unspent; at 39,997 it completes. Direct/replay semantic charge
+  sequences are equal, including the successful prefix and denied amount.
+  The incomplete names evaluation `work_units`, its configured ceiling,
+  successful spend, denied amount and actual charge point. Admission or
+  conversion stopping first fails this evaluator-boundary control.
+  Selection/binding/helper work adds no semantic charge. No fabricated
+  FunctionCall may stand for a pre-call event.
 - Step 5: TC-265's outcomes.
 
 ## Status
 
-Planned.
+Planned. QSL-681 phase controls are proposed, not executed.
