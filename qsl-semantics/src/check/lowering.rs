@@ -1158,6 +1158,7 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Enum(_)
             | ValueType::Reference(_)
             | ValueType::Population(_) => {}
+            ValueType::Uuid | ValueType::Timestamp => {}
         }
         Ok(None)
     }
@@ -1218,6 +1219,7 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Enum(_)
                     | ValueType::Reference(_)
                     | ValueType::Population(_) => {}
+                    ValueType::Uuid | ValueType::Timestamp => {}
                 }
             }
             if direct {
@@ -1848,6 +1850,10 @@ impl<'a> Lowering<'a> {
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
+            ValueType::Uuid | ValueType::Timestamp => Err(refuse(
+                location,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+            )),
         }?;
         Ok(TypeStep::Built(key))
     }
@@ -3801,6 +3807,9 @@ impl<'a> Lowering<'a> {
             | Value::Collection(_)
             | Value::Reference(_)
             | Value::Population(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
+            Value::Uuid(_) | Value::Timestamp(_) => {
+                return Err(fault(node.location(), KeyFault::UnbuiltLiteral))
+            }
         };
         let semantic_type = self.type_node(node.value_type(), node.location())?;
         self.value_node(
@@ -3892,7 +3901,7 @@ impl<'a> Lowering<'a> {
             }
             // FR-153: a population is never an equality operand; the
             // checker refuses one before lowering.
-            ValueType::Population(_) => {
+            ValueType::Population(_) | ValueType::Uuid | ValueType::Timestamp => {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),

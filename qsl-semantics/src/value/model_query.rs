@@ -78,11 +78,11 @@ use crate::model::population::{
     ReferenceKey,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, InternalFault};
 
 use quire_exact::{
     from_admitted, CollectionType, Incomplete, Meter, ObjectId, ObjectReference, OptionValue,
-    PopulationId, Refusal, Value, ValueType,
+    PopulationId, Value, ValueType,
 };
 use quire_semantic_value::stop::Stop;
 
@@ -92,6 +92,8 @@ use quire_semantic_value::stop::Stop;
 /// AC-12); this layer names no `check`-core outcome type (ADR-011 §6.2).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelQueryHalt {
+    /// A QSL-owned S6a invariant break, distinct from ordinary query results.
+    Fault(InternalFault),
     /// An ordinary evaluator stop.
     Stop(Stop),
     /// `model::population` refused the query. Boxed: `ModelRefusal` is
@@ -113,10 +115,9 @@ impl From<Incomplete> for ModelQueryHalt {
     }
 }
 
-/// A reference's identity triple could not be bridged; unreachable for an
-/// admitted program (see the module docs).
-fn invariant() -> ModelQueryHalt {
-    ModelQueryHalt::Stop(Stop::Refused(Refusal::CheckedInvariant))
+/// The explicit invariant of the detecting query producer (FR-090).
+fn invariant(identifier: &'static str) -> ModelQueryHalt {
+    ModelQueryHalt::Fault(InternalFault::new("S6a", identifier))
 }
 
 /// The FR-143 conversion of a model [`ReferenceKey`] into its kernel
@@ -124,10 +125,11 @@ fn invariant() -> ModelQueryHalt {
 /// [`quire_exact::UniverseId`] (ADR-013 §8 OQ-C ruling), the type is the same
 /// [`EffectiveId`], and the object identity is minted as an
 /// [`quire_exact::ObjectId`] from `key.object`'s own authored bytes. Fails
-/// only when the object identity is empty, which an admitted
-/// [`PopulationBinding`] never produces (a checked invariant).
+/// only when the object identity is empty. Population binding admission
+/// does not establish nonempty member keys, so public evaluation can reach it.
 fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQueryHalt> {
-    let object = ObjectId::new(key.object.clone()).map_err(|_| invariant())?;
+    let object = ObjectId::new(key.object.clone())
+        .map_err(|_| invariant("model-query-object-identity-empty"))?;
     Ok(ObjectReference::new(
         key.universe,
         key.type_identity,
@@ -186,7 +188,7 @@ pub fn evaluate_all_instances(
     meter: &mut Meter,
 ) -> Result<Value, ModelQueryHalt> {
     let ValueType::Reference(target_key) = collection_type.element() else {
-        return Err(invariant());
+        return Err(invariant("model-query-reference-element-expected"));
     };
     let target = resolve_target(binding, *target_key)?;
     match all_instances(binding, &target, meter) {
@@ -218,7 +220,7 @@ pub fn evaluate_lookup(
     meter: &mut Meter,
 ) -> Result<Value, ModelQueryHalt> {
     let Value::Reference(reference) = reference else {
-        return Err(invariant());
+        return Err(invariant("model-query-reference-value-expected"));
     };
     let target = resolve_target(binding, target)?;
     let static_type = resolve_target(binding, static_type)?;
@@ -261,6 +263,6 @@ pub fn evaluate_lookup(
 fn option_payload(result_type: &ValueType) -> Result<ValueType, ModelQueryHalt> {
     match result_type {
         ValueType::Option(payload) => Ok((**payload).clone()),
-        _ => Err(invariant()),
+        _ => Err(invariant("model-query-option-result-expected")),
     }
 }

@@ -1398,7 +1398,9 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Text(_)
             | quire_exact::ValueType::Enum(_)
             | quire_exact::ValueType::Composite(_)
-            | quire_exact::ValueType::Population(_) => return false,
+            | quire_exact::ValueType::Population(_)
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp => return false,
         }
     }
 }

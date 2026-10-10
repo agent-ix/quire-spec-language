@@ -1216,7 +1216,7 @@ fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
                     (
                         "id",
                         FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
-                            Outcome::Refused(Refusal::CheckedInvariant)
+                            Outcome::Refused(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted })
                         })),
                     ),
                 ],
@@ -1224,7 +1224,7 @@ fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
             )
             .unwrap();
         // `id` is declared first, so its refusal wins and `inner` never runs.
-        assert!(matches!(outer, Outcome::Refused(Refusal::CheckedInvariant)));
+        assert!(matches!(outer, Outcome::Refused(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted })));
         assert!(!inner_ran.get());
         let only_inner = env
             .evaluate_record(

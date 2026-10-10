@@ -476,7 +476,8 @@ impl TypeLeafWire {
             ValueType::Population(maximum) => Self::Population {
                 maximum: maximum.map(|maximum| maximum.to_string()),
             },
-            ValueType::Option(_) | ValueType::Collection(_) => return None,
+            ValueType::Option(_) | ValueType::Collection(_)
+            | ValueType::Uuid | ValueType::Timestamp => return None,
         })
     }
 
@@ -624,7 +625,9 @@ impl ScalarWire {
             Value::Option(_)
             | Value::Composite(_)
             | Value::Collection(_)
-            | Value::Population(_) => return None,
+            | Value::Population(_)
+            | Value::Uuid(_)
+            | Value::Timestamp(_) => return None,
         })
     }
 
@@ -812,10 +815,10 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                     }
                     // A state clause cannot name a population (ADR-016 FE-4),
                     // so no claim's domain holds one.
-                    Value::Population(_) => {
+                    Value::Population(_) | Value::Uuid(_) | Value::Timestamp(_) => {
                         self.unsupported.set(true);
                         return Err(quire_canonical::Error::Serialize(
-                            "a population has no deciding-element encoding".to_owned(),
+                            "this value kind has no deciding-element encoding".to_owned(),
                         ));
                     }
                     scalar => match ScalarWire::of(scalar) {
@@ -828,6 +831,12 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                     },
                 },
                 Emit::Type(value_type) => match value_type {
+                    ValueType::Uuid | ValueType::Timestamp => {
+                        self.unsupported.set(true);
+                        return Err(quire_canonical::Error::Serialize(
+                            "the selected type has no deciding-element encoding".to_owned(),
+                        ));
+                    }
                     ValueType::Option(payload) => Self::open_kind(
                         writer,
                         "option",

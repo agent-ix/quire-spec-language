@@ -1607,6 +1607,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
 /// becomes at the S6a seam, never an `Ok` `Refused` outcome -- into
 /// `ReplayRefusal::Fault`, never a settled `Category::Refusal` result.
 #[test]
+#[trace("TC-918", "FR-096-AC-19")]
 fn a_call_fault_settles_as_a_replay_fault_not_a_refusal() {
     let fault = InternalFault::new("S6a", "checked-program-invariant");
     let refusal = call_failure_to_replay_refusal(CallFailure::Fault(fault));
@@ -1616,6 +1617,31 @@ fn a_call_fault_settles_as_a_replay_fault_not_a_refusal() {
             assert_eq!(fault.invariant(), "checked-program-invariant");
         }
         other => panic!("expected ReplayRefusal::Fault, got {other:?}"),
+    }
+}
+
+#[test]
+#[trace("TC-918", "FR-096-AC-19")]
+fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
+    for cause in qsl_semantics::check::family::fixtures::received_kernel_causes() {
+        let scalar = crate::scalar::evaluated(quire_exact::Outcome::Refused(
+            quire_exact::Refusal::CheckedInvariant { cause },
+        ));
+        let Err(scalar) = scalar else { panic!("scalar invariant settled an outcome"); };
+        assert_eq!(scalar.stage(), "replay");
+        assert_eq!(scalar.invariant(), "scalar-evaluation-keeps-its-checked-invariants");
+        assert_eq!(scalar.kernel_cause(), Some(cause));
+        let fault = InternalFault::from_kernel("S6a", "checked-program-invariant", cause);
+        for refusal in [ReplayRefusal::Fault(scalar),
+            call_failure_to_replay_refusal(CallFailure::Fault(fault))] {
+            let ReplayRefusal::Fault(carried) = &refusal else { panic!("fault became a refusal"); };
+            assert_eq!(carried.kernel_cause(), Some(cause));
+            assert_eq!(refusal.code(), Code::RuntimeInvariant);
+            assert_eq!(refusal.code().category(), Category::InternalFailure);
+            let terminal = TerminalValue::from_replay_refusal(&refusal);
+            assert!(matches!(terminal, TerminalValue::Failed));
+            assert_eq!(terminal.category(), Category::InternalFailure);
+        }
     }
 }
 

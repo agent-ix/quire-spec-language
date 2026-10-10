@@ -2246,7 +2246,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
 
     let checked_invariant_evaluation = qsl_eval::value::Evaluation {
         outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Refused(
-            quire_exact::Refusal::CheckedInvariant,
+            quire_exact::Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted },
         )),
         location: None,
         losses: Vec::new(),

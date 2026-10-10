@@ -831,13 +831,28 @@ pub const ALLOCATION_FAILED: CatalogCode =
 pub struct InternalFault {
     stage: &'static str,
     invariant: &'static str,
+    kernel_cause: Option<quire_exact::CheckedInvariantCause>,
 }
 
 impl InternalFault {
     /// `stage` and `invariant` are stable identifiers the raising site
     /// names, never derived from a display string or message (ADR-013 R-05).
     pub const fn new(stage: &'static str, invariant: &'static str) -> Self {
-        Self { stage, invariant }
+        Self { stage, invariant, kernel_cause: None }
+    }
+
+    /// A received kernel invariant, retaining its original typed provenance.
+    pub const fn from_kernel(
+        stage: &'static str,
+        invariant: &'static str,
+        cause: quire_exact::CheckedInvariantCause,
+    ) -> Self {
+        Self { stage, invariant, kernel_cause: Some(cause) }
+    }
+
+    /// The received kernel cause; QSL-owned invariant faults have no kernel cause.
+    pub const fn kernel_cause(&self) -> Option<quire_exact::CheckedInvariantCause> {
+        self.kernel_cause
     }
 
     /// The stage, reader or module that raised this fault.
@@ -1078,7 +1093,7 @@ pub fn kernel_refusal_record(
             ("expected", target.as_str().to_owned()),
             ("actual", source.as_str().to_owned()),
         ]),
-        Refusal::CheckedInvariant => return None,
+        Refusal::CheckedInvariant { .. } => return None,
     };
     Some(RefusalRecord::new(code, fields, locus))
 }

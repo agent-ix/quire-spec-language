@@ -281,7 +281,9 @@ pub fn classify_domains(
             | ValueType::Text(_)
             | ValueType::Enum(_)
             | ValueType::Reference(_)
-            | ValueType::Population(Some(_)) => {}
+            | ValueType::Population(Some(_))
+            | ValueType::Uuid
+            | ValueType::Timestamp => {}
         }
     }
     Ok(domains)
