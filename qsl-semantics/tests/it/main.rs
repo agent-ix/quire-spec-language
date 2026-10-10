@@ -23,6 +23,7 @@ mod model_intake;
 #[cfg(feature = "test-support")]
 mod model_normalization;
 mod model_operations;
+mod model_conformance_boundary;
 #[cfg(feature = "test-support")]
 mod model_population;
 #[cfg(feature = "test-support")]
