@@ -13,7 +13,8 @@ relationships:
 Verify that `check_closure` accepts a safety proof's closure and rejects a
 missing initial state, a missing successor and a bad state.
 
-Scope: FR-338-AC-1 to FR-338-AC-3.
+Scope: FR-338-AC-1 to FR-338-AC-7. Canonical translation-state cases below
+are prospective qualification procedures; this artifact claims no execution.
 
 ## Test Procedure
 
@@ -26,6 +27,22 @@ Scope: FR-338-AC-1 to FR-338-AC-3.
    for `always holds(c.value <= 3)`.
 4. Check a certificate holding `t1` for `always holds(true)` over
    `test/tallies`.
+5. Derive each FR-338 canonical-vector context from its actual checked
+   formula/profile/activation/binding; compare the full UTF-8 JCS key
+   octets and the stated exact state-body octets. Construct equivalent
+   subsets and window debts in reverse insertion/materialization order.
+6. Supply every listed malformed/context negative. Keep two distinct
+   operand occurrences of one shared interval subformula, changing one
+   occurrence's debt only; change past memory and Büchi membership only.
+7. Read `eventually[0,1] p` over false/true and false/false letters and at
+   a terminal position under false-extension. Read it on each with a
+   prior activation still open when a new activation is created. Compare
+   verdicts with the one trace evaluator; under infinite-trace compare
+   the terminal stutter letter instead of bounded false-extension. At
+   origin compare `historically[0,1] holds(p)` for p true with
+   `historically[0,1] true`, distinguishing missing atomic history from constants.
+8. Admit u64::MAX interval bounds and b+1 saturation; reach the actual
+   automaton-state/identity-byte budget while encoding a reachable state.
 
 Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 
@@ -36,6 +53,16 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   state.
 - Step 3: `BadState` at value 3; accepted.
 - Step 4: `BadState` at `t1`.
+- Step 5: exact authored octets; reversed materialization yields equal
+  keys. Different counters, paths, past memory and acceptance membership
+  yield different full keys. No local graph index is an identity.
+- Step 6: malformed, unsorted, duplicate, wrong-context and unjustified
+  decided-state inputs refuse before certificate membership is used.
+- Step 7: accept then reject respectively; terminal semantics match the
+  evaluator and a new activation does not erase an older open debt.
+  The two historical origin cases are false and true respectively.
+- Step 8: exact mathematical strings, including b+1 above u64::MAX;
+  an explicit resource stop gives no truncated/default key.
 
 ## Status
 

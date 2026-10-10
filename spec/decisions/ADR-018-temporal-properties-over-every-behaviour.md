@@ -563,6 +563,34 @@ evaluation (RU-5), on 2026-10-01.
 | IV-6 | **Limit.** No syntactic cap on interval length applies beyond TR-3's `u64` bounds. EN-1's limits are FR-101's `Limits` plus `max_automaton_states`, an ADR-014 B-5 budget of QSL's own provider, like the rest of `ModelCheckLimits`, with a published default of 2^20 (1,048,576) automaton states, which a request raises like the other limits. `max_states` and `max_transitions` take FR-101's `Limits::default()` values, 10,000,000 and 100,000,000 (FR-126), with no second set, and every terminal record states the values used and whether one was reached. EN-1 counts distinct automaton states as the translation materializes them during product exploration, with checked arithmetic. Reaching the limit stops the run and settles V-7: `incomplete`, `Incomplete(LimitReached{limit, value, setting})` naming `max_automaton_states`, and the caller raises the limit or narrows the interval and reruns. |
 | IV-7 | **Position counting.** An interval operator counts positions, so a formula that has one is not stutter-invariant: inserting a step that repeats a state can change its truth. The state-space reduction record (References) specifies how reductions treat such a formula. A transfer of a claim through a refinement mapping is ADR-020 CO-3 and CO-4: it holds only for formulas with no interval or previous operator (amended by ADR-020). |
 
+### 12. Canonical translation state identity
+
+PC-3, SM-6, LA-2 and IV-3 are amended by the following explicit new
+representation choice. The owning translation SHALL construct
+[FR-338](../functional/FR-338-check-an-en-1-closure-certificate.md)'s
+closed structural state algebra and SHALL expose its complete RFC 8785
+UTF-8 `AutomatonStateKey` octets. The form records bounded origin/each
+activation, live signed occurrence obligations, canonical safety subsets,
+Büchi membership, past memory and IV-3 counters/offset sets. Checked
+operand paths keep repeated occurrences distinct; no enumeration index
+or digest is the automaton state identity.
+
+EN-1's automaton state index remains a graph-local storage number. It
+converts to the canonical structural key when producing PC-3/PC-4
+certificates; the qualified checker recomputes that same structure through
+LA-2. The key's encoding discriminator is not a new digest domain. Import
+requires canonical octets and context-resolved admissible facts, rather
+than accepting arbitrary bytes supplied by the provider.
+
+IV-3's earliest-deadline/furthest-extent subsumption and general offset
+sets are represented by FR-338's closed window alternatives. Exact
+arithmetic represents b+1 saturation even for u64::MAX b. Canonicalization
+sorts only the current state's fact sets and never constructs the whole
+automaton, searches shortest words or permutes graph vertices. IV-5's
+reachable construction and IV-6's explicit materialization limits remain
+the cost and stopping model. SM-7 parity remains required; authoring this
+representation does not qualify an implementation.
+
 ## Consequences
 
 - A temporal claim over a finite model subject gets a `proved` or `refuted`
