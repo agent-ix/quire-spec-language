@@ -93,7 +93,7 @@ cargo-deny-bans:
 # `cargo test` (no `--locked`) under `use-local`.
 # =============================================================================
 
-SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)
+SIBLINGS ?= $(shell cd "$$(git rev-parse --path-format=absolute --git-common-dir)/../.." && pwd -P)
 QSPEC_DIR ?= $(SIBLINGS)/quire-specification
 # Cargo runs tests from each package directory, so relative caller paths must
 # be resolved before exporting them. Keep invalid inputs for the refusal below.
