@@ -4691,8 +4691,8 @@ mod tests {
             "identity": "ix://acme/orders/VersionNumber",
             "scalar": "integer",
             "constraints": [
-                {"keyword": "min", "operands": {"value": 0}},
-                {"keyword": "max", "operands": {"value": 1000}},
+                {"keyword": "min", "operands": {"value": "0"}},
+                {"keyword": "max", "operands": {"value": "1000"}},
             ],
         });
         if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
@@ -4731,8 +4731,8 @@ mod tests {
     }
 
     /// FR-056-AC-16 (TC-911 step 1): a bound beyond +/-2^53 arrives as a
-    /// canonical decimal string and reads exactly, up to the i128 limits; a
-    /// JSON integer bound still reads.
+    /// canonical decimal string and reads exactly, up to the i128 limits;
+    /// small bounds use the same exact-string wire form.
     #[trace("TC-911", "FR-056-AC-16")]
     #[test]
     fn reads_decimal_string_bounds_up_to_i128() {
@@ -4749,10 +4749,10 @@ mod tests {
                 serde_json::json!("170141183460469231731687303715884105727"),
                 i128::MAX,
             ),
-            (serde_json::json!(1000), 1000),
+            (serde_json::json!("1000"), 1000),
         ] {
             let record = read_version_number(serde_json::json!({"constraints": [
-                {"keyword": "min", "operands": {"value": 0}},
+                {"keyword": "min", "operands": {"value": "0"}},
                 {"keyword": "max", "operands": {"value": upper}},
             ]}))
             .unwrap_or_else(|refusal| panic!("{upper}: {refusal:?}"));
@@ -4760,7 +4760,7 @@ mod tests {
         }
         let record = read_version_number(serde_json::json!({"constraints": [
             {"keyword": "min", "operands": {"value": "-170141183460469231731687303715884105728"}},
-            {"keyword": "max", "operands": {"value": 0}},
+            {"keyword": "max", "operands": {"value": "0"}},
         ]}))
         .expect("i128::MIN reads");
         assert_eq!(record.lower, i128::MIN);
@@ -4820,17 +4820,17 @@ mod tests {
             ),
             (
                 serde_json::json!({"constraints": [
-                    {"keyword": "min", "operands": {"value": 1000}},
-                    {"keyword": "max", "operands": {"value": 0}},
+                    {"keyword": "min", "operands": {"value": "1000"}},
+                    {"keyword": "max", "operands": {"value": "0"}},
                 ]}),
                 Code::InvalidModelBinding,
                 "$.types[0]: constraints: lower bound 1000 is greater than upper bound 0",
             ),
             (
                 serde_json::json!({"constraints": [
-                    {"keyword": "min", "operands": {"value": 0}},
-                    {"keyword": "min", "operands": {"value": 1}},
-                    {"keyword": "max", "operands": {"value": 1000}},
+                    {"keyword": "min", "operands": {"value": "0"}},
+                    {"keyword": "min", "operands": {"value": "1"}},
+                    {"keyword": "max", "operands": {"value": "1000"}},
                 ]}),
                 Code::InvalidModelBinding,
                 "$.types[0].constraints[1]: keyword: \"min\" is declared twice",
@@ -4838,7 +4838,7 @@ mod tests {
             (
                 serde_json::json!({"constraints": [
                     {"keyword": "min", "operands": {"value": "zero"}},
-                    {"keyword": "max", "operands": {"value": 1000}},
+                    {"keyword": "max", "operands": {"value": "1000"}},
                 ]}),
                 Code::InvalidModelBinding,
                 "$.types[0].constraints[0]: operands.value: \"zero\" for keyword \"min\" is not a \
@@ -4847,14 +4847,14 @@ mod tests {
             (
                 serde_json::json!({"constraints": [
                     {"keyword": "min", "operands": {"value": true}},
-                    {"keyword": "max", "operands": {"value": 1000}},
+                    {"keyword": "max", "operands": {"value": "1000"}},
                 ]}),
                 Code::InvalidModelBinding,
                 "$.types[0].constraints[0]: operands.value: missing or not an integer",
             ),
             (
                 serde_json::json!({"constraints": [
-                    {"keyword": "min", "operands": {"value": 0}},
+                    {"keyword": "min", "operands": {"value": "0"}},
                     {"keyword": "max", "operands": {"value": "170141183460469231731687303715884105728"}},
                 ]}),
                 Code::InvalidModelBinding,
@@ -4864,7 +4864,7 @@ mod tests {
             ),
             (
                 serde_json::json!({"constraints": [
-                    {"keyword": "min", "operands": {"value": 0}},
+                    {"keyword": "min", "operands": {"value": "0"}},
                     {"keyword": "max", "operands": {"value": "0018"}},
                 ]}),
                 Code::InvalidModelBinding,
@@ -4981,7 +4981,7 @@ mod tests {
                         {
                             "identity": "ix://acme/orders/VersionNumber/constraints/min",
                             "keyword": "min",
-                            "operands": {"value": 0},
+                            "operands": {"value": "0"},
                             "appliesTo": "ix://quire/native/Integer",
                             "diagnosticCode": "bound.min",
                             "origin": {"generated": {
@@ -4993,7 +4993,7 @@ mod tests {
                         {
                             "identity": "ix://acme/orders/VersionNumber/constraints/max",
                             "keyword": "max",
-                            "operands": {"value": 1000},
+                            "operands": {"value": "1000"},
                             "appliesTo": "ix://quire/native/Integer",
                             "diagnosticCode": "bound.max",
                             "origin": {"generated": {
@@ -5021,7 +5021,7 @@ mod tests {
     }
 
     /// The package document of FR-056-AC-16's `Wide` scalar type: `min` the
-    /// JSON integer 0 and `max` the raw JSON text `max_json`. Also returns
+    /// exact string `"0"` and `max` the raw JSON text `max_json`. Also returns
     /// the RFC 6901 pointer of the `max` operand.
     fn wide_document(max_json: &str) -> (Vec<u8>, String) {
         const SENTINEL: &str = "@@max@@";
@@ -5053,7 +5053,7 @@ mod tests {
                 serde_json::json!({
                     "scalar": "integer",
                     "constraints": [
-                        constraint("min", serde_json::json!(0)),
+                        constraint("min", serde_json::json!("0")),
                         constraint("max", Value::String(SENTINEL.to_owned())),
                     ],
                 }),
@@ -5103,6 +5103,21 @@ mod tests {
             )
         );
         assert_eq!(refusal.code, Code::NoncanonicalWire);
+    }
+
+    /// FR-144-AC-2 rejects even a JCS-exact JSON number at an integer
+    /// constraint operand through full package admission.
+    #[trace("FR-144-AC-2")]
+    #[test]
+    fn a_small_integer_json_number_bound_refuses_through_the_real_dispatch() {
+        let (bytes, _) = wide_document("1000");
+        let refusals = read_records("acme/orders", &parse_document(&bytes))
+            .expect_err("integer operands require exact strings");
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert!(refusals[0].detail.contains(
+            "/ir/types/0/constraints/1/operands/value (agent-ix.semantic-ir.INVALID_OPERAND)"
+        ));
     }
 
     /// A construct's `meaning` is schema-free text to

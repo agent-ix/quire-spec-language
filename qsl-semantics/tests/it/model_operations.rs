@@ -211,7 +211,7 @@ pub(super) fn version_number_value_type() -> (Value, Value, String) {
     // directly is what actually resolves to `Resolved::Native("integer")`,
     // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
     // type and its bound native value type".
-    let constraint = |keyword: &str, value: i64| {
+    let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"),
             "keyword": keyword,
@@ -233,7 +233,7 @@ pub(super) fn version_number_value_type() -> (Value, Value, String) {
         "value_type",
         json!({
             "scalar": "integer",
-            "constraints": [constraint("min", 0), constraint("max", 1000)],
+            "constraints": [constraint("min", "0"), constraint("max", "1000")],
         }),
     );
     (construct, type_node, identity)
@@ -1248,7 +1248,7 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
 ///
 /// `Text` itself cannot be used through the real pipeline at all: the
 /// pinned FCD schema validator's own native-scalar vocabulary
-/// (`agent-ix-semantic-ir`, rev `033e228`,
+/// (`agent-ix-semantic-ir`,
 /// `crates/semantic-ir/src/rules.rs`'s `NATIVE_SCALARS`) has no `Text`
 /// entry -- it spells the same concept `String` -- so
 /// `validate_with_semantic_ir` refuses any `ix://quire/native/Text`
@@ -1262,21 +1262,42 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
 #[trace("TC-458", "FR-103-AC-3")]
 #[test]
 fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
-    let document = config_version_document(
-        attempt_update(
-            json!([parameter("note", "ix://quire/native/Decimal")]),
-            json!({"modifies": [], "creates": [], "deletes": []}),
-        ),
-        Vec::new(),
-        Vec::new(),
-        json!([]),
-    );
+    let mut note = parameter("note", "ix://quire/native/Decimal");
+    let document_with_note = |note| {
+        config_version_document(
+            attempt_update(
+                json!([note]),
+                json!({"modifies": [], "creates": [], "deletes": []}),
+            ),
+            Vec::new(),
+            Vec::new(),
+            json!([]),
+        )
+    };
+    let missing_policy = admit(&document_with_note(note.clone()))
+        .expect_err("a native Decimal without a wire policy refuses upstream");
+    let UnitIntakeCause::Refused(refusals) = missing_policy.cause else {
+        panic!("{missing_policy:?}: expected a Refused cause");
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert!(matches!(
+        &refusals[0].cause,
+        qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+            if node == note["identity"].as_str().unwrap()
+    ), "{refusals:?}");
+    assert!(refusals[0].detail.contains(
+        "/ir/types/1/operations/0/params/0/typeRef (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING)"
+    ), "{refusals:?}");
+    // The wire policy admits this Decimal parameter at FCD's boundary;
+    // QSL's missing native parameters remain the refusal under test.
+    note["decimal"] = json!({"precision": 5, "scale": 2});
+    let document = document_with_note(note);
     let refusal = admit(&document).expect_err("a Decimal parameter refuses at I1");
     let UnitIntakeCause::Refused(refusals) = refusal.cause else {
         panic!("{refusal:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].code.as_str(), "unsupported_construct");
+    assert_eq!(refusals[0].code.as_str(), "unsupported_construct", "{refusals:?}");
     assert_eq!(refusals[0].cause.as_str(), "declaration-form");
 }
 
