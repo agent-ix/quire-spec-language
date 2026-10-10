@@ -19,7 +19,10 @@ fn identity() -> SourceIdentity {
 
 fn document_json(document: &OutcomeDocument) -> Value {
     let bytes = document.to_bytes().expect("the document encodes");
-    assert_eq!(bytes, document.to_bytes().expect("encoding is deterministic"));
+    assert_eq!(
+        bytes,
+        document.to_bytes().expect("encoding is deterministic")
+    );
     serde_json::from_slice(&bytes).expect("the document is JSON")
 }
 
@@ -116,7 +119,8 @@ fn a_driver_serializes_parse_refusals_with_the_original_locus() {
             SpineLimits::default().source,
             &Cancel::new(),
         );
-        let StageFailure::Refused(refusal) = result.as_ref().expect_err("the source refuses") else {
+        let StageFailure::Refused(refusal) = result.as_ref().expect_err("the source refuses")
+        else {
             panic!("the source must produce a typed refusal");
         };
         assert_eq!(refusal.code().as_str(), code);
@@ -146,10 +150,34 @@ fn a_driver_serializes_each_reached_parse_limit() {
     let source = identity();
     let defaults = SpineLimits::default().source;
     let cases = [
-        ("source_bytes", qsl_cst::Limits { source_bytes: 0, ..defaults }),
-        ("tokens", qsl_cst::Limits { tokens: 0, ..defaults }),
-        ("nodes", qsl_cst::Limits { nodes: 0, ..defaults }),
-        ("work_units", qsl_cst::Limits { work_units: 0, ..defaults }),
+        (
+            "source_bytes",
+            qsl_cst::Limits {
+                source_bytes: 0,
+                ..defaults
+            },
+        ),
+        (
+            "tokens",
+            qsl_cst::Limits {
+                tokens: 0,
+                ..defaults
+            },
+        ),
+        (
+            "nodes",
+            qsl_cst::Limits {
+                nodes: 0,
+                ..defaults
+            },
+        ),
+        (
+            "work_units",
+            qsl_cst::Limits {
+                work_units: 0,
+                ..defaults
+            },
+        ),
     ];
     for (field, limits) in cases {
         let result = parse(
