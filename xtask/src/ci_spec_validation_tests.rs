@@ -43,7 +43,10 @@ fn run(command: &mut Command) -> Output {
 fn refused(output: &Output, diagnostic: &str) {
     assert_eq!(output.status.code(), Some(2), "Make must propagate failure");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains(diagnostic), "expected {diagnostic}: {stderr}");
+    assert!(
+        stderr.contains(diagnostic),
+        "expected {diagnostic}: {stderr}"
+    );
 }
 
 #[trace("NFR-002", "NFR-005")]
@@ -70,25 +73,32 @@ fn spec_validation_executes_native_schema_controls_and_fails_closed() {
         let negative = run(make(root).arg("check-spec-validation"));
         refused(&negative, diagnostic);
         assert!(
+            String::from_utf8_lossy(&negative.stderr)
+                .contains("1 document(s) failed structural validation"),
+            "invalid fixtures must fail native document validation"
+        );
+        assert!(String::from_utf8_lossy(&negative.stderr).contains("Error 1"));
+        assert!(
             String::from_utf8_lossy(&negative.stderr).contains("fixture with spaces.md"),
             "document failure must name the owned fixture"
         );
     }
     std::fs::write(&document, VALID).unwrap();
-    assert!(run(make(root).arg("check-spec-validation")).status.success());
+    assert!(run(make(root).arg("check-spec-validation"))
+        .status
+        .success());
 
-    let empty = run(
-        make(root)
-            .arg("check-spec-validation")
-            .env("SPEC_VALIDATION_DOCUMENTS", "spec/missing/**/*.md"),
-    );
+    let empty = run(make(root)
+        .arg("check-spec-validation")
+        .env("SPEC_VALIDATION_DOCUMENTS", "spec/missing/**/*.md"));
     refused(&empty, "document glob matched no files");
-    let selected = run(
-        make(root)
-            .arg("check-spec-validation")
-            .env("SPEC_VALIDATION_DOCUMENTS", "spec/fixture with spaces.md"),
+    let selected = run(make(root)
+        .arg("check-spec-validation")
+        .env("SPEC_VALIDATION_DOCUMENTS", "spec/fixture with spaces.md"));
+    assert!(
+        selected.status.success(),
+        "forward document paths as one argument"
     );
-    assert!(selected.status.success(), "forward document paths as one argument");
 
     let binary_missing = run(make(root).arg("check-spec-validation").env("PATH", ""));
     refused(&binary_missing, "native quire is required on PATH");
@@ -96,16 +106,17 @@ fn spec_validation_executes_native_schema_controls_and_fails_closed() {
 
     let isolated_home = root.join("empty home");
     std::fs::create_dir(&isolated_home).unwrap();
-    let schema_missing = run(
-        make(root)
-            .arg("check-spec-validation")
-            .env("HOME", &isolated_home)
-            .env_remove("IX_FILAMENT_MODULES_PATH")
-            .env_remove("IX_SCHEMA_PATH"),
-    );
+    let schema_missing = run(make(root)
+        .arg("check-spec-validation")
+        .env("HOME", &isolated_home)
+        .env_remove("IX_FILAMENT_MODULES_PATH")
+        .env_remove("IX_SCHEMA_PATH"));
     refused(&schema_missing, "no modules found for scoped validation");
     assert!(String::from_utf8_lossy(&schema_missing.stderr).contains("quoin not found on PATH"));
-    assert!(!isolated_home.join(".ix").exists(), "gate must not install modules");
+    assert!(
+        !isolated_home.join(".ix").exists(),
+        "gate must not install modules"
+    );
 }
 
 #[trace("NFR-002", "NFR-005")]
@@ -117,5 +128,8 @@ fn full_ci_composes_the_unrestricted_scoped_validator() {
     assert!(stdout.contains("validate --scope . \"$SPEC_VALIDATION_DOCUMENTS\""));
     let validator = stdout.find("validate --scope").unwrap();
     let compilation = stdout.find("cargo clippy").unwrap();
-    assert!(validator < compilation, "structural validation precedes compilation");
+    assert!(
+        validator < compilation,
+        "structural validation precedes compilation"
+    );
 }
