@@ -180,6 +180,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
     type: contains
+  - target: ix://agent-ix/quire-spec-language/AD-001
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-018
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-019
@@ -1248,6 +1250,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR |
 | [ADR-031](decisions/ADR-031-state-forall-separating-witness.md) | ADR |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR |
+| [AD-001](assurance/AD-001-shared-evaluation-core-interface.md) | ArchitectureDescription |
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR |
