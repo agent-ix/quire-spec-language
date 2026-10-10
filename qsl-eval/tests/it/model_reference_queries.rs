@@ -3755,7 +3755,7 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
     for object in ["", "valid"] {
         let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
         let document = PopulationDocument {
-            model_identity: "empty-identity-test".to_owned(),
+            model_identity: "test/orders".to_owned(),
             members: vec![member(object, "model.A")],
         };
         let binding = match admit_binding(
