@@ -45,9 +45,10 @@ it.
   sha256-jcs)`.
 - The declared `supertypes`, `subsets` and `redefines` edges each original
   declaration carries as an inline property (never a second producer record).
-- The selected `quire.model.complete/v1` definition and its rule manifest
-  `quire.model.complete.rules/v1`.
-- `ModelNormalizationLimitsV1` of `quire.value.accounting/v1`.
+- The selected `quire.model.complete/v2` definition and its rule manifest
+  `quire.model.complete.rules/v2`.
+- `ModelNormalizationLimitsV1` of `quire.value.accounting/v2`, with unchanged
+  public object/member names and the replacement model-identity charge semantics.
 
 ## Outputs
 
@@ -78,7 +79,7 @@ fabricated effective entry or fact. Every effective entry and fact input SHALL
 refer to a key from this inventory. Retention introduces no additional
 effective-declaration or hash charge and no effective preimage member.
 
-Each effective declaration's identity is the `quire.model.effective-declaration/v1`
+Each effective declaration's identity is the `quire.model.effective-declaration/v2`
 digest quire-specification [FR-150](ix://agent-ix/quire-specification/FR-150)
 defines, over exactly `{version, owner_effective_type, original, derivation}`;
 this requirement does not restate that preimage. The model binder SHALL NOT
@@ -90,6 +91,33 @@ keys, SHALL yield distinct effective declarations; the binder SHALL NOT
 collapse those derived declarations by an identity-equivalence rule. An
 original whose kind has no selected derivation rule remains in the exact
 original inventory without acquiring an effective identity from this guarantee.
+
+The binder SHALL use the selected definition's closed key/block/range,
+literal/prefix and declaration-sequence grammar and its unique normal form.
+Its compressed preimages SHALL expand to every exact semantic fact, input key,
+rule and ordinal in phase/input order, with each distinct inheritance path
+retained. The binder SHALL eagerly compute ALL effective identities, hidden
+entries included, followed by every universe identity and the complete
+digest-ordered view identity. Shared helper commitments are not extra facts
+or effective declarations. This requirement delegates exact preimage grammar
+and factoring/tie-break rules to FR-150 and the selected model definition;
+it does not create a second identity writer.
+
+The retained view SHALL provide every declaration's compressed preimage and
+reachable exact key/block records as well as immutable originals/origins.
+The strict consumer boundary SHALL verify admitted selection, semantic
+normalization, canonical overlap/expansion, every eager digest and the complete
+inventory. A root-only view or requested-member proof is not that transport.
+The checked graph's structural NodeKey-to-DeclarationKey correspondence is
+not the full model effective view and SHALL NOT substitute for it.
+
+This initial norm draft SHALL NOT be adopted with the old wire/schema/vector
+bytes or old selected closure. The pre-release replacement requires one
+coherent selection, rule manifest, accounting, producer edge protocol, strict
+reader and caller-minted identity-domain cohort before any code cutover.
+Unadmitted operation redefinition edges remain an upstream prerequisite.
+The binder SHALL NOT introduce dual readers, old-digest transport, digest
+relabelling, compatibility shims or public API aliases for this replacement.
 
 ### Losing redefinitions are retained, not deleted
 
@@ -141,6 +169,21 @@ The model binder SHALL charge normalization work under
 denied, the binder SHALL return an incomplete result naming the exhausted
 charge point and SHALL expose no effective declaration for the run.
 
+The binder SHALL follow replacement accounting's declaration-first phase-5
+schedule, with separately admitted metadata scans, normal-form work, descriptor
+lookups/validation/pricing and each dependency's pre-encoding hash charge.
+It SHALL NOT compute type/helper hashes in phases 1–4, encode a node to discover
+its price, reserve bytes posthoc or use another canonical encoder. Its exact
+analytical template price SHALL equal the sole writer's encoded length before
+admitting the digest. A denied event performs none of its named work; a denied
+hash performs zero node encoding/hashing and no dependent work. Previously
+admitted preparation remains charged. Selection-local shared hits retain
+their lookup charges, never bypass the operation meter or create ambient state.
+Phase-4 conflict order uses owning original keys as the accounting authority
+states, without changing the meaning of an effective member key. All existing
+logical counters, one-meter stage transfers and failure suppression remain
+unchanged; a later conformance refusal cannot replace an earlier hash denial.
+
 ## Constraints
 
 | ID | Constraint | Type | Validation |
@@ -161,6 +204,10 @@ charge point and SHALL expose no effective declaration for the run.
 | FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
 | FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
+| FR-081-AC-9 | Expanding the canonical compressed provenance yields every ordered fact/input/rule/ordinal, including all hidden redefinitions and diamond paths; altered overlap, count, tail, ordinal meaning or alternative factoring cannot be admitted as the canonical correspondence. | Test |
+| FR-081-AC-10 | Every effective entry has its eager digest and retained preimage; complete view/universe computation includes them all. Missing provenance records or a root-only/requested-member proof transport cannot pass complete-view admission. | Test |
+| FR-081-AC-11 | Analytical closed-template prices agree with the sole writer for actual admitted strings; one-less or zero denial at preparation/hash charge points performs none of the denied work, including zero encoding/hashing of a denied node, while shared hits retain their prescribed lookup charges without rehashing. | Test |
+| FR-081-AC-12 | An old or mixed selection/schema/reader/accounting/domain cohort is not admitted as the replacement through digest relabelling, a compatibility reader or an API alias. | Inspection |
 
 ## Dependencies
 
