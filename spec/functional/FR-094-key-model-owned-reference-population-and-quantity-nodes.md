@@ -43,10 +43,12 @@ Every node here whose body holds no application is keyed by FR-092's
 `quire.structural-node/v1` preimage. A node that stands for a domain
 package's declaration carries QSpec's `ModelOwner`, as ADR-013 O-04 and C-02
 decide. The node shapes, the `ModelOwner` use on the structural preimage, the
-`model_population` and `compound_unit` shapes and the `clause` binding are
-QSL proposals to QSpec (ADR-013 QC-25, QC-26), as `quire.structural-node/v1`
-is (QC-24). QSpec references (`ix://agent-ix/quire-specification`, cited by
-reference, never copied): FR-322, `proposals/checked-package-v2/schema.json`,
+`model_population` and `compound_unit` shapes and the `clause` binding follow
+QSpec FR-322's settled derived type forms (ADR-013 QC-25, QC-26). A source
+type alias is resolved before lowering and forwards to its resolved node; it
+does not create an `alias` node. QSpec references
+(`ix://agent-ix/quire-specification`, cited by reference, never copied):
+FR-322, `proposals/checked-package-v2/schema.json`,
 `node-identity-preimage.schema.json`, `node-identity-vectors.json`,
 `operation-catalog.json` and the positive fixtures.
 
@@ -184,6 +186,13 @@ FR-092 spells an integer. Both nodes are anonymous: they carry no
 through `T`'s model node, so `Reference<T>` over object types of two domain
 package identities gives two ids, and a version-only change of `T`'s domain
 package keeps the id.
+
+An alias of either form forwards to the resolved node. For example,
+`Ref = Reference<Order>` names the same `composite_type`/`reference` node as
+`Reference<Order>`, and `Bucket = Population<Order>[3]` names the same
+`bounded_domain`/`model_population` node. The alias spelling enters neither
+preimage. An alias naming no type refuses during source resolution; it does
+not reach lowering as a second node.
 
 A type built from these follows FR-092's table: the `lookup<T>` result under
 `absent empty` is the `Option<Reference<T>>` node, and the `allInstances<T>(p)`
@@ -691,16 +700,16 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §5.1: no catch-all arm.
 - QSpec: `ModelOwner` and its vectors (FR-322-AC-28; ADR-013 QC-3), the
-  `reference` composite form and the `model_population` domain form of
-  `schema.json`, and the model operation entries of `operation-catalog.json`.
-  The `ModelOwner` structural preimage, the `compound_unit` form, the
-  `model_population` body and family, the `clause` binding and the v2
-  correspondence spelling are QSL proposals (QC-25, QC-26).
+  `reference` and `alias` composite forms, the `model_population` domain
+  form, the `compound_unit` scalar form and the model operation entries of
+  `schema.json` and `operation-catalog.json`; FR-322-AC-62 settles the
+  forwarding, bodies, anonymous ownership and refusal rules for these forms.
 
 ## Status
 
-Specified, with AC-6's quotient units corrected and the content-only
-`ModelOwner` (QSpec FR-322-AC-28). Implemented (#384):
+Specified, with AC-6's quotient units corrected, the content-only `ModelOwner`
+(QSpec FR-322-AC-28) and QSpec FR-322-AC-62's settled derived type forms.
+Implemented (#384):
 `qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
 `Reference`, `Population`, clause-function and quantity type nodes, and
 builds each declared unit's and dimension's nominal node, `check`
