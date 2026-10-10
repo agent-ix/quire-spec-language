@@ -232,11 +232,14 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         "caller ${FEATURE_LANE_PATH_VALUE}",
         "caller $(FEATURE_LANE_PATH_VALUE)",
         "caller $FEATURE_LANE_PATH_VALUE",
+        "caller $${FEATURE_LANE_PATH_VALUE}",
+        "caller $$(FEATURE_LANE_PATH_VALUE)",
+        "caller $$FEATURE_LANE_PATH_VALUE",
         "caller 'quote' \\ slash; * ? [x]",
     ] {
-        // Make's command-line assignment grammar requires doubled dollars.
-        // Command::args passes these bytes directly, without a shell launcher.
-        let root = format!("CARGO_TARGET_DIR={}", path.replace('$', "$$"));
+        // The root is captured as raw caller data: one dollar remains one,
+        // and the independently supplied doubled-dollar roots remain two.
+        let root = format!("CARGO_TARGET_DIR={path}");
         assert_eq!(
             recipe.run(
                 &["ci-default-features", "ci-all-features"],
@@ -246,6 +249,8 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
             expected(&format!("{path}/ci-default-features"), DEFAULT_COMMANDS)
                 + &expected(&format!("{path}/ci-all-features"), ALL_COMMANDS)
         );
+        // Explicit lane overrides retain recursive Make assignment decoding.
+        // Double each desired dollar here, independently of the raw root case.
         let default = format!("CI_DEFAULT_TARGET_DIR={}", path.replace('$', "$$"));
         let all_path = format!("/tmp/{path}");
         let all = format!("CI_ALL_TARGET_DIR={}", all_path.replace('$', "$$"));
@@ -328,8 +333,11 @@ fn repeated_switches_in_both_directions_keep_each_lane_directory() {
 fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let recipe = Recipe::new();
     let other_checks = [
+        "check-conformance-input",
+        "conformance",
         "check-no-committed-binaries",
         "check-index-completeness",
+        "check-spec-validation",
         "ci-clean-build",
         "seam-probe",
         "string-edge",
