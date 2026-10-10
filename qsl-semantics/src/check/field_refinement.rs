@@ -135,7 +135,7 @@ pub(crate) fn checked_refinement_failures(
         if (raises_lower || requires_presence) && single && !established.presence {
             fail(RefinementObligation::Presence);
         }
-        let mut no_form = (raises_lower && !single) || (smaller_upper && !single);
+        let mut no_form = (raises_lower && !single) || smaller_upper;
         if domain {
             match member.value_type.as_package().and_then(|key| index.scalar_bounds(key)) {
                 Some((lower, upper)) => {
