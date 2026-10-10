@@ -159,10 +159,7 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
                 let semantic = graph.semantic_graph();
                 let semantic_clone = semantic.clone();
                 assert!(
-                    semantic
-                        .nodes()
-                        .map(|node| (node.key(), node.body()))
-                        .eq(semantic_clone.nodes().map(|node| (node.key(), node.body()))),
+                    semantic.nodes().eq(semantic_clone.nodes()),
                     "{label}: the lowered graph equals its clone"
                 );
                 let mut debug = DebugByteCount::default();
