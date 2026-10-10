@@ -167,3 +167,124 @@ fn model_multiplicity_failures_reach_conformance_instead_of_generic_assembly() {
         assert_eq!(check(&bytes, "function noop using v(): Boolean pure { true }"), expected);
     }
 }
+
+#[trace("FR-082-AC-1", "FR-082-AC-8", "QSpec-TC-196")]
+#[test]
+fn all_five_static_failures_and_presence_survive_record_order_reversal() {
+    for reverse in [false, true] {
+        let bytes = document(|template| {
+            let parameter = |owner: &str, ty: &str| json!({"identity": identity(&format!("{owner}/set/arg")),
+                "name": "arg", "typeRef": identity(ty), "presence": "required", "nullable": false,
+                "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "origin": origin(&format!("{owner}/set/arg"))});
+            let mut parent = writer("A", &["A/p"], None);
+            parent["params"] = json!([parameter("A", "A")]);
+            parent["returns"] = json!({"typeRef": identity("B"), "nullable": false,
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true}});
+            let mut child = writer("B", &["A/p", "A/bad"], Some("A/set"));
+            child["params"] = json!([parameter("B", "B")]);
+            child["returns"] = json!({"typeRef": identity("A"), "nullable": false,
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true}});
+            let mut types = vec![scalar(template, "Count", 9), scalar(template, "Wide", 10),
+                object("A", None, vec![field("A", "bad", "Count", 1, Some(1), None),
+                    field("A", "p", "A", 0, Some(1), None)], vec![parent]),
+                object("B", Some("A"), vec![field("B", "bad", "Wide", 0, Some(3), Some("A/bad")),
+                    field("B", "p", "A", 1, Some(1), Some("A/p"))], vec![child])];
+            if reverse { types.reverse(); }
+            types
+        });
+        assert_eq!(check(&bytes, "function noop using v(): Boolean pure { true }"),
+            Err(vec![(Code::IllTyped, Some("variance-result")),
+                (Code::IllTyped, Some("multiplicity-narrowing")),
+                (Code::UndefinedExpression, Some("unproved-refinement")),
+                (Code::IllTyped, Some("variance-parameter")),
+                (Code::IllTyped, Some("variance-result")),
+                (Code::IllTyped, Some("effect-escape"))]), "reverse={reverse}");
+    }
+}
+
+#[trace("FR-082-AC-4", "FR-104", "QSpec-TC-196")]
+#[test]
+fn admitted_clause_failures_precede_the_conformance_stage() {
+    let bytes = document(|template| vec![scalar(template, "Count", 9), scalar(template, "Small", 5),
+        object("A", None, vec![field("A", "x", "Count", 1, Some(1), None)], vec![writer("A", &["A/x"], None)]),
+        object("B", Some("A"), vec![field("B", "xb", "Small", 1, Some(1), Some("A/x"))],
+            vec![writer("B", &["B/xb"], Some("A/set"))])]);
+    for (expression, code, cause) in [("missing", Code::MissingDeclaration, "missing-name"),
+        ("1", Code::IllTyped, "type-mismatch")] {
+        let body = format!("post QB using v on Config::B::set {{ {expression} }}");
+        assert_eq!(check(&bytes, &body), Err(vec![(code, Some(cause))]), "{expression}");
+    }
+}
+
+#[trace("FR-082-AC-4", "FR-104", "QSpec-TC-196")]
+#[test]
+fn an_unrelated_or_removed_guard_cannot_prove_an_owning_writer() {
+    for (body, extra_owner) in [
+        ("post QB using v on Config::B::set { true }", None),
+        ("post QS using v on Config::S::set { self.xs <= 5 }", Some("S")),
+        ("post QC using v on Config::C::set { self.xc <= 3 }", Some("C")),
+    ] {
+        let bytes = document(|template| {
+            let mut types = vec![scalar(template, "Count", 9), scalar(template, "Small", 5), scalar(template, "Tiny", 3),
+                object("A", None, vec![field("A", "x", "Count", 1, Some(1), None)], vec![writer("A", &["A/x"], None)]),
+                object("B", Some("A"), vec![field("B", "xb", "Small", 1, Some(1), Some("A/x"))],
+                    vec![writer("B", &["B/xb"], Some("A/set"))])];
+            if let Some(owner) = extra_owner {
+                let sibling = owner == "S";
+                types.push(object(owner, Some(if sibling { "A" } else { "B" }),
+                    vec![field(owner, if sibling { "xs" } else { "xc" }, if sibling { "Small" } else { "Tiny" },
+                        1, Some(1), Some(if sibling { "A/x" } else { "B/xb" }))],
+                    vec![writer(owner, &[if sibling { "S/xs" } else { "C/xc" }], Some(if sibling { "A/set" } else { "B/set" }))]));
+            }
+            types
+        });
+        assert_eq!(check(&bytes, body), Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]),
+            "guard={body}");
+    }
+}
+
+#[trace("FR-082-AC-3", "QSpec-TC-196")]
+#[test]
+fn subsetting_runs_both_axes_at_the_runtime_boundary() {
+    for row in 0..3 {
+        let bytes = document(|_| {
+            let mut subset = field("A", "ys", if row == 1 { "A" } else { "B" },
+                if row == 2 { 0 } else { 1 }, Some(if row == 2 { 4 } else { 2 }), None);
+            subset["subsets"] = json!([identity("A/ysup")]);
+            vec![object("A", None, vec![field("A", "ysup", "B", 1, Some(3), None), subset], vec![]),
+                object("B", Some("A"), vec![], vec![])]
+        });
+        let expected = match row {
+            0 => Ok(()),
+            1 => Err(vec![(Code::IllTyped, Some("subsetting-type"))]),
+            _ => Err(vec![(Code::IllTyped, Some("multiplicity-narrowing"))]),
+        };
+        assert_eq!(check(&bytes, "function noop using v(): Boolean pure { true }"), expected, "row={row}");
+    }
+}
+
+#[trace("FR-082-AC-2", "QSpec-TC-196")]
+#[test]
+fn contested_field_and_operation_targets_have_one_structural_authority() {
+    for operation_contest in [false, true] {
+        let bytes = document(|_| {
+            if operation_contest {
+                let first = writer("B", &[], Some("A/set"));
+                let mut second = first.clone();
+                second["identity"] = json!(identity("B/set2"));
+                second["name"] = json!("set2");
+                second["origin"] = origin("B/set2");
+                vec![object("A", None, vec![], vec![writer("A", &[], None)]),
+                    object("B", Some("A"), vec![], vec![first, second])]
+            } else {
+                vec![object("A", None, vec![field("A", "x", "A", 1, Some(1), None)], vec![]),
+                    object("B", Some("A"), vec![field("B", "xb", "A", 1, Some(1), Some("A/x")),
+                        field("B", "xb2", "A", 1, Some(1), Some("A/x"))], vec![])]
+            }
+        });
+        assert_eq!(check(&bytes, "function noop using v(): Boolean pure { true }"),
+            Err(vec![(Code::InvalidModelBinding, Some("redefinition-target"))]), "operations={operation_contest}");
+    }
+}
