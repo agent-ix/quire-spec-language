@@ -9,6 +9,7 @@
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
+use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
 use crate::identity::Backend;
 use crate::result::DisagreementCause;
@@ -17,6 +18,56 @@ use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
+use quire_exact::CancelCause;
+use serde::Serialize;
+
+/// FR-127: how a proof established its claim, independently of certification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ProofBasis {
+    /// Kani's completed SUCCESS checks; zero denotes a vacuous proof.
+    #[serde(rename = "bounded-proof")]
+    Checks {
+        /// Number of completed SUCCESS checks.
+        #[serde(rename = "checks")]
+        success_checks: u32,
+    },
+    /// Every reachable product state was explored.
+    Exhaustive,
+    /// Unrolling completed at or beyond the formula's horizon.
+    BoundedComplete {
+        /// Completed unrolling depth.
+        depth: u64,
+    },
+    /// The property was established by induction.
+    Inductive {
+        /// Induction depth.
+        depth: u64,
+    },
+}
+
+/// ADR-018 PC-1: who stands behind a proved result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Certification {
+    /// The qualified core produced or checked the proof.
+    Certified,
+    /// A first-party engine or solver proved it without a core check.
+    Uncertified,
+    /// A third-party plugin proved it without a core check.
+    Trusted,
+}
+
+impl Certification {
+    /// The required QSpec FR-331 certification member's spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Certified => "certified",
+            Self::Uncertified => "uncertified",
+            Self::Trusted => "trusted",
+        }
+    }
+}
 
 /// QSpec FR-243's settlement basis: the closed vocabulary every truth
 /// result carries exactly one of (ADR-031 SW-3, SW-10). Compared by its
@@ -77,7 +128,10 @@ pub enum IncompleteCause {
     /// The run exceeded its configured time budget.
     TimedOut,
     /// The run was cancelled before it produced a result.
-    Cancelled,
+    Cancelled {
+        /// The caller-owned cancellation handle's FR-276 cause.
+        source: CancelCause,
+    },
     /// The run exhausted a configured resource bound before completing.
     ResourceExhausted,
 }
@@ -87,7 +141,7 @@ impl IncompleteCause {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::TimedOut => "timed-out",
-            Self::Cancelled => "cancelled",
+            Self::Cancelled { .. } => "cancelled",
             Self::ResourceExhausted => "limit-reached",
         }
     }
@@ -140,10 +194,32 @@ impl UnavailabilityCause {
 
 /// The cause of a `TerminalValue::Inconclusive`: a closed set that later
 /// causes extend (ADR-018 §1, ADR-020 RE-4, ADR-022, ADR-023 HV-4, ADR-025
-/// MV-1), with no vacuous-proof member, because a vacuous proof is `Proved { success_checks: 0 }`
+/// MV-1), with no vacuous-proof member, because a vacuous proof has basis
+/// `Checks { success_checks: 0 }`
 /// (ADR-013 C-09) and a second spelling of it must be unrepresentable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InconclusiveCause {
+    /// The completed search horizon found no counterexample.
+    BoundReached {
+        /// Completed search depth.
+        depth: u64,
+    },
+    /// The induction step did not close the proof.
+    InductionNotClosed {
+        /// Attempted induction depth.
+        depth: u64,
+    },
+    /// A successor's contract conjunction could not be decided.
+    UndecidedSuccessor,
+    /// The subject supplies no initial state.
+    NoInitialState,
+    /// The core rejected a certificate, retaining its failing rule and locus.
+    CertificateRejected {
+        /// The check rule that failed.
+        rule: CertificateRule,
+        /// Where the rule failed.
+        at: CertificateLocus,
+    },
     /// `replay_parity`: the counterexample's E9 replay settled
     /// `inconclusive`, so the reason travels with the cause.
     ReplayParity(DisagreementCause),
@@ -165,6 +241,11 @@ impl InconclusiveCause {
     /// The cause's FR-331 wire spelling.
     pub const fn as_str(&self) -> &'static str {
         match self {
+            Self::BoundReached { .. } => "bound-reached",
+            Self::InductionNotClosed { .. } => "induction-not-closed",
+            Self::UndecidedSuccessor => "undecided-successor",
+            Self::NoInitialState => "no-initial-state",
+            Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
@@ -175,6 +256,11 @@ impl InconclusiveCause {
     /// the nested witness records and failure of a parity disagreement.
     fn measured_bytes(&self) -> usize {
         match self {
+            Self::BoundReached { .. }
+            | Self::InductionNotClosed { .. }
+            | Self::UndecidedSuccessor
+            | Self::NoInitialState
+            | Self::CertificateRejected { .. } => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -188,7 +274,7 @@ impl InconclusiveCause {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReportedInconclusiveCause {
     /// `kani_vacuous_proof`: a `Proved` run with zero SUCCESS checks in the
-    /// obligation, derived from `Proved { success_checks: 0 }` by
+    /// obligation, derived from the `Checks { success_checks: 0 }` basis by
     /// [`TerminalValue::vacuous_proof_cause`].
     KaniVacuousProof,
     /// The cause of a `TerminalValue::Inconclusive`.
@@ -219,13 +305,14 @@ pub enum DeclineCode {
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TerminalValue {
-    /// A Kani run whose obligation completed with `success_checks` SUCCESS
-    /// checks. Zero is vacuous (maps to `inconclusive`); at least one is an
-    /// ordinary proof (maps to `success`).
+    /// A proof carrying its strength and exactly one certification.
+    /// A zero-check `Checks` basis is vacuous (category `inconclusive`);
+    /// every other basis maps to `success`, with any certification.
     Proved {
-        /// The count of SUCCESS checks the obligation completed with. Zero
-        /// marks a vacuous proof.
-        success_checks: u32,
+        /// How the claim was established.
+        basis: ProofBasis,
+        /// Who produced or checked the proof (ADR-018 PC-1).
+        certification: Certification,
     },
     /// A backend result of `tested`: `success` category, but never promoted
     /// to `proved` and never counted as proof evidence.
@@ -268,8 +355,20 @@ impl TerminalValue {
     /// Behavior: "one exhaustive function with no `_` fallback arm").
     pub fn category(&self) -> Category {
         match self {
-            Self::Proved { success_checks: 0 } | Self::Inconclusive(_) => Category::Inconclusive,
-            Self::Proved { .. } | Self::Tested => Category::Success,
+            Self::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                ..
+            }
+            | Self::Inconclusive(_) => Category::Inconclusive,
+            Self::Proved {
+                basis:
+                    ProofBasis::Checks { .. }
+                    | ProofBasis::Exhaustive
+                    | ProofBasis::BoundedComplete { .. }
+                    | ProofBasis::Inductive { .. },
+                ..
+            }
+            | Self::Tested => Category::Success,
             Self::Refuted => Category::Violation,
             Self::Declined { .. } => Category::Refusal,
             Self::Unsupported(_) => Category::Unsupported,
@@ -281,7 +380,10 @@ impl TerminalValue {
     /// The typed cause of a vacuous proof, if this value is one.
     pub fn vacuous_proof_cause(&self) -> Option<ReportedInconclusiveCause> {
         match self {
-            Self::Proved { success_checks: 0 } => Some(ReportedInconclusiveCause::KaniVacuousProof),
+            Self::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                ..
+            } => Some(ReportedInconclusiveCause::KaniVacuousProof),
             _ => None,
         }
     }
@@ -421,7 +523,7 @@ impl ProofResultEnvelope {
     /// FR-069 Behavior's typed cause: `Some` exactly when this envelope's
     /// category is `Inconclusive` -- `KaniVacuousProof` for a vacuous
     /// `Proved` (zero SUCCESS checks), or the `Inconclusive` value's own
-    /// `ReplayParity` or `ReplayRefused`; `None` for every other category.
+    /// any typed inconclusive cause; `None` for every other category.
     /// A consumer that reads `category() == Inconclusive` never re-derives
     /// the cause from [`Self::record`] itself.
     pub fn inconclusive_cause(&self) -> Option<&ReportedInconclusiveCause> {
@@ -573,6 +675,227 @@ mod tests {
         }
     }
 
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+    #[test]
+    fn proof_reader_preserves_every_basis_and_required_certification() {
+        let bases = [
+            (
+                ProofBasis::Checks { success_checks: 0 },
+                Category::Inconclusive,
+            ),
+            (ProofBasis::Checks { success_checks: 1 }, Category::Success),
+            (ProofBasis::Checks { success_checks: 3 }, Category::Success),
+            (ProofBasis::Exhaustive, Category::Success),
+            (ProofBasis::BoundedComplete { depth: 5 }, Category::Success),
+            (ProofBasis::Inductive { depth: 2 }, Category::Success),
+            (ProofBasis::BoundedComplete { depth: 0 }, Category::Success),
+            (ProofBasis::Inductive { depth: u64::MAX }, Category::Success),
+        ];
+        let certifications = [
+            (Certification::Certified, "certified"),
+            (Certification::Uncertified, "uncertified"),
+            (Certification::Trusted, "trusted"),
+        ];
+        for (basis, category) in bases {
+            for (certification, spelling) in certifications {
+                let value = TerminalValue::Proved {
+                    basis,
+                    certification,
+                };
+                let source = BackendProviderSource {
+                    backend_identity: "proof-provider".to_owned(),
+                    items: vec![TerminalRecord::new(RequestIndex::new(0), value.clone())],
+                };
+                let envelopes = read_backend_provider_envelope(&source, ReplayLimits::default())
+                    .expect("the complete proof record admits");
+                assert_eq!(envelopes.len(), 1);
+                let envelope = &envelopes[0];
+                assert_eq!(
+                    envelope.category(),
+                    category,
+                    "{basis:?}, {certification:?}"
+                );
+                assert_eq!(envelope.record().value(), &value);
+                let TerminalValue::Proved {
+                    basis: retained_basis,
+                    certification: retained_certification,
+                } = envelope.record().value()
+                else {
+                    panic!("the reader must retain Proved");
+                };
+                assert_eq!(*retained_basis, basis);
+                assert_eq!(retained_certification.as_str(), spelling);
+                let expected_cause = if category == Category::Inconclusive {
+                    Some(&ReportedInconclusiveCause::KaniVacuousProof)
+                } else {
+                    None
+                };
+                assert_eq!(envelope.inconclusive_cause(), expected_cause);
+            }
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-2")]
+    #[test]
+    fn temporal_inconclusive_causes_keep_depth_and_exact_category() {
+        for (cause, spelling) in [
+            (
+                InconclusiveCause::BoundReached { depth: 1 },
+                "bound-reached",
+            ),
+            (
+                InconclusiveCause::InductionNotClosed { depth: 2 },
+                "induction-not-closed",
+            ),
+            (InconclusiveCause::UndecidedSuccessor, "undecided-successor"),
+            (InconclusiveCause::NoInitialState, "no-initial-state"),
+        ] {
+            let source = BackendProviderSource {
+                backend_identity: "model-provider".to_owned(),
+                items: vec![TerminalRecord::new(
+                    RequestIndex::new(7),
+                    TerminalValue::Inconclusive(cause.clone()),
+                )],
+            };
+            let envelopes = read_backend_provider_envelope(&source, ReplayLimits::default())
+                .expect("the complete inconclusive record admits");
+            assert_eq!(envelopes.len(), 1);
+            assert_eq!(envelopes[0].category(), Category::Inconclusive);
+            assert_eq!(envelopes[0].record(), &source.items[0]);
+            assert_eq!(
+                envelopes[0].inconclusive_cause(),
+                Some(&ReportedInconclusiveCause::Cause(cause))
+            );
+            assert_eq!(
+                envelopes[0].inconclusive_cause().unwrap().as_str(),
+                spelling
+            );
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+    #[test]
+    fn certificate_rejections_keep_every_rule_and_complete_typed_locus() {
+        use crate::certificate::QueryPart;
+
+        for rule in [
+            CertificateRule::InitialMissing,
+            CertificateRule::SuccessorMissing,
+            CertificateRule::BadState,
+            CertificateRule::NotPartition,
+            CertificateRule::BackwardEdge,
+            CertificateRule::WitnessFails,
+            CertificateRule::QueryMismatch,
+            CertificateRule::ShapeMismatch,
+            CertificateRule::ProofStepInvalid,
+            CertificateRule::NotRefutation,
+        ] {
+            for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
+                for at in [
+                    CertificateLocus::Query { part },
+                    CertificateLocus::ProofStep { part, index: 0 },
+                    CertificateLocus::ProofStep {
+                        part,
+                        index: u64::MAX,
+                    },
+                ] {
+                    let cause = InconclusiveCause::CertificateRejected { rule, at };
+                    let input = source(vec![TerminalRecord::new(
+                        RequestIndex::new(4),
+                        TerminalValue::Inconclusive(cause.clone()),
+                    )]);
+                    let read = read_backend_provider_envelope(&input, ReplayLimits::default())
+                        .expect("the complete typed certificate rejection admits");
+                    assert_eq!(read.len(), 1);
+                    assert_eq!(read[0].category(), Category::Inconclusive);
+                    assert_eq!(read[0].record(), &input.items[0]);
+                    assert_eq!(
+                        read[0].inconclusive_cause(),
+                        Some(&ReportedInconclusiveCause::Cause(cause))
+                    );
+                    assert_eq!(
+                        read[0].inconclusive_cause().unwrap().as_str(),
+                        "certificate-rejected"
+                    );
+                }
+            }
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-10", "FR-072-AC-2")]
+    #[test]
+    fn replay_verdict_disagreement_reads_as_replay_parity() {
+        use crate::result::{EvaluatedValue, WitnessArmResult, WitnessCheck, WitnessSettlement};
+
+        let proved = Verdict::from_category(Category::Violation);
+        let replayed = Verdict::from_category(Category::Success);
+        let replay = WitnessArmResult::settle(
+            proved,
+            replayed,
+            Category::Success,
+            Some(EvaluatedValue::Boolean(true)),
+            WitnessCheck::Agrees(None),
+            Vec::new(),
+            quire_exact::ScalarLimits {
+                integer_bits: 0,
+                decimal_digits: 0,
+                scale_expansion: 0,
+                text_input_bytes: 0,
+                text_scalars: 0,
+                normalized_scalars: 0,
+                unit_edges: 0,
+                value_occurrences: 0,
+                work_units: 0,
+                result_units: 0,
+            },
+        );
+        assert_eq!(replay.settlement(), WitnessSettlement::Inconclusive);
+        let expected = DisagreementCause::Verdicts { proved, replayed };
+        assert_eq!(replay.disagreement(), Some(&expected));
+        // The proof reader consumes a supplied terminal record and retains
+        // the replay's typed disagreement without reclassifying it.
+        let source = BackendProviderSource {
+            backend_identity: "model-provider".to_owned(),
+            items: vec![TerminalRecord::new(
+                RequestIndex::new(0),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+                    replay.disagreement().unwrap().clone(),
+                )),
+            )],
+        };
+        let envelopes = read_backend_provider_envelope(&source, ReplayLimits::default()).unwrap();
+        assert_eq!(envelopes.len(), 1);
+        assert_eq!(envelopes[0].category(), Category::Inconclusive);
+        assert_eq!(
+            envelopes[0].inconclusive_cause(),
+            Some(&ReportedInconclusiveCause::Cause(
+                InconclusiveCause::ReplayParity(expected)
+            ))
+        );
+        assert_eq!(
+            envelopes[0].inconclusive_cause().unwrap().as_str(),
+            "replay-parity"
+        );
+    }
+
+    #[trace("TC-522", "FR-127-AC-4")]
+    #[test]
+    fn cancelled_terminal_records_keep_requested_and_deadline_sources() {
+        for source in [CancelCause::Requested, CancelCause::Deadline] {
+            let value = TerminalValue::Incomplete(IncompleteCause::Cancelled { source });
+            let input = BackendProviderSource {
+                backend_identity: "model-provider".to_owned(),
+                items: vec![TerminalRecord::new(RequestIndex::new(0), value.clone())],
+            };
+            let envelopes =
+                read_backend_provider_envelope(&input, ReplayLimits::default()).unwrap();
+            assert_eq!(envelopes.len(), 1);
+            assert_eq!(envelopes[0].category(), Category::Incomplete);
+            assert_eq!(envelopes[0].record().value(), &value);
+            assert_eq!(IncompleteCause::Cancelled { source }.as_str(), "cancelled");
+        }
+    }
+
     /// FR-069-AC-1 (TC-177): every FR-331 wire value maps to its exact
     /// O-16 category, `proved`/`tested` stay distinct within `success`, and
     /// a vacuous `Proved` (zero SUCCESS checks) maps to `inconclusive`, not
@@ -585,12 +908,18 @@ mod tests {
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
         let cases = [
             (
-                TerminalValue::Proved { success_checks: 1 },
+                TerminalValue::Proved {
+                    basis: ProofBasis::Checks { success_checks: 1 },
+                    certification: Certification::Certified,
+                },
                 Category::Success,
                 None,
             ),
             (
-                TerminalValue::Proved { success_checks: 0 },
+                TerminalValue::Proved {
+                    basis: ProofBasis::Checks { success_checks: 0 },
+                    certification: Certification::Certified,
+                },
                 Category::Inconclusive,
                 Some(ReportedInconclusiveCause::KaniVacuousProof),
             ),
@@ -623,7 +952,9 @@ mod tests {
                 None,
             ),
             (
-                TerminalValue::Incomplete(IncompleteCause::Cancelled),
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Requested,
+                }),
                 Category::Incomplete,
                 None,
             ),
@@ -679,7 +1010,10 @@ mod tests {
         // category with it.
         assert_eq!(
             envelopes[0].record().value(),
-            &TerminalValue::Proved { success_checks: 1 }
+            &TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 1 },
+                certification: Certification::Certified,
+            }
         );
         assert_eq!(envelopes[2].record().value(), &TerminalValue::Tested);
         assert_ne!(envelopes[0].record().value(), envelopes[2].record().value());
@@ -739,8 +1073,14 @@ mod tests {
         assert_eq!(envelopes[0].category(), Category::Violation);
         assert_eq!(envelopes[0].category().exit_code(), 10);
         for value in [
-            TerminalValue::Proved { success_checks: 1 },
-            TerminalValue::Proved { success_checks: 0 },
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 1 },
+                certification: Certification::Certified,
+            },
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Certified,
+            },
             TerminalValue::Tested,
             TerminalValue::Refuted,
             TerminalValue::Declined {
@@ -920,7 +1260,10 @@ mod tests {
         let items = vec![
             TerminalRecord::new(
                 RequestIndex::new(0),
-                TerminalValue::Proved { success_checks: 3 },
+                TerminalValue::Proved {
+                    basis: ProofBasis::Checks { success_checks: 3 },
+                    certification: Certification::Certified,
+                },
             ),
             TerminalRecord::new(RequestIndex::new(1), TerminalValue::Refuted),
             TerminalRecord::new(

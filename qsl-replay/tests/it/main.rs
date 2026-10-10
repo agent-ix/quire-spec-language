@@ -3,3 +3,4 @@
 
 mod category_facade;
 mod outcome_facade;
+mod parse_outcome_facade;
