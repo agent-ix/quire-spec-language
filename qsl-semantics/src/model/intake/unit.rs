@@ -469,6 +469,58 @@ mod systems_operation_controls {
 
     #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
     #[test]
+    fn actual_connection_meaning_refuses_object_ends_without_reclassifying_as_navigation() {
+        for reverse in [false, true] {
+            let mut tree: Value = serde_json::from_slice(&document(false, reverse)).unwrap();
+            let link = tree["types"].as_array_mut().unwrap().iter_mut().find(|node| node["identity"] == key("Link")).unwrap();
+            link["sourceEnd"]["type"] = json!(key("Composite"));
+            link["targetEnd"]["type"] = json!(key("Thing"));
+            let bytes = serde_json::to_vec(&tree).unwrap();
+            let (unit, packages) = selection(&bytes);
+            let failure = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+                .expect_err("declared connection meaning requires Ports even when both ends are object types");
+            assert!(failure.additional.is_empty());
+            let UnitIntakeCause::Refused(refusals) = failure.cause else { panic!("expected wrong-export connection ends"); };
+            assert_eq!(refusals.len(), 2);
+            for refusal in refusals.iter() {
+                assert_eq!(refusal.code, Code::InvalidModelBinding);
+                assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+            }
+            assert_eq!(refusals.iter().map(|failure| failure.detail.as_str()).collect::<Vec<_>>(), vec![
+                "source end of ix://example/systems/Link: required kind Port, actual kind none",
+                "target end of ix://example/systems/Link: required kind Port, actual kind none",
+            ]);
+        }
+    }
+
+    #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
+    fn actual_inline_navigation_retains_original_shape_without_system_kind_charge() {
+        for reverse in [false, true] {
+            let mut tree: Value = serde_json::from_slice(&document(false, reverse)).unwrap();
+            tree["types"].as_array_mut().unwrap().retain(|node| node["identity"] != key("Link"));
+            let composite = tree["types"].as_array_mut().unwrap().iter_mut().find(|node| node["identity"] == key("Composite")).unwrap();
+            let origin = composite["origin"].clone();
+            let relationship = json!({"identity": format!("{}/nav", key("Composite")), "category": "structural", "composite": false,
+                "direction": "source-to-target", "origin": origin,
+                "sourceEnd": {"type": key("Composite"), "role": "composite", "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true}},
+                "targetEnd": {"type": key("Thing"), "role": "thing", "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true}}});
+            composite["relationships"] = json!([relationship.clone()]);
+            let bytes = serde_json::to_vec(&tree).unwrap();
+            let prefix = normalization_prefix(&bytes);
+            let (unit, packages) = selection(&bytes);
+            let selected = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+                .expect("real inline navigation between object types has no systems kind");
+            let original = crate::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: format!("{}/nav", key("Composite")) };
+            assert_eq!(selected[0].original_node(&original), Some(&relationship));
+            assert_eq!(selected.meter.consumed(LimitKind::WorkUnits), prefix + 5);
+            assert_eq!(selected.meter.admitted_charges().iter().filter(|point| **point == ChargePoint::SystemsKind).count(), 5);
+            assert!(!selected.meter.admitted_charges().contains(&ChargePoint::SystemsConnectionCondition));
+        }
+    }
+
+    #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
     fn actual_phase_one_refuses_missing_system_references_before_kind_mapping() {
         let declaration = |name: &str| crate::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: key(name) };
         let missing = declaration("Absent");
