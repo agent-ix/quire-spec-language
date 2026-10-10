@@ -114,13 +114,23 @@ fn read_authored(document: &Value) -> DomainPackage {
     let packages = package_input([bytes.as_slice()]);
     let digest = *packages.keys().next().expect("one authored package");
     let selection = qsl_semantics::model::domain_package::DomainPackageRef {
-        identity: document["package"]["identity"].as_str().expect("package identity").to_owned(),
-        version: document["package"]["version"].as_str().expect("package version").to_owned(),
+        identity: document["package"]["identity"]
+            .as_str()
+            .expect("package identity")
+            .to_owned(),
+        version: document["package"]["version"]
+            .as_str()
+            .expect("package version")
+            .to_owned(),
         digest,
     };
     let (selection, admitted) = admit(
-        &selection, SHA256_JCS_DIGEST_DOMAIN, &packages, IntakeLimits::default(),
-    ).expect("the selected authored package passes byte admission");
+        &selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &packages,
+        IntakeLimits::default(),
+    )
+    .expect("the selected authored package passes byte admission");
     read_domain_package(selection, &admitted)
         .expect("business declarations must be admitted through the public reader")
 }
@@ -131,7 +141,11 @@ fn normalized(package: &DomainPackage, declarations: usize) -> EffectiveView {
         panic!("business declarations must normalize: {outcome:?}");
     };
     assert_eq!(
-        meter.admitted_charges().iter().filter(|point| **point == ChargePoint::NormalizeRecord).count(),
+        meter
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeRecord)
+            .count(),
         declarations,
         "one normalize.record charge per original declaration",
     );
@@ -139,7 +153,11 @@ fn normalized(package: &DomainPackage, declarations: usize) -> EffectiveView {
 }
 
 fn original_keys(package: &DomainPackage) -> Vec<DeclarationKey> {
-    let mut keys: Vec<_> = package.records.iter().map(|record| record.key().clone()).collect();
+    let mut keys: Vec<_> = package
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
     keys.sort();
     keys
 }
@@ -152,72 +170,128 @@ fn expected_keys(package: &str, nodes: &[&str]) -> Vec<DeclarationKey> {
 
 fn k2() -> Value {
     let p = "test/orders";
-    let state = |name: &str| json!({
-        "identity": identity(p, &format!("OrderLifecycle/{name}")), "name": name,
-        "origin": origin(p, &format!("OrderLifecycle/{name}")),
-    });
-    let transition = |name: &str, from: &str, to: &str, trigger: &str, emits: Vec<String>| json!({
-        "identity": identity(p, &format!("OrderLifecycle/{name}")),
-        "from": identity(p, &format!("OrderLifecycle/{from}")),
-        "to": identity(p, &format!("OrderLifecycle/{to}")),
-        "trigger": identity(p, &format!("OrderLifecycle/{trigger}")),
-        "emits": emits, "origin": origin(p, &format!("OrderLifecycle/{name}")),
-    });
-    let step = |name: &str, kind: &str, consumes: Vec<String>| json!({
-        "identity": identity(p, &format!("Fulfilment/{name}")), "name": name,
-        "stepKind": kind, "consumes": consumes, "emits": [],
-        "origin": origin(p, &format!("Fulfilment/{name}")),
-    });
-    let mut placed = transition("transition0", "Draft", "Placed", "place", vec![identity(p, "OrderPlaced")]);
+    let state = |name: &str| {
+        json!({
+            "identity": identity(p, &format!("OrderLifecycle/{name}")), "name": name,
+            "origin": origin(p, &format!("OrderLifecycle/{name}")),
+        })
+    };
+    let transition = |name: &str, from: &str, to: &str, trigger: &str, emits: Vec<String>| {
+        json!({
+            "identity": identity(p, &format!("OrderLifecycle/{name}")),
+            "from": identity(p, &format!("OrderLifecycle/{from}")),
+            "to": identity(p, &format!("OrderLifecycle/{to}")),
+            "trigger": identity(p, &format!("OrderLifecycle/{trigger}")),
+            "emits": emits, "origin": origin(p, &format!("OrderLifecycle/{name}")),
+        })
+    };
+    let step = |name: &str, kind: &str, consumes: Vec<String>| {
+        json!({
+            "identity": identity(p, &format!("Fulfilment/{name}")), "name": name,
+            "stepKind": kind, "consumes": consumes, "emits": [],
+            "origin": origin(p, &format!("Fulfilment/{name}")),
+        })
+    };
+    let mut placed = transition(
+        "transition0",
+        "Draft",
+        "Placed",
+        "place",
+        vec![identity(p, "OrderPlaced")],
+    );
     placed["guard"] = json!(identity(p, "OrderLifecycle/NotYetPlaced"));
-    document(p, "1", vec![
-        construct("thing", meaning::OBJECT_TYPE), construct("value", meaning::VALUE_TYPE),
-        construct("money", meaning::RECORD_VALUE_TYPE), construct("happened", meaning::EVENT_TYPE),
-        construct("lifecycle", meaning::STATE_MACHINE), construct("saga", meaning::PROCESS),
-        construct("store", meaning::PERSISTENCE_INTERFACE), construct("context", meaning::NAMESPACE),
-        construct("population", meaning::POPULATION),
-    ], vec![
-        definition(p, "Order", "thing", json!({
-            "identityFields": [identity(p, "Order/order_id")],
-            "fields": [field(p, "Order", "order_id", "ix://quire/native/UUID"),
-                       field(p, "Order", "total", &identity(p, "Money"))],
-        })),
-        // Retain the declared Timestamp binding. The upstream wire's closed
-        // scalar vocabulary must be aligned before this fixture can admit.
-        definition(p, "Instant", "value", json!({"scalar": "Timestamp"})),
-        definition(p, "Money", "money", json!({
-            "identityFields": [],
-            "fields": [field(p, "Money", "amount_minor", "ix://quire/native/Int"),
-                       field(p, "Money", "currency", "ix://quire/native/String")],
-        })),
-        definition(p, "OrderPlaced", "happened", json!({
-            "identityFields": [], "occurrenceField": identity(p, "OrderPlaced/occurred_at"),
-            "fields": [field(p, "OrderPlaced", "occurred_at", &identity(p, "Instant")),
-                       field(p, "OrderPlaced", "order_id", "ix://quire/native/UUID")],
-        })),
-        definition(p, "OrderLifecycle", "lifecycle", json!({
-            "fields": [field(p, "OrderLifecycle", "placed", "ix://quire/native/Boolean")],
-            "operations": [operation(p, "OrderLifecycle", "place"), operation(p, "OrderLifecycle", "cancel")],
-            "clauses": [clause(p, "OrderLifecycle", "NotYetPlaced", "not self.placed")],
-            "states": [state("Draft"), state("Placed"), state("Cancelled")],
-            "transitions": [placed, transition("transition1", "Draft", "Cancelled", "cancel", vec![]),
-                            transition("transition2", "Placed", "Cancelled", "cancel", vec![])],
-        })),
-        definition(p, "Fulfilment", "saga", json!({
-            "identityFields": [identity(p, "Fulfilment/correlation_id")],
-            "fields": [field(p, "Fulfilment", "correlation_id", "ix://quire/native/UUID")],
-            "steps": [step("receive_order", "event", vec![identity(p, "OrderPlaced")]),
-                      step("reserve_stock", "command", vec![]), step("await_shipment", "wait", vec![])],
-        })),
-        definition(p, "OrderStore", "store", json!({
-            "fields": [], "operations": [operation(p, "OrderStore", "get"), operation(p, "OrderStore", "save")],
-            "persists": [identity(p, "Order")],
-        })),
-        definition(p, "OrderManagement", "context", json!({
-            "members": [identity(p, "Order"), identity(p, "Money"), identity(p, "OrderPlaced")],
-            "vocabulary": [{"term": "Place", "doc": "Commit a draft order", "origin": origin(p, "OrderManagement")}],
-        })),
-    ])
+    document(
+        p,
+        "1",
+        vec![
+            construct("thing", meaning::OBJECT_TYPE),
+            construct("value", meaning::VALUE_TYPE),
+            construct("money", meaning::RECORD_VALUE_TYPE),
+            construct("happened", meaning::EVENT_TYPE),
+            construct("lifecycle", meaning::STATE_MACHINE),
+            construct("saga", meaning::PROCESS),
+            construct("store", meaning::PERSISTENCE_INTERFACE),
+            construct("context", meaning::NAMESPACE),
+            construct("population", meaning::POPULATION),
+        ],
+        vec![
+            definition(
+                p,
+                "Order",
+                "thing",
+                json!({
+                    "identityFields": [identity(p, "Order/order_id")],
+                    "fields": [field(p, "Order", "order_id", "ix://quire/native/UUID"),
+                               field(p, "Order", "total", &identity(p, "Money"))],
+                }),
+            ),
+            // Retain the declared Timestamp binding. The upstream wire's closed
+            // scalar vocabulary must be aligned before this fixture can admit.
+            definition(p, "Instant", "value", json!({"scalar": "Timestamp"})),
+            definition(
+                p,
+                "Money",
+                "money",
+                json!({
+                    "identityFields": [],
+                    "fields": [field(p, "Money", "amount_minor", "ix://quire/native/Int"),
+                               field(p, "Money", "currency", "ix://quire/native/String")],
+                }),
+            ),
+            definition(
+                p,
+                "OrderPlaced",
+                "happened",
+                json!({
+                    "identityFields": [], "occurrenceField": identity(p, "OrderPlaced/occurred_at"),
+                    "fields": [field(p, "OrderPlaced", "occurred_at", &identity(p, "Instant")),
+                               field(p, "OrderPlaced", "order_id", "ix://quire/native/UUID")],
+                }),
+            ),
+            definition(
+                p,
+                "OrderLifecycle",
+                "lifecycle",
+                json!({
+                    "fields": [field(p, "OrderLifecycle", "placed", "ix://quire/native/Boolean")],
+                    "operations": [operation(p, "OrderLifecycle", "place"), operation(p, "OrderLifecycle", "cancel")],
+                    "clauses": [clause(p, "OrderLifecycle", "NotYetPlaced", "not self.placed")],
+                    "states": [state("Draft"), state("Placed"), state("Cancelled")],
+                    "transitions": [placed, transition("transition1", "Draft", "Cancelled", "cancel", vec![]),
+                                    transition("transition2", "Placed", "Cancelled", "cancel", vec![])],
+                }),
+            ),
+            definition(
+                p,
+                "Fulfilment",
+                "saga",
+                json!({
+                    "identityFields": [identity(p, "Fulfilment/correlation_id")],
+                    "fields": [field(p, "Fulfilment", "correlation_id", "ix://quire/native/UUID")],
+                    "steps": [step("receive_order", "event", vec![identity(p, "OrderPlaced")]),
+                              step("reserve_stock", "command", vec![]), step("await_shipment", "wait", vec![])],
+                }),
+            ),
+            definition(
+                p,
+                "OrderStore",
+                "store",
+                json!({
+                    "fields": [], "operations": [operation(p, "OrderStore", "get"), operation(p, "OrderStore", "save")],
+                    "persists": [identity(p, "Order")],
+                }),
+            ),
+            definition(
+                p,
+                "OrderManagement",
+                "context",
+                json!({
+                    "members": [identity(p, "Order"), identity(p, "Money"), identity(p, "OrderPlaced")],
+                    "vocabulary": [{"term": "Place", "doc": "Commit a draft order", "origin": origin(p, "OrderManagement")}],
+                }),
+            ),
+        ],
+    )
 }
 
 /// The full authored K2 must reach its 21 original declarations and charges.
@@ -226,16 +300,43 @@ fn k2() -> Value {
 #[test]
 fn full_k2_admission_preserves_twenty_one_declarations() {
     let package = read_authored(&k2());
-    assert_eq!(original_keys(&package), expected_keys("test/orders", &[
-        "Order", "Order/order_id", "Order/total", "Instant", "Money", "Money/amount_minor", "Money/currency",
-        "OrderPlaced", "OrderPlaced/occurred_at", "OrderPlaced/order_id", "OrderLifecycle", "OrderLifecycle/placed",
-        "OrderLifecycle/place", "OrderLifecycle/cancel", "OrderLifecycle/NotYetPlaced", "Fulfilment",
-        "Fulfilment/correlation_id", "OrderStore", "OrderStore/get", "OrderStore/save", "OrderManagement",
-    ]));
-    assert!(package.records.iter().any(|record| matches!(record,
-        DomainPackageRecord::RecordValueType(record) if record.key == key("test/orders", "Money"))));
+    assert_eq!(
+        original_keys(&package),
+        expected_keys(
+            "test/orders",
+            &[
+                "Order",
+                "Order/order_id",
+                "Order/total",
+                "Instant",
+                "Money",
+                "Money/amount_minor",
+                "Money/currency",
+                "OrderPlaced",
+                "OrderPlaced/occurred_at",
+                "OrderPlaced/order_id",
+                "OrderLifecycle",
+                "OrderLifecycle/placed",
+                "OrderLifecycle/place",
+                "OrderLifecycle/cancel",
+                "OrderLifecycle/NotYetPlaced",
+                "Fulfilment",
+                "Fulfilment/correlation_id",
+                "OrderStore",
+                "OrderStore/get",
+                "OrderStore/save",
+                "OrderManagement",
+            ]
+        )
+    );
+    assert!(
+        package.records.iter().any(|record| matches!(record,
+        DomainPackageRecord::RecordValueType(record) if record.key == key("test/orders", "Money")))
+    );
     let view = normalized(&package, 21);
-    assert!(!view.type_identities().contains_key(&key("test/orders", "OrderManagement")));
+    assert!(!view
+        .type_identities()
+        .contains_key(&key("test/orders", "OrderManagement")));
 }
 
 /// A record invariant is one original declaration, independent of native alignment.
@@ -244,14 +345,27 @@ fn full_k2_admission_preserves_twenty_one_declarations() {
 #[test]
 fn record_invariant_is_preserved_as_a_charged_declaration() {
     let p = "test/record-invariant";
-    let package = read_authored(&document(p, "1.0.0", vec![construct("value_record", meaning::RECORD_VALUE_TYPE)], vec![
-        definition(p, "Amount", "value_record", json!({
-            "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")],
-            "clauses": [clause(p, "Amount", "NonNegative", "self.amount_minor >= 0")],
-        })),
-    ]));
-    assert_eq!(original_keys(&package), expected_keys(p, &["Amount", "Amount/amount_minor", "Amount/NonNegative"]));
-    let original = package.original(&key(p, "Amount/NonNegative")).expect("the invariant retains original provenance");
+    let package = read_authored(&document(
+        p,
+        "1.0.0",
+        vec![construct("value_record", meaning::RECORD_VALUE_TYPE)],
+        vec![definition(
+            p,
+            "Amount",
+            "value_record",
+            json!({
+                "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")],
+                "clauses": [clause(p, "Amount", "NonNegative", "self.amount_minor >= 0")],
+            }),
+        )],
+    ));
+    assert_eq!(
+        original_keys(&package),
+        expected_keys(p, &["Amount", "Amount/amount_minor", "Amount/NonNegative"])
+    );
+    let original = package
+        .original(&key(p, "Amount/NonNegative"))
+        .expect("the invariant retains original provenance");
     assert_eq!(original.member_name.as_deref(), Some("NonNegative"));
     assert_eq!(original.origin, origin(p, "Amount/NonNegative"));
     normalized(&package, 3);
@@ -263,23 +377,60 @@ fn record_invariant_is_preserved_as_a_charged_declaration() {
 #[test]
 fn same_meaning_record_specialization_inherits_effective_fields() {
     let p = "test/record-specialization";
-    let package = read_authored(&document(p, "1.0.0", vec![construct("value_record", meaning::RECORD_VALUE_TYPE)], vec![
-        definition(p, "Amount", "value_record", json!({
-            "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")],
-        })),
-        definition(p, "TaxedAmount", "value_record", json!({
-            "supertypes": [identity(p, "Amount")],
-            "fields": [field(p, "TaxedAmount", "tax_minor", "ix://quire/native/Integer")],
-        })),
-    ]));
-    assert_eq!(original_keys(&package), expected_keys(p, &["Amount", "Amount/amount_minor", "TaxedAmount", "TaxedAmount/tax_minor"]));
+    let package = read_authored(&document(
+        p,
+        "1.0.0",
+        vec![construct("value_record", meaning::RECORD_VALUE_TYPE)],
+        vec![
+            definition(
+                p,
+                "Amount",
+                "value_record",
+                json!({
+                    "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")],
+                }),
+            ),
+            definition(
+                p,
+                "TaxedAmount",
+                "value_record",
+                json!({
+                    "supertypes": [identity(p, "Amount")],
+                    "fields": [field(p, "TaxedAmount", "tax_minor", "ix://quire/native/Integer")],
+                }),
+            ),
+        ],
+    ));
+    assert_eq!(
+        original_keys(&package),
+        expected_keys(
+            p,
+            &[
+                "Amount",
+                "Amount/amount_minor",
+                "TaxedAmount",
+                "TaxedAmount/tax_minor"
+            ]
+        )
+    );
     let view = normalized(&package, 4);
-    let derived = view.type_identities().get(&key(p, "TaxedAmount")).expect("record subtype has an effective type");
-    let mut fields: Vec<_> = view.declarations().iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type.as_ref() == Some(derived))
-        .map(|entry| entry.preimage.original.clone()).collect();
+    let derived = view
+        .type_identities()
+        .get(&key(p, "TaxedAmount"))
+        .expect("record subtype has an effective type");
+    let mut fields: Vec<_> = view
+        .declarations()
+        .iter()
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type.as_ref() == Some(derived)
+        })
+        .map(|entry| entry.preimage.original.clone())
+        .collect();
     fields.sort();
-    assert_eq!(fields, expected_keys(p, &["Amount/amount_minor", "TaxedAmount/tax_minor"]));
+    assert_eq!(
+        fields,
+        expected_keys(p, &["Amount/amount_minor", "TaxedAmount/tax_minor"])
+    );
 }
 
 /// A namespace is an original declaration and contributes no effective type.
@@ -288,20 +439,41 @@ fn same_meaning_record_specialization_inherits_effective_fields() {
 #[test]
 fn namespace_admission_preserves_original_without_an_effective_type() {
     let p = "test/namespace-admission";
-    let package = read_authored(&document(p, "1.0.0", vec![
-        construct("entity", meaning::OBJECT_TYPE), construct("context", meaning::NAMESPACE),
-    ], vec![
-        definition(p, "Entry", "entity", json!({
-            "fields": [field(p, "Entry", "id", "ix://quire/native/Integer")],
-            "identityFields": [identity(p, "Entry/id")],
-        })),
-        definition(p, "Scope", "context", json!({
-            "members": [identity(p, "Entry")],
-            "vocabulary": [{"term": "Entry", "doc": "An identified entry", "origin": origin(p, "Scope")}],
-        })),
-    ]));
-    assert_eq!(original_keys(&package), expected_keys(p, &["Entry", "Entry/id", "Scope"]));
-    let original = package.original(&key(p, "Scope")).expect("namespace has one original declaration");
+    let package = read_authored(&document(
+        p,
+        "1.0.0",
+        vec![
+            construct("entity", meaning::OBJECT_TYPE),
+            construct("context", meaning::NAMESPACE),
+        ],
+        vec![
+            definition(
+                p,
+                "Entry",
+                "entity",
+                json!({
+                    "fields": [field(p, "Entry", "id", "ix://quire/native/Integer")],
+                    "identityFields": [identity(p, "Entry/id")],
+                }),
+            ),
+            definition(
+                p,
+                "Scope",
+                "context",
+                json!({
+                    "members": [identity(p, "Entry")],
+                    "vocabulary": [{"term": "Entry", "doc": "An identified entry", "origin": origin(p, "Scope")}],
+                }),
+            ),
+        ],
+    ));
+    assert_eq!(
+        original_keys(&package),
+        expected_keys(p, &["Entry", "Entry/id", "Scope"])
+    );
+    let original = package
+        .original(&key(p, "Scope"))
+        .expect("namespace has one original declaration");
     assert_eq!(original.meaning.as_deref(), Some(meaning::NAMESPACE));
     let view = normalized(&package, 3);
     assert!(!view.type_identities().contains_key(&key(p, "Scope")));
