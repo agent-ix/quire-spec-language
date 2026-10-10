@@ -103,7 +103,7 @@ pub fn tc464_integer_argument_source() -> (Vec<u8>, String) {
 /// The original a_creation_of_a_subtype_of_a_creates_grant_admits input, before observation construction.
 pub fn tc465_creates_subtype_document() -> Vec<u8> {
     let config_version = "ix://example/config-version/ConfigVersion";
-    let document = add_sub_type(
+    add_sub_type(
         tc465_document_with(operation(
             "attemptUpdate",
             json!([]),
@@ -115,8 +115,7 @@ pub fn tc465_creates_subtype_document() -> Vec<u8> {
             }),
         )),
         &["ix://example/config-version/config_history"],
-    );
-    document
+    )
 }
 
 /// The owning state test's original source/model fixture.
