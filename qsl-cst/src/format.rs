@@ -1,21 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-003: format validated complete-V1 source over the S1 lossless CST
-//! (ADR-011 §6.1 tool layer, depending on layer 1 and F only; §6.2 `format`
+//! (ADR-011 §6.1 layer 1, depending on F only; §6.2 `format`
 //! row). Formatting rewrites whitespace between the CST's own tokens and
 //! keeps every token spelling and comment in order. It admits only a
 //! `ParsedSource` that `is_admissible()`; a recovering or diagnosed parse
 //! refuses with a typed cause and no output.
 //!
-//! `complete::editor::format_document` calls [`format_with_limit`].
-use qsl_cst::{
+use crate::{
     CompleteCause, CompleteCode, CompleteDiagnostic, CstToken, ParsedSource, TokenClass, TokenKind,
 };
 use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Phase, Span};
 
-/// The implementation's output-byte ceiling: 1 MiB. [`format()`] applies it,
-/// and [`format_with_limit`] clamps every selected ceiling to it.
+/// The default output-byte ceiling: 1 MiB, replaceable by the caller.
 pub const OUTPUT_BYTE_CEILING: usize = MAX_SOURCE_BYTES;
+
+/// FR-277: caller-selected limits for formatting, including every emitted byte.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FormatLimits {
+    /// Inclusive output length, including comments, indentation and final LF.
+    pub output_bytes: usize,
+}
+
+impl Default for FormatLimits {
+    fn default() -> Self {
+        Self {
+            output_bytes: OUTPUT_BYTE_CEILING,
+        }
+    }
+}
+
+impl FormatLimits {
+    /// Replace the output-byte bound with the supplied value, including zero.
+    pub fn with_output_bytes(mut self, output_bytes: usize) -> Self {
+        self.output_bytes = output_bytes;
+        self
+    }
+}
 
 /// Why `format` returned no output. Each arm holds the diagnostic that
 /// carries its code, cause and source location.
@@ -74,22 +95,33 @@ impl std::error::Error for FormatRefusal {}
 
 /// Format admissible complete-V1 source under the 1 MiB output ceiling.
 pub fn format(parsed: &ParsedSource) -> Result<String, FormatRefusal> {
-    format_with_limit(parsed, OUTPUT_BYTE_CEILING)
+    format_with_limits(parsed, FormatLimits::default())
 }
 
 /// Format admissible complete-V1 source under an inclusive selected
-/// output-byte ceiling, clamped to [`OUTPUT_BYTE_CEILING`]. Every append is
+/// output-byte ceiling used as given. Every append is
 /// checked before it grows the output, and a refusal returns no partial
 /// string.
 pub fn format_with_limit(
     parsed: &ParsedSource,
     output_bytes: usize,
 ) -> Result<String, FormatRefusal> {
+    format_with_limits(
+        parsed,
+        FormatLimits::default().with_output_bytes(output_bytes),
+    )
+}
+
+/// Format under the caller's typed limits without imposing a hidden ceiling.
+pub fn format_with_limits(
+    parsed: &ParsedSource,
+    limits: FormatLimits,
+) -> Result<String, FormatRefusal> {
     admit(parsed)?;
     let mut output = Output {
         parsed,
         text: String::new(),
-        limit: output_bytes.min(OUTPUT_BYTE_CEILING),
+        limit: limits.output_bytes,
     };
     let mut indent = 0_usize;
     let mut previous: Option<&CstToken> = None;
@@ -167,7 +199,7 @@ fn whole_source_error(
     cause: CompleteCause,
     message: &str,
 ) -> Box<CompleteDiagnostic> {
-    qsl_cst::diagnostic::error(
+    crate::diagnostic::error(
         parsed.source(),
         code,
         cause,
@@ -244,14 +276,17 @@ impl<'a> Output<'a> {
             .checked_add(value.len())
             .is_none_or(|length| length > self.limit)
         {
-            return Err(FormatRefusal::OutputBudgetExhausted(
-                qsl_cst::diagnostic::resource_exhausted(
-                    self.parsed.source(),
-                    Phase::Format,
-                    span,
-                    qsl_foundation::SyntaxLimit::SourceBytes { bound: self.limit },
-                ),
-            ));
+            let mut diagnostic = crate::diagnostic::resource_exhausted(
+                self.parsed.source(),
+                Phase::Format,
+                span,
+                qsl_foundation::SyntaxLimit::SourceBytes { bound: self.limit },
+            );
+            diagnostic.message = format!(
+                "output byte ceiling of {} bytes exhausted; raise FormatLimits.output_bytes with format_with_limit",
+                self.limit
+            );
+            return Err(FormatRefusal::OutputBudgetExhausted(diagnostic));
         }
         self.text.push_str(value);
         Ok(())
@@ -283,7 +318,7 @@ mod tests {
     use qsl_foundation::SourceIdentity;
 
     fn parse(text: &str) -> ParsedSource {
-        qsl_cst::parse(
+        crate::parse(
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:format".into(),
@@ -292,7 +327,7 @@ mod tests {
             },
             "format.quire",
             text.as_bytes(),
-            qsl_cst::Limits::default(),
+            crate::Limits::default(),
         )
         .expect("the source reads")
     }

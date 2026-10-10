@@ -21,6 +21,70 @@ pub fn emitted(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     dependencies: &DependencyInput,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
+    let original = emitted_once(source.clone(), path, bytes, packages, dependencies)?;
+    assert_format_identity(&original, source, path, bytes, packages, dependencies);
+    Ok(original)
+}
+
+/// Trace: FR-003-AC-9
+/// Every successful fixture using this actual S1–S4 seam also checks its
+/// formatted bytes under the same model and dependency selections.
+fn assert_format_identity(
+    original: &EmittedUnit,
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+) {
+    let parsed = qsl_cst::parse(source.clone(), path, bytes, qsl_cst::Limits::default()).unwrap();
+    let formatted = qsl_cst::format::format(&parsed).unwrap();
+    let mut formatted_source = source;
+    formatted_source.revision.push_str("-formatted");
+    let reparsed = qsl_cst::parse(
+        formatted_source.clone(),
+        path,
+        formatted.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        qsl_cst::format::format(&reparsed).unwrap(),
+        formatted,
+        "{path}: second pass"
+    );
+    let checked = emitted_once(
+        formatted_source,
+        path,
+        formatted.as_bytes(),
+        packages,
+        dependencies,
+    )
+    .unwrap_or_else(|refusal| panic!("{path}: formatted fixture must check: {refusal}"));
+    assert_eq!(
+        original.sources()[0].text().as_bytes(),
+        bytes,
+        "{path}: original source retained"
+    );
+    assert_eq!(
+        checked.sources()[0].text(),
+        formatted,
+        "{path}: formatted source retained"
+    );
+    assert_eq!(
+        checked.package().package_id(),
+        original.package().package_id(),
+        "{path}: formatting changed checked package identity"
+    );
+}
+
+fn emitted_once(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+) -> Result<EmittedUnit, Box<CompileRefusal>> {
     let cancel = Cancel::new();
     let limits = SpineLimits::default();
     let refusal = |failure| {
