@@ -1659,7 +1659,13 @@ fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
 fn real_public_package_equality_fault_propagates_into_replay_failure() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
-    use qsl_semantics::check::PackageDeclarations;
+    use qsl_semantics::check::{AdmittedModel, PackageDeclarations};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
+    };
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{ChargePoint, FieldValue, Integer, IntegerInterval, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
@@ -1667,7 +1673,22 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
         FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
     };
     use quire_semantic_value::object_closure::ObjectClosure;
-    let owner = quire_exact::EffectiveId::from_digest([0x71; 32]);
+    let owner_key = DeclarationKey::fixture("model.A");
+    let domain = DomainPackage::new(
+        DomainPackageRef::fixture("equality-fault-replay"),
+        vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: owner_key.clone(),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        })],
+    );
+    let NormalizeOutcome::Completed(view) = normalize(&domain, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("real equality model admission");
+    };
+    let owner = *view.type_identities().get(&owner_key).unwrap();
+    let model = AdmittedModel::new(&domain, &view).unwrap();
     let reference = quire_exact::ObjectReference::new(
         quire_exact::UniverseId::from_digest([0; 32]),
         owner,
@@ -1689,12 +1710,13 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
         .unwrap()
     };
     let span = qsl_foundation::Span { start: 0, end: 0 };
-    let operand = || Expression::field(Expression::name("receiver"), "number");
+    let operand = || Expression::field(Expression::deref(Expression::name("receiver")), "number");
     let source = Expression::binary(BinaryOperator::Equal, operand(), operand());
     let declarations = PackageDeclarations {
         types: types(ValueType::Int(
             IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap(),
         )),
+        models: vec![model],
         functions: vec![FunctionDeclaration::new(
             "Compare",
             vec![(
@@ -1821,7 +1843,7 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
     let owner = *view.type_identities().get(&object).unwrap();
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let document = PopulationDocument {
-        model_identity: "empty-identity-replay".to_owned(),
+        model_identity: domain.model_selection.identity.clone(),
         members: vec![PopulationMember {
             object: String::new(),
             type_identity: object,
