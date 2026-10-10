@@ -72,6 +72,7 @@ struct DeclFlags {
     non_root: bool,
     scalar_type: bool,
     record_value_type: bool,
+    namespace: bool,
     field_member: bool,
     operation_member: bool,
 }
@@ -126,7 +127,7 @@ pub(crate) struct RecordIndex {
     positions: HashMap<DeclarationKey, DeclIdx>,
     flags: Vec<DeclFlags>,
     /// Each type's declared `supertypes[]`, in record order, concatenated
-    /// over every `ObjectType` record under the key.
+    /// over every object or record value type record under the key.
     generals: Vec<Vec<DeclIdx>>,
     /// The position of the last field record under each key.
     fields: HashMap<DeclIdx, usize>,
@@ -141,6 +142,8 @@ pub(crate) struct RecordIndex {
     fields_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
     /// Each owner's operation members, in record order.
     operations_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
+    /// Original clause record positions, indexed once under their owner.
+    clauses_by_owner: HashMap<DeclIdx, Vec<usize>>,
     /// Each owner's redefining members, in record order.
     redefiners_by_owner: HashMap<DeclIdx, Vec<Redefiner>>,
     /// Each member's `redefines` target, from the first member record under
@@ -164,6 +167,7 @@ impl PartialEq for RecordIndex {
             && self.member_owner == other.member_owner
             && self.fields_by_owner == other.fields_by_owner
             && self.operations_by_owner == other.operations_by_owner
+            && self.clauses_by_owner == other.clauses_by_owner
             && self.redefiners_by_owner == other.redefiners_by_owner
             && self.redefines == other.redefines
             && self.record_count == other.record_count
@@ -186,8 +190,14 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .chain([&operation.owner])
             .chain(&operation.redefines)
             .collect(),
-        DomainPackageRecord::RecordValueType(_)
-        | DomainPackageRecord::ScalarType(_)
+        DomainPackageRecord::RecordValueType(record) => std::iter::once(&record.key)
+            .chain(&record.supertypes)
+            .collect(),
+        DomainPackageRecord::Clause(clause) => vec![&clause.key, &clause.owner],
+        DomainPackageRecord::Namespace(namespace) => std::iter::once(&namespace.key)
+            .chain(&namespace.members)
+            .collect(),
+        DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
         | DomainPackageRecord::Relationship(_)
@@ -339,6 +349,7 @@ impl RecordIndex {
             member_owner: HashMap::new(),
             fields_by_owner: HashMap::new(),
             operations_by_owner: HashMap::new(),
+            clauses_by_owner: HashMap::new(),
             redefiners_by_owner: HashMap::new(),
             redefines: HashMap::new(),
             record_count: domain_package.records.len(),
@@ -379,8 +390,21 @@ impl RecordIndex {
                     }
                     index.operations.insert(own, record_position);
                 }
-                DomainPackageRecord::RecordValueType(_) => {
+                DomainPackageRecord::RecordValueType(record) => {
                     index.flags[own.0].record_value_type = true;
+                    index.generals[own.0].extend(record.supertypes.iter().map(at));
+                }
+                DomainPackageRecord::Clause(clause) => {
+                    let owner = at(&clause.owner);
+                    index.member_owner.insert(own, owner);
+                    index
+                        .clauses_by_owner
+                        .entry(owner)
+                        .or_default()
+                        .push(record_position);
+                }
+                DomainPackageRecord::Namespace(_) => {
+                    index.flags[own.0].namespace = true;
                 }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
@@ -480,6 +504,45 @@ impl RecordIndex {
             .zip(&self.flags)
             .filter(|(_, flags)| flags.object_type)
             .map(|(key, _)| key)
+    }
+
+    /// Original namespace nodes are never normalizable types.
+    pub(crate) fn is_namespace(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).namespace
+    }
+
+    /// Types that have effective type identities, ascending by key.
+    pub(crate) fn normalizable_types(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.keys
+            .iter()
+            .zip(&self.flags)
+            .filter(|(_, flags)| flags.object_type || flags.record_value_type)
+            .map(|(key, _)| key)
+    }
+
+    /// Authored quire invariants directly owned by this type, ascending by key.
+    pub(crate) fn sorted_direct_clauses<'r>(
+        &self,
+        records: &'r [DomainPackageRecord],
+        owner: &DeclarationKey,
+    ) -> Vec<&'r super::domain_package::ClauseRecord> {
+        let Some(owner) = self.position(owner) else {
+            return Vec::new();
+        };
+        let mut clauses: Vec<_> = self
+            .clauses_by_owner
+            .get(&owner)
+            .into_iter()
+            .flatten()
+            .filter_map(|position| match records.get(*position) {
+                Some(DomainPackageRecord::Clause(clause)) if clause.language == "quire" => {
+                    Some(clause)
+                }
+                _ => None,
+            })
+            .collect();
+        clauses.sort_by(|a, b| a.key.cmp(&b.key));
+        clauses
     }
 
     /// `specific`'s declared `supertypes[]`, ascending by key.

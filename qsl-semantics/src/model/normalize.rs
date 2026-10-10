@@ -802,12 +802,9 @@ struct ObjectUniverseWire<'a> {
 /// supertype graph restricted to object types (ADR-013 §8 OQ-E:
 /// `model-complete.md`'s "Object universe" -- "the connected component of
 /// `T` in the supertype graph restricted to object types"). `supertypes[]`
-/// edges are read in both directions: `type_keys` and every key a
-/// [`ModelIndex::generalization_edges`] edge names are already guaranteed
-/// declared object types by the time this runs (a dangling supertype
-/// reference is an intake refusal reported before `build` ever reaches this
-/// call, and the index only ever collects `ObjectTypeRecord.supertypes[]`
-/// entries). A type with no supertype and no
+/// edges are read in both directions. The index also retains record ancestry,
+/// so only edges whose two ends are actual object types enter this graph.
+/// `type_keys` contains only object types. A type with no supertype and no
 /// subtype is its own singleton component. Component ids are assigned in
 /// `type_keys`' own ascending order and carry no meaning beyond grouping --
 /// callers needing a stable, spec-meaningful order sort the resulting
@@ -822,6 +819,9 @@ fn connected_components(
         adjacency.entry(key).or_default();
     }
     for (specific, general) in index.generalization_edges() {
+        if !index.is_object_type(specific) || !index.is_object_type(general) {
+            continue;
+        }
         adjacency.entry(specific).or_default().push(general);
         adjacency.entry(general).or_default().push(specific);
     }
@@ -1108,6 +1108,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
     index: &RecordIndex,
+    domain_package: &DomainPackage,
     seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
 ) -> Vec<ModelRefusal> {
     let key = record.key();
@@ -1196,7 +1197,69 @@ fn check_node<'a>(
                 }
             }
         }
-        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::ScalarType(_) => {}
+        DomainPackageRecord::RecordValueType(record) => {
+            for general in &record.supertypes {
+                if !index.is_record_value_type(general) {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: record.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "record value type {} names no record ancestor {}",
+                            record.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::Clause(clause) => {
+            if !index.is_record_value_type(&clause.owner) && !index.is_namespace(&clause.owner) {
+                refusals.push(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: clause.key.clone(),
+                        owner: clause.owner.clone(),
+                    },
+                    detail: format!(
+                        "clause {} names no admitted business owner {}",
+                        clause.key.node, clause.owner.node
+                    ),
+                });
+            }
+        }
+        DomainPackageRecord::Namespace(namespace) => {
+            for member in &namespace.members {
+                if index.is_namespace(member) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::MalformedDeclaration,
+                        detail: format!(
+                            "namespace {} contains namespace {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
+                } else if !domain_package
+                    .records
+                    .iter()
+                    .any(|record| record.key() == member)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: namespace.key.clone(),
+                            member: member.clone(),
+                        },
+                        detail: format!(
+                            "namespace {} names absent member {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
             if !index.is_object_type(&op.owner) {
                 refusals.push(ModelRefusal {
@@ -1389,7 +1452,7 @@ fn validate_references(domain_package: &DomainPackage, index: &RecordIndex) -> V
         std::collections::HashSet::new();
     let mut refusals = Vec::new();
     for record in records {
-        refusals.extend(check_node(record, index, &mut seen_keys));
+        refusals.extend(check_node(record, index, domain_package, &mut seen_keys));
     }
     refusals
 }
@@ -1462,7 +1525,7 @@ fn build(
     }
     let limits = *meter.limits();
     let mut charges = Charges::new(meter);
-    let type_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
+    let type_keys: Vec<DeclarationKey> = index.normalizable_types().cloned().collect();
 
     // Phase 2: one qualify fact per type and one per directly declared field
     // member. Every phase-2 fact sorts before every phase-3 fact, and every
@@ -1472,7 +1535,18 @@ fn build(
     let mut direct_fields = Vec::with_capacity(type_keys.len());
     for type_key in &type_keys {
         charges.fact()?;
-        let fields = index.sorted_direct_fields(&domain_package.records, type_key);
+        let mut fields: Vec<DeclarationKey> = index
+            .sorted_direct_fields(&domain_package.records, type_key)
+            .iter()
+            .map(|field| field.key.clone())
+            .collect();
+        fields.extend(
+            index
+                .sorted_direct_clauses(&domain_package.records, type_key)
+                .iter()
+                .map(|clause| clause.key.clone()),
+        );
+        fields.sort();
         for _ in &fields {
             charges.fact()?;
         }
@@ -1547,14 +1621,14 @@ fn build(
         let owner_effective_id = type_effective_ids[type_key];
         for member in fields {
             member_preimages.insert(
-                (type_key.clone(), member.key.clone()),
+                (type_key.clone(), member.clone()),
                 EffectiveDeclarationPreimage {
                     owner_effective_type: Some(owner_effective_id),
-                    original: member.key.clone(),
+                    original: member.clone(),
                     derivation: vec![Fact {
                         ordinal: 0,
                         rule: RULE_QUALIFY,
-                        inputs: vec![member.key.clone()].into(),
+                        inputs: vec![member.clone()].into(),
                     }],
                 },
             );
@@ -1563,20 +1637,30 @@ fn build(
             continue;
         };
         for ancestor in paths {
-            for member in
-                index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
-            {
+            let mut inherited: Vec<DeclarationKey> = index
+                .sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
+                .iter()
+                .map(|field| field.key.clone())
+                .collect();
+            inherited.extend(
+                index
+                    .sorted_direct_clauses(&domain_package.records, &ancestor.ancestor_key)
+                    .iter()
+                    .map(|clause| clause.key.clone()),
+            );
+            inherited.sort();
+            for member in inherited {
                 work_step();
                 charges.fact()?;
                 // The fact shares the ancestor path rather than copying it,
                 // so memory grows with facts plus total path length, not
                 // facts times path length.
-                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.key.clone()]);
+                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.clone()]);
                 let entry = member_preimages
-                    .entry((type_key.clone(), member.key.clone()))
+                    .entry((type_key.clone(), member.clone()))
                     .or_insert_with(|| EffectiveDeclarationPreimage {
                         owner_effective_type: Some(owner_effective_id),
-                        original: member.key.clone(),
+                        original: member.clone(),
                         derivation: Vec::new(),
                     });
                 let ordinal = entry.derivation.len();
@@ -1819,9 +1903,10 @@ fn build(
     // ADR-013 §8 OQ-E: one universe per connected component of the
     // object-type supertype graph, never one universe over every root type
     // in the domain package (`model-complete.md`'s "Object universe").
-    let component_of = connected_components(&type_keys, &index);
+    let object_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
+    let component_of = connected_components(&object_keys, &index);
     let mut members_by_component: HashMap<usize, Vec<DeclarationKey>> = HashMap::new();
-    for key in &type_keys {
+    for key in &object_keys {
         members_by_component
             .entry(component_of[key])
             .or_default()
