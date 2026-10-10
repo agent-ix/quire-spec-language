@@ -130,6 +130,7 @@ impl Recipe {
         // Run the real ci dependency graph, confining other lanes to their own tests.
         if target == "ci" {
             for prerequisite in [
+                "check-spec-validation",
                 "check-no-committed-binaries",
                 "check-index-completeness",
                 "ci-default-features",

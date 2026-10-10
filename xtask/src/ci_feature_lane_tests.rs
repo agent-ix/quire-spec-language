@@ -328,6 +328,8 @@ fn repeated_switches_in_both_directions_keep_each_lane_directory() {
 fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let recipe = Recipe::new();
     let other_checks = [
+        "check-conformance-input",
+        "conformance",
         "check-no-committed-binaries",
         "check-index-completeness",
         "check-spec-validation",

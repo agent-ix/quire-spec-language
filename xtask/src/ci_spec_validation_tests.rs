@@ -215,6 +215,8 @@ fn native_fixtures_use_workspace_default_relative_and_absolute_targets() {
 // of compilation, feature qualification, schema validation or tool correctness.
 const CARGO_RECORDER: &str = r#"
 use std::io::Write;
+#[path = "__CONFORMANCE_CHECKS__"]
+mod checks;
 fn main() {
     let executable = std::env::args_os().next().unwrap();
     let name = std::path::Path::new(&executable).file_name().unwrap();
@@ -229,12 +231,25 @@ fn main() {
     };
     let call = format!("{call}\n");
     log.write_all(call.as_bytes()).unwrap();
+    // Reuse the parent's synthetic completion vocabulary only to let the full
+    // invocation control traverse conformance. No private vectors are read.
+    if cargo {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if let Some(selection) = args.windows(2).find(|pair| pair[0] == "--exact") {
+            let (_, summary) = checks::CHECKS.iter()
+                .find(|(name, _)| *name == selection[1])
+                .expect("known conformance invocation");
+            println!("{summary}");
+            println!("test result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0.00s");
+        }
+    }
 }
 "#;
 
 // Independent complete invocation inventory: default (7), all-feature (2),
 // clean (3, including the two target-dir calls added below), four xtask probes,
-// deny, docs and three architecture checks. No Cargo prerequisite is excluded.
+// deny, docs and three architecture checks. The twelve adopted conformance
+// calls are additional to this original 19+2 inventory, never replacements.
 const AGGREGATE_CARGO_CALLS: &[&str] = &[
     "fmt\t--all\t--\t--check",
     "clippy\t--locked\t--workspace\t--all-targets\t--\t-D\twarnings",
@@ -257,6 +272,23 @@ const AGGREGATE_CARGO_CALLS: &[&str] = &[
     "run\t--locked\t-p\tarch-lint\t--\tqualified-core\t--qsl\t.",
 ];
 
+// Independent complete argv, not extracted from Make or generated from the
+// synthetic summary vocabulary used by the invocation-only recorder.
+const CONFORMANCE_CARGO_CALLS: &[&str] = &[
+    "test\t--locked\t-p\tqsl-semantics\t--lib\t--\t--exact\tcheck::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-semantics\t--lib\t--\t--exact\tcheck::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-semantics\t--test\tit\t--\t--exact\tquantities::tc_411_compound_unit_ids_match_qspec_vectors\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-package\t--lib\t--\t--exact\tchecked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-package\t--lib\t--\t--exact\tchecked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-package\t--lib\t--\t--exact\tchecked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-package\t--lib\t--\t--exact\tchecked_v2::tests::conformance_dependency_selection_vectors\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-package\t--lib\t--\t--exact\temit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-semantics\t--lib\t--\t--exact\tcheck::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-semantics\t--lib\t--\t--exact\tlibrary::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-semantics\t--test\tit\t--\t--exact\tcomplete_value_lock::conformance_catalog_matches_qspec_complete_value_lock\t--format\tterse\t--nocapture",
+    "test\t--locked\t-p\tqsl-semantics\t--test\tit\t--\t--exact\tcomplete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors\t--format\tterse\t--nocapture",
+];
+
 #[trace("TC-920", "NFR-002-AC-2")]
 #[test]
 fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
@@ -267,7 +299,12 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     let bin = root.join("bin");
     std::fs::create_dir(&bin).unwrap();
     let source = root.join("cargo_recorder.rs");
-    std::fs::write(&source, CARGO_RECORDER).unwrap();
+    let checks = workspace().join("xtask/src/ci_conformance_tests/checks.rs");
+    std::fs::write(
+        &source,
+        CARGO_RECORDER.replace("\"__CONFORMANCE_CHECKS__\"", &format!("{checks:?}")),
+    )
+    .unwrap();
     let compiler = run(
         Command::new("rustc")
             .args(["--edition=2021", "-D", "warnings"])
@@ -293,6 +330,11 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     let calls = root.join("cargo calls");
     let prechecks = root.join("precheck calls");
     let target = root.join("target");
+    let checkout = root.join("invocation-only QSpec sentinel");
+    let vectors = checkout.join("proposals/checked-package-v2");
+    std::fs::create_dir_all(&vectors).unwrap();
+    // Presence seam only, as in the parent fixture; never vector evidence.
+    std::fs::write(vectors.join("node-identity-vectors.json"), "").unwrap();
     let aggregate = |file: &Path, scheduling: &[&str]| {
         let mut command = make_with_file(root, file);
         command
@@ -300,6 +342,7 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
             .arg("ci")
             .env("PATH", &path)
             .env("CARGO_TARGET_DIR", &target)
+            .env("QSPEC_DIR", &checkout)
             .env_remove("CI_DEFAULT_TARGET_DIR")
             .env_remove("CI_ALL_TARGET_DIR")
             .env_remove("CI_CLEAN_TARGET_DIR")
@@ -330,6 +373,7 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
         let mut actual: Vec<_> = recorded.lines().map(str::to_owned).collect();
         let mut expected: Vec<_> = AGGREGATE_CARGO_CALLS
             .iter()
+            .chain(CONFORMANCE_CARGO_CALLS)
             .map(|call| (*call).to_owned())
             .collect();
         let clean = target.join("clean");
