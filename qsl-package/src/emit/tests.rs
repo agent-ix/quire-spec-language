@@ -3002,8 +3002,16 @@ fn check_attempt_unit(
     unit: &str,
     with_sub: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
+    check_attempt_unit_revision(unit, with_sub, "fixture:1")
+}
+
+fn check_attempt_unit_revision(
+    unit: &str,
+    with_sub: bool,
+    revision: &str,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", revision),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3052,6 +3060,46 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         .count();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the original attempt passed S1");
+    let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
+        .expect("the admitted attempt formats");
+    let reparsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new(
+            "agent-ix",
+            "test:qsl-309",
+            "fixture",
+            "fixture:1-formatted",
+        ),
+        "program.native",
+        formatted.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the formatted attempt parses");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "attempt second-pass bytes"
+    );
+    let formatted_graph = check_attempt_unit_revision(&formatted, with_sub, "fixture:1-formatted")
+        .unwrap_or_else(|refusals| panic!("formatted attempt refuses: {refusals:?}"));
+    let formatted_emission = emit_checked(&CheckedPackage::link(formatted_graph))
+        .expect("the formatted attempt emits through public S4");
+    assert_eq!(
+        formatted_emission.omitted,
+        [],
+        "formatted attempt S4 omissions"
+    );
+    assert_eq!(
+        formatted_emission.package().package_id(),
+        emission.package().package_id(),
+        "attempt formatting changed checked package identity"
+    );
     AttemptEmission {
         attempt,
         clauses,
@@ -3084,7 +3132,7 @@ fn digest_of(key: quire_exact::NodeKey) -> String {
 /// frame's `modifies` exactly `versionNumber` -- and exactly one
 /// `operation-contract` record for the frame. The "emit.rs needs no
 /// new code" claim, exercised against real nodes rather than their absence.
-#[trace("TC-513", "FR-114-AC-1")]
+#[trace("TC-513", "FR-114-AC-1", "FR-003-AC-9")]
 #[test]
 fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     let emitted = emit_attempt_unit(
@@ -3128,7 +3176,7 @@ fn assert_frame_modifies_version_number(frame: &Value) {
 /// one anchor node, one frame node and one frame record for it. The
 /// attempt's own occurrences are the only ones placing these nodes, so this
 /// fails if an attempt's generated occurrences have no enclosing region.
-#[trace("TC-513", "FR-114-AC-2")]
+#[trace("TC-513", "FR-114-AC-2", "FR-003-AC-9")]
 #[test]
 fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
     let emitted = emit_attempt_unit(
@@ -3153,7 +3201,7 @@ fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
 /// and a `post` on `Config::ConfigVersion::attemptUpdate` share one anchor
 /// node and one frame node, whose context is `ConfigVersion`'s own object
 /// node -- the same one the unit without `Sub` binds.
-#[trace("TC-513", "FR-114-AC-4")]
+#[trace("TC-513", "FR-114-AC-4", "FR-003-AC-9")]
 #[test]
 fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
     let emitted = emit_attempt_unit(
@@ -3290,7 +3338,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
 /// one `anchor` occurrence per clause or attempt naming it, ordinals in
 /// source order -- whichever is written first, the protocol's attempt or
 /// the `post` clause, gets ordinal 0.
-#[trace("TC-513", "FR-114")]
+#[trace("TC-513", "FR-114", "FR-003-AC-9")]
 #[test]
 fn anchor_occurrence_ordinals_follow_source_order() {
     let protocol = attempt_frame_unit(
@@ -3581,7 +3629,7 @@ fn a_node_two_unnamed_types_share_is_placed_at_the_least_name() {
 /// a declared type no function names also reaches it, though a type name
 /// sorts before a state clause. `VersionUnchanged`'s body `1 < 2` and
 /// `record R { x: Int[0, 9]; }` both reach the `Integer` scalar node.
-#[trace("FR-093-AC-18", "TC-416")]
+#[trace("FR-093-AC-18", "TC-416", "FR-003-AC-9")]
 #[test]
 fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
     const CLAUSE: &str =

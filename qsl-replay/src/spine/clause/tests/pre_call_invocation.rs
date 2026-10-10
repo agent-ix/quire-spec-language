@@ -17,14 +17,34 @@ const PARENT_PRESENT: &str = "ParentPresent";
 
 /// The base ConfigVersion unit plus the precondition `ParentPresent` on
 /// `attemptUpdate`.
-fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
+fn pre_call_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let (base_unit, packages) = config_version_unit_and_packages();
     let unit = format!(
         "{base_unit}\
          pre {PARENT_PRESENT} using v on Config::ConfigVersion::attemptUpdate {{ \
          present(self.parent) }}\n"
     );
+    (unit, packages)
+}
+
+fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
+    let (unit, packages) = pre_call_unit_and_packages();
     config_version_request_for(unit, packages, "pre-call-invocation.native", selection)
+}
+
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_pre_call_source_keeps_format_identity() {
+    let (unit, packages) = pre_call_unit_and_packages();
+    compose(
+        source(),
+        "pre-call-invocation.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the original ParentPresent program emits");
 }
 
 /// What the post snapshot's digest finds in the snapshot provision.

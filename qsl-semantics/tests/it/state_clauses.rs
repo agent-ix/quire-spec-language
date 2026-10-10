@@ -28,56 +28,20 @@ use quire_semantic_value::location::{Location, Origin};
 
 use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
+    attempt_update_modifies_version_and_parent, attempt_update_modifies_version_number,
     config_unit_with_body, config_version_document, config_version_document_with_operations,
-    config_version_document_with_population, config_version_identity, empty_frame, operation,
-    operation_parameter, subtype_document, subtype_document_with_two_member_population,
-    version_number_bound, version_number_identity,
+    config_version_document_with_population, empty_frame, frame_test_document, operation,
+    probe_operation, subtype_document, subtype_document_with_two_member_population,
+    tc464_flag_source, tc464_integer_argument_source, tc464_sub_target_source,
+    tc465_creates_subtype_document, tc465_deep_hierarchy_document, tc465_document,
+    tc465_document_with, tc465_document_with_archive_population,
+    tc465_document_with_archive_population_and_narrow_frame,
+    tc465_document_with_frame_modifies_parent_only, tc465_document_with_note_type,
+    tc465_document_with_set_field, tc465_document_with_sub_redefining_version_number,
+    tc465_document_with_sub_subtype, tc465_document_with_tag_type_sharing_a_field_name,
+    version_number_bound, with_unrelated_population, FRAME_CLAUSES, TC465_CLAUSES,
 };
 use serde_json::json;
-
-/// `attemptUpdate` with `modifies: [versionNumber]`, no parameters, result
-/// `Boolean` -- TC-458's own operation, reused verbatim by name.
-fn attempt_update_modifies_version_number() -> serde_json::Value {
-    operation(
-        "attemptUpdate",
-        json!([]),
-        Some("ix://quire/native/Boolean"),
-        json!({
-            "modifies": [config_version_identity("versionNumber")],
-            "creates": [],
-            "deletes": [],
-        }),
-    )
-}
-
-/// `attemptUpdate` with `modifies: [versionNumber, parent]` (TC-459 step 4).
-fn attempt_update_modifies_version_and_parent() -> serde_json::Value {
-    operation(
-        "attemptUpdate",
-        json!([]),
-        Some("ix://quire/native/Boolean"),
-        json!({
-            "modifies": [
-                config_version_identity("versionNumber"),
-                config_version_identity("parent"),
-            ],
-            "creates": [],
-            "deletes": [],
-        }),
-    )
-}
-
-/// `probe(target: ConfigVersion)`, no result, empty frame (TC-459 step 5,
-/// TC-466 step 3's fixture variant).
-fn probe_operation() -> serde_json::Value {
-    let config_version = "ix://example/config-version/ConfigVersion";
-    operation(
-        "probe",
-        json!([operation_parameter("probe", "target", config_version)]),
-        None,
-        empty_frame(),
-    )
-}
 
 /// Assembles and checks `body` (the unit's trailing declarations, e.g.
 /// state clauses) against `document`, or every refusal's catalog code --
@@ -1132,18 +1096,6 @@ fn operation_visibility_on_subtypes_inherits_or_refuses_ambiguous() {
 // so `parent` is a field outside `modifies` (check 11.3's own fixture).
 // ---------------------------------------------------------------------------
 
-fn frame_test_document() -> Vec<u8> {
-    config_version_document(
-        attempt_update_modifies_version_number(),
-        Vec::new(),
-        Vec::new(),
-        json!([]),
-    )
-}
-
-const FRAME_CLAUSES: &str = "pre AttemptUpdatePre using v on Config::ConfigVersion::attemptUpdate \
-    { true }\npost AttemptUpdatePost using v on Config::ConfigVersion::attemptUpdate { true }\n";
-
 fn frame_document_digest(bytes: &[u8]) -> [u8; 32] {
     let document = quire_canonical::read(bytes, u64::MAX).expect("test fixture is JSON");
     *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
@@ -2050,23 +2002,7 @@ fn tc464_step5_an_undeclared_parameter_requires_no_population() {
 #[trace("TC-464", "FR-106-AC-8")]
 #[test]
 fn tc464_step5_a_non_reference_parameter_requires_no_population() {
-    let flag = operation(
-        "flag",
-        json!([operation_parameter(
-            "flag",
-            "b",
-            "ix://quire/native/Boolean"
-        )]),
-        None,
-        empty_frame(),
-    );
-    let document = with_archive_population(config_version_document_with_operations(vec![
-        attempt_update_modifies_version_and_parent(),
-        probe_operation(),
-        flag,
-    ]));
-    let clauses =
-        format!("{TC465_CLAUSES}pre FlagHolds using v on Config::ConfigVersion::flag {{ b }}\n");
+    let (document, clauses) = tc464_flag_source();
     let archive = "ix://example/config-version/archive";
     let snapshot_bytes = tc464_chain_snapshot(
         &frame_label("pre-call-snap"),
@@ -2107,49 +2043,6 @@ fn tc464_step5_a_non_reference_parameter_requires_no_population() {
 // admits an object whose most-specific type conforms to `T` under the
 // declared supertypes graph, and refuses `wrong-value-kind` otherwise.
 // ---------------------------------------------------------------------------
-
-/// `document` with `Other`, an object type unrelated to `ConfigVersion` (no
-/// supertypes, nothing specializes it), and the population `others` whose
-/// only declared member is `Other`.
-fn with_unrelated_population(document: Vec<u8>) -> Vec<u8> {
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let other = "ix://example/config-version/Other";
-    let others = "ix://example/config-version/others";
-    envelope["types"].as_array_mut().unwrap().push(json!({
-        "identity": other,
-        "displayName": other,
-        "kind": {"module": "example/config-version", "name": "object_type"},
-        "roles": [],
-        "origin": {
-            "generated": {
-                "generatorIdentity": other,
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [other],
-            }
-        },
-        "constraints": [],
-        "extensions": [],
-        "unknownPolicy": "reject",
-        "supertypes": [],
-        "fields": [],
-        "operations": [],
-    }));
-    envelope["populations"].as_array_mut().unwrap().push(json!({
-        "identity": others,
-        "displayName": others,
-        "kind": {"module": "example/config-version", "name": "population"},
-        "members": [other],
-        "extent": "closed",
-        "origin": {
-            "generated": {
-                "generatorIdentity": others,
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [others],
-            }
-        },
-    }));
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
 
 /// A complete `archive` holding the one `Sub` object `k`.
 fn archive_with_sub_object() -> serde_json::Value {
@@ -2243,24 +2136,7 @@ fn an_unrelated_type_object_refuses_a_parameter_with_wrong_value_kind() {
 #[trace("TC-464", "FR-106-AC-8")]
 #[test]
 fn a_supertype_object_refuses_a_subtype_parameter_with_wrong_value_kind() {
-    let probe_sub = operation(
-        "probeSub",
-        json!([operation_parameter(
-            "probeSub",
-            "target",
-            "ix://example/config-version/Sub"
-        )]),
-        None,
-        empty_frame(),
-    );
-    let document = with_archive_population(config_version_document_with_operations(vec![
-        attempt_update_modifies_version_and_parent(),
-        probe_operation(),
-        probe_sub,
-    ]));
-    let clauses = format!(
-        "{TC465_CLAUSES}pre SubTargetHolds using v on Config::ConfigVersion::probeSub {{ true }}\n"
-    );
+    let (document, clauses) = tc464_sub_target_source();
     let snapshot_bytes = tc464_chain(&document, "pre", true);
     let snapshot = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&snapshot_bytes),
@@ -2353,159 +2229,6 @@ fn tc464_step5_an_incomplete_pre_call_snapshot_is_incomplete() {
 // `VersionUnchanged` (`attemptUpdate`'s postcondition) are its two clauses.
 // ---------------------------------------------------------------------------
 
-const TC465_CLAUSES: &str = "invariant ParentOrder using v on Config::ConfigVersion at current { \
-    present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }\n\
-    post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { \
-    self.versionNumber = pre(self.versionNumber) }\n\
-    pre ReachesTarget using v on Config::ConfigVersion::probe { \
-    reaches(self, target, parent) }\n\
-    post ProbeHolds using v on Config::ConfigVersion::probe { true }\n";
-
-fn tc465_document_with(operation: serde_json::Value) -> Vec<u8> {
-    config_version_document_with_operations(vec![operation, probe_operation()])
-}
-
-fn tc465_document() -> Vec<u8> {
-    tc465_document_with(attempt_update_modifies_version_and_parent())
-}
-
-/// [`tc465_document`], with `attemptUpdate` modifying `[parent]` only
-/// (row 27: an authorized-elsewhere change outside `modifies` must still
-/// refuse).
-fn tc465_document_with_frame_modifies_parent_only() -> Vec<u8> {
-    tc465_document_with(operation(
-        "attemptUpdate",
-        json!([]),
-        Some("ix://quire/native/Boolean"),
-        json!({
-            "modifies": ["ix://example/config-version/ConfigVersion/parent"],
-            "creates": [],
-            "deletes": [],
-        }),
-    ))
-}
-
-/// [`tc465_document`], with `ConfigVersion` also declaring `tags`, a set
-/// of `ConfigVersion` (row 17: check 6.2's set/bag/ordered-set refusal).
-/// Mutated directly at the JSON level (`config_version_document_with_
-/// operations` has no set-field builder), matching the ad hoc envelope
-/// patching [`config_version_document_with_population`] already uses for
-/// its own extra population.
-fn tc465_document_with_set_field() -> Vec<u8> {
-    let document = tc465_document();
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let config_version = "ix://example/config-version/ConfigVersion";
-    let tags_identity = format!("{config_version}/tags");
-    envelope["types"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|entry| entry["identity"] == config_version)
-        .expect("ConfigVersion is declared")["fields"]
-        .as_array_mut()
-        .expect("ConfigVersion declares fields")
-        .push(json!({
-            "identity": tags_identity,
-            "name": "tags",
-            "typeRef": config_version,
-            "presence": "required",
-            "nullable": false,
-            "defaultKind": "none",
-            "multiplicity": {"lower": 0, "upper": 5, "ordered": false, "unique": true},
-            "origin": {
-                "generated": {
-                    "generatorIdentity": tags_identity,
-                    "generatorVersion": "1.0.0",
-                    "inputIdentities": [tags_identity],
-                }
-            },
-        }));
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
-
-/// [`tc465_document`], with an extra object type `Note` declared but named
-/// by no population's `members` (row 32: check 6.1's wrong-role-mapping
-/// for an object whose type is not a member type of its population).
-fn tc465_document_with_note_type() -> Vec<u8> {
-    let document = tc465_document();
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let note = "ix://example/config-version/Note";
-    envelope["types"].as_array_mut().unwrap().push(json!({
-        "identity": note,
-        "displayName": note,
-        "kind": {"module": "example/config-version", "name": "object_type"},
-        "roles": [],
-        "origin": {
-            "generated": {
-                "generatorIdentity": note,
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [note],
-            }
-        },
-        "constraints": [],
-        "extensions": [],
-        "unknownPolicy": "reject",
-        "supertypes": [],
-        "fields": [],
-        "operations": [],
-    }));
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
-
-/// [`tc465_document_with`]'s `attemptUpdate` modifying `[versionNumber]`
-/// only, plus an independent object type `Tag` (no supertype relation to
-/// `ConfigVersion`) that declares its *own* field also named
-/// `versionNumber` -- same display name, unrelated declaring type. `Tag` is
-/// declared a member of `config_history` too (SR-750 FND-007 round 2's own
-/// cross-type test: a grant on `ConfigVersion::versionNumber` must never
-/// authorize a write to `Tag::versionNumber`, a same-named field of an
-/// unrelated type).
-fn tc465_document_with_tag_type_sharing_a_field_name() -> Vec<u8> {
-    let document = tc465_document_with(attempt_update_modifies_version_number());
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let tag = "ix://example/config-version/Tag";
-    let tag_version_number = format!("{tag}/versionNumber");
-    envelope["types"].as_array_mut().unwrap().push(json!({
-        "identity": tag,
-        "displayName": tag,
-        "kind": {"module": "example/config-version", "name": "object_type"},
-        "roles": [],
-        "origin": {
-            "generated": {
-                "generatorIdentity": tag,
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [tag],
-            }
-        },
-        "constraints": [],
-        "extensions": [],
-        "unknownPolicy": "reject",
-        "supertypes": [],
-        "fields": [{
-            "identity": tag_version_number,
-            "name": "versionNumber",
-            "typeRef": "ix://quire/native/Integer",
-            "presence": "required",
-            "nullable": false,
-            "defaultKind": "none",
-            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-            "origin": {
-                "generated": {
-                    "generatorIdentity": tag_version_number.clone(),
-                    "generatorVersion": "1.0.0",
-                    "inputIdentities": [tag_version_number],
-                }
-            },
-        }],
-        "operations": [],
-    }));
-    envelope["populations"][0]["members"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!(tag));
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
-
 /// SR-750 FND-007 round 2: a grant on `ConfigVersion::versionNumber` (the
 /// invocation's own `attemptUpdate` modifies exactly that field) never
 /// authorizes a write to `Tag::versionNumber` -- a same-named field of an
@@ -2559,20 +2282,7 @@ fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
 #[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
-    let config_version = "ix://example/config-version/ConfigVersion";
-    let document = add_sub_type(
-        tc465_document_with(operation(
-            "attemptUpdate",
-            json!([]),
-            Some("ix://quire/native/Boolean"),
-            json!({
-                "modifies": [config_version_identity("versionNumber")],
-                "creates": [config_version],
-                "deletes": [],
-            }),
-        )),
-        &["ix://example/config-version/config_history"],
-    );
+    let document = tc465_creates_subtype_document();
     let population = "ix://example/config-version/config_history";
     let sub = "ix://example/config-version/Sub";
     let result = run_tc465_invocation(
@@ -2634,158 +2344,6 @@ fn a_write_to_a_field_that_redefines_a_modifies_grant_admits() {
     if let Err(failure) = result {
         panic!("expected admission, got {failure:?}");
     }
-}
-
-/// [`tc465_document_with`]'s `attemptUpdate` modifying `[versionNumber]`
-/// only, plus `Sub` (a subtype of `ConfigVersion` and a member of
-/// `config_history`) declaring `version`, which redefines
-/// `ConfigVersion::versionNumber` under another name.
-fn tc465_document_with_sub_redefining_version_number() -> Vec<u8> {
-    let document = add_sub_type(
-        tc465_document_with(attempt_update_modifies_version_number()),
-        &["ix://example/config-version/config_history"],
-    );
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let sub = "ix://example/config-version/Sub";
-    let version = format!("{sub}/version");
-    let sub_type = envelope["types"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|entry| entry["identity"] == sub)
-        .expect("Sub is declared");
-    sub_type["fields"] = json!([{
-        "identity": version,
-        "name": "version",
-        // The same bound `VersionNumber` (`Int[0, 1000]`) that
-        // `ConfigVersion::versionNumber` declares, so this redefinition does
-        // not widen it and the package admits. A native `Integer` here would
-        // widen it and refuse `RedefinitionWidens` at assembly, which is
-        // covered in `type_environment_model.rs`, not here.
-        "typeRef": version_number_identity(),
-        "presence": "required",
-        "nullable": false,
-        "defaultKind": "none",
-        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-        "redefines": config_version_identity("versionNumber"),
-        "origin": {
-            "generated": {
-                "generatorIdentity": version.clone(),
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [version],
-            }
-        },
-    }]);
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
-
-/// [`tc465_document`], with an extra object type `Sub` (`supertypes:
-/// [ConfigVersion]`, no fields/operations of its own), declared as
-/// `config_history`'s own second member type (row 39: `Sub` "is a member
-/// type of `config_history`", `TC-465-admission-refuses-each-input-defect.md:67`
-/// -- not merely covered by conformance, so check 6.1 never refuses a `Sub`
-/// object as an undeclared member type).
-fn tc465_document_with_sub_subtype() -> Vec<u8> {
-    add_sub_type(
-        tc465_document(),
-        &["ix://example/config-version/config_history"],
-    )
-}
-
-/// Appends object type `Sub` (`supertypes: [ConfigVersion]`, no fields or
-/// operations of its own) to `document`, and declares it a member of every
-/// population in `populations` (by identity).
-fn add_sub_type(document: Vec<u8>, populations: &[&str]) -> Vec<u8> {
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let config_version = "ix://example/config-version/ConfigVersion";
-    let sub = "ix://example/config-version/Sub";
-    envelope["types"].as_array_mut().unwrap().push(json!({
-        "identity": sub,
-        "displayName": sub,
-        "kind": {"module": "example/config-version", "name": "object_type"},
-        "roles": [],
-        "origin": {
-            "generated": {
-                "generatorIdentity": sub,
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [sub],
-            }
-        },
-        "constraints": [],
-        "extensions": [],
-        "unknownPolicy": "reject",
-        "supertypes": [config_version],
-        "fields": [],
-        "operations": [],
-    }));
-    for population in envelope["populations"].as_array_mut().unwrap() {
-        if populations.contains(&population["identity"].as_str().unwrap()) {
-            population["members"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!(sub));
-        }
-    }
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
-
-/// [`tc465_document`], with `Sub` (see [`add_sub_type`]) and a second,
-/// unbounded population `archive` whose only declared member is `Sub`
-/// (rows 40, 41). FR-104 (`FR-104-check-state-clauses.md:194-195,216-221`,
-/// as amended): a population declaration never has a maximum,
-/// so `archive`, like `config_history`, is simply an unbounded
-/// `Population(None)` -- no wire field expresses a maximum at all.
-/// `archive` never covers a clause on `ConfigVersion` itself: population
-/// coverage is by conformance downward only (a clause on a *subtype*
-/// reaches its supertype's population, never the reverse,
-/// `population_coverage_is_by_conformance_and_absent_when_none_covers`),
-/// so declaring `archive`'s member as `Sub` (not `ConfigVersion`) keeps
-/// `config_history` the sole population `ConfigVersion`'s own clauses
-/// resolve against -- no S3 `ambiguous_declaration`/`ambiguous-name`.
-fn tc465_document_with_archive_population() -> Vec<u8> {
-    with_archive_population(tc465_document())
-}
-
-/// `document` with `Sub` (see [`add_sub_type`]) and the unbounded
-/// population `archive` whose only declared member is `Sub`
-/// ([`tc465_document_with_archive_population`]).
-fn with_archive_population(document: Vec<u8>) -> Vec<u8> {
-    let document = add_sub_type(document, &[]);
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let sub = "ix://example/config-version/Sub";
-    let archive = "ix://example/config-version/archive";
-    envelope["populations"].as_array_mut().unwrap().push(json!({
-        "identity": archive,
-        "displayName": archive,
-        "kind": {"module": "example/config-version", "name": "population"},
-        "members": [sub],
-        "extent": "closed",
-        "origin": {
-            "generated": {
-                "generatorIdentity": archive,
-                "generatorVersion": "1.0.0",
-                "inputIdentities": [archive],
-            }
-        },
-    }));
-    serde_json::to_vec(&envelope).expect("valid JSON")
-}
-
-/// [`tc465_document_with_archive_population`], with `attemptUpdate`
-/// modifying `[versionNumber]` only (row 40: a `parent` change anywhere,
-/// in any population, must be unauthorized).
-fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
-    let document = tc465_document_with_archive_population();
-    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    let config_version = "ix://example/config-version/ConfigVersion";
-    envelope["types"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|entry| entry["identity"] == config_version)
-        .expect("ConfigVersion is declared")["operations"][0]["frame"]["modifies"] =
-        json!(["ix://example/config-version/ConfigVersion/versionNumber"]);
-    serde_json::to_vec(&envelope).expect("valid JSON")
 }
 
 fn tc465_model_digest_hex(document: &[u8]) -> String {
@@ -4538,38 +4096,8 @@ fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping
 #[test]
 fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling() {
     const DEPTH: usize = 70;
-    let config_version = "ix://example/config-version/ConfigVersion";
     let type_name = |level: usize| format!("ix://example/config-version/Deep{level}");
-    let mut envelope: serde_json::Value =
-        serde_json::from_slice(&tc465_document()).expect("valid JSON");
-    for level in 1..=DEPTH {
-        let identity = type_name(level);
-        let parent = if level == 1 {
-            config_version.to_owned()
-        } else {
-            type_name(level - 1)
-        };
-        envelope["types"].as_array_mut().unwrap().push(json!({
-            "identity": identity,
-            "displayName": identity,
-            "kind": {"module": "example/config-version", "name": "object_type"},
-            "roles": [],
-            "origin": {
-                "generated": {
-                    "generatorIdentity": identity,
-                    "generatorVersion": "1.0.0",
-                    "inputIdentities": [identity],
-                }
-            },
-            "constraints": [],
-            "extensions": [],
-            "unknownPolicy": "reject",
-            "supertypes": [parent],
-            "fields": [],
-            "operations": [],
-        }));
-    }
-    let document = serde_json::to_vec(&envelope).expect("valid JSON");
+    let document = tc465_deep_hierarchy_document(DEPTH);
     let run = |model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits| {
         let model_digest_hex = tc465_model_digest_hex(&document);
         let label = frame_label("current-snap");
@@ -5204,24 +4732,7 @@ fn an_out_of_range_pre_state_value_refuses_under_witnessing() {
 #[trace("TC-465", "FR-106-AC-12")]
 #[test]
 fn an_out_of_range_argument_refuses_whatever_the_limits() {
-    let probe_int = operation(
-        "probeInt",
-        json!([operation_parameter(
-            "probeInt",
-            "amount",
-            &version_number_identity()
-        )]),
-        None,
-        empty_frame(),
-    );
-    let document = with_archive_population(config_version_document_with_operations(vec![
-        attempt_update_modifies_version_and_parent(),
-        probe_operation(),
-        probe_int,
-    ]));
-    let clauses = format!(
-        "{TC465_CLAUSES}pre AmountHolds using v on Config::ConfigVersion::probeInt {{ true }}\n"
-    );
+    let (document, clauses) = tc464_integer_argument_source();
     let snapshot_bytes = tc464_chain(&document, "pre", true);
     let snapshot = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&snapshot_bytes),

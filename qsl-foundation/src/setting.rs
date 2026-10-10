@@ -93,6 +93,7 @@ settings! {
     IntakeInputBytes => "intake.input_bytes", "I1 semantic-IR intake", InputBytes;
     IdentityInputBytes => "identity.input_bytes", "identity encoding", InputBytes;
     ReplayInputBytes => "replay.input_bytes", "replay envelope readers", InputBytes;
+    FormatOutputBytes => "format.output_bytes", "format", InputBytes;
     I2InputBytes => "i2.input_bytes", "I2 v2 reader", InputBytes;
     I2Nodes => "i2.nodes", "I2 v2 reader", NodeCount;
     I2Edges => "i2.edges", "I2 v2 reader", EdgeCount;
