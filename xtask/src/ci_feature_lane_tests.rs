@@ -62,32 +62,32 @@ fn workspace() -> &'static Path {
 }
 
 fn cargo_double() -> tempfile::TempDir {
-        let target = std::env::var_os("CARGO_TARGET_DIR")
-            .filter(|root| !root.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| workspace().join("target"));
-        let target = workspace().join(target);
-        fs::create_dir_all(&target).unwrap();
-        let directory = tempfile::tempdir_in(target).unwrap();
-        let output = Command::new("rustc")
-            .args([
-                "--edition=2021",
-                "--crate-name",
-                "feature_lane_cargo_double",
-                "-D",
-                "warnings",
-            ])
-            .arg(workspace().join("xtask/src/ci_feature_lane_tests/cargo_double.rs"))
-            .arg("-o")
-            .arg(directory.path().join("cargo"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "compile native Cargo process double: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        directory
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace().join("target"));
+    let target = workspace().join(target);
+    fs::create_dir_all(&target).unwrap();
+    let directory = tempfile::tempdir_in(target).unwrap();
+    let output = Command::new("rustc")
+        .args([
+            "--edition=2021",
+            "--crate-name",
+            "feature_lane_cargo_double",
+            "-D",
+            "warnings",
+        ])
+        .arg(workspace().join("xtask/src/ci_feature_lane_tests/cargo_double.rs"))
+        .arg("-o")
+        .arg(directory.path().join("cargo"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "compile native Cargo process double: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    directory
 }
 
 struct Recipe {
@@ -106,8 +106,15 @@ impl Recipe {
         .unwrap();
         fs::create_dir(directory.path().join("bin")).unwrap();
         let cargo_directory = cargo_double();
-        std::os::unix::fs::symlink(cargo_directory.path().join("cargo"), directory.path().join("bin/cargo")).unwrap();
-        Self { directory, cargo_directory }
+        std::os::unix::fs::symlink(
+            cargo_directory.path().join("cargo"),
+            directory.path().join("bin/cargo"),
+        )
+        .unwrap();
+        Self {
+            directory,
+            cargo_directory,
+        }
     }
 
     fn run(&self, targets: &[&str], root: Option<&str>, overrides: &[&str]) -> String {
@@ -186,7 +193,10 @@ fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
     let helper_directory = recipe.cargo_directory.path().to_path_buf();
     assert!(helper_directory.join("cargo").is_file());
     drop(recipe);
-    assert!(!helper_directory.exists(), "fixture teardown removes its compiled helper");
+    assert!(
+        !helper_directory.exists(),
+        "fixture teardown removes its compiled helper"
+    );
 }
 
 #[test]
@@ -226,7 +236,11 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         // Command::args passes these bytes directly, without a shell launcher.
         let root = format!("CARGO_TARGET_DIR={}", path.replace('$', "$$"));
         assert_eq!(
-            recipe.run(&["ci-default-features", "ci-all-features"], Some("ignored"), &[&root]),
+            recipe.run(
+                &["ci-default-features", "ci-all-features"],
+                Some("ignored"),
+                &[&root]
+            ),
             expected(&format!("{path}/ci-default-features"), DEFAULT_COMMANDS)
                 + &expected(&format!("{path}/ci-all-features"), ALL_COMMANDS)
         );
@@ -234,7 +248,11 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         let all_path = format!("/tmp/{path}");
         let all = format!("CI_ALL_TARGET_DIR={}", all_path.replace('$', "$$"));
         assert_eq!(
-            recipe.run(&["ci-default-features", "ci-all-features"], Some("ignored"), &[&default, &all]),
+            recipe.run(
+                &["ci-default-features", "ci-all-features"],
+                Some("ignored"),
+                &[&default, &all]
+            ),
             expected(path, DEFAULT_COMMANDS) + &expected(&all_path, ALL_COMMANDS)
         );
     }
@@ -249,7 +267,10 @@ fn routing_oracle_rejects_safe_path_and_command_mutations() {
     let root = "caller \"quote\" ${FEATURE_LANE_PATH_VALUE}";
     let oracle = expected(&format!("{root}/ci-default-features"), DEFAULT_COMMANDS)
         + &expected(&format!("{root}/ci-all-features"), ALL_COMMANDS);
-    assert_eq!(recipe.run(&["ci-default-features", "ci-all-features"], Some(root), &[]), oracle);
+    assert_eq!(
+        recipe.run(&["ci-default-features", "ci-all-features"], Some(root), &[]),
+        oracle
+    );
     for (before, after) in [
         (
             "export CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-default-features",
