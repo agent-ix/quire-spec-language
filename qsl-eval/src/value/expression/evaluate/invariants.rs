@@ -229,19 +229,29 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         TypeForm::builtin(BuiltinType::Reference, span)
             .with_arguments(vec![TypeForm::name("Owner", span)])
     };
-    let function = |name, holds| {
+    let function = |name, body| {
         FunctionDeclaration::new(
             name,
             vec![("receiver".to_owned(), receiver())],
             TypeForm::builtin(BuiltinType::Boolean, span),
             None,
-            Expression::boolean(holds),
+            body,
         )
     };
     let declarations = PackageDeclarations {
         types,
         models: vec![model],
-        functions: vec![function("Body", true), function("Guard", true)],
+        functions: vec![
+            function("Body", Expression::boolean(true)),
+            function("Guard", Expression::call("GuardCheck".to_owned(), vec![])),
+            FunctionDeclaration::new(
+                "GuardCheck",
+                vec![],
+                TypeForm::builtin(BuiltinType::Boolean, span),
+                None,
+                Expression::boolean(true),
+            ),
+        ],
         dispatch_operations: vec![DispatchOperation {
             receiver_type: owner,
             member: "step".to_owned(),
