@@ -122,11 +122,9 @@ pub enum ConformanceOutcome {
 pub enum ConformanceCheckOutcome {
     /// Every axis charge was admitted; see the substantive [`ConformanceOutcome`].
     Completed(ConformanceOutcome),
-    /// A real defect (a dangling member reference, or a conformance walk
-    /// reaching the caller's own configured `ancestor_steps` ceiling,
-    /// ADR-011 §7.3) refused the check outright.
+    /// A real defect, such as a dangling member reference, refused the check.
     Refused(ModelRefusal),
-    /// A `ModelNormalizationLimitsV1` counter was exhausted mid-check.
+    /// An owning meter charge or a per-walk ancestor edge was denied.
     Incomplete(Incomplete),
 }
 

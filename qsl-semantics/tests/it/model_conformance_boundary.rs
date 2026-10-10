@@ -34,7 +34,7 @@ fn field(owner: &str, name: &str, ty: &str, lower: u64, upper: Option<u64>, pare
     let mut value = json!({"identity": identity(&path), "name": name, "typeRef": identity(ty),
         "presence": if lower == 0 { "optional" } else { "required" },
         "nullable": false, "defaultKind": "none", "origin": origin(&path),
-        "multiplicity": {"lower": lower, "upper": upper.map_or(json!("unbounded"), |n| json!(n)),
+        "multiplicity": {"lower": lower, "upper": upper.map_or(Value::Null, |n| json!(n)),
             "ordered": false, "unique": true}});
     if let Some(parent) = parent {
         value["redefines"] = json!(identity(parent));
