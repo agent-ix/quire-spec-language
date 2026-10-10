@@ -1280,6 +1280,11 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
         panic!("{missing_policy:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0].code.as_str(),
+        "invalid_model_binding",
+        "{refusals:?}"
+    );
     assert!(
         matches!(
             &refusals[0].cause,
@@ -1288,10 +1293,13 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
         ),
         "{refusals:?}"
     );
-    assert!(
-        refusals[0].detail.contains(
-            "/ir/types/1/operations/0/params/0/typeRef (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING)"
-        ),
+    // A missing Decimal policy is diagnosed at the parameter owning the walk,
+    // not at its typeRef member (FCD FR-144, Decimal policy).
+    assert_eq!(
+        refusals[0].detail,
+        "agent-ix-semantic-ir refused this document at \
+         /ir/types/1/operations/0/params/0 (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING): \
+         a decimal parameter carries a decimal policy",
         "{refusals:?}"
     );
     // The wire policy admits this Decimal parameter at FCD's boundary;
