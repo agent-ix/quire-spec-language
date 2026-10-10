@@ -230,6 +230,12 @@ fn limit_of(
             {
                 return Some(at(identity_limit(bound, required), region.as_ref()));
             }
+            if let Some(incomplete) = refusals.iter().find_map(|refusal| match &refusal.cause {
+                CheckCause::ModelIncomplete(incomplete) => Some(incomplete),
+                _ => None,
+            }) {
+                return Some(at(incomplete.limit_exceeded(), region.as_ref()));
+            }
             let cause = refusals.iter().find_map(|refusal| match &refusal.cause {
                 CheckCause::ResourceExhausted(cause) => Some(cause),
                 _ => None,
@@ -1104,5 +1110,51 @@ fn wrap(identity: &LibraryName, refusal: Box<CompileRefusal>) -> Box<CompileRefu
             path: vec![identity.clone()],
             refusal: Box::new(refusal),
         }),
+    }
+}
+
+
+#[cfg(test)]
+mod model_incomplete_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use qsl_foundation::digest::{DigestDomain, DigestRecord};
+    use qsl_semantics::check::CheckRefusal;
+    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind};
+    use quire_semantic_value::location::{Location, Origin};
+
+    /// Projection controls supplement the actual model-conformance producer
+    /// tests; they do not establish that the producer reaches this boundary.
+    #[trace("FR-255-AC-1", "QSpec-TC-196")]
+    #[test]
+    fn model_incomplete_preserves_prefix_denied_counter_and_fallback_locus() {
+        let raw = RawSourceRef::new("test", "conformance",
+            DigestRecord::mint(DigestDomain::SourceBytesV1, [7; 32])).unwrap();
+        let region = SourceRegion::new(raw, 3, 11).unwrap();
+        for (kind, setting, limit, consumed, next, expected) in [
+            (LimitKind::WorkUnits, Setting::ModelWorkUnits, 17, 16, 2, 18_u128),
+            (LimitKind::AncestorSteps, Setting::ModelAncestorSteps, 4, 4, 1, 5),
+            (LimitKind::WorkUnits, Setting::ModelWorkUnits, u64::MAX,
+                u64::MAX - 1, 3, 18_446_744_073_709_551_617),
+        ] {
+            let incomplete = Incomplete { limit_kind: kind, limit, consumed,
+                next_charge: next, charge_point: if kind == LimitKind::AncestorSteps {
+                    ChargePoint::ModelAncestorEdge
+                } else { ChargePoint::ConformanceAxis } };
+            let refusal = CompileRefusal::Check {
+                refusals: vec![CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::ModelIncomplete(incomplete),
+                }],
+                region: Some(region.clone()),
+            };
+            let projected = limit_of(&refusal, &|_| None).expect("model denial is a stage limit");
+            assert_eq!(projected.setting(), setting);
+            assert_eq!(projected.configured_bound(), limit);
+            assert_eq!(projected.actual(), expected);
+            assert_eq!(projected.locus(), Some(&Locus::Region(region.clone())));
+            let CompileRefusal::Check { refusals, .. } = refusal else { unreachable!() };
+            assert_eq!(refusals[0].cause, CheckCause::ModelIncomplete(incomplete));
+        }
     }
 }
