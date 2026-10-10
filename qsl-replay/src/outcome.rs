@@ -4,7 +4,8 @@
 //! serializer.
 //!
 //! A driver writes a document with a constructor over the operation's own
-//! outcome ([`OutcomeDocument::from_parse`], [`OutcomeDocument::from_check`],
+//! outcome ([`OutcomeDocument::from_parse`], [`OutcomeDocument::from_format`],
+//! [`OutcomeDocument::from_check`],
 //! [`OutcomeDocument::from_package`],
 //! [`OutcomeDocument::from_replay`]), or, for the operations whose outcome
 //! types live above this crate (`prove`, `analyze`, `monitor`), with
@@ -22,6 +23,7 @@
 //! violation; the label `undefined` appears only as the category of a
 //! non-proof evaluation outcome such as `execute`.
 
+use qsl_cst::format::FormatRefusal;
 use qsl_foundation::diagnostic::{Category, Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
@@ -695,6 +697,32 @@ impl OutcomeDocument {
         match result {
             Ok(_) => Self::new(Operation::Parse, Some(OutcomeStage::S2), Category::Success),
             Err(failure) => Self::from_failure(Operation::Parse, failure),
+        }
+    }
+
+    /// The document of a `format` outcome. The complete UTF-8 text stays in
+    /// the staged success value; this non-execute document has no result or
+    /// artifacts. S2 is the reporting default, not a stage run by this adapter.
+    /// Refusals retain their original typed diagnostic and catalog category.
+    pub fn from_format(result: &Result<Staged<String>, FormatRefusal>) -> Self {
+        match result {
+            Ok(_) => Self::new(Operation::Format, Some(OutcomeStage::S2), Category::Success),
+            Err(refusal) => {
+                let diagnostic = refusal.diagnostic();
+                Self::new(
+                    Operation::Format,
+                    Some(OutcomeStage::S2),
+                    diagnostic.code.category(),
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    Some(diagnostic.cause.as_str()),
+                    diagnostic.code.as_str(),
+                    diagnostic.region.as_ref().map(|region| {
+                        OutcomeLocus::from(&Locus::Region(region.clone()))
+                    }),
+                    diagnostic.message.clone(),
+                )])
+            }
         }
     }
 
