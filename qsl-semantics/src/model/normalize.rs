@@ -1425,10 +1425,21 @@ fn work_step() {
 /// work happens (see the module docs). Every charge is made in
 /// `value-accounting.md`'s charge order before the work it prices grows any
 /// further, and the first denied charge stops normalization.
-fn build(
-    domain_package: &DomainPackage,
-    meter: &mut Meter,
-) -> Result<(ViewBody, RecordIndex), Denial> {
+struct NormalizationState<'a> {
+    domain_package: &'a DomainPackage,
+    index: RecordIndex,
+    type_keys: Vec<DeclarationKey>,
+    direct_fields: Vec<Vec<&'a crate::model::domain_package::FieldMemberRecord>>,
+    type_preimages: HashMap<DeclarationKey, EffectiveDeclarationPreimage>,
+    type_effective_ids: HashMap<DeclarationKey, EffectiveId>,
+    type_hashed_bytes: HashMap<DeclarationKey, u64>,
+    type_paths: HashMap<DeclarationKey, Vec<AncestorPath>>,
+    member_preimages: HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
+    hidden: HashSet<(DeclarationKey, DeclarationKey)>,
+}
+
+fn prepare<'a>(domain_package: &'a DomainPackage, meter: &mut Meter)
+    -> Result<NormalizationState<'a>, Denial> {
     #[cfg(test)]
     BUILD_CALLS.with(|calls| calls.set(calls.get() + 1));
     validate_selection(domain_package)?;
@@ -1439,10 +1450,12 @@ fn build(
     // property of the declaration record that owns it, never a record of
     // its own, so `records.len()` is the exact IR node count. Only the
     // running position is charged (#141 F11).
+    let retained_records = meter.consumed(LimitKind::DeclarationRecords);
     for position in 0..domain_package.records.len() {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
+                .size(LimitKind::DeclarationRecords,
+                    retained_records.saturating_add(length_amount(position + 1))),
         )?;
     }
     let index = RecordIndex::build(domain_package);
@@ -1452,17 +1465,28 @@ fn build(
     if let Ok(refusals) = Refusals::try_from(validate_references(domain_package, &index)) {
         return Err(Denial::Refused(refusals));
     }
-    let limits = *meter.limits();
-    let mut charges = Charges::new(meter);
     let type_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
 
+    Ok(NormalizationState {
+        domain_package, index, type_keys, direct_fields: Vec::new(),
+        type_preimages: HashMap::new(), type_effective_ids: HashMap::new(),
+        type_hashed_bytes: HashMap::new(), type_paths: HashMap::new(),
+        member_preimages: HashMap::new(), hidden: HashSet::new(),
+    })
+}
+
+fn qualify(state: &mut NormalizationState<'_>, meter: &mut Meter) -> Result<(), Denial> {
+    let domain_package = state.domain_package;
+    let index = &state.index;
+    let type_keys = state.type_keys.as_slice();
+    let mut charges = Charges::new(meter);
     // Phase 2: one qualify fact per type and one per directly declared field
     // member. Every phase-2 fact sorts before every phase-3 fact, and every
     // `normalize.fact` charge differs only in the running count it sizes, so
     // charging them here, in any order, admits the same sequence as charging
     // them sorted.
     let mut direct_fields = Vec::with_capacity(type_keys.len());
-    for type_key in &type_keys {
+    for type_key in type_keys {
         charges.fact()?;
         let fields = index.sorted_direct_fields(&domain_package.records, type_key);
         for _ in &fields {
@@ -1471,6 +1495,17 @@ fn build(
         direct_fields.push(fields);
     }
 
+    state.direct_fields = direct_fields;
+    Ok(())
+}
+
+fn inherit(state: &mut NormalizationState<'_>, meter: &mut Meter) -> Result<(), Denial> {
+    let domain_package = state.domain_package;
+    let index = &state.index;
+    let type_keys = state.type_keys.as_slice();
+    let direct_fields = &state.direct_fields;
+    let limits = *meter.limits();
+    let mut charges = Charges::new(meter);
     // Phase 3, type level: every type's ancestor paths, charged as each walk
     // finds them. Types are walked ascending by key, and each walk yields its
     // paths ascending, which is `value-accounting.md:490`'s charge order for
@@ -1486,7 +1521,7 @@ fn build(
     // edge set only once every type is walked (`model-complete.md`:292-295's
     // "each cycle is refused ... exactly once"; see the module docs).
     let mut cycle_candidates: Vec<CycleCandidate> = Vec::new();
-    for type_key in &type_keys {
+    for type_key in type_keys {
         let walk = ancestor_paths(type_key, &index, limits.ancestor_steps, &mut charges)?;
         let mut derivation = vec![Fact {
             ordinal: 0,
@@ -1535,7 +1570,7 @@ fn build(
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
     > = HashMap::new();
-    for (type_key, fields) in type_keys.iter().zip(&direct_fields) {
+    for (type_key, fields) in type_keys.iter().zip(direct_fields) {
         let owner_effective_id = type_effective_ids[type_key];
         for member in fields {
             member_preimages.insert(
@@ -1602,6 +1637,23 @@ fn build(
         return Err(Denial::Refused(refusals));
     }
 
+    state.type_preimages = type_preimages;
+    state.type_effective_ids = type_effective_ids;
+    state.type_hashed_bytes = type_hashed_bytes;
+    state.type_paths = type_paths;
+    state.member_preimages = member_preimages;
+    Ok(())
+}
+
+fn resolve(state: &mut NormalizationState<'_>, meter: &mut Meter) -> Result<(), Denial> {
+    let domain_package = state.domain_package;
+    let index = &state.index;
+    let type_keys = state.type_keys.as_slice();
+    let type_paths = &state.type_paths;
+    let type_preimages = &state.type_preimages;
+    let type_effective_ids = &state.type_effective_ids;
+    let member_preimages = &mut state.member_preimages;
+    let mut charges = Charges::new(meter);
     // Phase 4: every type's own field-redefinition conflicts, run only now
     // that every type's phase 2/3 has finished (see the module docs): a
     // redefinition's owner can sort after `type_key` in `type_keys`'
@@ -1618,7 +1670,7 @@ fn build(
     // type's own directly-declared operation members, plus every operation
     // directly declared on a proper ancestor reached along that type's own
     // phase-3 `type_paths`.
-    for type_key in &type_keys {
+    for type_key in type_keys {
         let mut effective_operations: HashSet<DeclIdx> = HashSet::new();
         effective_operations.extend(index.direct_operations(type_key));
         if let Some(paths) = type_paths.get(type_key) {
@@ -1702,11 +1754,11 @@ fn build(
     // redefine fact get built.
     let mut phase4_facts_charged: u64 = 0;
     let mut plans = Vec::with_capacity(type_keys.len());
-    for type_key in &type_keys {
+    for type_key in type_keys {
         let Some(paths) = type_paths.get(type_key) else {
             continue;
         };
-        let plan = plan_redefinitions(&index, type_key, paths, &member_preimages, &mut accounting);
+        let plan = plan_redefinitions(&index, type_key, paths, &*member_preimages, &mut accounting);
         while phase4_facts_charged < *accounting.phase4_fact_count {
             charges.fact()?;
             phase4_facts_charged += 1;
@@ -1723,7 +1775,7 @@ fn build(
         resolve_redefinitions(
             type_key,
             plan,
-            &mut member_preimages,
+            &mut *member_preimages,
             &mut hidden,
             &mut accounting,
         );
@@ -1751,6 +1803,17 @@ fn build(
         return Err(Denial::Refused(refusals));
     }
 
+    state.hidden = hidden;
+    Ok(())
+}
+
+fn finish(state: NormalizationState<'_>, meter: &mut Meter)
+    -> Result<(ViewBody, RecordIndex), Denial> {
+    let NormalizationState { domain_package, index, type_keys,
+        mut type_preimages, type_effective_ids, type_hashed_bytes,
+        mut member_preimages, hidden, .. } = state;
+    let limits = *meter.limits();
+    let mut charges = Charges::new(meter);
     // Phase 5: `normalize.declaration` then `normalize.hash` per effective
     // declaration -- "effective types, then effective members, each
     // ascending by effective member key" (`value-accounting.md:494`, QSL
@@ -1905,6 +1968,80 @@ fn build(
     charges
         .hash(view.canonical_len_from_parts(&domain_package.model_selection, declarations_len))?;
     Ok((view, index))
+}
+
+
+fn build(domain_package: &DomainPackage, meter: &mut Meter)
+    -> Result<(ViewBody, RecordIndex), Denial> {
+    let mut state = prepare(domain_package, meter)?;
+    qualify(&mut state, meter)?;
+    inherit(&mut state, meter)?;
+    resolve(&mut state, meter)?;
+    finish(state, meter)
+}
+
+/// An unfinished stage exposes only its denial. Completed-stage refusals
+/// retain each owning selection ordinal and its complete local refusal set.
+pub(crate) enum BatchDenial {
+    Refused(Vec<(usize, Refusals)>),
+    Incomplete(usize, Incomplete),
+}
+
+/// Run each real normalization phase across every selection before any
+/// selection advances. Input order is the caller's canonical selection
+/// order; one borrowed operation meter survives every phase and selection.
+pub(crate) fn normalize_packages(
+    packages: &[DomainPackage],
+    meter: &mut Meter,
+) -> Result<Vec<EffectiveView>, BatchDenial> {
+    let mut states = Vec::with_capacity(packages.len());
+    let mut failures = Vec::new();
+    for (ordinal, package) in packages.iter().enumerate() {
+        match prepare(package, meter) {
+            Ok(state) => states.push((ordinal, state)),
+            Err(Denial::Refused(refusals)) => failures.push((ordinal, refusals)),
+            Err(Denial::Incomplete(incomplete)) => return Err(BatchDenial::Incomplete(ordinal, incomplete)),
+        }
+    }
+    if !failures.is_empty() { return Err(BatchDenial::Refused(failures)); }
+    for (ordinal, state) in &mut states {
+        match qualify(state, meter) {
+            Ok(()) => {},
+            Err(Denial::Refused(refusals)) => failures.push((*ordinal, refusals)),
+            Err(Denial::Incomplete(incomplete)) => return Err(BatchDenial::Incomplete(*ordinal, incomplete)),
+        }
+    }
+    if !failures.is_empty() { return Err(BatchDenial::Refused(failures)); }
+    for (ordinal, state) in &mut states {
+        match inherit(state, meter) {
+            Ok(()) => {},
+            Err(Denial::Refused(refusals)) => failures.push((*ordinal, refusals)),
+            Err(Denial::Incomplete(incomplete)) => return Err(BatchDenial::Incomplete(*ordinal, incomplete)),
+        }
+    }
+    if !failures.is_empty() { return Err(BatchDenial::Refused(failures)); }
+    for (ordinal, state) in &mut states {
+        match resolve(state, meter) {
+            Ok(()) => {},
+            Err(Denial::Refused(refusals)) => failures.push((*ordinal, refusals)),
+            Err(Denial::Incomplete(incomplete)) => return Err(BatchDenial::Incomplete(*ordinal, incomplete)),
+        }
+    }
+    if !failures.is_empty() { return Err(BatchDenial::Refused(failures)); }
+    let mut views = Vec::with_capacity(states.len());
+    for (ordinal, state) in states {
+        match finish(state, meter) {
+            Ok(body) => {
+                let NormalizeOutcome::Completed(view) = into_outcome(Ok(body),
+                    || Arc::new(packages[ordinal].clone())) else { unreachable!("completed body"); };
+                views.push(view);
+            }
+            Err(Denial::Refused(refusals)) => failures.push((ordinal, refusals)),
+            Err(Denial::Incomplete(incomplete)) => return Err(BatchDenial::Incomplete(ordinal, incomplete)),
+        }
+    }
+    if !failures.is_empty() { return Err(BatchDenial::Refused(failures)); }
+    Ok(views)
 }
 
 /// The RFC 8785 length of one effective-view `declarations` element,
@@ -2718,10 +2855,12 @@ struct Charges<'m> {
 
 impl<'m> Charges<'m> {
     fn new(meter: &'m mut Meter) -> Self {
+        let facts = meter.consumed(LimitKind::DerivationFacts);
+        let declarations = meter.consumed(LimitKind::EffectiveDeclarations);
         Self {
             meter,
-            facts: 0,
-            declarations: 0,
+            facts,
+            declarations,
         }
     }
 
