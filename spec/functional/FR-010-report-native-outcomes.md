@@ -14,6 +14,10 @@ relationships:
 
 When the native CLI finishes a request, it shall report the observed pipeline outcome with its source identity.
 
+`src/cli.rs` takes the four-label grammar (with the revision namespace
+and revision) before the file today. The two-label grammar of AC-11 is
+remaining implementation work under QSL-381.
+
 ## Inputs
 
 Command, source labels/file and compiler outcome.

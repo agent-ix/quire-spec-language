@@ -16,6 +16,10 @@ relationships:
 ---
 # FR-065: Migrate function declaration and application onto the checked-family contract
 
+
+Termination
+is a separate whole-package pass (`check::termination::check`) after every
+declaration is checked.
 ## Description
 
 Function declaration and application is the sole representative family this
