@@ -162,6 +162,13 @@ automaton states and the depth reached.
   protocol position; interval distance SHALL advance only on ADR-027
   PB-3 counted steps (terminal stutter included). FR-338 defines upper
   distance-region closure and IV-2 open-upper until/release prefix debt.
+  For protocol future intervals it SHALL also perform FR-338's
+  checker-owned non-progress acceptance construction; first-phase closure
+  alone SHALL NOT certify a pending finite eventuality on an admitted
+  zero-counted lasso. This derived verification obligation preserves the
+  checked source form and its actual fairness set. A violation uses the
+  existing replayed lasso evidence; a Closure proof requires the core
+  acceptance check in addition to bad-prefix closure.
 
 - For a `BoundedMltl` (TP-2) clause the engine SHALL build a deterministic
   finite monitor over positions, for activation `on origin` and for
