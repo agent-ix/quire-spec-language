@@ -38,7 +38,10 @@ fn function(body: &str) -> (String, FunctionDeclaration) {
 
 fn span(source: &str, needle: &str) -> Span {
     let start = source.rfind(needle).expect("literal source region");
-    Span { start, end: start + needle.len() }
+    Span {
+        start,
+        end: start + needle.len(),
+    }
 }
 
 #[trace("TC-790", "TC-792", "FR-300-AC-1", "FR-301-AC-1")]
@@ -51,7 +54,10 @@ fn lookup_retains_target_operands_explicit_absence_and_spans() {
     ] {
         let body = format!("lookup<M::T>(p, r) absent {word}");
         let (source, function) = function(&body);
-        let ExprNode::Lookup { target, absence, .. } = function.body.root_node() else {
+        let ExprNode::Lookup {
+            target, absence, ..
+        } = function.body.root_node()
+        else {
             panic!("expected existing Lookup node");
         };
         assert_eq!(target.head, TypeFormHead::Name("M::T".into()));
@@ -64,8 +70,14 @@ fn lookup_retains_target_operands_explicit_absence_and_spans() {
         assert_eq!(children[1].node(), &ExprNode::Name("r".into()));
         let spans = &function.spans().expect("source-derived spans").body;
         assert_eq!(spans.span(spans.root()), Some(span(&source, &body)));
-        assert_eq!(spans.span(spans.child(spans.root(), 0).unwrap()), Some(span(&source, "p")));
-        assert_eq!(spans.span(spans.child(spans.root(), 1).unwrap()), Some(span(&source, "r")));
+        assert_eq!(
+            spans.span(spans.child(spans.root(), 0).unwrap()),
+            Some(span(&source, "p"))
+        );
+        assert_eq!(
+            spans.span(spans.child(spans.root(), 1).unwrap()),
+            Some(span(&source, "r"))
+        );
     }
 }
 
@@ -79,7 +91,10 @@ fn dispatch_preserves_receiver_and_argument_order_in_a_precondition() {
     let DeclarationForm::StateClause(clause) = unit.forms()[0].form() else {
         panic!("expected precondition");
     };
-    let ExprNode::Dispatch { member, arguments, .. } = clause.body.root_node() else {
+    let ExprNode::Dispatch {
+        member, arguments, ..
+    } = clause.body.root_node()
+    else {
         panic!("expected existing Dispatch node");
     };
     assert_eq!(member, "query");
@@ -87,13 +102,19 @@ fn dispatch_preserves_receiver_and_argument_order_in_a_precondition() {
     let children = clause.body.root().children();
     assert_eq!(children.len(), 3);
     assert!(matches!(children[0].node(), ExprNode::Deref(_)));
-    assert_eq!(children[0].children()[0].node(), &ExprNode::Name("r".into()));
+    assert_eq!(
+        children[0].children()[0].node(),
+        &ExprNode::Name("r".into())
+    );
     assert_eq!(children[1].node(), &ExprNode::Integer(11_i64.into()));
     assert_eq!(children[2].node(), &ExprNode::Integer(22_i64.into()));
     let spans = &clause.spans.body;
     assert_eq!(spans.span(spans.root()), Some(span(&source, body)));
     for (index, needle) in ["deref(r)", "11", "22"].into_iter().enumerate() {
-        assert_eq!(spans.span(spans.child(spans.root(), index).unwrap()), Some(span(&source, needle)));
+        assert_eq!(
+            spans.span(spans.child(spans.root(), index).unwrap()),
+            Some(span(&source, needle))
+        );
     }
 }
 
@@ -103,24 +124,48 @@ fn chained_calls_and_fields_keep_each_receiver_before_its_arguments() {
     let body = "deref(r).first(11).field.second(22, lookup<M::T>(p, r) absent empty)";
     let (source, function) = function(body);
     let root = function.body.root();
-    let ExprNode::Dispatch { member, arguments, .. } = root.node() else { panic!("second dispatch"); };
+    let ExprNode::Dispatch {
+        member, arguments, ..
+    } = root.node()
+    else {
+        panic!("second dispatch");
+    };
     assert_eq!(member, "second");
     assert_eq!(arguments.len(), 2);
     let children = root.children();
     assert_eq!(children[1].node(), &ExprNode::Integer(22_i64.into()));
-    assert!(matches!(children[2].node(), ExprNode::Lookup { absence: AbsenceMode::Empty, .. }));
-    let ExprNode::Field { field, .. } = children[0].node() else { panic!("field navigation"); };
+    assert!(matches!(
+        children[2].node(),
+        ExprNode::Lookup {
+            absence: AbsenceMode::Empty,
+            ..
+        }
+    ));
+    let ExprNode::Field { field, .. } = children[0].node() else {
+        panic!("field navigation");
+    };
     assert_eq!(field, "field");
     let first = children[0].children()[0];
-    let ExprNode::Dispatch { member, arguments, .. } = first.node() else { panic!("first dispatch"); };
+    let ExprNode::Dispatch {
+        member, arguments, ..
+    } = first.node()
+    else {
+        panic!("first dispatch");
+    };
     assert_eq!(member, "first");
     assert_eq!(arguments.len(), 1);
-    assert_eq!(first.children()[1].node(), &ExprNode::Integer(11_i64.into()));
+    assert_eq!(
+        first.children()[1].node(),
+        &ExprNode::Integer(11_i64.into())
+    );
     assert!(matches!(first.children()[0].node(), ExprNode::Deref(_)));
     let spans = &function.spans().unwrap().body;
     assert_eq!(spans.span(spans.root()), Some(span(&source, body)));
     let field = spans.child(spans.root(), 0).unwrap();
-    assert_eq!(spans.span(field), Some(span(&source, "deref(r).first(11).field")));
+    assert_eq!(
+        spans.span(field),
+        Some(span(&source, "deref(r).first(11).field"))
+    );
     let first = spans.child(field, 0).unwrap();
     assert_eq!(spans.span(first), Some(span(&source, "deref(r).first(11)")));
 }
@@ -130,24 +175,47 @@ fn chained_calls_and_fields_keep_each_receiver_before_its_arguments() {
 fn model_source_admission_defers_missing_names_and_wrong_keys_to_checking() {
     for (body, member) in [("r.missing()", "missing"), ("r.exhausted()", "exhausted")] {
         let (_, function) = function(body);
-        let ExprNode::Dispatch { member: actual, arguments, .. } = function.body.root_node() else { panic!("dispatch"); };
+        let ExprNode::Dispatch {
+            member: actual,
+            arguments,
+            ..
+        } = function.body.root_node()
+        else {
+            panic!("dispatch");
+        };
         assert_eq!(actual, member);
         assert!(arguments.is_empty());
     }
     let (_, lookup) = function("lookup<M::Missing>(p, 17) absent refused");
-    let ExprNode::Lookup { target, .. } = lookup.body.root_node() else { panic!("lookup"); };
+    let ExprNode::Lookup { target, .. } = lookup.body.root_node() else {
+        panic!("lookup");
+    };
     assert_eq!(target.head, TypeFormHead::Name("M::Missing".into()));
-    assert_eq!(lookup.body.root().children()[1].node(), &ExprNode::Integer(17_i64.into()));
+    assert_eq!(
+        lookup.body.root().children()[1].node(),
+        &ExprNode::Integer(17_i64.into())
+    );
     let (_, field) = function("deref(r).missing");
     assert!(matches!(field.body.root_node(), ExprNode::Field { field, .. } if field == "missing"));
     let (_, instances) = function("allInstances<M::T>(p)");
-    let ExprNode::AllInstances { target, .. } = instances.body.root_node() else { panic!("allInstances"); };
+    let ExprNode::AllInstances { target, .. } = instances.body.root_node() else {
+        panic!("allInstances");
+    };
     assert_eq!(target.head, TypeFormHead::Name("M::T".into()));
-    assert_eq!(instances.body.root().children()[0].node(), &ExprNode::Name("p".into()));
+    assert_eq!(
+        instances.body.root().children()[0].node(),
+        &ExprNode::Name("p".into())
+    );
     let (_, reaches) = function("reaches(r, p, parent)");
     assert!(matches!(reaches.body.root_node(), ExprNode::Reaches { edge, .. } if edge == "parent"));
-    assert_eq!(reaches.body.root().children()[0].node(), &ExprNode::Name("r".into()));
-    assert_eq!(reaches.body.root().children()[1].node(), &ExprNode::Name("p".into()));
+    assert_eq!(
+        reaches.body.root().children()[0].node(),
+        &ExprNode::Name("r".into())
+    );
+    assert_eq!(
+        reaches.body.root().children()[1].node(),
+        &ExprNode::Name("p".into())
+    );
 }
 
 #[trace("TC-790", "FR-300-AC-1")]
@@ -155,13 +223,23 @@ fn model_source_admission_defers_missing_names_and_wrong_keys_to_checking() {
 fn named_calls_stay_distinct_from_member_calls_and_type_arguments_survive() {
     let (_, function) = function("query(r).member(convert<Int[-2,3]>(1))");
     let children = function.body.root().children();
-    assert!(matches!(children[0].node(), ExprNode::Call { name, arguments } if name == "query" && arguments.len() == 1));
-    let ExprNode::Convert { target, .. } = children[1].node() else { panic!("convert"); };
+    assert!(
+        matches!(children[0].node(), ExprNode::Call { name, arguments } if name == "query" && arguments.len() == 1)
+    );
+    let ExprNode::Convert { target, .. } = children[1].node() else {
+        panic!("convert");
+    };
     assert_eq!(target.bounds, ["-2", "3"]);
     let (_, nested) = self::function("lookup<Reference<M::T>>(query(p), r.query()) absent refused");
-    let ExprNode::Lookup { target, .. } = nested.body.root_node() else { panic!("lookup"); };
+    let ExprNode::Lookup { target, .. } = nested.body.root_node() else {
+        panic!("lookup");
+    };
     assert_eq!(target.arguments.len(), 1);
     assert_eq!(target.arguments[0].head, TypeFormHead::Name("M::T".into()));
-    assert!(matches!(nested.body.root().children()[0].node(), ExprNode::Call { name, .. } if name == "query"));
-    assert!(matches!(nested.body.root().children()[1].node(), ExprNode::Dispatch { member, arguments, .. } if member == "query" && arguments.is_empty()));
+    assert!(
+        matches!(nested.body.root().children()[0].node(), ExprNode::Call { name, .. } if name == "query")
+    );
+    assert!(
+        matches!(nested.body.root().children()[1].node(), ExprNode::Dispatch { member, arguments, .. } if member == "query" && arguments.is_empty())
+    );
 }

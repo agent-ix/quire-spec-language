@@ -15,7 +15,8 @@ fn parse(text: &str, limits: Limits) -> ParsedSource {
         "model-syntax.native",
         text.as_bytes(),
         limits,
-    ).expect("source metadata admitted")
+    )
+    .expect("source metadata admitted")
 }
 
 #[trace("TC-790", "TC-792", "FR-300-AC-1", "FR-301-AC-1", "FR-301-AC-2")]
@@ -40,9 +41,13 @@ fn model_forms_preserve_source_bytes_and_named_productions() {
         assert_eq!(parsed.source().identity().identity, "model-syntax");
         assert_eq!(parsed.effective_limits(), Limits::default());
         let start = text.find(body).unwrap();
-        assert!(parsed.cst().nodes().iter().any(|node|
-            node.production() == Production::Expression && node.span() == Span { start, end: start + body.len() }
-        ));
+        assert!(parsed.cst().nodes().iter().any(|node| node.production()
+            == Production::Expression
+            && node.span()
+                == Span {
+                    start,
+                    end: start + body.len()
+                }));
     }
 }
 
@@ -70,8 +75,15 @@ fn invalid_model_productions_refuse_at_the_offending_token() {
         let start = text.rfind(token).unwrap();
         let region = diagnostic.region.as_ref().expect("located refusal");
         assert_eq!(region.start(), start, "{body}: {diagnostic:?}");
-        assert_eq!(region.end(), start + token.split_whitespace().next().unwrap().len(), "{body}");
-        assert!(diagnostic.message.starts_with("expected "), "{diagnostic:?}");
+        assert_eq!(
+            region.end(),
+            start + token.split_whitespace().next().unwrap().len(),
+            "{body}"
+        );
+        assert!(
+            diagnostic.message.starts_with("expected "),
+            "{diagnostic:?}"
+        );
     }
 }
 
@@ -82,7 +94,11 @@ fn absence_words_remain_identifiers_outside_the_lookup_mode() {
     let parsed = parse(text, Limits::default());
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     for word in [b"empty".as_slice(), b"undefined", b"refused"] {
-        assert!(parsed.cst().tokens().iter().any(|token| token.spelling() == word && token.kind() == TokenKind::Identifier));
+        assert!(parsed
+            .cst()
+            .tokens()
+            .iter()
+            .any(|token| token.spelling() == word && token.kind() == TokenKind::Identifier));
     }
 }
 
@@ -97,13 +113,19 @@ fn model_sources_keep_the_existing_budget_refusals() {
     ] {
         let parsed = parse(&text, limits);
         assert!(!parsed.is_admissible());
-        assert_eq!(parsed.diagnostics()[0].code, CompleteCode::StageLimitExceeded);
+        assert_eq!(
+            parsed.diagnostics()[0].code,
+            CompleteCode::StageLimitExceeded
+        );
         assert!(parsed.diagnostics()[0].limit().is_some());
         assert_eq!(parsed.effective_limits(), limits);
     }
     let refusal = qsl_cst::parse(
         SourceIdentity::new("test", "model-syntax", "test", "1"),
-        "model-syntax.native", text.as_bytes(), Limits::default().with_source_bytes(text.len() - 1),
-    ).unwrap_err();
+        "model-syntax.native",
+        text.as_bytes(),
+        Limits::default().with_source_bytes(text.len() - 1),
+    )
+    .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
 }
