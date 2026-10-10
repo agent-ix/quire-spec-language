@@ -844,7 +844,11 @@ fn expressions(g: &mut Grammar) {
                 r(P::Expression),
                 x(")"),
                 x("absent"),
-                c(vec![literal("undefined"), literal("empty"), literal("refused")]),
+                c(vec![
+                    literal("undefined"),
+                    literal("empty"),
+                    literal("refused"),
+                ]),
             ]),
             s(vec![
                 x("size"),

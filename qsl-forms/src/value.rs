@@ -14,8 +14,8 @@
 //! node per CST node, so S1's node limit bounds it (FR-257).
 
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
-use qsl_foundation::Span;
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
 
 use super::dispatch::{Construct, FormsCause, FormsRefusal};
@@ -1209,12 +1209,15 @@ impl<'c> Mapping<'c> {
                     };
                     let mut end = member.span().end;
                     let mut arguments = Vec::new();
-                    let call = matches!(rest.peek(), Some(Item::Token(token)) if token.spelling() == b"(");
+                    let call =
+                        matches!(rest.peek(), Some(Item::Token(token)) if token.spelling() == b"(");
                     if call {
                         rest.next();
                         loop {
                             match rest.next() {
-                                Some(Item::Node(argument)) if argument.production() == Production::Expression => {
+                                Some(Item::Node(argument))
+                                    if argument.production() == Production::Expression =>
+                                {
                                     arguments.push(*argument);
                                 }
                                 Some(Item::Token(token)) if token.spelling() == b"," => {}
@@ -1222,12 +1225,18 @@ impl<'c> Mapping<'c> {
                                     end = token.span().end;
                                     break;
                                 }
-                                Some(Item::Token(_) | Item::Node(_)) | None => return Err(unexpected(node)),
+                                Some(Item::Token(_) | Item::Node(_)) | None => {
+                                    return Err(unexpected(node))
+                                }
                             }
                         }
                     }
                     let name = text(member, node)?;
-                    let shape = if call { Shape::Dispatch(name) } else { Shape::Field(name) };
+                    let shape = if call {
+                        Shape::Dispatch(name)
+                    } else {
+                        Shape::Field(name)
+                    };
                     suffixes.push((shape, end, arguments));
                 }
                 Item::Token(token) if token.spelling() == b"[" => {
@@ -1253,10 +1262,7 @@ impl<'c> Mapping<'c> {
         let start = node.span().start;
         let mut parent = task.parent;
         for (shape, end, arguments) in suffixes.into_iter().rev() {
-            let span = Span {
-                start,
-                end,
-            };
+            let span = Span { start, end };
             let index = self.node(shape, node.production(), span, parent);
             self.queue(index, arguments);
             parent = Some(index);
