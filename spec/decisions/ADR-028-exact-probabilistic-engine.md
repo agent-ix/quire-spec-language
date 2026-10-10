@@ -119,7 +119,7 @@ What EN-5 builds on:
 | PR-1 | **Actions.** At a model state `s`, the actions are the enabled scheduled identities (ADR-024 PM-2): (operation, receiver, non-random argument vector) whose effective precondition holds at `s` and that have at least one post-state for some drawn random vector. An action `a` has the **draw distribution** `D(s, a)`: each random argument vector `r` in the product of its parameters' supports with probability the product of their PM-1 probabilities. Preconditions read no random parameter (PM-1), so the action set is decided before any draw. |
 | PR-2 | **The MDP.** A drawn vector `r` of action `a` at `s` leads to the post-states FR-120 gives for `(a, r)`. When there is exactly one, the edge `s → s'` carries probability `D(s, a)(r)`, summed over the vectors that lead to `s'`. When there are several, the choice among them is part of the scheduler's choice (SCH-2). When there are none, the draw loses mass, and the subject settles `unsupported`, `NotMarkov{state, transition, post_states}` (ADR-024 PM-3). The MDP's support graph is ADR-018's state graph (ADR-024 PM-6). |
 | PR-3 | **The DTMC under a workload.** Under `W`, each action is chosen with ADR-024 PM-2's probability, so each edge carries PM-3's step probability. Several post-states for one drawn vector settle `NotMarkov` under a workload, as PM-3 states. |
-| PR-4 | **The product with a monitor.** For a form whose event is a bounded formula or a comparison of a bounded measure (ADR-024 PF-1, PF-2), EN-5 forms the product of the MDP or DTMC with ADR-018 SM-6's deterministic finite monitor for the formula, read at each position (ADR-018 SM-3), with EN-1's closure at terminal model states. A bounded measure adds its accumulator to the product state: the steps or reward accumulated since activation, saturating at a single value above the threshold `c` (any value above `c` serves, since only `M <= c` and `M < c` are read), and the activation flag. Rewards are non-negative values from finite supports (ADR-024 PM-5), so the accumulator takes finitely many values. The product state key is (model state key, monitor state index, accumulator); the product edge carries the model edge's action, draw and probability. |
+| PR-4 | **The product with a monitor.** For a form whose event is a bounded formula or a comparison of a bounded measure (ADR-024 PF-1, PF-2), EN-5 forms the product of the MDP or DTMC with ADR-018 SM-6's deterministic finite monitor for the formula, read at each model position (ADR-018 SM-3), with EN-1's closure for bounded formulas and FR-407's bounded measure stutter semantics at terminal states. A bounded measure retains its activation, complete horizon/control phase and steps or exact reward accumulated since activation. FR-196's closed canonical representation uses one tagged above-bound amount for every finite amount above c, retains exact equality for strict/non-strict comparisons, and distinguishes censoring from finite overflow. Weighted fractions retain both exact sums through completion; finite horizon and finite supports make their state space finite without truncation. The full canonical product key contains model, monitor, accumulator and the actual SCH-2 pending scheduled identity/drawn vector, each with real absence when absent. Local monitor indices are storage only; formula identity uses FR-338's canonical structural AutomatonStateKey. The product edge carries the model edge's action, draw and probability. |
 | PR-5 | **Decided states.** The monitor of a bounded formula counts positions to its horizon `h` (ADR-014 TR-4), so every product path reaches an accepting or a rejecting monitor state within `h + 1` positions, which EN-5 keeps as absorbing **decided** states. The product restricted to undecided states is acyclic. |
 | PR-6 | **Products for unbounded forms.** An unbounded form (XF-4, XF-5, XF-6) needs no monitor: its state predicates label model states and its reward labels edges. Its product is the MDP or DTMC itself, with the target or the long-run predicate as labels. |
 
@@ -529,6 +529,25 @@ lead, consistent with the owner's earlier rulings.
 | RU-4 | When the scheduler resolves residual nondeterminism | **After the draw,** as in a standard MDP | The scheduler sees the drawn vector, as the model's nondeterminism follows the draw | SCH-2 |
 | RU-5 | Whether the weighted long-run fraction is kept over every scheduler | **Kept.** | Time-weighted availability needs it | XF-6, LR-2 |
 | RU-6 | Who resolves delays over a timed subject under a workload | **The workload resolves both the action and the delay choice** when it gives the delays: the subject is then a DTMC, checked exactly on EN-5. Delay nondeterminism left over is decided by its minimum and maximum | One claim under one workload has one measure; the exact engine computes it when it is rational | TA-1, TA-1a; ADR-026 SS-7 and RU-5 on acceptance |
+
+### Canonical product representation amendment
+
+The representation selected in
+[FR-196](../functional/FR-196-build-the-probabilistic-product.md) is an
+explicit new normative choice for PR-4, SCH-2 and CE-1. Its complete JCS
+octets retain the existing typed model and Value identities and actual
+optional state; no new digest, default accumulator or monitor index is
+introduced as semantic authority. Certificate values, ranking, policy,
+component bias and rejection loci use that identical full representation.
+FR-331's consumer transport remains independently owned.
+
+PR-4's former permission to retain any value above c does not select a
+unique representation and is superseded by the single above-bound tag.
+XF-3's exact weighted sums are retained separately: pairs (1,2) and (2,4)
+cannot coalesce before a later weighted contribution, despite equal
+current ratios. Censoring, activation and horizon/phase remain explicit.
+The change authors identity and prospective vectors; it claims no
+translator, exact provider or strict-reader qualification.
 
 ## Consequences
 
