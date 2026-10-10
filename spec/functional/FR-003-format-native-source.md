@@ -66,7 +66,7 @@ checked package identity as checking the original source.
 | FR-003-AC-4 | Output beyond its selected ceiling receives resource_exhausted. | Test |
 | FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test |
 | FR-003-AC-6 | format(source) and format_with_limit(source, 1048576) return identical bytes. Source whose formatted output exceeds 1 MiB refuses under format(source) naming the limit, its value and format_with_limit, and formats in full under format_with_limit with a limit raised to fit it. | Test |
-| FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
+| FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `qsl-cst/src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
 | FR-003-AC-8 | format and format_with_limit refuse a `ParsedSource` whose CST carries a recovery, and one that carries a diagnostic and no recovery, each with a typed cause and no output string; neither call panics. | Test (TC-404) |
 | FR-003-AC-9 | For each complete-V1 fixture unit in the repository's tests that checks, checking its formatted source through the S1 to S4 spine yields a checked package identity equal to the original's, and formatting the formatted source again yields identical bytes. | Test (TC-885) |
 
@@ -76,7 +76,7 @@ checked package identity as checking the original source.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 (layer 1), §6.2 (`format` row) and §7.3 (M-6a row) set the input
   to the CST.
-- [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
+- [Detailed contract or implementation evidence](../../qsl-cst/src/format.rs) supplies the scoped context.
 
 ## Status
 

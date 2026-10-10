@@ -33,6 +33,8 @@ pub fn emitted(
 }
 
 /// The same identity oracle with the owning fixture's limits and lock evidence.
+// Keep source, selected packages, dependencies, limits and lock evidence explicit
+// so callers retain each owning fixture's independent admission authority.
 #[allow(clippy::too_many_arguments)]
 pub fn emitted_with_authority(
     source: SourceIdentity,
@@ -68,6 +70,8 @@ pub fn emitted_with_authority(
 /// Trace: FR-003-AC-9
 /// Every successful fixture using this actual S1–S4 seam also checks its
 /// formatted bytes under the same model and dependency selections.
+// The original result and each admission input remain separate so the round trip
+// reuses the fixture's actual authority without substituting helper defaults.
 #[allow(clippy::too_many_arguments)]
 fn assert_format_identity(
     original: &EmittedUnit,
@@ -129,6 +133,8 @@ fn assert_format_identity(
     );
 }
 
+// Forward the same independent admission inputs to checking before packaging;
+// grouping or defaulting them here would obscure the owning fixture's choices.
 #[allow(clippy::too_many_arguments)]
 fn emitted_once(
     source: SourceIdentity,
@@ -150,6 +156,8 @@ fn refusal(failure: qsl_replay::spine::FrontEndFailure) -> Box<CompileRefusal> {
         .unwrap_or_else(|fault| panic!("the front end faulted: {fault:?}"))
 }
 
+// This seam composes parse/select/check with the caller's exact source, models,
+// dependencies, limits and lock; each input stays explicit for fixture custody.
 #[allow(clippy::too_many_arguments)]
 fn checked_once(
     source: &SourceIdentity,
@@ -251,14 +259,20 @@ pub fn dependency_fixture_identity(
     let mut pending = vec![(original.package(), formatted.package())];
     let mut visited = std::collections::BTreeSet::new();
     while let Some((original, formatted)) = pending.pop() {
-        let original_id = qsl_package::emit_checked(original)
-            .unwrap()
-            .package()
-            .package_id();
-        let formatted_id = qsl_package::emit_checked(formatted)
-            .unwrap()
-            .package()
-            .package_id();
+        let original_emission = qsl_package::emit_checked(original).unwrap();
+        assert!(
+            original_emission.omitted().is_empty(),
+            "{path}: original dependency emission omitted {:?}",
+            original_emission.omitted()
+        );
+        let formatted_emission = qsl_package::emit_checked(formatted).unwrap();
+        assert!(
+            formatted_emission.omitted().is_empty(),
+            "{path}: formatted dependency emission omitted {:?}",
+            formatted_emission.omitted()
+        );
+        let original_id = original_emission.package().package_id();
+        let formatted_id = formatted_emission.package().package_id();
         assert_eq!(
             original_id, formatted_id,
             "{path}: formatting changed checked dependency package identity"
