@@ -25,7 +25,8 @@ declares an operation instead of the receiver's static type, and a
 correspondence left caller-supplied.
 
 Scope: FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 (its
-`Reference` and `DeclarationKey` cases), FR-094-CON-1, FR-094-CON-2.
+`Reference` and `DeclarationKey` cases), FR-094-AC-9, FR-094-AC-10,
+FR-094-CON-1, FR-094-CON-2.
 
 ## Test Procedure
 
@@ -54,6 +55,12 @@ with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
    the record-kind `match` with a field member record.
 8. Scan the model-declaration-node `match` for a `_` arm, and scan every
    model-owned preimage for an owner of kind `source` or `definition`.
+9. Repeat step 4 with source aliases `Ref = Reference<M::Order>` and
+   `Bucket = Population<M::Order>[3]`, then resolve an alias naming no type.
+10. Apply `RM-REF-TARGET` to R1, `RM-POP-MAX` to PO1 and `RM-CU-ORDER` to U2,
+    retaining each original node id while refreshing the package projection
+    and package id. Repeat each mutation after replacing the node id with the
+    changed preimage digest.
 
 Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 
@@ -75,6 +82,13 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 - Step 7: each of the four refuses as an internal fault naming that value,
   and yields no key.
 - Step 8: no `_` arm, and no `source` or `definition` owner.
+- Step 9: both aliases name the already settled R1 or PO1 node, no alias node
+  is emitted, and the unknown alias refuses `missing_declaration` /
+  `missing-name` before lowering.
+- Step 10: each mutation first retains its original id for the stale-key
+  check, then recomputes the changed id. The reader refuses the scalar
+  reference target, negative population bound and noncanonical compound-unit
+  term order as semantic-shape errors after key freshness succeeds.
 
 ## Status
 

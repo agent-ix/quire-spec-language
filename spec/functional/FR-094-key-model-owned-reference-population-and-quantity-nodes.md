@@ -43,10 +43,12 @@ Every node here whose body holds no application is keyed by FR-092's
 `quire.structural-node/v1` preimage. A node that stands for a domain
 package's declaration carries QSpec's `ModelOwner`, as ADR-013 O-04 and C-02
 decide. The node shapes, the `ModelOwner` use on the structural preimage, the
-`model_population` and `compound_unit` shapes and the `clause` binding are
-QSL proposals to QSpec (ADR-013 QC-25, QC-26), as `quire.structural-node/v1`
-is (QC-24). QSpec references (`ix://agent-ix/quire-specification`, cited by
-reference, never copied): FR-322, `proposals/checked-package-v2/schema.json`,
+`model_population` and `compound_unit` shapes and the `clause` binding follow
+QSpec FR-322's settled derived type forms (ADR-013 QC-25, QC-26). A source
+type alias is resolved before lowering and forwards to its resolved node; it
+does not create an `alias` node. QSpec references
+(`ix://agent-ix/quire-specification`, cited by reference, never copied):
+FR-322, `proposals/checked-package-v2/schema.json`,
 `node-identity-preimage.schema.json`, `node-identity-vectors.json`,
 `operation-catalog.json` and the positive fixtures.
 
@@ -154,9 +156,9 @@ environment are exactly the admitted effective views' `type_identities`
 values, so every admitted `Reference<T>` maps to one `DeclarationKey`.
 
 A model declaration node's body names no member, so the type of a `field` or
-`operation` member is not in the graph. ADR-013 QC-25 asks QSpec how a
-reader derives it for FR-322's `member` result form and `member_of`
-constraint. The `Attribute` projection over a `deref` result is QC-24's.
+`operation` member is not in the graph. QSpec FR-322 settles how a reader
+derives it for FR-322's `member` result form and `member_of` constraint. The
+`Attribute` projection over a `deref` result is QC-24's.
 
 ### Model correspondence
 
@@ -175,7 +177,7 @@ v2 spelling of the correspondence is ADR-013 QC-25.
 
 | Checked type | `node_tag` / `semantic_form` | `semantic_type` | Body |
 |---|---|---|---|
-| `Reference<T>` | `composite_type` / `reference` | itself | `aggregate{[reference(T's model node)]}` |
+| `Reference<T>` | `composite_type` / `reference` | itself | `aggregate{[reference(T's model declaration node)]}`; scalar, value, function and other non-model targets are refused by the checked-package reader |
 | `Population<T>[N]` | `bounded_domain` / `model_population` | the `Set<Reference<T>>` node | binding `max` = `N` |
 
 `N` is an integer literal typed at the `Integer` node (FR-092 T2), spelled as
@@ -184,6 +186,13 @@ FR-092 spells an integer. Both nodes are anonymous: they carry no
 through `T`'s model node, so `Reference<T>` over object types of two domain
 package identities gives two ids, and a version-only change of `T`'s domain
 package keeps the id.
+
+An alias of either form forwards to the resolved node. For example,
+`Ref = Reference<Order>` names the same `composite_type`/`reference` node as
+`Reference<Order>`, and `Bucket = Population<Order>[3]` names the same
+`bounded_domain`/`model_population` node. The alias spelling enters neither
+preimage. An alias naming no type refuses during source resolution; it does
+not reach lowering as a second node.
 
 A type built from these follows FR-092's table: the `lookup<T>` result under
 `absent empty` is the `Option<Reference<T>>` node, and the `allInstances<T>(p)`
@@ -271,7 +280,9 @@ domain:
   `quire.value.compound-unit/v1` preimage (ascending root-unit node key). A
   term is `aggregate{[binding "unit" = reference(the root unit's node),
   binding "exponent" = the exponent as an integer literal typed at the
-  `Integer` node]}`. The dimensionless unit's body is `aggregate{[]}`.
+  `Integer` node]}`. Each root reference names a targetless canonical nominal
+  unit whose `semantic_type` is its dimension node. The dimensionless unit's
+  body is `aggregate{[]}`.
 
 `check` reads a compound unit's terms from the `CompoundUnit` that the check
 stage's unit scope holds for its `UnitId`: the package's unit table, or the
@@ -669,6 +680,8 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-6 | With `a` a quantity of QSpec's declared unit `metre` and `t` one of `second`, `a`'s parameter has semantic type `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, QSpec's `unit-metre` key, and the graph holds no `compound_unit` node for it. In a function body, the result type of `a * a` keys to U1. The compound units that `value::quantity::result_unit` forms for `a / t`, `a / a` and `(a * a) / a`, held in the check stage's unit scope, key to U2, U3 and U4. U2's first term names metre, and U4 differs from the `metre` unit key. | Test (TC-419) |
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
+| FR-094-AC-9 | A source alias `Ref = Reference<M::Order>` and `Bucket = Population<M::Order>[3]` resolve before lowering: every parameter and result using either alias names R1 or PO1 exactly, no alias node is emitted, and an alias naming no declared type refuses `missing_declaration`/`missing-name` before a node key is requested. | Test (TC-417); QSpec FR-322-AC-62 executable vectors |
+| FR-094-AC-10 | The derived-form mutation vectors `RM-REF-TARGET`, `RM-POP-MAX` and `RM-CU-ORDER` retain the original node id for the stale-key check, then recompute the changed digest before semantic validation. The checked-package reader refuses scalar, function and value reference targets; negative bounds and arbitrary-set populations; and non-self-typed, non-root or noncanonical compound-unit forms as `invalid_package` semantic-shape refusals. The accepted U2 vector uses the actual targetless nominal `unit-metre` and `unit-second` roots, whose `semantic_type` is their dimension key; the reader admits that vector before the reordered-term mutation is applied. | Test (TC-417, TC-419); QSpec `tc_322_recomputed_derived_forms_refuse_semantic_mutations` |
 
 ## Dependencies
 
@@ -691,16 +704,17 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §5.1: no catch-all arm.
 - QSpec: `ModelOwner` and its vectors (FR-322-AC-28; ADR-013 QC-3), the
-  `reference` composite form and the `model_population` domain form of
-  `schema.json`, and the model operation entries of `operation-catalog.json`.
-  The `ModelOwner` structural preimage, the `compound_unit` form, the
-  `model_population` body and family, the `clause` binding and the v2
-  correspondence spelling are QSL proposals (QC-25, QC-26).
+  alias-forwarding rule and `reference` composite form, the
+  `model_population` domain form, the `compound_unit` scalar form and the
+  model operation entries of `schema.json` and `operation-catalog.json`;
+  FR-322-AC-62 settles the
+  forwarding, bodies, anonymous ownership and refusal rules for these forms.
 
 ## Status
 
-Specified, with AC-6's quotient units corrected and the content-only
-`ModelOwner` (QSpec FR-322-AC-28). Implemented (#384):
+Specified, with AC-6's quotient units corrected, the content-only `ModelOwner`
+(QSpec FR-322-AC-28) and QSpec FR-322-AC-62's settled derived type forms.
+Implemented (#384):
 `qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
 `Reference`, `Population`, clause-function and quantity type nodes, and
 builds each declared unit's and dimension's nominal node, `check`
