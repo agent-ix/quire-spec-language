@@ -363,16 +363,23 @@ pub enum RelationshipDirection {
     Undirected,
 }
 
-/// FCD FR-115 relationship record: FR-152's Connection candidate, or (when
-/// both ends name object types) a navigation-only relationship with no
-/// kind. Never an Allocation: an allocation's wire shape names only a
-/// source and a target element and carries neither ends' multiplicity nor a
-/// direction (`model-complete.md`:335 — see [`AllocationRecord`]), so it is
-/// read as one, never folded into this shape with fabricated fields.
+/// The actual producer shape that declared a relationship.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelationshipMeaning {
+    /// A node with `quire.meaning.systems.connection/v1` meaning.
+    Connection,
+    /// An owning type's inline navigation relationship.
+    NavigationRelationship,
+}
+
+/// A connection or navigation relationship, retaining its producer meaning.
+/// An allocation has its own source/target shape and is never folded here.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.
     pub key: DeclarationKey,
+    /// The producer meaning, independent of the kinds of the named ends.
+    pub meaning: RelationshipMeaning,
     /// The source end.
     pub source: RelationshipEnd,
     /// The target end.

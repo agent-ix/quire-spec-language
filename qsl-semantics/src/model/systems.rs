@@ -47,7 +47,7 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::conformance::multiplicity_conforms;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
-    PortDirection, RelationshipRecord, ValueTypeRef,
+    PortDirection, RelationshipMeaning, RelationshipRecord, ValueTypeRef,
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
@@ -265,13 +265,8 @@ pub fn classify(
     }
 
     for relationship in &relationships {
-        let source_is_type = object_types.contains(&relationship.source.type_identity);
-        let target_is_type = object_types.contains(&relationship.target.type_identity);
-        if source_is_type && target_is_type {
-            edge_kinds.insert(relationship.key.clone(), Kind::None);
-            continue;
-        }
-        charge_kind(meter)?;
+        let navigation = relationship.meaning == RelationshipMeaning::NavigationRelationship;
+        if !navigation { charge_kind(meter)?; }
         // FR-208-AC-9: a relationship end names an object type or a Port; a
         // record value type is a declared type of neither meaning, so each
         // such end refuses malformed and the other end is not resolved.
@@ -294,8 +289,8 @@ pub fn classify(
                 });
             }
             Kind::None
-        } else if source_is_type && target_is_type {
-            Kind::None // navigation relationship: no kind, not an error.
+        } else if navigation {
+            Kind::None
         } else {
             let mut ends_ok = true;
             for (end, label) in [

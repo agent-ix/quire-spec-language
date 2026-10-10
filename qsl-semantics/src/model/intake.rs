@@ -49,7 +49,7 @@ use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
     Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipMeaning,
     RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
@@ -2477,6 +2477,7 @@ fn read_connection(
     };
     Ok(RelationshipRecord {
         key: declaration_key(package, node),
+        meaning: RelationshipMeaning::Connection,
         source: RelationshipEnd {
             type_identity: declaration_key(package, source_type),
             // `ConnectionEnd` (FCD's wire shape for a Connection node's
@@ -2555,6 +2556,7 @@ fn read_relationship(
     };
     Ok(RelationshipRecord {
         key: declaration_key(package, node),
+        meaning: RelationshipMeaning::NavigationRelationship,
         source,
         target,
         direction,

@@ -220,6 +220,7 @@ fn acme(version: &str) -> DomainPackage {
             query_over("Sub/scaled", "Sub", Some("Order/scaled"), &["m"]),
             DomainPackageRecord::Relationship(RelationshipRecord {
                 key: key("billedTo"),
+                meaning: crate::model::domain_package::RelationshipMeaning::NavigationRelationship,
                 source: RelationshipEnd {
                     type_identity: key("Order"),
                     role: Some("order".to_owned()),

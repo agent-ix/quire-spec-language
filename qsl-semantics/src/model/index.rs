@@ -507,7 +507,8 @@ impl RecordIndex {
                 DomainPackageRecord::Endpoint(port) => { ports.insert(own, at(&port.owning_component)); }
                 DomainPackageRecord::Relationship(relationship) => {
                     end_members.push((own, at(&relationship.source.type_identity),
-                        at(&relationship.target.type_identity), false));
+                        at(&relationship.target.type_identity),
+                        relationship.meaning == crate::model::domain_package::RelationshipMeaning::Connection));
                 }
                 DomainPackageRecord::Allocation(allocation) => {
                     end_members.push((own, at(&allocation.source_element), at(&allocation.target_element), true));
@@ -524,9 +525,8 @@ impl RecordIndex {
                 index.members_by_owner.entry(owner).or_default().push(*port);
             }
         }
-        for (member, source, target, allocation) in end_members {
-            let connection = ports.contains_key(&source) && ports.contains_key(&target);
-            let ends = if allocation || connection { vec![source, target] } else { vec![source] };
+        for (member, source, target, both_end_owners) in end_members {
+            let ends = if both_end_owners { vec![source, target] } else { vec![source] };
             for end in ends {
                 if let Some(owner) = element_owners.get(&end).copied() {
                     index.members_by_owner.entry(owner).or_default().push(member);

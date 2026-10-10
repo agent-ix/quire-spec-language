@@ -15,7 +15,7 @@ use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLim
 use qsl_semantics::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
     EndpointRecord, Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    PortDirection, RelationshipDirection, RelationshipEnd, RelationshipMeaning, RelationshipRecord, ScalarTypeRecord,
 };
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::DeclarationKey;
@@ -116,6 +116,7 @@ fn endpoint(
 }
 
 fn relationship(
+    meaning: RelationshipMeaning,
     identity: &str,
     source: &str,
     source_m: Multiplicity,
@@ -125,6 +126,7 @@ fn relationship(
 ) -> DomainPackageRecord {
     DomainPackageRecord::Relationship(RelationshipRecord {
         key: DeclarationKey::fixture(identity),
+        meaning,
         source: RelationshipEnd {
             type_identity: DeclarationKey::fixture(source),
             role: None,
@@ -192,6 +194,7 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
             one(),
         ),
         relationship(
+            RelationshipMeaning::Connection,
             "model.Sys.pipe",
             "model.Sys.pump.out",
             one(),
@@ -202,6 +205,7 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
         operation_run(),
         allocation("model.Pump.alloc", "model.Pump.run", "model.Sys.pump"),
         relationship(
+            RelationshipMeaning::NavigationRelationship,
             "model.rel.parts",
             "model.Sys",
             one(),
@@ -210,6 +214,7 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
             RelationshipDirection::SourceToTarget,
         ),
         relationship(
+            RelationshipMeaning::NavigationRelationship,
             "model.rel.home",
             "model.Pump",
             one(),
@@ -305,6 +310,7 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
             },
         ));
         records.push(relationship(
+            RelationshipMeaning::NavigationRelationship,
             "model.Sys.owes",
             "model.Sys",
             one(),
