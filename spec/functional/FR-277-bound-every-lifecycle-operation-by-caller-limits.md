@@ -303,6 +303,7 @@ declaration budgets to manufacture those hooks.
 | Helper input | Required independent bound and source proof | Owner boundary |
 | --- | --- | --- |
 | Numeric membership | Finite stored numeric size for every value and domain endpoint, and finite scale/exponent inputs; prove the released operation terminates with work bounded by those sizes | QSV identifies the actual kernel operation and public/admitted size access; kernel owns semantics, QSL supplies the invoking phase context |
+| Decimal membership temporary storage and cancellation | Establish a separate temporary-storage bound, actual fallible reservation/failure path and original-Cancel observation boundary; numeric input sizes alone do not establish these guarantees | Luna's IR/kernel helper-contract plan owns the missing capability; QSL projects its actual native cause and phase without invoking an unbounded substitute |
 | Enum / registry / ancestor search | Finite admitted member/declaration/ancestor entry counts and key-content sizes; connect actual immutable environment sizes to its effective caller-configured admission/byte limits | QSV registry and membership contract, after IR-713; no guessed descriptor/signature |
 | Type resolution / structural comparison | Finite reachable type-node/link counts and bounded scalar/key content, with source-proven cycle/termination behavior; no type nesting-depth ceiling | QSV's existing admitted-type boundary; QSL conversion owns its actual descriptor/materialization invocations |
 | Witness helper inputs | Finite replay encoded bytes and complete semantic occurrence/node counts; subordinate numeric/type/registry helpers additionally satisfy the rows above | QSL FR-098/263 and QSV's helper-input contract; occurrence/node limits alone do not bound an arbitrarily large numeric leaf |
@@ -314,6 +315,30 @@ A claim that inputs are merely admitted is not that proof. Replay's byte
 limit alone is not proof about a direct caller's kernel values. Missing
 size access/bounds or an unproved terminating type chain remains an explicit
 source gate; no implicit unbounded input or free cached work is allowed.
+
+Released decimal membership's `compare_shifted` performs BigInt decimal-digit
+formatting and shifted multiplication (`abs * 10^shift`) with no helper
+budget, original-Cancel hook or demonstrated fallible temporary reservation.
+The input-size reasoning above does not prove bounded temporary storage or
+the required cancellation/storage-failure behavior for that operation.
+Candidate integer cost of at most two limb comparisons and rational cost
+of at most four limb comparisons are positive cost-bound hypotheses from
+the peer packet, not qualified claims about every numeric helper or decimal
+storage. No default numeric/type bound is inferred from them.
+
+Where the current native helper lacks the required bounded capability, the
+supplied phase SHALL return category unsupported with a typed native cause
+identifying the actual helper/operation and missing bounded temporary-storage
+or cancellation capability before invoking that helper. It SHALL NOT claim
+limit exhaustion, caller cancellation, invalid value or allocator failure
+that did not occur. An actual storage/capacity failure or cancellation
+retains its original typed cause. No default admission path bypasses this
+check, and no partially admitted value or evaluation consumption is returned.
+The concrete shared native cause/carrier/catalog projection is an explicit
+owner mapping gate; this draft creates no kernel variant, catalog spelling
+or guessed capacity default. If that mapping is unavailable, QSL reports
+the bounded capability/projection unavailable rather than manufacturing a
+kernel cause or successful admission.
 
 QSV must establish a finite work function for each bounded helper input.
 Then a finite number of admitted logical invocations, each on independently

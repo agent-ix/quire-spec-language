@@ -90,6 +90,15 @@ Requests are built from the unit's spine compile, as in TC-444.
    return must preserve the original cause. Do not claim an internal
    per-limb/comparison callback that the helper does not expose. A missing
    size/termination proof is an explicit shared source gate, not a pass.
+9. Include decimal membership with an actual shifted comparison. Separately
+   assess the helper's temporary storage, fallible reservation and original
+   Cancel boundary for decimal-digit formatting/shifted multiplication.
+   Input numeric-size bounds and integer/rational comparison-cost candidates
+   must not substitute for those guarantees. If the current bounded-helper
+   capability is unsupported, retain the explicit native helper/capability
+   cause and phase before invocation. If the cause's native carrier/catalog
+   projection is missing, report that mapping unavailable, never a guessed
+   kernel cause or qualified default success.
 
 Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and
@@ -136,10 +145,16 @@ Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
   owning IR helper-contract gap and preserve QSL-503's blocking edge; the
   draft and its review remain a proposal. No copied helper or fake outer
   work/cancellation claim is accepted.
+- Step 9: no blanket admission safety or decimal temporary-storage/Cancel
+  claim follows from numeric bounds. Unsupported bounded capability remains
+  unsupported, distinct from a measured storage failure, capacity failure,
+  limit, actual caller cancellation or invalid value. No default bypass,
+  partial admitted value or evaluation consumption is accepted. The IR
+  source gap remains routed while this draft's review proceeds.
 
 ## Status
 
 Passed locally, `qsl-replay/src/execute/tests/composite.rs`, except the union cases
 (pending QSL-503) and a quantity-typed parameter in source (pending STD-113).
-This historical status does not cover QSL-681 steps 5-8: those controls are
+This historical status does not cover QSL-681 steps 5-9: those controls are
 proposed and unexecuted, pending shared event, union and wire alignment.
