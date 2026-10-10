@@ -2268,11 +2268,12 @@ fn read_value_type(
     let constraints = ctx.array_field("constraints")?;
     // FR-144's unbounded integer subject is still a QSL integer domain: the
     // shared wire reader admits only values through the JCS-safe range before
-    // this model reader sees them. Keep that effective range explicit, then
-    // narrow it with the declared inclusive or exclusive bounds.
+    // this model reader sees them. Use that range only for an absent side;
+    // an explicit bound replaces its side and any second bound on that side
+    // further narrows it.
     const SAFE_INTEGER_BOUND: i128 = 9_007_199_254_740_991;
-    let mut lower = -SAFE_INTEGER_BOUND;
-    let mut upper = SAFE_INTEGER_BOUND;
+    let mut lower: Option<i128> = None;
+    let mut upper: Option<i128> = None;
     let mut seen = std::collections::BTreeSet::new();
     for (position, constraint) in constraints.iter().enumerate() {
         let constraint_at = format!("{at}.constraints[{position}]");
@@ -2288,19 +2289,19 @@ fn read_value_type(
         let value =
             bound_operand(operand, keyword).map_err(|reason| constraint_ctx.malformed(reason))?;
         match keyword {
-            "min" => lower = lower.max(value),
+            "min" => lower = Some(lower.map_or(value, |current| current.max(value))),
             "exclusiveMin" => {
                 let next = value.checked_add(1).ok_or_else(|| {
                     constraint_ctx.malformed("exclusiveMin: bound has no representable successor")
                 })?;
-                lower = lower.max(next);
+                lower = Some(lower.map_or(next, |current| current.max(next)));
             }
-            "max" => upper = upper.min(value),
+            "max" => upper = Some(upper.map_or(value, |current| current.min(value))),
             "exclusiveMax" => {
                 let previous = value.checked_sub(1).ok_or_else(|| {
                     constraint_ctx.malformed("exclusiveMax: bound has no representable predecessor")
                 })?;
-                upper = upper.min(previous);
+                upper = Some(upper.map_or(previous, |current| current.min(previous)));
             }
             other => {
                 return Err(unsupported_at(
@@ -2311,6 +2312,8 @@ fn read_value_type(
             }
         }
     }
+    let lower = lower.unwrap_or(-SAFE_INTEGER_BOUND);
+    let upper = upper.unwrap_or(SAFE_INTEGER_BOUND);
     if lower > upper {
         return Err(ctx.malformed(format!(
             "constraints: lower bound {lower} is greater than upper bound {upper}"
@@ -4776,6 +4779,16 @@ mod tests {
         .expect("an unbounded integer uses the safe effective range");
         assert_eq!(unbounded.lower, -9_007_199_254_740_991);
         assert_eq!(unbounded.upper, 9_007_199_254_740_991);
+
+        let explicit_wide = read_version_number(serde_json::json!({
+            "constraints": [
+                {"keyword": "min", "operands": {"value": "-9007199254740992"}},
+                {"keyword": "max", "operands": {"value": "9007199254740992"}},
+            ]
+        }))
+        .expect("explicit bounds replace the safe defaults");
+        assert_eq!(explicit_wide.lower, -9_007_199_254_740_992);
+        assert_eq!(explicit_wide.upper, 9_007_199_254_740_992);
 
         let narrowed = read_version_number(serde_json::json!({
             "constraints": [
