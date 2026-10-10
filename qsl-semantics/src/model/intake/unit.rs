@@ -112,6 +112,18 @@ impl std::ops::Deref for SelectedModels {
 }
 
 impl SelectedModels {
+    /// Links a one-package test fixture with its genuine admission meter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_link_dispatch(
+        self,
+        original: &crate::model::key::DeclarationKey,
+        closure: crate::model::dispatch::GeneralizationClosure,
+    ) -> crate::model::dispatch::LinkCheckOutcome {
+        let (entries, mut meter) = self.into_parts();
+        assert_eq!(entries.len(), 1, "this fixture links one genuinely admitted package");
+        crate::model::dispatch::link_dispatch(&entries[0].view, original, closure, &mut meter)
+    }
+
     pub(crate) fn into_parts(self) -> (Vec<SelectedModel>, Meter) { (self.entries, self.meter) }
 
     /// Read-only accounting evidence from the actual operation owner.

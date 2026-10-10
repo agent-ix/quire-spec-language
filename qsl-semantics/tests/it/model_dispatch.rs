@@ -15,7 +15,7 @@ use ix_trace_rs::trace;
 use qsl_forms::Expression;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
+    DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::{
@@ -562,26 +562,19 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
     }
 }
 
-/// A linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
-/// model.A.op{edges}` (`op{i}` redefines `op{i-1}`): exactly `edges`
-/// `redefines` edges. Every operation is owned by `model.A`, so every
-/// dispatch/dominance conformance check is the trivial `s == t` case and
-/// only `family_steps` is exercised. Only the last operation has a body, so
-/// `model.A` has exactly one applicable candidate. Each operation is a
-/// query (a declared result, an empty effect), so the chain also passes the
-/// checked-dispatch bridge.
+/// One proper ancestor owner per redefinition edge. Original members keep
+/// their real owner identities; only the terminal operation has a body.
+fn chain_owner(index: u64) -> String {
+    if index == 0 { "model.A".to_owned() } else { format!("model.A{index}") }
+}
+
+fn chain_operation(index: u64) -> String { format!("{}.op", chain_owner(index)) }
+
 fn redefinition_chain(edges: u64) -> Vec<DomainPackageRecord> {
-    (0..=edges)
-        .map(|i| {
-            let redefines = i.checked_sub(1).map(|parent| format!("model.A.op{parent}"));
-            query_operation(
-                &format!("model.A.op{i}"),
-                "model.A",
-                i == edges,
-                redefines.as_deref(),
-            )
-        })
-        .collect()
+    (0..=edges).map(|index| {
+        let parent = index.checked_sub(1).map(chain_operation);
+        query_operation(&chain_operation(index), &chain_owner(index), index == edges, parent.as_deref())
+    }).collect()
 }
 
 /// [`operation`], with a declared `model.A` result so the checked-dispatch
@@ -598,7 +591,7 @@ fn query_operation(
         unreachable!("operation() always builds an operation member");
     };
     record.result = Some(OperationResult {
-        value_type: ValueTypeRef::Package(DeclarationKey::fixture(owner)),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
         multiplicity: Multiplicity {
             lower: 1,
             upper: Some(1),
@@ -609,31 +602,29 @@ fn query_operation(
     DomainPackageRecord::OperationMember(record)
 }
 
-fn link_chain(
-    domain_package: &DomainPackage,
-    limits: ModelNormalizationLimits,
-) -> LinkCheckOutcome {
-    link_dispatch(
-        &effective_view(domain_package),
-        &DeclarationKey::fixture("model.A.op0"),
-        GeneralizationClosure::Closed,
-        &mut Meter::new(limits),
-    )
+fn link_chain(domain_package: &DomainPackage, limits: ModelNormalizationLimits) -> LinkCheckOutcome {
+    qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(), limits)
+        .expect("the proper-ancestor chain genuinely admits before linking")
+        .fixture_link_dispatch(&DeclarationKey::fixture(chain_operation(0)), GeneralizationClosure::Closed)
 }
 
 fn chain_package(edges: u64) -> DomainPackage {
-    let mut records = vec![object_type("model.A", vec![])];
+    let mut records: Vec<_> = (0..=edges).map(|index| {
+        let parent = index.checked_sub(1).map(chain_owner);
+        object_type(&chain_owner(index), parent.as_deref().into_iter().collect())
+    }).collect();
     records.extend(redefinition_chain(edges));
     DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records)
 }
 
-fn assert_links_model_a_to(outcome: LinkCheckOutcome, winner: &str) {
+fn assert_links_chain_receiver_to(outcome: LinkCheckOutcome, receiver: &str, winner: &str) {
     let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
         panic!("expected a linked dispatch table, got {outcome:?}");
     };
     assert_eq!(
         table
-            .linked_for(&DeclarationKey::fixture("model.A"))
+            .linked_for(&DeclarationKey::fixture(receiver))
             .map(|c| c.node.clone()),
         Some(winner.to_owned()),
     );
@@ -647,9 +638,10 @@ fn assert_links_model_a_to(outcome: LinkCheckOutcome, winner: &str) {
 #[test]
 fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limits() {
     const EDGES: u64 = 130;
-    assert_links_model_a_to(
+    assert_links_chain_receiver_to(
         link_chain(&chain_package(EDGES), ModelNormalizationLimits::UNLIMITED),
-        &format!("model.A.op{EDGES}"),
+        &chain_owner(EDGES),
+        &chain_operation(EDGES),
     );
 }
 
@@ -663,12 +655,11 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limi
 fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_bridge() {
     const EDGES: u64 = 130;
     let domain_package = chain_package(EDGES);
-    let view = effective_view(&domain_package);
     let mut clauses = OperationClauses::default();
-    let root = DeclarationKey::fixture("model.A.op0");
+    let root = DeclarationKey::fixture(chain_operation(0));
     clauses.member.insert(root.clone(), "op".to_owned());
     for i in 0..=EDGES {
-        let key = DeclarationKey::fixture(format!("model.A.op{i}"));
+        let key = DeclarationKey::fixture(chain_operation(i));
         clauses
             .parameters
             .insert(key.clone(), vec![("self".to_owned(), ValueType::Boolean)]);
@@ -680,8 +671,11 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
             clauses.own_body.insert(key, Expression::boolean(true));
         }
     }
-    let declarations = checked_dispatch_operation(
-        &view,
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package,
+        ModelNormalizationLimits::UNLIMITED).expect("proper-ancestor chain genuinely admits");
+    let declarations = qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &DispatchRoot {
             key: root,
             closure: GeneralizationClosure::Closed,
@@ -691,7 +685,6 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
             qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
             b"",
         ),
-        &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("expected a checked dispatch family, got {refusal:?}"));
@@ -712,9 +705,10 @@ fn a_ten_thousand_long_redefines_chain_links_on_a_small_stack() {
                 family_steps: EDGES,
                 ..ModelNormalizationLimits::UNLIMITED
             };
-            assert_links_model_a_to(
+            assert_links_chain_receiver_to(
                 link_chain(&chain_package(EDGES), limits),
-                &format!("model.A.op{EDGES}"),
+                &chain_owner(EDGES),
+                &chain_operation(EDGES),
             );
         })
         .expect("spawn a 512 KiB thread")
@@ -737,12 +731,11 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
     const EDGES: u64 = 20;
     const ROOT: u64 = 10;
     let domain_package = chain_package(EDGES);
-    let view = effective_view(&domain_package);
     let mut clauses = OperationClauses::default();
-    let root = DeclarationKey::fixture(format!("model.A.op{ROOT}"));
+    let root = DeclarationKey::fixture(chain_operation(ROOT));
     clauses.member.insert(root.clone(), "op".to_owned());
     for i in 0..=EDGES {
-        let key = DeclarationKey::fixture(format!("model.A.op{i}"));
+        let key = DeclarationKey::fixture(chain_operation(i));
         clauses
             .parameters
             .insert(key.clone(), vec![("self".to_owned(), ValueType::Boolean)]);
@@ -755,8 +748,12 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
         }
     }
     let run = |family_steps: u64| {
-        checked_dispatch_operation(
-            &view,
+        let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+            qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+            ModelNormalizationLimits { family_steps, ..ModelNormalizationLimits::UNLIMITED })
+            .expect("proper-ancestor chain genuinely admits before family traversal");
+        qsl_semantics::check::checked_dispatch_selected_operation(
+            selected,
             &DispatchRoot {
                 key: root.clone(),
                 closure: GeneralizationClosure::Closed,
@@ -766,10 +763,6 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
                 qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
                 b"",
             ),
-            &mut Meter::new(ModelNormalizationLimits {
-                family_steps,
-                ..ModelNormalizationLimits::UNLIMITED
-            }),
             qsl_foundation::IdentityLimits::default(),
         )
     };
@@ -789,12 +782,8 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
     }
 }
 
-/// TC-225: a family of exactly `family_steps` redefinition steps links with
-/// its unique winner. One step more -- a redefiner that, if the walk went on
-/// to find it, would make `model.A` ambiguous -- refuses with the distinct
-/// `resource_exhausted` outcome naming the configured bound: not a linked
-/// table naming a "unique" winner the truncated walk happened to reach, and
-/// not an ambiguity result.
+/// A fully admitted chain at the bound links; a fully admitted chain
+/// with one additional edge refuses without exposing a partial winner.
 #[trace("TC-720", "FR-255-AC-1")]
 #[trace("TC-225", "FR-083-AC-4")]
 #[test]
@@ -805,31 +794,21 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
         ..ModelNormalizationLimits::UNLIMITED
     };
 
-    assert_links_model_a_to(
+    assert_links_chain_receiver_to(
         link_chain(&chain_package(BOUND), limits),
-        &format!("model.A.op{BOUND}"),
+        &chain_owner(BOUND),
+        &chain_operation(BOUND),
     );
 
-    let mut over = chain_package(BOUND);
-    over.records.push(query_operation(
-        &format!("model.A.op{}", BOUND + 1),
-        "model.A",
-        true,
-        Some(&format!("model.A.op{BOUND}")),
-    ));
-    assert!(
-        matches!(
-            link_chain(&over, ModelNormalizationLimits::UNLIMITED),
-            LinkCheckOutcome::Completed(DispatchLinkOutcome::Ambiguous(_))
-        ),
-        "the fixture must be genuinely ambiguous once the whole family is walked"
-    );
+    let over = chain_package(BOUND + 1);
+    assert_links_chain_receiver_to(link_chain(&over, ModelNormalizationLimits::UNLIMITED),
+        &chain_owner(BOUND + 1), &chain_operation(BOUND + 1));
     match link_chain(&over, limits) {
         LinkCheckOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::family_steps(DeclarationKey::fixture("model.A.op0"), BOUND)
+                ModelRefusalCause::family_steps(DeclarationKey::fixture(chain_operation(0)), BOUND)
             );
             let exceeded = refusal
                 .cause
@@ -854,5 +833,33 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             );
         }
         other => panic!("expected Refused(FamilySteps), got {other:?}"),
+    }
+}
+
+
+/// Incomparable genuine inherited replacements refuse in normalization,
+/// before any bridge or partial dispatch table is exposed.
+#[trace("TC-225", "QSpec-TC-196", "FR-082-AC-2")]
+#[test]
+fn a_genuine_sibling_join_refuses_with_both_redefinition_paths_before_dispatch() {
+    use qsl_semantics::model::intake::{SelectedModels, UnitIntakeCause};
+    for reverse in [false, true] {
+        let mut package = chain_package(3);
+        package.records.push(object_type("model.A4", vec!["model.A2"]));
+        package.records.push(object_type("model.Join", vec!["model.A3", "model.A4"]));
+        package.records.push(query_operation("model.A4.op", "model.A4", true, Some("model.A2.op")));
+        if reverse { package.records.reverse(); }
+        let refused = SelectedModels::fixture("M", qsl_foundation::Span { start: 0, end: 0 },
+            package, ModelNormalizationLimits::UNLIMITED).expect_err("R07 refuses the contested inherited target before linking");
+        assert!(refused.additional.is_empty());
+        let UnitIntakeCause::Refused(refusals) = refused.cause else { panic!("expected completed normalization refusal, got {refused:?}"); };
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert_eq!(refusals[0].cause, ModelRefusalCause::DerivationConflict {
+            type_: DeclarationKey::fixture("model.Join"),
+            member: DeclarationKey::fixture("model.A2.op"),
+            redefiners: vec![DeclarationKey::fixture("model.A3.op"), DeclarationKey::fixture("model.A4.op")],
+        });
+        assert_eq!(refusals[0].detail, "type model.Join has 2 undominated redefinitions of model.A2.op: [model.A3, model.A3.op, model.A2.op] and [model.A4, model.A4.op, model.A2.op]");
     }
 }
