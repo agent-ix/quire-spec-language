@@ -288,3 +288,21 @@ fn contested_field_and_operation_targets_have_one_structural_authority() {
             Err(vec![(Code::InvalidModelBinding, Some("redefinition-target"))]), "operations={operation_contest}");
     }
 }
+
+#[trace("FR-082-AC-10", "QSpec-TC-196", "QSpec-TC-198")]
+#[test]
+fn reference_covariance_uses_the_complete_model_without_a_writer_obligation() {
+    for (parent_type, child_type, compatible) in [("A", "B", true),
+        ("B", "A", false), ("A", "C", false)] {
+        let bytes = document(|_| vec![
+            object("A", None, vec![field("A", "x", parent_type, 1, Some(1), None)], vec![]),
+            object("B", Some("A"), vec![field("B", "xb", child_type, 1, Some(1), Some("A/x"))], vec![]),
+            object("C", None, vec![], vec![]),
+        ]);
+        let expected = if compatible { Ok(()) } else {
+            Err(vec![(Code::IllTyped, Some("variance-result"))])
+        };
+        assert_eq!(check(&bytes, "function noop using v(): Boolean pure { true }"), expected,
+            "Reference<{child_type}> redefines Reference<{parent_type}>");
+    }
+}
