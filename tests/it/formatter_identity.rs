@@ -287,7 +287,11 @@ fn state_generated_occurrences_have_authored_regions() {
             region.start() < region.end(),
             "generated occurrence must be placed"
         );
-        let Origin::StateClause { clause: name, index } = &location.origin else {
+        let Origin::StateClause {
+            clause: name,
+            index,
+        } = &location.origin
+        else {
             panic!("generated state-fixture node must name its enclosing clause: {location:?}");
         };
         let expected = authored_names
