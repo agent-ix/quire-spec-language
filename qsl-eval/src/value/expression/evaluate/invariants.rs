@@ -111,12 +111,14 @@ fn admitted_owner_fixture(
     quire_semantic_value::declaration::TypeEnvironment,
     qsl_semantics::check::AdmittedModel,
 ) {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
     };
-    use qsl_semantics::model::normalize::{normalize, ModelNormalizationLimits, NormalizeOutcome};
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 
-    let owner_key = quire_semantic_value::declaration::DeclarationKey::fixture("model.A");
+    let owner_key = DeclarationKey::fixture("model.A");
     let domain = DomainPackage::new(
         DomainPackageRef::fixture("bundle.qsl174-ac10-seam"),
         vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
