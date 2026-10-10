@@ -2337,10 +2337,10 @@ fn read_value_type(
     })
 }
 
-/// A scalar bound operand: a JSON integer (the read already refuses one
-/// beyond +/-2^53 as inexact) or a canonical decimal string, either exact in
-/// `i128::MIN..=i128::MAX` (FR-056). `Err` is the refusal's reason, naming
-/// `keyword` and the written value.
+/// Parse a scalar bound exactly in `i128::MIN..=i128::MAX` (FR-056).
+/// Public Semantic IR validation first requires canonical integer strings
+/// under FCD FR-144; the internal JSON-integer branch below does not authorize
+/// numeric operands on that wire. `Err` names `keyword` and the written value.
 fn bound_operand(operand: &Value, keyword: &str) -> Result<i128, String> {
     if let Some(number) = operand.as_i64() {
         return Ok(i128::from(number));
@@ -5188,17 +5188,24 @@ mod tests {
     #[trace("TC-911", "FR-056-AC-16")]
     #[test]
     fn a_wide_bound_is_a_decimal_string_and_a_wide_json_number_is_inexact() {
-        let (bytes, _) = wide_document("\"18446744073709551615\"");
-        let records = read_records("acme/orders", &parse_document(&bytes))
-            .expect("Wide with a string bound admits");
-        assert_eq!(
-            records,
-            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
-                key: declaration_key("acme/orders", "ix://acme/orders/Wide"),
-                lower: 0,
-                upper: i128::from(u64::MAX),
-            })]
-        );
+        for (max_json, upper) in [
+            ("\"18446744073709551615\"", i128::from(u64::MAX)),
+            ("\"9223372036854775808\"", 9_223_372_036_854_775_808),
+            ("\"1000\"", 1000),
+        ] {
+            let (bytes, _) = wide_document(max_json);
+            let records = read_records("acme/orders", &parse_document(&bytes))
+                .expect("Wide with a canonical string bound admits at every magnitude");
+            assert_eq!(
+                records,
+                vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Wide"),
+                    lower: 0,
+                    upper,
+                })],
+                "{max_json}"
+            );
+        }
 
         let (bytes, pointer) = wide_document("18446744073709551615");
         let refusal =
@@ -5253,17 +5260,23 @@ mod tests {
     /// FR-056 retains reader diagnostics before declaration admission.
     /// Pinned FCD FR-144 rejects even a JCS-exact JSON number at an integer
     /// constraint operand; this is not a QSL refinement criterion.
-    #[trace("FR-056-AC-2")]
+    #[trace("FR-056-AC-2", "FR-056-AC-16", "TC-911")]
     #[test]
     fn a_small_integer_json_number_bound_refuses_through_the_real_dispatch() {
-        let (bytes, _) = wide_document("1000");
-        let refusals = read_records("acme/orders", &parse_document(&bytes))
-            .expect_err("integer operands require exact strings");
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-        assert!(refusals[0].detail.contains(
-            "/ir/types/0/constraints/1/operands/value (agent-ix.semantic-ir.INVALID_OPERAND)"
-        ));
+        for (position, number) in [(0, serde_json::json!(0)), (1, serde_json::json!(1000))] {
+            let (bytes, _) = wide_document("\"1000\"");
+            let mut document: Value = serde_json::from_slice(&bytes).expect("valid fixture JSON");
+            document["types"][0]["constraints"][position]["operands"]["value"] = number;
+            let refusals =
+                read_records("acme/orders", &parse_document(document.to_string().as_bytes()))
+                    .expect_err("integer operands require exact strings");
+            assert_eq!(refusals.len(), 1);
+            assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+            assert!(refusals[0].detail.contains(&format!(
+                "/ir/types/0/constraints/{position}/operands/value \
+                 (agent-ix.semantic-ir.INVALID_OPERAND)"
+            )));
+        }
     }
 
     /// A construct's `meaning` is schema-free text to

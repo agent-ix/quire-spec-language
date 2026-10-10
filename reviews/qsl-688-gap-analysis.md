@@ -226,3 +226,181 @@ coordination. Static findings/outcomes and prior history are unchanged.
 Both existing private comments were updated in place and their full bodies
 read back exactly; latest bodies and receipt are in cancelled-waiter-* and
 *-cancelled-waiter-comment.md beside these RAW records. No parser PASS claimed.
+
+
+## SAME replacement disposition pass 5
+
+Reviewed exact published head: `3c01f49481ec1d1acaadcb080e6a273b15687b10`; direct parent
+`939f177edf66ed6a5e4075e881e0cd5e35cf313c`. SAME sole replacement
+Poincare run `01a1266b-377a-70a1-86ca-5be4d11d5405`, model unknown.
+GitHub independently returned Draft OPEN at this exact head; worktree clean.
+The source commit imports the complete supplied round-4 RAW records verbatim
+(cmp RC 0 for both); it does not contain author-authored fixed dispositions.
+Every preceding finding, severity, outcome and identity stays immutable.
+
+### Static verdict and method boundary
+
+FND-003 and FND-004 are fixed by source inspection at 3c01f494.
+No new incremental dispatch implementation defect found. Latest changed-scope
+code/Rust and manual semantic gap verdict is FAIL because the explicit local
+contract contradiction below remains open. This is not gate approval.
+Formatting, check, Clippy, test selection/runtime, computed matrix/coverage and
+artifact validation on this head are NOT RUN, deferred by the user's brief.
+No helper, queue, command-version, validator, Make, build or test was invoked.
+Only ordinary tracker CLI readback parsing is permitted, in memory; no repository
+qualification helper. No plan supplied: Plan completion: not assessed.
+
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | The retained local integer contract/AC-16 admits JSON integer min 0, but the c620d6be reader rejects any Integer numeric operand before QSL admission. wide_document now substitutes string "0", so its AC-16 tag no longer verifies the criterion's literal admitted input. Actual #690 concerns Text/UUID/Timestamp, not this numeric amendment. MAIN must reconcile the owning contract and literal acceptance control; neither upstream context nor deleting false tags supplies approval. | spec/functional/FR-056-admit-domain-package-model-declarations.md:360-371,417; qsl-semantics/src/model/intake.rs:1388,3007,5165; pinned FCD rules.rs:1733-1763 |
+
+## Dispositions (replacement pass 5)
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 3c01f49481ec1d1acaadcb080e6a273b15687b10; supported bound cases alone invoke bound(); enumValues reaches unsupported_at without requesting operands.value. Static verified, runtime NOT RUN. |
+| FND-004 | fixed | 3c01f49481ec1d1acaadcb080e6a273b15687b10; wrong local FR-144-AC-2/20 removed; FCD context identified explicitly, retained reader-diagnostic control uses local FR-056-AC-2; broad FR-056 ownership is not a new numeric AC or computed-coverage claim. Static verified, runtime NOT RUN. |
+| FND-005 | still-open | Local FR-056/AC-16 still promises JSON integer min 0 admission; public c620d6be validation rejects it. MAIN routes normative owner separately; no actual amendment, waiver or numeric TC-897 exists at this head. |
+
+FND-003 after_excerpt (exact source):
+```rust
+            "min" => {
+                let value = bound()?;
+                lower = Some(lower.map_or(value, |current| current.max(value)));
+            }
+```
+Its complete refusal control at intake.rs:5222-5252 supplies schema-required
+identity, appliesTo Integer, diagnostic code and generated origin; canonical
+operands.values ["0","1"] satisfy pinned schema/rules. read_records first calls
+FCD decide. Exact vector equality requires UnsupportedConstruct,
+UnsupportedDeclarationForm with the enum constraint node, the exact
+value-type/v1:constraints:enumValues capability and exact detail/location.
+A malformed setup error cannot satisfy it. No enum implementation is added.
+
+FND-004 after_excerpt (exact source):
+```rust
+    /// FR-056 retains reader diagnostics before declaration admission.
+    /// Pinned FCD FR-144 rejects even a JCS-exact JSON number at an integer
+    /// constraint operand; this is not a QSL refinement criterion.
+    #[trace("FR-056-AC-2")]
+```
+The effective-range/mixed/default/endpoint/enum tests use only existing FR-056
+owning-requirement context; no numeric criterion is invented or upstream
+refinement/backend coverage claimed. Engine binder behavior has not been run.
+
+### Preserved closed findings
+
+FND-001 remains fixed by `14fbc9c89ac4623e4032f9241f3ef91aaac62714`.
+Exact preserved digest:
+`"4090c5dd0982184b93a3488998b9c3e6830c0fb7cf447f0946a8494524f716a8"`.
+FND-002 remains fixed by `233609db89f4fe7afe11560b6aa0105c325fc9f9`.
+Exact preserved absent-side finalization:
+`let lower = lower.unwrap_or(-SAFE_INTEGER_BOUND);`
+`let upper = upper.unwrap_or(SAFE_INTEGER_BOUND);`
+No new disposition rows for these already-closed findings; earlier actual
+962 receipts stay attributed to 962, never to 3c01f494.
+
+### Whole fresh-main scope and oracle inspection
+
+Read every hunk of `4200c0a2a...3c01f494`, merge base b24dbda01d56843cd14d8cab9233ec3cff67535f:
+Cargo.lock, qsl-semantics/Cargo.toml,
+examples/config-version/model.semantic-ir.json,
+qsl-replay/src/spine/clause/tests.rs,
+qsl-semantics/src/model/intake.rs,
+qsl-semantics/tests/it/model_intake.rs,
+qsl-semantics/tests/it/model_operations.rs,
+reviews/qsl-688-code-review.md and reviews/qsl-688-gap-analysis.md.
+The 939..3c delta is intake.rs +160/-14 and two verbatim RAW imports +154 each.
+Pin, ConfigVersion helpers, corpus digest and paired public Decimal controls
+remain unchanged since the inspected 939 checkpoint. Published 939 and its
+published second-parent 25de history remain preserved. No spec/plan/CI delta,
+new vendoring, unsafe/cast/panic, concurrency/resource framework, placeholder,
+mock bypass, assertion weakening or foreign-lane edit found. Rust/code,
+manual changed-scope gap and explicitly requested semantic/oracle checks ran;
+spec-review sub-analyses/React/Python lanes inapplicable.
+Computed whole-repository matrix and coverage remain unassessed, not PASS.
+
+Bound closure is lazy and called only in four supported arms; duplicate keyword
+checks, max/min intersection, checked successor/predecessor, i128 canonical
+string parsing, default semantics and malformed refusal constructors remain
+intact. The direct-reader numeric compatibility is pre-existing; public wire
+validation is distinct and rejects numeric Integer operands.
+
+New mixed test covers (10,0,90,100)->(10,90) and
+(0,10,100,90)->(11,89), each forward and reverse. Assign-last-value mutations
+on either side fail one of these independently written expected pairs.
+Min-only/max-only one-unit-outside-safe cases require exact explicit wide
+edge plus unchanged absent-side default. Interior i128 extreme exclusive
+cases require exact adjacent endpoints; exterior i128 endpoints require
+InvalidModelBinding, complete IntakeMalformedDeclaration with actual fallback
+constraint node and exact successor/predecessor reason, not panic/clamp/wrap.
+These strengthen all previously disclosed direct-reader oracle gaps; they do
+not establish upstream backend behavior or whole-public-pipeline endpoint
+coverage. Runtime/mutation execution NOT RUN.
+Existing malformed/repeated/reversed/noncanonical/outside-i128/raw-number
+controls retain intentional invalid operands and canonical valid siblings.
+The enum full dispatch is separate from these direct-reader controls.
+The policy-free Decimal setup rejection and policy-bearing original unsupported
+control remain paired, unchanged and awaiting actual current-head execution.
+
+### Normative correction — supersedes the mistaken round-4 attribution
+
+Independently read the actual FR-056 integer paragraph and AC-16 at this branch,
+fresh-main 4200c0a2a, #690 head cfb3dcdd082b623e82d644bb370f837e4cff9a25
+and main 9da86d0f553956d11a49e23cdb93794c86389e4b.
+All still admit JSON integer operands and AC-16 min JSON 0. Read #690's actual
+TC-897: Text profiles and canonical UUID/Timestamp payload/adaptor controls,
+not numeric operand/Decimal policy. Round 4's report/journal attribution to a
+numeric #690 amendment was wrong; historical prose is retained, explicitly
+superseded here. No guessed numeric AC, TC, amendment approval or source fix.
+FND-005 is the concrete local-contract/source gap, not an introduced defect in
+the 939..3c fix. MAIN owns the separate normative route. No new finding ticket.
+
+### Qualification custody
+
+962 batch actual exit 2 retains fmt/check/affected-Clippy 0; replay242
+(including all140 prior reds), state113, intake91, model_intake14 PASS;
+operations11 PASS/1 Decimal setup FAIL. Those are earlier-head receipts only.
+MAIN reports own childless 939 focus21549/session22278 cancelled before
+acquisition, actual143, empty log, no fmt/check/test execution.
+Reviewer's own obsolete record waiter60431/session47969 likewise ACTUAL143,
+zero output, no acquisition/execution. No waiter restarted in this round.
+One priority focused qualification remains MAIN-controlled after this static
+verdict and remaining blocker report; final aggregate also remains MAIN-owned.
+
+
+### Subsequent MAIN decision within the same frozen round-5 source
+
+MAIN authorized a separate normative SOURCE stage inside existing PR688, with
+another author and independent norm reviewer; no new ticket/PR and TC897 K2
+untouched. This reviewer remains independent and writes no source.
+The decision is planned, not landed: exact inspected head remains3c01f494.
+
+Precise pinned-contract mismatch: FCD c620d6be FR144-AC21 (line466) is the
+SysML v2 Integer/Real target mapping with DECLARED_LOSS on Decimal/Float32.
+It is not a numeric-encoding criterion. The actual Numeric scalars/Value sites
+rules (lines55-66,160-185), AC2/AC3 and rules.rs require every Integer
+constraint/default/enum operand to be a canonical string, regardless of
+magnitude; even JSON number1 is INVALID_OPERAND. There is no literalEncoding
+exception in the inspected schema/rules. A proposed number/absent-encoding
+safe JSON-number exception applied to Integer constraint operands conflicts
+with the actual pin. Safe Integer generated instance-wire values may be
+numbers under the separate Instance wire section; that does not authorize IR
+operands. Integer JSON1000 rejection remains correct; amend local minJSON0
+authority/control rather than inferring compatibility. FND005 remains open
+until authored reconciliation at a newly frozen head. No new finding is
+invented from this proposed-but-unwritten wording.
+
+### Round-5 private record custody completed
+
+Normal Linear CLI dedup/add/list readback, no repo helper.
+Code SR2449 comment ae3b38b5-9f95-4cc8-94b5-4ccd71a74653;
+gap SR2450 comment f455e431-0c13-492c-afba-8eae3a806ad2.
+Exact full-body equality 16429/16433 characters; both actual returned YAML
+blocks parsed in memory with real YAML parser, SHA/IDs/outcome completeness
+checked. Actual findings={FND005}; dispositions={FND003,FND004,FND005};
+old checked={FND003,FND004}; no duplicate id/round comment. Full RAW readback
+round5-private-comments-readback.json and *-round5-comment.md beside these SRs.
+This does not qualify repo schemas, matrix or tests; all remain NOT RUN.
