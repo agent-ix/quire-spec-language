@@ -287,6 +287,8 @@ impl Site {
                 matches!(self, Self::Relationship)
             }
             DeclarationKind::Allocation
+            | DeclarationKind::Clause
+            | DeclarationKind::Namespace
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Population => false,
