@@ -2215,18 +2215,18 @@ fn read_record_value_type(
 /// Its `constraints[]` carry the domain as `min`/`max` entries
 /// (`agent-ix-semantic-ir`'s own closed constraint-keyword vocabulary), each
 /// naming a numeric `operands.value` -- read structurally from those typed
-/// fields, never by parsing a rendered `Int[lo,hi]` string.
+/// fields, never by parsing a rendered `Int[lo,hi]` string. Missing bounds use
+/// the JCS-safe integer range; declared inclusive and exclusive bounds narrow
+/// that range.
 ///
 /// **Unsupported vs. malformed.** A shape this reader's own narrow slice
-/// cannot hold -- a scalar keyword other than `"integer"`, a constraint
-/// keyword this integer slice has no case for, or a half-bounded domain
-/// (only `min` or only `max`; both are itself schema-valid FCD wire, e.g. a
-/// natural-number domain) -- refuses `unsupported_construct`: a real,
-/// schema-valid form this reader does not implement yet, not a defect in
-/// the document. A shape that is wrong regardless of what this reader
+/// cannot hold -- a scalar keyword other than `"integer"` or a constraint
+/// keyword this integer slice has no case for -- refuses `unsupported_construct`:
+/// a real, schema-valid form this reader does not implement yet, not a defect
+/// in the document. A shape that is wrong regardless of what this reader
 /// implements -- an `operations`/`relationships`/`supertypes` member on a
-/// scalar, a constraint keyword given twice, a non-numeric bound, no bound
-/// at all, or `lower` greater than `upper` -- refuses
+/// scalar, a constraint keyword given twice, a non-numeric bound, or `lower`
+/// greater than `upper` -- refuses
 /// `invalid_model_binding`/`malformed-declaration`. Members this reader has
 /// no use for at all (`variants`, `clauses`, `abstract`, ...) are read by no
 /// reader and left alone, same as for every other construct kind's own
@@ -2266,15 +2266,42 @@ fn read_value_type(
         ));
     }
     let constraints = ctx.array_field("constraints")?;
-    let mut lower: Option<i128> = None;
-    let mut upper: Option<i128> = None;
+    // FR-144's unbounded integer subject is still a QSL integer domain: the
+    // shared wire reader admits only values through the JCS-safe range before
+    // this model reader sees them. Keep that effective range explicit, then
+    // narrow it with the declared inclusive or exclusive bounds.
+    const SAFE_INTEGER_BOUND: i128 = 9_007_199_254_740_991;
+    let mut lower = -SAFE_INTEGER_BOUND;
+    let mut upper = SAFE_INTEGER_BOUND;
+    let mut seen = std::collections::BTreeSet::new();
     for (position, constraint) in constraints.iter().enumerate() {
         let constraint_at = format!("{at}.constraints[{position}]");
         let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
         let keyword = constraint_ctx.str_field("keyword")?;
-        let slot = match keyword {
-            "min" => &mut lower,
-            "max" => &mut upper,
+        if !seen.insert(keyword) {
+            return Err(constraint_ctx.malformed(format!("keyword: {keyword:?} is declared twice")));
+        }
+        let operand = constraint
+            .get("operands")
+            .and_then(|operands| operands.get("value"))
+            .ok_or_else(|| constraint_ctx.malformed("operands.value: missing or not an integer"))?;
+        let value =
+            bound_operand(operand, keyword).map_err(|reason| constraint_ctx.malformed(reason))?;
+        match keyword {
+            "min" => lower = lower.max(value),
+            "exclusiveMin" => {
+                let next = value.checked_add(1).ok_or_else(|| {
+                    constraint_ctx.malformed("exclusiveMin: bound has no representable successor")
+                })?;
+                lower = lower.max(next);
+            }
+            "max" => upper = upper.min(value),
+            "exclusiveMax" => {
+                let previous = value.checked_sub(1).ok_or_else(|| {
+                    constraint_ctx.malformed("exclusiveMax: bound has no representable predecessor")
+                })?;
+                upper = upper.min(previous);
+            }
             other => {
                 return Err(unsupported_at(
                     constraint,
@@ -2282,41 +2309,8 @@ fn read_value_type(
                     format!("{}:constraints:{other}", meaning::VALUE_TYPE),
                 ))
             }
-        };
-        if slot.is_some() {
-            return Err(constraint_ctx.malformed(format!("keyword: {keyword:?} is declared twice")));
         }
-        let operand = constraint
-            .get("operands")
-            .and_then(|operands| operands.get("value"))
-            .ok_or_else(|| constraint_ctx.malformed("operands.value: missing or not an integer"))?;
-        *slot = Some(
-            bound_operand(operand, keyword).map_err(|reason| constraint_ctx.malformed(reason))?,
-        );
     }
-    let (lower, upper) = match (lower, upper) {
-        (Some(lower), Some(upper)) => (lower, upper),
-        (None, None) => {
-            return Err(ctx.malformed(
-                "constraints: an integer value type requires both a min and a max bound",
-            ))
-        }
-        (lower, _upper) => {
-            // Exactly one of `min`/`max` is present: a half-bounded integer
-            // domain, schema-valid `agent-ix-semantic-ir` wire this reader's
-            // own [`ScalarTypeRecord`] has no shape for (it bounds a closed
-            // `[lower, upper]` interval only) -- a real form, not a defect.
-            return Err(unsupported_at(
-                type_value,
-                at,
-                format!(
-                    "{}:constraints:half-bounded({})",
-                    meaning::VALUE_TYPE,
-                    if lower.is_some() { "min" } else { "max" }
-                ),
-            ));
-        }
-    };
     if lower > upper {
         return Err(ctx.malformed(format!(
             "constraints: lower bound {lower} is greater than upper bound {upper}"
@@ -4769,6 +4763,31 @@ mod tests {
         assert_eq!(record.lower, i128::MIN);
     }
 
+    /// FR-144 maps an unbounded integer subject to the JCS-safe effective
+    /// range, while inclusive and exclusive bounds narrow that range without
+    /// converting the exact decimal-string operands through a floating point
+    /// value.
+    #[trace("FR-144-AC-2", "FR-144-AC-20")]
+    #[test]
+    fn reads_effective_integer_range_and_exclusive_bounds() {
+        let unbounded = read_version_number(serde_json::json!({
+            "constraints": []
+        }))
+        .expect("an unbounded integer uses the safe effective range");
+        assert_eq!(unbounded.lower, -9_007_199_254_740_991);
+        assert_eq!(unbounded.upper, 9_007_199_254_740_991);
+
+        let narrowed = read_version_number(serde_json::json!({
+            "constraints": [
+                {"keyword": "exclusiveMin", "operands": {"value": "-1"}},
+                {"keyword": "exclusiveMax", "operands": {"value": "100"}},
+            ]
+        }))
+        .expect("exclusive integer bounds read");
+        assert_eq!(narrowed.lower, 0);
+        assert_eq!(narrowed.upper, 99);
+    }
+
     /// Every malformed or unsupported bound-scalar wire shape this reader
     /// refuses -- structurally, from the constraint's own typed `keyword`/
     /// `operands.value` fields, never from a rendered `Int[lo,hi]` string.
@@ -4787,26 +4806,6 @@ mod tests {
                  \"quire.meaning.model.value-type/v1:scalar=string\" has no reader yet",
             ),
             (
-                serde_json::json!({"constraints": []}),
-                Code::InvalidModelBinding,
-                "$.types[0]: constraints: an integer value type requires both a min and a max \
-                 bound",
-            ),
-            (
-                serde_json::json!({"constraints": [{"keyword": "min", "operands": {"value": 0}}]}),
-                Code::UnsupportedConstruct,
-                "$.types[0]: construct meaning/capability \
-                 \"quire.meaning.model.value-type/v1:constraints:half-bounded(min)\" has no \
-                 reader yet",
-            ),
-            (
-                serde_json::json!({"constraints": [{"keyword": "max", "operands": {"value": 1000}}]}),
-                Code::UnsupportedConstruct,
-                "$.types[0]: construct meaning/capability \
-                 \"quire.meaning.model.value-type/v1:constraints:half-bounded(max)\" has no \
-                 reader yet",
-            ),
-            (
                 serde_json::json!({"constraints": [
                     {"keyword": "min", "operands": {"value": 1000}},
                     {"keyword": "max", "operands": {"value": 0}},
@@ -4822,15 +4821,6 @@ mod tests {
                 ]}),
                 Code::InvalidModelBinding,
                 "$.types[0].constraints[1]: keyword: \"min\" is declared twice",
-            ),
-            (
-                serde_json::json!({"constraints": [
-                    {"keyword": "min", "operands": {"value": 0}},
-                    {"keyword": "exclusiveMax", "operands": {"value": 1000}},
-                ]}),
-                Code::UnsupportedConstruct,
-                "$.types[0].constraints[1]: construct meaning/capability \
-                 \"quire.meaning.model.value-type/v1:constraints:exclusiveMax\" has no reader yet",
             ),
             (
                 serde_json::json!({"constraints": [
