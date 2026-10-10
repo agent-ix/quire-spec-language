@@ -530,8 +530,8 @@ fn second_selected_model_denial_withholds_first_models_completed_axis_failures()
 
 
 /// Independent costs: field f(T)+multiplicity+refinement is 3 (4 for B);
-/// the optional redefining writer adds arity/result/multiplicity 3 and
-/// two writes against two grants 4. Intake's observed N is carried into
+/// the optional redefining writer adds arity/result/multiplicity 3,
+/// two writes against two grants 4, and two contract-construction axes. Intake's observed N is carried into
 /// the real checker, with no reset or replacement meter.
 #[trace("FR-082-AC-4", "FR-082-AC-8", "QSpec-TC-196")]
 #[test]
@@ -545,11 +545,11 @@ fn all_six_refinement_vectors_preserve_native_payload_and_same_operation_budget(
 
     for (row, cost, denied_prefix, denied_charge, obligation) in [
         (0, 3, 2, 1, Some(RefinementObligation::Presence)),
-        (1, 10, 9, 1, None),
+        (1, 12, 11, 1, None),
         (2, 4, 3, 1, Some(RefinementObligation::NoProofForm)),
         (3, 3, 2, 1, Some(RefinementObligation::Domain)),
-        (4, 10, 6, 4, None),
-        (5, 10, 6, 4, Some(RefinementObligation::Domain)),
+        (4, 12, 11, 1, None),
+        (5, 12, 11, 1, Some(RefinementObligation::Domain)),
     ] {
         let (bytes, body) = refinement_fixture(row);
         let (unit, packages) = config_unit_with_body(&bytes, body);
