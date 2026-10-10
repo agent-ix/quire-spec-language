@@ -104,5 +104,3 @@ pub fn attempt_flow(name: &str, contracts: &str) -> String {
          }}"
     )
 }
-
-
