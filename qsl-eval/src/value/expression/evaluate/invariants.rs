@@ -105,6 +105,47 @@ fn reference() -> ObjectReference {
     )
 }
 
+fn admitted_owner_fixture(
+    fields: Vec<quire_semantic_value::declaration::FieldDeclaration>,
+) -> (
+    quire_semantic_value::declaration::TypeEnvironment,
+    qsl_semantics::check::AdmittedModel,
+) {
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
+    };
+    use qsl_semantics::model::normalize::{normalize, ModelNormalizationLimits, NormalizeOutcome};
+
+    let owner_key = quire_semantic_value::declaration::DeclarationKey::fixture("model.A");
+    let domain = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.qsl174-ac10-seam"),
+        vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: owner_key.clone(),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        })],
+    );
+    let view = match normalize(&domain, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("expected the Owner model fixture to normalize: {other:?}"),
+    };
+    let owner = view
+        .type_identities()
+        .get(&owner_key)
+        .copied()
+        .expect("the Owner model identity is present");
+    assert_eq!(owner, reference().object_type());
+    let types = quire_semantic_value::declaration::TypeEnvironment::new(
+        [],
+        [quire_semantic_value::declaration::ObjectTypeDeclaration::new(owner, "Owner", fields)],
+    )
+    .unwrap();
+    let model = qsl_semantics::check::AdmittedModel::new(&domain, &view)
+        .expect("the effective view belongs to the Owner fixture");
+    (types, model)
+}
+
 fn claim_level(machine: &mut Machine<'_, '_>) {
     machine.frames = vec![vec![]];
     machine.iterations = 0;
@@ -181,6 +222,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
     use qsl_semantics::check::{DispatchCandidate, DispatchOperation, PackageDeclarations};
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let owner = reference().object_type();
+    let (types, model) = admitted_owner_fixture(vec![]);
     let receiver = || {
         TypeForm::builtin(BuiltinType::Reference, span)
             .with_arguments(vec![TypeForm::name("Owner", span)])
@@ -195,17 +237,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         )
     };
     let declarations = PackageDeclarations {
-        types: quire_semantic_value::declaration::TypeEnvironment::new(
-            [],
-            [
-                quire_semantic_value::declaration::ObjectTypeDeclaration::new(
-                    owner,
-                    "Owner",
-                    vec![],
-                ),
-            ],
-        )
-        .unwrap(),
+        types,
+        models: vec![model],
         functions: vec![function("Body", true), function("Guard", true)],
         dispatch_operations: vec![DispatchOperation {
             receiver_type: owner,
@@ -1038,15 +1071,12 @@ fn object_package(
     value_type: ValueType,
     presence: quire_exact::Presence,
 ) -> qsl_package::CheckedPackage {
-    let declaration = quire_semantic_value::declaration::ObjectTypeDeclaration::new(
-        reference().object_type(),
-        "Owner",
-        vec![quire_semantic_value::declaration::FieldDeclaration::new(
-            "edge", value_type, presence,
-        )],
-    );
+    let (types, model) = admitted_owner_fixture(vec![
+        quire_semantic_value::declaration::FieldDeclaration::new("edge", value_type, presence),
+    ]);
     let graph = qsl_semantics::check::PackageDeclarations {
-        types: quire_semantic_value::declaration::TypeEnvironment::new([], [declaration]).unwrap(),
+        types,
+        models: vec![model],
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             qsl_foundation::IdentityLimits::default(),
