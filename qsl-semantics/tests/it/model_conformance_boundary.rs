@@ -311,7 +311,7 @@ fn reference_covariance_uses_the_complete_model_without_a_writer_obligation() {
 #[test]
 fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins() {
     use std::collections::{BTreeMap, BTreeSet};
-    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::accounting::{LimitKind, ModelNormalizationLimits};
     use qsl_semantics::model::intake::admit_unit;
     use qsl_semantics::model::key::{DeclarationKey, RULE_QUALIFY};
     use crate::model_operations::{config_unit_with_body, parse_and_build};
@@ -388,6 +388,15 @@ fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins(
         let effective_originals: BTreeSet<_> = entries.iter().map(|entry| entry.preimage.original.clone()).collect();
         assert!(effective_originals.is_subset(&retained_keys));
         assert!(!effective_originals.contains(&key("Count")), "scalar receives no fabricated effective entry");
+        assert_eq!(selected.consumed(LimitKind::DeclarationRecords), 5);
+        assert_eq!(selected.consumed(LimitKind::EffectiveDeclarations), 6,
+            "only A/B and their owned/inherited field and operation entries are charged");
+        assert_eq!(selected.consumed(LimitKind::DerivationFacts), 7,
+            "the original scalar adds no qualify or inherit fact");
+        let hashed = entries.iter().map(|entry| entry.preimage.canonical_len()).sum::<u64>()
+            + selection.view.object_universe().canonical_len() + selection.view.canonical_len();
+        assert_eq!(selected.consumed(LimitKind::HashedBytes), hashed,
+            "the original scalar adds no independent hash charge");
         for original in [key("A"), key("B"), key("A/x"), key("A/set")] {
             assert!(entries.iter().any(|entry| entry.preimage.original == original
                 && entry.preimage.derivation.iter().any(|fact| fact.rule == RULE_QUALIFY)), "qualify {original:?}");
@@ -403,4 +412,86 @@ fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins(
             assert_ne!(Some(selection.view.identity()), baseline_view, "different content selects a different view");
         }
     }
+}
+
+fn two_model_unit(reverse: bool) -> (String, std::collections::BTreeMap<[u8; 32], Vec<u8>>) {
+    use qsl_semantics::model::intake::package_input;
+    use qsl_semantics::model::key::hex;
+    let bytes = document(|_| vec![
+        object("A", None, vec![field("A", "x", "A", 0, Some(1), None)], vec![]),
+        object("B", Some("A"), vec![field("B", "x", "C", 0, Some(1), Some("A/x"))], vec![]),
+        object("C", None, vec![], vec![]),
+    ]);
+    let second = String::from_utf8(bytes.clone()).expect("fixture JSON")
+        .replace(PACKAGE, "example/other").into_bytes();
+    let input = package_input([bytes.as_slice(), second.as_slice()]);
+    let first_digest = package_input([bytes.as_slice()]).into_keys().next().expect("first digest");
+    let second_digest = package_input([second.as_slice()]).into_keys().next().expect("second digest");
+    let mut declarations = vec![
+        format!("model Z = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";", hex(&first_digest)),
+        format!("model A = \"example/other\" version \"1.0.0\" digest \"sha256-jcs:{}\";", hex(&second_digest)),
+    ];
+    if reverse { declarations.reverse(); }
+    (format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{}\nfunction noop using v(): Boolean pure {{ true }}\n", declarations.join("\n")), input)
+}
+
+#[trace("FR-082-AC-1", "FR-082-AC-8", "QSpec-TC-196")]
+#[test]
+fn all_selected_models_report_failures_in_canonical_order_despite_alias_and_source_order() {
+    use qsl_semantics::model::accounting::{LimitKind, ModelNormalizationLimits};
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::check::{CheckCause, PackageDeclarations};
+    use crate::model_operations::parse_and_build;
+    let mut baseline_counters = None;
+    for reverse in [false, true] {
+        let (unit, packages) = two_model_unit(reverse);
+        let built = parse_and_build(&unit);
+        let selected = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+            .expect("both models structurally admit under one operation");
+        assert_eq!(selected.iter().map(|model| model.alias.as_str()).collect::<Vec<_>>(), ["Z", "A"]);
+        let counters: Vec<_> = LimitKind::ALL.into_iter().map(|kind| selected.consumed(kind)).collect();
+        if let Some(expected) = &baseline_counters { assert_eq!(&counters, expected); }
+        else { baseline_counters = Some(counters); }
+        let raw = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "tc-196", "fixture", "1"),
+            "unit.native", unit.as_bytes(), qsl_cst::Limits::default()).expect("source");
+        let package = PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, Vec::new())
+            .expect("model-owned variance waits for conformance");
+        let refusals = package.check(CheckingLimits::default()).expect_err("both model axes fail");
+        let failures: Vec<_> = refusals.iter().map(|refusal| match &refusal.cause {
+            CheckCause::ModelConformance(failure) => (failure.member.package.as_str(), failure.member.node.as_str(), failure.axis),
+            other => panic!("actual typed model failure required: {other:?}"),
+        }).collect();
+        assert_eq!(failures, vec![
+            (PACKAGE, "ix://example/config-version/B/x", "value-type"),
+            ("example/other", "ix://example/other/B/x", "value-type"),
+        ]);
+    }
+}
+
+#[trace("FR-082-AC-8", "QSpec-TC-196")]
+#[test]
+fn second_selected_model_denial_withholds_first_models_completed_axis_failures() {
+    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits};
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::check::{CheckCause, PackageDeclarations};
+    use crate::model_operations::parse_and_build;
+    let (unit, packages) = two_model_unit(true);
+    let probe = parse_and_build(&unit);
+    let baseline = admit_unit(&probe.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+        .expect("actual normalization cost");
+    let normalization_work = baseline.consumed(LimitKind::WorkUnits);
+    let built = parse_and_build(&unit);
+    let selected = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits {
+        work_units: normalization_work + 3, ..ModelNormalizationLimits::UNLIMITED
+    }).expect("the same stage-wide normalization completes within the actual budget");
+    let raw = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "tc-196", "fixture", "1"),
+        "unit.native", unit.as_bytes(), qsl_cst::Limits::default()).expect("source");
+    let package = PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, Vec::new())
+        .expect("model-owned variance waits for conformance");
+    let refused = package.check(CheckingLimits::default()).expect_err("second model owning charge denies");
+    assert_eq!(refused.len(), 1, "the unfinished stage exposes none of its earlier model failures");
+    assert_eq!(refused[0].cause, CheckCause::ModelIncomplete(Incomplete {
+        limit_kind: LimitKind::WorkUnits, limit: normalization_work + 3, consumed: normalization_work + 3,
+        next_charge: 1, charge_point: ChargePoint::ConformanceAxis,
+    }));
 }

@@ -114,6 +114,12 @@ impl std::ops::Deref for SelectedModels {
 impl SelectedModels {
     pub(crate) fn into_parts(self) -> (Vec<SelectedModel>, Meter) { (self.entries, self.meter) }
 
+    /// Read-only accounting evidence from the actual operation owner.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn consumed(&self, kind: crate::model::accounting::LimitKind) -> u64 {
+        self.meter.consumed(kind)
+    }
+
     /// A fixture uses the same private normalization producer and owns its
     /// actual admitted meter; it cannot pair an arbitrary view with a meter.
     #[cfg(any(test, feature = "test-support"))]
