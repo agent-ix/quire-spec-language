@@ -276,14 +276,19 @@ pub enum Error {
         #[source]
         source: crate::test_suites::ArtifactError,
     },
-    /// The cargo arguments select a run the guard cannot enumerate.
-    #[error(
-        "test-suites: {flag} is not supported: cargo cannot list a doc-only run with --no-run, \
-         so its suites cannot be checked"
-    )]
+    /// The cargo arguments select a run the guard cannot list the suites of.
+    #[error("test-suites: {argument} is not supported: {reason}")]
     TestSuitesUnsupportedSelection {
-        /// The refused flag.
-        flag: &'static str,
+        /// The refused argument.
+        argument: String,
+        /// Why the guard cannot list that selection's suites.
+        reason: &'static str,
+    },
+    /// A `--package` names no package of the workspace.
+    #[error("test-suites: no workspace package is named {name}")]
+    TestSuitesUnknownPackage {
+        /// The name given.
+        name: String,
     },
     /// `cargo` exited unsuccessfully; this error exits with its status.
     #[error("test-suites: `{step}` failed ({})", .status.map_or_else(|| "killed by a signal".to_owned(), |code| format!("exit status {code}")))]
@@ -335,9 +340,9 @@ impl Error {
             | Self::CanonicalTypesCargoMetadata { .. }
             | Self::CanonicalTypesMetadataJson { .. }
             | Self::CanonicalTypesMetadata { .. } => Code::Metadata,
-            Self::TestSuitesUnknownLane { .. } | Self::TestSuitesUnsupportedSelection { .. } => {
-                Code::Usage
-            }
+            Self::TestSuitesUnknownLane { .. }
+            | Self::TestSuitesUnsupportedSelection { .. }
+            | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
         }
