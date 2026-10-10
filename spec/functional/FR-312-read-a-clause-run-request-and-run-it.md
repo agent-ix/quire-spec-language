@@ -71,6 +71,14 @@ package and dependency inputs.
 
 ## Behavior
 
+- The clause request reader SHALL retain the three existing selection
+  shapes and FR-109's Boolean `function` claim semantics. FR-100's shared
+  Value carriers are in-process carriers, not additional JSON argument
+  variants of this reader. A Reference-result function belongs to the
+  existing public Value `run` boundary; this reader SHALL NOT select it as
+  a Boolean claim, invent a Population wire payload, or form a default
+  model context to stand in for admission. The driver's TC-792 typed call
+  requires actual consumer integration with that reviewed Rust boundary.
 - The reader SHALL decode `clause` under FR-100's closed-envelope rules:
   unknown and duplicate members and positional record arrays refuse
   `invalid-request` at stage `request`, naming the member.
@@ -118,6 +126,12 @@ package and dependency inputs.
 - QSpec FR-301 (exit codes).
 
 ## Status
+
+QSL-665's typed-call clarification is proposed; its consumer qualification
+is UNRUN. QSL-656 owns the reviewed replacement of `clause.work_units` by
+`clause.accounting` and its defaults/closed decoding. That source-history
+amendment must be reconciled before consuming the legacy wording below;
+this clarification does not define a compatibility member.
 
 Specified; not yet implemented -- TC-891 planned. Lands with the deletion of
 native `run` (ADR-031 R-1). That change also deletes the per-file `sha256:`

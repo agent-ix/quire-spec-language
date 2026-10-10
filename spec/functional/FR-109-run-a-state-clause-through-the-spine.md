@@ -40,9 +40,12 @@ disposition, the compiled `package_id` and the usage. It is the spine replacemen
 for native-run/1 clause execution (ADR-011 §5, the paragraph that says it has
 no spine equivalent before M-6c) and for FR-023's in-process `execute`.
 
-FR-100 already owns the spine run's argument binding and its S6a outcome
-mapping. This requirement reuses both by reference and adds only object
-arguments, observations and the claim reading of a Boolean result.
+FR-100 owns the spine run's typed public argument binding and S6a outcome
+mapping. This requirement reuses their applicable rules and adds observations
+and the claim reading of a Boolean result. Its `Function` selection remains
+a Boolean claim. A Reference-valued Value function is called through
+FR-100's existing `spine::run` entry, including TC-792 step 1; it is not
+selected as a claim to work around the Value-call boundary.
 
 ## Inputs
 
@@ -57,8 +60,9 @@ A `ClauseRunRequest`:
 - a selection: `Clause(ClauseSelection)` (FR-106), `Frame { operation,
   invocation }` (FR-115), or `Function { name,
   arguments, snapshot }`. `name` follows FR-100's `function` rule.
-  `arguments` are FR-100's `{parameter, value}` pairs, one per parameter, in
-  any order, whose `value` is FR-100's canonical integer, or
+  `arguments` are this claim runner's `{parameter, value}` pairs, one per
+  parameter, in any order, whose `value` is the file-assignment form of
+  FR-100's canonical integer, or
   `{"reference": {"population": ..., "key": ...}}` for a parameter of a
   model object type, resolved in the current snapshot `snapshot` names;
 - an optional expected `package_id`;
@@ -130,6 +134,12 @@ binding receipt when CG consumes the serialized result.
   snapshot, refusing an unresolved one `invalid_runtime_input`/
   `wrong-role-mapping`; evaluation SHALL be `CheckedPackage::call` with that
   snapshot's `ObjectEnvironment`.
+- Sharing FR-100's argument/result helpers SHALL NOT widen a `Function`
+  claim's Boolean guard, require its object argument to be a member of a
+  separate query population, or replace its actual snapshot admission.
+  Its existing `wrong-role-mapping` unresolved-object oracle remains this
+  claim selection's rule; the typed Value call retains FR-100's distinct
+  call-admission and lookup outcomes.
 - The entry SHALL map `Completed(true)` to `success` (exit 0) and
   `Completed(false)` to `violation` (exit 10), as QSpec FR-301 does for a
   claim, with `truth` set.
@@ -184,6 +194,13 @@ binding receipt when CG consumes the serialized result.
 
 ## Dependencies
 
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md)'s proposed
+  typed-public-call amendment supplies the Value-call boundary only;
+  [TC-792](../test-cases/TC-792-state-model-causes-render-with-their-own-prefix.md)
+  retains this claim runner for its separate dispatched-clause step 2.
+  QSL-656 owns reconciliation of the evaluation budget wording below to
+  the reviewed `accounting` object; this amendment does not reinstate the
+  legacy top-level `work_units` member or take ownership of TC-951.
 - FR-100 (the spine run's argument binding, outcome mapping, internal-failure
   handling and exit statuses), FR-106, FR-107 (admission and evaluation), FR-099 and FR-027
   (the spine compile), FR-098 (the stale `package_id` rule), FR-060 (the CG

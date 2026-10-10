@@ -29,6 +29,14 @@ relationships:
     type: references
   - target: "ix://agent-ix/quire-specification/FR-301"
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-084
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-089
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-301
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/interface_005
+    type: depends_on
 ---
 # FR-100: Run a named function of a 1-draft program through the spine
 
@@ -62,6 +70,86 @@ the outcome's ADR-013 O-16 category.
 
 ## Inputs
 
+### Typed public call
+
+The public Rust call contract SHALL use these existing shared carriers:
+
+| Boundary member | Carrier and meaning |
+| --- | --- |
+| `CallArgument.parameter` | The declared parameter name, as before |
+| `CallArgument.value` | `quire_exact::Value`, replacing `i64`; this entry admits Boolean, Integer, Reference and Population arguments only |
+| `Call.accounting` | The caller's complete `quire_exact::ScalarLimits`, with all ten existing counters |
+| `run` object context | An explicit borrowed `&qsl_semantics::model::object_environment::ObjectEnvironment`, immediately before the existing `&Cancel` argument; the other run inputs retain their roles |
+| Completed Reference | `CallValue::Reference(quire_exact::ObjectReference)` in the existing `CallOutcome::Completed` arm |
+
+The existing `Result<(PackageId, CallOutcome), Box<RunRefusal>>` return
+type SHALL remain the facade's return type. For an actual model-context
+admission refusal, `RunRefusal` SHALL carry
+`Admission { position: usize, refusal: qsl_semantics::model::normalize::ModelRefusal }`;
+its code/category are the original refusal's, its stage is `call`, and its
+typed cause/payload are retained. A dangling call argument SHALL carry
+`DanglingReference { position: usize }`, stage `call`, code
+`dangling_reference`, cause `absent-target-in-complete-population`, category
+refusal. These are typed facade refusal arms; no qsl_eval or private helper
+type is exposed. Existing `WrongValueKind`, binding, compile, cancellation
+and fault variants retain their behavior. An earlier failure in external
+model/population/object admission remains that operation's failure and
+does not manufacture a `run` result.
+
+This is a replacement of the existing public signature, not an additional
+entry. Population arguments carry only `Value::Population(PopulationId)`;
+FR-084 admission produces the binding and FR-089 records its identity in
+the borrowed context. Reference arguments carry
+`Value::Reference(ObjectReference)` with the original universe,
+most-specific effective type and object identity. The facade SHALL NOT
+mint either identity, copy an environment, construct a trusted effective
+view, or expose an evaluator API.
+
+The context's object closure SHALL come from actual model-aware admission
+against the selected model and checked type environment. Its population
+bindings SHALL come from `admit_binding` or `admit_invocation` against the
+actual normalized selected domain package. Registration uses each binding's
+own `population_id`; an unequal binding collision retains the existing
+`PopulationConflict` failure. A caller declaration that these inputs are
+trusted is insufficient. The call boundary SHALL check correspondence to
+the compiled model selections, registered population, declared maximum,
+declared object type and actual universe before evaluation, including when
+the function never reads an argument. It SHALL retain each owning typed
+admission failure, its cause and available fields/locus.
+
+Object-world closure and query population membership are different scopes.
+A Reference argument must resolve in the admitted object world; it need
+not belong to the selected query population. A real object outside that
+population reaches `lookup` and its absence mode. An unresolved object
+refuses admission as `dangling_reference` /
+`absent-target-in-complete-population`, with its declared parameter position,
+rather than as a lookup absence or an internal fault. An unregistered
+PopulationId or mismatched declared maximum retains `WrongValueKind` and
+its position under FR-089. Wrong-kind input retains the same refusal;
+foreign model/universe input retains the owning `foreign_reference` cause
+and actual expected/supplied identities. Malformed identities retain their
+own construction/reader refusal before a typed value can be supplied.
+`with_unresolved_references` SHALL NOT admit a model call here.
+
+The input guard SHALL NOT reinterpret other Value variants as one of these
+four admitted kinds. Binding-name checks run in full before value checks,
+in the existing order: unknown/duplicate arguments, missing parameters,
+then declared-position kind/domain/context admission. Integer assignments
+`0` and `1` to Boolean parameters retain their canonical false/true meaning;
+any other integer refuses. A typed Boolean binds a Boolean parameter
+directly. Integer parameters retain exact integer/domain admission.
+
+### File request encoding
+
+The native-run/1 argument encoding below remains a signed-i64 assignment
+encoding. Its reader converts those assignments to the shared values for
+the same public entry. It carries no Population payload or model-call
+context member. This amendment defines no alternative request dialect,
+compatibility entry or caller-minted population handle. Typed TC-792
+execution is an in-process public call; admitting an I05 envelope's model
+inputs remains the owning strict reader/admission operation. A file/driver
+adapter cannot claim typed-input support without that consumer qualification.
+
 A native-run/1 request (FR-026's closed envelope and shared limits). For a
 `1-draft` program the request carries:
 
@@ -94,7 +182,21 @@ A `0-draft` request carries FR-026's members and no `call` or `libraries`.
 
 ## Outputs
 
-### Outcome document
+### Typed result and outcome document
+
+The public entry SHALL admit declared Boolean, Integer/Int and Reference
+results. Other result kinds retain `unsupported_construct` before a call.
+A completed Reference SHALL retain the actual returned identity triple in
+`CallValue::Reference`, without dereferencing, re-hashing or narrowing it.
+An unexpected completed kind remains an internal invariant failure.
+
+Where a completed Reference is serialized in the existing function outcome
+document, its value SHALL reuse the existing canonical typed Reference form:
+`{"kind":"reference","universe":U,"type":T,"object_identity":O}`.
+`U` and `T` are the actual UniverseId and most-specific EffectiveId, each
+64 lowercase hexadecimal characters; `O` is the exact nonempty UTF-8 object
+identity. No population binding or object fields are serialized as a
+Reference result. This does not add a Population argument wire encoding.
 
 For a call that reaches S6a, stdout is one `spine-run-result/1` JSON
 document, newline-terminated, and nothing else.
@@ -118,7 +220,7 @@ exhausted limit this document's `outcome` member carries. Its members are:
     `{"kind": "integer", "decimal": "<ASCII decimal>"}`, the integer written
     exactly, with a leading `-` when negative and no other sign, leading
     zero or exponent ([FR-038](FR-038-encode-exact-protocol-numbers.md)'s
-    integer spelling, at any magnitude);
+    integer spelling, at any magnitude), or the Reference form above;
   - `{"kind": "refused", ...}`, with the members the refusal table below
     states;
   - `{"kind": "undefined", "reason": "<reason>"}`;
@@ -265,7 +367,7 @@ exits with that code's exit status:
 | A `call` that is not the closed object above; an argument `value` that is not a JSON integer in the signed 64-bit range; a `work_units` that is not a JSON integer from 0 to `u64::MAX` | `request` | `invalid-request` | as FR-026 | 20 |
 | A spine compile refusal | the refusing spine stage | that stage's cause code | as FR-027 | that code's |
 | A `function` that is empty, holds an empty segment or a segment that is not an identifier, has more than one segment, or names no function of the compiled package | `call` | `missing_declaration` | `{"function": "<the function string>"}` | 20 |
-| A function whose declared result is neither `Boolean` nor an integer type | `call` | `unsupported_construct` | `{"function": "<the function string>"}` | 21 |
+| A function whose declared result is neither `Boolean`, an integer type nor `Reference` | `call` | `unsupported_construct` | `{"function": "<the function string>"}` | 21 |
 | An argument naming no parameter, a parameter named twice, or a parameter with no argument | `call` | `invalid_runtime_input` | `{"parameter": "<the parameter name>"}` | 20 |
 | A value that is not of its parameter's declared type (`WrongValueKind`) | `call` | `invalid_runtime_input` | `{"position": <the parameter's zero-based position>}` | 20 |
 
@@ -320,8 +422,8 @@ exit 30.
   does (FR-098, OQ-5).
 - If the name resolves to no function, then `qsl_replay::spine::run` shall
   refuse with `missing_declaration` at stage `call`.
-- If the function's declared result is neither `Boolean` nor an integer
-  type, then `qsl_replay::spine::run` shall refuse with
+- If the function's declared result is neither `Boolean`, an integer
+  type nor `Reference`, then `qsl_replay::spine::run` shall refuse with
   `unsupported_construct` at stage `call` before any call or charge.
 - `qsl_replay::spine::run` shall join each argument to the parameter of the
   same declared name, and order the values by declared parameter position,
@@ -329,13 +431,9 @@ exit 30.
 - If an argument names no parameter, names a parameter already bound, or
   leaves a parameter unbound, then `qsl_replay::spine::run` shall refuse
   with `invalid_runtime_input` at stage `call`, naming the parameter.
-- `qsl_replay::spine::run` shall convert each argument's value to a value of
-  its parameter's declared type by FR-098's rule: an integer for an integer
-  type, and `0` or `1` for `Boolean`.
-- If a `Boolean` parameter's value is other than `0` or `1`, or the
-  parameter is of a kind neither `Boolean` nor an integer type, then
-  `qsl_replay::spine::run` shall refuse `WrongValueKind` before the call,
-  naming the parameter's position.
+- `qsl_replay::spine::run` SHALL bind shared typed values under the Typed
+  public call rules above. The signed-i64 file assignments retain FR-098's
+  canonical integer/Boolean conversion and its existing refusal oracles.
 - If a value is outside its parameter's declared domain (`12` for
   `Int[0, 9]`), then `qsl_replay::spine::run` shall refuse `WrongValueKind`
   at S6a admission, naming the parameter's position.
@@ -357,6 +455,20 @@ exit 30.
   `qsl_replay::spine` or in a re-export. The types `qsl_replay::spine::run`
   takes and returns are `qsl_replay`, `qsl_foundation`, `qsl_semantics` or
   `quire_exact` types.
+- The entry SHALL pass the borrowed admitted context to the existing S6a
+  call exactly once after admission. It SHALL preserve FR-301's enclosing
+  family result, StateModel catalog attribution, fields and location for a
+  model refusal. It SHALL NOT use a default context for a typed model call,
+  precompute lookup as a facade substitute, or use a second evaluator.
+- The entry SHALL retain the caller's original Cancel through each
+  applicable phase. Requested and Deadline remain distinct, category
+  incomplete, exit 22, with no invented cancel cause or evaluated charge.
+  Population admission limits, supplied admission/conversion limits and
+  semantic evaluation limits retain their existing owners and units.
+  Pre-call failure consumes no evaluation work. QSL-681's proposed A/H
+  contract requires its owning settlement and IR-714 public helper
+  qualification; no default, private helper or full-Tree qualification is
+  inferred by this amendment.
 
 ## Acceptance Criteria
 
@@ -374,9 +486,24 @@ exit 30.
 | FR-100-AC-10 | With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Pos>(x in q: x)` for an empty `q` of `Sequence<Int[1, 9]>[0, 2]` returns `Outcome::Undefined(Undefined::SumOutOfDomain)` located at the `sum` node, and the outcome mapping renders it `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 10. The same `sum` for `q` holding `4` completes with `4`. | Test (TC-786) |
 | FR-100-AC-11 | Every exit status `run` returns equals FR-285's exit code of the outcome's O-16 category: FR-100-AC-10's `sum-out-of-domain` outcome and a `FamilyResult::Undefined` with reason `precondition-false` each write outcome kind `undefined` and exit 10; FR-100-AC-4's `invalid_runtime_input` refusals exit 20; FR-100-AC-5's record-result function exits 21; FR-100-AC-6 exits 22; a `CallFailure::Fault` exits 30. The `execute` operation (FR-279) over each of these inputs returns an outcome whose FR-285 exit code equals the command's. | Test (TC-786) |
 | FR-100-AC-12 | `qsl_replay::spine::run` over FR-100-AC-1's `seven`, with a `Cancel` that trips during the run and not before it, returns `RunRefusal::Cancelled` carrying the handle's cause, category incomplete, exit 22, and never `RunRefusal::Fault`: tripped with `Requested` at the last front-end charge (before S6a starts) and tripped with `Deadline` at the first S6a charge (inside `CheckedPackage::call`), each gives `Cancelled` with that cause. `OutcomeDocument::from_run` over each writes `category` incomplete, `last_stage` `null` and one `cancelled` diagnostic whose cause is `requested` and `deadline` respectively. | Test (TC-452) |
+| FR-100-AC-14 | TC-792's exact source-compiled Value lookup with real admitted Population/Reference inputs reaches S6a through `spine::run`; a reference resolving in the object world but absent from the selected population produces the actual enclosing `FamilyResult::Refused`, StateModel `absent-key` cause, refusal category and exit 20, with the owning fields and source location. Compile/select/admit/unsupported-result failures do not satisfy this criterion. | Test |
+| FR-100-AC-15 | With the same compiled lookup and model, selecting a population containing that reference completes with `CallValue::Reference` whose universe, most-specific type and object identity equal the supplied reference, exit 0. The Reference result encoding retains all three components exactly. | Test |
+| FR-100-AC-16 | Independently supply a wrong-kind argument, an unregistered PopulationId, a binding whose declared maximum differs from the parameter's, a foreign selected model/universe, and a dangling Reference. Each refuses before evaluation with its owning typed cause and parameter/identity fields. Unknown, duplicate and missing parameter failures retain precedence over value admission. A function ignoring its arguments cannot bypass these checks. | Test |
+| FR-100-AC-17 | Malformed identity bytes rejected by the actual constructor/reader never become supplied typed references. A well-formed real object absent only from the query population reaches the AC-14 lookup refusal; an object absent from the complete object world produces dangling-reference admission instead. An unresolved-reference context cannot turn the latter into AC-14. | Test |
+| FR-100-AC-18 | The scalar inputs, values, refusals, category/exit mapping and internal-fault oracles in AC-1 through AC-12 remain equal after adapting callers to the shared Value field and explicit context. All ten actual accounting limits reach evaluation unchanged. Requested and Deadline stops remain distinct before and during S6a; applicable pre-call denial has zero evaluation consumption. | Test |
+| FR-100-AC-19 | Public signatures use the carriers in Typed public call and no qsl_eval path. The source, binding and object context are admitted through their actual owner APIs, with no copied/trusted substitute model view or second engine. The driver executes TC-792 through this reviewed public boundary and retains the absent/present and invalid-admission distinctions. | Inspection |
+
+The typed-call acceptance criteria supplement all existing scalar oracles;
+FR-100-AC-13 remains reserved to the QSL-656 accounting amendment.
 
 ## Dependencies
 
+- [FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md),
+  [FR-089](FR-089-carry-population-identity-across-the-kernel-boundary.md)
+  and [FR-301](FR-301-render-state-model-causes-under-the-enclosing-family.md)
+  own admission, the shared Population carrier and StateModel attribution.
+  [I05](ix://agent-ix/quire-specification/interface_005) owns the paired
+  native-runtime interface contract.
 - [FR-026](FR-026-run-standalone-native-workflow.md): native-run/1, its
   intake limits and its command-error envelope; the `0-draft` route.
 - [FR-027](FR-027-export-compiled-native-package.md): the edition reader,
@@ -406,6 +533,16 @@ exit 30.
   located undefined outcome.
 
 ## Status
+
+The typed-public-call amendment is proposed for independent review under
+QSL-665. Its source, admission, result and TC-792 consumer qualification are
+UNRUN. Existing implementation statements below describe the scalar entry
+only. QSL-656's reviewed accounting amendment is a source-history
+prerequisite: its closed `accounting` object replaces the legacy file
+`work_units` member, with no compatibility member. The accounting owner
+retains that amendment and TC-951; this branch does not duplicate it.
+Source consumers must reconcile that exact amendment before implementation
+or qualification. No implementation branch is created by this spec.
 
 Remaining work (implementation, with the native-run deletion change, FR-312):
 the code still requires a `sha256:` source digest on each source selection
