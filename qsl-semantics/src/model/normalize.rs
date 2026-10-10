@@ -7,7 +7,7 @@
 //! effective entries under their owning effective type. Phase 4 resolves
 //! both kinds through one proper-descendant dominance authority, records
 //! redefine facts on each immediate pair and hides the displaced members.
-//! Subsetting does not derive a replacement. Source checking subsequently
+//! Subsetting records its own phase-4 fact without deriving a replacement. Source checking subsequently
 //! checks every conformance axis against retained real-clause facts, using
 //! the same operation-owned meter; normalization resolves structural targets.
 //!
@@ -114,8 +114,8 @@
 //! rung's own optimization, never a change to what is priced), where `f(o)`
 //! is owner `o`'s own count of type derivation facts (qualify plus
 //! inherit). `m` and `f(o)` are read directly from `build`'s own phase 2/3
-//! results (`member_preimages`/`type_preimages`, extended for `m` with the
-//! domain package's own directly-declared and inherited operation members), which
+//! results (`member_preimages`/`type_preimages`), including each directly
+//! declared and inherited field and operation, which
 //! is why phase 4 now runs as its own pass only after every type's phase
 //! 2/3 has finished, rather than interleaved per type as before: a
 //! redefinition's owner can sort after the type currently being processed
@@ -186,7 +186,7 @@ use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
     EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRefWire,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_foundation::diagnostic::Code;
 use quire_exact::{length_amount, Cancel};
@@ -1707,11 +1707,26 @@ fn resolve(state: &mut NormalizationState<'_>, meter: &mut Meter) -> Result<(), 
     // redefine fact get built.
     let mut phase4_facts_charged: u64 = 0;
     let mut plans = Vec::with_capacity(type_keys.len());
+    let mut subset_facts = Vec::new();
     for type_key in type_keys {
         let Some(paths) = type_paths.get(type_key) else {
             continue;
         };
         let plan = plan_redefinitions(&index, type_key, paths, &*member_preimages, &mut accounting);
+        let mut owner_paths = BTreeMap::new();
+        owner_paths.insert(type_key.clone(), KeyPath::default());
+        for path in paths {
+            owner_paths.entry(path.ancestor_key.clone()).or_insert_with(|| path.path.clone());
+        }
+        for (owner, path) in owner_paths {
+            for field in index.sorted_direct_fields(&domain_package.records, &owner) {
+                for target in &field.subsets {
+                    *accounting.phase4_fact_count += 1;
+                    subset_facts.push(((type_key.clone(), field.key.clone()),
+                        FactInputs::new(path.clone(), vec![field.key.clone(), target.clone()])));
+                }
+            }
+        }
         while phase4_facts_charged < *accounting.phase4_fact_count {
             charges.fact()?;
             phase4_facts_charged += 1;
@@ -1732,6 +1747,17 @@ fn resolve(state: &mut NormalizationState<'_>, meter: &mut Meter) -> Result<(), 
             &mut hidden,
             &mut accounting,
         );
+    }
+    for (key, inputs) in subset_facts {
+        let entry = member_preimages.get_mut(&key)
+            .expect("a reached subsetting field was qualified or inherited in phase 3");
+        entry.derivation.push(Fact { ordinal: entry.derivation.len(), rule: RULE_SUBSET, inputs });
+    }
+    for entry in member_preimages.values_mut() {
+        let phase4 = entry.derivation.partition_point(|fact| fact.rule == RULE_QUALIFY || fact.rule == RULE_INHERIT);
+        entry.derivation[phase4..].sort_by(|a, b| a.inputs.iter().cmp(b.inputs.iter())
+            .then_with(|| a.rule.identity.cmp(b.rule.identity)));
+        for (ordinal, fact) in entry.derivation.iter_mut().enumerate() { fact.ordinal = ordinal; }
     }
     phase4_refusal_candidates.sort_by(|a, b| a.0.cmp(&b.0));
     // A `normalize.redefinition-check` refusal's rank is the redefining

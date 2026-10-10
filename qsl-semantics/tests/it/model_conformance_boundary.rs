@@ -256,6 +256,27 @@ fn subsetting_runs_both_axes_at_the_runtime_boundary() {
             vec![object("A", None, vec![field("A", "ysup", "B", 1, Some(3), None), subset], vec![]),
                 object("B", Some("A"), vec![], vec![])]
         });
+        let (unit, packages) = crate::model_operations::config_unit_with_body(&bytes,
+            "function noop using v(): Boolean pure { true }");
+        let built = crate::model_operations::parse_and_build(&unit);
+        let selected = qsl_semantics::model::intake::admit_unit(&built.selections().models, &packages,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::UNLIMITED)
+            .expect("structural subsetting facts precede conformance");
+        let view = &selected[0].view;
+        let subset = qsl_semantics::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: identity("A/ys") };
+        let target = qsl_semantics::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: identity("A/ysup") };
+        let facts: Vec<_> = view.declarations().iter().filter(|entry| entry.preimage.original == subset)
+            .flat_map(|entry| entry.preimage.derivation.iter())
+            .filter(|fact| fact.rule == qsl_semantics::model::key::RULE_SUBSET)
+            .map(|fact| fact.inputs.iter().cloned().collect::<Vec<_>>()).collect();
+        let expected_paths = std::collections::BTreeSet::from([
+            vec![subset.clone(), target.clone()],
+            vec![qsl_semantics::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: identity("A") }, subset, target],
+        ]);
+        assert_eq!(facts.into_iter().collect::<std::collections::BTreeSet<_>>(), expected_paths);
+        assert!(view.declarations().iter().all(|entry| entry.visible), "subsetting hides no replacement target");
+        assert_eq!(selected.consumed(qsl_semantics::model::accounting::LimitKind::EffectiveDeclarations), 6);
+        assert_eq!(selected.consumed(qsl_semantics::model::accounting::LimitKind::DerivationFacts), 9);
         let expected = match row {
             0 => Ok(()),
             1 => Err(vec![(Code::IllTyped, Some("subsetting-type"))]),
