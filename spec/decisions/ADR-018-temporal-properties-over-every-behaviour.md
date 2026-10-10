@@ -591,6 +591,24 @@ updates at every letter; ages and bucket distances advance only when
 distance advances. Finite Boolean bucket transforms preserve chronological
 truth without an unbounded list of zero-distance positions.
 
+EN-1, PC-3, SM-6 and the finite-prefix-only consequence of §4 are further
+amended for protocol future intervals: counted distance can cease on an
+admitted infinite run, so a syntactic finite bound does not guarantee a
+finite bad prefix. FR-338 defines a checker-owned negated-activation
+acceptance construction and zero-counted cycle search, retaining the
+original bounded/safety certificate keys and source classification.
+A Closure certificate is sufficient only when that acceptance check also
+completes with no admitted violation. It uses the actual resolved fairness
+premise, never a new counted-progress assumption. Finite F/U occurrences
+have least-fixed-point acceptance on protocol zero-distance runs, including
+pre-lower shifts; the G/R dual retains greatest-fixed-point behavior.
+Counterexamples use the existing replayed lasso shape and CX-5 ordering.
+A counted exit does not make a zero-counted cycle harmless. This also
+amends PC-4's protocol acceptance membership for finite F/U carries.
+The core recomputes the auxiliary product lazily under explicit request
+budgets; neither a stopped check nor a finite depth can erase a remaining
+non-progress obligation.
+
 IV-3's earliest-deadline/furthest-extent subsumption and general offset
 sets are represented by FR-338's closed window alternatives. Exact
 arithmetic represents b+1 saturation even for u64::MAX b. Canonicalization

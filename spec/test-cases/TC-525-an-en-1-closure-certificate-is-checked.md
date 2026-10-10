@@ -47,6 +47,13 @@ are prospective qualification procedures; this artifact claims no execution.
    p-true step; at distance one insert an uncounted p-true letter after
    a false letter. Compare all horizons/ages before and after a memory
    step, and compare mixed-truth protocol past bucket transforms.
+   Offer a full closure for origin `eventually[1,1] true` on a real
+   uncounted protocol loop under adversarial scheduling/no fairness,
+   with and without a counted exit; compare with a graph where each
+   cycle contains a counted step. Compare origin-discharged F[0,1]true
+   and the dual G[1,1]false on the uncounted loop. Check exact auxiliary
+   acceptance and replay the nonempty zero-counted lasso; repeat with
+   an actual fairness constraint whose enabled/taken test excludes it.
 8. Admit u64::MAX interval bounds and b+1 saturation; reach the actual
    automaton-state/identity-byte budget while encoding a reachable state.
 
@@ -70,6 +77,10 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   Open until rejects at origin while finite until accepts; release
   preserves its dual. Fork/memory letters do not reduce distance, and
   a final-region zero-distance true letter can satisfy the pending F.
+  The unresolved F[1,1]true starvation closure rejects WitnessFails,
+  even with a counted exit; counted-progress cycles discharge it.
+  F[0,1]true and the empty-window G dual do not falsely reject. Only
+  the actual resolved fairness test can exclude a starvation lasso.
 - Step 8: exact mathematical strings, including b+1 above u64::MAX;
   an explicit resource stop gives no truncated/default key.
 

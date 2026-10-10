@@ -21,7 +21,8 @@ relationships:
 `qsl-replay`'s `check_closure` SHALL accept a `ClosureCertificate` that EN-1
 returns with a safety proof exactly when the certificate's product states
 contain every initial product state, are closed under expansion, and hold
-no bad state, recomputing every successor with the core's own code
+no bad state, and its checker-owned non-progress check below finds no
+admitted violating lasso, recomputing every successor with the core's own code
 (ADR-018 PC-3, PC-5, LA-3). A proof whose certificate it accepts settles
 `proved`, `Certified` (FR-127); one it rejects settles `inconclusive`,
 `CertificateRejected`.
@@ -304,7 +305,12 @@ carried from this position, or its current expansion discharged it through
 its operand/right operand. A carried least-fixed-point obligation with no
 discharge excludes that acceptance membership. Greatest-fixed-point `G/R`
 requires no separate acceptance set. Finite deadlines require no Büchi
-set. Membership refers to occurrences, never local set numbers; the
+set on an ordinary subject. On a protocol subject finite F/U (including
+a signed dual and a debt still before its lower shift) also have a
+least-fixed-point acceptance set: a carry excludes membership and actual
+discharge includes it. Counted progress makes finite debt eventually
+close; zero-distance progress does not. A finite G/R is greatest-fixed-point
+and needs no such set. Membership refers to occurrences, never local set numbers; the
 component checker derives set order by their canonical bytes.
 
 All sets above SHALL be sorted in ascending complete canonical element
@@ -331,6 +337,90 @@ constants unchanged; infinite-trace terminal stutter advances on the real
 last model state's letter. No terminal/cache marker is needed because
 profile, clock and all open debt/memory facts select those moves; marking
 a state "closed" cannot bypass recomputation.
+
+### Protocol non-progress acceptance and closure classification
+
+For a protocol subject with any future interval, the TP-2/TP-3 source form
+SHALL NOT imply that first-phase bad-prefix closure alone is a proof.
+Counted bounds do not bound the number of zero-distance positions. This
+is an additional acceptance obligation of a Closure certificate, not a
+new fairness assumption, an unsupported-form refusal, or a projection
+that deletes those positions. The original bounded/safety state keys
+remain the certificate's states. The checker SHALL recompute the following
+auxiliary finite construction from their actual initial states/edges and
+the request's checked formula, without trusting a producer's cycle claim.
+
+An auxiliary configuration is exactly `[phase,branch]`, where branch is
+the closed elementary configuration above for the **negated** checked
+formula. For origin activation phase is `"active"` throughout. For each
+activation phase is `"waiting"` or `"active"`: waiting updates the complete
+past closure at every letter and may choose that position as the start of
+one negated-root activation; active never returns to waiting or restarts.
+Its past facts are retained from the authoritative origin. The negated-root
+expansion, signed paths, Boolean choices, future/past windows, delta updates
+and terminal profile closure use exactly the rules above. Discharging the
+negated root keeps an obligation-free branch; a contradictory branch has
+no successor. This construction selects a violating activation, rather than
+requiring every activation to violate. It introduces no generic residual
+or provider-defined state. Waiting is not an accepting run.
+
+Derive one generalized Büchi set per signed least-fixed-point occurrence
+in the negated closure, **including finite F/U and their pre-lower shifts**.
+The membership rule above applies. Also derive one activation set consisting
+exactly of active configurations, so an infinitely waiting run cannot
+witness a violation. These auxiliary set identities are `[o,s]` and
+`["activation"]`, sorted by complete canonical element bytes; the activation
+set is present for both origin and each and is always met for origin.
+It is derived from phase, never an extra Boolean supplied by the producer.
+Auxiliary configurations compare by complete canonical bytes of this closed
+array. They are checker work, not additional certificate members or a new
+public AutomatonStateKey alternative.
+
+The checker SHALL retain all reachable pairs of a certified product state
+and auxiliary configuration by following every recomputed edge, including
+counted edges on the stem. It SHALL then search the subgraph containing
+only delta-zero edges for a nonempty infinite cycle that visits every
+auxiliary acceptance set and satisfies **exactly** the request's resolved
+fairness constraints. Apply ADR-018's SCC acceptance and ADR-019's strong
+fairness refinement, deriving enabledness from the complete subject at the
+paired state; no requirement that an SCC be bottom is imposed. A counted
+exit does not disallow a zero-distance cycle an adversarial scheduler may
+keep choosing. No progress fairness is added. Undefined letters retain
+UE-1's first-phase handling.
+
+A passing cycle is a genuine non-progress refutation: EN-1 SHALL return its
+canonical stem/nonempty loop through CX-5 and replay it using PB-3 distances.
+When checking an offered Closure certificate, the checker SHALL reject it
+with existing `WitnessFails` at the canonical first product-state locus of
+the first passing auxiliary component, ordered by complete product-state
+then auxiliary bytes. This rule is an explicit extension of PC-3's checked
+closure obligation; it adds no rejection variant or certificate field.
+PC-4 for a TP-4 item still owns its ordinary component certificate; its
+protocol negated automaton uses the same finite least-fixed-point membership
+so that a pending finite F/U carry is not accepted merely by looping at one
+distance. TP-1/deadlock items without future intervals retain pure bad-prefix
+closure. A completed prefix at h counted steps is not a BoundedComplete
+proof while an admitted unresolved non-progress branch remains.
+
+Correctness follows by splitting an infinite finite-product run: either it
+has infinitely many counted steps, when each fixed finite debt reaches its
+upper region, or after a finite stem it has only zero-distance steps. In the
+latter case the auxiliary acceptance keeps finite F/U strong (a witness must
+actually discharge), while finite G/R can survive universally on that tail.
+For an interval whose lower distance is still positive, no witness is
+fabricated: F/U cannot discharge, while its Boolean dual can hold. Thus the
+negated construction accepts exactly a violating activation on that tail.
+Past memory, operand order, and all actual zero-distance letters remain in
+the construction. Fairness filters only behaviors already excluded by the
+request's existing premise.
+
+This auxiliary construction SHALL be materialized lazily, with checked
+state/edge/automaton/evaluation budgets already applicable to the request.
+The core explores no model state outside the supplied closure, but auxiliary
+configurations may multiply its states; certificate size alone is therefore
+not a bound on this acceptance work. A stopped acceptance check cannot
+accept the certificate or settle Certified. It follows the existing resource
+stop outcome and produces no default acceptance or progress premise.
 
 The translation SHALL materialize only states reached by the product.
 Canonicalization visits only this state's retained structural facts,
@@ -395,6 +485,25 @@ transform `[true,true]` and historically `[false,false]`; reversing those
 letters for a since recurrence can change its transform, while no distance
 counter increments. These cases test truth updates independently of distance.
 
+Non-progress adverse oracle: `eventually[1,1] true` on origin, at distance
+zero with an infinite uncounted fork/join or memory cycle under an actual
+adversarial/no-fairness premise, has no eligible witness and is violated.
+The positive monitor key remains undecided with lower/upper/horizon 1;
+its constant letter and a reachable counted exit do not change that fact.
+The auxiliary negation is `always[1,1] false`, whose finite greatest-fixed-point
+shift can persist on the zero-distance suffix, giving an accepting active
+cycle with no least-fixed-point debt. A closure offered as a proof rejects
+WitnessFails, and the reproduced refutation has a nonempty zero-counted loop.
+If every cycle instead includes a counted edge, the same eventuality reaches
+true at distance one and no such auxiliary cycle passes. An uncounted loop
+at distance zero for `eventually[0,1] true` has already discharged at origin
+and does not produce a false non-progress rejection. The dual
+`always[1,1] false` on the first loop is true because no eligible position
+exists; its auxiliary finite F shift fails acceptance. These paired oracles
+prevent rejecting every pending clock indiscriminately. An authored/resolved
+fairness constraint may exclude a particular starvation loop only if its
+actual enabled/taken test fails; a counted exit alone is not that premise.
+
 These are normative prospective vectors, not a runtime qualification claim.
 Admission negatives include a foreign C, a node id used as an operand path,
 one occurrence's debt placed at another, a u32 state index, an unknown tag,
@@ -428,8 +537,10 @@ different materialization orders SHALL produce identical full octets.
   deadlocked state (FR-124). A deadlocked state is bad for no other item:
   it reads by the terminal rules (ADR-018 DL-6).
 - The checker SHALL expand no state outside the certificate, so its work is
-  bounded by the certificate's size, and SHALL accept when every reached
-  state is expanded.
+  bounded by the certificate's model-state closure and the explicit
+  auxiliary acceptance budgets above, and SHALL accept only after every
+  reached state is expanded and the required non-progress check completes
+  with no admitted violating lasso.
 
 ## Acceptance Criteria
 
@@ -440,7 +551,7 @@ different materialization orders SHALL produce identical full octets.
 | FR-338-AC-3 | Over FR-120-AC-9's `test/tallies` subject, a certificate holding `t1` for `always holds(true)` is rejected `BadState` at `t1`, whose expansion records `ContractUndetermined` for the undefined `pre Low`. | Test (TC-525) |
 | FR-338-AC-4 | The canonical octet vectors have exactly the specified state bodies and full `K_C` octets; reversing subset/window insertion order leaves bytes equal, distinct occurrence paths and differing live facts leave bytes unequal, and no graph enumeration index enters the key. | Test |
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
-| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics, and on each retains an older unfulfilled activation after creating a new one. | Test |
+| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 
 ## Dependencies
