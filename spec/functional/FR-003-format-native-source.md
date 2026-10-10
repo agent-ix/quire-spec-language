@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: "ix://agent-ix/quire-spec-language/US-035"
     type: traces_to
+  - target: "ix://agent-ix/quire-spec-language/FR-255"
+    type: references
 ---
 # FR-003: Format validated source without changing token meaning
 
@@ -45,10 +47,19 @@ ADR-011 Rulings 2026-09-22, native-edition `format`).
 Formatting changes whitespace and normalizes layout to LF while retaining grouping and original token order. The library returns the complete string; the CLI writes it to stdout and leaves files untouched.
 
 The format(source) API applies the published default output limit of 1 MiB. The
-format_with_limit(source, output_bytes) API accepts any limit, including zero and
-values above the default, and uses it as given. A refusal at the limit names the
-limit, its value and format_with_limit as the way to raise it. The byte limit is
-inclusive and counts spaces, indentation, comments and the final newline.
+typed `FormatLimits.output_bytes` field is the `format.output_bytes` setting in
+FR-255, and `format_with_limits(source, limits)` consumes that value.
+`format_with_limit(source, output_bytes)` is the convenience form that builds
+the same limits value. Both forms accept any limit, including zero and values
+above the default, and use it as given. A refusal at the limit uses the
+existing `resource_exhausted`/`input-bytes-exceeded` catalog cause for
+compatibility with QSL's shared limit kind, while its rendered diagnostic
+calls the condition a format output-byte limit, names `format.output_bytes`,
+reports the configured value and emitted UTF-8 byte count, and identifies
+`format_with_limit` as the way to raise it. It SHALL NOT describe the emitted
+count as input or source bytes.
+The byte limit is inclusive and counts spaces, indentation, comments and the
+final newline.
 Every append is checked before its growth; a refused operation returns no
 partial string. Allocation capacity is an implementation detail and is not a
 separate heap-accounting promise. Reuse the existing declarative token vocabulary.
@@ -63,12 +74,13 @@ checked package identity as checking the original source.
 | FR-003-AC-1 | Formatting preserves the ordered token spellings. | Test |
 | FR-003-AC-2 | Formatting preserves comments. | Test |
 | FR-003-AC-3 | A second formatting pass produces identical bytes. | Test |
-| FR-003-AC-4 | Output beyond its selected ceiling receives resource_exhausted. | Test |
+| FR-003-AC-4 | Output beyond its selected ceiling receives `resource_exhausted`/`input-bytes-exceeded`; its rendered diagnostic calls this a format output-byte limit, reports the configured bound and emitted UTF-8 byte count, names `format.output_bytes`, and does not present the emitted count as input or source bytes. | Test (TC-931) |
 | FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test |
 | FR-003-AC-6 | format(source) and format_with_limit(source, 1048576) return identical bytes. Source whose formatted output exceeds 1 MiB refuses under format(source) naming the limit, its value and format_with_limit, and formats in full under format_with_limit with a limit raised to fit it. | Test |
 | FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `qsl-cst/src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
 | FR-003-AC-8 | format and format_with_limit refuse a `ParsedSource` whose CST carries a recovery, and one that carries a diagnostic and no recovery, each with a typed cause and no output string; neither call panics. | Test (TC-404) |
 | FR-003-AC-9 | For each complete-V1 fixture unit in the repository's tests that checks, checking its formatted source through the S1 to S4 spine yields a checked package identity equal to the original's, and formatting the formatted source again yields identical bytes. | Test (TC-885) |
+| FR-003-AC-10 | `FormatLimits` maps its only field, `output_bytes`, to FR-255's `format.output_bytes` through `SettingLimits`; `with_output_bytes` changes only that field, and the settings operation's `format.output_bytes=<n>` operand supplies the resulting value to `format_with_limits`. | Test (TC-931) |
 
 ## Dependencies
 
@@ -89,3 +101,9 @@ TC-013, AC-4 to AC-6 by TC-016, AC-7 and AC-8 by TC-404, and AC-9 by
 TC-885. AC-6 states a caller-raisable ceiling; `src/format.rs` clamps
 every selected ceiling to 1 MiB today, so AC-6 is not met until that
 clamp goes.
+
+## References
+
+- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) owns the
+  `format.output_bytes` setting row and shared limits/settings seam that this
+  formatter contract qualifies.
