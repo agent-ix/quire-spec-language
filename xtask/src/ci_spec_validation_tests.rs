@@ -77,7 +77,18 @@ fn spec_validation_executes_native_schema_controls_and_fails_closed() {
                 .contains("1 document(s) failed structural validation"),
             "invalid fixtures must fail native document validation"
         );
-        assert!(String::from_utf8_lossy(&negative.stderr).contains("Error 1"));
+        let native = run(Command::new("quire").current_dir(root).args([
+            "validate",
+            "--scope",
+            ".",
+            "spec/**/*.md",
+        ]));
+        assert!(!native.status.success(), "native validator must refuse");
+        let native_exit = native.status.code().expect("native validator exit code");
+        assert!(
+            String::from_utf8_lossy(&negative.stderr).contains(&format!("Error {native_exit}")),
+            "Make must retain the actual native validator exit"
+        );
         assert!(
             String::from_utf8_lossy(&negative.stderr).contains("fixture with spaces.md"),
             "document failure must name the owned fixture"
