@@ -15,6 +15,7 @@
 
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
 use qsl_foundation::Span;
+use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{CollectionKind, Integer};
 
 use super::dispatch::{Construct, FormsCause, FormsRefusal};
@@ -582,6 +583,8 @@ enum Shape {
     Collection(CollectionKind),
     Convert(TypeForm),
     AllInstances(TypeForm),
+    Lookup(TypeForm, AbsenceMode),
+    Dispatch(String),
     Query(BinderQuery, String),
     Flatten,
     Accumulate {
@@ -739,6 +742,20 @@ impl Shape {
                     population: operands.next()?,
                 }
             }
+            Self::Lookup(target, absence) => {
+                arity(2)?;
+                ExprNode::Lookup {
+                    target,
+                    population: operands.next()?,
+                    reference: operands.next()?,
+                    absence,
+                }
+            }
+            Self::Dispatch(member) => ExprNode::Dispatch {
+                receiver: operands.next()?,
+                member,
+                arguments: operands.rest(),
+            },
             Self::Query(query, binder) => {
                 arity(2)?;
                 ExprNode::Query {
@@ -1175,22 +1192,43 @@ impl<'c> Mapping<'c> {
         Ok(integer(&text(token, operand)?, operand)? == Integer::from(i128::MIN).neg())
     }
 
-    /// `primary(.member)*`: a left-nested chain of `Field` nodes. Indexing
-    /// `e[i]` has no variant.
+    /// A left-nested chain of field navigation and dispatched calls.
+    /// Indexing `e[i]` has no variant.
     fn postfix(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
         let Some((Item::Node(primary), rest)) = items.split_first() else {
             return Err(unexpected(node));
         };
-        let mut members = Vec::new();
-        let mut rest = rest.iter();
+        let mut suffixes = Vec::new();
+        let mut rest = rest.iter().peekable();
         while let Some(item) = rest.next() {
             match item {
                 Item::Token(token) if token.spelling() == b"." => {
                     let Some(Item::Token(member)) = rest.next() else {
                         return Err(unexpected(node));
                     };
-                    members.push(*member);
+                    let mut end = member.span().end;
+                    let mut arguments = Vec::new();
+                    let call = matches!(rest.peek(), Some(Item::Token(token)) if token.spelling() == b"(");
+                    if call {
+                        rest.next();
+                        loop {
+                            match rest.next() {
+                                Some(Item::Node(argument)) if argument.production() == Production::Expression => {
+                                    arguments.push(*argument);
+                                }
+                                Some(Item::Token(token)) if token.spelling() == b"," => {}
+                                Some(Item::Token(token)) if token.spelling() == b")" => {
+                                    end = token.span().end;
+                                    break;
+                                }
+                                Some(Item::Token(_) | Item::Node(_)) | None => return Err(unexpected(node)),
+                            }
+                        }
+                    }
+                    let name = text(member, node)?;
+                    let shape = if call { Shape::Dispatch(name) } else { Shape::Field(name) };
+                    suffixes.push((shape, end, arguments));
                 }
                 Item::Token(token) if token.spelling() == b"[" => {
                     let end = rest
@@ -1214,17 +1252,14 @@ impl<'c> Mapping<'c> {
         }
         let start = node.span().start;
         let mut parent = task.parent;
-        for member in members.iter().rev() {
+        for (shape, end, arguments) in suffixes.into_iter().rev() {
             let span = Span {
                 start,
-                end: member.span().end,
+                end,
             };
-            parent = Some(self.node(
-                Shape::Field(text(member, node)?),
-                node.production(),
-                span,
-                parent,
-            ));
+            let index = self.node(shape, node.production(), span, parent);
+            self.queue(index, arguments);
+            parent = Some(index);
         }
         self.work.push(Task {
             node: primary,
@@ -1312,6 +1347,22 @@ impl<'c> Mapping<'c> {
                     Shape::AllInstances(target)
                 };
                 self.with_children(shape, &task, one(&operands)?)
+            }
+            b"lookup" => {
+                if operands.len() != 2 {
+                    return Err(unexpected(node));
+                }
+                let target = type_form(self.cst, only(items, Production::TypeReference, node)?)?;
+                let Some(Item::Token(mode)) = items.last() else {
+                    return Err(unexpected(node));
+                };
+                let absence = match mode.spelling() {
+                    b"undefined" => AbsenceMode::Undefined,
+                    b"empty" => AbsenceMode::Empty,
+                    b"refused" => AbsenceMode::Refused,
+                    _ => return Err(unexpected(node)),
+                };
+                self.with_children(Shape::Lookup(target, absence), &task, operands)
             }
             b"size" => {
                 if !nodes_of(items, Production::TypeReference).is_empty() {
