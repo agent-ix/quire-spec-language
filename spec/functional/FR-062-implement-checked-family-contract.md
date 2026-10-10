@@ -24,13 +24,6 @@ relationships:
 ---
 # FR-062: Implement the shared checked-family contract
 
-
-Declared names
-carried on checked nodes are checked input. Copying a declared name into
-`PreconditionFailure.selected`, and using field names as record keys, are
-allowed. A "display string" is rendered text (`Display` or `Debug`
-output, diagnostic text, source spelling); ADR-011 FB-01 forbids reading
-one "to recover semantics".
 ## Description
 
 QSL semantic families (`Value`, `StateModel`, `SumCase`, `TemporalTrace`,
@@ -40,6 +33,13 @@ through the same shape for every family, and every family's checked nodes
 reach the checked package through the same S4 v2 emitter. QSL SHALL
 implement one shared contract, with the parts below, that every family
 implements once and that no family bypasses.
+
+Declared names
+carried on checked nodes are checked input. Copying a declared name into
+`PreconditionFailure.selected`, and using field names as record keys, are
+allowed. A "display string" is rendered text (`Display` or `Debug`
+output, diagnostic text, source spelling); ADR-011 FB-01 forbids reading
+one "to recover semantics".
 
 The contract's six parts (ADR-012 §2):
 
@@ -339,12 +339,15 @@ condition.
 | FR-062-AC-12 | A family `check` that reaches one of its two stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. A family `check` compares no measured node count before typing: its node limit is `CheckingLimits::nodes`, charged at the node (FR-062-AC-7). With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 | FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound and guards are those of its own occurrence. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
-The state scan covers the non-test items of every `.rs` file under `src/check`
-and `src/family` (files with `tests` in the name and `#[cfg(test)]` items are
+The state scan for FR-062-AC-3 covers the non-test items of every `.rs` file
+under `qsl-semantics/src/check` and `qsl-semantics/src/family`
+(files with `tests` in the name and `#[cfg(test)]` items are
 skipped). Callees outside them (`quire-exact`, `qsl-forms`,
 `qsl-foundation` and the rest of `qsl-semantics`) are not scanned.
 
-The scan reads `evaluate.rs` and the `evaluate` method in `family.rs`
+The evaluator display-string scan for FR-062-AC-6 reads
+`qsl-eval/src/value/expression/evaluate.rs` and the `evaluate` method in
+`qsl-eval/src/value/expression/family.rs`
 only; `causes.rs`, `mod.rs`, `s6a.rs` and callees in other crates are
 not scanned.
 

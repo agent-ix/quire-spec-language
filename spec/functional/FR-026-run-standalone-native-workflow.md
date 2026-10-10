@@ -32,7 +32,7 @@ contract below apply to `0-draft` programs.
 
 The code applies fixed 1 MiB, 64-file and
 8 MiB ceilings; they become the configurable `request_bytes` and
-`dependent_bytes` limits above (FR-026-AC-4).
+`dependent_bytes` limits in Behavior (FR-026-AC-4).
 
 The request and result identities still carry `revision_namespace` and
 `revision` until the QSL-381 change (QSpec STD-150).

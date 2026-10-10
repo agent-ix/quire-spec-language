@@ -12,10 +12,6 @@ relationships:
 ---
 # FR-064: Restrict string dispatch to marked edges
 
-
-Detector scope: a comparison is branch-gating when it feeds an
-`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
-chain, is a match arm's own value, or is a `strip_prefix` call.
 ## Description
 
 ADR-012 §9 fixes one rule: a string may select semantics only at a listed
@@ -46,6 +42,10 @@ enforced by a running check rather than by convention alone.
   exit when it is empty.
 
 ## Behavior
+
+Detector scope: a comparison is branch-gating when it feeds an
+`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
+chain, is a match arm's own value, or is a `strip_prefix` call.
 
 ### The marker attribute
 

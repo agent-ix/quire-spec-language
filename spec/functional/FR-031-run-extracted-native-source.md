@@ -16,7 +16,7 @@ When a native-run/1 request selects program extraction in an enabled build, the 
 
 The native-run/1 code still reads and emits the body record's old
 `revision_namespace`, `revision` and `formal_revision` fields and no `digest`;
-it moves to the `{authority, identity, document, digest}` record above.
+it moves to the `{authority, identity, document, digest}` record in Inputs.
 
 ## Inputs
 

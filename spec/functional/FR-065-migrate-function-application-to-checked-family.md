@@ -16,10 +16,6 @@ relationships:
 ---
 # FR-065: Migrate function declaration and application onto the checked-family contract
 
-
-Termination
-is a separate whole-package pass (`check::termination::check`) after every
-declaration is checked.
 ## Description
 
 Function declaration and application is the sole representative family this
@@ -92,6 +88,10 @@ ill-typed declaration through the contract's refusal outcome
 (`StageFailure::Refused`), carrying an `ill_typed` cause, and SHALL record no
 success diagnostic for it. It SHALL admit a well-typed declaration with the
 declaration's minted identity.
+
+Termination
+is a separate whole-package pass (`check::termination::check`) after every
+declaration is checked.
 
 ### `Value`'s application check decides every function application
 
