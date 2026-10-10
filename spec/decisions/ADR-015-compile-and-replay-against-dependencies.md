@@ -22,14 +22,6 @@ relationships:
 ---
 # ADR-015: Compile and replay against dependencies
 
-## Status
-
-Accepted (2026-09-25). Amends ADR-011 §2.1 (E3), §4 (dependency binding)
-and §5 (spine `compile`), and ADR-013 O-02, O-04, O-26 and QC-27, as each
-decision below states. QSpec states the wire and identity parts in FR-307,
-FR-322 and FR-323 (agent-ix/quire-specification); this
-record states QSL's side.
-
 ## Context
 
 ADR-011 §4 says E4 and the layer-6 `replay` facade check every dependency
@@ -56,6 +48,12 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 5. How E3 types a use of an imported name, such as `l::f(x)`, when an
    `ImportView` carries names only; and how a reference into a dependency
    enters a node's identity (ADR-013 QC-27, FR-087-AC-13, TC-379).
+
+Amends ADR-011 §2.1 (E3), §4 (dependency binding)
+and §5 (spine `compile`), and ADR-013 O-02, O-04, O-26 and QC-27, as each
+decision below states. QSpec states the wire and identity parts in FR-307,
+FR-322 and FR-323 (agent-ix/quire-specification); this
+record states QSL's side.
 
 ## Decision
 

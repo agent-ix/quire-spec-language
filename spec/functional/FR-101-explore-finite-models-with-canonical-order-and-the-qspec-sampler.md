@@ -391,15 +391,3 @@ repository (this repository's TC-210 is a witness-envelope case).
 - [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md): the
   extent rule and `Outcome::category()`.
 
-## Status
-
-AC-1 to AC-15 implemented in `qsl_eval::simulation`; TC-439, TC-453 to
-TC-455, TC-474 and TC-536's `Limits` half pass locally in
-`qsl-eval/tests/it/finite_simulation.rs`, which carries none of QSpec's
-`TC-210` or `FR-181-AC-*` tags. `explore_request` and `sample_request` are
-the only public entries; `explore`, `sample` and `Sampler` are
-`pub(crate)`. `Outcome::category()` gives `Stopped` the category of its
-cause's code: incomplete for `resource_exhausted`, the catalog's category
-for any other catalogued code, and internal failure for a code the catalog
-does not define. The `TransitionSystem` reduction hooks are FR-162's and
-not yet implemented.

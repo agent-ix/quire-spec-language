@@ -79,9 +79,3 @@ method, plan, result or evidence schema is introduced.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) owns package limits.
 - [FR-009](FR-009-lower-qualified-projections.md) retains actual executable lowering.
 
-## Status
-
-Reviewed draft for LC02 issue #3: all-eight review, with the
-source-setup correction/re-review. Task-016's producer
-qualification is recorded in SR-111; reconstruction and independent
-canonical/interchange/B/C acceptance remain pending under Plan-007.

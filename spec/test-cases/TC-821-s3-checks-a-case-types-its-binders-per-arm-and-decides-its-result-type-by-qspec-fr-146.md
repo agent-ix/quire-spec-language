@@ -30,6 +30,3 @@ Tag each test `#[trace("TC-821", "<AC id>")]`.
 - Step 2: checks.
 - Step 3: refuses `ill_typed`/`type-mismatch` at `true`.
 
-## Status
-
-Planned.

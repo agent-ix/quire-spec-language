@@ -63,19 +63,3 @@ requires `[dependencies]` to be exactly `qsl-cst`, `qsl-foundation` and
 `quire-exact`, and refuses any other workspace crate in
 `[dev-dependencies]`.
 
-## Status
-
-Passed locally. Step 1's crate edges
-(`tests/it/family_outcome_layering.rs::no_crate_below_layer_three_depends_on_the_check_core`)
-and step 2 over every type `qsl-forms` defines
-(`qsl-forms/tests/it/identity_free_forms.rs`) pass locally. Step 3 passes
-locally: `no_production_match_in_qsl_forms_has_a_catch_all_arm` (same file)
-refuses a `_` or bare-binding arm in any `match` over `Production` in
-`qsl-forms`, and `check::type_form::tests::resolve_form_has_no_catch_all_arm`
-does the same for the assembler's `resolve_form`; the dispatch match is
-scanned by `dispatch_entry_is_a_single_thin_call`. Step 1's family-module
-edges are scanned by `value_module_has_edges_only_to_the_forms_core_and_the_lower_crates`
-(`identity_free_forms.rs`): `value.rs`'s `use` trees, inline paths and macro-body
-paths may name only `qsl_cst`, `qsl_foundation`, `quire_exact`, std and the
-forms core (`dispatch`, `spans`, `syntax`), and the test fails on any other
-edge.

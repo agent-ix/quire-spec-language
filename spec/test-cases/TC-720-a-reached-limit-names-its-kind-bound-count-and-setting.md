@@ -43,6 +43,3 @@ Tag the tests `#[trace("TC-720", "FR-255-AC-1")]`, `#[trace("TC-720", "FR-255-AC
 - Step 3: each field maps to one name; the names are distinct; their union
   equals the table; each builder call changes only its own field.
 
-## Status
-
-Implemented. Step 1 is stage-driven for every setting row but the pending `intake.input_bytes` (FR-255 Status); steps 2 and 3 are implemented.

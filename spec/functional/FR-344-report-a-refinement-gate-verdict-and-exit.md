@@ -121,6 +121,3 @@ their exits.
 - Specification tickets QSL-386, QSL-387; implementation tickets QSL-40,
   QSL-39.
 
-## Status
-
-Specified; not yet implemented -- TC-864 to TC-866 planned.

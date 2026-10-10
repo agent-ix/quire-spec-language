@@ -84,26 +84,6 @@ relationships:
 ---
 # ADR-017: Protocol/frame, refinement and abstraction-relation boundaries (ARCH-43)
 
-## Status
-
-Proposed, 2026-09-29. Owning ticket: GitHub #223 (ARCH-43),
-epic QSL-34 (#205), Layer 4 (coordination and conformance architecture). It
-is a prerequisite of gate QSL-15 (#224, ARCH-G4) for that gate's scenarios 5
-(scoped protocol/frame clause), 7 (spec/profile refinement regression) and 8
-(model-to-implementation relation with an unbound refusal). It implements no
-feature. Supersedes nothing. Its `/spec-review all` is SR-800 to SR-807 in
-[`spec/reviews/arch-43-boundaries/`](../reviews/arch-43-boundaries/integrity.md).
-
-Amended 2026-10-01 (abstraction relation FR pass, FR-304 to FR-307): AR-1,
-AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
-decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
-v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
-(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
-
-A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
-"QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
-to this record; other artifacts cite them as `ADR-017 PF-n`.
-
 ## Context
 
 External ticket text is quoted as data, not verified in its repository.
@@ -206,6 +186,16 @@ corpus, Backlog; IR-33 blocks IR-32). Frame lowering is
 agent-ix/quire-contract-ir#109 (IR-89; its lowering half is now IR-339,
 Backlog). Kani contracts and frame harnesses are
 agent-ix/quire-contract-codegen#49 (IR-93, Backlog).
+
+A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
+"QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
+to this record; other artifacts cite them as `ADR-017 PF-n`.
+
+AR-1,
+AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
+decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
+v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
+(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
 
 ## Decision
 

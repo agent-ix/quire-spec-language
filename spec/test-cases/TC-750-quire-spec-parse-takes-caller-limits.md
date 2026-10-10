@@ -30,6 +30,3 @@ Tag the test `#[trace("TC-750", "FR-256-AC-5")]`.
 - Step 2: exits 0 and reports `"status":"parsed"`.
 - Step 3: exits with the usage error.
 
-## Status
-
-Passed locally: `tests/it/deep_sources.rs`.

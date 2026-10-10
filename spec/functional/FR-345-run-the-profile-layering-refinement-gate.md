@@ -178,6 +178,3 @@ hook.
   V1-TOOL-012 re-trace (STD-117).
 - Implementation ticket QSL-39; specification ticket QSL-387.
 
-## Status
-
-Specified; not yet implemented -- TC-867 and TC-868 planned.

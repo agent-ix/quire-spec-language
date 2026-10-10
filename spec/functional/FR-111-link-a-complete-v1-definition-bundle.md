@@ -54,6 +54,11 @@ no stage of the S1 to S4 spine calls it.
 - `BundleRefusal`: the `Code`, the `ResolutionCause`, the typed
   `PackageError` and the index of the root whose closure refused.
 
+A refusal of the whole link
+(the root list's ceiling, the closed definitions' bytes, the capabilities,
+the facets, the identity) carries no root index: `BundleRefusal::root` is
+`None`.
+
 ## Behavior
 
 ### Closure
@@ -149,22 +154,7 @@ names the field, its bound, the count reached and its setting
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §6.1, §6.2 (`complete::package` → layer-3 `library`).
 - [FR-087](FR-087-typestate-and-cross-package-node-key.md), whose AC-7 moves this capability here when `ResolvedSourcePackage` retires.
 
-## Status
-
-Specified by the 2026-09-26 ruling on QSL-234. Implemented:
-`library::bundle` (`qsl-semantics/src/library/bundle.rs`) holds
-`link_bundle` and the closure, facet, capability, limit and identity code
-moved from the retired `complete::resolve_source_package`. Its tests
-(`library::bundle_tests`, TC-491) carry the tags of the scenarios they took
-over (QSpec FR-131-AC-1 to AC-3, FR-339-AC-3), so those criteria stayed
-backed. FR-111-AC-1 to AC-7 are backed there. A refusal of the whole link
-(the root list's ceiling, the closed definitions' bytes, the capabilities,
-the facets, the identity) carries no root index: `BundleRefusal::root` is
-`None`.
-
-Roots and edges resolve by definition identity alone; a `DefinitionRef`
-is `{authority, identity}`.
-
 QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
 typed-node schema member of an extension definition yet; FR-354 reads them
 once QSpec does.
+

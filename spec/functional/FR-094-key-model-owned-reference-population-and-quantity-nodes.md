@@ -697,19 +697,3 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
   `model_population` body and family, the `clause` binding and the v2
   correspondence spelling are QSL proposals (QC-25, QC-26).
 
-## Status
-
-Specified, with AC-6's quotient units corrected and the content-only
-`ModelOwner` (QSpec FR-322-AC-28). Implemented (#384):
-`qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
-`Reference`, `Population`, clause-function and quantity type nodes, and
-builds each declared unit's and dimension's nominal node, `check`
-records the model correspondence, `check::checked_dispatch_operation` gives
-each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
-scope keeps its formed units until lowering has keyed them. TC-417, TC-418
-and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there; AC-8 is backed in `qsl-package/src/emit/extent_agreement.rs`. ADR-012 §4.3
-places an operation's postconditions with `ProtocolClause`, so the clause functions
-this requirement keys are exactly the invariant, precondition and body
-functions `DeclaredClauseKind` names. AC-1's and AC-5's `2.0.0` halves
-assert the same keys as `1.0.0`. A check with two admitted versions of one domain package
-identity refuses as an internal fault.

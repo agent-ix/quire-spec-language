@@ -79,6 +79,3 @@ intake. Extracted-to-original mapping remains the separate SourceMap API.
 - [NFR-005](../non-functional/NFR-005-rust-verification-paths.md) requires Rust production and qualification paths.
 - [FR-006](FR-006-check-defined-expressions.md) remains the downstream checking obligation; this bridge does not satisfy TC-025–029.
 
-## Status
-
-Implemented and qualified source correspondence for native checking. No checker or execution completion is claimed.

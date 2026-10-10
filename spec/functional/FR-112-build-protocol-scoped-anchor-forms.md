@@ -85,6 +85,3 @@ One `ScopedAnchorForm` per node reference, with:
 - FR-048 is the composed lane's choreography rule set, which the spine
   replaces (ADR-011 §7.3 M-6d).
 
-## Status
-
-Specified. Not yet implemented.

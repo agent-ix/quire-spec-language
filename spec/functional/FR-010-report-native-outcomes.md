@@ -59,6 +59,8 @@ express this existing API. Display renders `{code}: {message}` and Error has
 no underlying cause. This scoped compatibility exception does not introduce
 a second error envelope or alter the audit target's derived errors.
 
+The refusal line's keys are in one fixed order, the field order of the CLI's refusal record: `status`, `phase`, `code`, `source`, `path`, `span`, `message`, then `cause` and `label` when present; `source`'s own keys read `authority`, `identity`, `revision_namespace`, `revision`.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -80,9 +82,3 @@ a second error envelope or alter the audit target's derived errors.
 - [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../src/main.rs) supplies the scoped context.
 
-## Status
-
-Draft. FR-010-AC-11 is implemented (ADR-013 §7 slice S-4b):
-`src/cli.rs` takes the four-label grammar (with the revision namespace and revision) before the file today, and TC-425 backs that form; `parse` reports the source `RawSourceRef` with only the authority, the identity and the digest. Remaining work (implementation, Linear QSL-381): the CLI takes the two labels AC-11 states. The `refused` line carries `cause` `blank-label` and `label` for a blank label (FR-001), backed by TC-425. The refusal line's keys are in one fixed order, the field order of the CLI's refusal record: `status`, `phase`, `code`, `source`, `path`, `span`, `message`, then `cause` and `label` when present; `source`'s own keys read `authority`, `identity`, `revision_namespace`, `revision`.
-
-Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

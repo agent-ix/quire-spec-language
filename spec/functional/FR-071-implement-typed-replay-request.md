@@ -160,8 +160,3 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   requirement's scope; this requirement owns only the decode-time
   byte-vs-declared-digest integrity check (AC-6).
 
-## Status
-
-Remaining work (implementation, Linear QSL-381): each package-reference source entry still
-carries the revision namespace and revision; it carries the two labels and
-the digest (QSpec STD-150).

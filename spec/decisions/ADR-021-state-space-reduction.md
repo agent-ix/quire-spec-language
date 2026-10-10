@@ -36,30 +36,6 @@ relationships:
 ---
 # ADR-021: State-space reduction: symmetry, partial-order reduction and state constraints
 
-## Status
-
-Proposed, 2026-10-01. §10 records the owner's rulings on the draft's five
-questions. The QSL compiler requirements that implement it are FR-150 to
-FR-162, traced to US-019.
-It builds on
-ADR-018, itself a draft, and follows the owner's rulings recorded there
-(ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
-fairness granularity is `whole` (ADR-018 FA-6); reachable deadlocks are
-reported by a derived deadlock-freedom item, with a per-model opt-out
-(ADR-018 DL-1 to DL-7); and the infinite-trace profile admits interval
-operators nested under unbounded ones (ADR-018 IV-1 to IV-7). It reads the strong-fairness record (ADR-019) and the
-refinement record (ADR-020), both drafts, for their interaction with each
-reduction (§3). The owning ticket and related work are listed under
-References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement; "CG", "IR" and "RT" prefix the codegen, contract IR and contract
-runtime repositories' own artifacts. "QSpec FR-360" is the infinite-trace
-result disposition vocabulary, as in ADR-018. Item ids `RD-`,
-`SYM-`, `AQ-`, `POR-`, `SC-`, `PT-`, `EI-`, `RV-`, `TX-`, `DS-`, `QS-` and `RU-` are local
-to this record. Other artifacts cite them as `ADR-021 SYM-3`. Items of
-ADR-018 are cited as `ADR-018 SM-3`.
-
 ## Context
 
 ADR-018's explicit-state engine EN-1 explores the product of a model
@@ -127,6 +103,14 @@ What QSL has that bears on each:
   derived deadlock-freedom item, a TP-1 invariant `always holds(not
   deadlocked)`, unless the model declares `terminal any`; `terminal when P`
   marks intended terminal states (ADR-018 DL-1 to DL-3).
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement; "CG", "IR" and "RT" prefix the codegen, contract IR and contract
+runtime repositories' own artifacts. "QSpec FR-360" is the infinite-trace
+result disposition vocabulary, as in ADR-018. Item ids `RD-`,
+`SYM-`, `AQ-`, `POR-`, `SC-`, `PT-`, `EI-`, `RV-`, `TX-`, `DS-`, `QS-` and `RU-` are local
+to this record. Other artifacts cite them as `ADR-021 SYM-3`. Items of
+ADR-018 are cited as `ADR-018 SM-3`.
 
 ## Decision
 

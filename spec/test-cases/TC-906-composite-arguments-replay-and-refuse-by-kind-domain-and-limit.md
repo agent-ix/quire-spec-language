@@ -54,6 +54,9 @@ Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and
 `#[trace("TC-906", "FR-098-AC-10")]`.
 
+The union cases depend on QSL-503; a quantity-typed parameter in source
+depends on STD-113.
+
 ## Expected Results
 
 - Step 1: each replay evaluates `x.i.a` to `7` and settles as FR-098-AC-2
@@ -71,7 +74,3 @@ Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
   `deref` settles `inconclusive` with cause `NoValue`, since a replayed
   function has no object environment.
 
-## Status
-
-Passed locally, `qsl-replay/src/execute/tests/composite.rs`, except the union cases
-(pending QSL-503) and a quantity-typed parameter in source (pending STD-113).

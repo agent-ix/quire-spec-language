@@ -42,15 +42,6 @@ FR-087-AC-13.
   stage `intake`, at the import's identity string. E3 does not run, so
   `l::R` is not refused.
 
-## Status
-
-Steps 1 and 3 pass locally: `qsl-replay`
-`spine::dependency_tests::e3_resolves_an_imported_name_only_through_its_qualifier`,
-with a library function `f` in place of `R`, since ADR-015 D-5 admits an
-imported name only as a callee; `l::f`'s resolution to `{package_id, node}`
-is asserted by `an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference`.
-Steps 2 and 4 are planned in their rewritten form.
-
 ## References
 
 - Linear QSL-263 (steps 2 and 4 rewritten to the stages that refuse them).

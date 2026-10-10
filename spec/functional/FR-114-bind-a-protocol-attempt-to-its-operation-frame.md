@@ -38,6 +38,15 @@ type, operation name), however many clauses and attempts name the operation
 (FR-105); an attempt adds no second frame node and no second frame
 requirement record.
 
+A protocol holding the attempt compiles only when every other part of it is
+checked (FR-113 Description lists what is and what still refuses
+`unsupported_construct`/`not-yet-implemented`). The package then holds the
+attempt's anchor, frame and frame record, and no node for the protocol
+itself. So TC-513's own fixture
+body `{ updated }`, which reads the binder, still refuses until protocol
+bodies are checked. The tests use `{ true }`. The emitted spellings follow
+FR-105's and are pending STD-111, as FR-105's are.
+
 ## Inputs
 
 - The attempt's form: its name, role, operation name `M::T::op` and
@@ -97,23 +106,3 @@ requirement record.
   `choreography-surface.md` (the `attempt` row), `state-contract.md`.
 - STD-111 (QSpec) for the emitted spellings, as FR-105 states.
 
-## Status
-
-Specified and implemented: the
-assembler resolves an attempt's operation as FR-104 resolves a clause's.
-S3 checks the `contracts` list, and refuses a list entry that names two
-state clauses of one name. S4 binds the operation's one anchor and frame
-node, and gives each clause or attempt naming the operation an `anchor`
-occurrence, with ordinals in source order. The attempt's frame record is
-computed by the same function a clause's frame record uses. An operation
-named only by an attempt emits its anchor, frame and frame record. AC-1 to
-AC-4 are tested (TC-513), including through `emit_checked`.
-
-A protocol holding the attempt compiles only when every other part of it is
-checked (FR-113 Status lists what is and what still refuses
-`unsupported_construct`/`not-yet-implemented`). The package then holds the
-attempt's anchor, frame and frame record, and no node for the protocol
-itself. So TC-513's own fixture
-body `{ updated }`, which reads the binder, still refuses until protocol
-bodies are checked. The tests use `{ true }`. The emitted spellings follow
-FR-105's and are pending STD-111, as FR-105's are.

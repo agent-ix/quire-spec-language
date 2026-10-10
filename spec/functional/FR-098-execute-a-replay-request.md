@@ -41,6 +41,12 @@ it. It is not part of the facade CG may call: the FR-060 T12-A rule
 refuses any CG reference to `qsl_replay::spine` -- a `use` of it, a path
 through it, or a crate alias or glob import that reaches it.
 
+A replay runs its call over an object environment with unresolved
+references (`ObjectEnvironment::with_unresolved_references`): a reference
+argument is admitted by its identity, and a read through one completes no
+value (`unknown_required_feature`/`unsupported-feature`, construct
+`dereference`), so it settles `inconclusive` with cause `NoValue`.
+
 ## Inputs
 
 - An FR-071 replay request, in its wire shape.
@@ -229,6 +235,10 @@ through it, or a crate alias or glob import that reaches it.
 | FR-098-AC-10 | One predicate per leaf family, each taking one parameter of that family (an enum `Color`, `Text[0, 8]`, `Rational`, a `Decimal` with scales `[0, 2]`, `Float64`, a quantity in a declared unit `m`, and a `Reference<T>`), replays its counterexample from a `Witness` entry in FR-070's witness value text and settles as AC-2 states; the reference predicate tests the reference for equality with itself and does not dereference it. Each of these refuses `WrongValueKind` naming position 0, before the call: an enum value naming another enum's declaration; a nine-scalar text; a decimal with scale 3; a `float32` for the `Float64`; a quantity in another unit; and a reference whose `object_type` is another type's. A predicate that dereferences its reference settles `inconclusive` with cause `NoValue`. | Test (TC-906) |
 | FR-098-AC-11 | A proved package whose one source declares `function wide using v(x: Int[0, 18446744073709551615]): Boolean pure { x <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`, and an `Input` assignment of `x` = 18446744073709551615, carried on the replay wire as the decimal string `"18446744073709551615"`, settles `reproduced-without-witness` with the call's result `false`. The same holds for `x: Int[0, 9223372036854775808]` with body `x <= 9223372036854775807` and `x` = `"9223372036854775808"`, for `x: Int[0, 18446744073709551616]` with body `x <= 18446744073709551615` and `x` = `"18446744073709551616"`, and for `x: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` with body `x > -170141183460469231731687303715884105728` and `x` = `"-170141183460469231731687303715884105728"`. As the QSL-source stand-in for QSL-642's CG wide-range model (the u64 range CG admits under IR-624 AC35), a unit declaring `record Meter { reading: Int[0, 18446744073709551615]; }` and `function meter_over using v(m: Meter): Boolean pure { m.reading <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`. | Test (TC-913) |
 
+The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
+arguments. A quantity-typed parameter in source (AC-10) depends on
+STD-113; the quantity conversion is tested directly.
+
 ## Dependencies
 
 - [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md): the
@@ -247,29 +257,4 @@ through it, or a crate alias or glob import that reaches it.
   input and the S4 source resolution; ADR-015 D-4.
 - ADR-013 O-25, O-26, C-11, C-13, OQ-5; ADR-011 §2.1 E9, §4, §6.1.
 - QSpec FR-323 (`byte_provision`, `replay`).
-
-## Status
-
-Implemented. TC-444 passes locally for AC-1 to AC-5. TC-444
-also covers a predicate whose body calls another declared
-function (the QSL-22 Layer 3 exemplar's shape), confirming the S4 emitter
-writes the checked `call` node codegen's FR-021 oracle generator reads.
-
-AC-6 and AC-7 (ADR-015 D-4) are implemented;
-TC-444 step 7 passes locally.
-
-AC-11 (QSL-642, integer bounds up to i128) is implemented; TC-913 passes locally.
-AC-8 to AC-10 (composite and leaf-family arguments, QSL-640) are implemented
-(`qsl_replay::replay` takes `ReplayLimits` for a raised `replay.input_bytes`): TC-906 passes
-locally for records, options, sequences, sets, enums, text, rationals,
-decimals, floats and references, the occurrence and node limits, and each
-refusal. A replay runs its call over an object environment with unresolved
-references (`ObjectEnvironment::with_unresolved_references`): a reference
-argument is admitted by its identity, and a read through one completes no
-value (`unknown_required_feature`/`unsupported-feature`, construct
-`dereference`), so it settles `inconclusive` with cause `NoValue`. Pending:
-
-- the union cases of AC-8 and AC-9: S6a admits no union argument until QSL-503;
-- a quantity-typed parameter in source (AC-10): complete-V1 source can name no
-  unit as a type (STD-113), so the quantity conversion is tested directly.
 

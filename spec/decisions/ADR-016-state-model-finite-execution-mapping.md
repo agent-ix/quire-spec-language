@@ -60,35 +60,6 @@ relationships:
 ---
 # ADR-016: State, model and finite execution on the shared foundation (ARCH-40)
 
-## Status
-
-Proposed, 2026-09-29. Owning ticket: GitHub #220 (ARCH-40),
-epic QSL-34 (#205), Layer 4 architecture and conformance mapping. It owns no
-feature implementation. The implementation owners are QSL-68 (#120, V1-A04,
-model graph and binding), QSL-67 (#121, V1-A05, native execution and finite
-simulation) and #164 (the static type/model conformance boundary,
-Done). Its `/spec-review all` is SR-786 to SR-793 in
-[`spec/reviews/state-model-mapping/`](../reviews/state-model-mapping/integrity.md).
-
-ADR-012 §15 is the state-clause share of this mapping: families,
-stages, identity, wire, observations, outcomes, requirements and deletion
-order for `invariant`, `pre` and `post`. This record does not restate it. It
-adds the model graph, the static/runtime boundary, identity across all four
-phases (check, execute, proof handoff, replay), finite exploration, and the
-owner and oracle of every remaining piece.
-
-It amends these cells of earlier records, each listed under "Amendments made
-with this record": ADR-011 M-6c and §8 (lane D); ADR-012 §2, §3, §5.1 S1 and
-§13.5 Q210-3 (`StateModel` has no S6a hook, FP-3); ADR-013 O-13 Population
-row, T-6, QC-21 (the `PopulationId` preimage, ID-5), and O-16 and §6
-(simulation outcome, FP-4). It reopens no other cell.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. `StateModel` alone names the family (`FamilyKind::StateModel`);
-FR-120's layer-3 seam type is written `model::state::StateModel`. Item ids
-`SC-`, `ID-`, `EX-`, `FE-`, `ND-`, `FP-`, `G-`, `OR-` and `PI-` are local to
-this record. Other artifacts cite them as `ADR-016 G-3`.
-
 ## Context
 
 Linear ticket states quoted below are
@@ -182,6 +153,19 @@ decides the reference edge of a `quire.op.model.reaches_field` application.
 TC-463 step 1 (`s4_state_package_reads_back_through_i2`) and TC-469 step 6
 (`tc_469_step_6_the_emitted_package_admits_via_i04`) run and pass. IR `lower`
 returns no form for a `state` node. Gate QSL-20 (#219, ARCH-G3) is Backlog.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. `StateModel` alone names the family (`FamilyKind::StateModel`);
+FR-120's layer-3 seam type is written `model::state::StateModel`. Item ids
+`SC-`, `ID-`, `EX-`, `FE-`, `ND-`, `FP-`, `G-`, `OR-` and `PI-` are local to
+this record. Other artifacts cite them as `ADR-016 G-3`.
+
+ADR-012 §15 is the state-clause share of this mapping: families,
+stages, identity, wire, observations, outcomes, requirements and deletion
+order for `invariant`, `pre` and `post`. This record does not restate it. It
+adds the model graph, the static/runtime boundary, identity across all four
+phases (check, execute, proof handoff, replay), finite exploration, and the
+owner and oracle of every remaining piece.
 
 ## Decision
 

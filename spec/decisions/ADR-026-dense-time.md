@@ -42,28 +42,6 @@ relationships:
 ---
 # ADR-026: Dense time: clocks, timed behaviours and the model-time clock binding
 
-## Status
-
-Proposed, 2026-10-01. Design draft. §1 records the owner's rulings: QSL
-specifies dense time, for robots and embedded real-time systems; model-claim
-intervals count time units through a clock binding, with both bindings kept;
-a non-local time-lock reuses ADR-022's trap evidence; stochastic delays
-are specified with statistical checking; the engine is a native zone engine
-with checkable certificates; hybrid dynamics go to QSpec FR-193's solvers;
-schedulability is a native closed-form analysis with WCET as a premise; and
-monitors run on integer ticks. This record designs clocks, constraints, timed
-semantics, time divergence, the clock binding, stochastic delays, the zone
-engine and its certificates, task sets and schedulability, the hybrid
-boundary, embedded monitors and Kani obligations, and the seam into ADR-018.
-A native hybrid engine stays a research question (§13). It adds no
-requirement. The owning ticket and related work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `RU-`, `CK-`, `TS-`, `TD-`, `CB-`, `DF-`, `TV-`, `CT-`,
-`EZ-`, `CF-`, `DC-`, `SD-`, `SS-`, `RT-`, `HY-`, `MN-`, `KG-` and `OV-` are local to this record. Other artifacts cite
-them as `ADR-026 TS-3`. ADR-018 items are cited as `ADR-018 SM-3`, and the
-sibling drafts ADR-022 and ADR-024 likewise.
-
 ## Context
 
 **Time in QSL today.** Every clock QSL admits is discrete and exact. QSpec
@@ -94,6 +72,12 @@ integer time (§9 example).
 **Hybrid models.** QSpec FR-193 analyses continuous and hybrid models under a
 selected sound solver contract and names no solver. Clocks are the hybrid
 variables whose rate is 1 everywhere; other rates are hybrid dynamics (§13).
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `RU-`, `CK-`, `TS-`, `TD-`, `CB-`, `DF-`, `TV-`, `CT-`,
+`EZ-`, `CF-`, `DC-`, `SD-`, `SS-`, `RT-`, `HY-`, `MN-`, `KG-` and `OV-` are local to this record. Other artifacts cite
+them as `ADR-026 TS-3`. ADR-018 items are cited as `ADR-018 SM-3`, and the
+sibling drafts ADR-022 and ADR-024 likewise.
 
 ## Decision
 

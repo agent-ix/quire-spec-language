@@ -66,9 +66,3 @@ FR-013 owns existing linkage;
 FR-014 owns exact native/IR coordinates; FR-015 owns admitted native models.
 NFR-005 applies to all new qualification execution. Hosted CI stays manual-only.
 
-## Status
-
-Implemented repair of the SR-074 findings, reviewed in SR-083.
-AC-1/3 have executed traced regressions; AC-2 has the specified ownership
-inspection. Full native model/checker qualification remains unfinished;
-completing this repair does not establish FR-015/016.

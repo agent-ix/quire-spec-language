@@ -50,6 +50,3 @@ Tag the tests `#[trace("TC-460", "FR-104-AC-n")]`.
 
 No row yields a checked clause or function.
 
-## Status
-
-Implemented.

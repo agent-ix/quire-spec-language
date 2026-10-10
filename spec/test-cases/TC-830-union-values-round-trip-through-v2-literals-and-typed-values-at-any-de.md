@@ -29,6 +29,3 @@ Tag each test `#[trace("TC-830", "<AC id>")]`.
 - Step 2: admitted, converted, equal to itself; no host stack overflow.
 - Step 3: the value-occurrence limit, named, with its configured value.
 
-## Status
-
-Planned.

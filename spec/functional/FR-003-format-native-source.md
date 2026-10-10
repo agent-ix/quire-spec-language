@@ -16,6 +16,10 @@ relationships:
 
 When validated source is formatted, the formatter shall preserve every token spelling and comment.
 
+`src/format.rs` clamps
+every selected ceiling to 1 MiB today, so AC-6 is not met until that
+clamp goes.
+
 ## Inputs
 
 The S1 output `qsl_cst::ParsedSource` (its lossless CST and exact source)
@@ -78,14 +82,3 @@ checked package identity as checking the original source.
   to the CST.
 - [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
 
-## Status
-
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.
-
-The input is the CST (ADR-011 §7.3 M-6a). `src/format.rs` takes
-`qsl_cst::ParsedSource` and owns the one CST token walk, which
-`complete::editor::format_document` also calls. AC-1 to AC-3 are backed by
-TC-013, AC-4 to AC-6 by TC-016, AC-7 and AC-8 by TC-404, and AC-9 by
-TC-885. AC-6 states a caller-raisable ceiling; `src/format.rs` clamps
-every selected ceiling to 1 MiB today, so AC-6 is not met until that
-clamp goes.

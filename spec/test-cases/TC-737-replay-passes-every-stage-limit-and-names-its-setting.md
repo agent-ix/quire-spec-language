@@ -38,6 +38,3 @@ Tag the tests `#[trace("TC-737", "FR-263-AC-2")]`, `#[trace("TC-737", "FR-263-AC
 - Step 4: `BoundExceeded`, bound `B`, actual `B + 1`, setting
   `replay.input_bytes`; each raised run decodes.
 
-## Status
-
-Planned.

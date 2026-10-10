@@ -153,7 +153,3 @@ encode. Naming them is not discharging them.
   and correspondence record — depends on `quire-contract-ir#63`,
   `quire-contract-ir#64` and actual TL capability, and is not implemented here.
 
-## Status
-
-The classifier evaluates the Behavior section's rows, which restate QSpec
-FR-095's disposition.

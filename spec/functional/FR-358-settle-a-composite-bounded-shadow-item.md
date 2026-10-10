@@ -407,6 +407,13 @@ step 6 recomputes over that call's own harness bounds.
 | FR-358-AC-7 | Verified, each of these refuses with no settlement row, including with `success_checks` 0, so the refusal takes precedence over row V-3: a harness bound keyed at a path `Q` does not have (refused input, naming the key); two harness bounds on one key; an `IntegerRange` harness bound keyed at an `s`; and a request `DeclaredDomain` keyed at an `x`, which has an authored bound. At `c`, a `Variants` bound naming `Purple`, and a request `DeclaredDomain` over an enum position, each refuse naming the key. | Test (TC-907) |
 | FR-358-AC-8 | Falsified, row F-1: `refinement: Disagreed` settles `Disagreed`, which is `Failed`, never `Refuted`, for each of: a diverging shadow; an agreeing shadow; a left operand with `x: 12` (overriding the admission refusal); `native` `ExecutionFault` (overriding the native fault); and limits too small for the exact evaluation. A common-step refusal (an edited source) still refuses with `refinement: Disagreed`. | Test (TC-907) |
 
+The `K<T>` cases of
+FR-358-AC-4 and AC-5 are tested on the derivation and coverage seam, over
+each of `Sequence`, `Set`, `Bag` and `OrderedSet`, not through a source
+function, because the grammar takes only `K<T>[min, max]`. The `Text` leaf of
+FR-358-AC-5 is tested with a rational leaf until text-profile selection
+exists (QSL-646).
+
 ## Dependencies
 
 - [FR-357](FR-357-replay-scalar-parity-claims.md): the operator-parity shape
@@ -430,16 +437,3 @@ step 6 recomputes over that call's own harness bounds.
   (strengths), AC-24 (the refinement ceiling), and AC-2 and AC-3 (the backend ceiling), CG FR-029-AC-17 and AC-24 (the interim rows
   this replaces, and CG's precedence), and CG FR-033 (the claim CG builds).
 
-## Status
-
-Implemented (QSL-640): the identity tie (step 6) recomputes ADR-013 O-09's
-parity preimage through `parity_obligation` and runs the operand membership
-checks. A composite literal operand and an operand with no declared maximum
-are defined in O-09's parity preimage text, and each has a test.
-
-Two parts of the acceptance criteria are open. The `K<T>` cases of
-FR-358-AC-4 and AC-5 are tested on the derivation and coverage seam, over
-each of `Sequence`, `Set`, `Bag` and `OrderedSet`, not through a source
-function, because the grammar takes only `K<T>[min, max]`. The `Text` leaf of
-FR-358-AC-5 is tested with a rational leaf until text-profile selection
-exists (QSL-646).

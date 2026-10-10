@@ -56,10 +56,3 @@ Tag the test `#[trace("FR-091-AC-4", "FR-091-AC-5", "FR-091-AC-6", "TC-395")]`.
 - Step 5 finds those names only in the `Value` family form builder.
 - No step from 1 to 3 returns a parsed unit.
 
-## Status
-
-Steps 1 to 3 are backed by `qsl-forms/tests/it/value_forms.rs`:
-`s2_refuses_inadmissible_input_and_undispatched_declarations`. Step 4 is
-backed by `enum_predicate_dimension_and_unit_declarations_build_forms`, and
-step 5's scan by
-`only_the_value_builder_names_the_enum_dimension_unit_and_predicate_productions`.

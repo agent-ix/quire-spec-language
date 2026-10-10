@@ -46,6 +46,3 @@ Tag the tests `#[trace("TC-891", "FR-312-AC-n")]`.
   `package_id` run writes a `/2` document with stage `compile`,
   `stale_dependency`, exit 20.
 
-## Status
-
-Planned (FR-312).

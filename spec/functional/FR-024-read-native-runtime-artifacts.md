@@ -18,6 +18,10 @@ relationships:
 
 When a caller supplies serialized native runtime bytes and an exact snapshot or invocation reference, the reader shall return a structurally checked artifact bound to those selected bytes.
 
+The envelope identity and the local schema still carry
+`revision_namespace` and `revision` until QSL-381 drops them
+(QSpec STD-150).
+
 ## Inputs
 
 Borrowed input bytes, a role-specific SnapshotRef or InvocationRef, and existing
@@ -98,6 +102,3 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): shared closed JSON record adapter.
 - [Input contract](../../docs/native-runtime-inputs.md): complete native-state-input/1 fields.
 
-## Status
-
-FR-024-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation, Linear QSL-381): the envelope identity and the local schema drop `revision_namespace` and `revision` (QSpec STD-150).

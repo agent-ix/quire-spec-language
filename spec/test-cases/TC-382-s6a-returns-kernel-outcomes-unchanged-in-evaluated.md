@@ -62,8 +62,3 @@ it holds with `assert_eq!`.
   where `i`'s charge point is `ChargePoint::FunctionCall`.
 - No step returns a `FamilyOutcome::FamilyEvaluated` or `Err(_)`.
 
-## Status
-
-`✅ Passed locally`. Backed: `s6a_returns_kernel_outcomes_unchanged_in_evaluated`,
-in `qsl-eval/tests/it/total_functions.rs`, through `CheckedPackage::call`. It also
-calls a rounding decimal division and asserts the one loss `call` returns.

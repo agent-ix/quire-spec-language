@@ -533,8 +533,3 @@ identity text of operation `op`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
 
-## Status
-
-Specified; not yet implemented. TC-471 to TC-473
-planned. FR-056's bound scalar reader, which every AC's fixture uses, is
-on main.

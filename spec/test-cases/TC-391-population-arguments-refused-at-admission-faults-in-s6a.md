@@ -40,6 +40,12 @@ argument reach S6a.
 
 Tag the test `#[trace("FR-090-AC-10", "TC-391")]`.
 
+The S6a-internal half calls `ValueFunctionFamily::evaluate` directly,
+so it asserts that hook's own `Result<EvalOutcome<Value>, InternalFault>`
+shape -- a bare `InternalFault`, never a refusal-shaped wrapper -- rather
+than the `CheckedPackage::call`-level `FamilyOutcome`/kernel-`Refused`
+spelling.
+
 ## Expected Results
 
 - Steps 2 and 3 each return `Err(CallFailure::Input(_))`, and the meter
@@ -49,33 +55,3 @@ Tag the test `#[trace("FR-090-AC-10", "TC-391")]`.
   `Ok(e)` whose `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(_))`
   or a `FamilyOutcome::FamilyEvaluated`, and it does not panic.
 
-## Status
-
-`✅ Passed locally`. Backed, in two parts (the S6a-internal half calls
-`ValueFunctionFamily::evaluate` directly, so it asserts that hook's own
-`Result<EvalOutcome<Value>, InternalFault>` shape -- a bare `InternalFault`,
-never a refusal-shaped wrapper -- rather than the `CheckedPackage::call`-level
-`FamilyOutcome`/kernel-`Refused` spelling above):
-
-- Steps 1-3 (admission, `CheckedPackage::call`):
-  `tc_391_call_refuses_an_unresolved_population_id_at_admission` and
-  `tc_391_call_refuses_a_population_maximum_mismatch_at_admission`, in
-  `qsl-eval/tests/it/model_reference_queries.rs`, each tagged
-  `#[trace("TC-391", "FR-090-AC-10")]`, asserting `Err(CallFailure::
-  Input(InputRefusal::WrongValueKind { .. }))` and an empty meter.
-- Step 4 (bypassing admission, called directly against the S6a seam,
-  `ValueFunctionFamily::evaluate`, rather than `Machine::
-  resolve_population` in isolation):
-  `evaluate_bypassing_admission_with_an_unresolved_population_id_is_an_internal_fault`
-  and
-  `evaluate_bypassing_admission_with_a_population_maximum_mismatch_is_an_internal_fault`,
-  in `qsl-eval/src/value/expression/evaluate.rs`, each tagged
-  `#[trace("FR-090-AC-10", "TC-391")]`, asserting `Err(fault)` -- a bare
-  `InternalFault` from `ValueFunctionFamily::evaluate`'s own hook -- with
-  `fault.category() == Category::InternalFailure` and the two conditions'
-  own distinct invariant identifiers, never a panic. Proven by mutation
-  (PR #334 review round 2,
-  finding F2/N1): deleting the interception that keeps a fault out of the
-  shared `Stop`/`Outcome` path makes both tests fail -- by a compile error
-  once the fault can no longer be represented as a `Stop` at all, not by a
-  panic.

@@ -29,6 +29,3 @@ Tag each test `#[trace("TC-817", "<AC id>")]`.
 - Steps 2 and 3: admitted.
 - Step 4: TC-263's verdicts.
 
-## Status
-
-Planned.

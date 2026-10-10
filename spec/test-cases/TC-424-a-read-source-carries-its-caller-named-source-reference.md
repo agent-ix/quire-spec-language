@@ -67,15 +67,3 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
   `EditPredecessor`, `ForeignNode` and `RequestRevision` respectively, and
   no region; none is `invalid_source_identity`.
 
-## Status
-
-Partial. Passed locally (steps 1 to 7) step 2's
-U+3000 and U+200B cases and its `blank-label` cause and `label`
-(`qsl-foundation/src/source.rs`, `a_blank_label_refuses_naming_it_and_admits_nothing`),
-step 6 (`label_order_precedes_the_path`, and the complete reader's
-`the_reader_reports_blank_label_before_empty_path`) and step 7
-(`a_stale_edit_predecessor_refuses_as_a_source_map_with_no_region`,
-`rendering_a_foreign_cst_node_is_a_typed_refusal`,
-`stale_profile_and_cancelled_editor_requests_are_typed`) under the
-four-label reader. Steps 1 to 4, 6 and 7 as stated here wait on the
-two-label reader and digest-based edit and request checks (FR-001 Status).

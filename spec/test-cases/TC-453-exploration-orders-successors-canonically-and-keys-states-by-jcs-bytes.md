@@ -80,6 +80,3 @@ public entries; `explore` is `pub(crate)` (FR-101).
 
 Tag each test `#[trace("TC-453", "FR-101-AC-n")]` with its AC.
 
-## Status
-
-✅ Implemented; passes locally.

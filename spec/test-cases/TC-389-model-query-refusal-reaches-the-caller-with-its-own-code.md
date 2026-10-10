@@ -54,9 +54,3 @@ Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
   `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
 - Step 4 finds no field of type `qsl_foundation::diagnostic::Code`.
 
-## Status
-
-`✅ Passed locally`. Steps 1 to 3: `model_query_refusal_reaches_the_caller_with_its_own_code`,
-in `qsl-eval/tests/it/model_reference_queries.rs`. Step 4:
-`model_query_refusal_carries_no_native_code`, in
-`qsl-eval/src/value/expression/causes.rs`.

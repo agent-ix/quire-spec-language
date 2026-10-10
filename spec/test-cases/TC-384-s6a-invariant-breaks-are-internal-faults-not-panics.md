@@ -42,6 +42,15 @@ The test harness treats a panic as a failure.
 
 Tag the test `#[trace("FR-090-AC-3", "TC-384")]`.
 
+The test calls `ValueFunctionFamily::evaluate` (the S6a seam's own hook)
+directly, rather than through `CheckedPackage::call`, so it asserts the
+hook's own `Result<EvalOutcome<Value>, InternalFault>` shape: step 3 is
+`Ok(EvalOutcome::Kernel(Outcome::Completed(Value::Integer(3))))`, and steps
+4 and 5 are `Err(fault)` -- a bare `InternalFault`, since the hook never
+wraps its fault in any refusal-shaped type -- with `fault.stage()`,
+`fault.category()` and `fault.invariant()` checked exactly as specified and
+the two steps' invariant identifiers asserted distinct.
+
 ## Expected Results
 
 - Step 3 returns `Ok(e)` with `e.outcome` equal to
@@ -56,15 +65,3 @@ Tag the test `#[trace("FR-090-AC-3", "TC-384")]`.
   `FamilyOutcome::FamilyEvaluated` or
   `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
 
-## Status
-
-`✅ Passed locally`. Backed: `s6a_invariant_breaks_are_internal_faults_not_panics`, in
-`qsl-eval/src/value/expression/mod.rs`, tagged `#[trace("FR-090-AC-3", "TC-384")]`.
-The test calls `ValueFunctionFamily::evaluate` (the S6a seam's own hook)
-directly, rather than through `CheckedPackage::call`, so it asserts the
-hook's own `Result<EvalOutcome<Value>, InternalFault>` shape: step 3 is
-`Ok(EvalOutcome::Kernel(Outcome::Completed(Value::Integer(3))))`, and steps
-4 and 5 are `Err(fault)` -- a bare `InternalFault`, since the hook never
-wraps its fault in any refusal-shaped type -- with `fault.stage()`,
-`fault.category()` and `fault.invariant()` checked exactly as specified and
-the two steps' invariant identifiers asserted distinct.

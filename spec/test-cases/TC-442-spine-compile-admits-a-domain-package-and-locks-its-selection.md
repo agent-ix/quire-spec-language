@@ -79,6 +79,3 @@ including its two field-access and conforming-equality cases),
   (twice) and `invalid_model_binding`, each at the `model` declaration; every
   message is readable text.
 
-## Status
-
-Passed locally.

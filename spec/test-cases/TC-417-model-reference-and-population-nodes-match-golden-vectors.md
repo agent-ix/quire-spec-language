@@ -76,6 +76,3 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
   and yields no key.
 - Step 8: no `_` arm, and no `source` or `definition` owner.
 
-## Status
-
-Implemented (#384). The tests back every step.

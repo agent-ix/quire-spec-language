@@ -203,9 +203,3 @@ definitions, before and after the move.
 - [US-009](../usecase/US-009-trust-a-single-check-authority-unreachable-from-evaluation.md).
 - GitHub agent-ix/quire-spec-language#241.
 
-## Status
-
-Specified (ADR-011 §7.3 M-2), the direct successor to FR-068
-(ADR-011 §7.3 M-5) in the corrected order (X-1 → M-3a → M-5 → M-2).
-M-2 was previously an ADR
-row with no owning FR — this requirement fills that gap.

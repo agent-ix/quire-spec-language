@@ -732,6 +732,14 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and on their `identity_projection` entries: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The key of every emitted structural node recomputed from the wire node alone, its `owner` included, equals its `node_id`, and each `Tree` group's label recomputes from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
 | FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; their `package_id`s differ, and IR's v2 reader admits both. QSL writes the declarations with the qualified names `["Point"]` and `["List"]` (FR-092 D1), so these `Point`, `List` and `Integer` nodes are the corresponding nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
 
+No FR-093 AC backs the `Pre` row; the `ProtocolClause`
+postcondition lowering backs it. Remaining work: #218, and the `owner`
+member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet:
+IR adds `owner` to its `CheckedSemanticNodeV2` first (IR-646), and the
+emitter then writes it. Until then AC-7 is unmet as worded: its test
+(`every_written_node_recomputes_to_its_node_id`) supplies the owner (`a`,
+`u`) itself instead of reading it from the node's `owner` member.
+
 ## Dependencies
 
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): type, parameter
@@ -783,50 +791,3 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
   recursion leaf, and a reader that derives an optional field's leaf
   without `inner` refuses its leaves.
 
-## Status
-
-Specified, including the text-leaf walk and its recursion
-leaf. Implemented (#384): `check` lowers each checked node in
-`qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and TC-415
-backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14, AC-15 and CON-1. The
-text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
-leaf to the node limit before any leaf's law is read, and keys the Recursive
-text-leaf vectors. The lowering spells an integer literal as a decimal string and gives
-`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is the M-4 emitter, in `qsl-package/src/emit.rs`:
-TC-416 backs AC-7, AC-9, AC-12, AC-17, AC-18, AC-19, AC-20 and CON-2 there. The IR reader
-admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
-and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
-so a function with parameters and a recursive function are written whole
-and read back Verified. The emission omits a node whose form IR's v2
-vocabulary lacks, a node naming a node the checked graph does not hold,
-a nominal node whose owner the lock does not select (a definition-owned
-unit or dimension node, so a compound unit over one), and every node that
-names an omitted one;
-AC-7 and AC-12 are checked on every node the arm writes, omitted or not.
-AC-13 is backed:
-`conformance_emitted_application_nodes_match_qspec_positive_fixtures`
-(`qsl-package/src/emit/tests/golden.rs`, run by `make conformance`) emits a
-function for each fixture operation a row lowers and compares 13 fixture
-application nodes on the AC's members, and IR's v2 reader admits each emitted
-package. The fixtures' two `quire.op.ieee.float64.add` nodes carry `mode`
-`toward-zero` and `nearest-even`; `ValueType::Float` carries the mode
-(FR-091-OQ-4), so the golden test writes one `Float64[mode]` function per mode
-and compares `mode` on every member. The fixture identities no row lowers in a function
-body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decimal`,
-`model.reaches` and the `model.*` rows AC-3 excludes) are skipped by name. The
-`dependencies` rule is specified. Ownership, decided here: `check` builds
-the lowering and the keys; the M-4 emitter serializes the lowered nodes
-and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
-postcondition lowering backs it. Remaining work: #218, and the `owner`
-member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet:
-IR adds `owner` to its `CheckedSemanticNodeV2` first (IR-646), and the
-emitter then writes it. Until then AC-7 is unmet as worded: its test
-(`every_written_node_recomputes_to_its_node_id`) supplies the owner (`a`,
-`u`) itself instead of reading it from the node's `owner` member.
-
-The emitter writes `diagnostics.catalog`, each lock definition and each law
-`definition` as the identity-only `DefinitionRef`: AC-17 states it for
-`diagnostics.catalog`, AC-20 for the lock rows and the law `definition`
-(`the_lock_selects_the_catalog_definitions` and
-`a_law_names_its_definition_by_authority_and_identity`,
-`qsl-package/src/emit/tests.rs`).

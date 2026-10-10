@@ -34,17 +34,6 @@ relationships:
 ---
 # ADR-031: Separating witness for a state forall on native-run-result/2
 
-## Status
-
-Accepted, 2026-10-01. Owner rulings on the four design questions are
-recorded under Rulings and folded into the rules below. FR-265 to FR-269
-implement this record. The owning ticket and related work are listed under
-References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `SW-` and `R-` are local to this record. Other artifacts
-cite them as `ADR-031 SW-3`.
-
 ## Context
 
 A state clause (FR-107) is evaluated at S6a over one admitted observation: the
@@ -72,6 +61,10 @@ a Boolean stand-in and whose `index` is always present. The predicate and
 state-clause replays fill it with the result Boolean, index 0 and an empty
 path. FR-122's `StateClauseCounterexample` names the clause and its
 observation.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `SW-` and `R-` are local to this record. Other artifacts
+cite them as `ADR-031 SW-3`.
 
 ## Decision
 

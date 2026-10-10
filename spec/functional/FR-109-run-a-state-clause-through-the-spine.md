@@ -42,6 +42,10 @@ FR-100 already owns the spine run's argument binding and its S6a outcome
 mapping. This requirement reuses both by reference and adds only object
 arguments, observations and the claim reading of a Boolean result.
 
+AC-7's `UndefinedEvaluation{cause}` record is not implemented. The I3
+extracted-source input is `ClauseRunSource::Extracted`, behind
+`qsl-replay`'s `quire-extraction` feature.
+
 ## Inputs
 
 A `ClauseRunRequest`:
@@ -186,9 +190,3 @@ selection, admission or evaluation result is a report.
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
   ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
 
-## Status
-
-Implemented, except AC-7's `UndefinedEvaluation{cause}` record (the undefined evaluation's
-category `undefined` and exit 10 are implemented). The I3 extracted-source input is
-`ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
-feature.

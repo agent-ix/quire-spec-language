@@ -99,7 +99,3 @@ an FR-331 terminal value.
 - **Downstream**: [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md)
   carries the counterexample this envelope's `violation` category names.
 
-## Status
-
-Implemented: `qsl_replay::read_backend_provider_envelope`, verified by
-TC-177 to TC-179.

@@ -148,6 +148,3 @@ passed to FR-344's report.
   V1-TOOL-011 re-trace), STD-117.
 - Implementation ticket QSL-40; specification ticket QSL-386.
 
-## Status
-
-Specified; not yet implemented -- TC-860 and TC-864 planned.

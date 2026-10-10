@@ -82,8 +82,3 @@ opaque strings or inferring kinds from diagnostic messages.
 L2 implementation slice. Predicate evaluation and family execution remain their
 existing roadmap tickets; this requirement does not claim them from parsing.
 
-## Status
-
-The syntax implementation uses `parse_native` and `parse_native_source`;
-TC-113 exercises their typed output and historical compatibility. This completes
-the syntax portion of compiler #35. FR-036's package linking remains open.

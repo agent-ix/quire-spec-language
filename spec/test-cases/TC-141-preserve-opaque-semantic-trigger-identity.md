@@ -38,7 +38,3 @@ reader translates versions, invents a string nor returns partial temporal
 truth. Every typed axis and completeness view retains the exact evidence
 reference and value admitted into the request.~~
 
-## Status
-
-Retired (M-6d): `tests/it/native_temporal_owner.rs` is deleted,
-and FR-053 (the requirement this test case verified) is retired in full.

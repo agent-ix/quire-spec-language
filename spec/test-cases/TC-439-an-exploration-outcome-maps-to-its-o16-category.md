@@ -25,6 +25,3 @@ Verify `explore::Outcome::category()`. Scope: FR-097-AC-5.
   inconclusive.
 - Step 3: `Cancelled` with frontier [0], category incomplete.
 
-## Status
-
-Backed: `qsl-eval/tests/it/finite_simulation.rs`, `tc_439_explore_outcomes_map_to_their_o16_category`. Passes locally.

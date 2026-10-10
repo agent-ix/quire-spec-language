@@ -50,6 +50,3 @@ Tag the test `#[trace("FR-084-AC-7", "TC-410")]`.
 - Each object component is the member's authored identity bytes (`b1`,
   `e1`, `x1`).
 
-## Status
-
-Planned; no test backs this case.

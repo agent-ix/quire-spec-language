@@ -49,6 +49,3 @@ Tag the tests `#[trace("TC-848", "<AC id>")]`.
   `unsupported_projection`/`missing-fairness-premise` naming `fair weak
   whole inc`.
 
-## Status
-
-🚧 Planned.

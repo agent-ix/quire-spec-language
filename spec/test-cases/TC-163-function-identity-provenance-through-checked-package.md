@@ -54,17 +54,3 @@ FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
   domain `quire.checked-semantic-node/v1`; each QSpec operation vector's
   recomputed key equals its recorded `sha256`.
 
-## Status
-
-Step 6 (FR-065-AC-8) is backed since #384 switched the checker's minter
-to the FR-092 and FR-093 keys (`qsl-semantics/src/check/lowering/tests.rs`).
-
-Steps 1-5 (FR-065-AC-1 through AC-3) are covered by four `compile_fail`
-doctests on `CheckedPackage::link` (`qsl-package/src/checked.rs`, AC-1),
-`a_function_identity_survives_emission_and_the_i2_read` (AC-2, steps 2-3) and
-`emit_checked_places_the_calls_occurrence_at_its_own_source_span` (AC-3,
-steps 4-5), both in `qsl-package/src/emit/tests.rs`. See FR-065's own Status
-section for the current per-AC accounting.
-
-FR-065-AC-4 moved to TC-376 when it was made a
-behavioural criterion; this test case no longer carries a code-shape step.

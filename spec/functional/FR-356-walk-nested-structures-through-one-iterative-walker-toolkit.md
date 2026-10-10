@@ -86,11 +86,6 @@ a hand-written stack in each walk.
 | FR-356-AC-6 | `qsl-walk-grow`'s `maybe_grow` called on a 100,000-deep native recursion completes on a thread with a 512 KiB stack, and is a plain call of its closure under `cfg(kani)`. Each call site of `maybe_grow` outside the core has a test driving a 100,000-deep recursion through it on a thread with a 512 KiB stack, and no code outside `maybe_grow` calls `stacker`. | Test (TC-902) |
 | FR-356-AC-7 | The deep-input fuzz target generates sources nested from 1 to 100,000 levels deep and drives each through the S1 parser and the S3 checker. A run of 10,000 inputs ends with every input returning a result or a stated limit outcome, and no panic, abort or stack overflow. | Test (TC-903) |
 
-## Status
-
-Partly implemented. `quire-walk` lives in `agent-ix/quire-walk` with its
-tests and Kani harnesses (TC-898 and TC-899 there). `qsl-walk-grow` and the
-deep-input fuzz target (TC-903) land here.
 Until ADR-030 slice 1 deletes the S2 forms and S3 checker depth caps, a
 fuzz input nested deeper than either cap ends in that cap's limit outcome,
 so it does not yet reach the walks past it. AC-5 and the call-site half of

@@ -38,6 +38,3 @@ The map covers every body byte once and permits only selected layout deletion. L
 - [US-002](../usecase/US-002-link-exact-models.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../src/source_map.rs) supplies the scoped context.
 
-## Status
-
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

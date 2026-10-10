@@ -68,6 +68,3 @@ Tag the tests `#[trace("TC-473", "FR-120-AC-n")]`.
   the `reaches`. Each refusal's span is that form's source bytes, and no
   `CheckedPackage` is produced.
 
-## Status
-
-Planned.

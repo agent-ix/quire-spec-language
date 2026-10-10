@@ -169,29 +169,6 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 - IR's v2 reader admits the `dependency_reference` term for the emitted
   package of AC-5 and AC-6 to read back through IR.
 
-## Status
-
-Implemented. D-1's spine resolution, D-2, D-3 and
-D-5 are implemented: spine `compile` takes a `DependencyInput`, and the S4
-source resolution (`qsl-replay/src/spine.rs`) compiles each imported library
-from source, binds it to the recomputed
-`package_id`, reads its import view through `qsl_package::read_import_view`,
-and links it through `CheckedPackage::link_with`; E3 types an imported call
-from the library's checked graph (`check::family` `Application::Imported`),
-lowers it to a `dependency_reference` callee, and the evaluator runs it
-against the library's package. TC-446 passes locally for AC-1 to AC-7
-(`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are `qsl-cst`'s
-`an_import_names_only_its_library_identity`). AC-7's `DependencyLimits`
-(`dependency.libraries`, `dependency.import_edges`, `dependency.source_bytes`)
-are charged by the S4 resolution and refuse as named `LimitExceeded`s, also
-through the lifecycle `check` (`check_names_the_dependency_limit_field_it_reached`);
-the resolution, the closure read and the drop of a nested package chain run
-on a constant native stack. AC-5's `g::f(3)` clause was
-amended to expect the `Int[0, 9]` conversion node a local call also writes. D-1's CLI `libraries` supplier (FR-027-AC-10, TC-446 step 7) and
-replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented. The CLI renders a refusal against the source its
-region is in, a library's or the program's
-(`a_library_refusal_renders_over_the_library_source`).
-
 ## References
 
 - Linear QSL-264 (AC-8: call-site preconditions of an imported function).

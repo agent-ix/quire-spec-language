@@ -51,6 +51,3 @@ Tag the test `#[trace("FR-091-AC-1", "TC-392")]`.
   definition reference as written and the `Profile` span from step 4, and
   no import or model selection.
 
-## Status
-
-Backed by `qsl-forms/tests/it/value_forms.rs`: `a_unit_builds_one_form_per_declaration_in_source_order`.

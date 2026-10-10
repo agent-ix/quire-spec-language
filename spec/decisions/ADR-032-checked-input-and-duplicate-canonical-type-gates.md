@@ -22,16 +22,6 @@ relationships:
 ---
 # ADR-032: Checked-input and duplicate-canonical-public-type gates
 
-## Status
-
-Accepted, 2026-10-01. Owner rulings on the four design questions are
-recorded under Rulings and folded into the rules below. FR-270 to FR-273
-implement this record. The owning ticket and related work are listed under
-References.
-
-Item ids `CK-`, `DT-` and `R-` are local to this record. Other artifacts cite
-them as `ADR-032 CK-3`.
-
 ## Context
 
 ADR-011 §4 states two rules that no running gate checks as a whole.
@@ -78,6 +68,9 @@ Measured on main at the time of writing:
   `quire-semantic-value` or `qsl-replay`: `CollectionType`,
   `ComparisonOperator`, `EnumDeclaration`, `IntegerDomain` and `ValueType`.
   They are v2 wire types that ADR-013 §4 converts at the boundary.
+
+Item ids `CK-`, `DT-` and `R-` are local to this record. Other artifacts cite
+them as `ADR-032 CK-3`.
 
 ## Decision
 

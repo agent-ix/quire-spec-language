@@ -34,18 +34,6 @@ relationships:
 ---
 # ADR-024: Statistical and probabilistic properties
 
-## Status
-
-Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-FR-185 to FR-194, under US-022. §10 records the
-owner's rulings on the draft's five questions, folded into the decision
-below. The owning ticket and related work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `PM-`, `PF-`, `ST-`, `WA-`, `SV-`, `RP-`, `RX-`, `DS-`,
-`QS-` and `RU-` are local to this record. Other artifacts cite them as
-`ADR-024 SV-1`. ADR-018 items are cited as `ADR-018 SM-3`.
-
 ## Context
 
 QSL states and checks Boolean properties. ADR-018 gives a temporal claim a
@@ -84,6 +72,11 @@ What exists today:
 The question has two halves: what a probabilistic model and property mean,
 and how a verdict states that a sampled result is a measurement and not a
 proof.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `PM-`, `PF-`, `ST-`, `WA-`, `SV-`, `RP-`, `RX-`, `DS-`,
+`QS-` and `RU-` are local to this record. Other artifacts cite them as
+`ADR-024 SV-1`. ADR-018 items are cited as `ADR-018 SM-3`.
 
 ## Decision
 

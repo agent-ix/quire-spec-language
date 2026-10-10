@@ -41,6 +41,13 @@ Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
 `#[trace("TC-451", "FR-100-AC-5")]` (steps 5 and 6) and
 `#[trace("TC-451", "FR-100-AC-6")]` (step 7).
 
+FND-012: `origin` is a reserved keyword
+(`qsl-cst`'s token table), so the fixture's record-result function is
+named `corner`, not `origin`, in `tests/fixtures/spine-run.native`; every
+other fixture name above is exact. Nothing about the scenario changes --
+still a function whose declared result is a record, still refusing
+`unsupported_construct` before any call.
+
 ## Expected Results
 
 - Step 1: exit 0 each; outcomes `completed` with
@@ -64,11 +71,3 @@ Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
   expected type); each exits 20 with empty stdout.
 - Step 7: outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22.
 
-## Status
-
-Passed locally. FND-012: `origin` is a reserved keyword
-(`qsl-cst`'s token table), so the fixture's record-result function is
-named `corner`, not `origin`, in `tests/fixtures/spine-run.native`; every
-other fixture name above is exact. Nothing about the scenario changes --
-still a function whose declared result is a record, still refusing
-`unsupported_construct` before any call.

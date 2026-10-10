@@ -58,6 +58,3 @@ Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "TC-396")]`.
   `missing_declaration`/`missing-name`.
 - No step-3 refusal has code `unsupported_construct`.
 
-## Status
-
-Backed by `qsl-forms/tests/it/value_forms.rs` (`a_construct_no_variant_represents_refuses_the_unit`, `nested_constructs_of_other_families_are_built_where_written`) and `qsl-semantics` `check::assemble` tests (`nested_constructs_of_other_families_refuse_with_their_own_causes`).

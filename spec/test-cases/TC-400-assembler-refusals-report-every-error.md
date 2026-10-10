@@ -47,6 +47,3 @@ Tag the test `#[trace("FR-091-AC-14", "FR-091-AC-15", "FR-091-AC-16", "FR-091-AC
 - Step 5 gives an alias-cycle error with the same code, naming `C`.
 - No step returns a `PackageDeclarations` value.
 
-## Status
-
-Backed by `qsl-semantics` `check::assemble` tests: `the_assembler_reports_every_error`.

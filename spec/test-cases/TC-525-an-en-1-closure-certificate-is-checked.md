@@ -37,6 +37,3 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 - Step 3: `BadState` at value 3; accepted.
 - Step 4: `BadState` at `t1`.
 
-## Status
-
-🚧 Planned.

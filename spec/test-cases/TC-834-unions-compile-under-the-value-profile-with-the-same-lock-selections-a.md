@@ -27,6 +27,3 @@ Tag each test `#[trace("TC-834", "<AC id>")]`.
 - The two emitted locks hold equal `profile_selections` and
   `definition_selections`.
 
-## Status
-
-Planned.

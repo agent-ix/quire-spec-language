@@ -40,6 +40,3 @@ those of step 3 `#[trace("TC-729", "FR-259-AC-5")]`.
   carrying 4096, and none reports a limit, a malformed value or malformed
   input.
 
-## Status
-
-Planned. Step 3 is implemented.

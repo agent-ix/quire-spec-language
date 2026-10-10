@@ -45,14 +45,3 @@ Tag the tests `#[trace("TC-727", "FR-258-AC-3")]`, `#[trace("TC-727", "FR-258-AC
   count `w`, setting `s3.work_units`, at the declaration's span; at `w` the
   declaration's own charge is admitted and a later lowering charge stops it.
 
-## Status
-
-Backed: step 1 by `the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults`
-(`qsl-package/src/emit/tests/deep_bodies.rs`) and
-`the_checking_defaults_hold_no_depth`; steps 2 and 3 through package
-checking and the library builder by
-`a_1000_term_sum_stops_on_the_node_limit_at_the_failing_node` and
-`a_1000_term_sum_stops_on_a_work_budget_one_below_its_work`
-(`qsl-semantics/src/check/family.rs`); the setting names in an outcome, the
-replay request's `stage_limits` entry and FR-255's settings operation by
-TC-720 and TC-721 (`qsl-replay/src/limits.rs`).

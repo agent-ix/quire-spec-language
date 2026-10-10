@@ -58,14 +58,3 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 - Step 6: `Err(InternalFault)` naming `S6a` and `checked-program-invariant`,
   and no `Evaluation`.
 
-## Status
-
-Passing locally, steps 1 to 6. Steps 1 to 3 cover FR-096-AC-6 and
-FR-096-AC-7. Step 4 (FR-096-AC-8) covers all twelve kernel causes: each
-variant carries the target domain or width its record renders,
-`Refusal::code()` and `Refusal::cause()` return the key table's code and
-cause (`ForeignReference` returns `foreign-universe`), and
-`kernel_refusal_record` builds each record, with a `CheckedInvariant`
-building none. Step 5 (FR-096-AC-13) covers the two
-`DivisionOutOfDomain` causes. Step 6 (FR-096-AC-15): `Machine::run`
-returns a kernel `CheckedInvariant` as `Err(InternalFault)`.

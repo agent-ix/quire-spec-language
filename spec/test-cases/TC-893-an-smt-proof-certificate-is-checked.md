@@ -42,6 +42,3 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 - Step 3: `proved`, `Uncertified`; `Unverifiable` at that step and
   `proved`, `Uncertified`, twice.
 
-## Status
-
-🚧 Planned.

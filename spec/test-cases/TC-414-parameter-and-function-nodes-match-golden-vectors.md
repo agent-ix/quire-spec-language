@@ -58,6 +58,3 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-414")]` with the AC each backs.
   `owner` member, and its key is E1.
 - Step 4: `x` is P4 and `m` is F3; `decreases` references P4.
 
-## Status
-
-Implemented (#384). The tests back every step.

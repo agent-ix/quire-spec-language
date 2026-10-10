@@ -48,6 +48,3 @@ Tag the test `#[trace("FR-091-AC-18", "TC-401")]`.
   equal step 1's. Under (`a`, `w`), all three differ from step 1's.
 - Step 5 finds no such item.
 
-## Status
-
-Steps 1 to 4 are backed by `qsl-semantics` `check::assemble` tests: `records_and_tuples_are_keyed_over_the_units_owner`. Step 5 holds by search (no such item exists) but is not a test.

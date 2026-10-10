@@ -31,6 +31,3 @@ Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 - Step 2: `WitnessFails` at `{(*, 0, q1)}`'s first state; `BackwardEdge`;
   `NotPartition`; `WitnessFails`.
 
-## Status
-
-🚧 Planned.

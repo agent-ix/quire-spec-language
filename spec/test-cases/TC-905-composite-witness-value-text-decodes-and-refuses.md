@@ -117,6 +117,3 @@ Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
   together hold at least 1,000,026 bytes, each with a capacity smaller than
   3,000,026 bytes.
 
-## Status
-
-Passed locally, `qsl-replay/src/witness/value_text/tests.rs`.

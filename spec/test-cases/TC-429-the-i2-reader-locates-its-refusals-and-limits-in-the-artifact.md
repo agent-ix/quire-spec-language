@@ -29,6 +29,12 @@ Scope: FR-096-AC-9, FR-096-AC-10, FR-096-AC-18.
 
 Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 
+IR's own depth limit is IR's to delete, an IR-owned follow-up
+(ADR-030 D-8 O-1).
+
+Every fixture is a real v2 wire mutated at one member; each expected
+locus hashes the bytes in the test.
+
 ## Expected Results
 
 - Step 1: `StageFailure::Refused`, code `unknown_wire`/`unsupported-wire`,
@@ -42,14 +48,3 @@ Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 - Step 4: a refusal with no locus.
 - Step 5: the envelope refusal carries the native code `noncanonical_wire`, not `invalid_package`.
 
-## Status
-
-Backed, in `qsl-package/src/checked_v2/tests.rs`: steps 1 and 4
-by `an_unknown_contract_version_is_unsupported_wire_at_contract_version`,
-steps 2 and 3 by `each_reader_limit_names_its_kind_bound_actual_and_locus`,
-which also covers IR's edge, occurrence, diagnostic and work limits. IR's
-own depth limit is IR's to delete, an IR-owned follow-up (ADR-030 D-8 O-1).
-`a_refusal_at_a_value_is_located_at_its_pointer` locates an IR refusal at a
-value. Every fixture is a real v2 wire mutated at one member; each expected
-locus hashes the bytes in the test. Step 5 is backed by
-`maps_noncanonical_bytes_to_the_native_noncanonical_wire_code`.

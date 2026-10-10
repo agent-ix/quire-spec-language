@@ -98,6 +98,12 @@ call's harness bounds.
 Tag each test `#[trace("TC-907", "FR-358-AC-N")]` for the criterion it
 backs.
 
+The `k` cases of steps 4 and 5 have no
+source form (the grammar takes only `K<T>[min, max]`), so the unbounded
+`K<T>` position derivation and coverage are tested directly, over each of
+`Sequence`, `Set`, `Bag` and `OrderedSet`. The `Text` leaf of step 5 uses a
+rational leaf until text-profile selection exists (QSL-646).
+
 ## Expected Results
 
 - Step 1: `Diverged` (`Failed`, internal failure) for the first two
@@ -140,10 +146,3 @@ backs.
 - Step 11: equal for the sent claim and unequal for each changed member.
 - Step 12: `LimitAboveReader` under the default, a settlement when raised.
 
-## Status
-
-Passed locally for steps 1 to 12. The `k` cases of steps 4 and 5 have no
-source form (the grammar takes only `K<T>[min, max]`), so the unbounded
-`K<T>` position derivation and coverage are tested directly, over each of
-`Sequence`, `Set`, `Bag` and `OrderedSet`. The `Text` leaf of step 5 uses a
-rational leaf until text-profile selection exists (QSL-646).

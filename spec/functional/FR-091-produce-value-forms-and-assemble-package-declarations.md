@@ -120,6 +120,10 @@ The complete-V1 grammar is QSpec's `proposals/quire-v1/shared-grammar.md`,
 which `qsl-cst` transcribes (`qsl-cst/src/grammar.rs`). It is the authority
 for the syntax this requirement maps.
 
+A domain package's native `Float32`/`Float64` model field is still refused
+with the floating-type error (`Unmapped::Float`); floating types are admitted
+as function parameter, result and body types only.
+
 ## Inputs
 
 - The S1 output of one complete-V1 unit, `qsl_cst::ParsedSource`, whose CST
@@ -876,55 +880,6 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   `ix://agent-ix/quire-specification`.
 - **Downstream:** the ADR-011 §5 stage driver calls S1, S2, the assembler
   and `check` in that order.
-
-## Status
-
-The `Value` slice is implemented, with the `dimension` and `unit`
-declarations (FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
-the dimension and unit forms as written, and the assembler normalizes
-terms, reduces exact numbers, mints keys with `nominal_key` and admits a
-`UnitGraph` (`PackageDeclarations::units`, `nominal_spans`;
-`assemble_with_limits` takes the decimal-scale bound). AC-35's errors are
-raised with their declarations; only their catalog code is open. It also has the `enum`, `ordered enum`
-and `predicate` declarations (FR-091-AC-25 to AC-30; the enum and
-predicate half of AC-6). `enum` and `ordered` build the enum form, and
-`predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
-The assembler admits each enum form as an `EnumBinding` over keys that
-`check::node_key::nominal_key` mints, records its name span in
-`declared_type_spans`, and resolves an enum name in a type form to
-`ValueType::Enum`. `nominal_key` returns a `Result`, because encoding a
-preimage can refuse, and the refusal is the nominal-admission fault. `qsl_forms::build_unit` walks a
-unit's declarations and dispatches `function`, `type`, `record` and `tuple`
-to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
-the expression table with each node's span, refuses the listed
-unrepresented constructs, and builds every depth S1 admits. The forms
-`FunctionDeclaration` carries its `using` alias. The assembler records each
-resolved selection in `PackageDeclarations::function_selections`
-(FR-091-AC-22). A bare `Float32` or `Float64` is admitted by S1 and builds a
-type form with no rounding mode (FR-091-AC-23). No `match` over `Production`
-in `qsl-forms` has a `_` arm (FR-091-AC-11). The assembler is
-`PackageDeclarations::assemble` (`qsl-semantics/src/check/assemble.rs`). It
-resolves aliases, records, tuples and function signatures, mints each
-record's and tuple's handle over the unit's `SourceOwner`, records the span
-of each declared type's name for FR-096, and reports every error it finds.
-
-Remaining work:
-
-- QSL-642's i128 ceiling and the `i128::MIN` fold (FR-091-AC-36 to AC-38)
-  are implemented: S2 builds the folded literal, the assembler refuses a
-  bound and `Typer` a literal with `IntegerOutsideI128`. The IR wire still
-  carries `i64` until IR-662 (FR-033-AC-6, TC-912).
-- AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
-  publishes the topology causes the topology cause reports
-  `invalid_package` with the informational cause `unit-graph-topology`.
-  The hand-off to FR-094's lowering of the unit and dimension nodes is
-  under Dependencies.
-- The other families' parsed-form types are not built: the state family's
-  under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
-  QSL-40, QSL-39 and QSL-36.
-- A domain package's native `Float32`/`Float64` model field is still refused
-  with the floating-type error (`Unmapped::Float`); floating types are admitted
-  as function parameter, result and body types only.
 
 ## Rulings
 

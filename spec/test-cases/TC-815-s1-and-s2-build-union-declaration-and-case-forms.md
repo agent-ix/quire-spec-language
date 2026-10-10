@@ -31,6 +31,3 @@ Tag each test `#[trace("TC-815", "<AC id>")]`.
 - Step 3: an `Expression::Call` and an `Expression::Name`; no construction
   form exists.
 
-## Status
-
-Planned.

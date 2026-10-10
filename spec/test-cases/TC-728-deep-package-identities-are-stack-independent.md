@@ -46,6 +46,3 @@ Tag the tests `#[trace("TC-728", "FR-259-AC-1")]`, `#[trace("TC-728", "FR-259-AC
 - Step 5: for each pair, the deepest nesting at the shallow depth equals
   the deepest nesting at the deep depth.
 
-## Status
-
-Planned.
