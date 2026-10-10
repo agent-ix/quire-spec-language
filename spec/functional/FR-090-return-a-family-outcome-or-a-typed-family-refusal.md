@@ -524,6 +524,33 @@ producer. Operation-construction errors in the table are distinct from
 ordinary `Completed`, `Undefined`, `Refused` and `Incomplete` outcomes returned
 by a successfully constructed kernel operation.
 
+For the fixed Rational caller only, QSL SHALL verify
+`ieee-conversion-rejected` by temporary source Inspection rather than a
+fabricated execution fixture. The evaluator's `NodeKind::IeeeToRational`
+calls `ieee_to_exact` with `IeeeExactTarget::Rational(domain)`;
+the [released kernel discriminant](https://github.com/agent-ix/quire-exact/blob/762b5fcce139980db259dde908d2b66214c852e3/src/ieee.rs#L692-L707)
+returns outer `Err(IllTyped)` only for Decimal, Integer or BoundedInteger
+targets. Its Rational arm returns `Ok(Outcome::from_stop(to_exact(...)))`.
+Thus no value, Rational domain or meter state at this caller can select
+the outer error arm. Inspection SHALL retain the defensive S6a
+`ieee-conversion-rejected` InternalFault mapping without a synthetic kernel
+cause; a fake non-Rational target, replacement producer, mock, throw or panic
+SHALL NOT substitute for the actual caller proof. This exception does not
+cover Float operand checks, IEEE profile checks or any other table producer.
+
+The temporary exception SHALL expire when the reviewed, merged Rational-only
+kernel API from upstream dependency IR-728 lands and QSL adopts it. Adoption
+SHALL remove the obsolete outer-Err defensive arm, its producer-table row and
+this temporary Inspection exception together, and restore criteria and
+fixtures for the actual remaining producers. IR-728 is an upstream API
+dependency, not a prerequisite to using the current safe defensive mapping.
+If the fixed Rational discriminant or kernel rejection behavior changes before
+that adoption, this proof no longer permits an execution exception: QSL SHALL
+re-establish the actual producer's verification obligation. Ordinary IEEE
+Completed/Undefined/Refused/Incomplete outcomes and exact charge prefixes
+remain executable obligations. Cancellation remains QSL-owned; the kernel
+Outcome has no cancellation variant.
+
 QSL SHALL preserve the charges already performed before the detected break
 and SHALL perform no fault-specific charge, retry, query rerun or result
 retention after that break. An earlier denied charge or cancellation remains
@@ -583,10 +610,12 @@ undefined cause type.
 | FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and not a panic. The same query with `absent refused` returns `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test |
 | FR-090-AC-13 | For an admitted population binding containing a selected member with empty object identity, public `allInstances` evaluation returns `CallFailure::Fault` with stage `S6a` and invariant `model-query-object-identity-empty`. The fault has no synthetic kernel cause. | Test |
 | FR-090-AC-14 | Each model-query shape producer in the table returns the table's `S6a` fault when its stated condition is supplied through a private seam, including option wrapping after a successful query. | Test |
-| FR-090-AC-15 | Each production evaluator producer in the table other than `record-present-value-missing`, exercised at the detecting site with its stated malformed state, returns the table's `S6a` fault rather than a manufactured kernel CheckedInvariant. | Test |
+| FR-090-AC-15 | Each production evaluator producer in the table other than `record-present-value-missing` and the fixed Rational caller's `ieee-conversion-rejected` while its temporary Inspection exception applies, exercised at the detecting site with its stated malformed state, returns the table's `S6a` fault rather than a manufactured kernel CheckedInvariant. | Test |
 | FR-090-AC-16 | A metered run reaching a table producer records precisely its ordinary charge prefix through that producer; a run stopped by an earlier denied charge or cancellation records its existing Incomplete outcome instead. | Test |
 | FR-090-AC-17 | A QSL-owned table fault propagated through public call, public evaluate or replay retains its stage and invariant identifier in the existing fault channel. | Test |
 | FR-090-AC-18 | Inspection of the Record producer establishes that `record-present-value-missing` is locally unreachable: `pop_many(present)` either stops earlier or supplies exactly the number of Present slots counted, and `zip(slots, declared)` consumes at most that many values. | Inspection |
+| FR-090-AC-19 | Inspection of the production IEEE-to-rational caller and the kernel target discriminant establishes that the caller always selects Rational and outer Err is selected only for non-Rational targets; the retained defensive arm maps to the specified QSL InternalFault without a synthetic cause. | Inspection |
+| FR-090-AC-20 | When the reviewed, merged IR-728 Rational-only API is adopted by QSL, the obsolete outer-Err arm, `ieee-conversion-rejected` producer row and temporary Inspection exception are removed together, with verification obligations matching the actual remaining producers. | Inspection |
 
 ## Dependencies
 
