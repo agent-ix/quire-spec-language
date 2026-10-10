@@ -55,8 +55,11 @@ use quire_semantic_value::location::{Location, Origin};
 /// exposed writer. Both proof forms may fail independently.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RefinementObligation {
+    /// The actual writer does not establish the narrowed single-field presence.
     Presence,
+    /// Its retained interval does not establish the narrowed scalar domain.
     Domain,
+    /// The narrowed object/collection obligation has no FR-146 proof form.
     NoProofForm,
 }
 

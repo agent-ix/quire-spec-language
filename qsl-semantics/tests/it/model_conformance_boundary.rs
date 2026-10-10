@@ -306,3 +306,101 @@ fn reference_covariance_uses_the_complete_model_without_a_writer_obligation() {
             "Reference<{child_type}> redefines Reference<{parent_type}>");
     }
 }
+
+#[trace("FR-081-AC-1", "FR-081-AC-7", "FR-081-AC-8", "TC-213")]
+#[test]
+fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins() {
+    use std::collections::{BTreeMap, BTreeSet};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::model::key::{DeclarationKey, RULE_QUALIFY};
+    use crate::model_operations::{config_unit_with_body, parse_and_build};
+
+    let bytes = document(|template| {
+        let mut a = object("A", None, vec![field("A", "x", "Count", 1, Some(1), None)],
+            vec![writer("A", &["A/x"], None)]);
+        a["origin"] = json!({"source": {"sourceIdentity": identity("spec"),
+            "path": "spec/A.md", "startLine": 2, "startColumn": 1, "endLine": 8, "endColumn": 9}});
+        let mut b = object("B", Some("A"), vec![], vec![]);
+        b["origin"] = json!({"source": {"sourceIdentity": identity("spec"),
+            "path": "spec/B.md", "startLine": 3, "startColumn": 2}});
+        let mut count = scalar(template, "Count", 9);
+        count["origin"] = json!({"generated": {"generatorIdentity": identity("generator"),
+            "generatorVersion": "1.2.3", "inputIdentities": [identity("A"), identity("B")]}});
+        vec![a, b, count]
+    });
+    let baseline: Value = serde_json::from_slice(&bytes).expect("original document");
+    let key = |name: &str| DeclarationKey { package: PACKAGE.to_owned(), node: identity(name) };
+    let expected: BTreeMap<_, _> = [
+        (key("A"), baseline["types"][0]["origin"].clone()),
+        (key("B"), baseline["types"][1]["origin"].clone()),
+        (key("Count"), baseline["types"][2]["origin"].clone()),
+        (key("A/x"), baseline["types"][0]["fields"][0]["origin"].clone()),
+        (key("A/set"), baseline["types"][0]["operations"][0]["origin"].clone()),
+    ].into_iter().collect();
+    let mut baseline_ids = None;
+    let mut baseline_view = None;
+    for row in 0..9 {
+        let mut input = baseline.clone();
+        match row {
+            0 => {},
+            1 => input["types"].as_array_mut().expect("types").reverse(),
+            2 => input["source"]["version"] = json!("1.0.1"),
+            3 => {
+                let a = input["types"][0]["origin"].clone();
+                input["types"][0]["origin"] = input["types"][1]["origin"].clone();
+                input["types"][1]["origin"] = a;
+            }
+            4 => input["types"][0]["origin"]["source"]["endColumn"] = json!(10),
+            5 => { input["types"][0]["origin"]["source"].as_object_mut().expect("source").remove("endLine"); }
+            6 => input["types"][2]["origin"]["generated"]["generatorVersion"] = json!("1.2.4"),
+            7 => input["types"][2]["origin"]["generated"]["inputIdentities"].as_array_mut().expect("inputs").reverse(),
+            8 => input["types"][2]["origin"] = input["types"][1]["origin"].clone(),
+            _ => unreachable!("bounded vector table"),
+        }
+        let bytes = serde_json::to_vec(&input).expect("vector document");
+        let (unit, packages) = config_unit_with_body(&bytes, "function noop using v(): Boolean pure { true }");
+        let built = parse_and_build(&unit);
+        let selected = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+            .expect("actual admitted original inventory");
+        assert_eq!(selected.len(), 1);
+        let selection = &selected[0];
+        let retained_keys: BTreeSet<_> = selection.original_keys().cloned().collect();
+        assert_eq!(retained_keys, expected.keys().cloned().collect(), "inventory vector {row}");
+        let retained: BTreeMap<_, _> = selection.original_keys().map(|key| {
+            let node = selection.original_node(key).expect("own original node");
+            (key.clone(), node["origin"].clone())
+        }).collect();
+        let mut offered = BTreeMap::new();
+        for ty in input["types"].as_array().expect("types") {
+            let mut nodes = vec![ty];
+            for collection in ["fields", "operations"] {
+                if let Some(entries) = ty.get(collection).and_then(Value::as_array) { nodes.extend(entries); }
+            }
+            for node in nodes {
+                offered.insert(DeclarationKey { package: PACKAGE.to_owned(),
+                    node: node["identity"].as_str().expect("declared identity").to_owned() }, node["origin"].clone());
+            }
+        }
+        assert_eq!(retained, offered, "actual origin retention vector {row}");
+        if row < 3 { assert_eq!(retained, expected); } else { assert_ne!(retained, expected, "origin mutant {row}"); }
+        let entries = selection.view.declarations();
+        let effective_originals: BTreeSet<_> = entries.iter().map(|entry| entry.preimage.original.clone()).collect();
+        assert!(effective_originals.is_subset(&retained_keys));
+        assert!(!effective_originals.contains(&key("Count")), "scalar receives no fabricated effective entry");
+        for original in [key("A"), key("B"), key("A/x"), key("A/set")] {
+            assert!(entries.iter().any(|entry| entry.preimage.original == original
+                && entry.preimage.derivation.iter().any(|fact| fact.rule == RULE_QUALIFY)), "qualify {original:?}");
+        }
+        let qualifying_ids: BTreeSet<_> = entries.iter().filter(|entry|
+            entry.preimage.derivation.iter().any(|fact| fact.rule == RULE_QUALIFY))
+            .map(|entry| entry.effective_id).collect();
+        if row == 0 {
+            baseline_ids = Some(qualifying_ids);
+            baseline_view = Some(selection.view.identity());
+        } else {
+            assert_eq!(Some(qualifying_ids), baseline_ids, "origins and selection digest cannot re-key declarations");
+            assert_ne!(Some(selection.view.identity()), baseline_view, "different content selects a different view");
+        }
+    }
+}

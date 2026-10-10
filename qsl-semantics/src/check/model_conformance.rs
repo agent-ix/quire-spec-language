@@ -17,14 +17,28 @@ use qsl_foundation::Code;
 /// failure additionally names the exposed writer and its own obligation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelConformanceFailure {
+    /// The redefining or subsetting member's original declaration key.
     pub member: DeclarationKey,
+    /// Its immediate declared parent or subset target.
     pub parent: DeclarationKey,
+    /// The actual exposed writer, when refinement fails.
     pub writer: Option<DeclarationKey>,
+    /// The writer's failed presence, domain or unsupported proof obligation.
     pub obligation: Option<RefinementObligation>,
+    /// The failed conformance axis.
     pub axis: &'static str,
+    /// The stable top-level code.
     pub code: Code,
+    /// The complete closed native cause payload.
     pub cause: ModelRefusalCause,
+    /// A human-readable account of the failed axis.
     pub detail: String,
+    /// The member's own exact admitted origin; absence remains absent.
+    pub member_origin: Option<serde_json::Value>,
+    /// The immediate parent's own exact admitted origin.
+    pub parent_origin: Option<serde_json::Value>,
+    /// The exposed writer's own exact admitted origin, never its sibling's.
+    pub writer_origin: Option<serde_json::Value>,
 }
 
 impl std::hash::Hash for ModelConformanceFailure {
@@ -47,7 +61,11 @@ pub(crate) enum StageDenial {
     MissingModel(String),
 }
 
-fn append(outcome: ConformanceCheckOutcome, member: &DeclarationKey,
+fn origin(selection: &SelectedModel, key: &DeclarationKey) -> Option<serde_json::Value> {
+    selection.original_node(key)?.get("origin").cloned()
+}
+
+fn append(selection: &SelectedModel, outcome: ConformanceCheckOutcome, member: &DeclarationKey,
     parent: &DeclarationKey, failures: &mut Vec<ModelConformanceFailure>) -> Result<(), Incomplete> {
     let axes = match outcome {
         ConformanceCheckOutcome::Incomplete(incomplete) => return Err(incomplete),
@@ -60,6 +78,7 @@ fn append(outcome: ConformanceCheckOutcome, member: &DeclarationKey,
     failures.extend(axes.into_iter().map(|axis| ModelConformanceFailure {
         member: member.clone(), parent: parent.clone(), writer: None, obligation: None,
         axis: axis.axis, code: axis.code, cause: axis.cause, detail: axis.detail,
+        member_origin: origin(selection, member), parent_origin: origin(selection, parent), writer_origin: None,
     }));
     Ok(())
 }
@@ -80,11 +99,14 @@ pub(crate) fn check(selected: &[SelectedModel], meter: &mut Meter, models: &[Adm
             match record {
                 DomainPackageRecord::FieldMember(field) => {
                     if let Some(parent) = &field.redefines {
-                        append(conformance::check_field_redefinition(index, &field.key, parent, meter),
+                        append(selection, conformance::check_field_redefinition(index, &field.key, parent, meter),
                             &field.key, parent, &mut failures).map_err(StageDenial::Incomplete)?;
                         conformance::charge_refinement_axis(meter).map_err(StageDenial::Incomplete)?;
                         failures.extend(checked_refinement_failures(model, &field.key, parent, forms, checked)
                                 .into_iter().map(|failure| ModelConformanceFailure {
+                                    member_origin: origin(selection, &failure.member),
+                                    parent_origin: origin(selection, &failure.parent),
+                                    writer_origin: origin(selection, &failure.writer),
                                     member: failure.member, parent: failure.parent, writer: Some(failure.writer),
                                     obligation: Some(failure.obligation), axis: "refinement", code: Code::UndefinedExpression,
                                     cause: ModelRefusalCause::UnprovedRefinement,
@@ -92,13 +114,13 @@ pub(crate) fn check(selected: &[SelectedModel], meter: &mut Meter, models: &[Adm
                                 }));
                     }
                     for parent in &field.subsets {
-                        append(conformance::check_subsetting(index, &field.key, parent, meter),
+                        append(selection, conformance::check_subsetting(index, &field.key, parent, meter),
                             &field.key, parent, &mut failures).map_err(StageDenial::Incomplete)?;
                     }
                 }
                 DomainPackageRecord::OperationMember(operation) => {
                     if let Some(parent) = &operation.redefines {
-                        append(conformance::check_operation_redefinition(index, &operation.key, parent, meter),
+                        append(selection, conformance::check_operation_redefinition(index, &operation.key, parent, meter),
                             &operation.key, parent, &mut failures).map_err(StageDenial::Incomplete)?;
                     }
                 }

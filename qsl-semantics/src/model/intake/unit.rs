@@ -31,6 +31,65 @@ pub struct SelectedModel {
     pub span: Span,
     /// The admitted domain package's effective view.
     pub view: EffectiveView,
+    originals: OriginalInventory,
+}
+
+/// Read-only handles into one actually admitted source document. Inventory
+/// entries name original declaration nodes, including scalar declarations;
+/// none are derived effective members or inputs to an effective identity.
+#[derive(Clone, Debug)]
+struct OriginalInventory {
+    document: std::sync::Arc<serde_json::Value>,
+    nodes: BTreeMap<crate::model::key::DeclarationKey, String>,
+}
+
+impl OriginalInventory {
+    fn empty() -> Self {
+        Self { document: std::sync::Arc::new(serde_json::Value::Null), nodes: BTreeMap::new() }
+    }
+
+    fn admitted(package: &str, document: PackageDocument) -> Self {
+        let document = std::sync::Arc::new(document.tree);
+        let mut nodes = BTreeMap::new();
+        let mut pending = Vec::new();
+        for collection in ["types", "populations"] {
+            if let Some(entries) = document.get(collection).and_then(serde_json::Value::as_array) {
+                pending.extend(entries.iter().enumerate().map(|(ordinal, node)|
+                    (node, format!("/{collection}/{ordinal}"))));
+            }
+        }
+        while let Some((node, pointer)) = pending.pop() {
+            if let Some(identity) = node.get("identity").and_then(serde_json::Value::as_str) {
+                nodes.insert(crate::model::key::DeclarationKey {
+                    package: package.to_owned(), node: identity.to_owned(),
+                }, pointer.clone());
+            }
+            for collection in ["fields", "operations", "params"] {
+                if let Some(entries) = node.get(collection).and_then(serde_json::Value::as_array) {
+                    pending.extend(entries.iter().enumerate().map(|(ordinal, child)|
+                        (child, format!("{pointer}/{collection}/{ordinal}"))));
+                }
+            }
+        }
+        Self { document, nodes }
+    }
+
+    fn node(&self, key: &crate::model::key::DeclarationKey) -> Option<&serde_json::Value> {
+        self.document.pointer(self.nodes.get(key)?)
+    }
+}
+
+impl SelectedModel {
+    /// This key's own original admitted node. No fallback to an effective
+    /// ancestor, another selection, or a caller-supplied origin is made.
+    pub fn original_node(&self, key: &crate::model::key::DeclarationKey) -> Option<&serde_json::Value> {
+        self.originals.node(key)
+    }
+
+    /// Every original declaration key, ascending by its full package/key.
+    pub fn original_keys(&self) -> impl Iterator<Item = &crate::model::key::DeclarationKey> {
+        self.originals.nodes.keys()
+    }
 }
 
 /// One model-admission operation. Only intake constructs a nonempty owner;
@@ -70,7 +129,7 @@ impl SelectedModels {
             UnitIntakeRefusal { alias: alias.to_owned(), span, cause, additional: Vec::new() }
         })?;
         Ok(Self { entries: views.into_iter().map(|view| SelectedModel {
-            alias: alias.to_owned(), span, view,
+            alias: alias.to_owned(), span, view, originals: OriginalInventory::empty(),
         }).collect(), meter })
     }
 }
@@ -201,11 +260,13 @@ pub fn admit_unit_with_cancel(
     })?;
     let mut owners = Vec::with_capacity(admitted.len());
     let mut selected_packages = Vec::with_capacity(admitted.len());
+    let mut originals = Vec::with_capacity(admitted.len());
     let mut reader_failures = Vec::new();
     for ((selection, _), package_ref, document) in admitted {
         match read_records(&package_ref.identity, &document) {
             Ok(records) => {
                 owners.push(selection);
+                originals.push(OriginalInventory::admitted(&package_ref.identity, document));
                 selected_packages.push(DomainPackage::new(package_ref, records));
             }
             Err(refusals) => {
@@ -234,8 +295,8 @@ pub fn admit_unit_with_cancel(
         }
     })?;
     Ok(SelectedModels {
-        entries: owners.into_iter().zip(views).map(|(selection, view)| SelectedModel {
-            alias: selection.alias.clone(), span: selection.span, view,
+        entries: owners.into_iter().zip(views).zip(originals).map(|((selection, view), originals)| SelectedModel {
+            alias: selection.alias.clone(), span: selection.span, view, originals,
         }).collect(), meter,
     })
 }
