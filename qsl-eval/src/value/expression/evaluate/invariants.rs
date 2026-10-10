@@ -1057,6 +1057,94 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
 }
 
 #[test]
+#[trace("TC-917", "FR-090-AC-16")]
+fn scalar_query_resume_retains_the_valid_result_and_preserves_earlier_stops() {
+    let (package, _) = super::tests::population_function_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    for (visit, result) in [(Visit::Forall, Value::Boolean(false)),
+        (Visit::Exists, Value::Boolean(true)), (Visit::Count, Value::Boolean(true)),
+        (Visit::Sum, Value::Integer(Integer::one()))] {
+        let source_type = ValueType::collection(quire_exact::CollectionType::new(
+            CollectionKind::Sequence, ValueType::Boolean, None));
+        let result_type = match visit {
+            Visit::Count | Visit::Sum => ValueType::Integer,
+            _ => ValueType::Boolean,
+        };
+        let operand_type = if visit == Visit::Sum { ValueType::Integer } else { ValueType::Boolean };
+        let root = CheckedBody::fixture(vec![source_type, operand_type], |ids| NodeKind::Query {
+            visit, slot: 0, source: ids[0], body: ids[1],
+        }, result_type);
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+        let mut pending = iteration(root.root());
+        pending.awaiting = true;
+        pending.next = 1;
+        machine.iterations = 1;
+        machine.values.push(result.clone());
+        machine.iterate(pending).unwrap_or_else(|_| panic!("valid scalar query resume"));
+        assert_eq!(machine.iterations, 0);
+        assert!(machine.tasks.is_empty());
+        match visit {
+            Visit::Forall => assert!(matches!(machine.values.as_slice(), [Value::Boolean(false)])),
+            Visit::Exists => assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)])),
+            Visit::Count | Visit::Sum => assert!(matches!(machine.values.as_slice(),
+                [Value::Integer(value)] if value == &Integer::one())),
+            _ => panic!("unselected query visit"),
+        }
+        drop(machine);
+        assert_eq!(meter.admitted_charges(), [ChargePoint::CollectionResultRetain]);
+        earlier_charge_controls(&package, &objects, ChargePoint::CollectionResultRetain, |machine| {
+            let mut pending = iteration(root.root());
+            pending.awaiting = true;
+            pending.next = 1;
+            machine.iterations = 1;
+            machine.values.push(result.clone());
+            machine.iterate(pending)
+        });
+    }
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-16")]
+fn fold_resume_and_finish_retain_the_real_accumulator_and_earlier_stop() {
+    fn run<'a>(machine: &mut Machine<'a, '_>, node: CheckedNode<'a>, resume: bool) -> Result<(), Halt> {
+        let mut pending = iteration(node);
+        pending.next = 1;
+        pending.accumulator = Some(Value::Boolean(!resume));
+        machine.iterations = 1;
+        if resume {
+            pending.awaiting = true;
+            machine.values.push(Value::Boolean(true));
+            machine.iterate(pending)
+        } else {
+            machine.finish(*pending)
+        }
+    }
+    let (package, _) = super::tests::population_function_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let source_type = ValueType::collection(quire_exact::CollectionType::new(
+        CollectionKind::Sequence, ValueType::Boolean, None));
+    let root = CheckedBody::fixture(vec![source_type, ValueType::Boolean, ValueType::Boolean],
+        |ids| NodeKind::Fold { accumulator: 0, binder: 1, source: ids[0],
+            step: ids[1], identity: Some(ids[2]) }, ValueType::Boolean);
+    for resume in [false, true] {
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+        run(&mut machine, root.root(), resume).unwrap_or_else(|_| panic!("valid fold accumulator"));
+        assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
+        assert_eq!(machine.iterations, 0);
+        assert!(machine.tasks.is_empty());
+        drop(machine);
+        assert_eq!(meter.admitted_charges(), [ChargePoint::CollectionResultRetain]);
+        assert_eq!(meter.consumed(quire_exact::LimitKind::ResultUnits), 1);
+        earlier_charge_controls(&package, &objects, ChargePoint::CollectionResultRetain,
+            |machine| run(machine, root.root(), resume));
+    }
+}
+
+#[test]
 #[trace("TC-917", "FR-090-AC-18")]
 fn record_present_value_branch_has_a_local_count_and_zip_proof() {
     let source: String = include_str!("../evaluate.rs").chars()
