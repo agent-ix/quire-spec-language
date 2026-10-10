@@ -321,10 +321,10 @@ The list has these properties:
   and profile. Two types whose text leaves differ in any path or profile
   therefore have different lists.
 - **Without recursion.** A walk that reaches no open composite appends no
-  recursion leaf. Its leaves are FR-322's text leaves, except that an
-  optional field's path passes through `inner` (a QSL proposal, ADR-013
-  QC-24). A recursive composite that reaches no `Text` type, such as
-  FR-092's `List`, adds no leaf.
+  recursion leaf. Its text leaves use `inner` for an optional field and
+  `member:<identifier>` for a union payload; these paths await a QSpec
+  FR-322 extension (ADR-013 QC-24). A recursive composite that reaches no
+  `Text` type, such as FR-092's `List`, adds no leaf.
 - **Independent of keys and group order.** `d` counts path segments. It is
   not a FR-092 group ordinal, and the list names no node, so an application
   node's leaves do not depend on its operand types' recursion group order or
