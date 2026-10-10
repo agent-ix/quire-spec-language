@@ -61,22 +61,24 @@ impl Recipe {
             "recipe process: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let bytes = std::fs::read(log).expect("read argv receipts");
+        let bytes = std::fs::read(log).expect("read argument and environment receipts");
         let mut remaining = bytes.as_slice();
         let mut calls = Vec::new();
         while !remaining.is_empty() {
+            let (presence, rest) = remaining.split_first().expect("environment presence flag");
+            remaining = rest;
+            let observed_root = match presence {
+                0 => None,
+                1 => Some(read_text(&mut remaining)),
+                _ => panic!("invalid environment presence flag"),
+            };
+            assert_eq!(
+                observed_root.as_deref(),
+                root,
+                "every Cargo-boundary call preserves absent, empty or literal caller environment"
+            );
             let count = read_length(&mut remaining);
-            let mut arguments = Vec::new();
-            for _ in 0..count {
-                let len = read_length(&mut remaining);
-                let (argument, rest) = remaining.split_at(len);
-                arguments.push(
-                    std::str::from_utf8(argument)
-                        .expect("UTF-8 test arguments")
-                        .to_owned(),
-                );
-                remaining = rest;
-            }
+            let arguments: Vec<_> = (0..count).map(|_| read_text(&mut remaining)).collect();
             calls.push(arguments);
         }
         let clean = format!(
@@ -122,6 +124,15 @@ impl Recipe {
             "literal caller path and all three recipe argument lists are preserved"
         );
     }
+}
+
+fn read_text(bytes: &mut &[u8]) -> String {
+    let len = read_length(bytes);
+    let (text, rest) = bytes.split_at(len);
+    *bytes = rest;
+    std::str::from_utf8(text)
+        .expect("UTF-8 test inputs")
+        .to_owned()
 }
 
 fn read_length(bytes: &mut &[u8]) -> usize {

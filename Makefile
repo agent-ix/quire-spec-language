@@ -180,7 +180,9 @@ ci-all-features:
 # resolves, not that its object code is produced.
 # Export the literal caller value without evaluating embedded Make expressions.
 # The shell expands this environment value as data, not as recipe source.
+ifneq ($(origin CARGO_TARGET_DIR),undefined)
 override export CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+endif
 
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/clean"
