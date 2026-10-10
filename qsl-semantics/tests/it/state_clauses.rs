@@ -39,8 +39,7 @@ use crate::model_operations::{
     tc465_document_with_frame_modifies_parent_only, tc465_document_with_note_type,
     tc465_document_with_set_field, tc465_document_with_sub_redefining_version_number,
     tc465_document_with_sub_subtype, tc465_document_with_tag_type_sharing_a_field_name,
-    version_number_bound, with_unrelated_population, FRAME_CLAUSES,
-    TC465_CLAUSES,
+    version_number_bound, with_unrelated_population, FRAME_CLAUSES, TC465_CLAUSES,
 };
 use serde_json::json;
 
