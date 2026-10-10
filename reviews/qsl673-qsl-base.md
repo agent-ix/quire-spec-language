@@ -44,3 +44,14 @@ Targeted validation passed 4/5 changed QSL documents grammar-clean; the only
 warning is the newly added compound EARS statement in FR-255, handled in the
 separate EARS artifact. Full-scope validation reports pre-existing structural
 failures. No code, build, or lock job was run.
+
+## Dispositions
+
+Round 1 disposition reviewed at `bac630980b94dca810e1718a2e1b9adbb1420a2d`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bac630980b94dca810e1718a2e1b9adbb1420a2d |
+| FND-002 | fixed | bac630980b94dca810e1718a2e1b9adbb1420a2d |
+
+The generic FR-277 outcome statement now scopes `LimitExceeded` to non-format lifecycle operations and gives the formatter's `resource_exhausted` exception its own normative bullet. FR-255, FR-003 and TC-931 now explicitly preserve the shared catalog kind/cause while requiring output-byte wording, the emitted UTF-8 count, `format.output_bytes`, and a prohibition on input/source-byte wording.

@@ -41,3 +41,13 @@ The cycle is visible from the changed FR-003 frontmatter and FR-255 dependency
 section; no build, lock or implementation check was used. The review treats
 “owns” and the explicit FR-003 dependency prose as normative prerequisite
 claims, as required by dependency analysis.
+
+## Dispositions
+
+Round 1 disposition reviewed at `bac630980b94dca810e1718a2e1b9adbb1420a2d`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bac630980b94dca810e1718a2e1b9adbb1420a2d |
+
+FR-003's relationship to FR-255 is now `references`, and FR-255 retains FR-003 as a reference rather than a prerequisite dependency; the prior FR-003 -> FR-255 -> FR-003 prerequisite cycle is removed.

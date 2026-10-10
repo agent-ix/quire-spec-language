@@ -39,3 +39,13 @@ Targeted validation compared the frozen head with its parent: the parent FR-255
 was grammar-clean, while the frozen head reports exactly these three EARS
 warnings on the newly added sentence. No unrelated repository warning was
 treated as a QSL-673 finding.
+
+## Dispositions
+
+Round 1 disposition reviewed at `bac630980b94dca810e1718a2e1b9adbb1420a2d`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bac630980b94dca810e1718a2e1b9adbb1420a2d |
+
+FR-255 now separates the limits-type builder obligations into atomic numbered requirements with explicit subjects: field builders, `FormatLimits::with_output_bytes`, and `format_with_limits`. Targeted validation reports the changed documents grammar-clean with no EARS warnings.

@@ -50,3 +50,13 @@ property-extractable on the five-file selection; the remaining criteria are
 existing broad rows). The computed matrix marks FR-003-AC-10 and the new
 formatter portions of FR-255/FR-277 as untagged future obligations, consistent
 with TC-931's Planned status.
+
+## Dispositions
+
+Round 1 disposition reviewed at `bac630980b94dca810e1718a2e1b9adbb1420a2d`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bac630980b94dca810e1718a2e1b9adbb1420a2d |
+
+FR-255 status now narrows implementation claims to pre-existing rows and marks the formatter row/seam partial and pending TC-931/QSL-605. TC-720 status likewise excludes the pending formatter row and seam. TC-931 remains explicitly Planned.
