@@ -99,11 +99,14 @@ Publishing or freezing this draft's review commit does not settle those gates.
   under the agreed event contract.
   Proposed diagnostic/setting names are `supplied.admission_work_units`
   and `supplied.conversion_work_units`, distinct from population admission's
-  `admission.work_units`. Acceptance by the settings operation or replay
-  `stage_limits` requires an explicit coordinated FR-255 table amendment,
+  `admission.work_units`. Acceptance by the settings operation requires
+  an explicit coordinated FR-255 table amendment,
   with bound owner, limits field, taxonomy and justified published default.
   This requirement SHALL NOT independently register a setting or privately
-  add a closed replay-envelope member. Missing bounds inherit their own
+  add a closed replay-envelope member. QSpec FR-323's paired proposal carries
+  these fields in typed `limits.supplied` for applicable replay/non-replay
+  requests, not `stage_limits`: that closed member carries only recompile
+  stage settings under QSpec FR-460/461. Missing bounds inherit their own
   published defaults under ADR-014 section 2; they are never unbounded.
   It SHALL NOT derive either bound from the evaluation allowance, multiply
   that allowance, reset helper spend between arguments, or bypass a phase.
@@ -178,15 +181,15 @@ because their carrying type is a supplied-value accounting limits type,
 not a compiler/reader stage-limits type. This classification requires a
 coordinated amendment of ADR-014 B-2 and its outcome projection rule:
 pre-call exhaustion has a phase/event, not a semantic evaluator charge
-point. Merely storing a bound in replay `stage_limits` SHALL NOT reclassify
-it as B-3 (ADR-014 section 1). The retained per-argument node/occurrence
+point. Supplied A/H SHALL NOT be stored in replay `stage_limits` or
+reclassified as B-3 (ADR-014 section 1). The retained per-argument node/occurrence
 bounds remain their existing B-2 `ScalarLimits` fields.
 
 ### Unselected numerical hypotheses and confirmation
 
 | Counter | Unselected numerical hypothesis | Planning basis, not measured work | Planned headroom |
 | --- | --- | --- | --- |
-| Supplied admission helper units | 262,144 | Research predicts 69,997 membership events for the unchanged full Tree; conservatively allow two such passes if conversion membership and final call admission both actually run | 192,147 above one predicted pass; 122,150 above two (139,994), about 87% above the two-pass planning total |
+| Supplied admission helper units | 262,144 | Research predicts 69,997 membership events for one A-owned direct/final admission sequence over the unchanged full Tree; conversion-invoked membership belongs to H, not a second A-owned pass | 192,147 above the one-pass prediction is discretionary hypothetical headroom, not required second-pass work or a source-proven bound |
 | Replay conversion helper units | 524,288 | Research predicts 129,994 events for the whole converter; QSV's additional hypothetical 32D+128 schedule at D=10,000 gives 320,128, not a proved event bound | 394,294 above the research prediction; 204,160 above the hypothetical schedule (about 64%) |
 
 These fixed powers of two are chosen from the supplied-fixture research
@@ -260,8 +263,9 @@ shared result-envelope authority SHALL remain in force. A QSL phase limit
 is not a kernel refusal record. The public wire projection of the
 discriminated limit origin requires the reviewed shared result contract;
 until that contract supports phase/event and the numerical fields above,
-QSL SHALL report this projection unavailable rather than serialize a fake
-charge point, drop phase information or privately extend QSpec's envelope.
+consumer projection qualification SHALL remain blocked; QSL SHALL NOT
+serialize a fake charge point, drop phase information, manufacture an
+unavailable-mapping runtime error or privately extend QSpec's envelope.
 
 ### Logical events and bounded subordinate work
 
@@ -275,10 +279,15 @@ reviewed FR-109 contract. It SHALL NOT prescribe a nonexistent union API.
 | Actual step | Owner and count boundary | Cache/delegation rule |
 | --- | --- | --- |
 | Logical value visit | Initiating phase: one per runtime occurrence actually inspected by QSV supplied membership | Existing trusted nested-value boundary and invalid-stop order; unvisited descendants cost no visit |
-| Logical type-pair/link step | Initiating phase: one per actual QSV structural type-pair or link step under FR-109 | No duplicate expected-type-entry charge; cache optimization preserves the logical count |
+| Logical type comparison | Initiating phase: exactly one per compared PAIR OF type-chain LINKS under QSV FR-109, including the initial expected/actual pair | No extra expected-type-entry charge; neither an individual link nor an entire chain replaces this unit; cache preserves logical count and first denied event |
 | Logical child schedule | Initiating phase: one per actual child scheduling operation prescribed by QSV FR-109 | Count before fallible worklist reservation/mutation; do not also hide it inside a value visit |
 | Logical descriptor query | Initiating phase: one per descriptor query prescribed by QSV FR-109 | Cache hits preserve logical query count; QSL/QSV delegation does not count the same query twice |
-| Unhooked numeric/enum/registry subordinate operation | Included in its initiating logical check/query, with independently bounded helper inputs | No invented per-limb/key-comparison events; source proof must bound input-dependent work, temporary storage and cancellation behavior |
+
+Unhooked numeric/enum/registry subordinate work is a helper-cost premise,
+not a fifth logical event or helper-entry debit. Its cost is included in
+the initiating check/query and requires independently bounded helper
+inputs plus source proof of finite work, temporary storage and cancellation
+behavior. No invented per-limb/key-comparison charge is permitted.
 
 These are descriptive event labels, not invented public enum/API spellings.
 QSL SHALL use QSV FR-109's actual published event definitions and ordering.
@@ -292,11 +301,21 @@ explicit owner budget. A facade/helper delegation that reaches the same
 lookup is one event, not a facade event plus a helper event. Repeating an actual operation
 counts a new event; returning an already computed result cannot trigger a
 fabricated second visit. Successful helper spend SHALL not reset on a
-cache hit, helper return or argument boundary. Original Cancel SHALL be
+cache hit, helper return or argument boundary. For identical input, admitted
+environment and incoming budget (including nonzero already-spent work),
+cold and warm caches SHALL preserve both the logical event count and the
+complete first-denial record. Original Cancel SHALL be
 polled before each scheduled logical step and after an invoked helper
 returns, before any subsequent mutation or event. This promises no callback
 inside an unhooked helper and no wall-clock cancellation latency. The public ceiling SHALL remain a caller
 choice, never a derived multiplier of those sizes or the evaluation bound.
+
+An actual failed worklist reservation SHALL preserve its measured request
+and native byte/additional-element unit. Checked representation-size
+overflow SHALL remain distinct from counter overflow and allocator denial.
+After removal of a storage denial, retry with the same input/environment
+and initial budget SHALL follow the same membership rules and yield the
+same result as a fresh attempt, with no retained partial admission.
 
 ### Selected independently bounded helper-input contract
 
@@ -311,7 +330,7 @@ declaration budgets to manufacture those hooks.
 | Helper input | Required independent bound and source proof | Owner boundary |
 | --- | --- | --- |
 | Numeric membership | Finite stored numeric size for every value and domain endpoint, and finite scale/exponent inputs; prove the released operation terminates with work bounded by those sizes | QSV identifies the actual kernel operation and public/admitted size access; kernel owns semantics, QSL supplies the invoking phase context |
-| Decimal membership temporary storage and cancellation | Establish a separate temporary-storage bound, actual fallible reservation/failure path and original-Cancel observation boundary; numeric input sizes alone do not establish these guarantees | Luna's IR/kernel helper-contract plan owns the missing capability; QSL projects its actual native cause and phase without invoking an unbounded substitute |
+| Decimal membership temporary storage and cancellation | Establish a separate temporary-storage bound, actual fallible reservation/failure path and original-Cancel observation boundary; numeric input sizes alone do not establish these guarantees | IR-718 SPEC and IR-719 implementation own the enabling capability; reviewed typed integration is a qualification prerequisite, not a new QSL runtime error |
 | Enum / registry / ancestor search | Finite admitted member/declaration/ancestor entry counts and key-content sizes; connect actual immutable environment sizes to its effective caller-configured admission/byte limits | QSV registry and membership contract, after IR-713; no guessed descriptor/signature |
 | Type resolution / structural comparison | Finite reachable type-node/link counts and bounded scalar/key content, with source-proven cycle/termination behavior; no type nesting-depth ceiling | QSV's existing admitted-type boundary; QSL conversion owns its actual descriptor/materialization invocations |
 | Witness helper inputs | Finite replay encoded bytes and complete semantic occurrence/node counts; subordinate numeric/type/registry helpers additionally satisfy the rows above | QSL FR-098/263 and QSV's helper-input contract; occurrence/node limits alone do not bound an arbitrarily large numeric leaf |
@@ -329,24 +348,31 @@ formatting and shifted multiplication (`abs * 10^shift`) with no helper
 budget, original-Cancel hook or demonstrated fallible temporary reservation.
 The input-size reasoning above does not prove bounded temporary storage or
 the required cancellation/storage-failure behavior for that operation.
-Candidate integer cost of at most two limb comparisons and rational cost
-of at most four limb comparisons are positive cost-bound hypotheses from
-the peer packet, not qualified claims about every numeric helper or decimal
-storage. No default numeric/type bound is inferred from them.
+QSV FR-109's Integer interval premise is at most TWO INTEGER COMPARISONS;
+its Rational membership premise is at most FOUR INTEGER COMPARISONS,
+without cross multiplication. Each comparison uses sign/length and at most
+the larger operand's limb count, bounded conservatively by admitted
+magnitude-bit bound B. The bound SHALL cover every operand: the supplied
+Integer and both interval endpoints, or the Rational numerator/denominator
+and all interval endpoints. These are not two/four limb comparisons.
+Qualification SHALL identify the authoritative helper operation and actual
+finite operand bounds; these cost premises neither qualify Decimal storage
+nor select any default numeric/type bound.
 
-Where the current native helper lacks the required bounded capability, the
-supplied phase SHALL return category unsupported with a typed native cause
-identifying the actual helper/operation and missing bounded temporary-storage
-or cancellation capability before invoking that helper. It SHALL NOT claim
-limit exhaustion, caller cancellation, invalid value or allocator failure
-that did not occur. An actual storage/capacity failure or cancellation
-retains its original typed cause. No default admission path bypasses this
-check, and no partially admitted value or evaluation consumption is returned.
-The concrete shared native cause/carrier/catalog projection is an explicit
-owner mapping gate; this draft creates no kernel variant, catalog spelling
-or guessed capacity default. If that mapping is unavailable, QSL reports
-the bounded capability/projection unavailable rather than manufacturing a
-kernel cause or successful admission.
+Before a supplied-family path is qualified, every required helper SHALL
+satisfy the source-proof prerequisites above and its actual typed consumer
+mapping SHALL be reviewed. Missing proof or mapping is an implementation
+qualification BLOCKER, not a runtime invalid/limit/storage/unsupported
+result or an unavailable-mapping error code. In particular, Decimal
+qualification remains blocked until IR-718's reviewed capability is
+implemented through IR-719 and the typed QSV/QSL mapping is approved.
+No successful bounded-admission claim, default bypass or invocation of an
+unqualified substitute discharges this prerequisite. Actual observed
+storage/capacity failure or cancellation SHALL retain its original typed
+cause, with no partial admitted value or evaluation consumption.
+Once the owning reviewed capability is enabled, Decimal positive replay
+and its original invalid-domain controls remain mandatory under FR-098
+AC-10 and TC-906; Decimal is not removed or made an optional feature.
 
 QSV must establish a finite work function for each bounded helper input.
 Then a finite number of admitted logical invocations, each on independently
@@ -354,7 +380,7 @@ bounded inputs, bounds total helper work without pretending to count its
 internal comparisons. This reasoning is a proposal, not an established
 released-source proof or a request for a new kernel API. If QSV's source
 proof cannot establish it, main SHALL route the precise bounded-helper API
-gap to Luna's IR plan and preserve the QSL-503 blocking edge. It SHALL NOT
+gap to the existing owning IR plan (Decimal: IR-718/IR-719) and preserve the QSL-503 blocking edge. It SHALL NOT
 implement a copied helper or silently change event units. Draft publication
 and independent review may proceed while that enabling gap is unresolved.
 ## Acceptance Criteria
@@ -366,9 +392,14 @@ and independent review may proceed while that enabling gap is unresolved.
 | FR-277-AC-3 | `execute` over an input whose work, with `work_units` set to one below what it needs, is denied returns the outcome `Incomplete` carrying the limit kind, the configured value, the counter at the failed charge (the consumed value with the denied amount) and the `accounting` field name that raises it. | Test (TC-758) |
 | FR-277-AC-4 | TC-830 and TC-906 distinguish admission/conversion limits, invalid input, caller cancellation, measured storage failure and capacity failure through the typed phase outcome above. Limits preserve the setting, configured ceiling, successful spend and denied event/amount without spending the denied step; all pre-call failures have zero evaluation consumption and no FunctionCall projection. Zero ceilings and checked overflow cannot admit a value. | Test |
 | FR-277-AC-5 | Across multiple arguments and nested helpers, TC-906 retains the same original Cancel and cumulative admission/conversion budgets. No helper event is debited twice or seeded into converted-node counts; cancellation at a later argument remains cancellation, and a failed reservation precedes mutation with no partial success. | Test |
+| FR-277-AC-6 | For each claimed supported supplied-family path, qualification identifies every required indivisible helper and its authoritative operation, actual finite bounds for all operands/inputs, finite work and peak temporary-storage proof, original-Cancel response boundary, actual fallible failure route where storage is required and reviewed typed consumer mapping. Omitting any premise blocks implementation qualification, not a fabricated runtime result. Decimal's tiny [0,100], 1@0, scale-2 allocation falsifier remains blocked until reviewed IR-718/implemented IR-719 capability and typed integration satisfy these premises; once enabled, FR-098 AC-10's positive Decimal replay remains mandatory. TC-906 steps 8-9 inspect this prerequisite and its missing-premise negative control. | Analysis |
 
 ## Dependencies
 
+- [IR-718 SPEC](https://linear.app/agent-ix/issue/IR-718/spec-quire-exact-bounded-fallible-decimal-membership-for-supplied)
+  and [IR-719 implementation](https://linear.app/agent-ix/issue/IR-719/quire-exactqsv-implement-bounded-decimal-membership-and-supplied):
+  reviewed and implemented bounded Decimal membership plus actual typed
+  QSV/QSL integration; missing qualification is a blocker, not a new outcome.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md): the
   accepted setting registry and cross-entry-point mapping; its owner must
   add the proposed rows before those names are accepted.
