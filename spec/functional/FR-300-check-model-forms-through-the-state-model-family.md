@@ -37,7 +37,7 @@ family's `check` hook, and every refusal that hook raises SHALL be a
 
 - One model expression form, nested in a `Value` function body or a
   `ProtocolClause` body: `deref` (a field read, `NodeKind::Attribute`),
-  `allInstances<T>(p)`, `lookup<T>(p, r)`, `reaches` inside a clause, or a
+  `allInstances<T>(p)`, `lookup<T>(p, r) absent m`, `reaches` inside a clause, or a
   dispatched call
   `receiver.member(args)` (QSpec FR-151 rule
   `quire.model.dispatch.single/v1`).
@@ -88,7 +88,7 @@ the S3 hook arm. `StateModel` takes part in no S6a seam (ADR-016 FP-3).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-300-AC-1 | For each of the five model forms, a unit whose form is well-typed compiles, and the form's checked node and static type are the ones QSpec FR-151 and FR-153 fix (`deref` typed by its declared field type, `allInstances<T>(p)` as `Set<T>[0,n]` for a population declared with maximum `n`, `lookup<T>(p, r)` as `T`). | Test (TC-790) |
+| FR-300-AC-1 | For each of the five model forms, a unit whose form is well-typed compiles, and the form's checked node and static type are the ones QSpec FR-151 and FR-153 fix (`deref` typed by its declared field type, `allInstances<T>(p)` as `Set<Reference<T>>[0,N]` for `p: Population<T>[N]` or unbounded `Set<Reference<T>>` for `p: Population<T>`, `lookup<T>(p, r) absent m` as `Reference<T>` for `undefined` or `refused` and `Option<Reference<T>>` for `empty`). | Test (TC-790) |
 | FR-300-AC-2 | For each of the five model forms, an ill-formed instance (a read of a member the static type does not declare, a `lookup` key whose static type does not conform, a dispatched call to an undeclared operation) refuses at S3 with a cause whose family is `FamilyKind::StateModel`, whose catalog code carries the `state-model` prefix, and whose QSpec code and cause are the ones QSpec FR-151 or FR-153 fix. | Test (TC-790) |
 | FR-300-AC-3 | `xtask seam-probe` reports the `StateModel` arm of the S1 `catalog_code()` prefix match, of the S2 hook match and of the S3 hook match as seam locations, and fails when any of the three is absent from its report. | Test (TC-791) |
 
