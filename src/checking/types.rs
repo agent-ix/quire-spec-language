@@ -47,6 +47,8 @@ impl<'a> DomainType<'a> {
                 declaration,
             }),
             DeclarationKind::ValueType
+            | DeclarationKind::Clause
+            | DeclarationKind::Namespace
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Part
