@@ -32,11 +32,21 @@ drop or the rekey.
 2. Record the exact set of original `DeclarationKey` values FR-056 admission
    returns for these five declarations.
 3. Run the model binder's normalization over the admitted declarations.
-4. Collect the set of original declaration keys the resulting correspondence
-   names (one per `ViewEntry`/derivation-fact origin, deduplicated).
+4. Collect the set of original declaration keys from the correspondence
+   owner's complete retained intake inventory, including the scalar. Collect
+   effective-entry and derivation-fact origin keys separately, deduplicated.
 5. Compare the two sets for exact equality, and separately assert that no
    correspondence entry's original key differs by even one byte (package,
    node or digest-domain component) from its FR-056 source.
+6. Assert effective-entry/fact origin keys are a subset of the retained
+   inventory, that the two object types and owned field/operation receive
+   their selected qualify facts, and that the scalar receives no fabricated
+   qualify fact, effective entry or extra effective-declaration/hash charge.
+7. Repeat with reversed IR-node order, then with equal nodes selected under a
+   different content digest of the same package identity. Original keys and
+   qualifying effective-declaration identities remain equal; effective-view
+   identities differ between selections. Each origin remains the actual FCD
+   source or generated origin; invent no byte span for generated origins.
 
 ## Expected Results
 
