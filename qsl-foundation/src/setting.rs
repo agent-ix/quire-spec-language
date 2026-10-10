@@ -312,6 +312,7 @@ mod tests {
         }
     }
 
+    #[ix_trace_rs::trace("FR-255-AC-3")]
     #[test]
     fn accounting_names_are_bare_counters_in_neither_stage_table_nor_a_stage_name() {
         for counter in AccountingSetting::ALL {
