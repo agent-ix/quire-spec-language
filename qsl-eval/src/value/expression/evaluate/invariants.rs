@@ -79,6 +79,252 @@ fn claim_level(machine: &mut Machine<'_, '_>) {
     }, None));
 }
 
+fn earlier_charge_controls<'a>(package: &'a qsl_package::CheckedPackage,
+    objects: &'a ObjectEnvironment, point: ChargePoint,
+    mut action: impl for<'meter> FnMut(&mut Machine<'a, 'meter>) -> Result<(), Halt>) {
+    let graph = package.graph();
+    for cause in [None, Some(quire_exact::CancelCause::Requested), Some(quire_exact::CancelCause::Deadline)] {
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let cancel = cause.map(|cause| {
+            let cancel = quire_exact::Cancel::new(); cancel.cancel(cause); cancel
+        });
+        if let Some(cancel) = &cancel {
+            meter = meter.with_cancel(cancel.clone());
+        } else {
+            meter = meter.with_injected_denial(quire_exact::InjectedDenial {
+                point, occurrence: std::num::NonZeroU64::new(1).unwrap(),
+            });
+        }
+        let mut machine = Machine::new(graph.scope(), graph, objects, &mut meter, graph.dispatch_tables());
+        let stop = match action(&mut machine) {
+            Err(Halt::Stop(Stop::Incomplete(record))) => record,
+            Err(Halt::Located(located)) => match located.stop {
+                Stop::Incomplete(record) => record,
+                _ => panic!("earlier charge did not stay Incomplete"),
+            },
+            _ => panic!("earlier charge failed to precede the producer"),
+        };
+        assert_eq!(stop.charge_point, point);
+        drop(machine);
+        assert!(meter.admitted_charges().is_empty());
+        if let Some(cancel) = cancel { assert_eq!(cancel.tripped(), cause); }
+    }
+}
+
+fn checked_dispatch_package() -> qsl_package::CheckedPackage {
+    use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::{DispatchCandidate, DispatchOperation, PackageDeclarations};
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let owner = reference().object_type();
+    let receiver = || TypeForm::builtin(BuiltinType::Reference, span)
+        .with_arguments(vec![TypeForm::name("Owner", span)]);
+    let function = |name, holds| FunctionDeclaration::new(name,
+        vec![("receiver".to_owned(), receiver())], TypeForm::builtin(BuiltinType::Boolean, span),
+        None, Expression::boolean(holds));
+    let declarations = PackageDeclarations {
+        types: quire_semantic_value::declaration::TypeEnvironment::new([], [
+            quire_semantic_value::declaration::ObjectTypeDeclaration::new(owner, "Owner", vec![]),
+        ]).unwrap(),
+        functions: vec![function("Body", true), function("Guard", true)],
+        dispatch_operations: vec![DispatchOperation { receiver_type: owner,
+            member: "step".to_owned(), parameters: vec![ValueType::Reference(owner)],
+            result: ValueType::Boolean, table: 0 }],
+        dispatch_tables: vec![DispatchTable::new(vec![(owner, DispatchCandidate {
+            body: 0, precondition: Some(1), precondition_clauses: vec![1],
+        })], 1)],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default())
+    };
+    qsl_package::CheckedPackage::link(declarations.check(
+        quire_semantic_value::checking::CheckingLimits::default()).unwrap())
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
+fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
+    use qsl_semantics::check::DispatchCandidate;
+    let node = body(|ids| NodeKind::Dispatch { receiver: ids[0],
+        operation: 0, table: usize::MAX, arguments: vec![] });
+    probe_package!("dispatch-table-unresolved", m, checked_dispatch_package(),
+        ObjectEnvironment::default(), [], {
+            m.values.push(Value::Reference(reference())); m.apply(node.root())
+        });
+    let node = body(|ids| NodeKind::Dispatch { receiver: ids[0],
+        operation: 0, table: 0, arguments: vec![] });
+    let foreign = ObjectReference::new(quire_exact::UniverseId::from_digest([0; 32]),
+        quire_exact::EffectiveId::from_digest([0xfe; 32]),
+        quire_exact::ObjectId::new("foreign-subtype").unwrap());
+    probe_package!("dispatch-candidate-unresolved", m, checked_dispatch_package(),
+        ObjectEnvironment::default(), [ChargePoint::DispatchSelect], {
+            m.values.push(Value::Reference(foreign.clone())); m.apply(node.root())
+        });
+    let package = checked_dispatch_package();
+    earlier_charge_controls(&package, &ObjectEnvironment::default(), ChargePoint::DispatchSelect, |m| {
+        m.values.push(Value::Reference(foreign.clone())); m.apply(node.root())
+    });
+    // Mutate exactly one callable index in an otherwise linked table:
+    // precondition lookup, selected body after precondition lookup, bare body.
+    for (precondition, selected) in [(Some(usize::MAX), 0),
+        (Some(1), usize::MAX), (None, usize::MAX)] {
+        let tables = [DispatchTable::new(vec![(reference().object_type(), DispatchCandidate {
+            body: selected, precondition, precondition_clauses: vec![],
+        })], 1)];
+        probe_package!("evaluation-callable-unresolved", m, checked_dispatch_package(),
+            ObjectEnvironment::default(), [ChargePoint::DispatchSelect], {
+                m.dispatch_tables = &tables;
+                m.values.push(Value::Reference(reference())); m.apply(node.root())
+            });
+        earlier_charge_controls(&package, &ObjectEnvironment::default(), ChargePoint::DispatchSelect, |m| {
+            m.dispatch_tables = &tables;
+            m.values.push(Value::Reference(reference())); m.apply(node.root())
+        });
+    }
+    probe_package!("evaluation-callable-unresolved", m, checked_dispatch_package(),
+        ObjectEnvironment::default(), [], {
+            m.frames.push(vec![]); m.values.push(Value::Boolean(true));
+            m.step(Task::DispatchGuard(Box::new(DispatchGuard {
+                body_function: usize::MAX, arguments: vec![Value::Reference(reference())],
+                failure: PreconditionFailure { operation: "step".to_owned(),
+                    selected: "Body".to_owned(), receiver: reference() }, node: node.root(),
+            })))
+        });
+}
+
+fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
+    use quire_semantic_value::unit::{DimensionNode, NominalDeclaration, UnitGraph, UnitNode};
+    let dimension_a = quire_exact::NodeKey::from_digest([0xa1; 32]);
+    let dimension_b = quire_exact::NodeKey::from_digest([0xb1; 32]);
+    let unit_a = quire_exact::NodeKey::from_digest([0xa2; 32]);
+    let unit_b = quire_exact::NodeKey::from_digest([0xb2; 32]);
+    let nominal = |name: &str| NominalDeclaration {
+        qualified_declaration: vec![name.to_owned()], preimage: vec![],
+    };
+    let dimensions = std::collections::BTreeMap::from([
+        (dimension_a, DimensionNode::checked(vec![], nominal("Length")).unwrap()),
+        (dimension_b, DimensionNode::checked(vec![], nominal("Time")).unwrap()),
+    ]);
+    let units = std::collections::BTreeMap::from([
+        (unit_a, UnitNode::checked(*dimension_a.as_bytes(), None, Rational::from_integer(Integer::one()),
+            Rational::from_integer(Integer::zero()), nominal("Metre")).unwrap()),
+        (unit_b, UnitNode::checked(*dimension_b.as_bytes(), None, Rational::from_integer(Integer::one()),
+            Rational::from_integer(Integer::zero()), nominal("Second")).unwrap()),
+    ]);
+    let graph = UnitGraph::from_checked_nodes(&dimensions, &units).unwrap();
+    quire_semantic_value::quantity::UnitTable::declared(&graph)
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
+fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
+    use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::{AdmittedImport, PackageDeclarations};
+    use qsl_semantics::library::{LibraryName, PackageNodeKey};
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let mut declarations = PackageDeclarations::new(qsl_semantics::check::fixture_source(),
+        qsl_foundation::IdentityLimits::default());
+    declarations.functions.push(FunctionDeclaration::new("Body", vec![],
+        TypeForm::builtin(BuiltinType::Boolean, span), None, Expression::boolean(true)));
+    let library = qsl_package::CheckedPackage::link(declarations.check(
+        quire_semantic_value::checking::CheckingLimits::default()).unwrap());
+    let identity = LibraryName::new("fixture:callable").unwrap();
+    let emission = qsl_package::emit_checked(&library).unwrap();
+    let view = qsl_package::read_import_view(&library, &emission, identity.clone(),
+        &std::collections::BTreeMap::new(), &mut qsl_package::AdmittedPackages::default(),
+        qsl_package::V2ReadLimits::default()).unwrap();
+    let callee = PackageNodeKey::new(emission.package().package_id(),
+        qsl_foundation::digest::WireNodeId::from_digest(
+            *library.graph().callable("Body").unwrap().identity.as_bytes()));
+    let mut declarations = PackageDeclarations::new(qsl_semantics::check::fixture_source(),
+        qsl_foundation::IdentityLimits::default());
+    declarations.imports.insert("lib".to_owned(), AdmittedImport {
+        identity, view, graph: library.shared_graph(),
+    });
+    let package = qsl_package::CheckedPackage::link(declarations.check(
+        quire_semantic_value::checking::CheckingLimits::default()).unwrap());
+    let node = body(|_| NodeKind::ImportedCall { callee,
+        function: usize::MAX, arguments: vec![] });
+    probe_package!("evaluation-callable-unresolved", m, package,
+        ObjectEnvironment::default(), [], { m.apply(node.root()) });
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
+fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
+    let units = quantity_units();
+    let mut ids = units.ids();
+    let left = Value::Quantity(quire_exact::Quantity::new(Rational::from_integer(Integer::one()), ids.next().unwrap()));
+    let right = Value::Quantity(quire_exact::Quantity::new(Rational::from_integer(Integer::one()), ids.next().unwrap()));
+    let node = body(|ids| NodeKind::Quantity(ArithmeticOperator::Add, ids[0], ids[1]));
+    probe!("quantity-operation-rejected", m, [], {
+        m.units = UnitScope::new(&units); m.values = vec![left.clone(), right.clone()];
+        m.apply(node.root())
+    });
+    probe!("ordered-quantity-comparison-rejected", m, [], {
+        m.units = UnitScope::new(&units);
+        m.order(OrderingOperator::Less, OrderedKind::Quantities, &left, &right).map(|_| ())
+    });
+    let (package, _) = super::tests::population_function_package();
+    let objects = ObjectEnvironment::default();
+    let graph = package.graph();
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+    machine.units = UnitScope::new(&units);
+    assert!(!machine.order(OrderingOperator::Less, OrderedKind::Quantities, &left, &left).unwrap());
+    machine.values = vec![left.clone(), left.clone()];
+    machine.apply(node.root()).unwrap();
+    let Value::Quantity(sum) = machine.values.pop().unwrap() else { panic!("quantity sum"); };
+    let Value::Quantity(left) = left else { unreachable!() };
+    assert_eq!(sum.magnitude(), &Rational::from_integer(Integer::from(2_i64)));
+    assert_eq!(sum.unit(), left.unit());
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
+fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantifier() {
+    use qsl_forms::{BinderQuery, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::PackageDeclarations;
+    use super::super::s6a::separation::{ObservationIdentity, Provenance};
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let mut declarations = PackageDeclarations::new(qsl_semantics::check::fixture_source(),
+        qsl_foundation::IdentityLimits::default());
+    declarations.functions.push(FunctionDeclaration::new("Quantified", vec![],
+        TypeForm::builtin(BuiltinType::Boolean, span), None,
+        Expression::query(BinderQuery::Forall, "element",
+            Expression::collection(CollectionKind::Sequence, vec![Expression::boolean(true)]),
+            Expression::name("element"))));
+    let package = qsl_package::CheckedPackage::link(declarations.check(
+        quire_semantic_value::checking::CheckingLimits::default()).unwrap());
+    let graph = package.graph();
+    let node = graph.function_state(0).unwrap().body;
+    let objects = ObjectEnvironment::default();
+    for missing_position in [true, false] {
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+        claim_level(&mut machine);
+        let mut i = iteration(node); i.next = 1;
+        let provenance = Provenance::member(ObservationIdentity {
+            authority: "test".to_owned(), identity: "producer-probe".to_owned(),
+            revision_namespace: "test".to_owned(), revision: "1".to_owned(),
+        }, reference(), "items".to_owned());
+        let provenance = if missing_position { provenance.select(&[]).unwrap() }
+            else { provenance };
+        machine.trail.as_mut().unwrap().record(&Value::Collection(i.source.clone()), provenance);
+        let result = machine.note_stop(&i);
+        if missing_position {
+            let Err(Halt::Fault(fault)) = result else { panic!("provenance producer"); };
+            assert_eq!(fault.invariant(), "query-stop-provenance-position-invalid");
+            assert_eq!(fault.stage(), "S6a");
+            assert_eq!(fault.kernel_cause(), None);
+        } else {
+            result.unwrap();
+            assert_eq!(machine.trail.as_ref().unwrap()
+                .provenance(&Value::Collection(i.source.clone())).unwrap().position(0), Some(0));
+        }
+        drop(machine);
+        assert!(meter.admitted_charges().is_empty());
+    }
+}
+
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
@@ -329,6 +575,63 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
 
 #[test]
 #[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
+fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
+    use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::PackageDeclarations;
+    use super::super::{CallFailure, CheckedPackageEvaluation, QualifiedName};
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let expected = ValueType::Int(IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap());
+    let base = object_package(expected, quire_exact::Presence::Required);
+    let operand = || Expression::field(Expression::name("receiver"), "edge");
+    let expression = Expression::binary(BinaryOperator::Equal, operand(), operand());
+    let mut declarations = PackageDeclarations::new(qsl_semantics::check::fixture_source(),
+        qsl_foundation::IdentityLimits::default());
+    declarations.types = base.graph().scope().types().clone();
+    declarations.functions.push(FunctionDeclaration::new("Compare", vec![("receiver".to_owned(),
+        TypeForm::builtin(BuiltinType::Reference, span)
+            .with_arguments(vec![TypeForm::name("Owner", span)]))],
+        TypeForm::builtin(BuiltinType::Boolean, span), None, expression.clone()));
+    let package = qsl_package::CheckedPackage::link(declarations.check(
+        quire_semantic_value::checking::CheckingLimits::default()).unwrap());
+    let checked = package.graph().check_expression(vec![("receiver".to_owned(),
+        ValueType::Reference(reference().object_type()))], &expression, None,
+        quire_semantic_value::checking::CheckMode::Kernel,
+        quire_semantic_value::checking::CheckingLimits::default()).unwrap();
+    // Admit real storage against Integer, then read it against the separately
+    // checked Int[0,9] declaration. No fault/result/cause is injected.
+    let storage = object_package(ValueType::Integer, quire_exact::Presence::Required);
+    for stored in [-1_i64, 1_i64] {
+        let closure = quire_semantic_value::object_closure::ObjectClosure::new(
+            storage.graph().scope().types(), [(reference(), vec![("edge",
+                FieldValue::Present(Value::Integer(Integer::from(stored))))])], &[]).unwrap();
+        let objects = ObjectEnvironment::new(closure);
+        for call in [false, true] {
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let arguments = vec![Value::Reference(reference())];
+            let result = if call {
+                package.call(&QualifiedName::unqualified("Compare").unwrap(), arguments, &objects, &mut meter)
+            } else {
+                package.evaluate(&checked, arguments, &objects, &mut meter)
+            };
+            if stored < 0 {
+                let Err(CallFailure::Fault(fault)) = result else { panic!("received typed kernel fault"); };
+                assert_eq!(fault.stage(), "S6a");
+                assert_eq!(fault.invariant(), "checked-program-invariant");
+                assert_eq!(fault.kernel_cause(), Some(
+                    quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted));
+                assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
+                let expected: &[ChargePoint] = if call { &[ChargePoint::FunctionCall] } else { &[] };
+                assert_eq!(meter.admitted_charges(), expected);
+            } else {
+                assert!(matches!(result.unwrap().outcome,
+                    qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))));
+            }
+        }
+    }
+}
+
+#[test]
+#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
 fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
     let location = Location::root(Origin::Expression);
     for cause in qsl_semantics::check::family::fixtures::received_kernel_causes() {
@@ -458,6 +761,11 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         m.values.push(Value::Collection(collection(vec![Value::Boolean(true)])));
         m.apply(root.root())
     });
+    let (package, _) = super::tests::population_function_package();
+    earlier_charge_controls(&package, &ObjectEnvironment::default(), ChargePoint::CollectionVisit, |m| {
+        m.values.push(Value::Collection(collection(vec![Value::Boolean(true)])));
+        m.apply(root.root())
+    });
     let root = body(|ids| NodeKind::AllInstances { population: ids[0] });
     probe!("query-population-type-expected", m, [], {
         // Use a genuine binding identity; failure precedes population resolution.
@@ -502,6 +810,10 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
     probe!("iteration-node-invalid", m, [ChargePoint::CollectionVisit], {
         m.iterate(iteration(literal.root()))
     });
+    let (package, _) = super::tests::population_function_package();
+    earlier_charge_controls(&package, &ObjectEnvironment::default(), ChargePoint::CollectionVisit, |m| {
+        m.iterate(iteration(literal.root()))
+    });
     probe!("iteration-node-invalid", m, [], { m.finish(*iteration(literal.root())) });
     probe!("query-stop-node-expected", m, [], {
         claim_level(&mut m); m.note_stop(&iteration(literal.root()))
@@ -528,6 +840,9 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
     let fold = body(|ids| NodeKind::Fold { accumulator: 0, binder: 1,
         source: ids[0], step: ids[1], identity: Some(ids[0]) });
     probe!("fold-accumulator-missing", m, [ChargePoint::CollectionVisit], {
+        m.iterate(iteration(fold.root()))
+    });
+    earlier_charge_controls(&package, &ObjectEnvironment::default(), ChargePoint::CollectionVisit, |m| {
         m.iterate(iteration(fold.root()))
     });
     probe!("fold-accumulator-missing", m, [], { m.finish(*iteration(fold.root())) });

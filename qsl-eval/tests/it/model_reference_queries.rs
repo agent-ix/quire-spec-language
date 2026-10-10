@@ -3820,6 +3820,38 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                 assert!(cancelled.admitted_charges().is_empty());
                 assert_eq!(cancel.tripped(), Some(cause));
             }
+            // Cancel at each later ordinary charge, not merely before entry.
+            // The observer trips the real cancellation token on that poll;
+            // neither the kernel result nor the bridge fault is substituted.
+            for stopped in 1..prefix.len() {
+                for cause in [quire_exact::CancelCause::Requested, quire_exact::CancelCause::Deadline] {
+                    let token = std::sync::Arc::new(std::sync::Mutex::new(None::<quire_exact::Cancel>));
+                    let observed = std::sync::Arc::downgrade(&token);
+                    let polls = std::sync::atomic::AtomicUsize::new(0);
+                    let cancel = quire_exact::Cancel::observing(move || {
+                        if polls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == stopped {
+                            if let Some(token) = observed.upgrade() {
+                                token.lock().unwrap().as_ref().unwrap().cancel(cause);
+                            }
+                        }
+                    });
+                    *token.lock().unwrap() = Some(cancel.clone());
+                    let mut meter = Meter::new(SCALAR_UNLIMITED).with_cancel(cancel.clone());
+                    let result = if call {
+                        package.call(&QualifiedName::unqualified("F").unwrap(),
+                            vec![population_argument(&scenario)], &objects, &mut meter)
+                    } else {
+                        package.evaluate(&expression, vec![population_argument(&scenario)],
+                            &objects, &mut meter)
+                    }.expect("later cancellation precedes the bridge fault");
+                    let FamilyOutcome::Evaluated(Outcome::Incomplete(record)) = result.outcome else {
+                        panic!("later cancellation must stay Incomplete");
+                    };
+                    assert_eq!(record.charge_point, prefix[stopped]);
+                    assert_eq!(meter.admitted_charges(), &prefix[..stopped]);
+                    assert_eq!(cancel.tripped(), Some(cause));
+                }
+            }
             // Every earlier denied charge wins over a producer not reached.
             for denied in 0..=prefix.len() {
                 let mut meter = Meter::new(SCALAR_UNLIMITED);

@@ -1645,6 +1645,140 @@ fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
     }
 }
 
+#[test]
+#[trace("TC-918", "FR-096-AC-19")]
+fn real_public_package_equality_fault_propagates_into_replay_failure() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::PackageDeclarations;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_exact::{ChargePoint, FieldValue, Integer, IntegerInterval, Meter, Value, ValueType};
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+    use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
+    use quire_semantic_value::object_closure::ObjectClosure;
+    let owner = quire_exact::EffectiveId::from_digest([0x71; 32]);
+    let reference = quire_exact::ObjectReference::new(quire_exact::UniverseId::from_digest([0; 32]),
+        owner, quire_exact::ObjectId::new("receiver").unwrap());
+    let types = |value_type| TypeEnvironment::new([], [ObjectTypeDeclaration::new(owner, "Owner",
+        vec![FieldDeclaration::new("number", value_type, quire_exact::Presence::Required)])]).unwrap();
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let operand = || Expression::field(Expression::name("receiver"), "number");
+    let source = Expression::binary(BinaryOperator::Equal, operand(), operand());
+    let declarations = PackageDeclarations {
+        types: types(ValueType::Int(IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap())),
+        functions: vec![FunctionDeclaration::new("Compare", vec![("receiver".to_owned(),
+            TypeForm::builtin(BuiltinType::Reference, span).with_arguments(vec![TypeForm::name("Owner", span)]))],
+            TypeForm::builtin(BuiltinType::Boolean, span), None, source.clone())],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default())
+    };
+    let package = qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    let expression = package.graph().check_expression(vec![("receiver".to_owned(), ValueType::Reference(owner))],
+        &source, None, CheckMode::Kernel, CheckingLimits::default()).unwrap();
+    let storage = types(ValueType::Integer);
+    let closure = ObjectClosure::new(&storage, [(reference.clone(), vec![("number",
+        FieldValue::Present(Value::Integer(Integer::from(-1_i64))))])], &[]).unwrap();
+    let objects = ObjectEnvironment::new(closure);
+    for call in [false, true] {
+        let mut meter = Meter::new(UNLIMITED);
+        let arguments = vec![Value::Reference(reference.clone())];
+        let failure = if call {
+            package.call(&QualifiedName::unqualified("Compare").unwrap(), arguments, &objects, &mut meter)
+        } else {
+            package.evaluate(&expression, arguments, &objects, &mut meter)
+        }.expect_err("real checked equality source violation");
+        let refusal = call_failure_to_replay_refusal(failure);
+        let ReplayRefusal::Fault(fault) = &refusal else { panic!("received kernel fault became a refusal"); };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), "checked-program-invariant");
+        assert_eq!(fault.kernel_cause(), Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted));
+        assert_eq!(refusal.code(), Code::RuntimeInvariant);
+        let terminal = TerminalValue::from_replay_refusal(&refusal);
+        assert!(matches!(terminal, TerminalValue::Failed));
+        assert_eq!(terminal.category(), Category::InternalFailure);
+        let expected: &[ChargePoint] = if call { &[ChargePoint::FunctionCall] } else { &[] };
+        assert_eq!(meter.admitted_charges(), expected);
+    }
+}
+
+#[test]
+#[trace("TC-919", "FR-090-AC-13", "FR-096-AC-19")]
+fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_failure() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm, TypeFormHead};
+    use qsl_semantics::check::{AdmittedModel, PackageDeclarations};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef,
+        Extent, ObjectTypeRecord, PopulationRecord};
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use qsl_semantics::model::population::{admit_binding, AdmissionMeter, AdmissionOutcome,
+        PopulationAdmissionLimits, PopulationDocument, PopulationMember};
+    use quire_exact::{ChargePoint, Meter, Value, ValueType};
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+    use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+    let object = DeclarationKey::fixture("model.A");
+    let population = DeclarationKey::fixture("model.population");
+    let domain = DomainPackage::new(DomainPackageRef::fixture("empty-identity-replay"), vec![
+        DomainPackageRecord::ObjectType(ObjectTypeRecord { key: object.clone(), interface_features: None,
+            abstract_type: false, supertypes: vec![] }),
+        DomainPackageRecord::Population(PopulationRecord { key: population.clone(),
+            member_types: vec![object.clone()], extent: Extent::Closed }),
+    ]);
+    let NormalizeOutcome::Completed(view) = normalize(&domain, ModelNormalizationLimits::UNLIMITED)
+        else { panic!("real domain admission"); };
+    let owner = *view.type_identities().get(&object).unwrap();
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let document = PopulationDocument { model_identity: "empty-identity-replay".to_owned(),
+        members: vec![PopulationMember { object: String::new(), type_identity: object, field_values: vec![] }] };
+    let AdmissionOutcome::Admitted(binding) = admit_binding(&view, &document, &population,
+        GeneralizationClosure::Closed, Some(1), &mut admission) else { panic!("real empty-member admission"); };
+    let argument = Value::Population(binding.population_id());
+    let objects = ObjectEnvironment::default().with_population(binding).unwrap();
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let source = Expression::size(Expression::all_instances(
+        TypeForm::builtin(BuiltinType::Reference, span).with_arguments(vec![TypeForm::name("M::A", span)]),
+        Expression::name("population")));
+    let declarations = PackageDeclarations {
+        types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(owner, "M::A", vec![])]).unwrap(),
+        models: vec![AdmittedModel::new(&domain, &view).unwrap()],
+        functions: vec![FunctionDeclaration::new("Count", vec![("population".to_owned(),
+            TypeForm::new(TypeFormHead::Population, span).with_arguments(vec![TypeForm::name("M::A", span)])
+                .with_bounds(vec!["1".to_owned()]))],
+            TypeForm::builtin(BuiltinType::Integer, span), None, source.clone())],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(), qsl_foundation::IdentityLimits::default())
+    };
+    let package = qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    let expression = package.graph().check_expression(vec![("population".to_owned(), ValueType::Population(Some(1)))],
+        &source, None, CheckMode::Kernel, CheckingLimits::default()).unwrap();
+    for call in [false, true] {
+        let mut meter = Meter::new(UNLIMITED);
+        let failure = if call {
+            package.call(&QualifiedName::unqualified("Count").unwrap(), vec![argument.clone()], &objects, &mut meter)
+        } else {
+            package.evaluate(&expression, vec![argument.clone()], &objects, &mut meter)
+        }.expect_err("real empty identity bridge violation");
+        let refusal = call_failure_to_replay_refusal(failure);
+        let ReplayRefusal::Fault(fault) = &refusal else { panic!("bridge fault became a replay refusal"); };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), "model-query-object-identity-empty");
+        assert_eq!(fault.kernel_cause(), None);
+        assert_eq!(refusal.code(), Code::RuntimeInvariant);
+        let terminal = TerminalValue::from_replay_refusal(&refusal);
+        assert!(matches!(terminal, TerminalValue::Failed));
+        assert_eq!(terminal.category(), Category::InternalFailure);
+        let mut expected = vec![];
+        if call { expected.push(ChargePoint::FunctionCall); }
+        expected.extend([ChargePoint::PopulationVisit, ChargePoint::CollectionBound, ChargePoint::CollectionResultRetain]);
+        assert_eq!(meter.admitted_charges(), expected);
+    }
+    // This is the actual package -> replay fault-adapter path. A full replay
+    // witness request cannot admit Population input under the existing input
+    // contract; that refusal is intentionally not loosened for this fixture.
+}
+
 /// The unit FR-357's tests replay: `inc`, `dec`, `dbl` and `neg` are
 /// unbounded-integer functions over one `+`, `-`, `*` and unary `-`, `inv` is
 /// `Rational`-valued, and `small` is a predicate.
