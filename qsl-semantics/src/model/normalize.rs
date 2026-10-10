@@ -2199,15 +2199,6 @@ fn plan_redefinitions(
     for (owner, path, redefiner) in reaching {
         let redefining = index.key(redefiner.member);
         let redefines = index.key(redefiner.target);
-        let is_field = redefiner.is_field
-            && index.is_field_member(redefining)
-            && index.is_field_member(redefines);
-        let is_operation = !redefiner.is_field
-            && index.is_operation_member(redefining)
-            && index.is_operation_member(redefines);
-        if !is_field && !is_operation {
-            continue;
-        }
         let edge = RedefinitionEdge {
             owner: owner.clone(),
             redefining: redefining.clone(),
@@ -2247,17 +2238,27 @@ fn plan_redefinitions(
             // charge (QSL #145).
             push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
         }
-        if reachable {
-            // `model-complete.md:231`: one redefine fact on the redefining
-            // feature and one on the redefined feature per edge, contested
-            // or not, winner or not.
-            *accounting.phase4_fact_count += 2 * length_amount(edges.len());
-        }
-        field_groups.push(TargetGroup {
-            target: target_key,
-            edges,
-            reachable,
+        // The target must be inherited by the edge's own declaring owner,
+        // not merely visible in some descendant's effective view. Reuse
+        // the phase-three closure; this is the same structural authority.
+        let (eligible, invalid): (Vec<_>, Vec<_>) = edges.into_iter().partition(|edge| {
+            let same_kind = (index.is_field_member(&edge.redefining)
+                && index.is_field_member(&edge.target))
+                || (index.is_operation_member(&edge.redefining)
+                    && index.is_operation_member(&edge.target));
+            reachable && same_kind && index.member_owner(&edge.target).is_some_and(|owner|
+                accounting.owner_ancestor_sets.get(&edge.owner)
+                    .is_some_and(|ancestors| ancestors.contains(owner)))
         });
+        if !invalid.is_empty() {
+            field_groups.push(TargetGroup { target: target_key.clone(), edges: invalid, reachable: false });
+        }
+        if !eligible.is_empty() {
+            // Every eligible edge derives both facts, whether contested or
+            // not. Invalid targets derive neither fact.
+            *accounting.phase4_fact_count += 2 * length_amount(eligible.len());
+            field_groups.push(TargetGroup { target: target_key, edges: eligible, reachable: true });
+        }
     }
 
     TypeRedefinitions { owner_effective_id, field_groups }

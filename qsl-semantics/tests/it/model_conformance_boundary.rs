@@ -739,3 +739,51 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
         assert_eq!(failure.writer_origin, Some(origin("A/set")));
     }
 }
+
+
+#[trace("FR-082-AC-2", "QSpec-TC-196")]
+#[test]
+fn structural_target_eligibility_uses_the_declaring_owner_and_member_kind() {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause};
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    use crate::model_operations::{config_unit_with_body, parse_and_build};
+    for operations in [false, true] {
+        for row in 0..3 {
+            let bytes = document(|_| {
+                let target_owner = if row == 1 { "C" } else if row == 0 { "B" } else { "A" };
+                let target = format!("{target_owner}/{}", if operations { "set" } else if row == 2 { "set" } else { "x" });
+                let mut b_fields = vec![field("B", "x", "A", 1, Some(1), None)];
+                let mut b_ops = vec![writer("B", &[], None)];
+                if operations {
+                    let mut child = writer("B", &[], Some(&target));
+                    child["identity"] = json!(identity("B/child"));
+                    child["name"] = json!("child");
+                    if row == 2 { child["redefines"] = json!(identity("A/x")); }
+                    b_ops.push(child);
+                } else {
+                    b_fields.push(field("B", "child", "A", 1, Some(1), Some(&target)));
+                }
+                vec![object("A", None, vec![field("A", "x", "A", 1, Some(1), None)], vec![writer("A", &[], None)]),
+                    object("B", Some("A"), b_fields, b_ops),
+                    object("C", Some("A"), vec![field("C", "x", "A", 1, Some(1), None)], vec![writer("C", &[], None)])]
+            });
+            let (unit, packages) = config_unit_with_body(&bytes, "function noop using v(): Boolean pure { true }");
+            let built = parse_and_build(&unit);
+            let refused = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+                .expect_err("same-owner, sibling, and wrong-kind targets are structurally ineligible");
+            let UnitIntakeCause::Refused(refusals) = refused.cause else { panic!("{refused:?}"); };
+            let key = |path| DeclarationKey { package: PACKAGE.to_owned(), node: identity(path) };
+            assert_eq!(refusals.len(), 1);
+            assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+            let target = match (operations, row) {
+                (false, 0) => "B/x", (false, 1) => "C/x", (false, _) => "A/set",
+                (true, 0) => "B/set", (true, 1) => "C/set", (true, _) => "A/x",
+            };
+            assert_eq!(refusals[0].cause, ModelRefusalCause::RedefinitionTarget {
+                target: key(target), redefiners: vec![key("B/child")],
+            }, "operations={operations}, row={row}");
+        }
+    }
+}
