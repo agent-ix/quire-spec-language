@@ -51,6 +51,10 @@ QSL's roots and edge rules.
 
 ## Behavior
 
+Detector scope: a comparison is branch-gating when it feeds an
+`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
+chain, is a match arm's own value, or is a `strip_prefix` call.
+
 ### The marker attribute
 
 `#[string_edge]` SHALL be a tool attribute applicable to a function. It

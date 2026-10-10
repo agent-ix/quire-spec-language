@@ -358,9 +358,12 @@ exit 30.
   takes and returns are `qsl_replay`, `qsl_foundation`, `qsl_semantics` or
   `quire_exact` types.
 
-The conversion of `CheckedInvariant` to an `InternalFault` is
-`qsl_replay::spine::run`'s, since the evaluator still returns it as a
-refusal (FR-096).
+The evaluator converts a `CheckedInvariant` stop to `Err(InternalFault)`
+at S6a, returning no `Evaluation` or refusal record (FR-096-AC-15).
+`CheckedPackage::call` carries that fault as `CallFailure::Fault`, which
+`qsl_replay::spine::run` propagates. Its outcome mapping also defensively
+converts a constructed `Outcome::Refused(Refusal::CheckedInvariant)` to an
+`InternalFault`, as FR-100-AC-9 requires.
 
 Every exit status is FR-285's `Category::exit_code` of the outcome's
 category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
