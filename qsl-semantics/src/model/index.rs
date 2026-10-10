@@ -455,7 +455,7 @@ impl RecordIndex {
                     index.member_owner.insert(own, owner);
                     index.fields_by_owner.entry(owner).or_default().push(own);
                     if let Some(target) = &field.redefines {
-                        index.note_redefiner(owner, record_position, own, at(target), true);
+                        index.note_redefiner(owner, record_position, own, at(target));
                     }
                     index.fields.insert(own, record_position);
                 }
@@ -469,7 +469,7 @@ impl RecordIndex {
                         .or_default()
                         .push(own);
                     if let Some(target) = &operation.redefines {
-                        index.note_redefiner(owner, record_position, own, at(target), false);
+                        index.note_redefiner(owner, record_position, own, at(target));
                     }
                     index.operations.insert(own, record_position);
                 }
