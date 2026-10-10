@@ -210,7 +210,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         dispatch_operations: vec![DispatchOperation {
             receiver_type: owner,
             member: "step".to_owned(),
-            parameters: vec![ValueType::Reference(owner)],
+            parameters: vec![],
             result: ValueType::Boolean,
             table: 0,
         }],
@@ -505,21 +505,34 @@ fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
-    use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_forms::{
+        BuiltinType, DeclarationSpans, Expression, ExpressionSpans, FunctionDeclaration, TypeForm,
+    };
     use qsl_semantics::check::{AdmittedImport, PackageDeclarations};
     use qsl_semantics::library::{LibraryName, PackageNodeKey};
-    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let span = qsl_foundation::Span { start: 0, end: 4 };
     let mut declarations = PackageDeclarations::new(
-        qsl_semantics::check::fixture_source(),
+        qsl_semantics::check::admitted_source(
+            qsl_foundation::SourceIdentity::new("a", "callable", "git", "1"),
+            b"true",
+        ),
         qsl_foundation::IdentityLimits::default(),
     );
-    declarations.functions.push(FunctionDeclaration::new(
-        "Body",
-        vec![],
-        TypeForm::builtin(BuiltinType::Boolean, span),
-        None,
-        Expression::boolean(true),
-    ));
+    declarations.functions.push(
+        FunctionDeclaration::new(
+            "Body",
+            vec![],
+            TypeForm::builtin(BuiltinType::Boolean, span),
+            None,
+            Expression::boolean(true),
+        )
+        .with_spans(DeclarationSpans {
+            declaration: span,
+            body: ExpressionSpans::new(span).expect("the literal has a root span"),
+            measure: None,
+        })
+        .expect("the literal span matches the body"),
+    );
     let library = qsl_package::CheckedPackage::link(
         declarations
             .check(quire_semantic_value::checking::CheckingLimits::default())
@@ -681,13 +694,18 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
     );
     declarations.functions.push(FunctionDeclaration::new(
         "Quantified",
-        vec![],
+        vec![(
+            "items".to_owned(),
+            TypeForm::collection(CollectionKind::Sequence, span)
+                .with_arguments(vec![TypeForm::builtin(BuiltinType::Boolean, span)])
+                .with_bounds(vec!["0".into(), "1".into()]),
+        )],
         TypeForm::builtin(BuiltinType::Boolean, span),
         None,
         Expression::query(
             BinderQuery::Forall,
             "element",
-            Expression::collection(CollectionKind::Sequence, vec![Expression::boolean(true)]),
+            Expression::name("items"),
             Expression::name("element"),
         ),
     ));
@@ -1296,7 +1314,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
     let expected =
         ValueType::Int(IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap());
     let base = object_package(expected, quire_exact::Presence::Required);
-    let operand = || Expression::field(Expression::name("receiver"), "edge");
+    let operand = || Expression::field(Expression::deref(Expression::name("receiver")), "edge");
     let expression = Expression::binary(BinaryOperator::Equal, operand(), operand());
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
@@ -1663,11 +1681,20 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
         machine.pop().unwrap_or_else(|_| panic!("local result")),
         Value::Boolean(true)
     ));
-    let branch = body(|ids| NodeKind::If {
-        condition: ids[0],
-        then: ids[0],
-        otherwise: ids[1],
-    });
+    let branch_expression = qsl_forms::Expression::if_then_else(
+        qsl_forms::Expression::boolean(false),
+        qsl_forms::Expression::boolean(true),
+        qsl_forms::Expression::boolean(false),
+    );
+    let branch = graph
+        .check_expression(
+            vec![],
+            &branch_expression,
+            None,
+            quire_semantic_value::checking::CheckMode::Kernel,
+            quire_semantic_value::checking::CheckingLimits::default(),
+        )
+        .unwrap_or_else(|_| panic!("typed branch fixture"));
     machine.values.push(Value::Boolean(false));
     machine
         .step(Task::Branch(branch.root()))
