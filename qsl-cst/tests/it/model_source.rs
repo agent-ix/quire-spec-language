@@ -74,7 +74,11 @@ fn invalid_model_productions_refuse_at_the_offending_token() {
         assert_eq!(diagnostic.path, "model-syntax.native");
         let start = text.rfind(token).unwrap();
         let region = diagnostic.region.as_ref().expect("located refusal");
-        assert_eq!(usize::try_from(region.start()).unwrap(), start, "{body}: {diagnostic:?}");
+        assert_eq!(
+            usize::try_from(region.start()).unwrap(),
+            start,
+            "{body}: {diagnostic:?}"
+        );
         assert_eq!(
             usize::try_from(region.end()).unwrap(),
             start + token.split_whitespace().next().unwrap().len(),
