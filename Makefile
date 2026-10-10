@@ -184,15 +184,15 @@ use-remote:
 ci-default-features:
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo fmt --all -- --check
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked --workspace --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked -p qsl-semantics
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-qsl-semantics --locked -p qsl-semantics
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked -p qsl-cst
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-qsl-cst --locked -p qsl-cst
 
 ci-all-features:
 	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo test --locked --workspace --all-features
+	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
