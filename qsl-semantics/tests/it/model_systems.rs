@@ -713,47 +713,40 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
 }
 
-/// The bidirectional interface-type condition compares `flow_source` and
-/// `flow_target` by their full `DeclarationKey`: two ports whose value
-/// types share a display node but declare it in different packages are not
-/// the same interface type. `model.Sys.pump.out` and `model.Sys.tank.in`
-/// both name a value type with node `model.Count`, one in `test/orders`
-/// and one in `other/pkg`.
+/// Bidirectional ports require identical declared interfaces, even when one
+/// interface properly specializes the other. The directional subtype case
+/// is covered by Y04; this standalone condition fixture declares both types.
 #[trace("QSpec-TC-197", "QSpec-FR-152-AC-4", "QSpec-FR-152-AC-6")]
 #[test]
-fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node() {
-    let domain_package = fixture_y(|records| {
-        find_relationship(records, "model.Sys.pipe").direction =
-            RelationshipDirection::Bidirectional;
-        find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::InOut);
-        find_endpoint(records, "model.Sys.tank.in").direction = Some(PortDirection::InOut);
-        find_endpoint(records, "model.Sys.pump.out").value_type =
-            DeclarationKey::fixture("model.Count");
-        find_endpoint(records, "model.Sys.tank.in").value_type = DeclarationKey {
-            package: "other/pkg".to_owned(),
-            node: "model.Count".to_owned(),
-        };
-    });
-    let mut meter = unlimited_meter();
-    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
-    match check_connection(
-        &ModelIndex::build(domain_package.clone()),
-        &classification,
-        &DeclarationKey::fixture("model.Sys.pipe"),
-        &mut meter,
-    ) {
-        ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
-            assert_eq!(
-                failures,
-                vec![ConditionFailure {
+fn y07_bidirectional_interface_type_requires_identical_declared_interfaces() {
+    for identical in [false, true] {
+        let domain_package = fixture_y(|records| {
+            find_relationship(records, "model.Sys.pipe").direction = RelationshipDirection::Bidirectional;
+            find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::InOut);
+            find_endpoint(records, "model.Sys.tank.in").direction = Some(PortDirection::InOut);
+            find_endpoint(records, "model.Sys.tank.in").value_type =
+                DeclarationKey::fixture(if identical { "model.Flow" } else { "model.Flow2" });
+        });
+        let mut meter = unlimited_meter();
+        let classification = classify(&domain_package, &mut meter).expect("classify declared interfaces");
+        assert!(classification.refusals.is_empty());
+        match check_connection(
+            &ModelIndex::build(domain_package.clone()),
+            &classification,
+            &DeclarationKey::fixture("model.Sys.pipe"),
+            &mut meter,
+        ) {
+            ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted) if identical => {}
+            ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) if !identical => {
+                assert_eq!(failures, vec![ConditionFailure {
                     condition: "interface-type",
                     code: Code::IllTyped,
                     cause: ModelRefusalCause::TypeMismatch,
-                    detail: "model.Count does not conform to model.Count".to_owned(),
-                }]
-            );
+                    detail: "model.Flow does not conform to model.Flow2".to_owned(),
+                }]);
+            }
+            other => panic!("expected identical-interface result {identical}, got {other:?}"),
         }
-        other => panic!("expected an interface-type refusal, got {other:?}"),
     }
 }
 

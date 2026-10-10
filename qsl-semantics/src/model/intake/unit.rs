@@ -469,6 +469,42 @@ mod systems_operation_controls {
 
     #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
     #[test]
+    fn genuine_selected_packages_keep_same_node_interface_keys_distinct() {
+        let first = document(false, false);
+        let mut second_tree: Value = serde_json::from_slice(&first).unwrap();
+        second_tree["package"]["identity"] = json!("example/systems-z");
+        let second = serde_json::to_vec(&second_tree).unwrap();
+        let packages = package_input([first.as_slice(), second.as_slice()]);
+        let first_digest = crate::model::key::hex(&PackageDocument::parse(&first, UNBOUNDED).unwrap().jcs_digest);
+        let second_digest = crate::model::key::hex(&PackageDocument::parse(&second, UNBOUNDED).unwrap().jcs_digest);
+        for reverse in [false, true] {
+            let mut declarations = vec![format!("model Z = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{first_digest}\";"),
+                format!("model A = \"example/systems-z\" version \"1.0.0\" digest \"sha256-jcs:{second_digest}\";")];
+            if reverse { declarations.reverse(); }
+            let text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{}\nfunction noop using v(): Boolean pure {{ true }}\n", declarations.join("\n"));
+            let parsed = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "systems", "fixture", "3"),
+                "unit.native", text.as_bytes(), qsl_cst::Limits::default()).unwrap();
+            assert!(parsed.diagnostics().is_empty());
+            let unit = qsl_forms::build_unit(&parsed).unwrap();
+            let selected = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED).unwrap();
+            assert_eq!(selected[0].alias, "Z");
+            assert_eq!(selected[1].alias, "A");
+            let a = crate::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: key("I") };
+            let b = crate::model::key::DeclarationKey { package: "example/systems-z".to_owned(), node: key("I") };
+            assert_eq!(a.node, b.node);
+            assert_ne!(a, b);
+            assert_eq!(selected[0].original_node(&a), selected[1].original_node(&b));
+            assert!(selected[0].original_node(&b).is_none());
+            assert!(selected[1].original_node(&a).is_none());
+            assert_ne!(selected[0].view.type_identities()[&a], selected[1].view.type_identities()[&b]);
+            // This direct identity seam does not authorize foreign connection ends.
+            assert_eq!(selected[0].view.model_index().conformance_walk(&a, &a, u64::MAX), Ok(true));
+            assert_eq!(selected[0].view.model_index().conformance_walk(&a, &b, u64::MAX), Ok(false));
+        }
+    }
+
+    #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
     fn actual_connection_meaning_refuses_object_ends_without_reclassifying_as_navigation() {
         for reverse in [false, true] {
             let mut tree: Value = serde_json::from_slice(&document(false, reverse)).unwrap();
