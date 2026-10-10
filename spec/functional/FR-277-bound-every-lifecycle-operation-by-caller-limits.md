@@ -57,9 +57,13 @@ FR-255 setting that sets the bound.
   settings operation shall route `format.output_bytes=<n>` to that field.
 - Each limits type shall give every field a published default that the
   caller replaces field by field.
-- When an operation reaches a bound, it shall return `LimitExceeded` naming
-  the limit kind, the configured value, the counter reached and the limits
-  field that raises it.
+- Each non-format lifecycle operation that reaches a bound shall return
+  `LimitExceeded` naming the limit kind, configured value, counter reached and
+  limits field that raises it.
+- The format operation that reaches its output-byte bound shall return FR-003's
+  `resource_exhausted`/`input-bytes-exceeded` diagnostic naming
+  `format.output_bytes`, configured bound and emitted UTF-8 byte count, with no
+  partial output.
 - A reached limit shall never produce a success outcome.
 - Each lifecycle operation shall process input at any nesting depth that
   fits its node, byte and work limits, and shall not fail by exhausting the

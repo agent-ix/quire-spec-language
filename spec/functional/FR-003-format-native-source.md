@@ -10,7 +10,7 @@ relationships:
   - target: "ix://agent-ix/quire-spec-language/US-035"
     type: traces_to
   - target: "ix://agent-ix/quire-spec-language/FR-255"
-    type: depends_on
+    type: references
 ---
 # FR-003: Format validated source without changing token meaning
 
@@ -51,8 +51,13 @@ typed `FormatLimits.output_bytes` field is the `format.output_bytes` setting in
 FR-255, and `format_with_limits(source, limits)` consumes that value.
 `format_with_limit(source, output_bytes)` is the convenience form that builds
 the same limits value. Both forms accept any limit, including zero and values
-above the default, and use it as given. A refusal at the limit names
-`format.output_bytes`, its value and `format_with_limit` as the way to raise it.
+above the default, and use it as given. A refusal at the limit uses the
+existing `resource_exhausted`/`input-bytes-exceeded` catalog cause for
+compatibility with QSL's shared limit kind, while its rendered diagnostic
+calls the condition a format output-byte limit, names `format.output_bytes`,
+reports the configured value and emitted UTF-8 byte count, and identifies
+`format_with_limit` as the way to raise it. It SHALL NOT describe the emitted
+count as input or source bytes.
 The byte limit is inclusive and counts spaces, indentation, comments and the
 final newline.
 Every append is checked before its growth; a refused operation returns no
@@ -69,7 +74,7 @@ checked package identity as checking the original source.
 | FR-003-AC-1 | Formatting preserves the ordered token spellings. | Test |
 | FR-003-AC-2 | Formatting preserves comments. | Test |
 | FR-003-AC-3 | A second formatting pass produces identical bytes. | Test |
-| FR-003-AC-4 | Output beyond its selected ceiling receives resource_exhausted. | Test |
+| FR-003-AC-4 | Output beyond its selected ceiling receives `resource_exhausted`/`input-bytes-exceeded`; its rendered diagnostic calls this a format output-byte limit, reports the configured bound and emitted UTF-8 byte count, names `format.output_bytes`, and does not present the emitted count as input or source bytes. | Test (TC-931) |
 | FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test |
 | FR-003-AC-6 | format(source) and format_with_limit(source, 1048576) return identical bytes. Source whose formatted output exceeds 1 MiB refuses under format(source) naming the limit, its value and format_with_limit, and formats in full under format_with_limit with a limit raised to fit it. | Test |
 | FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
@@ -83,8 +88,6 @@ checked package identity as checking the original source.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 (layer 1), §6.2 (`format` row) and §7.3 (M-6a row) set the input
   to the CST.
-- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) owns the
-  setting row and the shared limits/settings seam.
 - [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
 
 ## Status
@@ -98,3 +101,9 @@ TC-013, AC-4 to AC-6 by TC-016, AC-7 and AC-8 by TC-404, and AC-9 by
 TC-885. AC-6 states a caller-raisable ceiling; `src/format.rs` clamps
 every selected ceiling to 1 MiB today, so AC-6 is not met until that
 clamp goes.
+
+## References
+
+- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) owns the
+  `format.output_bytes` setting row and shared limits/settings seam that this
+  formatter contract qualifies.

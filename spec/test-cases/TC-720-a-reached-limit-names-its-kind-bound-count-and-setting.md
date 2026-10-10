@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify that every configurable limit in FR-255's setting table reports
+Verify that every implemented limit in FR-255's setting table reports
 the limit, its configured value, the count reached and the setting that
 raises it, that the rendered diagnostic says how to raise it, and that each
 limits type maps its fields to the table.
@@ -19,7 +19,7 @@ Scope: FR-255-AC-1, FR-255-AC-2, FR-255-AC-3.
 
 ## Test Procedure
 
-1. For each row of FR-255's setting table, build the smallest input that
+1. For each implemented row of FR-255's setting table, build the smallest input that
    reaches that limit at a configured bound `B` (for the I2 rows, a v2
    artifact; for the observation rows, a snapshot; for the library rows, a
    catalog), and run the row's stage.
@@ -45,4 +45,6 @@ Tag the tests `#[trace("TC-720", "FR-255-AC-1")]`, `#[trace("TC-720", "FR-255-AC
 
 ## Status
 
-Implemented. Step 1 is stage-driven for every setting row but the pending `intake.input_bytes` (FR-255 Status); steps 2 and 3 are implemented.
+Implemented for the pre-existing rows covered by FR-255 Status; the pending
+`format.output_bytes` row and its formatter/settings seam are exercised by
+TC-931 after QSL-605. Steps 2 and 3 are implemented.

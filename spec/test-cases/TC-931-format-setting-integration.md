@@ -35,12 +35,17 @@ and through QSL's settings operation, using the concrete FR-255 row.
 
 Every bound below the required output length returns
 `resource_exhausted`/`input-bytes-exceeded`, names `format.output_bytes` and the
-configured bound, and returns no partial string. The exact bound succeeds with
-the final newline included. The raised value from the settings operation is
-the `FormatLimits.output_bytes` value consumed by the formatter, and a value
-above the default is honored. Formatting the successful output again is
-idempotent and preserves the checked package identity.
+configured bound, reports the emitted UTF-8 byte count, and returns no partial
+string. The catalog kind/cause remain the shared input-bytes kind/cause for
+compatibility; the rendered diagnostic SHALL call this a format output-byte
+limit and SHALL not call the emitted count input or source bytes. The exact
+bound succeeds with the final newline included. The raised value from the
+settings operation is the `FormatLimits.output_bytes` value consumed by the
+formatter, and a value above the default is honored. Formatting the successful
+output again is idempotent and preserves the checked package identity.
 
 ## Status
 
-Planned. This case is the QSL integration contract for QSL-673 and QSL-605.
+Planned. This case is the QSL-673 integration contract for QSL-605; the
+`format.output_bytes` row and FormatLimits/settings mapping remain pending
+until that implementation lands.

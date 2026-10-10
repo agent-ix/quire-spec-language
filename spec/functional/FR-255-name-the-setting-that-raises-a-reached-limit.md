@@ -87,7 +87,7 @@ not yet ported takes its row, with its limits type, when that operation lands.
 | `dependency.source_bytes` | S4 source resolution | input bytes | `DependencyLimits` source_bytes | 16777216 bytes |
 | `identity.input_bytes` | identity encoding | input bytes | `AssemblyLimits` identity (`IdentityLimits` input_bytes), carried into checking, bundle linking and exploration keys | 16777216 bytes |
 | `replay.input_bytes` | replay envelope readers | input bytes | the replay readers' encoded-byte bound | 1048576 bytes |
-| `format.output_bytes` | format | input bytes | `qsl_cst::format::FormatLimits` output_bytes | 1048576 bytes |
+| `format.output_bytes` | format | input bytes (shared catalog kind) | `qsl_cst::format::FormatLimits` output_bytes | 1048576 bytes |
 | `i2.input_bytes` | I2 v2 reader | input bytes | the v2 read limits' artifact bytes | 16777216 bytes |
 | `i2.nodes` | I2 v2 reader | node count | the v2 read limits' nodes | 10000 nodes |
 | `i2.edges` | I2 v2 reader | edge count | the v2 read limits' edges | 100000 edges |
@@ -99,12 +99,16 @@ not yet ported takes its row, with its limits type, when that operation lands.
 
 S2 has no limit of its own (FR-257). The `format.output_bytes` row bounds the
 UTF-8 bytes the formatter would return, including formatting whitespace,
-comments and the final newline. QSL uses the existing input-bytes limit kind
-and its `input-bytes-exceeded` catalog cause for this output byte counter; the
-row's setting and bound identify that the formatter's emitted output is the
-counter. The formatter has no replay `stage_limits` entry because replay does
-not run the format operation. Its typed `FormatLimits` field and the settings
-operation remain the library entry points for raising it. `replay.input_bytes` bounds the replay
+comments and the final newline. QSL uses the existing shared `input bytes`
+limit kind and its `input-bytes-exceeded` catalog cause for this output-byte
+counter because the catalog has no distinct output-byte arm. For this row,
+that kind and cause apply to the formatter's emitted UTF-8 byte count, not to
+source intake. The rendered diagnostic SHALL call the condition a format
+output-byte limit, name `format.output_bytes`, report the configured bound and
+the emitted actual byte count, and SHALL NOT describe those emitted bytes as
+input or source bytes. The formatter has no replay `stage_limits` entry because
+replay does not run the format operation. Its typed `FormatLimits` field and
+the settings operation remain the library entry points for raising it. `replay.input_bytes` bounds the replay
 request and envelope bytes themselves, so it is raised from the library and
 the CLI, and a request's own `stage_limits` does not carry it. An execution
 budget under `quire.value.accounting/v1` is set in a request's accounting limits,
@@ -136,15 +140,21 @@ rule and a row in this table.
 3. **Rendering.** When QSL renders a `stage_limit_exceeded` diagnostic, the
    text SHALL follow QSpec FR-461's rendering, filled from the outcome of
    Behavior 1.
-4. **The library raises every limit by its field.** Each stage's limits
-   type SHALL offer a builder method for each field in the table, which sets
-   that field's bound and changes nothing else. `FormatLimits::with_output_bytes`
-   SHALL set the formatter's field, and `format_with_limits` SHALL consume the
-   resulting `FormatLimits` value.
-5. **The replay request raises every limit by name.** Replay SHALL read the
+4. **Every limits type exposes field builders.** Each stage limits type SHALL
+   offer a builder method for each field in the table.
+5. **Each field builder sets its field.** Each field builder SHALL set only its
+   field's bound.
+6. **Each field builder preserves other fields.** Each field builder SHALL
+   leave every other field unchanged.
+7. **The formatter builder sets its output field.**
+   `FormatLimits::with_output_bytes` SHALL set only the formatter's
+   `output_bytes` field.
+8. **The formatter consumes its typed bound.** The `format_with_limits`
+   operation SHALL consume the supplied `FormatLimits.output_bytes` bound.
+9. **The replay request raises every limit by name.** Replay SHALL read the
    request's `stage_limits` as a map from setting name to bound and pass
    every entry through to its stage (FR-263).
-6. **The settings operation raises every limit by name.** The driver CLI
+10. **The settings operation raises every limit by name.** The driver CLI
    exposes the caller limits as `--limit <name>=<value>`, repeatable
    (ADR-029 CB-1). QSL SHALL provide the library settings operation that the
    driver CLI calls with those operands: given a list of `<name>=<value>`
@@ -155,7 +165,7 @@ rule and a row in this table.
    `<name>` is not in the table, `<value>` is
    not a non-negative decimal integer, or one name is given twice, it SHALL
    return a usage refusal that names the operand, and no stage runs.
-7. **Absent settings take their defaults.** When a caller does not
+11. **Absent settings take their defaults.** When a caller does not
    configure a limit at an entry point, QSL SHALL run the stage with that
    limit at its default from the table.
 
@@ -172,9 +182,11 @@ rule and a row in this table.
 
 ## Status
 
-The setting table, the one-mapping-per-limits-type rule, the builders, the
-settings operation, a request's `stage_limits` and the defaults are
-implemented (TC-720, TC-721). Backing of the criteria:
+The pre-existing setting-table rows, one-mapping-per-limits-type rule, builders,
+settings operation, request `stage_limits` and defaults are implemented for the
+rows covered by TC-720 and TC-721. The `format.output_bytes` row and its
+`FormatLimits` to settings-operation seam are partial and remain pending the
+formatter integration in QSL-605 (TC-931). Backing of the criteria:
 
 - FR-255-AC-1 is stage-driven for the step ceilings and the byte limits: the step
   ceilings (`model.ancestor_steps`, `admission.ancestor_steps`,
@@ -189,9 +201,6 @@ implemented (TC-720, TC-721). Backing of the criteria:
   `model.dispatch_candidates`; every other row is checked at the entry
   points (the setting is accepted and sets its field) and not re-run
   through its stage.
-- The `format.output_bytes` row and the `FormatLimits` to settings-operation
-  seam are specified here and remain pending the formatter integration in
-  QSL-605 (TC-931).
 
 ## Dependencies
 
@@ -204,8 +213,6 @@ implemented (TC-720, TC-721). Backing of the criteria:
 - [FR-098](FR-098-execute-a-replay-request.md) and
   [FR-263](FR-263-replay-at-any-depth-under-the-request-limits.md) carry the
   request's `stage_limits`.
-- [FR-003](FR-003-format-native-source.md) owns the formatter's output bytes,
-  refusal code and no-partial-output rule.
 - [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
   §2: an absent bound is inherited from its published default.
 - QSpec FR-461 owns the naming rule and the rendering this requirement
@@ -213,6 +220,8 @@ implemented (TC-720, TC-721). Backing of the criteria:
 
 ## References
 
+- [FR-003](FR-003-format-native-source.md) defines the formatter output-byte
+  behavior qualified by this setting row.
 - QSpec FR-146: no checking depth limit, and a host stack limit is never an
   outcome.
 - QSpec FR-460, the ecosystem depth rule; FR-461, the limit, value and
