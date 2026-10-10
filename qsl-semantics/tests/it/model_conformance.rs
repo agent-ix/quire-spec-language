@@ -232,6 +232,17 @@ fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record(
         let edges = if branching { 3 } else { 2 };
         let work = if branching { 4 } else { 3 };
         for limit in [0, edges - 1, edges] {
+            let normalized = normalize(&package, ModelNormalizationLimits {
+                ancestor_steps: limit, ..ModelNormalizationLimits::UNLIMITED
+            });
+            if limit == edges {
+                assert!(matches!(normalized, NormalizeOutcome::Completed(_)));
+            } else {
+                assert_eq!(normalized, NormalizeOutcome::Incomplete(Incomplete {
+                    limit_kind: LimitKind::AncestorSteps, limit, consumed: limit, next_charge: 1,
+                    charge_point: ChargePoint::ModelAncestorEdge,
+                }));
+            }
             let mut meter = Meter::new(ModelNormalizationLimits {
                 ancestor_steps: limit, ..ModelNormalizationLimits::UNLIMITED
             });
