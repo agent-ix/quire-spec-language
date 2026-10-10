@@ -353,3 +353,121 @@ pub fn admit_unit_with_cancel(
         }).collect(), meter,
     })
 }
+
+#[cfg(test)]
+mod systems_operation_controls {
+    use super::*;
+    use crate::model::accounting::{ChargePoint, LimitKind};
+    use crate::model::normalize::{ModelRefusalCause, normalize_packages};
+    use ix_trace_rs::trace;
+    use serde_json::{json, Value};
+
+    const PACKAGE: &str = "example/systems";
+    const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    fn key(name: &str) -> String { format!("ix://{PACKAGE}/{name}") }
+    fn document(wrong_port: bool, reverse: bool) -> Vec<u8> {
+        let origin = json!({"source": {"sourceIdentity": key("spec"), "path": "systems.md", "startLine": 1, "startColumn": 1}});
+        let multiplicity = json!({"lower": 1, "upper": 1, "ordered": false, "unique": true});
+        let node = |name: &str, kind: &str, extra: Value| {
+            let mut value = json!({"identity": key(name), "displayName": name,
+                "kind": {"module": PACKAGE, "name": kind}, "roles": [], "origin": origin,
+                "constraints": [], "extensions": [], "unknownPolicy": "reject", "fields": [], "operations": [], "relationships": []});
+            value.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone()); value
+        };
+        let construct = |name: &str, meaning: &str| json!({"kind": {"module": PACKAGE, "name": name},
+            "moduleVersion": "1.0.0", "manifestDigest": DIGEST,
+            "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": meaning}});
+        let mut types = vec![
+            node("Composite", "object", json!({"supertypes": []})),
+            node("Thing", "object", json!({"supertypes": []})),
+            node("I", "interface", json!({"supertypes": [], "featureOrder": []})),
+            node("ISub", "interface", json!({"supertypes": [key("I")], "featureOrder": []})),
+            node("Part", "part", json!({"owner": key("Composite"), "declaredType": key("Thing"), "multiplicity": multiplicity})),
+            node("Out", "port", json!({"owner": key(if wrong_port { "Composite" } else { "Part" }),
+                "interfaceType": key(if wrong_port { "Thing" } else { "ISub" }), "direction": "out", "multiplicity": multiplicity})),
+            node("In", "port", json!({"owner": key("Part"), "interfaceType": key("I"), "direction": "in", "multiplicity": multiplicity})),
+            node("Link", "connection", json!({"sourceEnd": {"type": key("Out"), "multiplicity": multiplicity},
+                "targetEnd": {"type": key("In"), "multiplicity": multiplicity}, "flowDirection": "source-to-target"})),
+        ];
+        if reverse { types.reverse(); }
+        serde_json::to_vec(&json!({"contractVersion": "2.0.0",
+            "source": {"identity": key("spec"), "version": "1.0.0", "dialect": "spec-bundle", "digest": DIGEST},
+            "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": DIGEST,
+                "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST},
+            "occurrences": [], "extensions": [], "populations": [], "types": types,
+            "constructs": [construct("object", super::super::meaning::OBJECT_TYPE),
+                construct("interface", super::super::meaning::SYSTEMS_INTERFACE), construct("part", super::super::meaning::SYSTEMS_PART),
+                construct("port", super::super::meaning::SYSTEMS_PORT), construct("connection", super::super::meaning::SYSTEMS_CONNECTION)]})).unwrap()
+    }
+    fn selection(bytes: &[u8]) -> (qsl_forms::ParsedUnit, BTreeMap<[u8; 32], Vec<u8>>) {
+        let packages = package_input([bytes]);
+        let digest = crate::model::key::hex(packages.keys().next().unwrap());
+        let text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\nfunction noop using v(): Boolean pure {{ true }}\n");
+        let parsed = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "systems", "fixture", "1"),
+            "unit.native", text.as_bytes(), qsl_cst::Limits::default()).unwrap();
+        assert!(parsed.diagnostics().is_empty());
+        (qsl_forms::build_unit(&parsed).unwrap(), packages)
+    }
+    fn normalization_prefix(bytes: &[u8]) -> u64 {
+        let document = PackageDocument::parse(bytes, UNBOUNDED).unwrap();
+        let records = read_records(PACKAGE, &document).unwrap();
+        let package = DomainPackage::new(DomainPackageRef { identity: PACKAGE.to_owned(), version: "1.0.0".to_owned(), digest: document.jcs_digest }, records);
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        normalize_packages(&[package], &mut meter).unwrap();
+        meter.consumed(LimitKind::WorkUnits)
+    }
+
+    #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
+    fn actual_intake_charges_interfaces_first_and_connection_type_facts_once() {
+        for reverse in [false, true] {
+            let bytes = document(false, reverse);
+            let prefix = normalization_prefix(&bytes);
+            let (unit, packages) = selection(&bytes);
+            let selected = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED).unwrap();
+            // Two interfaces, one part, two ports, one connection; then
+            // direction1 + actual ISub qualify/inherit2 + multiplicity1.
+            assert_eq!(selected.consumed(LimitKind::WorkUnits), prefix + 6 + 4);
+            assert_eq!(selected[0].original_node(&crate::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: key("Out") }).unwrap()["origin"]["source"]["path"], "systems.md");
+        }
+    }
+    #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
+    fn actual_intake_preserves_all_port_kind_failures_and_connection_cascade() {
+        for reverse in [false, true] {
+            let bytes = document(true, reverse);
+            let (unit, packages) = selection(&bytes);
+            let refused = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+                .expect_err("all applicable kind failures precede source checking");
+            assert!(refused.additional.is_empty());
+            let UnitIntakeCause::Refused(refusals) = refused.cause else { panic!("expected systems kind refusals"); };
+            assert_eq!(refusals.len(), 3);
+            for refusal in refusals.iter() {
+                assert_eq!(refusal.code, Code::InvalidModelBinding);
+                assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+            }
+            assert_eq!(refusals.iter().map(|refusal| refusal.detail.as_str()).collect::<Vec<_>>(), vec![
+                "ix://example/systems/Out: required kind Part, actual kind none",
+                "ix://example/systems/Out: required kind Interface, actual kind none",
+                "source end of ix://example/systems/Link: required kind Port, actual kind none",
+            ]);
+        }
+    }
+    #[trace("QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
+    fn actual_intake_denies_interface_kind_or_type_condition_without_partial_failures() {
+        let bytes = document(false, false);
+        let prefix = normalization_prefix(&bytes);
+        for (bound, consumed, next, point) in [
+            (prefix + 1, prefix + 1, 1, ChargePoint::SystemsKind),
+            (prefix + 8, prefix + 7, 2, ChargePoint::SystemsConnectionCondition),
+        ] {
+            let (unit, packages) = selection(&bytes);
+            let refused = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits {
+                work_units: bound, ..ModelNormalizationLimits::UNLIMITED }).expect_err("actual stage work must fit the next full charge");
+            assert!(refused.additional.is_empty());
+            assert_eq!(refused.cause, UnitIntakeCause::Limit(Incomplete { limit_kind: LimitKind::WorkUnits,
+                limit: bound, consumed, next_charge: next, charge_point: point }));
+        }
+    }
+}
