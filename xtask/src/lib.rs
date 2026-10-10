@@ -21,6 +21,9 @@ pub mod typestate_scan;
 mod ci_clean_build_tests;
 
 #[cfg(test)]
+mod ci_conformance_tests;
+
+#[cfg(test)]
 mod ci_feature_lane_tests;
 
 #[cfg(test)]
