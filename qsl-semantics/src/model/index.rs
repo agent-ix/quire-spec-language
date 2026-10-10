@@ -669,6 +669,17 @@ impl RecordIndex {
             .collect()
     }
 
+    /// Both kinds of directly owned model feature, ascending by original key.
+    pub(crate) fn sorted_direct_member_keys<'r>(&self, records: &'r [DomainPackageRecord],
+        owner: &DeclarationKey) -> Vec<&'r DeclarationKey> {
+        let mut keys: Vec<_> = self.sorted_direct_fields(records, owner).into_iter()
+            .map(|field| &field.key).collect();
+        keys.extend(self.direct_operations(owner).iter().filter_map(|member|
+            operation_at(records, *self.operations.get(member)?).map(|operation| &operation.key)));
+        keys.sort();
+        keys
+    }
+
     /// `owner`'s directly declared operation members, in record order.
     pub(crate) fn direct_operations(&self, owner: &DeclarationKey) -> &[DeclIdx] {
         self.position(owner)
