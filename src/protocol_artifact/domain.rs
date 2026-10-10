@@ -149,6 +149,8 @@ pub(super) fn exports<'a>(
                 continue;
             }
             DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::Clause(_)
+            | DomainPackageRecord::Namespace(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Relationship(_)
