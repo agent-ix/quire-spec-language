@@ -223,7 +223,14 @@ fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
 	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
-ci: check-no-committed-binaries check-index-completeness check-spec-validation ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+# Each aggregate prerequisite depends on validation, rather than racing it as
+# a sibling under -j (or continuing past it under -k). Standalone lane commands
+# retain their existing behavior; this ordering belongs to the aggregate gate.
+CI_CHECKS := check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+ci: check-spec-validation $(CI_CHECKS)
+ifneq ($(filter ci,$(MAKECMDGOALS)),)
+$(CI_CHECKS): | check-spec-validation
+endif
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the

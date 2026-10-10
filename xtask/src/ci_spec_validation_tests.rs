@@ -2,6 +2,7 @@
 //! Native structural-validator controls for the local CI gate (NFR-002/NFR-005).
 
 use ix_trace_rs::trace;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -12,6 +13,28 @@ fn workspace() -> PathBuf {
         .parent()
         .expect("xtask is below the workspace")
         .to_path_buf()
+}
+
+fn target_directory(root: &Path, target: Option<&OsStr>) -> PathBuf {
+    root.join(
+        target
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("target")),
+    )
+}
+
+fn fixture_in(root: &Path, target: Option<&OsStr>) -> tempfile::TempDir {
+    let target = target_directory(root, target);
+    std::fs::create_dir_all(&target).expect("create workspace-resolved target");
+    tempfile::Builder::new()
+        .prefix("spec validation controls ")
+        .tempdir_in(target)
+        .expect("scratch inside the workspace-resolved target")
+}
+
+fn owned_fixture() -> tempfile::TempDir {
+    fixture_in(&workspace(), std::env::var_os("CARGO_TARGET_DIR").as_deref())
 }
 
 fn make(root: &Path) -> Command {
@@ -49,14 +72,10 @@ fn refused(output: &Output, diagnostic: &str) {
     );
 }
 
-#[trace("NFR-002", "NFR-005")]
+#[trace("TC-914", "NFR-002-AC-3")]
 #[test]
 fn spec_validation_executes_native_schema_controls_and_fails_closed() {
-    let target = std::env::var_os("CARGO_TARGET_DIR").expect("owned target required");
-    let fixture = tempfile::Builder::new()
-        .prefix("spec validation controls ")
-        .tempdir_in(target)
-        .expect("scratch inside the owned target");
+    let fixture = owned_fixture();
     let root = fixture.path();
     std::fs::create_dir(root.join("spec")).unwrap();
     let document = root.join("spec/fixture with spaces.md");
@@ -130,17 +149,140 @@ fn spec_validation_executes_native_schema_controls_and_fails_closed() {
     );
 }
 
-#[trace("NFR-002", "NFR-005")]
+#[trace("TC-914", "NFR-002-AC-1")]
 #[test]
 fn full_ci_composes_the_unrestricted_scoped_validator() {
     let output = run(make(&workspace()).args(["-n", "ci"]));
     assert!(output.status.success(), "expand the real aggregate gate");
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("validate --scope . \"$SPEC_VALIDATION_DOCUMENTS\""));
-    let validator = stdout.find("validate --scope").unwrap();
-    let compilation = stdout.find("cargo clippy").unwrap();
     assert!(
-        validator < compilation,
-        "structural validation precedes compilation"
+        stdout.contains("cargo clippy"),
+        "aggregate includes compilation"
     );
+    let baseline = run(make(&workspace()).arg("check-spec-validation"));
+    assert!(
+        baseline.status.success(),
+        "full repository scoped validation"
+    );
+}
+
+#[trace("TC-914", "NFR-002-AC-4")]
+#[test]
+fn native_fixtures_use_workspace_default_relative_and_absolute_targets() {
+    let owner = owned_fixture();
+    let root = owner.path().join("caller workspace");
+    std::fs::create_dir(&root).unwrap();
+    let absolute = owner.path().join("absolute target");
+    for (target, expected) in [
+        (None, root.join("target")),
+        (
+            Some(OsStr::new("relative target")),
+            root.join("relative target"),
+        ),
+        (Some(absolute.as_os_str()), absolute.clone()),
+    ] {
+        let fixture = fixture_in(&root, target);
+        assert_eq!(fixture.path().parent(), Some(expected.as_path()));
+        let path = fixture.path().to_path_buf();
+        std::fs::create_dir_all(path.join("spec/nested")).unwrap();
+        std::fs::write(path.join("spec/nested/fixture with spaces.md"), VALID).unwrap();
+        assert!(run(make(&path).arg("check-spec-validation"))
+            .status
+            .success());
+        drop(fixture);
+        assert!(!path.exists(), "Rust owner must remove its fixture");
+    }
+    assert_eq!(
+        target_directory(&workspace(), None),
+        workspace().join("target")
+    );
+    assert_eq!(
+        target_directory(&workspace(), Some(OsStr::new("136-target/relative"))),
+        workspace().join("136-target/relative")
+    );
+    assert_eq!(
+        target_directory(&workspace(), Some(absolute.as_os_str())),
+        absolute
+    );
+}
+
+// Observes Make-to-Cargo invocation only. Returning success here is not evidence
+// of compilation, feature qualification, schema validation or tool correctness.
+const CARGO_RECORDER: &str = r#"
+use std::io::Write;
+fn main() {
+    let path = std::env::var_os("SPEC_GATE_CARGO_CALLS").expect("owned call log");
+    let mut log = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    let call = format!("{}\n", std::env::args().skip(1).collect::<Vec<_>>().join("\t"));
+    log.write_all(call.as_bytes()).unwrap();
+}
+"#;
+
+#[trace("TC-914", "NFR-002-AC-2")]
+#[test]
+fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
+    let fixture = owned_fixture();
+    let root = fixture.path();
+    std::fs::create_dir_all(root.join("spec/nested")).unwrap();
+    let document = root.join("spec/nested/fixture with spaces.md");
+    let bin = root.join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let source = root.join("cargo_recorder.rs");
+    std::fs::write(&source, CARGO_RECORDER).unwrap();
+    let compiler = run(
+        Command::new("rustc")
+            .args(["--edition=2021", "-D", "warnings"])
+            .arg(&source)
+            .arg("-o")
+            .arg(bin.join("cargo")),
+    );
+    assert!(compiler.status.success(), "compile native process recorder");
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let calls = root.join("cargo calls");
+    for scheduling in [&["-j1"][..], &["-j4"][..], &["-j4", "-k"][..]] {
+        let aggregate = || {
+            let mut command = make(root);
+            command
+                .args(scheduling)
+                .args([
+                    "-o",
+                    "check-no-committed-binaries",
+                    "-o",
+                    "check-index-completeness",
+                    "-o",
+                    "cargo-deny-bans",
+                    "ci",
+                ])
+                .env("PATH", &path)
+                .env("SPEC_GATE_CARGO_CALLS", &calls);
+            command
+        };
+        std::fs::write(&document, VALID.replace("id: NFR-999\n", "")).unwrap();
+        let negative = run(&mut aggregate());
+        refused(&negative, "1 document(s) failed structural validation");
+        assert!(
+            !calls.exists(),
+            "invalid native spec must prevent ALL Cargo calls"
+        );
+
+        std::fs::write(&document, VALID).unwrap();
+        assert!(
+            run(&mut aggregate()).status.success(),
+            "restored aggregate reaches Cargo"
+        );
+        let recorded = std::fs::read_to_string(&calls).unwrap();
+        for operation in [
+            "fmt\t", "clippy\t", "test\t", "build\t", "check\t", "doc\t", "run\t",
+        ] {
+            assert!(
+                recorded.lines().any(|line| line.starts_with(operation)),
+                "missing {operation}: {recorded}"
+            );
+        }
+        std::fs::remove_file(&calls).unwrap();
+    }
 }
