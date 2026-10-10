@@ -300,6 +300,40 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
     );
 }
 
+/// No checker reads a `temporal` clause yet: each one refuses at its own
+/// declaration span rather than compiling into a package that silently
+/// lacks it.
+#[test]
+fn each_temporal_clause_refuses_as_not_yet_implemented() {
+    let first = "temporal A using v over (p: Boolean) clock \"s\" on origin { holds(true) }";
+    let second =
+        "temporal B using v over (p: Boolean) clock \"s\" on origin { eventually[0,*] holds(p) }";
+    let (text, found) = errors(&format!("{first}\n{second}"));
+    assert_eq!(
+        found,
+        [
+            AssemblyError {
+                cause: AssemblyCause::UnimplementedTemporalClause { name: "A".into() },
+                span: last(&text, first),
+            },
+            AssemblyError {
+                cause: AssemblyCause::UnimplementedTemporalClause { name: "B".into() },
+                span: last(&text, second),
+            },
+        ]
+    );
+    for error in &found {
+        assert_eq!(
+            error.cause.code(),
+            qsl_foundation::Code::UnsupportedConstruct
+        );
+        assert_eq!(
+            error.cause.catalog_code(),
+            qsl_foundation::CatalogCode::new("unsupported_construct", "not-yet-implemented")
+        );
+    }
+}
+
 #[trace("FR-091-AC-8", "TC-396")]
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {

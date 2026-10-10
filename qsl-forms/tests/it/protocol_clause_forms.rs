@@ -107,7 +107,8 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
-        | DeclarationForm::Protocol(_) => panic!("a state clause form, not {form:?}"),
+        | DeclarationForm::Protocol(_)
+        | DeclarationForm::Temporal(_) => panic!("a state clause form, not {form:?}"),
     }
 }
 
@@ -121,7 +122,8 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
-        | DeclarationForm::StateClause(_) => panic!("a protocol form, not {form:?}"),
+        | DeclarationForm::StateClause(_)
+        | DeclarationForm::Temporal(_) => panic!("a protocol form, not {form:?}"),
     }
 }
 
