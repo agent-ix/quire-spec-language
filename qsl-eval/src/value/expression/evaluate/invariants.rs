@@ -31,7 +31,7 @@ macro_rules! probe_package {
         let graph = package.graph();
         let objects = $objects;
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let fault = {
+        let _fault = {
             let mut __probe_machine_storage = Machine::new(
                 graph.scope(),
                 graph,
@@ -1863,12 +1863,12 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
 fn projection_and_ordering_shape_faults_keep_their_original_channels() {
     let slot = FieldValue::Present(Value::Integer(Integer::one()));
     probe!("field-option-payload-rejected", m, [], {
-        let _ = &mut m;
+        let _ = m;
         Machine::project(&slot, true, &ValueType::option(ValueType::Boolean), false).map(|_| ())
     });
     for slot in [FieldValue::Absent, FieldValue::Null] {
         probe!("field-projection-shape-invalid", m, [], {
-            let _ = &mut m;
+            let _ = m;
             Machine::project(&slot, false, &ValueType::Boolean, false).map(|_| ())
         });
         let control = Machine::project(&slot, true, &ValueType::option(ValueType::Boolean), false);
@@ -1916,7 +1916,7 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         m.finish(*iteration(literal.root()))
     });
     probe!("query-stop-node-expected", m, [], {
-        claim_level(&mut m);
+        claim_level(m);
         m.note_stop(&iteration(literal.root()))
     });
     for visit in [
@@ -2001,7 +2001,7 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
             m.iterate(i)
         });
         probe!("query-stop-position-invalid", m, [], {
-            claim_level(&mut m);
+            claim_level(m);
             let mut i = iteration(query.root());
             i.next = next;
             m.note_stop(&i)
