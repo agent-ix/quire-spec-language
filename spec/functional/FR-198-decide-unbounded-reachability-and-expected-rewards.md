@@ -33,6 +33,8 @@ no arithmetic, and the item is refuted by the scheduler that always waits.
 
 - FR-196's product for a `Reach` or `ExpectedReward` claim, and the
   fairness set when the claim states one (FR-200 transforms the objective).
+  Digital timed subjects additionally retain ADR-028 §13a's derived TS-5
+  observation admissibility, even with an empty authored fairness set.
 - FR-203's limits: `max_iterations`, `precision_bits`,
   `max_precision_bits`, `max_rational_bits`, `max_policy_iterations`.
 
@@ -40,8 +42,8 @@ no arithmetic, and the item is refuted by the scheduler that always waits.
 
 ```rust
 pub enum UnboundedResult {
-    Exact { values: Vec<ExtRational>, policy: Option<Vec<ActionChoice>> },   // UR-4
-    Bounds { lower: Vec<Dyadic>, upper: Vec<Dyadic>, precision_bits: u32, sweeps: u64, policy: Option<Vec<ActionChoice>> },
+    Exact { values: Vec<ExtRational>, policy: Option<Vec<(ProductKey, WitnessEntry)>> },   // UR-4
+    Bounds { lower: Vec<Dyadic>, upper: Vec<Dyadic>, precision_bits: u32, sweeps: u64, policy: Option<Vec<(ProductKey, WitnessEntry)>> },
     PrecisionBudget { lower: Dyadic, upper: Dyadic },
     Stopped(ExactProbLimit),
 }
@@ -49,6 +51,38 @@ pub enum ExtRational { Finite(Rational), PlusInfinity }
 ```
 
 ## Behavior
+
+### Derived timed observation admissibility
+
+For FR-204 digital timed subjects, EN-5 SHALL apply ADR-028 §13a instead of
+unrestricted memoryless extremum attainment. Results are infima/suprema over
+almost-surely observation-admissible schedulers and the actual authored
+fairness set, if any. Initial observation, resolved discrete steps and
+IdleObserve check predicates; pure delays do not. Targets/failures are
+observation edges; analysis absorption is not a public monitor/key. Recompute
+the original digital continuation graph and its observation-admissible end
+components before absorption. R is the almost-sure winning region for
+reaching their union. Retain finite-prefix choices exactly when all
+positive-probability successors stay in R. No waiting bound, clock-cap
+inflation, fairness declaration or altered workload probability is added.
+
+For Reach, maximize in R for the supremum; obtain the infimum by the
+complement reachability of observation-admissible target-avoiding components,
+with actual FR-200 fairness refinement where applicable. For elapsed-until,
+minimize the target-reaching stochastic shortest path in R. For the
+supremum, graph-recompute +infinity both for admitted positive-probability
+target nonreachability and for any reachable pretarget positive-reward waiting
+end component in R with an admissible exit. Its infinite wait may be
+inadmissible; arbitrary finite waits followed by that exit make the
+supremum unbounded. Otherwise collapse zero-reward waiting components and
+use the finite exact methods below. Empty admissible continuations cannot
+serve as a witness or be silently treated as an unrestricted extremum.
+
+The objective's one-step operator uses the actual elapsed reward and a
+terminal continuation0 on a goal observation edge, V(post-key) otherwise
+(Reach uses terminal1). An equal post-key reached by pure delay is not a
+goal. Initial B true terminates before reward. Recurrent admissibility is
+checked on the original subject continuation, not an absorbed goal sink.
 
 ### Reachability
 
@@ -87,6 +121,19 @@ pub enum ExtRational { Finite(Rational), PlusInfinity }
 
 ### Result
 
+- For the derived TS-5 case, a finite threshold refutation SHALL use an
+  actual admitted FR-202 WitnessEntry policy. Exact-rational randomized
+  choices are permitted with no authored fairness set; independently check
+  every reachable recurrent induced-chain component has observation edges
+  and meets actual fairness. A nonattained supremum is not assigned an
+  inadmissible attaining policy. A positive waiting component supplies
+  finite threshold evidence by mixing its waiting choices with a checked
+  admissible exit/progress policy, with positive rational epsilon; evaluate
+  the chain exactly and decrease epsilon until the finite bound is crossed,
+  or return the actual precision/rational/policy budget stop. No fixed
+  epsilon or waiting cap is a semantic restriction. The unrestricted policy
+  selection rules below apply outside this derived case.
+
 - The witness policy SHALL be the final policy of policy iteration or, from
   interval iteration, the action attaining the bound at each state in the
   final upper iterate (maximum) or lower iterate (minimum), ties broken by
@@ -104,9 +151,9 @@ pub enum ExtRational { Finite(Rational), PlusInfinity }
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-198-AC-1 | §15.6 `Terminates`: the live state is in `Prob0E`, so the minimum of `Pr(eventually holds(p.done))` is 0 with no iteration and the policy takes `wait`; the maximum is 1 (`Prob1E`). `probability >= 0.95 [eventually holds(m.delivered)]` over `Link` gives the minimum `24/25`. | Test (TC-633) |
-| FR-198-AC-2 | `Link`'s `cost` claim (FR-195-AC-2): the target `delivered or attempts = 2` is reached with probability 1 under every scheduler; the minimum is `11/10` (`send_a`) and the maximum `6/5` (`send_b`), exact, and the `<= 6/5` bound is met at equality. `expected accumulate cost until holds(m.delivered) <= 3` has value `+∞` under every scheduler, decided by the graph alone. | Test (TC-633) |
+| FR-198-AC-2 | `Link`'s `cost` claim (FR-195-AC-2): the target `delivered or attempts = 2` is reached with probability 1 under every scheduler; the minimum is `11/10` (`send_a`) and the maximum `6/5` (`send_b`), exact, and the `<= 6/5` bound is met at equality. `expected accumulate cost until holds(m.delivered) <= 3` has value `+∞` under every scheduler, decided by the graph alone. For FR-196's no-fairness quiescent x>=1/cap2 elapsed oracle, infimum1 and supremum+infinity follow from the finite-wait component; the randomized 3/4-delay, 1/4-observe witness has exact initial value5>3 and observes almost surely. A claimed maximum3 and a delay-forever attaining witness fail. | Test (TC-633) |
 | FR-198-AC-3 | A `Loop` model whose live state steps to itself, to `goal` and to `fail`, each with probability `1/3`, over every scheduler with one action, has `Pr(eventually holds(goal)) = 1/2`. Interval iteration's lower bound at the live state rises and its upper bound falls at each sweep, each bounding `1/2`; with `max_iterations` 3 and threshold `1/2`, policy iteration decides `1/2` at equality. Under a workload the same value comes from one exact solve. | Test (TC-633) |
-| FR-198-AC-4 | With `max_policy_iterations` 0 and AC-3's equality threshold, the result is `Stopped(MaxPolicyIterations)`. Two runs of one request return equal results and equal policies. | Test (TC-633) |
+| FR-198-AC-4 | With `max_policy_iterations` 0 and AC-3's equality threshold, the result is `Stopped(MaxPolicyIterations)`. Two runs of one request return equal results and equal policies. Exhausting the derived component or randomized-evidence construction budget returns the actual stop; it does not substitute a deterministic policy or observation bound. | Test (TC-633) |
 | FR-198-AC-5 | A `Mec` model whose live state has the actions `a_stay`, back to itself with probability 1, and `b_exit`, to `goal` or `fail` with `1/2` each: over every scheduler the maximum of `Pr(eventually holds(goal))` is `1/2`, and the witness policy takes `b_exit` at the live state, though `a_stay` comes first in canonical order and attains the same iterate value. `probability <= 1/4` over the same event settles `refuted` on that policy, and its evidence replays. | Test (TC-633) |
 
 ## Dependencies
