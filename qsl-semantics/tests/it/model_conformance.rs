@@ -2264,39 +2264,16 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
     );
 
     match check_chain(BOUND + 1, limits) {
-        ConformanceCheckOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ResourceExhausted);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ancestor_steps(
-                    DeclarationKey::fixture("model.chain.0"),
-                    BOUND,
-                    qsl_foundation::Setting::ModelAncestorSteps,
-                )
-            );
-            let exceeded = refusal
-                .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
-            assert_eq!(
-                exceeded.setting(),
-                qsl_foundation::Setting::ModelAncestorSteps
-            );
-            assert_eq!(
-                exceeded.actual(),
-                u128::from(match &refusal.cause {
-                    ModelRefusalCause::AncestorSteps { limit, .. }
-                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
-                    other => panic!("unexpected {other:?}"),
-                }) + 1
-            );
-            assert_eq!(refusal.cause.as_str(), "ancestor-steps");
-            assert!(
-                refusal.detail.contains(&BOUND.to_string()),
-                "refusal detail must name the configured bound, got {refusal:?}"
-            );
+        ConformanceCheckOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete, qsl_semantics::model::accounting::Incomplete {
+                limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
+                limit: BOUND,
+                consumed: BOUND,
+                next_charge: 1,
+                charge_point: qsl_semantics::model::accounting::ChargePoint::ModelAncestorEdge,
+            });
         }
-        other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+        other => panic!("expected Incomplete(AncestorSteps), got {other:?}"),
     }
 }
 
