@@ -189,6 +189,10 @@ fn state_fixture_identity(case: usize) {
         .expect("the owning original state fixture assembles")
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("state fixture {case}: original S3: {refusals:?}"));
+    if case == 13 {
+        let (source, _) = semantic_models::config_unit_with_body(&document, &body);
+        subtype_fixture_diagnostics(&graph, &source);
+    }
     let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
         .unwrap_or_else(|refusal| panic!("state fixture {case}: original public S4: {refusal:?}"));
     assert!(
@@ -209,6 +213,82 @@ fn state_fixture_identity(case: usize) {
         spine.package().package_id(),
         "state fixture {case}: owning S4 and formatter spine must agree"
     );
+}
+
+fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, source: &str) {
+    use quire_semantic_value::location::{Location, Origin};
+
+    eprintln!("state fixture 13: original S3 succeeded; source={source:?}");
+    for node in graph.semantic_graph().nodes() {
+        // The public structural terms retain the actual links, including
+        // nominal links, without deriving an edge or node kind from a key.
+        eprintln!(
+            "state fixture 13: node={:?} tag={:?} form={} type={:?} declaration={:?} body={:?} nominal={:?}",
+            node.key(),
+            node.node_tag(),
+            node.semantic_form(),
+            node.semantic_type(),
+            node.declaration(),
+            node.body(),
+            node.nominal()
+        );
+    }
+    let mut unresolved_generated = 0;
+    for (key, origin, location) in graph.occurrences() {
+        let node = graph
+            .semantic_graph()
+            .node(key)
+            .expect("the original subtype occurrence names a checked node");
+        assert_eq!(graph.occurrence(key, &origin), Some(location));
+        let region = graph.occurrence_region(key, &origin);
+        eprintln!(
+            "state fixture 13: occurrence={key:?}/{origin:?} location={location:?} region={region:?}"
+        );
+        if origin.role().as_str() == "generated" && region.is_none() {
+            unresolved_generated += 1;
+            eprintln!(
+                "state fixture 13: unresolved Generated node={key:?} role={} ordinal={} location={location:?} tag={:?} form={} preimage={}",
+                origin.role().as_str(),
+                origin.ordinal(),
+                node.node_tag(),
+                node.semantic_form(),
+                std::str::from_utf8(node.preimage()).expect("canonical preimage is UTF-8")
+            );
+        }
+        let anchor_seed = matches!(
+            &location.origin,
+            Origin::Body { .. }
+                | Origin::Measure { .. }
+                | Origin::StateClause { .. }
+                | Origin::ProtocolAttempt { .. }
+        ) || (matches!(&location.origin, Origin::TypeDeclaration { .. })
+            && location.depth() == 0);
+        if anchor_seed {
+            let root = Location::root(location.origin.clone());
+            let root_region = graph.region(&root);
+            eprintln!(
+                "state fixture 13: anchor seed node={key:?} root={root:?} region={root_region:?}"
+            );
+            if let Some(region) = root_region {
+                assert_eq!(region.source(), graph.source(), "original anchor source");
+                assert!(region.start() < region.end(), "real anchor span is nonempty");
+                let start = usize::try_from(region.start()).unwrap();
+                let end = usize::try_from(region.end()).unwrap();
+                let bytes = source
+                    .get(start..end)
+                    .expect("the anchor span selects the original authored unit");
+                eprintln!("state fixture 13: anchor root={root:?} authored bytes={bytes:?}");
+                if let Origin::StateClause { clause, index } = &root.origin {
+                    assert_eq!(
+                        graph.state_clauses()[*index].name(),
+                        clause.as_str(),
+                        "the anchor names its actual checked clause"
+                    );
+                }
+            }
+        }
+    }
+    eprintln!("state fixture 13: unresolved Generated count={unresolved_generated}; strict S4 next");
 }
 
 macro_rules! state_identity_tests {
