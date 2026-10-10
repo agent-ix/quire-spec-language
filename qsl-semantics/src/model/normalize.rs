@@ -929,12 +929,11 @@ struct AncestorWalk {
 ///
 /// `max_steps` is the caller's
 /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`],
-/// used as given: it bounds how many distinct `supertypes` edges this one
+/// used as given: it bounds how many `supertypes` edges this one
 /// walk follows, each charged before it is followed, so under multiple
 /// supertypes it bounds the closure of `root_key`, never a chain depth. A
 /// closure of `n` edges is admitted at `max_steps == n`, and following one
-/// edge more refuses [`ModelRefusalCause::AncestorSteps`] naming `root_key`
-/// and the bound.
+/// edge more returns the exact `model.ancestor-edge` incomplete record.
 fn ancestor_paths(
     root_key: &DeclarationKey,
     index: &RecordIndex,
@@ -956,7 +955,7 @@ fn ancestor_paths(
     }];
     let mut out = Vec::new();
     let mut closing_cycles: Vec<ClosingCycle> = Vec::new();
-    let mut followed: HashSet<(DeclarationKey, DeclarationKey)> = HashSet::new();
+    let mut followed = 0_u64;
     while let Some(frame) = stack.last_mut() {
         if frame.next >= frame.directs.len() {
             stack.pop();
@@ -972,27 +971,20 @@ fn ancestor_paths(
             .expect("every Frame is seeded with root_key and only ever grows visited");
         let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
-        // Charge the edge before following it: each distinct edge of the
-        // closure costs one step, however many paths reach it.
-        if followed.insert((specific_key.clone(), ancestor_key.clone()))
-            && u64::try_from(followed.len()).unwrap_or(u64::MAX) > max_steps
-        {
-            return Err(Denial::from(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::ancestor_steps(
-                    root_key.clone(),
-                    max_steps,
-                    qsl_foundation::Setting::ModelAncestorSteps,
-                ),
-                detail: format!(
-                    "ancestor walk from {} exceeded the ancestor_steps limit of {max_steps}",
-                    root_key.node
-                ),
+        // The owning cycle/fact work admits first, so a simultaneous work
+        // denial wins. The edge ceiling adds no work and refunds none.
+        charges.cycle_check(frame.path.len().saturating_add(1))?;
+        if followed == max_steps {
+            return Err(Denial::Incomplete(Incomplete {
+                limit_kind: LimitKind::AncestorSteps,
+                limit: max_steps,
+                consumed: followed,
+                next_charge: 1,
+                charge_point: ChargePoint::ModelAncestorEdge,
             }));
         }
+        followed += 1;
         let new_path = frame.path.extended(&ancestor_key);
-
-        charges.cycle_check(new_path.len())?;
         if frame.visited.contains(&ancestor_key) {
             // Every contributing declaration in the cycle itself, not the
             // whole path from the walk's root: `frame.visited` is that whole
@@ -3185,14 +3177,14 @@ mod tests {
             ..short
         };
         match normalize(&chain, records_unlimited) {
-            NormalizeOutcome::Refused(refusals) => {
-                assert_eq!(refusals.len(), 1);
-                assert!(matches!(
-                    refusals[0].cause,
-                    ModelRefusalCause::AncestorSteps { limit: 5, .. }
-                ));
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(incomplete, Incomplete {
+                    limit_kind: LimitKind::AncestorSteps,
+                    limit: 5, consumed: 5, next_charge: 1,
+                    charge_point: ChargePoint::ModelAncestorEdge,
+                });
             }
-            other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+            other => panic!("expected Incomplete(AncestorSteps), got {other:?}"),
         }
     }
 

@@ -28,7 +28,7 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
-use super::facts::Definedness;
+use super::facts::{CheckedFacts, Definedness};
 use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
@@ -295,6 +295,7 @@ pub struct ClauseClaim {
 /// lowering keys it.
 #[derive(Debug)]
 pub struct TypedStateClause {
+    pub(crate) facts: CheckedFacts,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
@@ -415,7 +416,17 @@ fn check_clause(
     )
     .with_cancel(input.cancel);
     bind_parameters(&mut typer, &parameters, location)?;
+    let parent_projections = if form.kind == StateClauseKind::Postcondition {
+        form.operation.as_ref().map(|operation| {
+            input.models.iter().flat_map(|model| {
+                model.parent_projections(form.context, operation, input.scope.types())
+            }).collect()
+        }).unwrap_or_default()
+    } else {
+        BTreeMap::new()
+    };
     typer.enter_state_clause(StateContext {
+        parent_projections,
         kind: form.kind,
         operation: form
             .operation
@@ -435,13 +446,13 @@ fn check_clause(
     let slot_names = typer.slot_names().to_vec();
     let formed_units = typer.into_formed_units();
     let observations = Observations::of(body.root(), form.observation(), parameters.len());
-    Definedness::new(
+    let facts = Definedness::new(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     )
     .with_observations(&observations)
-    .check(body.root())?;
+    .check_and_retain(body.root())?;
 
     // The populations the clause ranges over: its context's, already
     // resolved by the assembler (FR-104 "Resolution"), then each one a
@@ -477,6 +488,7 @@ fn check_clause(
         .into_iter()
         .collect();
     Ok(TypedStateClause {
+        facts,
         parameters,
         body,
         slots,

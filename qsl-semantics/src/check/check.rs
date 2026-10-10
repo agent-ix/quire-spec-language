@@ -716,6 +716,7 @@ pub(crate) struct Typer<'a> {
 /// `result` are bound to.
 #[derive(Clone, Debug)]
 pub(crate) struct StateContext {
+    pub(crate) parent_projections: BTreeMap<quire_semantic_value::declaration::FieldRef, (ValueType, Presence)>,
     /// The clause kind.
     pub(crate) kind: qsl_forms::StateClauseKind,
     /// The operation's name, for a `pre` or `post` clause.
@@ -1657,15 +1658,23 @@ impl<'a> Typer<'a> {
             .attribute(key, field)
             .ok_or_else(|| mismatch(location))?;
         let declared = attribute.field();
-        let optional = declared.presence() == Presence::Optional;
+        let identity = attribute.identity();
+        let projected = self.state.as_ref().and_then(|state| {
+            matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot)
+                .then(|| state.parent_projections.get(&identity))
+                .flatten()
+        });
+        let (declared_type, presence) = projected
+            .map_or((declared.value_type(), declared.presence()), |(value_type, presence)| (value_type, *presence));
+        let optional = presence == Presence::Optional;
         let value_type = if optional {
-            ValueType::option(declared.value_type().clone())
+            ValueType::option(declared_type.clone())
         } else {
-            declared.value_type().clone()
+            declared_type.clone()
         };
         Ok(node(
             NodeKind::Attribute {
-                field: attribute.identity(),
+                field: identity,
                 reference: self.push(reference),
                 optional,
                 derefed,

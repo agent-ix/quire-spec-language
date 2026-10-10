@@ -46,6 +46,8 @@ pub struct AdmittedModel {
     selection: DomainPackageRef,
     records: BTreeMap<DeclarationKey, DomainPackageRecord>,
     types: BTreeMap<EffectiveId, DeclarationKey>,
+    index: std::sync::Arc<crate::model::index::ModelIndex>,
+    ancestors: BTreeMap<DeclarationKey, std::collections::BTreeSet<DeclarationKey>>,
 }
 
 /// Why an [`AdmittedModel`] cannot be formed: the effective view was
@@ -61,6 +63,111 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
+    pub(crate) fn model_index(&self) -> &crate::model::index::ModelIndex {
+        &self.index
+    }
+
+    pub(crate) fn declaration_key(&self, identity: EffectiveId) -> Option<&DeclarationKey> {
+        self.types.get(&identity)
+    }
+
+    pub(crate) fn field_reference(&self, key: &DeclarationKey) -> Option<quire_semantic_value::declaration::FieldRef> {
+        let DomainPackageRecord::FieldMember(field) = self.records.get(key)? else { return None; };
+        let (owner, _) = self.types.iter().find(|(_, key)| *key == &field.owner)?;
+        let name = crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
+        Some(quire_semantic_value::declaration::FieldRef::new(*owner, name))
+    }
+
+    pub(crate) fn operation_key(&self, operation: &crate::check::state_clause::ClauseOperation) -> Option<&DeclarationKey> {
+        let owner = self.types.get(&operation.declaring)?;
+        self.index.operations().find(|record| &record.owner == owner
+            && crate::model::intake::member_identity_name(&record.owner.node, &record.key.node)
+                == Some(operation.declaration.name())).map(|record| &record.key)
+    }
+
+    pub(crate) fn reaches_owner(&self, specific: &DeclarationKey, general: &DeclarationKey) -> bool {
+        specific == general || self.ancestors.get(specific).is_some_and(|ancestors| ancestors.contains(general))
+    }
+
+    pub(crate) fn narrows_value_type(&self, child: &crate::model::domain_package::ValueTypeRef,
+        parent: &crate::model::domain_package::ValueTypeRef) -> bool {
+        match (child.as_package(), parent.as_package()) {
+            (Some(child), Some(parent)) if child != parent => {
+                match (self.index.scalar_bounds(child), self.index.scalar_bounds(parent)) {
+                    (Some((lower, upper)), Some((parent_lower, parent_upper))) =>
+                        parent_lower <= lower && upper <= parent_upper,
+                    (None, None) => self.reaches_owner(child, parent),
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// The immediate parent's declared projection for each narrowed field
+    /// written by this clause's actual operation. The map is derived from
+    /// admitted records and declared fields, never from clause literals.
+    pub(crate) fn parent_projections(
+        &self,
+        context: EffectiveId,
+        operation: &crate::check::state_clause::ClauseOperation,
+        environment: &quire_semantic_value::declaration::TypeEnvironment,
+    ) -> BTreeMap<quire_semantic_value::declaration::FieldRef, (ValueType, quire_exact::Presence)> {
+        use crate::model::intake::member_identity_name;
+        use quire_semantic_value::declaration::FieldRef;
+
+        let Some(context_key) = self.types.get(&context) else {
+            return BTreeMap::new();
+        };
+        let Some(operation_owner) = self.types.get(&operation.declaring) else {
+            return BTreeMap::new();
+        };
+        let writer = self.records.values().find_map(|record| match record {
+            DomainPackageRecord::OperationMember(writer)
+                if &writer.owner == operation_owner
+                    && member_identity_name(&writer.owner.node, &writer.key.node)
+                        == Some(operation.declaration.name()) => Some(writer),
+            _ => None,
+        });
+        let Some(writer) = writer else {
+            return BTreeMap::new();
+        };
+        let mut projections = BTreeMap::new();
+        for record in self.records.values() {
+            let DomainPackageRecord::FieldMember(field) = record else { continue; };
+            if &field.owner != context_key { continue; }
+            let Some(target) = &field.redefines else { continue; };
+            let Some(DomainPackageRecord::FieldMember(parent)) = self.records.get(target) else { continue; };
+            let mut lineage = std::collections::BTreeSet::new();
+            let mut current = Some(field);
+            while let Some(member) = current {
+                if !lineage.insert(member.key.clone()) { break; }
+                current = member.redefines.as_ref().and_then(|key| match self.records.get(key) {
+                    Some(DomainPackageRecord::FieldMember(member)) => Some(member),
+                    _ => None,
+                });
+            }
+            if !writer.effect.modifies.iter().any(|key| lineage.contains(key)) { continue; }
+            let narrows_type = self.narrows_value_type(&field.value_type, &parent.value_type);
+            let narrowed = narrows_type
+                || (field.presence == quire_exact::Presence::Required && parent.presence == quire_exact::Presence::Optional)
+                || field.multiplicity.lower > parent.multiplicity.lower
+                || match (field.multiplicity.upper, parent.multiplicity.upper) {
+                    (Some(child), Some(parent)) => child < parent,
+                    (Some(_), None) => true,
+                    _ => false,
+                };
+            if !narrowed { continue; }
+            let Some((parent_id, _)) = self.types.iter().find(|(_, key)| *key == &parent.owner) else { continue; };
+            let Some(parent_name) = member_identity_name(&parent.owner.node, &parent.key.node) else { continue; };
+            let Some(parent_type) = environment.object_type(*parent_id) else { continue; };
+            let Some(declared) = parent_type.attributes().iter().find(|member| member.name() == parent_name) else { continue; };
+            let Some(name) = member_identity_name(&field.owner.node, &field.key.node) else { continue; };
+            projections.insert(FieldRef::new(context, name), (declared.value_type().clone(), declared.presence()));
+        }
+        projections
+    }
+
     /// `domain_package`, admitted with `view`, its own effective view.
     pub fn new(domain_package: &DomainPackage, view: &EffectiveView) -> Result<Self, ForeignView> {
         if view.model_selection() != &domain_package.model_selection {
@@ -81,6 +188,13 @@ impl AdmittedModel {
 
     fn assemble(domain_package: &DomainPackage, view: &EffectiveView) -> Self {
         Self {
+            index: view.shared_model_index().clone(),
+            ancestors: view.declarations().iter()
+                .filter(|entry| entry.preimage.owner_effective_type.is_none())
+                .map(|entry| (entry.preimage.original.clone(), entry.preimage.derivation.iter()
+                    .filter(|fact| fact.rule == crate::model::key::RULE_INHERIT)
+                    .filter_map(|fact| fact.inputs.iter().last().cloned()).collect()))
+                .collect(),
             alias: None,
             selection: domain_package.model_selection.clone(),
             records: domain_package
@@ -105,6 +219,8 @@ impl AdmittedModel {
         types: impl IntoIterator<Item = (EffectiveId, DeclarationKey)>,
     ) -> Self {
         Self {
+            index: std::sync::Arc::new(crate::model::index::ModelIndex::build(domain_package.clone())),
+            ancestors: BTreeMap::new(),
             alias: None,
             selection: domain_package.model_selection.clone(),
             records: domain_package

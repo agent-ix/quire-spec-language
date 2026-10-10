@@ -437,6 +437,17 @@ impl<'a> Definedness<'a> {
         self.walk(root, Facts::default())
     }
 
+    /// Admit the body and retain its true-outcome closure on this same
+    /// definedness checker. Only an admitted body can produce this value.
+    pub(crate) fn check_and_retain(
+        &mut self,
+        root: CheckedNode<'_>,
+    ) -> Result<CheckedFacts, CheckRefusal> {
+        self.check(root)?;
+        let (when_true, _) = self.outcomes(root, &Rc::new(Facts::default()));
+        Ok(CheckedFacts { when_true })
+    }
+
     /// The stable path `node` reads under `facts`, if it reads one: the
     /// projection chain is followed to its root on a loop, then its steps
     /// are applied root first.
@@ -1319,6 +1330,69 @@ pub(crate) struct Established {
     /// The proved integer interval on `self.<field>` on the true outcome,
     /// if any.
     pub(crate) interval: Option<ProvedInterval>,
+}
+
+/// The actual FR-146 closure of an admitted clause. Its constructor and
+/// underlying facts are private to the checker; callers can only query a
+/// model attribute at its exact root and observation.
+pub(crate) struct CheckedFacts {
+    when_true: Option<Rc<Facts>>,
+}
+
+impl std::fmt::Debug for CheckedFacts {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("CheckedFacts")
+            .field("reachable", &self.when_true.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl CheckedFacts {
+    pub(crate) fn attribute(
+        &self,
+        root: Slot,
+        field: &FieldRef,
+        observation: Observation,
+    ) -> Established {
+        let Some(facts) = &self.when_true else {
+            return Established::default();
+        };
+        let path = StablePath {
+            root,
+            steps: vec![Step::Attribute(field.clone(), observation)],
+        };
+        let presence = facts.present.contains(&path);
+        let direct = facts.intervals.get(&Subject::Value(path.clone())).cloned();
+        let mut value_path = path;
+        value_path.steps.push(Step::Value);
+        Established {
+            presence,
+            interval: direct.or_else(|| facts.intervals.get(&Subject::Value(value_path)).cloned()),
+        }
+    }
+}
+
+impl Established {
+    /// Separate admitted postconditions are conjunctive. Presence and each
+    /// interval end are combined independently, so neither proof form
+    /// suppresses the other.
+    pub(crate) fn conjoin(&mut self, other: Self) {
+        self.presence |= other.presence;
+        match (&mut self.interval, other.interval) {
+            (None, interval) => self.interval = interval,
+            (Some(current), Some(next)) => {
+                current.lower = match (current.lower.take(), next.lower) {
+                    (Some(left), Some(right)) => Some(left.max(right)),
+                    (left, right) => left.or(right),
+                };
+                current.upper = match (current.upper.take(), next.upper) {
+                    (Some(left), Some(right)) => Some(left.min(right)),
+                    (left, right) => left.or(right),
+                };
+            }
+            (Some(_), None) => {}
+        }
+    }
 }
 
 /// Derives the facts `condition`'s true outcome establishes about
