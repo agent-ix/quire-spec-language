@@ -41,6 +41,12 @@ and S4 rows).
   v2 nodes through the wire vocabulary (`NodeTag`, `SemanticTerm`,
   `Operator`), each with QSpec FR-440's spelling. A `case` node's
   `quire.op.control.case` application carries `member: null`.
+- S3 and S4 SHALL preserve the `union_value` aggregate body and its
+  `quire.application-node/v1` key selected by
+  [FR-319](FR-319-key-union-member-and-case-nodes.md), including a nullary
+  member and payloads consisting only of references. Emission and the I2
+  reader use this explicit selector even when the body contains no
+  application term.
 - The S4 emitter SHALL omit with `UnsupportedForm` every node whose tag and
   form the target IR cannot decode, together with every node that names it,
   leaving no partial body.
@@ -61,6 +67,7 @@ and S4 rows).
 | FR-320-AC-1 | A package with `Shape`, `area` (FR-318-AC-1) and a function returning `Shape::Rect(2, 3)` emits v2 nodes in QSpec's union spelling. After S4 emission and the I2 read, the union's node id and every member identity are unchanged (the `WireNodeId` equals the emitted id), and after replay's S1 to S4 recompile of the digest-addressed source the recompiled `package_id` equals the emitted one. | Test (TC-827) |
 | FR-320-AC-2 | Against an IR that cannot decode the union (tag, form), S4 omits the union node and every node naming it with `UnsupportedForm`, and the emitted body holds none of them. | Test (TC-827) |
 | FR-320-AC-3 | One `value-validity` item whose function body contains `case` is emitted and settles `unsupported` with its catalog code through the IR and CG arms, with no QSL settlement in between. | Test (TC-828) |
+| FR-320-AC-4 | For the independently fixed nullary and reference-payload vectors of FR-319-AC-4, the producer emits the specified aggregate bodies and expected application-preimage keys, and the I2 reader admits those same keys. Replacing a retained key with the structural-preimage digest of the same node refuses `invalid_package`/`stale-node-key` at FR-322's node-key check. A producer/reader round trip alone is not the expected-byte or expected-key oracle. | Test |
 
 ## Dependencies
 

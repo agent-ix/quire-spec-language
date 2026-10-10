@@ -29,10 +29,13 @@ relationships:
 `check` mints every checked node id (ADR-011 E3, FB-13; ADR-013 O-04). QSpec
 FR-322 publishes preimages for two kinds of node: the nominal enum, enum
 member, dimension and unit nodes, and every node whose body contains an
-application (`quire.application-node/v1`). The `Value` family also emits type
+application (`quire.application-node/v1`). QSpec FR-440 additionally selects
+that application preimage for a `value`/`union_value` node even when its
+aggregate body contains no application. The `Value` family also emits type
 nodes, literal and aggregate value nodes, parameter nodes and function nodes
-whose bodies hold no application. This requirement defines QSL's key for
-those nodes: the `quire.structural-node/v1` preimage. It also fixes the node
+whose bodies hold no application. Apart from the `union_value` exception,
+this requirement defines QSL's key for those nodes: the
+`quire.structural-node/v1` preimage. It also fixes the node
 shape of a type, a parameter and a function, which that key hashes.
 
 ADR-013 O-04 keys these nodes by this QSL-proposed preimage, and QSL
@@ -69,9 +72,17 @@ copied): FR-322, `proposals/checked-package-v2/node-identity-preimage.schema.jso
    nominal preimage (`quire.enum-declaration-node/v1`,
    `quire.enum-member-node/v1`, `quire.dimension-node/v1`,
    `quire.unit-node/v1`);
-2. any other node whose body contains an `application` term by QSpec's
-   `quire.application-node/v1` preimage, exactly as FR-322 defines it;
+2. any `value`/`union_value` node, and any other node whose body contains an
+   `application` term, by QSpec's `quire.application-node/v1` preimage,
+   exactly as FR-322 and FR-440 define it;
 3. every other node by the `quire.structural-node/v1` preimage below.
+
+The `union_value` selection is independent of payload arity and of whether
+the body contains an `application` term. Its aggregate body is the body
+specified by [FR-319](FR-319-key-union-member-and-case-nodes.md) and
+[FR-320](FR-320-lower-and-emit-union-and-case-nodes.md).
+The exception applies only to `value`/`union_value`: a `record_value` or
+`tuple_value` whose body contains no application still selects rule 3.
 
 The key is SHA-256 of the RFC 8785 bytes of the preimage, produced by the one
 JCS implementation ADR-013 §2 names (`quire-canonical`).
