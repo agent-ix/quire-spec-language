@@ -602,3 +602,59 @@ fn all_six_refinement_vectors_preserve_native_payload_and_same_operation_budget(
         }), "R08 row {row}");
     }
 }
+
+
+pub(super) fn unrelated_numeric_clause() {
+    let (bytes, _) = refinement_fixture(4);
+    assert_eq!(check(&bytes, "post Q using v on Config::B::set { self.cs >= 0 }"),
+        Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]));
+}
+
+pub(super) fn conjoined_numeric_clauses() {
+    let bytes = document(|template| {
+        let mut count = scalar(template, "Count", 9);
+        for constraint in count["constraints"].as_array_mut().unwrap() {
+            if constraint["keyword"] == "min" { constraint["operands"]["value"] = json!(-5); }
+        }
+        vec![count, scalar(template, "Small", 5),
+            object("A", None, vec![field("A", "c", "Count", 1, Some(1), None)],
+                vec![writer("A", &["A/c"], None)]),
+            object("B", Some("A"), vec![field("B", "cs", "Small", 1, Some(1), Some("A/c"))],
+                vec![writer("B", &["A/c"], Some("A/set"))])]
+    });
+    for clauses in [
+        "post Lower using v on Config::B::set { self.cs >= 0 }\npost Upper using v on Config::B::set { self.cs <= 5 }",
+        "post Upper using v on Config::B::set { self.cs <= 5 }\npost Lower using v on Config::B::set { self.cs >= 0 }",
+    ] {
+        assert_eq!(check(&bytes, clauses), Ok(()), "both real clauses establish [0,5]");
+    }
+    for clause in ["post Lower using v on Config::B::set { self.cs >= 0 }",
+        "post Upper using v on Config::B::set { self.cs <= 5 }"] {
+        assert_eq!(check(&bytes, clause),
+            Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]),
+            "neither checked clause alone proves the complete narrowed interval");
+    }
+}
+
+pub(super) fn malformed_numeric_domain() {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause};
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    use crate::model_operations::{config_unit_with_body, parse_and_build};
+    let bytes = document(|template| {
+        let mut count = scalar(template, "Count", 0);
+        for constraint in count["constraints"].as_array_mut().unwrap() {
+            if constraint["keyword"] == "min" { constraint["operands"]["value"] = json!(9); }
+        }
+        vec![count, object("A", None, vec![field("A", "c", "Count", 1, Some(1), None)], vec![])]
+    });
+    let (unit, packages) = config_unit_with_body(&bytes, "function noop using v(): Boolean pure { true }");
+    let built = parse_and_build(&unit);
+    let refusal = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+        .expect_err("malformed domain refuses before any clause or conformance stage");
+    let UnitIntakeCause::Refused(refusals) = refusal.cause else {
+        panic!("actual malformed domain cause required: {refusal:?}");
+    };
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause, ModelRefusalCause::MalformedDeclaration);
+}

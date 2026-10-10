@@ -954,44 +954,7 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligation() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
-        "model.B.cs",
-        "model.B",
-        "model.Small",
-        mult(1, Some(1)),
-        Some("model.A.c"),
-        vec![],
-    ));
-    records.push(operation_redefining(
-        "model.B.set",
-        "model.B",
-        vec![],
-        None,
-        vec![],
-        vec![],
-        vec![],
-        vec![PostconditionClause::Comparison {
-            field: DeclarationKey::fixture("model.B.cs"),
-            operator: OrderingOperator::GreaterOrEqual,
-            literal: 0,
-        }],
-        Some("model.A.set"),
-    ));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08g"), records);
-    let redefining_key = DeclarationKey::fixture("model.B.cs");
-    let redefined_key = DeclarationKey::fixture("model.A.c");
-    match check_field_refinement_obligation(
-        &ModelIndex::build(domain_package.clone()),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
-            assert!(failures[0].detail.contains("field-domain"));
-        }
-        other => panic!("expected Refused (g, unrelated clause), got {other:?}"),
-    }
+    crate::model_conformance_boundary::unrelated_numeric_clause();
 }
 
 /// Review of PR #157 finding #1 (and its re-review, finding #5): the
@@ -1011,141 +974,16 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
-    let ge_zero = PostconditionClause::Comparison {
-        field: DeclarationKey::fixture("model.B.cs"),
-        operator: OrderingOperator::GreaterOrEqual,
-        literal: 0,
-    };
-    let le_five = PostconditionClause::Comparison {
-        field: DeclarationKey::fixture("model.B.cs"),
-        operator: OrderingOperator::LessOrEqual,
-        literal: 5,
-    };
-
-    for (order, clauses) in [
-        ("ge-then-le", vec![ge_zero.clone(), le_five.clone()]),
-        ("le-then-ge", vec![le_five, ge_zero]),
-    ] {
-        let records = vec![
-            object_type("model.A", vec![]),
-            object_type("model.B", vec!["model.A"]),
-            scalar_type("model.Count", -5, 9),
-            scalar_type("model.Small", 0, 5),
-            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
-            field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
-            field_member_redefining(
-                "model.B.cs",
-                "model.B",
-                "model.Small",
-                mult(1, Some(1)),
-                Some("model.A.c"),
-                vec![],
-            ),
-            operation(
-                "model.A.set",
-                "model.A",
-                vec![],
-                None,
-                vec!["model.A.x", "model.A.c"],
-                vec![],
-                vec![],
-                vec![],
-            ),
-            operation_redefining(
-                "model.B.set",
-                "model.B",
-                vec![],
-                None,
-                vec![],
-                vec![],
-                vec![],
-                clauses,
-                Some("model.A.set"),
-            ),
-        ];
-        let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08h"), records);
-        let redefining_key = DeclarationKey::fixture("model.B.cs");
-        let redefined_key = DeclarationKey::fixture("model.A.c");
-        match check_field_refinement_obligation(
-            &ModelIndex::build(domain_package.clone()),
-            &redefining_key,
-            &redefined_key,
-        ) {
-            Ok(ConformanceOutcome::Compatible) => {}
-            other => panic!(
-                "expected Compatible regardless of clause order ({order}): the two \
-                 clauses together establish [0,5], contained in Small's [0,5], \
-                 got {other:?}"
-            ),
-        }
-    }
+    crate::model_conformance_boundary::conjoined_numeric_clauses();
 }
 
 /// Review of PR #157 finding #3: a malformed `ScalarTypeRecord` (its own
 /// lower greater than its upper) must refuse when a narrowing
-/// redefinition's obligation check seeds a synthetic guard from it, never
-/// panic on this caller-supplied domain package data.
+/// domain reader admits any checked facts, never panic on malformed source data.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
-    let records = vec![
-        object_type("model.A", vec![]),
-        object_type("model.B", vec!["model.A"]),
-        scalar_type("model.Count", 9, 0), // malformed: lower > upper.
-        scalar_type("model.Small", 0, 5),
-        field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
-        field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
-        field_member_redefining(
-            "model.B.cs",
-            "model.B",
-            "model.Small",
-            mult(1, Some(1)),
-            Some("model.A.c"),
-            vec![],
-        ),
-        operation(
-            "model.A.set",
-            "model.A",
-            vec![],
-            None,
-            vec!["model.A.x", "model.A.c"],
-            vec![],
-            vec![],
-            vec![],
-        ),
-        operation_redefining(
-            "model.B.set",
-            "model.B",
-            vec![],
-            None,
-            vec![],
-            vec![],
-            vec![],
-            vec![PostconditionClause::Comparison {
-                field: DeclarationKey::fixture("model.B.cs"),
-                operator: OrderingOperator::LessOrEqual,
-                literal: 5,
-            }],
-            Some("model.A.set"),
-        ),
-    ];
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08i"), records);
-    let redefining_key = DeclarationKey::fixture("model.B.cs");
-    let redefined_key = DeclarationKey::fixture("model.A.c");
-    match check_field_refinement_obligation(
-        &ModelIndex::build(domain_package.clone()),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Err(refusal) => {
-            assert_eq!(refusal.code, Code::InvalidModelBinding);
-            // FR-272's `invalid_model_binding` cause list is closed; there
-            // is no dedicated scalar-domain variant, so this is the
-            // catalogued `malformed-declaration`.
-            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
-        }
-        other => panic!("expected Err(malformed-declaration), got {other:?}"),
-    }
+    crate::model_conformance_boundary::malformed_numeric_domain();
 }
 
 /// QSL #171: `check_operation_redefinition`'s effect axis must walk a
