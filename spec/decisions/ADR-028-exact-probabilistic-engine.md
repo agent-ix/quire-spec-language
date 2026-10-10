@@ -129,9 +129,9 @@ What EN-5 builds on:
 | --- | --- |
 | SCH-1 | **Meaning.** `under every scheduler` (ADR-024 PM-8) quantifies over every scheduler of PR-2's MDP: any function from the finite history of states and actions to a distribution over the enabled actions, history-dependent and randomized. `probability >= θ [E]` holds when the **minimum** over schedulers of `Pr[s0, σ](E)` is at least `θ`, and `probability <= θ [E]` when the **maximum** is at most `θ`, for every initial state `s0` and every `over` binding (ADR-024 PM-4). Each other form reads its quantity's minimum or maximum the same way. The workload plays no part, and a scheduler may schedule any enabled action, including one a workload would weight low. |
 | SCH-2 | **Residual nondeterminism.** When one drawn vector of an action has several post-states, the scheduler picks one after the draw, knowing the drawn vector, as in a standard MDP (RU-4). The MDP models this choice as an intermediate state `(s, a, r)` with one action per post-state, each with probability 1. Intermediate states are not positions: a monitor reads only model states (ADR-018 SM-3). |
-| SCH-3 | **Memoryless deterministic schedulers suffice on the product.** On a finite MDP, the minimum and the maximum of a reachability probability, of a finite-horizon expected reward, of an expected reward to a target, and of a long-run average reward are attained by a scheduler that picks one action per state, ignoring history (Puterman; Baier and Katoen). Every form of §4 reduces to one of these on PR-4's product, whose monitor state and accumulator are exactly the finite memory the form needs on the model. EN-5 therefore computes over memoryless deterministic schedulers on the product, and its witness scheduler (§10) is one. |
+| SCH-3 | **Memoryless deterministic schedulers suffice on the product.** On a finite MDP, the minimum and the maximum of a reachability probability, of a finite-horizon expected reward, of an expected reward to a target, and of a long-run average reward are attained by a scheduler that picks one action per state, ignoring history (Puterman; Baier and Katoen). Every form of §4 reduces to one of these on PR-4's product, whose monitor state and accumulator are exactly the finite memory the form needs on the model. EN-5 therefore computes over memoryless deterministic schedulers on an unrestricted product. **Amended for TS-5 observation admissibility:** §13a defines infimum/supremum and finite-wait components; an extremum need not be attained, and an exact-rational randomized admissible witness may be required even without an authored fairness set. |
 | SCH-4 | **Fairness.** An every-scheduler claim with no fairness set ranges over every scheduler, including one that starves an enabled action. One that states a fairness set ranges over the fair schedulers of §3a (RU-3). A claim under a workload carries no fairness set: the workload is fair with probability 1 (ADR-024 PM-7). |
-| SCH-5 | **Under a workload.** Under `W` the scheduler is PM-2's memoryless randomized scheduler, the product is a DTMC, and its value is one number per initial state and binding. |
+| SCH-5 | **Under a workload.** Where no free delay/TS-5 observation choices remain (TA-1a and §13a otherwise apply), under `W` the scheduler is PM-2's memoryless randomized scheduler, the product is a DTMC, and its value is one number per initial state and binding. |
 
 ### 3a. Fair schedulers
 
@@ -195,10 +195,10 @@ checks.
 | UR-1 | **Qualitative precomputation.** EN-5 first computes, by graph algorithms alone, the states whose value is 0 or 1: `Prob0` and `Prob1` under a workload; `Prob0A`, `Prob0E`, `Prob1A` and `Prob1E` over every scheduler (de Alfaro; Baier and Katoen §10.6). Values at these states are exact without arithmetic, and the remaining states have values strictly between 0 and 1. |
 | UR-2 | **End components.** Over every scheduler, EN-5 decomposes the MDP into maximal end components (MECs). For a maximum it collapses each MEC with no target state into one state, keeping the actions that leave it; for a minimum, `Prob0E` already holds the states that can stay away from the target forever. On the resulting MDP the reachability operator has a unique fixed point, so iteration from both ends converges to the value (Haddad and Monmege; Baier, Klein, Leuschner, Parker and Wunderlich). |
 | UR-3 | **Interval iteration.** EN-5 iterates the Bellman operator from 0 and from 1 at once, over dyadic intervals with outward rounding (AR-2): the lower sequence rises and the upper sequence falls, and each iterate of each is a valid lower or upper certificate (CE-3). It stops when the interval at every initial product state lies on one side of the threshold. Plain value iteration with a convergence threshold has no stopping guarantee and is never run. |
-| UR-4 | **Exact policy iteration.** When the interval still contains the threshold after `max_iterations` sweeps or at `max_precision_bits`, EN-5 runs policy iteration in exact rationals: it fixes a memoryless deterministic scheduler, evaluates it by an exact sparse linear solve (fraction-free elimination, Bareiss), improves it action by action, and stops at a scheduler no action improves. The value is exact, so a value equal to the threshold is decided, which no interval method decides. Under a workload it is one exact linear solve. |
-| UR-5 | **Expected rewards.** For XF-5, the qualitative step finds the states that reach `B` with probability 1 under every scheduler (for a maximum) or under some scheduler (for a minimum); elsewhere the value is `+∞`, decided by the graph alone. On the rest, interval iteration needs an upper starting vector, which EN-5 obtains as in sound value iteration (Quatmann and Katoen), and end components of zero reward are collapsed as in UR-2. Exact policy iteration is the fallback, as in UR-4. |
+| UR-4 | **Exact policy iteration.** On unrestricted products (the derived timed case uses §13a), when the interval still contains the threshold after `max_iterations` sweeps or at `max_precision_bits`, EN-5 runs policy iteration in exact rationals: it fixes a memoryless deterministic scheduler, evaluates it by an exact sparse linear solve (fraction-free elimination, Bareiss), improves it action by action, and stops at a scheduler no action improves. The value is exact, so a value equal to the threshold is decided, which no interval method decides. Under a workload it is one exact linear solve. |
+| UR-5 | **Expected rewards.** On unrestricted products (TS-5 observation-admissible timed objectives instead use §13a), for XF-5, the qualitative step finds the states that reach `B` with probability 1 under every scheduler (for a maximum) or under some scheduler (for a minimum); elsewhere the value is `+∞`, decided by the graph alone. On the rest, interval iteration needs an upper starting vector, which EN-5 obtains as in sound value iteration (Quatmann and Katoen), and end components of zero reward are collapsed as in UR-2. Exact policy iteration is the fallback, as in UR-4. |
 | UR-6 | **Cost.** Qualitative precomputation is linear in the product for a DTMC and `O(|S| · |E|)` for an MDP; MEC decomposition is `O(|S| · |E|)`. Each interval sweep costs `O(|E|)` operations at `p` bits; the number of sweeps depends on how fast the model mixes, and `max_iterations` bounds it. Each policy evaluation costs a sparse elimination whose integers stay within the Hadamard bound, polynomial in the states and the bit length of the step probabilities; policy iteration ends after finitely many improvements, exponentially many in the worst case (Fearnley) and few in practice, and `max_policy_iterations` bounds them. |
-| UR-7 | **Canonical result.** The witness scheduler is the final policy of UR-4 or, from interval iteration, the action that attains the bound at each state in the final upper (for a maximum) or lower (for a minimum) iterate, ties broken by canonical transition order. For a maximum, the policy is chosen on UR-2's collapsed MDP and expanded on the product: at each collapsed MEC, the chosen leaving action at the MEC state that owns it, and at every other state of the MEC the first action, in canonical order, on a shortest path inside the MEC to that state. An action that stays inside a MEC attains the same iterate value as the leaving action, so choosing per state would let the induced chain stay in the MEC forever; the expansion leaves it and attains the maximum. |
+| UR-7 | **Canonical result.** On unrestricted products (the admissible threshold witnesses of §13a are checked instead for TS-5), the witness scheduler is the final policy of UR-4 or, from interval iteration, the action that attains the bound at each state in the final upper (for a maximum) or lower (for a minimum) iterate, ties broken by canonical transition order. For a maximum, the policy is chosen on UR-2's collapsed MDP and expanded on the product: at each collapsed MEC, the chosen leaving action at the MEC state that owns it, and at every other state of the MEC the first action, in canonical order, on a shortest path inside the MEC to that state. An action that stays inside a MEC attains the same iterate value as the leaving action, so choosing per state would let the induced chain stay in the MEC forever; the expansion leaves it and attains the maximum. |
 
 ### 8. Long-run fractions
 
@@ -245,7 +245,7 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 
 | ID | Rule |
 | --- | --- |
-| WS-1 | **Witness scheduler.** `WitnessScheduler{entries}`: for each product state the evidence names, its key (PR-4) and its choice: a scheduled identity; after a draw with several post-states, the post-state digest per drawn vector (SCH-2); over a timed subject, a unit `Delay` or an identity (§13). It is memoryless and deterministic on the product (SCH-3), or memoryless and randomized for a claim with a fairness set (FS-9), and is defined on the evidence's states only. |
+| WS-1 | **Witness scheduler.** `WitnessScheduler{entries}`: for each product state the evidence names, its key (PR-4) and its choice: a scheduled identity; after a draw with several post-states, the complete PostState ProductKey choice for the actual pending drawn vector (SCH-2), retaining CX-2 model-content binding; over a timed subject, FR-196's closed UnitDelay/EnterIdleDelay/IdleDelay/IdleObserve choices or actual identity/post-state choices (§13). It is memoryless and deterministic on an unrestricted product (SCH-3), or memoryless and randomized for a claim with a fairness set (FS-9) or TS-5 observation admissibility (§13a), and is defined on the evidence's states, including its checked admissibility continuation support. |
 | WS-2 | **`ProbabilisticCounterexample`.** `{initial_state, binding, bound, scheduler, evidence}`: the index of the initial state in the subject and the `over` binding (ADR-018 CX-2), the claim's bound with its threshold, the witness scheduler (absent under a workload), and the evidence. It travels in `WitnessEnvelope<ProbabilisticCounterexample>` with a new `ReplaySource::ProbabilisticWitness` arm, and the envelope's obligation identity binds the subject and claim. |
 | WS-3 | **Path-set evidence.** A finite list of finite product paths from the initial state, each as ADR-018 CX-2's step content plus each step's drawn random vector, on which the event is false (for a `>= θ` bound) or true (for a `<= θ` bound), pairwise prefix-free so their cylinders are disjoint, whose exact path probabilities sum past the bound: above `1 − θ` for `>= θ`, above `θ` for `<= θ`. A path's probability is the product of its step probabilities under the workload (ADR-024 PM-3), or of its draw probabilities and the witness scheduler's choice probabilities. For a quantile claim the paths read QSpec FR-413's two masses: `V`, the violating paths' probability, and `N`, the not-activated paths' probability; the evidence refutes `quantile q of M <= c` when `V > (1 − q) · (1 − N)` and `quantile q of M >= c` when `V > 0` and `V >= q · (1 − N)`, since `1 − N` bounds the activation probability from above. EN-5 emits a path set when at most `max_witness_paths` paths reach the bound, most probable first. An undefined evaluation (XV-8) is one path ending at the undefined state, with its `UndefinedEvaluation`, and carries no bound sum. |
 | WS-4 | **Subsystem evidence.** Otherwise the evidence is a lower certificate (CE-3), on the chain the witness scheduler induces or under the workload, for the violating quantity (`Pr(not E)` for `>= θ`, `Pr(E)` for `<= θ`) with value past the bound. The certificate's support is a critical subsystem (Funke, Jantsch and Baier): the checker explores only its states and their successors. Long-run and expected-reward refutations use the same shape with their own certificate kinds (CE-3). |
@@ -256,12 +256,12 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 
 | ID | Rule |
 | --- | --- |
-| CE-1 | **`ProbabilityCertificate`.** `{identity, objective, kind, values, ranking, policy, components}`: the item's obligation identity (ADR-013 O-09, as ADR-026 CF-5); the objective (the target or decided states, the reward, minimum, maximum or workload, and the fairness set, FS-9); the kind `Lower`, `Upper`, `Exact` or `LongRun`; a value per product state, each an exact rational (a dyadic value from interval iteration is an exact rational); for `Lower` and `Exact`, a natural-number ranking per state; for a lower bound on a maximum, or an upper bound on a minimum, a memoryless deterministic policy; and for `LongRun`, per component its value and a gain–bias pair. States are named by product state key (PR-4). The certificate names its states; it carries no qualitative sets, which the checker recomputes. |
+| CE-1 | **`ProbabilityCertificate`.** `{identity, objective, kind, values, ranking, policy, components}`: the item's obligation identity (ADR-013 O-09, as ADR-026 CF-5); the objective (the target or decided states, the reward, minimum, maximum or workload, and the fairness set, FS-9); the kind `Lower`, `Upper`, `Exact` or `LongRun`; a value per product state, each an exact rational (a dyadic value from interval iteration is an exact rational); for `Lower` and `Exact`, a natural-number ranking per state; for a lower bound on a maximum, or an upper bound on a minimum, a closed FR-202 WitnessEntry policy, deterministic or exact-rational randomized when actual fairness/TS-5 admissibility requires it; and for `LongRun`, per component its value and a gain–bias pair. States are named by product state key (PR-4). The certificate names its states; it carries no qualitative sets, which the checker recomputes. |
 | CE-2 | **The checker re-enumerates.** `qsl_replay::check_probability_certificate`, a layer-6 facade entry, recompiles the package, re-admits the subject and re-enumerates the product through `ModelSystem` and the monitor: every reachable product state for an `Upper`, `Exact` or `LongRun` certificate, the support and its successors for a `Lower` one. It recomputes the decided states, the `Prob0`/`Prob1` sets, the components and, with a fairness set, the maximal fair end components (FS-4) by graph algorithms, and checks the conditions of CE-3 in exact rationals. It solves no equation and runs no iteration. |
-| CE-3 | **Conditions.** With `F` the one-step operator of the objective (the workload's average, the minimum or maximum over actions, or the policy's action) and values fixed at decided, target and `Prob0` states: **Upper**: `F(y) <= y` at every state, so the least fixed point, which is the value, is at most `y` (Knaster–Tarski). **Lower**: `x <= F(x)` at every state of the support, and every non-target state with `x > 0` has, under the workload, under the policy, or for a minimum under every action, a successor with positive probability, `x > 0` and a smaller rank; then no end component inside the support avoids the target, and `x` is at most the value. **Exact**: both, with equality, so `x` is the value. On a finite-horizon product the ranking is the remaining horizon, which the checker reads from the monitor state. **Expected reward**: the same conditions with the reward added to `F`, and the `+∞` states recomputed by the graph check. **LongRun**: per component, the gain–bias pair satisfies Puterman's multichain optimality equations for the reward `R · ([P] − ρ_C)` with gain 0, as equalities under the component's policy (a value attained) and as inequalities over every action (a value no scheduler exceeds), plus an `Exact`, `Lower` or `Upper` certificate for LR-3's expected component value. |
+| CE-3 | **Conditions.** With `F` the one-step operator of the objective (the workload's average, the minimum or maximum over actions, or the policy's action) and values fixed at decided, target and `Prob0` states: **Upper**: `F(y) <= y` at every state, so the least fixed point, which is the value, is at most `y` (Knaster–Tarski). **Lower**: `x <= F(x)` at every state of the support, and every non-target state with `x > 0` has, under the workload, under the policy, or for a minimum under every action, a successor with positive probability, `x > 0` and a smaller rank; then no end component inside the support avoids the target, and `x` is at most the value. **Exact**: both, with equality, so `x` is the value. On a finite-horizon product the ranking is the remaining horizon, which the checker reads from the monitor state. **Expected reward**: the same conditions with the reward added to `F`, and the `+∞` states recomputed by the graph check. For TS-5 elapsed-until, §13a supplies observation-edge goals, goal-edge terminal rank0, admissible continuation and positive finite-wait component checks; a goal-edge successor need not have positive value. **LongRun**: per component, the gain–bias pair satisfies Puterman's multichain optimality equations for the reward `R · ([P] − ρ_C)` with gain 0, as equalities under the component's policy (a value attained) and as inequalities over every action (a value no scheduler exceeds), plus an `Exact`, `Lower` or `Upper` certificate for LR-3's expected component value. |
 | CE-4 | **The bound follows.** The checker accepts a certificate that meets its conditions and puts the initial state's value on the claim's side of the threshold: `Lower` for a proof of `>= θ` or a refutation of `<= θ`; `Upper` for a proof of `<= θ`, or for a refutation of `>= θ` by an upper bound on `Pr(E)` below `θ`; `Exact` for either. For the `>=` quantile form (XF-2) the side is strict: an `Upper` certificate `y` for `max E[Y]` proves it when `y(s0) < 0`. When `y(s0) = 0`, the checker takes the actions tight under `y`, those with `Q_y(s, a) = y(s)`, `Q_y(s, a)` the one-step value of action `a` under `y`, and checks by graph search that no activated product state is reachable from the initial state using tight actions alone. A scheduler with `E[Y] = 0` has zero slack at every state it reaches, so it uses only tight actions; when activation is unreachable under them, no scheduler meets equality while activating, and the strict bound holds. Otherwise the certificate is rejected. A dyadic interval from interval iteration yields a `Lower` and an `Upper` certificate at once (UR-3). |
 | CE-5 | **Verdict path.** EN-5 checks its own certificate before emitting it (AR-4). QSL's settlement map in `qsl-replay` runs `check_probability_certificate` on the certificate that left S6c over E11 and settles `proved` only when it accepts; a rejection settles `inconclusive`, `CertificateRejected`; a checker stopped by a budget settles V-7. The checker refuses a certificate whose identity differs from the item's (ADR-026 CF-5). |
-| CE-6 | **Size and cost.** A certificate holds one value per state it names, plus a rank and a policy choice where CE-3 needs them. The checker's cost is the re-enumeration plus one pass over the edges in exact rationals, linear in the product. It runs under the request's B-5 budgets. |
+| CE-6 | **Size and cost.** A certificate holds one value per state it names, plus a rank and a policy choice where CE-3 needs them. The checker's arithmetic pass is linear in the enumerated edges in exact rationals; qualitative component/refinement/admissibility work (§13a where applicable) is additional checker-owned graph work, charged to the same budgets. It runs under the request's B-5 budgets. |
 | CE-7 | **A small trusted base.** The checker lives in the qualified core, as the owner ruled for certificate checkers (ADR-029, References). The checker's arithmetic and its graph algorithms are separate code from EN-5's iterative and linear-algebra methods and are kept small. The product construction is shared with EN-1, whose translations already answer to SM-1 (ADR-018 SM-7). |
 
 ### 12. Limits
@@ -286,8 +286,138 @@ claim's scheduler resolves each delay (RU-6).
 | TA-3 | **Digital clocks.** EN-5 scales every constant to an integer by the common denominator of the model's and the claim's constants, as ADR-026 EZ-10 does, and explores the digital MDP of Kwiatkowska, Norman, Parker and Sproston: a timed state is the discrete state with an integer value per clock, capped at the clock's largest compared constant plus one; a delay move adds one unit to every clock below its cap and is admissible when the time invariants hold after it and the state is not urgent (ADR-026 CK-7); a discrete move is ADR-026 TS-2's step with integer clocks. For a closed, diagonal-free PTA the minimum and maximum of a reachability probability and of an expected time to a target are equal on the digital and the dense semantics, so the verdict is a verdict on the dense model, and every delay a witness takes is a valid dense delay. |
 | TA-4 | **Admitted forms.** XF-4 reachability and until over state predicates; deadline events under the timed profile, `eventually[0, D] holds(P)` and `holds(A) until[0, D] holds(B)` with `D` closed, by one extra digital clock that no step resets, capped at `D + 1`; and XF-5's `expected elapsed until holds(B)`, with each delay move carrying one unit of time as its reward. Another TT-2 shape settles `unsupported`, `TimedFormShape`. |
 | TA-5 | **Time divergence.** On the digital MDP every infinite path diverges exactly when no reachable cycle consists of discrete moves alone, which EN-5 checks by an SCC decomposition of the discrete-move subgraph. A reachable zero-delay cycle settles `unsupported`, `ZeroDelayCycle{states}`, because a scheduler that follows it is Zeno and lies outside ADR-026 TS-4's admitted behaviours. Time-locks are reported by ADR-026 TD-2's item, as for every timed subject. |
-| TA-6 | **Evidence.** A witness scheduler chooses between a unit delay and an identity at each digital state (WS-1); under `W` it chooses only the delays no distribution gives. A timed path in a path set carries ADR-026 CT-1 delays and replays by CT-3; its last timed state has no admissible discrete step before the event's time horizon passes, which replay checks from the guards and time invariants. A certificate names digital product states, and the checker re-enumerates the digital MDP. |
+| TA-6 | **Evidence.** A witness scheduler names FR-196's distinct ordinary delay, enter-idle delay, idle delay and idle observation choices, or an actual identity/post-state at each applicable digital state (WS-1); under `W` it chooses only the delays no distribution gives. A timed path in a path set carries ADR-026 CT-1 delays and replays by CT-3; its last timed state has no admissible discrete step before the event's time horizon passes, which replay checks from the guards and time invariants. A certificate names digital product states, and the checker re-enumerates the digital MDP. |
 | TA-7 | **Size.** The digital MDP has the discrete states times the product over clocks of (cap + 1) values. Its cost grows with the scaled constants, and `max_states` bounds it (LM-1). |
+
+### 13a. TS-5 observation admissibility, extrema and evidence
+
+This is an explicit new optimization/evidence amendment for TA-3/TA-4,
+SCH-1/SCH-3, UR-5/UR-7 and WS-1/CE-1. It supplies the contract that the
+closed idle-tail state/action representation requires. It preserves the
+TS-5 behavior set and arbitrary finite waits; it introduces no observation
+period, cap on waiting, authored fairness constraint or Unsupported cause.
+
+Every-scheduler timed quantities SHALL be the infimum/supremum over
+schedulers whose induced behaviors satisfy TS-4/TS-5 with probability1,
+conjoined with the claim's **actual** authored fairness set if present.
+Without an authored set, TS-5 still applies as derived behavior admissibility.
+A claim under a workload keeps its fixed action/draw distributions; any free
+delay/tail observation choices retain their actual scheduler quantification.
+No invented workload weight selects an observation instant. Unqualified
+attainment by deterministic memoryless policies does not apply here.
+
+The core/engine SHALL rederive observation edges: initial/resolved discrete
+steps and IdleObserve supply predicate letters, while UnitDelay/EnterIdleDelay/
+IdleDelay supply elapsed reward but no predicate letter. Reach/elapsed target
+B is checked only on those observations. Successful edges terminate the
+quantity in an internal target sink, not a fabricated public monitor/key.
+This distinction is needed even though exact-only keys have actual None
+monitor/accumulator/deadline.
+
+R and its components SHALL be computed on the **original** digital subject
+continuation graph, before objective target absorption. An internal goal sink
+or monitor's completed objective is never an observation-progress self-loop.
+Continuations retain actual clocks, tail modes and enabled choices after the
+quantity stops; a successful observation must have an admissible continuation.
+
+For exact-only Reach/elapsed objectives, values describe an as-yet-unhit
+quantity at a public ProductKey. A goal is an observation **edge**, even when
+its post-key is also reachable by a pure delay. In the one-step operator,
+`Q(s,a) = reward(s,a) + sum_e p(e) * continuation(e)`, where continuation is
+0 for a goal edge of elapsed until (1 for Reach), and V(post-key) otherwise.
+The initial observed predicate is checked separately before any reward.
+Value/rank rows cover the reachable as-yet-unhit objective graph: after a
+goal edge, no post-goal value row is required solely for that terminated
+visit. The separately checked original-continuation graph/policy still
+covers those post-goal states for behavior admissibility; this is not a
+missing-value default on any non-goal edge.
+The internal terminal value is not a fabricated public key or a Rational
+value row that forces every visit to that same post-key to be a goal.
+Expected-reward properness ranks may decrease through a positive-probability
+goal observation edge to terminal rank0, even though its terminal value is0;
+otherwise the successor must have smaller rank. This rule replaces the
+`x>0` successor proviso of CE-3 for this expected-reward use. Each reachable
+non-goal recurrent component under a finite expected-reward evidence policy
+must have an exit towards a lower rank or a goal. Reach Lower certificates
+retain their existing positive-value proviso. All rank/goal tests are checked
+from actual edges, independently of certificate assertions.
+
+An observation-admissible end component is an actual closed strongly
+connected state/action support satisfying the existing weak/strong fair
+end-component conditions where applicable and containing an observation
+edge. A full-support recurrent policy in it emits observations infinitely
+often almost surely; TA-5's actual zero-delay-cycle check and positive tail
+delays retain time divergence. Recompute maximal such components by the
+existing FS-4 refinement, additionally removing components without any
+observation edge; an ordinary zero-delay cycle still triggers TA-5 rather
+than gaining admission. Let R be the almost-sure winning region for reaching
+their union, obtained by the usual exact qualitative reachability graph
+check. Admissible continuations exist exactly in R. Only choices whose
+positive-probability successors all stay in R may appear on a finite prefix
+of an admitted scheduler. These choices retain every arbitrary finite wait;
+they are not required to stay in an accepting component at every instant.
+
+For reachability, the supremum is the ordinary maximum over those choices
+in R: finite choices before success can be followed by an admissible policy.
+For the infimum, use FS-6's complement construction with the union of
+observation-admissible target-avoiding end components, including the actual
+fairness refinements. Until failure is checked at its observation letter.
+For elapsed rewards, the minimum uses the target-reaching stochastic shortest
+path on R; a scheduler that does not reach the target has +infinity by the
+existing expected-until meaning. For the maximum, first apply that same
+non-reachability +infinity condition **over admitted schedulers**, then apply
+the following finite-wait condition even where target reachability is1.
+
+A pre-target waiting end component may be nonaccepting, provided its states
+are in R and it has an exit strategy to an admissible continuation. If such
+a component containing an actual positive-reward action is reachable with
+positive probability by choices in R, the elapsed-reward supremum SHALL be
++infinity. A full-support recurrent waiting policy earns a positive mean
+reward; remaining for longer finite time and then leaving gives arbitrarily
+large expectation without an inadmissible infinite wait. This is FS-7's
+finite-wait argument applied to TS-5's actual condition, not a statement that
+a nonaccepting component is an admitted recurrent behavior. Where no such
+component or admitted non-target recurrence is reachable, collapse zero-reward
+waiting components and use the existing finite exact methods. A resource stop
+is never evidence that only deterministic policies suffice.
+
+The certificate objective's checked claim/profile already selects TS-5:
+the checker SHALL rederive the observation condition from it, independently
+of the authored fairness vector. Removing the actual empty/nonempty fairness
+set cannot remove that condition. Recompute R, admissible target-avoiding
+components and positive-reward waiting components with checker-owned graph
+code. Existing CE-3 +infinity values are qualitative and rederived; their
+states need no fabricated finite Rational row. A proof of a finite upper
+maximum bound cannot omit the positive-wait condition. A finite threshold
+refutation SHALL carry an actual admitted policy whose exact induced-chain
+value crosses the bound, not a delay-forever policy asserted to attain a
+supremum. Randomized FR-202 entries with reduced positive exact probabilities
+are permitted for TS-5 even with no authored fairness set. Replay/checking
+SHALL verify all reachable recurrent induced-chain components contain
+observation edges and satisfy the actual fairness constraints; target sinks
+represent quantity termination and require a checked admissible continuation
+on the original subject. This verifies almost-sure admissibility, not that
+every probability-zero infinite draw sequence progresses.
+
+To obtain finite threshold evidence for a positive waiting component, mix
+its recurrent waiting choices with an admissible exit/progress policy using
+positive rational epsilon, decreasing epsilon until exact chain evaluation
+crosses the finite threshold. There is no fixed semantic lower bound on
+epsilon or wait length; existing rational/iteration budgets may stop the
+construction explicitly. This permits arbitrarily long finite waits and
+almost-sure progress, and supersedes WS-1's authored-fairness-only restriction
+on randomized evidence for this derived condition. CE-1 policy entries use
+the same closed WitnessEntry action distributions, so induced-chain replay
+and proof checking cannot silently project Observe to Delay/Identity.
+
+Prospective adverse oracle: cap2 x>=1 quiescent target has infimum elapsed1
+and supremum +infinity; every admitted finite wait N has elapsed N. At c3,
+initial EnterIdleDelay, one IdleDelay at x1, then capped x2 Delay3/4 versus
+Observe1/4 gives exact value5 and almost-sure observation. A maximum3 claimed
+from deterministic memoryless policies fails; a delay-only recurrent witness
+fails admissibility; the exact geometric chain reproduces the refutation.
+No positive wait bound, synthetic clock threshold or model-state counter is
+inserted into ProductKey to conceal this counterexample.
 
 ### 14. Reductions
 
@@ -506,7 +636,7 @@ follows v1.
 | ID | Item | Where |
 | --- | --- | --- |
 | QS-1 | The evidence kind `exact` for `probabilistic-satisfaction`, its advertisement and the no-substitution rule (ADR-024 QS-6), and claims without confidence parameters as exact-only (SP-4, XF-7) | QSpec FR-290, FR-331, FR-407, FR-408 |
-| QS-2 | `under every scheduler`: minimum and maximum over every history-dependent randomized scheduler, the scheduler's choice after a draw with several post-states, and the statement that memoryless deterministic schedulers on the product attain both (SCH-1 to SCH-3) | QSpec FR-406 |
+| QS-2 | `under every scheduler`: minimum and maximum over every history-dependent randomized scheduler, the scheduler's choice after a draw with several post-states, and unrestricted-product memoryless deterministic attainment (SCH-1 to SCH-3), qualified by §13a derived TS-5 infimum/supremum and randomized threshold evidence | QSpec FR-406 |
 | QS-3 | The forms with exact evidence: the probabilistic product with a bounded monitor and accumulators (PR-4, PR-5), the quantile threshold transform (XF-2), the mean of a fraction (XF-3), unbounded reachability, until and always over state predicates (XF-4), expected reward to a target with `+∞` (XF-5), long-run fractions by bottom components with `ZeroWeightComponent` (§8) | QSpec FR-411, FR-407, FR-090 |
 | QS-4 | Result content: `ExactValue` and `ValueBounds` onto FR-331 `proved` with FR-243 `closed-scope`, one entry per initial state and binding with minimum or maximum, `PrecisionBudget`, `CertificateRejected` and the unsupported causes (XV-1 to XV-6) | QSpec FR-411, FR-331, FR-243 |
 | QS-5 | The witness wire: `WitnessScheduler`, `ProbabilisticCounterexample` with path-set and subsystem evidence, and the replay rules of WS-5 | QSpec FR-413 |

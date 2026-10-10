@@ -50,7 +50,14 @@ Fixtures: ADR-024 §7.1 and §7.2 models and claims; `Link` with `Deliver`; the 
    residual discrete draw follows already applied unit delays and resolves
    only its discrete update. Check workload multi-post-state race NotMarkov,
    every-scheduler delay-distribution refusal and drawn-timed unknown-tag
-   refusal; none is a pending positive. Refuse every timed
+   refusal; none is a pending positive. Compare named Observe/IdleDelay
+   choices at the same D=1 key and ordinary/enter-idle delays from running;
+   replay each choice with exact clocks, phase, letter and elapsed reward.
+   For expected elapsed x>=1 with cap2/no deadline, check admitted wait4
+   at threshold3 and the exact 3/4-delay,1/4-observe chain (value5),
+   actual almost-sure observation progress and supremum +infinity. Reject
+   a claimed maximum3 from deterministic policies and a delay-only
+   recurrent witness. Refuse every timed
    shape/clock/deadline negative; stop at the actual identity-byte/product
    budget and inspect the outcome.
 
@@ -82,3 +89,8 @@ Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
   delay-only tail without future observations is not admitted TS-5
   evidence. Ordinary pending resolves no extra elapsed delay; the two
   unsupported race cases remain refusals, and drawn-timed refuses.
+  Tail actions have distinct complete names and replayable effects.
+  The exact geometric elapsed witness has value5>3, reaches the first
+  observation almost surely and retains a valid infinite observation
+  continuation; waiting components give supremum +infinity without
+  an inadmissible attaining witness or an invented progress bound.

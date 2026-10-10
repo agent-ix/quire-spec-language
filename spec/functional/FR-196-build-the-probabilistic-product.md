@@ -75,8 +75,48 @@ pub struct ProbProduct {
 }
 // ProductKey lives in `qsl-replay` with the certificate types, so the checker reads it
 pub struct ProductKey { pub model: StateKey, pub monitor: Option<u32>, pub accumulator: Option<Accumulator>, pub pending: Option<(ScheduledIdentity, Vec<Value>)> }
-pub struct ProbEdge { pub from: ProductStateId, pub action: Option<ScheduledIdentity>, pub draw: Option<Vec<Value>>, pub to: ProductStateId, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
+pub struct ProbEdge { pub from: ProductStateId, pub choice: ProductAction, pub action: Option<ScheduledIdentity>, pub draw: Option<Vec<Value>>, pub to: ProductStateId, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
 ```
+
+`ProductAction` is the following new closed semantic action type, owned with
+ProductKey in qsl-replay. An edge's `action` is its operation projection;
+None alone SHALL NOT identify a delay or observation choice.
+
+```rust
+pub enum ProductAction {
+    Identity(ScheduledIdentity), // FR-187 exact operation/receiver/non-random arguments
+    PostState(ProductKey),       // actual SCH-2 resolved complete target key
+    TerminalStutter,             // existing untimed terminal stutter
+    UnitDelay,                  // ordinary running delay, no predicate letter
+    EnterIdleDelay,             // positive delay committing to TS-5 idle tail
+    IdleDelay,                  // positive delay already in idle tail
+    IdleObserve,                // clock-valued observation, no additional elapsed time
+}
+```
+
+Canonical semantic action bodies use exactly `["identity",schedule]`,
+`["post-state",product_key]`, `["terminal-stutter"]`, `["delay"]`,
+`["enter-idle-delay"]`, `["idle-delay"]` and `["idle-observe"]` respectively,
+where schedule uses the full existing schedule form below and product_key
+is a parsed full canonical key, not a local index/digest/string wrapper.
+Unknown/extra/missing members refuse. Action equality/order uses complete
+JCS UTF-8 bytes. These are explicit new semantic choices, not a claim that
+QSpec FR-413/412 transport already accepts these spellings. No fake operation
+NodeId, receiver or random draw is assigned to a timed tail choice.
+
+UnitDelay is enabled only in running mode and stays running. EnterIdleDelay
+is enabled only in a TS-5 quiescent running state, advances every clock and
+deadline one digital unit and commits to idle-delayed. IdleDelay is enabled
+in idle-ready or idle-delayed, advances one digital unit and yields
+idle-delayed. IdleObserve is enabled only in idle-delayed, emits its current
+clock-valued stutter letter, increments no clock/reward and yields idle-ready.
+Each delay has elapsed reward one digital unit (1/scale in the model unit);
+Observe has elapsed reward zero. All delay guards/invariants still rederive.
+Identity/PostState follow the actual discrete draw/reset relation and emit
+a letter only when the post-state is resolved, never at a pending intermediate.
+TerminalStutter retains its existing untimed profile meaning and is not a
+synonym for IdleObserve. FR-202 owns choice entries/path replay, FR-201 owns
+certificate policy entries, and FR-204 enumerates these actual digital actions.
 
 ### Canonical probability product key
 
@@ -238,6 +278,16 @@ rules as a discrete letter. Delay crossing still rejects before a later
 stutter, so a tail observation exactly at D can accept while one after D
 cannot. Time unit, capped clocks, deadline and idle phase remain in every
 key, including a decided control state.
+
+For timed Reach/expected elapsed, target predicates are read at the initial
+observation and at resolved discrete/IdleObserve **observation edges**, not
+at a pure delay state's updated clocks. An analysis target sink may be used
+internally for a successful observation edge, without adding a monitor or
+accumulator default to the public key. Its predecessor edge carries the
+actual elapsed reward and observation; the checker rederives it. This avoids
+mistaking x>=1 at an unobserved idle-delayed node for reaching the target.
+FR-198/ADR-028's admissibility-aware optimization and FR-202's exact induced
+chain evidence use that same relation.
 
 At model position zero, a measure is inactive unless A holds; when A
 holds it is active, or complete with magnitude zero when B also holds.
@@ -472,6 +522,36 @@ a reset on the stutter, resumed operations after entering idle mode, omitted
 idle control, and treating idle-delayed as an absorbing no-letter terminal
 all refuse. An infinite tail delay cycle with no more observation stutters
 fails TS-5 admissibility; arbitrarily long finite waits are preserved.
+Tail action/policy oracles: at x=1/t=D=1, the same idle-delayed key admits
+`["idle-observe"]` (zero elapsed reward, accepts x>=1) or `["idle-delay"]`
+(elapsed reward1, crosses D and rejects). Replacing Observe by delay is a
+semantic change, not an alias. At a quiescent running key `["delay"]` and
+`["enter-idle-delay"]` have the same one-unit clock change but different
+irreversible control; their action bodies and resulting keys differ.
+Observe from idle-ready, a scheduled-operation alias for Observe, and a
+missing/unknown semantic choice refuse. Replay compares the complete target
+key, actual phase/clock/deadline, letter/no-letter and elapsed reward once.
+
+Unbounded expected-elapsed oracle uses the same quiescent x>=1 target with
+no deadline, actual None monitor/accumulator and cap2. Every finite first
+observation wait N>=1 is admitted and has elapsed N. The minimum is1 and
+the supremum is +infinity, although no deterministic memoryless policy may
+witness an arbitrary finite wait at the capped same key. For threshold3,
+choose EnterIdleDelay initially, IdleDelay at idle-delayed x1, and at capped
+idle-delayed x2 choose IdleDelay with exact probability3/4 or IdleObserve
+with1/4. Expected additional delay is3, so total expectation is5>3 and the
+first observation occurs with probability1. After every observation, idle-ready chooses IdleDelay; the resulting
+idle-delayed x2 uses that same 3/4 Delay versus 1/4 Observe distribution.
+No history switch at the same key is required after the target. This is an almost-surely admitted
+randomized memoryless witness with no authored fairness set. Its finite
+support chain/certificate is checked in exact rationals; delay forever is
+inadmissible and is not offered as an attaining infinity witness. Values
+before target are5 initially,4 at idle-delayed x1,3 at capped idle-delayed x2,
+and0 as the terminal contribution of a target observation edge; that
+analysis sink is not a public ProductKey/certificate value row. The last
+equality is3=3/4*(1+3)+1/4*0.
+A certificate claiming maximum3 from deterministic policies alone fails.
+
 Adverse inputs include missing/reordered/duplicate clock identities, reset
 of the deadline, wrong scale/cap, timed monitor local index, absent deadline
 for Deadline, an event-position formula wrapper for timed Deadline and
