@@ -46,10 +46,11 @@ use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
 
 use crate::model::domain_package::{
-    AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
-    Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    ClauseRecord, DomainPackage, NamespaceRecord, NamespaceTerm, OriginalDeclaration, PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+    AllocationRecord, ClauseRecord, ComponentRecord, DomainPackage, DomainPackageRecord,
+    DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NamespaceRecord,
+    NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+    OperationParameterRecord, OperationResult, OriginalDeclaration, PopulationRecord,
+    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
     RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
@@ -2172,7 +2173,9 @@ fn read_record_value_type(
     }
     let fields = ctx.array_field("fields")?;
     if fields.is_empty() && supertypes.is_empty() {
-        return Err(ctx.malformed("fields: a record value type has one or more own or inherited fields"));
+        return Err(
+            ctx.malformed("fields: a record value type has one or more own or inherited fields")
+        );
     }
     records.push(DomainPackageRecord::RecordValueType(
         RecordValueTypeRecord {
@@ -2227,12 +2230,17 @@ fn read_namespace(
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), ModelRefusal> {
     if !ctx.array_field("supertypes")?.is_empty() {
-        return Err(unsupported_at(ctx.value, &ctx.at, format!("{}:supertypes", meaning::NAMESPACE)));
+        return Err(unsupported_at(
+            ctx.value,
+            &ctx.at,
+            format!("{}:supertypes", meaning::NAMESPACE),
+        ));
     }
     for forbidden in ["fields", "operations", "relationships"] {
         if let Some(member) = ctx.array_field(forbidden)?.first() {
             let at = format!("{}.{forbidden}[0]", ctx.at);
-            return Err(NodeCtx::new(member, at).malformed("a namespace owns no field, operation or relationship"));
+            return Err(NodeCtx::new(member, at)
+                .malformed("a namespace owns no field, operation or relationship"));
         }
     }
     if !ctx.array_field("identityFields")?.is_empty() {
@@ -2241,7 +2249,11 @@ fn read_namespace(
     for (position, clause) in ctx.array_field("clauses")?.iter().enumerate() {
         let member = NodeCtx::new(clause, format!("{}.clauses[{position}]", ctx.at));
         if member.str_field("language")? == "quire" {
-            return Err(unsupported_at(clause, &member.at, format!("{}:clauses", meaning::NAMESPACE)));
+            return Err(unsupported_at(
+                clause,
+                &member.at,
+                format!("{}:clauses", meaning::NAMESPACE),
+            ));
         }
     }
     let members = ctx.identity_keys(package, "members")?;
@@ -2251,28 +2263,45 @@ fn read_namespace(
     for (position, member) in members.iter().enumerate() {
         let at = NodeCtx::new(ctx.value, format!("{}.members[{position}]", ctx.at));
         match type_meanings.get(member.node.as_str()) {
-            Some(&meaning::NAMESPACE) => return Err(at.malformed("a namespace cannot contain a namespace")),
-            Some(_) => {},
-            None => return Err(ModelRefusal {
-                code: Code::DanglingReference,
-                cause: ModelRefusalCause::UnknownMember { record: declaration_key(package, node), member: member.clone() },
-                detail: format!("{}: names no type of this domain package: {}", at.at, member.node),
-            }),
+            Some(&meaning::NAMESPACE) => {
+                return Err(at.malformed("a namespace cannot contain a namespace"))
+            }
+            Some(_) => {}
+            None => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownMember {
+                        record: declaration_key(package, node),
+                        member: member.clone(),
+                    },
+                    detail: format!(
+                        "{}: names no type of this domain package: {}",
+                        at.at, member.node
+                    ),
+                })
+            }
         }
     }
     let mut vocabulary = Vec::new();
     for (position, value) in ctx.array_field("vocabulary")?.iter().enumerate() {
         let term = NodeCtx::new(value, format!("{}.vocabulary[{position}]", ctx.at));
         let name = term.str_field("term")?;
-        if name.is_empty() { return Err(term.malformed("term: must be non-empty")); }
+        if name.is_empty() {
+            return Err(term.malformed("term: must be non-empty"));
+        }
         vocabulary.push(NamespaceTerm {
             term: name.to_owned(),
             doc: term.str_field("doc")?.to_owned(),
-            origin: value.get("origin").ok_or_else(|| term.malformed("origin: missing"))?.clone(),
+            origin: value
+                .get("origin")
+                .ok_or_else(|| term.malformed("origin: missing"))?
+                .clone(),
         });
     }
     records.push(DomainPackageRecord::Namespace(NamespaceRecord {
-        key: declaration_key(package, node), members, vocabulary,
+        key: declaration_key(package, node),
+        members,
+        vocabulary,
     }));
     read_clauses(package, node, ctx, records)
 }
@@ -3089,7 +3118,8 @@ pub fn read_domain_package(
     let records = read_records(&selection.identity, document)?;
     let meanings = meaning_index(&document.tree).map_err(|refusal| vec![refusal])?;
     let mut originals = BTreeMap::new();
-    let declared: std::collections::BTreeSet<_> = records.iter().map(DomainPackageRecord::key).collect();
+    let declared: std::collections::BTreeSet<_> =
+        records.iter().map(DomainPackageRecord::key).collect();
     let mut refusals = Vec::new();
     for collection in ["types", "populations"] {
         let values = document.tree.get(collection).and_then(Value::as_array);
@@ -3099,37 +3129,64 @@ pub fn read_domain_package(
             let result = (|| {
                 let (_, node_key) = read_type_identity(&selection.identity, &ctx)?;
                 let kind = ctx.kind_key()?;
-                let resolved = meanings.get(&(kind.0.to_owned(), kind.1.to_owned()))
+                let resolved = meanings
+                    .get(&(kind.0.to_owned(), kind.1.to_owned()))
                     .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?;
-                let origin = value.get("origin").filter(|origin| origin.is_object())
+                let origin = value
+                    .get("origin")
+                    .filter(|origin| origin.is_object())
                     .ok_or_else(|| ctx.malformed("origin: missing or not an object"))?;
-                originals.insert(node_key.clone(), OriginalDeclaration {
-                    meaning: Some(resolved.clone()), origin: origin.clone(), member_name: None,
-                });
+                originals.insert(
+                    node_key.clone(),
+                    OriginalDeclaration {
+                        meaning: Some(resolved.clone()),
+                        origin: origin.clone(),
+                        member_name: None,
+                    },
+                );
                 for collection in ["fields", "operations", "relationships", "clauses"] {
                     for (position, value) in ctx.array_field(collection)?.iter().enumerate() {
                         let member = NodeCtx::new(value, format!("{at}.{collection}[{position}]"));
                         let identity = member.str_field("identity")?;
-                        let name = member_identity_name(&node_key.node, identity)
-                            .ok_or_else(|| member.malformed("identity: is not a member of its declared owner"))?;
+                        let name =
+                            member_identity_name(&node_key.node, identity).ok_or_else(|| {
+                                member.malformed("identity: is not a member of its declared owner")
+                            })?;
                         let key = declaration_key(&selection.identity, identity);
                         // Only real emitted original records receive metadata.
                         // Metadata cannot turn an unsupported/dropped form into a declaration.
-                        if !declared.contains(&key) { continue; }
-                        let origin = value.get("origin").filter(|origin| origin.is_object())
+                        if !declared.contains(&key) {
+                            continue;
+                        }
+                        let origin = value
+                            .get("origin")
+                            .filter(|origin| origin.is_object())
                             .ok_or_else(|| member.malformed("origin: missing or not an object"))?;
-                        originals.insert(key, OriginalDeclaration {
-                            meaning: None, origin: origin.clone(), member_name: Some(name.to_owned()),
-                        });
+                        originals.insert(
+                            key,
+                            OriginalDeclaration {
+                                meaning: None,
+                                origin: origin.clone(),
+                                member_name: Some(name.to_owned()),
+                            },
+                        );
                     }
                 }
                 Ok::<(), ModelRefusal>(())
             })();
-            if let Err(refusal) = result { refusals.push(refusal); }
+            if let Err(refusal) = result {
+                refusals.push(refusal);
+            }
         }
     }
-    if !refusals.is_empty() { return Err(refusals); }
-    Ok(DomainPackage { model_selection: selection, records, originals })
+    if !refusals.is_empty() {
+        return Err(refusals);
+    }
+    Ok(DomainPackage {
+        model_selection: selection,
+        records,
+        originals,
+    })
 }
 
 /// [`read_records`]'s per-node reader over a document
@@ -3209,21 +3266,32 @@ fn read_nodes(
                             if let DomainPackageRecord::Namespace(namespace) = record {
                                 for (position, member) in namespace.members.iter().enumerate() {
                                     if namespace_members.contains_key(member) {
-                                        duplicate = Some(NodeCtx::new(type_value, format!("{at}.members[{position}]"))
-                                            .malformed("member: already belongs to an earlier namespace"));
+                                        duplicate = Some(
+                                            NodeCtx::new(
+                                                type_value,
+                                                format!("{at}.members[{position}]"),
+                                            )
+                                            .malformed(
+                                                "member: already belongs to an earlier namespace",
+                                            ),
+                                        );
                                         break;
                                     }
                                 }
                                 if duplicate.is_none() {
                                     for member in &namespace.members {
-                                        namespace_members.insert(member.clone(), namespace.key.clone());
+                                        namespace_members
+                                            .insert(member.clone(), namespace.key.clone());
                                     }
                                 }
                             }
                         }
-                        if let Some(refusal) = duplicate { refusals.push(refusal); }
-                        else { records.append(&mut new_records); }
-                    },
+                        if let Some(refusal) = duplicate {
+                            refusals.push(refusal);
+                        } else {
+                            records.append(&mut new_records);
+                        }
+                    }
                     Err(refusal) => refusals.push(refusal),
                 }
             }

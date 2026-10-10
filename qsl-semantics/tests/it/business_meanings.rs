@@ -486,8 +486,14 @@ fn namespace_admission_preserves_original_without_an_effective_type() {
         .original(&key(p, "Scope"))
         .expect("namespace has one original declaration");
     assert_eq!(original.meaning.as_deref(), Some(meaning::NAMESPACE));
-    let DomainPackageRecord::Namespace(namespace) = package.records.iter()
-        .find(|record| record.key() == &key(p, "Scope")).expect("namespace original") else { panic!("expected namespace payload"); };
+    let DomainPackageRecord::Namespace(namespace) = package
+        .records
+        .iter()
+        .find(|record| record.key() == &key(p, "Scope"))
+        .expect("namespace original")
+    else {
+        panic!("expected namespace payload");
+    };
     assert_eq!(namespace.members, expected_keys(p, &["Entry"]));
     assert_eq!(namespace.vocabulary.len(), 1);
     assert_eq!(namespace.vocabulary[0].term, "Entry");
@@ -507,27 +513,69 @@ fn record_subtype_inherits_invariant_without_an_object_universe() {
     let p = "test/record-inheritance";
     let mut foreign = clause(p, "Amount", "External", "self.amount_minor >= 0");
     foreign["language"] = json!("ocl");
-    let package = read_authored(&document(p, "1.0.0",
+    let package = read_authored(&document(
+        p,
+        "1.0.0",
         vec![construct("value_record", meaning::RECORD_VALUE_TYPE)],
         vec![
-            definition(p, "Amount", "value_record", json!({
-                "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")],
-                "clauses": [clause(p, "Amount", "NonNegative", "self.amount_minor >= 0"), foreign],
-            })),
-            definition(p, "SpecialAmount", "value_record", json!({"supertypes": [identity(p, "Amount")]})),
-        ]));
-    assert_eq!(original_keys(&package), expected_keys(p, &["Amount", "Amount/amount_minor", "Amount/NonNegative", "Amount/External", "SpecialAmount"]));
-    let DomainPackageRecord::Clause(clause) = package.records.iter().find(|record| record.key() == &key(p, "Amount/External")).expect("foreign clause is a real original") else { panic!("expected clause payload"); };
+            definition(
+                p,
+                "Amount",
+                "value_record",
+                json!({
+                    "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")],
+                    "clauses": [clause(p, "Amount", "NonNegative", "self.amount_minor >= 0"), foreign],
+                }),
+            ),
+            definition(
+                p,
+                "SpecialAmount",
+                "value_record",
+                json!({"supertypes": [identity(p, "Amount")]}),
+            ),
+        ],
+    ));
+    assert_eq!(
+        original_keys(&package),
+        expected_keys(
+            p,
+            &[
+                "Amount",
+                "Amount/amount_minor",
+                "Amount/NonNegative",
+                "Amount/External",
+                "SpecialAmount"
+            ]
+        )
+    );
+    let DomainPackageRecord::Clause(clause) = package
+        .records
+        .iter()
+        .find(|record| record.key() == &key(p, "Amount/External"))
+        .expect("foreign clause is a real original")
+    else {
+        panic!("expected clause payload");
+    };
     assert_eq!(clause.language, "ocl");
     assert_eq!(clause.text, "self.amount_minor >= 0");
     let view = normalized(&package, 5);
     let subtype = view.type_identities()[&key(p, "SpecialAmount")];
-    let mut inherited: Vec<_> = view.declarations().iter().filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(subtype)).map(|entry| entry.preimage.original.clone()).collect();
+    let mut inherited: Vec<_> = view
+        .declarations()
+        .iter()
+        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(subtype))
+        .map(|entry| entry.preimage.original.clone())
+        .collect();
     inherited.sort();
-    assert_eq!(inherited, expected_keys(p, &["Amount/amount_minor", "Amount/NonNegative"]));
+    assert_eq!(
+        inherited,
+        expected_keys(p, &["Amount/amount_minor", "Amount/NonNegative"])
+    );
     assert!(view.object_universe_of(&key(p, "Amount")).is_none());
     assert!(view.object_universe_of(&key(p, "SpecialAmount")).is_none());
-    assert!(view.object_universes().all(|universe| universe.root_types.is_empty()));
+    assert!(view
+        .object_universes()
+        .all(|universe| universe.root_types.is_empty()));
 }
 
 /// Cycles are refused by the bounded existing ancestry walk, not accepted as
@@ -537,16 +585,40 @@ fn record_subtype_inherits_invariant_without_an_object_universe() {
 #[test]
 fn record_specialization_cycle_refuses_before_effective_view() {
     let p = "test/record-cycle";
-    let package = read_authored(&document(p, "1.0.0", vec![construct("value_record", meaning::RECORD_VALUE_TYPE)], vec![
-        definition(p, "Amount", "value_record", json!({"supertypes": [identity(p, "TaxedAmount")], "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")]})),
-        definition(p, "TaxedAmount", "value_record", json!({"supertypes": [identity(p, "Amount")], "fields": [field(p, "TaxedAmount", "tax_minor", "ix://quire/native/Integer")]})),
-    ]));
+    let package = read_authored(&document(
+        p,
+        "1.0.0",
+        vec![construct("value_record", meaning::RECORD_VALUE_TYPE)],
+        vec![
+            definition(
+                p,
+                "Amount",
+                "value_record",
+                json!({"supertypes": [identity(p, "TaxedAmount")], "fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")]}),
+            ),
+            definition(
+                p,
+                "TaxedAmount",
+                "value_record",
+                json!({"supertypes": [identity(p, "Amount")], "fields": [field(p, "TaxedAmount", "tax_minor", "ix://quire/native/Integer")]}),
+            ),
+        ],
+    ));
     let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
-    let NormalizeOutcome::Refused(refusals) = outcome else { panic!("record cycle must refuse: {outcome:?}"); };
+    let NormalizeOutcome::Refused(refusals) = outcome else {
+        panic!("record cycle must refuse: {outcome:?}");
+    };
     assert_eq!(refusals.len(), 1);
     let refusal = refusals.iter().next().expect("one cycle refusal");
-    assert_eq!(refusal.code, qsl_foundation::diagnostic::Code::InvalidModelBinding);
-    let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle { ancestor, via } = &refusal.cause else { panic!("expected real cycle cause: {refusal:?}"); };
+    assert_eq!(
+        refusal.code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle { ancestor, via } =
+        &refusal.cause
+    else {
+        panic!("expected real cycle cause: {refusal:?}");
+    };
     let mut nodes = vec![ancestor.clone(), via.clone()];
     nodes.sort();
     assert_eq!(nodes, expected_keys(p, &["Amount", "TaxedAmount"]));
@@ -557,11 +629,25 @@ fn authored_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::M
     let packages = package_input([bytes.as_slice()]);
     let digest = *packages.keys().next().expect("one authored package");
     let selection = qsl_semantics::model::domain_package::DomainPackageRef {
-        identity: document["package"]["identity"].as_str().expect("package identity").to_owned(),
-        version: document["package"]["version"].as_str().expect("package version").to_owned(), digest,
+        identity: document["package"]["identity"]
+            .as_str()
+            .expect("package identity")
+            .to_owned(),
+        version: document["package"]["version"]
+            .as_str()
+            .expect("package version")
+            .to_owned(),
+        digest,
     };
-    let (selection, admitted) = admit(&selection, SHA256_JCS_DIGEST_DOMAIN, &packages, IntakeLimits::default()).expect("byte admission precedes business restriction checks");
-    qsl_semantics::model::intake::read_records(&selection.identity, &admitted).expect_err("invalid business form must refuse")
+    let (selection, admitted) = admit(
+        &selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &packages,
+        IntakeLimits::default(),
+    )
+    .expect("byte admission precedes business restriction checks");
+    qsl_semantics::model::intake::read_records(&selection.identity, &admitted)
+        .expect_err("invalid business form must refuse")
 }
 
 /// Record restrictions survive admitting their ancestry and clause members.
@@ -569,28 +655,54 @@ fn authored_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::M
 #[trace("QSpec-TC-235")]
 #[test]
 fn record_identity_operation_and_wrong_meaning_parent_remain_refused() {
-    use qsl_semantics::model::normalize::ModelRefusalCause;
     use qsl_foundation::diagnostic::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
     let p = "test/record-restrictions";
     for form in 0..3 {
-        let mut amount = definition(p, "Amount", "value_record", json!({"fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")]}));
+        let mut amount = definition(
+            p,
+            "Amount",
+            "value_record",
+            json!({"fields": [field(p, "Amount", "amount_minor", "ix://quire/native/Integer")]}),
+        );
         match form {
             0 => amount["identityFields"] = json!([identity(p, "Amount/amount_minor")]),
             1 => amount["operations"] = json!([operation(p, "Amount", "add")]),
             _ => amount["supertypes"] = json!([identity(p, "Entry")]),
         }
-        let fixture = document(p, "1.0.0", vec![construct("value_record", meaning::RECORD_VALUE_TYPE), construct("entity", meaning::OBJECT_TYPE)], vec![amount,
-            definition(p, "Entry", "entity", json!({"identityFields": [identity(p, "Entry/id")], "fields": [field(p, "Entry", "id", "ix://quire/native/Integer")]}))]);
+        let fixture = document(
+            p,
+            "1.0.0",
+            vec![
+                construct("value_record", meaning::RECORD_VALUE_TYPE),
+                construct("entity", meaning::OBJECT_TYPE),
+            ],
+            vec![
+                amount,
+                definition(
+                    p,
+                    "Entry",
+                    "entity",
+                    json!({"identityFields": [identity(p, "Entry/id")], "fields": [field(p, "Entry", "id", "ix://quire/native/Integer")]}),
+                ),
+            ],
+        );
         let refusals = authored_refusals(&fixture);
         assert_eq!(refusals.len(), 1, "one restriction refusal for form {form}");
         if form == 1 {
             assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-            let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause else { panic!("expected operation declaration-form refusal"); };
+            let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause
+            else {
+                panic!("expected operation declaration-form refusal");
+            };
             assert_eq!(node, &identity(p, "Amount/add"));
             assert_eq!(what, &format!("{}:operations", meaning::RECORD_VALUE_TYPE));
         } else {
             assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-            let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else { panic!("expected located malformed record"); };
+            let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause
+            else {
+                panic!("expected located malformed record");
+            };
             assert_eq!(node, &identity(p, "Amount"));
         }
     }
@@ -604,16 +716,45 @@ fn record_identity_operation_and_wrong_meaning_parent_remain_refused() {
 fn namespace_later_membership_and_namespace_target_remain_refused() {
     use qsl_semantics::model::normalize::ModelRefusalCause;
     let p = "test/namespace-restrictions";
-    let scope = |name: &str, member: &str| definition(p, name, "context", json!({
-        "members": [identity(p, member)], "vocabulary": [{"term": "Entry", "doc": "An entry", "origin": origin(p, name)}],
-    }));
-    let entry = definition(p, "Entry", "entity", json!({"identityFields": [identity(p, "Entry/id")], "fields": [field(p, "Entry", "id", "ix://quire/native/Integer")]}));
-    for namespaces in [vec![scope("Zulu", "Entry"), scope("Alpha", "Entry")], vec![scope("Zulu", "Alpha"), scope("Alpha", "Entry")]] {
-        let mut nodes = vec![entry.clone()]; nodes.extend(namespaces);
-        let refusals = authored_refusals(&document(p, "1.0.0", vec![construct("entity", meaning::OBJECT_TYPE), construct("context", meaning::NAMESPACE)], nodes));
+    let scope = |name: &str, member: &str| {
+        definition(
+            p,
+            name,
+            "context",
+            json!({
+                "members": [identity(p, member)], "vocabulary": [{"term": "Entry", "doc": "An entry", "origin": origin(p, name)}],
+            }),
+        )
+    };
+    let entry = definition(
+        p,
+        "Entry",
+        "entity",
+        json!({"identityFields": [identity(p, "Entry/id")], "fields": [field(p, "Entry", "id", "ix://quire/native/Integer")]}),
+    );
+    for namespaces in [
+        vec![scope("Zulu", "Entry"), scope("Alpha", "Entry")],
+        vec![scope("Zulu", "Alpha"), scope("Alpha", "Entry")],
+    ] {
+        let mut nodes = vec![entry.clone()];
+        nodes.extend(namespaces);
+        let refusals = authored_refusals(&document(
+            p,
+            "1.0.0",
+            vec![
+                construct("entity", meaning::OBJECT_TYPE),
+                construct("context", meaning::NAMESPACE),
+            ],
+            nodes,
+        ));
         assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code, qsl_foundation::diagnostic::Code::InvalidModelBinding);
-        let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else { panic!("expected located namespace refusal"); };
+        assert_eq!(
+            refusals[0].code,
+            qsl_foundation::diagnostic::Code::InvalidModelBinding
+        );
+        let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
+            panic!("expected located namespace refusal");
+        };
         assert_eq!(node, &identity(p, "Zulu"));
     }
 }
@@ -623,28 +764,64 @@ fn namespace_later_membership_and_namespace_target_remain_refused() {
 #[trace("QSpec-TC-235")]
 #[test]
 fn namespace_field_operation_quire_clause_and_supertypes_remain_refused() {
-    use qsl_semantics::model::normalize::ModelRefusalCause;
     use qsl_foundation::diagnostic::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
     let p = "test/namespace-forms";
     for form in 0..4 {
-        let mut scope = definition(p, "Scope", "context", json!({"members": [], "vocabulary": []}));
+        let mut scope = definition(
+            p,
+            "Scope",
+            "context",
+            json!({"members": [], "vocabulary": []}),
+        );
         match form {
             0 => scope["fields"] = json!([field(p, "Scope", "name", "ix://quire/native/Integer")]),
             1 => scope["operations"] = json!([operation(p, "Scope", "close")]),
             2 => scope["clauses"] = json!([clause(p, "Scope", "Scoped", "true")]),
             _ => scope["supertypes"] = json!([identity(p, "Ghost")]),
         }
-        let refusals = authored_refusals(&document(p, "1.0.0", vec![construct("context", meaning::NAMESPACE)], vec![scope]));
+        let refusals = authored_refusals(&document(
+            p,
+            "1.0.0",
+            vec![construct("context", meaning::NAMESPACE)],
+            vec![scope],
+        ));
         assert_eq!(refusals.len(), 1);
         if form < 2 {
             assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-            let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else { panic!("expected located malformed namespace member"); };
-            assert_eq!(node, &identity(p, if form == 0 { "Scope/name" } else { "Scope/close" }));
+            let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause
+            else {
+                panic!("expected located malformed namespace member");
+            };
+            assert_eq!(
+                node,
+                &identity(
+                    p,
+                    if form == 0 {
+                        "Scope/name"
+                    } else {
+                        "Scope/close"
+                    }
+                )
+            );
         } else {
             assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-            let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause else { panic!("expected namespace declaration-form refusal"); };
-            assert_eq!(node, &identity(p, if form == 2 { "Scope/Scoped" } else { "Scope" }));
-            assert_eq!(what, &format!("{}:{}", meaning::NAMESPACE, if form == 2 { "clauses" } else { "supertypes" }));
+            let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause
+            else {
+                panic!("expected namespace declaration-form refusal");
+            };
+            assert_eq!(
+                node,
+                &identity(p, if form == 2 { "Scope/Scoped" } else { "Scope" })
+            );
+            assert_eq!(
+                what,
+                &format!(
+                    "{}:{}",
+                    meaning::NAMESPACE,
+                    if form == 2 { "clauses" } else { "supertypes" }
+                )
+            );
         }
     }
 }

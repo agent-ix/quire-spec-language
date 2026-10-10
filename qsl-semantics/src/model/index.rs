@@ -397,7 +397,11 @@ impl RecordIndex {
                 DomainPackageRecord::Clause(clause) => {
                     let owner = at(&clause.owner);
                     index.member_owner.insert(own, owner);
-                    index.clauses_by_owner.entry(owner).or_default().push(record_position);
+                    index
+                        .clauses_by_owner
+                        .entry(owner)
+                        .or_default()
+                        .push(record_position);
                 }
                 DomainPackageRecord::Namespace(_) => {
                     index.flags[own.0].namespace = true;
@@ -509,7 +513,9 @@ impl RecordIndex {
 
     /// Types that have effective type identities, ascending by key.
     pub(crate) fn normalizable_types(&self) -> impl Iterator<Item = &DeclarationKey> {
-        self.keys.iter().zip(&self.flags)
+        self.keys
+            .iter()
+            .zip(&self.flags)
             .filter(|(_, flags)| flags.object_type || flags.record_value_type)
             .map(|(key, _)| key)
     }
@@ -520,12 +526,21 @@ impl RecordIndex {
         records: &'r [DomainPackageRecord],
         owner: &DeclarationKey,
     ) -> Vec<&'r super::domain_package::ClauseRecord> {
-        let Some(owner) = self.position(owner) else { return Vec::new(); };
-        let mut clauses: Vec<_> = self.clauses_by_owner.get(&owner).into_iter().flatten()
+        let Some(owner) = self.position(owner) else {
+            return Vec::new();
+        };
+        let mut clauses: Vec<_> = self
+            .clauses_by_owner
+            .get(&owner)
+            .into_iter()
+            .flatten()
             .filter_map(|position| match records.get(*position) {
-                Some(DomainPackageRecord::Clause(clause)) if clause.language == "quire" => Some(clause),
+                Some(DomainPackageRecord::Clause(clause)) if clause.language == "quire" => {
+                    Some(clause)
+                }
                 _ => None,
-            }).collect();
+            })
+            .collect();
         clauses.sort_by(|a, b| a.key.cmp(&b.key));
         clauses
     }

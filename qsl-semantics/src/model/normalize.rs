@@ -1201,8 +1201,14 @@ fn check_node<'a>(
                 if !index.is_record_value_type(general) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownGeneral { supertype: record.key.clone(), general: general.clone() },
-                        detail: format!("record value type {} names no record ancestor {}", record.key.node, general.node),
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: record.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "record value type {} names no record ancestor {}",
+                            record.key.node, general.node
+                        ),
                     });
                 }
             }
@@ -1211,20 +1217,44 @@ fn check_node<'a>(
             if !index.is_record_value_type(&clause.owner) && !index.is_namespace(&clause.owner) {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner { member: clause.key.clone(), owner: clause.owner.clone() },
-                    detail: format!("clause {} names no admitted business owner {}", clause.key.node, clause.owner.node),
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: clause.key.clone(),
+                        owner: clause.owner.clone(),
+                    },
+                    detail: format!(
+                        "clause {} names no admitted business owner {}",
+                        clause.key.node, clause.owner.node
+                    ),
                 });
             }
         }
         DomainPackageRecord::Namespace(namespace) => {
             for member in &namespace.members {
                 if index.is_namespace(member) {
-                    refusals.push(ModelRefusal { code: Code::InvalidModelBinding, cause: ModelRefusalCause::MalformedDeclaration,
-                        detail: format!("namespace {} contains namespace {}", namespace.key.node, member.node) });
-                } else if !domain_package.records.iter().any(|record| record.key() == member) {
-                    refusals.push(ModelRefusal { code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownMember { record: namespace.key.clone(), member: member.clone() },
-                        detail: format!("namespace {} names absent member {}", namespace.key.node, member.node) });
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::MalformedDeclaration,
+                        detail: format!(
+                            "namespace {} contains namespace {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
+                } else if !domain_package
+                    .records
+                    .iter()
+                    .any(|record| record.key() == member)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: namespace.key.clone(),
+                            member: member.clone(),
+                        },
+                        detail: format!(
+                            "namespace {} names absent member {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
                 }
             }
         }
@@ -1504,9 +1534,17 @@ fn build(
     let mut direct_fields = Vec::with_capacity(type_keys.len());
     for type_key in &type_keys {
         charges.fact()?;
-        let mut fields: Vec<DeclarationKey> = index.sorted_direct_fields(&domain_package.records, type_key)
-            .iter().map(|field| field.key.clone()).collect();
-        fields.extend(index.sorted_direct_clauses(&domain_package.records, type_key).iter().map(|clause| clause.key.clone()));
+        let mut fields: Vec<DeclarationKey> = index
+            .sorted_direct_fields(&domain_package.records, type_key)
+            .iter()
+            .map(|field| field.key.clone())
+            .collect();
+        fields.extend(
+            index
+                .sorted_direct_clauses(&domain_package.records, type_key)
+                .iter()
+                .map(|clause| clause.key.clone()),
+        );
         fields.sort();
         for _ in &fields {
             charges.fact()?;
@@ -1598,9 +1636,17 @@ fn build(
             continue;
         };
         for ancestor in paths {
-            let mut inherited: Vec<DeclarationKey> = index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
-                .iter().map(|field| field.key.clone()).collect();
-            inherited.extend(index.sorted_direct_clauses(&domain_package.records, &ancestor.ancestor_key).iter().map(|clause| clause.key.clone()));
+            let mut inherited: Vec<DeclarationKey> = index
+                .sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
+                .iter()
+                .map(|field| field.key.clone())
+                .collect();
+            inherited.extend(
+                index
+                    .sorted_direct_clauses(&domain_package.records, &ancestor.ancestor_key)
+                    .iter()
+                    .map(|clause| clause.key.clone()),
+            );
             inherited.sort();
             for member in inherited {
                 work_step();
