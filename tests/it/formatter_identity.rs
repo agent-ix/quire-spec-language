@@ -294,6 +294,48 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
     eprintln!(
         "state fixture 13: unresolved Generated count={unresolved_generated}; strict S4 next"
     );
+    assert_eq!(graph.requirements().len(), 1, "one original subtype claim");
+    let record = graph.requirements().values().next().unwrap();
+    let qsl_semantics::family::ClaimExtent::Unbounded(domains) = record.requirements().extent()
+    else {
+        panic!("the original subtype is covered by an unbounded population");
+    };
+    assert_eq!(domains.len(), 1, "one original covering population");
+    let (domain, kind) = domains.iter().next().unwrap();
+    assert_eq!(*kind, qsl_foundation::bound::DomainKind::Population);
+    let qsl_foundation::bound::DomainKey::Population { member_type, .. } = domain else {
+        panic!("the requirement names its population's own member type");
+    };
+    let member = graph.semantic_graph().resolve_wire(*member_type).unwrap();
+    let node = graph.semantic_graph().node(member).unwrap();
+    let Some(qsl_semantics::check::Owner::Model(owner)) = node.owner() else {
+        panic!("the population member is the original model-owned type");
+    };
+    assert_eq!(owner.identity(), "example/config-version");
+    assert_eq!(owner.node(), "ix://example/config-version/ConfigVersion");
+    assert_eq!(node.semantic_form(), "object_type");
+    let occurrences: Vec<_> = graph
+        .occurrences()
+        .filter(|(key, _, _)| *key == member)
+        .collect();
+    assert_eq!(occurrences.len(), 1, "one population member type occurrence");
+    let (_, origin, location) = &occurrences[0];
+    assert_eq!(origin.role().as_str(), "type", "population type is recorded");
+    assert_eq!(origin.ordinal(), 0, "first population type occurrence");
+    let Origin::StateClause { clause, index } = &location.origin else {
+        panic!("the population type is placed at its actual clause: {location:?}");
+    };
+    assert_eq!(clause, "SubInvariant");
+    assert_eq!(*index, 0);
+    assert_eq!(location.depth(), 0);
+    let region = graph
+        .occurrence_region(member, origin)
+        .expect("the population type has its real clause body region");
+    assert_eq!(region.source(), graph.source());
+    let start = source.find("{ true }").expect("original subtype body") + 2;
+    assert_eq!(usize::try_from(region.start()).unwrap(), start);
+    assert_eq!(usize::try_from(region.end()).unwrap(), start + "true".len());
+    assert_eq!(&source[start..start + "true".len()], "true");
 }
 
 macro_rules! state_identity_tests {

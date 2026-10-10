@@ -219,7 +219,11 @@ impl Lowering<'_> {
         self.record(key, OccurrenceRole::Claim, location.clone());
         let mut population_objects = Vec::with_capacity(clause.population_types.len());
         for object in clause.population_types {
-            population_objects.push(self.object_node(*object, location)?);
+            let object = self.object_node(*object, location)?;
+            // The requirement names this type even when the clause's nodes
+            // do not, as for a population covering a proper subtype.
+            self.record(object, OccurrenceRole::Type, location.clone());
+            population_objects.push(object);
         }
         Ok(LoweredClause {
             key,
