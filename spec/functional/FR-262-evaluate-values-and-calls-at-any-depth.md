@@ -13,6 +13,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-146
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-029
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-294
+    type: depends_on
 ---
 # FR-262: Evaluate, key and handle values and calls at any depth
 
@@ -24,6 +30,11 @@ under `quire.value.accounting/v1` (ADR-030 D-4.7). QSpec FR-146 defines
 execution fuel as the `work_units` limit, with one `function.call` charge per
 call and no call-depth counter; this requirement carries it through QSL's
 evaluator.
+
+The QSL-owned shared evaluation-core interface SHALL own resumable application
+state, the scheduler step and execution fuel for interpreted checked expressions
+and registered generated host bodies. This specifies a required interface;
+leaf extraction and host registration are not claimed to be implemented.
 
 ## Behavior
 
@@ -46,14 +57,125 @@ evaluator.
 5. **Exploration limits.** Simulation SHALL keep its exploration limits
    (FR-101), which bound states, transitions and path length.
 
+### Ownership and admission
+
+The shared interface belongs to QSL, in a leaf crate in its own repository.
+It SHALL use `core` and `alloc` and forbid unsafe code. QSL's existing std
+evaluator remains the semantic reference; the no_std replacement is a separate
+implementation milestone. RT and CG SHALL consume this interface, without
+depending on evaluator internals.
+
+For this extraction, [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)'s
+layer 5 remains the S6a family, simulation and checked-package adapter owner.
+The shared core sits below it, without dependencies on QSL's checker, package,
+model-intake, routing, replay or backend crates. Separating constructor-private
+checked-term types and runtime model-admission dependencies from the checker
+precedes extraction. That separation SHALL preserve checking authority, source
+locations, declaration identities, model correspondence and proof closure.
+
+When registering a host function, the core SHALL bind a resumable body factory
+to an exact callable identity and signature already admitted in the selected
+checked closure. Registration SHALL NOT mint checked authority, replace its
+proofs, or resolve calls by ambient name lookup. Capability negotiation and
+unsupported preparation remain before application under
+[FR-294](FR-294-run-every-execution-backend-behind-one-seam.md).
+
+### Operational interface
+
+These are typed in-process operations, not a wire format or second lowering.
+Their semantic inputs and results are normative; concrete Rust item names
+belong to the interface implementation.
+
+| Operation | Inputs | Result and responsibility |
+| --- | --- | --- |
+| Register host body | Admitted callable identity and signature; resumable body factory | Checked-closure-bound registration; fresh invocation state for each call |
+| Begin application | Selected checked closure; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`; `Cancel` | Pre-charge input failure, or one opaque session bound to these inputs |
+| Step session | Exclusive access to that live session | Still runnable, or terminal `Evaluation` / `CallFailure` under the existing S6a contract |
+| Resume body | Invocation state; initial arguments or the matching child's evaluation; scoped access to the session meter | Continue with saved state, request a child application, or return an evaluation |
+
+A session SHALL retain its task stack, call frames, lexical bindings,
+package/import context, source locations, losses and accounting across steps.
+A session SHALL NOT be copied, rebound to another checked closure, environment
+or meter, or resumed after a terminal result. Synchronous `call` and `evaluate`
+SHALL drive this same session until terminal with their existing result and
+input-refusal contracts.
+
+When requesting a nested application, a body SHALL return the exact admitted
+callee, completed arguments, call-site location and saved caller continuation
+to the scheduler. The scheduler SHALL validate the request, charge the call
+and push the callee frame without native recursion. While the child is active,
+the caller SHALL remain suspended. When the child completes, the scheduler
+SHALL deliver its evaluation to the matching continuation exactly once.
+Non-completed outcomes SHALL propagate under existing expression rules without
+inventing a value. Generated closures remain a first-class lowering, with
+invocation state retaining the program position and locals after each child.
+
+A step SHALL advance one finite saved body/task transition and commit its state
+before returning control. Still runnable is a scheduling boundary, not
+`Incomplete`, a value, or a charge point. A body SHALL hand every governed
+nested application to the scheduler rather than recursively entering `call`,
+`evaluate`, or synchronous `Frame::call` to obtain a child's value. Each
+transition's local host work must terminate; arbitrary host recursion or
+blocking I/O lies outside the checked evaluation contract. No time-slice or
+latency guarantee is allocated here.
+
+### Fuel and terminal boundaries
+
+All frames and bodies SHALL use the same existing `quire.value.accounting/v1`
+meter, including its non-work counters. Fuel is its `work_units` limit, not a
+second budget or scheduler-step count. Source arguments SHALL evaluate left to
+right before completed-input validation. Validation SHALL precede
+`function.call`, which SHALL precede binding and body execution. A checked
+expression root SHALL incur no call charge unless it reaches an application.
+
+A continuation SHALL neither replay completed work nor recharge an admitted
+call. Saving state, yielding, pushing/popping a frame and delivering a child
+SHALL add no accounting charge. Kernel operations SHALL keep their existing
+charge points and order. When a charge is denied, the core SHALL terminate
+with the existing located incomplete result at that charge, leaving the denied
+charge's counters unchanged and retaining earlier successful spend. A fresh
+invocation is required after raising limits; static totality stays unchanged.
+
+The core SHALL poll `Cancel` at every charge, as
+[FR-276](FR-276-cancel-a-lifecycle-operation.md) requires, as well as before
+each scheduler transition. When cancellation is observed before the next transition, the core SHALL
+terminate with the existing `CallFailure::Cancelled`, without executing another
+body, child or charge. A transition already in progress SHALL save its committed
+state at its end before control returns to the caller; cancellation SHALL NOT
+replay it. When the session terminates with completion, refusal, undefinedness,
+incomplete, fault or cancellation, the core SHALL release suspended frames
+without executing continuations.
+Locations, loss records and outcome propagation SHALL match the reference
+evaluator; a scheduling yield is never an evaluation result.
+
+[ADR-029](../decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md)
+EB-1's `ExecutionBackend` / `PreparedEntries` remains the outer seam. The shared
+body/scheduler interface sits inside execution; it SHALL NOT select backends
+or change prepared-entry unsupported dispositions. When an in-process backend
+invokes a registered host body, it SHALL save that body's continuation at the
+end of the step and use the same session for child handoffs. A host invocation
+already performed SHALL NOT be lost or repeated across a step. AOT transport
+and JIT preparation retain their existing contracts.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-262-AC-1 | On a thread with a 512 KiB stack, the recursive function `function count using v(n: Int[0, 1000000]): Integer pure decreases(n) { if n = 0 then 0 else count(n - 1) + 1 }`, called with `100000` under a `work_units` budget sized for it, completes with `100000`. With `work_units` one below the run's measured spend, the same call returns `incomplete { limit_kind: work_units }` at the denied charge, and completes once `work_units` is raised to the measured spend. | Test (TC-734) |
-| FR-262-AC-2 | On a thread with a 512 KiB stack, a recursive list value 100,000 long (`record List { head: Int[0, 9]; tail: List?; }`), built by a recursive function, evaluates; it keys as simulation state, and its state-key bytes equal the RFC 8785 text of its canonical JSON form; it compares equal to its clone, and it and its clone drop. A `ValueType` of 100,000 nested `Option`s around `Boolean` clones, compares equal to its clone, hashes equal to its clone, formats for debug and drops on the same thread. | Test (TC-735) |
+| FR-262-AC-1 | On a thread with a 512 KiB stack, the recursive function `function count using v(n: Int[0, 1000000]): Integer pure decreases(n) { if n = 0 then 0 else count(n - 1) + 1 }`, called with `100000` under a `work_units` budget sized for it, completes with `100000`. With `work_units` one below the run's measured spend, the same call returns `incomplete { limit_kind: work_units }` at the denied charge, and completes once `work_units` is raised to the measured spend. | Test |
+| FR-262-AC-2 | On a thread with a 512 KiB stack, a recursive list value 100,000 long (`record List { head: Int[0, 9]; tail: List?; }`), built by a recursive function, evaluates; it keys as simulation state, and its state-key bytes equal the RFC 8785 text of its canonical JSON form; it compares equal to its clone, and it and its clone drop. A `ValueType` of 100,000 nested `Option`s around `Boolean` clones, compares equal to its clone, hashes equal to its clone, formats for debug and drops on the same thread. | Test |
+| FR-262-AC-3 | Inspection finds one QSL-owned core interface without checker/package dependencies or RT/CG access to evaluator internals; registration cannot create checked authority or substitute another closure. | Inspection |
+| FR-262-AC-4 | A generated body calls a second generated body that calls an interpreted function. Stepping between every handoff and return produces the reference result and charge sequence, resumes each caller once, preserves locals and call-site locations, and never recursively invokes the evaluator. | Test |
+| FR-262-AC-5 | A source call with two argument applications charges them left to right before its own call charge and body work. Steps add no charge; a standalone literal charges no `function.call`; rejected root inputs cause no charge or body invocation. | Test |
+| FR-262-AC-6 | For AC-4's mixed-body chain let `w` be reference work spend. Limit `w` completes; `w - 1` returns the reference located incomplete result and denied charge, keeps earlier spend and leaves the denied charge unrecorded. No subsequent step can run a suspended body; a fresh invocation at `w` completes with static totality unchanged. | Test |
+| FR-262-AC-7 | Cancelling after a child request is saved, before the next transition, returns `CallFailure::Cancelled` with no further charge or body execution. In a direct-return caller, a child refusal or undefined outcome propagates with reference location/loss behavior and runs no subsequent body work; dropping the session executes no continuation. | Test |
+| FR-262-AC-8 | A body performs charged work, saves a local, requests a child and continues with its returned value. Each body transition and child occurs exactly once across steps; prepared-entry execution matches the synchronous reference, including a kernel loss record, and unsupported preparation stays a pre-application disposition. | Test |
 
 ## Dependencies
+
+- Shared interface ownership: QSL-682 and IR-583; checked-term extraction:
+  IR-586. RT consumes this contract in
+  `ix://agent-ix/quire-contract-runtime/FR-273` (IR-512); its resumable-body
+  implementation is downstream work.
 
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   D-4.7 and D-6.
