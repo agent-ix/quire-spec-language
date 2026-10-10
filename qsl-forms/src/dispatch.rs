@@ -7,9 +7,9 @@
 //! declaration's first significant token selects its dispatch entry
 //! (FR-091, refining FR-067's "root construct's leading token"). The `Value`
 //! family owns the `function`, `type`, `record`, `tuple`, `enum`, `ordered`,
-//! `predicate`, `dimension` and `unit` entries; every
-//! other leading token has none and refuses the whole unit with
-//! [`FormsCause::NoDispatchEntry`]. The families' own productions are in
+//! `predicate`, `dimension` and `unit` entries; `SumCase` owns `union`
+//! (FR-313), and `ProtocolClause` owns its state and protocol entries.
+//! A token with no entry refuses with [`FormsCause::NoDispatchEntry`]. The families' own productions are in
 //! their own modules (`value` for `Value`); this module holds no grammar.
 //!
 //! The mechanism itself — refusal on a recovering CST, span-only/no-identity
@@ -24,6 +24,7 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::protocol_clause;
+use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::value;
 
@@ -135,6 +136,8 @@ impl ParsedUnit {
 /// (TC-167) over CSTs the real grammar cannot produce.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeadingTokenKind {
+    /// `union`: the `SumCase` declaration form (FR-313).
+    Union,
     /// `function`: the `Value` function form.
     Function,
     /// `type`: the `Value` alias form.
@@ -355,6 +358,7 @@ fn dispatch(
     construct: Construct<'_>,
 ) -> Result<DeclarationForm, FormsRefusal> {
     match kind {
+        LeadingTokenKind::Union => sum_case::union_declaration(construct),
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
@@ -389,6 +393,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         return Some(LeadingTokenKind::TestProbe);
     }
     match spelling {
+        b"union" => Some(LeadingTokenKind::Union),
         b"function" => Some(LeadingTokenKind::Function),
         b"type" => Some(LeadingTokenKind::Type),
         b"record" => Some(LeadingTokenKind::Record),

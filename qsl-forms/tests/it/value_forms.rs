@@ -50,6 +50,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::StateClause(_)
@@ -93,6 +94,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Name(spelling) => spelling.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
         ExprNode::If { .. } => "If".into(),
+        ExprNode::Case(_) => "Case".into(),
         ExprNode::Binary { operator, .. } => format!("{operator:?}"),
         ExprNode::Negate(_) => "Negate".into(),
         ExprNode::Not(_) => "Not".into(),
@@ -182,6 +184,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Record(_) => "record",
             DeclarationForm::Tuple(_) => "tuple",
             DeclarationForm::Enum(_) => "enum",
+            DeclarationForm::Union(_) => "union",
             DeclarationForm::Dimension(_) => "dimension",
             DeclarationForm::Unit(_) => "unit",
             DeclarationForm::StateClause(_) => "state_clause",

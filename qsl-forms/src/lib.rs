@@ -30,6 +30,7 @@
 mod dispatch;
 mod protocol_clause;
 mod spans;
+mod sum_case;
 mod syntax;
 mod value;
 
@@ -38,15 +39,16 @@ pub use dispatch::{
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
-    Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinaryOperator,
-    BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
-    DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    ExactNumberForm, ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder,
-    FieldInitializer, FunctionDeclaration, NameForm, ProtocolBodyForm, ProtocolConstructForm,
-    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
-    RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm, AttemptForm,
+    BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, CaseForm, ClauseKind,
+    DeclarationForm, DeclarationKind, DeclaredClauseKind, DeclaredName, DimensionForm,
+    DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId,
+    ExprNode, ExprRef, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration,
+    NameForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
+    RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged,
+    Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal, TupleForm, TypeForm,
+    TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

@@ -478,6 +478,8 @@ impl fmt::Debug for ExprId {
 /// it has its own probe arm. Never constructed outside the probe build.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExprNode {
+    /// A union `case`, whose child handles belong to this expression arena.
+    Case(CaseForm),
     /// `true` or `false`.
     Boolean(bool),
     /// An integer literal.
@@ -711,6 +713,9 @@ impl ExprNode {
     /// child index `i` names the `i`th of them.
     pub fn children(&self) -> Vec<ExprId> {
         match self {
+            Self::Case(case) => std::iter::once(case.scrutinee)
+                .chain(case.arms.iter().map(|arm| arm.body))
+                .collect(),
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
@@ -784,9 +789,15 @@ impl ExprNode {
 
     /// The names this node binds, in binding order: a `let`'s name, a
     /// query's, count's or sum's binder, or an accumulation's accumulator
-    /// then its binder. Empty for every other node.
+    /// then its binder; a case's arm binders in arm and payload order.
+    /// Empty for every other node. Arm scopes belong to their own bodies.
     pub fn binders(&self) -> Vec<&str> {
         match self {
+            Self::Case(case) => case
+                .arms
+                .iter()
+                .flat_map(|arm| arm.binders.iter().map(|binder| binder.name.as_str()))
+                .collect(),
             Self::Let { name: binder, .. }
             | Self::Query { binder, .. }
             | Self::Count { binder, .. }
@@ -831,6 +842,12 @@ impl ExprNode {
     /// child id in reach.
     fn spellings_mut(&mut self) -> Spellings<'_> {
         match self {
+            // Dispatch rewriting reaches the child name nodes, never arm
+            // binder declarations or member selectors (FR-313).
+            Self::Case(_) => Spellings {
+                reference: None,
+                binders: Vec::new(),
+            },
             Self::Name(name) => Spellings {
                 reference: Some(name),
                 binders: Vec::new(),
@@ -887,6 +904,12 @@ impl ExprNode {
     fn shift_children(&mut self, shift: impl Fn(ExprId) -> ExprId) {
         let one = |id: &mut ExprId| *id = shift(*id);
         match self {
+            Self::Case(case) => {
+                one(&mut case.scrutinee);
+                for arm in &mut case.arms {
+                    one(&mut arm.body);
+                }
+            }
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
@@ -1443,7 +1466,9 @@ impl Expression {
     /// A copy of this tree with the names its nodes read and bind
     /// respelled by `respell`, which is handed each node's id (children
     /// first) and that node's [`Spellings`]. It reaches no child id, so the
-    /// copy always has this tree's shape.
+    /// copy always has this tree's shape. Case member selectors and arm
+    /// binder declarations remain authored; their body references are
+    /// visited as ordinary child name nodes (FR-313).
     pub fn respell_names(&self, mut respell: impl FnMut(ExprId, Spellings<'_>)) -> Self {
         let nodes = self
             .nodes
@@ -1947,6 +1972,52 @@ pub struct EnumForm {
     pub ordered: bool,
     /// The members in source order.
     pub members: Vec<EnumMemberForm>,
+}
+
+/// One union member, preserving authored payload positions (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnionMemberForm {
+    /// The member identifier and its span.
+    pub name: DeclaredName,
+    /// Payload types in source order; empty for a nullary member.
+    pub payload: Vec<TypeForm>,
+    /// The whole member's source span.
+    pub span: Span,
+}
+
+/// A closed union declaration at S2 (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnionForm {
+    /// The union identifier and its span.
+    pub name: DeclaredName,
+    /// Members in source order, without semantic validation.
+    pub members: Vec<UnionMemberForm>,
+    /// The declaration's source span.
+    pub span: Span,
+}
+
+/// An expression case arm, with arena-local body handle (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArmForm {
+    /// Bare or qualified member selector as authored.
+    pub member: NameForm,
+    /// Binder identifiers and spans in payload order.
+    pub binders: Vec<DeclaredName>,
+    /// Body in the enclosing expression arena.
+    pub body: ExprId,
+    /// The whole arm, including its terminating semicolon.
+    pub span: Span,
+}
+
+/// An expression case, with children in the enclosing arena (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseForm {
+    /// Scrutinee in the enclosing expression arena.
+    pub scrutinee: ExprId,
+    /// Arms in source order, including duplicates for S3 to diagnose.
+    pub arms: Vec<ArmForm>,
+    /// The whole expression's source span.
+    pub span: Span,
 }
 
 /// A qualified name as written, with `::` separators, and its span.
@@ -2498,6 +2569,8 @@ impl ProtocolDeclarationForm {
 /// carries").
 #[derive(Clone, Debug)]
 pub enum DeclarationForm {
+    /// A `union` declaration (FR-313).
+    Union(UnionForm),
     /// A `function` declaration, boxed: it is several times the size of
     /// the other forms.
     Function(Box<FunctionDeclaration>),
