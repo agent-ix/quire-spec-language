@@ -33,7 +33,7 @@ fn function(body: &str) -> (String, FunctionDeclaration) {
     let DeclarationForm::Function(function) = unit.forms()[0].form() else {
         panic!("expected function");
     };
-    (source, function.clone())
+    (source, function.as_ref().clone())
 }
 
 fn span(source: &str, needle: &str) -> Span {
@@ -88,8 +88,8 @@ fn dispatch_preserves_receiver_and_argument_order_in_a_precondition() {
     assert_eq!(children.len(), 3);
     assert!(matches!(children[0].node(), ExprNode::Deref(_)));
     assert_eq!(children[0].children()[0].node(), &ExprNode::Name("r".into()));
-    assert_eq!(children[1].node(), &ExprNode::Integer(11.into()));
-    assert_eq!(children[2].node(), &ExprNode::Integer(22.into()));
+    assert_eq!(children[1].node(), &ExprNode::Integer(11_i64.into()));
+    assert_eq!(children[2].node(), &ExprNode::Integer(22_i64.into()));
     let spans = &clause.spans.body;
     assert_eq!(spans.span(spans.root()), Some(span(&source, body)));
     for (index, needle) in ["deref(r)", "11", "22"].into_iter().enumerate() {
