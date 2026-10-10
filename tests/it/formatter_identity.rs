@@ -551,7 +551,9 @@ state_identity_tests! {
     state_two_member_population_keeps_checked_identity: 17,
 }
 
-#[trace("TC-885", "FR-003-AC-9")]
+// FR-093 generated-placement support for original state-clause roots. The
+// enum/record vectors of AC-18 and formatting identity have separate controls.
+#[trace("FR-093")]
 #[test]
 fn state_generated_occurrences_have_authored_regions() {
     use quire_semantic_value::location::Origin;
@@ -800,10 +802,14 @@ fn ieee_fixture_identity(text: &str) {
         let graph = declarations
             .check(quire_semantic_value::checking::CheckingLimits::default())
             .expect("the owning IEEE profile admits the fixture");
-        qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
-            .unwrap()
-            .package()
-            .package_id()
+        let emission =
+            qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph)).unwrap();
+        assert!(
+            emission.omitted().is_empty(),
+            "IEEE {revision}: emission omitted {:?}",
+            emission.omitted()
+        );
+        emission.package().package_id()
     };
     let original = compile(text, "1");
     let parsed = qsl_cst::parse(
