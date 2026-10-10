@@ -1,5 +1,5 @@
 ---
-id: TC-915
+id: TC-919
 org: agent-ix
 title: "An empty model-query object identity is an internal fault"
 type: TC
@@ -7,7 +7,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-090
     type: verifies
 ---
-# TC-915: An empty model-query object identity is an internal fault
+# TC-919: An empty model-query object identity is an internal fault
 
 ## Description
 
