@@ -199,9 +199,17 @@ give the same verdict the model gives at evaluation:
   proper ancestor SHALL refuse with a redefinition-target cause. The
   exposed field SHALL narrow every field it stands for: required wherever
   one of them is, and admitting only values that field's type admits. A
-  reference field SHALL be redefined only with the identical reference
-  type, since evaluation matches a reference's object type exactly.
-  Otherwise the environment SHALL refuse as ill-typed.
+  reference field of type `Reference<T>` SHALL, under
+  `quire.model.complete/v1`, admit a redefining field of type `Reference<S>`
+  exactly when `S` conforms to `T` in the closed FR-151 effective view:
+  `S` is `T` or a proper subtype of `T`. This covariance SHALL preserve the
+  reference's qualified identity and SHALL NOT admit an implicit downcast.
+  Reverse or unrelated target types SHALL refuse `ill_typed`/`variance-result`.
+  Covariance SHALL NOT discharge a writer's refinement obligation: narrowing
+  an object-typed domain written by an exposed operation still requires an
+  established postcondition fact and SHALL refuse
+  `undefined_expression`/`unproved-refinement` with obligation `no-proof-form`
+  when no FR-146 fact form expresses that narrowing.
 - `deref(r).f` SHALL resolve `f` in `r`'s static type's flattened set, and
   SHALL read the one slot of the referenced object's own type that stands
   for that field.
@@ -219,6 +227,7 @@ give the same verdict the model gives at evaluation:
 | FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 | FR-082-AC-8 | Given a field `f` declared `optional` with multiplicity `[1, 1]`, redefined by a field declared `required` with multiplicity `[1, 1]` and written by an exposed operation whose postcondition establishes no presence fact, the checker refuses `unproved-refinement` with obligation `field-presence`; with `present(self.f)` established it admits the redefinition. Given `f` and its redefinition both declared `required` with multiplicity `[0, 1]`, or both `optional` with multiplicity `[1, 1]`, written by the same operation with no established fact, the checker admits the redefinition and engages no obligation. | Test (TC-896) |
 | FR-082-AC-9 | Given a domain package whose scalar type `Wide` is bound to `[0, 18446744073709551615]` (its bounds written as decimal strings, FR-056), a field `f: Wide` redefined by a field of scalar type `Narrow` bound to `[0, 9223372036854775808]`, and an exposed operation writing `f` whose stated postcondition is `self.f <= 9223372036854775808`, the checker admits the redefinition; with the postcondition `self.f <= 9223372036854775809` it refuses `unproved-refinement` with obligation `field-domain`. | Test (TC-911) |
+| FR-082-AC-10 | Under `quire.model.complete/v1`, given `S` a proper subtype of `T`, a field of type `Reference<T>` redefined by `Reference<S>` with identical multiplicity and presence and no outstanding writer refinement obligation passes the value-type axis and preserves qualified reference identity. A reverse or unrelated target type refuses `ill_typed`/`variance-result` and admits no implicit downcast. If an exposed operation writes the narrowed object-typed domain and no FR-146 fact form expresses the narrowing, the checker refuses `undefined_expression`/`unproved-refinement` with obligation `no-proof-form`. | Test |
 
 ## Dependencies
 
