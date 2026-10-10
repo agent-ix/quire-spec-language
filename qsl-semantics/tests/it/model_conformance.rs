@@ -173,6 +173,44 @@ fn fixture_h_base() -> Vec<DomainPackageRecord> {
     ]
 }
 
+#[trace("FR-151-AC-4", "FR-151-AC-11", "QSpec-TC-196")]
+#[test]
+fn operation_axes_charge_the_selected_type_facts_and_complete_effect_comparisons() {
+    use qsl_semantics::model::accounting::LimitKind;
+
+    for (row, expected_work, expected_failures) in [(2, 10, 0), (3, 8, 5), (4, 8, 1), (9, 10, 0)] {
+        let mut records = fixture_h_base();
+        if row == 9 {
+            records.push(field_member_redefining("model.B.w", "model.B", "model.A",
+                mult(0, Some(1)), Some("model.A.x"), vec![]));
+        }
+        records.push(operation_redefining("model.B.op", "model.B",
+            if row == 4 { vec![] } else { vec![("model.B.op.p1",
+                if row == 3 { "model.B" } else { "model.A" },
+                if row == 3 { mult(1, Some(1)) } else { mult(0, Some(2)) })] },
+            Some((if row == 3 { "model.A" } else { "model.B" },
+                if row == 3 { mult(0, Some(1)) } else { mult(1, Some(1)) })),
+            if row == 3 { vec!["model.B.y"] } else if row == 9 { vec!["model.B.w"] } else { vec![] },
+            if [2, 4].contains(&row) { vec!["model.B"] } else { vec![] },
+            vec![], vec![], Some("model.A.op")));
+        let package = DomainPackage::new(DomainPackageRef::fixture("bundle.h"), records);
+        let view = match normalize(&package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("structural normalization must admit R{row}: {other:?}"),
+        };
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        let result = check_operation_redefinition(view.model_index(),
+            &DeclarationKey::fixture("model.B.op"), &DeclarationKey::fixture("model.A.op"), &mut meter);
+        let failures = match result {
+            ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => 0,
+            ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => failures.len(),
+            other => panic!("all charges must complete: {other:?}"),
+        };
+        assert_eq!(failures, expected_failures, "R{row} independent failures");
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), expected_work, "R{row} work pricing");
+    }
+}
+
 fn bundle_h(mut records: Vec<DomainPackageRecord>) -> DomainPackage {
     records.extend(fixture_h_base());
     DomainPackage::new(DomainPackageRef::fixture("bundle.h"), records)
