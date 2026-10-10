@@ -168,7 +168,10 @@ automaton states and the depth reached.
   zero-counted lasso. This derived verification obligation preserves the
   checked source form and its actual fairness set. A violation uses the
   existing replayed lasso evidence; a Closure proof requires the core
-  acceptance check in addition to bad-prefix closure.
+  acceptance check in addition to bad-prefix closure. FR-338's typed
+  Stopped result is propagated through FR-127 as Incomplete with the
+  actual limit/value/setting or cancellation source; it is never converted
+  to an accepted closure or CertificateRejected.
 
 - For a `BoundedMltl` (TP-2) clause the engine SHALL build a deterministic
   finite monitor over positions, for activation `on origin` and for

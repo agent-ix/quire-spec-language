@@ -56,6 +56,10 @@ are prospective qualification procedures; this artifact claims no execution.
    an actual fairness constraint whose enabled/taken test excludes it.
 8. Admit u64::MAX interval bounds and b+1 saturation; reach the actual
    automaton-state/identity-byte budget while encoding a reachable state.
+   Exhaust the auxiliary graph max_states budget and the actual evaluation
+   meter separately; cancel through FR-276 first with requested, then with
+   deadline. Pass each typed stop through FR-127 and through the FR-339
+   closure call; compare exact limit/value/setting or cancellation source.
 
 Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 
@@ -83,6 +87,11 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   the actual resolved fairness test can exclude a starvation lasso.
 - Step 8: exact mathematical strings, including b+1 above u64::MAX;
   an explicit resource stop gives no truncated/default key.
+  Also exhaust the auxiliary graph/state/automaton/evaluation budget
+  before acceptance and cancel with Requested and Deadline at a charge.
+  The typed Stopped result preserves the exact configured limit, charged
+  value/setting or cancellation source; FR-127 settles Incomplete with
+  those fields, never Accepted or CertificateRejected.
 
 ## Status
 
