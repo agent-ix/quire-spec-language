@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-352
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-311
     type: depends_on
 ---
@@ -20,8 +22,10 @@ When the `qualify` repository gate finishes a conformance run, the gate SHALL
 report QSL qualified for the run's scope if and only if every capability in
 that scope is `passed` (FR-351).
 
-Complete-V1 qualified is that verdict over the default scope: every
-capability the corpus lists for a QSL consumer type (FR-350).
+Complete-V1 qualified is that verdict over the default scope defined by
+[FR-350](FR-350-run-the-conformance-corpus-against-qsl.md): every capability
+the corpus lists for a QSL consumer type and a semantic profile QSL's
+definition catalog holds.
 
 ## Inputs
 
@@ -50,6 +54,15 @@ with none, the scope is the default scope. Each `--limit` raises or lowers
 one FR-255 setting. `--text` writes the FR-352 report as text instead of
 JSON.
 
+Before any vector executes, the gate SHALL validate all arguments, resolve
+the complete `--limit` operand list through the
+[FR-255 settings operation](FR-255-name-the-setting-that-raises-a-reached-limit.md),
+validate the corpus contract and resolve the selected capability ids.
+An unknown setting, a non-integer or negative bound, or a repeated setting
+is a usage refusal naming the offending operand. Omitted settings retain
+FR-255's defaults. A missing file named by an otherwise valid vector is
+the per-vector `tool-failure` of FR-350, not a corpus preflight refusal.
+
 ### Exit contract
 
 | Exit | Meaning |
@@ -72,15 +85,19 @@ JSON.
 - A verdict for a caller-selected scope SHALL name that scope. Only a run
   over the default scope SHALL report `complete-v1: qualified`.
 - A non-passing capability outside the scope SHALL change no verdict.
+- A completed run containing only `tool-failure` vector outcomes SHALL
+  still report `not-qualified` and exit 1. Exit 2 does not replace a
+  completed run's verdict because the per-vector failure was an I/O error,
+  panic or internal fault.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-353-AC-1 | A fixture corpus whose in-scope vectors all pass, run over the default scope, reports `complete-v1: qualified` and exits 0. | Test (TC-880) |
-| FR-353-AC-2 | The same corpus with one vector's expected cause changed reports `not-qualified`, naming that vector's capability as `failed`, and exits 1; the same corpus with one capability's vectors removed reports `not-qualified`, naming it `uncovered`. | Test (TC-880) |
-| FR-353-AC-3 | A run scoped to the capabilities that pass, over the corpus of AC-2, reports `qualified` for that named scope, does not report `complete-v1: qualified`, and exits 0. | Test (TC-881) |
-| FR-353-AC-4 | A run over a corpus location that does not exist reports the I/O refusal, gives no verdict and exits 2; so does a run over a corpus whose `contract_version` is `quire.conformance-corpus/v0`, naming `/contract_version`, a corpus with one vector missing its expected disposition, naming that member, and a run with `--capability CAP-Z` that the corpus does not list, naming `CAP-Z`. No vector executes in any of them. | Test (TC-881) |
+| FR-353-AC-1 | A fixture corpus whose in-scope vectors all pass, run over the default scope, reports `complete-v1: qualified` and exits 0. | Test |
+| FR-353-AC-2 | The same corpus with one vector's expected cause changed reports `not-qualified`, naming that vector's capability as `failed`, and exits 1; the same corpus with one capability's vectors removed reports `not-qualified`, naming it `uncovered`. Separate one-capability runs settling `unsupported`, `incomplete` and `tool-failure` each report `not-qualified` and exit 1; a missing vector input is the latter case, while a missing corpus is AC-4's exit 2. | Test |
+| FR-353-AC-3 | A run scoped to the capabilities that pass, over the corpus of AC-2, reports `qualified` for that named scope, does not report `complete-v1: qualified`, and exits 0. | Test |
+| FR-353-AC-4 | A run over a corpus location that does not exist reports the I/O refusal, gives no verdict and exits 2; so does a run over a corpus whose `contract_version` is `quire.conformance-corpus/v0`, naming `/contract_version`, a corpus with one vector missing its expected disposition, naming that member, and a run with `--capability CAP-Z` that the corpus does not list, naming `CAP-Z`. Duplicate keys, out-of-domain values and non-canonical encodings each refuse before execution. Runs with `--limit s9.nodes=1`, `--limit s3.nodes=ten`, `--limit s3.nodes=-1`, or two `--limit s3.nodes=5` operands each refuse naming the offending operand. No vector executes and no verdict is emitted in any of them. | Test |
 
 ## Dependencies
 

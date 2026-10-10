@@ -18,6 +18,12 @@ Scope: FR-352-AC-1, FR-352-AC-2, FR-352-AC-3.
 
 Build a fixture corpus with four in-scope capabilities: two whose vectors pass, one with a failing vector, one with no vector. Write the capability ids out of order in the corpus. Run twice with JSON output and once with text output.
 
+Then add three vectors to the failing capability: one with a missing input
+file (`tool-failure`), one expecting success but returning an unknown-feature
+refusal (`unsupported`), and one expecting success but exhausting its
+configured accounting budget (`incomplete`). Give the four non-passing
+vectors ids out of order and repeat both output modes.
+
 Tag the tests `#[trace("TC-879", "FR-352-AC-n")]`.
 
 ## Expected Results
@@ -25,3 +31,7 @@ Tag the tests `#[trace("TC-879", "FR-352-AC-n")]`.
 - Counts 2, 1, 0, 0, 0, 1 for `passed`, `failed`, `tool-failure`, `unsupported`, `incomplete`, `uncovered`; coverage 50 per cent.
 - The failing capability's entry holds the failing vector's id with expected and actual result; passing entries hold no vector detail.
 - The two JSON reports are byte-equal, list capabilities and vectors in ascending id order and name the QSL version that ran. The text report gives the same counts and coverage.
+- After adding the three vectors, capability counts and coverage stay the
+  same. The failed capability keeps the original failed vector as its only
+  deciding id. Both output modes retain all four non-passing vectors in id
+  order, each with its own outcome and expected and actual result.

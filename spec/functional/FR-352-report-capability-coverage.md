@@ -34,8 +34,10 @@ asks for text. It holds:
 - the scope;
 - the count of capabilities with each outcome, and the coverage, which is
   the `passed` count divided by the in-scope count;
-- each capability's outcome and, for each non-passing capability, the
-  vectors that decided it, each with its expected and actual result.
+- each capability's outcome and its deciding vector ids, and, for each
+  non-passing capability, every non-passing vector with its own outcome,
+  expected result and actual result. A vector with a lower settlement
+  precedence remains visible even when it did not decide the capability.
 
 ## Behavior
 
@@ -50,9 +52,9 @@ asks for text. It holds:
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-352-AC-1 | Over a fixture corpus with four in-scope capabilities, two `passed`, one `failed` and one `uncovered`, the report gives counts 2, 1, 0, 0, 0, 1 for `passed`, `failed`, `tool-failure`, `unsupported`, `incomplete` and `uncovered`, and coverage 50 per cent. | Test (TC-879) |
-| FR-352-AC-2 | The `failed` capability's entry holds its failing vector's id with the expected and the actual result; the `passed` capabilities' entries hold no vector detail. | Test (TC-879) |
-| FR-352-AC-3 | The JSON report of two runs over the fixture corpus is byte-equal, capabilities and vectors are in ascending id order, and the report names the QSL version that ran. The text report holds the same counts and coverage. | Test (TC-879) |
+| FR-352-AC-1 | Over a fixture corpus with four in-scope capabilities, two `passed`, one `failed` and one `uncovered`, the report gives counts 2, 1, 0, 0, 0, 1 for `passed`, `failed`, `tool-failure`, `unsupported`, `incomplete` and `uncovered`, and coverage 50 per cent. | Test |
+| FR-352-AC-2 | The `failed` capability's entry holds its failing vector's id with the expected and the actual result; the `passed` capabilities' entries hold no vector detail. Adding a `tool-failure`, `unsupported` and `incomplete` vector to the failed capability leaves it `failed` with the same deciding vector id, while the report retains all four non-passing vectors with their own outcomes and expected and actual results. | Test |
+| FR-352-AC-3 | The JSON report of two runs over the fixture corpus is byte-equal, capabilities and vectors are in ascending id order, and the report names the QSL version that ran. The text report holds the same counts and coverage. | Test |
 
 ## Dependencies
 

@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: depends_on
 ---
 # FR-350: Run the complete-V1 conformance corpus against QSL
 
@@ -60,8 +62,25 @@ the entry point a caller of that subject uses:
 QSL reads QSpec FR-336 `applicability` at two levels. A capability is in
 the default scope (FR-351) when its applicability names a QSL consumer type
 and a semantic profile QSL's definition catalog holds. A vector SHALL run
-when its own applicability names a QSL consumer type, through that type's
-entry point. The runner calls no internal function a caller cannot reach.
+when its capability is in the selected scope and its own applicability
+names a QSL consumer type, through that type's entry point. Vectors of an
+out-of-scope capability SHALL NOT execute. The runner calls no internal
+function a caller cannot reach.
+
+### Corpus and limits ownership
+
+The runner SHALL read the selected QSpec corpus and the inputs it names
+without rewriting its vectors, expected dispositions, `results` or
+`coverage`. Expected dispositions come from the corpus's independent oracle;
+the runner SHALL NOT replace them with results calculated by QSL.
+
+The runner SHALL resolve `--limit` operands through the existing
+[FR-255 settings operation](FR-255-name-the-setting-that-raises-a-reached-limit.md).
+Q1 owns no additional setting names or defaults. The subject receives those
+effective limits at its public entry point; a setting for a stage that the
+subject does not run does not cause that stage to run. Evaluation budgets
+retain the subject's accounting contract, including any override the
+FR-255 settings operation defines.
 
 ### Settlement
 
@@ -78,8 +97,9 @@ settle the vector by the first of these, in this order, that holds:
    `unknown_required_feature` or `unsupported_projection` refusal.
 2. `unsupported`: QSL returned `unsupported_projection` or
    `unknown_required_feature`, holding the code and cause QSL returned.
-3. `incomplete`: the vector reached a resource limit, naming the limit, its
-   value and the option that raises it.
+3. `incomplete`: the vector reached a resource limit, retaining its kind,
+   bound and actual charge/count, and the setting or request field through
+   which the subject's public contract raises it.
 4. `failed`: any other result, holding the expected and the actual result.
    A refusal with the right code and a different cause is `failed`, as is a
    success where a refusal was expected and the reverse.
@@ -89,6 +109,8 @@ settle the vector by the first of these, in this order, that holds:
 The runner SHALL settle each vector independently: a `tool-failure`,
 `incomplete` or `failed` vector SHALL change no other vector's outcome, and
 the runner SHALL continue with the next vector.
+Each vector SHALL start with fresh resource accounting at its effective
+limits; a previous vector's consumption cannot reduce its remaining budget.
 
 ### Determinism
 
@@ -100,11 +122,11 @@ environment variable or search path to decide an outcome.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-350-AC-1 | Over a fixture corpus holding one positive compile vector, one positive `run` vector, one `replay` vector and one `format` vector, each with the expected result QSL returns, each vector is `passed` and each ran through its subject's public entry point. | Test (TC-875) |
-| FR-350-AC-2 | A refusal vector expecting `ill_typed`/`unit-mismatch` is `passed` when QSL returns that pair, and `failed` when QSL returns `ill_typed`/`type-mismatch`, the failure holding the expected and the actual code and cause. A refusal vector over source QSL admits is `failed`, holding the expected refusal and the actual success. | Test (TC-875) |
-| FR-350-AC-3 | A vector that expects a success, which QSL answers with `unknown_required_feature`/`unknown-feature`, is `unsupported`, holding that pair; the same answer to a vector that expects that pair is `passed`. A vector that expects a success, run with an evaluation budget of zero, is `incomplete`, naming the budget, its value and the option that raises it, and with the default budget is `passed`. A boundary vector that expects the zero-budget limit refusal, run with a budget of zero, is `passed`. A vector expecting `ill_typed`/`type-mismatch` that QSL answers with `unknown_required_feature` is `unsupported`. | Test (TC-876) |
-| FR-350-AC-4 | A vector naming a source file absent from the corpus is `tool-failure` holding the I/O error, and the vectors before and after it in the corpus keep the outcomes they have when it is removed. | Test (TC-876) |
-| FR-350-AC-5 | Two runs over the same fixture corpus with the same build and limits give equal per-vector outcomes. | Test (TC-876) |
+| FR-350-AC-1 | Over a fixture corpus holding one positive compile vector, one positive `run` vector, one `replay` vector and one `format` vector, each with the expected result QSL returns, each vector is `passed` and each ran through its subject's public entry point. | Test |
+| FR-350-AC-2 | A refusal vector expecting `ill_typed`/`unit-mismatch` is `passed` when QSL returns that pair, and `failed` when QSL returns `ill_typed`/`type-mismatch`, the failure holding the expected and the actual code and cause. A refusal vector over source QSL admits is `failed`, holding the expected refusal and the actual success. | Test |
+| FR-350-AC-3 | A vector that expects a success, which QSL answers with `unknown_required_feature`/`unknown-feature`, is `unsupported`, holding that pair; the same answer to a vector that expects that pair is `passed`. A vector that expects a success, run with an evaluation budget of zero, is `incomplete`, retaining its budget kind, bound, actual count and the subject's setting or request field that raises it, and with the default budget is `passed`. A boundary vector that expects the zero-budget limit refusal, run with a budget of zero, is `passed`. A vector expecting `ill_typed`/`type-mismatch` that QSL answers with `unknown_required_feature` is `unsupported`. A positive compile vector checked under `--limit s3.nodes=0` is `incomplete` naming `s3.nodes`; raising that setting to fit yields `passed`, with actual typed results equal to direct public calls under the same effective limits. | Test |
+| FR-350-AC-4 | A vector naming a source file absent from the corpus is `tool-failure` holding the I/O error, and the vectors before and after it in the corpus keep the outcomes they have when it is removed. | Test |
+| FR-350-AC-5 | Two runs over the same fixture corpus with the same build and limits give equal per-vector outcomes. Two identical successful vectors, each requiring the full configured budget, both pass in either corpus order. The corpus and its named input bytes are unchanged after execution, including its recorded results and coverage. | Test |
 
 ## Dependencies
 

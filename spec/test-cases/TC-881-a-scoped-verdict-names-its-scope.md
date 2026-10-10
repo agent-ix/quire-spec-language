@@ -22,6 +22,13 @@ Every step runs `cargo run --package xtask -- qualify --corpus <dir>`, adding th
 2. Run over a corpus location that does not exist.
 3. Run over TC-880 step 1's corpus with `contract_version` set to `quire.conformance-corpus/v0`; then with one vector's expected disposition removed.
 4. Run over TC-880 step 1's corpus with `--capability CAP-Z`, an id the corpus does not list.
+5. Make three independent corpus mutations: duplicate a required key,
+   replace a closed-domain value with a value outside that domain, and
+   encode a valid document non-canonically under QSpec FR-336. Run each.
+6. Over the valid corpus, run separately with `--limit s9.nodes=1`,
+   `--limit s3.nodes=ten`, `--limit s3.nodes=-1`, and two occurrences of
+   `--limit s3.nodes=5`. Observe the subject invocation boundary in every
+   refusal case, including a bad operand after a valid operand.
 
 Tag the tests `#[trace("TC-881", "FR-353-AC-n")]`.
 
@@ -31,3 +38,7 @@ Tag the tests `#[trace("TC-881", "FR-353-AC-n")]`.
 - Step 2: the I/O refusal, no verdict, exit 2.
 - Step 3: a refusal naming `/contract_version`, then one naming the missing member; no verdict, no vector executed, exit 2 each.
 - Step 4: `unknown_required_feature`/`unknown-feature` naming `CAP-Z`, no verdict, no vector executed, exit 2.
+- Step 5: each corpus validation refusal names its cause and locus; no
+  verdict, no vector executed, exit 2.
+- Step 6: usage refusal naming the offending operand; no verdict, no
+  vector executed, exit 2. A valid earlier operand starts no stage.
