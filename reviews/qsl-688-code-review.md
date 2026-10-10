@@ -3,7 +3,7 @@ id: SR-2449
 title: "Code review of quire-spec-language PR #688: exact numeric intake"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@233609db89f4fe7afe11560b6aa0105c325fc9f9; PR #688; qsl-semantics/src/model/intake.rs; qsl-semantics/tests/it/model_intake.rs; qsl-semantics/Cargo.toml; Cargo.lock; fresh agent-ix/filament-core-data origin/main@c620d6be99654a7a77f0ecc2f97d3c7136402651; QSL-59 boundary task/59-business-model-fix@240f8cced"
+scope: "agent-ix/quire-spec-language@b4be629d0b02e798ec0972682d27256b3779acf9; PR #688; examples/config-version/model.semantic-ir.json; qsl-semantics/src/model/intake.rs; qsl-semantics/tests/it/model_intake.rs; qsl-semantics/Cargo.toml; Cargo.lock; fresh agent-ix/filament-core-data origin/main@c620d6be99654a7a77f0ecc2f97d3c7136402651; QSL-59 boundary task/59-business-model-fix@240f8cced"
 review_set: subset
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-056, type: reviews }
@@ -76,3 +76,13 @@ inclusive and exclusive bounds now replace absent safe defaults and continue to
 tighten when a second bound exists on the same side. No new code or gap findings
 were identified. The focused model-intake gate is attributed to the dispatching
 leader's queued run.
+
+## Disposition pass 3
+
+Reviewed the sole `da3dabe` to `b4be629` delta in the detached checkout
+`/tmp/qsl688-review-b4`: ConfigVersion's `min` and `max` operands changed from
+JSON numbers `0` and `1000` to canonical decimal strings. This matches FR-144's
+exact integer representation and FCD's accepted constraint wire shape. The
+supplied focused corpus result is 2/2 PASS; the aggregate old-head result is
+red, and model_intake, compile, and lint checks were NOTRUN. Prior FND-001 and
+FND-002 remain fixed; no new finding applies to this fixture-only delta.
