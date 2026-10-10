@@ -1253,6 +1253,7 @@ mod tests {
     }
 
     #[trace("TC-522", "FR-127-AC-9")]
+    #[trace("TC-770", "FR-286-AC-3")]
     #[test]
     fn certificate_query_wire_keeps_every_rule_and_query_part() {
         use crate::QueryPart;
@@ -1281,17 +1282,56 @@ mod tests {
                         at: CertificateLocus::Query { part },
                     }),
                 );
-                let document =
-                    OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), vec![item]);
-                let written: Value = serde_json::from_slice(&document.to_bytes().unwrap()).unwrap();
+                let document = OutcomeDocument::settled(
+                    Operation::Analyze,
+                    Some(OutcomeStage::S6c),
+                    vec![
+                        record(
+                            0,
+                            TerminalValue::Proved {
+                                basis: ProofBasis::Exhaustive,
+                                certification: Certification::Trusted,
+                            },
+                        ),
+                        record(
+                            1,
+                            TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 9 }),
+                        ),
+                        item,
+                    ],
+                );
+                let bytes = document.to_bytes().expect("query rejection document encodes");
+                assert_eq!(document.to_bytes().unwrap(), bytes);
+                let written: Value = serde_json::from_slice(&bytes).unwrap();
                 assert_eq!(
-                    written["items"],
-                    json!([{
-                        "request_index": 2,
-                        "result": "inconclusive",
-                        "cause": {"kind": "certificate-rejected", "rule": expected_rule, "at": expected_part},
+                    written,
+                    json!({
+                        "format": "quire-outcome/1",
+                        "operation": "analyze",
+                        "last_stage": "S6c",
                         "category": "inconclusive",
-                    }])
+                        "items": [{
+                            "request_index": 0,
+                            "result": "proved",
+                            "cause": null,
+                            "basis": {"type": "exhaustive"},
+                            "certification": "trusted",
+                            "category": "success",
+                        }, {
+                            "request_index": 1,
+                            "result": "inconclusive",
+                            "cause": {"kind": "bound-reached", "depth": 9},
+                            "category": "inconclusive",
+                        }, {
+                            "request_index": 2,
+                            "result": "inconclusive",
+                            "cause": {"kind": "certificate-rejected", "rule": expected_rule, "at": expected_part},
+                            "category": "inconclusive",
+                        }],
+                        "diagnostics": [],
+                        "artifacts": [],
+                        "result": null,
+                    })
                 );
             }
         }
