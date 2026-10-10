@@ -1280,14 +1280,20 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
         panic!("{missing_policy:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert!(matches!(
-        &refusals[0].cause,
-        qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-            if node == note["identity"].as_str().unwrap()
-    ), "{refusals:?}");
-    assert!(refusals[0].detail.contains(
-        "/ir/types/1/operations/0/params/0/typeRef (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING)"
-    ), "{refusals:?}");
+    assert!(
+        matches!(
+            &refusals[0].cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == note["identity"].as_str().unwrap()
+        ),
+        "{refusals:?}"
+    );
+    assert!(
+        refusals[0].detail.contains(
+            "/ir/types/1/operations/0/params/0/typeRef (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING)"
+        ),
+        "{refusals:?}"
+    );
     // The wire policy admits this Decimal parameter at FCD's boundary;
     // QSL's missing native parameters remain the refusal under test.
     note["decimal"] = json!({"precision": 5, "scale": 2});
@@ -1297,7 +1303,11 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
         panic!("{refusal:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].code.as_str(), "unsupported_construct", "{refusals:?}");
+    assert_eq!(
+        refusals[0].code.as_str(),
+        "unsupported_construct",
+        "{refusals:?}"
+    );
     assert_eq!(refusals[0].cause.as_str(), "declaration-form");
 }
 
