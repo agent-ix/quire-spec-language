@@ -3,11 +3,12 @@
 mod cli;
 
 use cli::{Command, SyntaxCommand};
+use qsl_cst::format::format;
 use qsl_cst::CompleteDiagnostic;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::{render_offered, IdentityCauseFields, SourceReadCause};
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
-use quire_spec_language::{format::format, parse, Limits};
+use quire_spec_language::{parse, Limits};
 use serde_json::json;
 use std::io::{self, Read, Write};
 use std::path::Path;

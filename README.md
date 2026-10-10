@@ -197,10 +197,12 @@ which may contain replacement characters; exact labels and the actual byte
 digest carry the separate source correspondence. See the
 [native diagnostic catalog](docs/native-error-codes.md) for stable outcomes.
 
-Library callers can use `format::format_with_limit(unit, output_bytes)` to lower
-the inclusive 1 MiB output-content ceiling. It counts every emitted byte,
+Library callers can use `qsl_cst::format::format_with_limit(unit, output_bytes)` to replace
+the default inclusive 1 MiB output-content ceiling. The supplied limit is used as
+given, including zero and values above the default. `format_with_limits` takes
+the typed `FormatLimits` value. It counts every emitted byte,
 including the final newline, and refuses before an append would exceed the
-limit. Existing `format::format(unit)` retains the default ceiling. Allocator
+limit. `qsl_cst::format::format(unit)` retains the default ceiling. Allocator
 capacity is not an exact content-byte accounting promise.
 
 ## Run and check
@@ -251,7 +253,8 @@ checks a selected byte digest; parse_source retains that verified immutable sour
 
 Default ceilings are 1 MiB source, 100,000 tokens, 50,000 syntax nodes and 64
 nested delimiters/parser frames. Callers can lower these ceilings. Formatting
-also bounds output to 1 MiB and can return incomplete if expansion exceeds it.
+defaults to a 1 MiB output limit and can return incomplete if expansion exceeds
+the caller's selected limit.
 Long flat expressions use an arena; grouping and all original source bytes are
 retained. Balanced reserved forms refuse as unsupported; malformed tokens and
 delimiters are syntax errors. No recovery manufactures a successful partial unit.

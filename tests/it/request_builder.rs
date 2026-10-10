@@ -37,8 +37,17 @@ const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { tru
     function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }";
 
 /// `declarations` checked through S1, S2 and S3.
+/// Trace: FR-003-AC-9
 fn check(declarations: &str) -> CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
+    crate::support::front_end::emitted(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        &BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("each checked request-builder fixture retains its formatted package identity");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
