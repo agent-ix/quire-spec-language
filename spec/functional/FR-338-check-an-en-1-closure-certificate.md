@@ -179,9 +179,9 @@ position and is not an authored operator.
 | open-upper `F[l,open] A` / `G[l,open] A`, `l>0` | Carry the shift without reading A before the lower distance. |
 | `A U[l,open] B`, `l>0` | Require A at every prefix position before the lower distance, and carry the shift. This is IV-2's prefix conjunction followed by unbounded until. |
 | `A R[l,open] B`, `l>0` | Require A now and discharge, or carry the shift. This is the Boolean dual of the preceding until rule; B is not required in the prefix. |
-| `F[0,u] A`, finite `u` | Require A now, or carry the same debt until the distance region closes. An undisclosed F debt fails when a move would pass u. |
+| `F[0,u] A`, finite `u` | Require A now, or carry the same debt until the distance region closes. An undischarged F debt fails when a move would pass u. |
 | `G[0,u] A`, finite `u` | Require A now and carry until the region closes; discharge at its closed upper boundary. |
-| `A U[0,u] B`, finite `u` | Require B now, or require A now and carry until the region closes. An undisclosed U debt fails when a move would pass u. |
+| `A U[0,u] B`, finite `u` | Require B now, or require A now and carry until the region closes. An undischarged U debt fails when a move would pass u. |
 | `A R[0,u] B`, finite `u` | Require B now and either require A now and discharge or carry. Discharge the surviving carry at the closed upper boundary, the dual of finite until. |
 | interval `[0,open]` | The corresponding unbounded rule. |
 
@@ -212,7 +212,7 @@ kind. Offsets are measured from the last letter read, not pre-decremented for
 a presumed next step. Before reading a successor letter, subtract that
 edge's counted distance delta, saturating lower at zero. A finite debt
 whose upper would become negative closes before that out-of-window letter
-is read: an undisclosed F/U fails, a surviving G/R discharges. A debt with
+is read: an undischarged F/U fails, a surviving G/R discharges. A debt with
 upper zero remains live across zero-distance successors, whose letters
 must still be read. Fulfilled obligations disappear, and a new activation
 adds its checked interval. Open-upper U/R shift entries retain the signed
@@ -320,7 +320,8 @@ position zero. A safety monitor determinizes the elementary configurations
 of the formula itself after removing configurations with no accepting
 infinite continuation; a liveness automaton retains an elementary
 configuration of the negated formula with generalized Büchi membership.
-A bounded monitor determinizes the finite branches: at its horizon any
+A bounded monitor determinizes the finite branches: at the closure of its
+final counted-distance region any
 unfulfilled least-fixed-point finite debt rejects and fulfilled branches
 accept, with QSpec FR-091's closed boundary rules. `on each` adds the root
 activation at every model position and retains every prior live debt;
