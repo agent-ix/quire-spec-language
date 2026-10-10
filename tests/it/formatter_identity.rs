@@ -318,9 +318,17 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
         .occurrences()
         .filter(|(key, _, _)| *key == member)
         .collect();
-    assert_eq!(occurrences.len(), 1, "one population member type occurrence");
+    assert_eq!(
+        occurrences.len(),
+        1,
+        "one population member type occurrence"
+    );
     let (_, origin, location) = &occurrences[0];
-    assert_eq!(origin.role().as_str(), "type", "population type is recorded");
+    assert_eq!(
+        origin.role().as_str(),
+        "type",
+        "population type is recorded"
+    );
     assert_eq!(origin.ordinal(), 0, "first population type occurrence");
     let Origin::StateClause { clause, index } = &location.origin else {
         panic!("the population type is placed at its actual clause: {location:?}");
