@@ -81,10 +81,10 @@ constraint, in FR-123's order.
   not bad for a TP-4 item, whose terminal state reads by its stutter edge
   (ADR-018 DL-6). It SHALL pass the same request limits and Cancel handle
   to the closure check, and immediately propagate `Rejected` or `Stopped`
-  unchanged. Component enumeration, partition and acceptance/fairness work
-  SHALL charge those same existing budgets and check cancellation at each
-  charge as FR-338 specifies. `Accepted` requires every component check
-  to finish; no stop is translated into a defect or an accepted proof.
+  unchanged. The checker SHALL charge those same existing budgets during
+  component enumeration, partition and acceptance/fairness work, and check
+  cancellation at each charge as FR-338 specifies. `Accepted` requires every
+  component check to finish; no stop is translated into a defect or an accepted proof.
 - The checker SHALL reject with `NotPartition` when the components do not
   partition the closure's reached states.
 - The checker SHALL reject with `BackwardEdge` when an edge it computed
