@@ -222,6 +222,8 @@ pub fn classify(
                 record_value_types.insert(record.key.clone());
             }
             DomainPackageRecord::FieldMember(_)
+            | DomainPackageRecord::Clause(_)
+            | DomainPackageRecord::Namespace(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Population(_) => {}

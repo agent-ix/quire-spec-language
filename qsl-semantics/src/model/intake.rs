@@ -49,7 +49,7 @@ use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
     Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+    ClauseRecord, DomainPackage, NamespaceRecord, NamespaceTerm, OriginalDeclaration, PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
     RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
@@ -2102,17 +2102,17 @@ fn read_object_type(
 
 /// Reads a `RECORD_VALUE_TYPE` type (FR-208-AC-4) into a
 /// [`RecordValueTypeRecord`] plus one [`FieldMemberRecord`] per declared
-/// field, in declaration order.
+/// field and authored clause, in declaration order.
 ///
-/// A record value type has one or more fields and no identity field: an
-/// empty `fields` or a non-empty `identityFields` refuses
+/// A record value type has one or more own or inherited fields and no
+/// identity field: an empty root `fields` or non-empty `identityFields` refuses
 /// `invalid_model_binding`/`malformed-declaration`. An operation refuses
 /// `unsupported_construct`/`declaration-form` naming the operation. A
 /// `supertypes` entry naming a type of another meaning refuses
 /// `malformed-declaration` at that entry (FR-208-AC-12), one naming no type
 /// of the document `dangling_reference`/`unknown-general`, and one naming a
-/// record value type `declaration-form`: record-value-type generalization is
-/// not read yet. An inline relationship refuses `malformed-declaration`,
+/// record value type preserves declared ancestry for normalization.
+/// An inline relationship refuses `malformed-declaration`,
 /// since a relationship end must name an object type.
 ///
 /// `type_meanings` maps each type identity of the document to the meaning
@@ -2163,15 +2163,6 @@ fn read_record_value_type(
             }
         }
     }
-    // Every entry names a record value type: a generalization this reader
-    // does not read yet.
-    if !supertypes.is_empty() {
-        return Err(unsupported_at(
-            type_value,
-            at,
-            format!("{}:supertypes", meaning::RECORD_VALUE_TYPE),
-        ));
-    }
     if !ctx.array_field("relationships")?.is_empty() {
         return Err(
             NodeCtx::new(type_value, format!("{at}.relationships[0]")).malformed(
@@ -2180,12 +2171,13 @@ fn read_record_value_type(
         );
     }
     let fields = ctx.array_field("fields")?;
-    if fields.is_empty() {
-        return Err(ctx.malformed("fields: a record value type has one or more fields"));
+    if fields.is_empty() && supertypes.is_empty() {
+        return Err(ctx.malformed("fields: a record value type has one or more own or inherited fields"));
     }
     records.push(DomainPackageRecord::RecordValueType(
         RecordValueTypeRecord {
             key: declaration_key(package, node),
+            supertypes,
         },
     ));
     let fields_at = format!("{at}.fields");
@@ -2197,7 +2189,92 @@ fn read_record_value_type(
             &format!("{fields_at}[{position}]"),
         )?));
     }
+    read_clauses(package, node, &ctx, records)?;
     Ok(())
+}
+
+/// Read real clause members without interpreting expression text or languages.
+fn read_clauses(
+    package: &str,
+    owner: &str,
+    ctx: &NodeCtx<'_>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), ModelRefusal> {
+    for (position, value) in ctx.array_field("clauses")?.iter().enumerate() {
+        let member = NodeCtx::new(value, format!("{}.clauses[{position}]", ctx.at));
+        let identity = member.str_field("identity")?;
+        let name = member_identity_name(owner, identity)
+            .ok_or_else(|| member.malformed("identity: is not a member of its declared owner"))?;
+        if member.str_field("clauseId")? != name {
+            return Err(member.malformed("clauseId: differs from its identity's member name"));
+        }
+        records.push(DomainPackageRecord::Clause(ClauseRecord {
+            key: declaration_key(package, identity),
+            owner: declaration_key(package, owner),
+            language: member.str_field("language")?.to_owned(),
+            text: member.str_field("text")?.to_owned(),
+        }));
+    }
+    Ok(())
+}
+
+/// Namespace data is original-only: it never grants a type or frame role.
+fn read_namespace(
+    package: &str,
+    node: &str,
+    ctx: &NodeCtx<'_>,
+    type_meanings: &HashMap<&str, &str>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), ModelRefusal> {
+    if !ctx.array_field("supertypes")?.is_empty() {
+        return Err(unsupported_at(ctx.value, &ctx.at, format!("{}:supertypes", meaning::NAMESPACE)));
+    }
+    for forbidden in ["fields", "operations", "relationships"] {
+        if let Some(member) = ctx.array_field(forbidden)?.first() {
+            let at = format!("{}.{forbidden}[0]", ctx.at);
+            return Err(NodeCtx::new(member, at).malformed("a namespace owns no field, operation or relationship"));
+        }
+    }
+    if !ctx.array_field("identityFields")?.is_empty() {
+        return Err(ctx.malformed("identityFields: a namespace has no object identity"));
+    }
+    for (position, clause) in ctx.array_field("clauses")?.iter().enumerate() {
+        let member = NodeCtx::new(clause, format!("{}.clauses[{position}]", ctx.at));
+        if member.str_field("language")? == "quire" {
+            return Err(unsupported_at(clause, &member.at, format!("{}:clauses", meaning::NAMESPACE)));
+        }
+    }
+    let members = ctx.identity_keys(package, "members")?;
+    if members.is_empty() {
+        return Err(ctx.malformed("members: a namespace has one or more members"));
+    }
+    for (position, member) in members.iter().enumerate() {
+        let at = NodeCtx::new(ctx.value, format!("{}.members[{position}]", ctx.at));
+        match type_meanings.get(member.node.as_str()) {
+            Some(&meaning::NAMESPACE) => return Err(at.malformed("a namespace cannot contain a namespace")),
+            Some(_) => {},
+            None => return Err(ModelRefusal {
+                code: Code::DanglingReference,
+                cause: ModelRefusalCause::UnknownMember { record: declaration_key(package, node), member: member.clone() },
+                detail: format!("{}: names no type of this domain package: {}", at.at, member.node),
+            }),
+        }
+    }
+    let mut vocabulary = Vec::new();
+    for (position, value) in ctx.array_field("vocabulary")?.iter().enumerate() {
+        let term = NodeCtx::new(value, format!("{}.vocabulary[{position}]", ctx.at));
+        let name = term.str_field("term")?;
+        if name.is_empty() { return Err(term.malformed("term: must be non-empty")); }
+        vocabulary.push(NamespaceTerm {
+            term: name.to_owned(),
+            doc: term.str_field("doc")?.to_owned(),
+            origin: value.get("origin").ok_or_else(|| term.malformed("origin: missing"))?.clone(),
+        });
+    }
+    records.push(DomainPackageRecord::Namespace(NamespaceRecord {
+        key: declaration_key(package, node), members, vocabulary,
+    }));
+    read_clauses(package, node, ctx, records)
 }
 
 /// Reads the plain-scalar shape of a `VALUE_TYPE` type (FR-056's
@@ -2757,6 +2834,9 @@ fn read_type_node(
         meaning::RECORD_VALUE_TYPE => {
             read_record_value_type(package, type_value, node, at, type_meanings, &mut records)?
         }
+        meaning::NAMESPACE => {
+            read_namespace(package, node, &ctx, type_meanings, &mut records)?;
+        }
         meaning::VALUE_TYPE => {
             records.push(DomainPackageRecord::ScalarType(read_value_type(
                 package, type_value, node, at,
@@ -2822,6 +2902,8 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
         DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
         DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::Clause(_)
+        | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
@@ -2997,6 +3079,59 @@ pub fn read_records(
     read_nodes(package_identity, &document.tree)
 }
 
+/// Read original declarations and their actual authored provenance together.
+/// No package is returned if either declaration reading or metadata validation
+/// refuses. This boundary never infers source positions from declaration keys.
+pub fn read_domain_package(
+    selection: DomainPackageRef,
+    document: &PackageDocument,
+) -> Result<DomainPackage, Vec<ModelRefusal>> {
+    let records = read_records(&selection.identity, document)?;
+    let meanings = meaning_index(&document.tree).map_err(|refusal| vec![refusal])?;
+    let mut originals = BTreeMap::new();
+    let declared: std::collections::BTreeSet<_> = records.iter().map(DomainPackageRecord::key).collect();
+    let mut refusals = Vec::new();
+    for collection in ["types", "populations"] {
+        let values = document.tree.get(collection).and_then(Value::as_array);
+        for (position, value) in values.into_iter().flatten().enumerate() {
+            let at = format!("$.{collection}[{position}]");
+            let ctx = NodeCtx::new(value, &at);
+            let result = (|| {
+                let (_, node_key) = read_type_identity(&selection.identity, &ctx)?;
+                let kind = ctx.kind_key()?;
+                let resolved = meanings.get(&(kind.0.to_owned(), kind.1.to_owned()))
+                    .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?;
+                let origin = value.get("origin").filter(|origin| origin.is_object())
+                    .ok_or_else(|| ctx.malformed("origin: missing or not an object"))?;
+                originals.insert(node_key.clone(), OriginalDeclaration {
+                    meaning: Some(resolved.clone()), origin: origin.clone(), member_name: None,
+                });
+                for collection in ["fields", "operations", "relationships", "clauses"] {
+                    for (position, value) in ctx.array_field(collection)?.iter().enumerate() {
+                        let member = NodeCtx::new(value, format!("{at}.{collection}[{position}]"));
+                        let identity = member.str_field("identity")?;
+                        let name = member_identity_name(&node_key.node, identity)
+                            .ok_or_else(|| member.malformed("identity: is not a member of its declared owner"))?;
+                        let key = declaration_key(&selection.identity, identity);
+                        // Only real emitted original records receive metadata.
+                        // Metadata cannot turn an unsupported/dropped form into a declaration.
+                        if !declared.contains(&key) { continue; }
+                        let origin = value.get("origin").filter(|origin| origin.is_object())
+                            .ok_or_else(|| member.malformed("origin: missing or not an object"))?;
+                        originals.insert(key, OriginalDeclaration {
+                            meaning: None, origin: origin.clone(), member_name: Some(name.to_owned()),
+                        });
+                    }
+                }
+                Ok::<(), ModelRefusal>(())
+            })();
+            if let Err(refusal) = result { refusals.push(refusal); }
+        }
+    }
+    if !refusals.is_empty() { return Err(refusals); }
+    Ok(DomainPackage { model_selection: selection, records, originals })
+}
+
 /// [`read_records`]'s per-node reader over a document
 /// [`validate_with_semantic_ir`] has already accepted. Every shape the
 /// validator guarantees is still checked, so a dependency pin that stops
@@ -3055,6 +3190,7 @@ fn read_nodes(
     let mut records = Vec::new();
     let mut refusals = Vec::new();
     let mut pending: Vec<PendingFrame> = Vec::new();
+    let mut namespace_members: HashMap<DeclarationKey, DeclarationKey> = HashMap::new();
     for node in nodes {
         match node {
             DocumentNode::Type(type_value, position, _) => {
@@ -3067,7 +3203,27 @@ fn read_nodes(
                     &at,
                     &mut pending,
                 ) {
-                    Ok(mut new_records) => records.append(&mut new_records),
+                    Ok(mut new_records) => {
+                        let mut duplicate = None;
+                        for record in &new_records {
+                            if let DomainPackageRecord::Namespace(namespace) = record {
+                                for (position, member) in namespace.members.iter().enumerate() {
+                                    if namespace_members.contains_key(member) {
+                                        duplicate = Some(NodeCtx::new(type_value, format!("{at}.members[{position}]"))
+                                            .malformed("member: already belongs to an earlier namespace"));
+                                        break;
+                                    }
+                                }
+                                if duplicate.is_none() {
+                                    for member in &namespace.members {
+                                        namespace_members.insert(member.clone(), namespace.key.clone());
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(refusal) = duplicate { refusals.push(refusal); }
+                        else { records.append(&mut new_records); }
+                    },
                     Err(refusal) => refusals.push(refusal),
                 }
             }
@@ -4584,6 +4740,7 @@ mod tests {
             records[0],
             DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
                 key: key("ix://acme/orders/Money"),
+                supertypes: Vec::new(),
             })
         );
         for (record, (name, native)) in records[1..].iter().zip([
@@ -4605,8 +4762,7 @@ mod tests {
     /// (the operation for an operation), and reads nothing. A supertype of
     /// another meaning (an object type, an event type) refuses
     /// `malformed-declaration` at that entry; a record value type supertype
-    /// is a generalization this reader does not read yet
-    /// (`declaration-form`); one naming no type is a dangling reference.
+    /// preserves its declared ancestry; one naming no type is a dangling reference.
     #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_record_value_type_its_meaning_does_not_admit() {
@@ -4623,12 +4779,6 @@ mod tests {
                 Code::UnsupportedConstruct,
                 "ix://acme/orders/Money/add",
                 "$.types[0].operations[0]:",
-            ),
-            (
-                serde_json::json!({"supertypes": ["ix://acme/orders/Base"]}),
-                Code::UnsupportedConstruct,
-                "ix://acme/orders/Money",
-                "$.types[0]:",
             ),
             (
                 serde_json::json!({"supertypes": ["ix://acme/orders/Order"]}),
