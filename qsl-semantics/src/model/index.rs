@@ -85,8 +85,6 @@ pub(crate) struct Redefiner {
     pub(crate) member: DeclIdx,
     /// The member it redefines.
     pub(crate) target: DeclIdx,
-    /// `true` for a field member, `false` for an operation member.
-    pub(crate) is_field: bool,
 }
 
 /// One type's ancestry: the walk [`RecordIndex::conforms`] specifies, run to
@@ -503,7 +501,6 @@ impl RecordIndex {
         record: usize,
         member: DeclIdx,
         target: DeclIdx,
-        is_field: bool,
     ) {
         self.redefiners_by_owner
             .entry(owner)
@@ -512,7 +509,6 @@ impl RecordIndex {
                 record,
                 member,
                 target,
-                is_field,
             });
         self.redefines.entry(member).or_insert(target);
     }
