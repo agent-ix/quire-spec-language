@@ -469,6 +469,52 @@ mod systems_operation_controls {
 
     #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
     #[test]
+    fn actual_phase_one_refuses_missing_system_references_before_kind_mapping() {
+        let declaration = |name: &str| crate::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: key(name) };
+        let missing = declaration("Absent");
+        for (name, pointer, cause) in [
+            ("Part", "/owner", ModelRefusalCause::UnknownOwner { member: declaration("Part"), owner: missing.clone() }),
+            ("Part", "/declaredType", ModelRefusalCause::UnknownMember { record: declaration("Part"), member: missing.clone() }),
+            ("Out", "/owner", ModelRefusalCause::UnknownComponent { item: declaration("Out"), missing: missing.clone() }),
+            ("Out", "/interfaceType", ModelRefusalCause::UnknownMember { record: declaration("Out"), member: missing.clone() }),
+            ("Link", "/sourceEnd/type", ModelRefusalCause::UnknownEndpoint { end: "source", relationship: declaration("Link"), missing: missing.clone() }),
+            ("Link", "/targetEnd/type", ModelRefusalCause::UnknownEndpoint { end: "target", relationship: declaration("Link"), missing: missing.clone() }),
+            ("Assignment", "/sourceElement", ModelRefusalCause::UnknownMember { record: declaration("Assignment"), member: missing.clone() }),
+            ("Assignment", "/targetElement", ModelRefusalCause::UnknownMember { record: declaration("Assignment"), member: missing.clone() }),
+        ] {
+            for reverse in [false, true] {
+                let mut tree: Value = serde_json::from_slice(&document(false, reverse)).unwrap();
+                let mut allocation = tree["types"].as_array().unwrap().iter().find(|node| node["identity"] == key("Part")).unwrap().clone();
+                allocation["identity"] = json!(key("Assignment"));
+                allocation["displayName"] = json!("Assignment");
+                allocation["kind"]["name"] = json!("allocation");
+                let fields = allocation.as_object_mut().unwrap();
+                for field in ["owner", "declaredType", "multiplicity"] { fields.remove(field); }
+                fields.insert("sourceElement".to_owned(), json!(key("Out")));
+                fields.insert("targetElement".to_owned(), json!(key("Part")));
+                tree["types"].as_array_mut().unwrap().push(allocation);
+                let mut construct = tree["constructs"][3].clone();
+                construct["kind"]["name"] = json!("allocation");
+                construct["construct"]["meaning"] = json!(super::super::meaning::SYSTEMS_ALLOCATION);
+                tree["constructs"].as_array_mut().unwrap().push(construct);
+                let node = tree["types"].as_array_mut().unwrap().iter_mut().find(|node| node["identity"] == key(name)).unwrap();
+                *node.pointer_mut(pointer).unwrap() = json!(key("Absent"));
+                let bytes = serde_json::to_vec(&tree).unwrap();
+                let (unit, packages) = selection(&bytes);
+                let failure = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+                    .expect_err("missing node reference stops phase one before cascaded systems failures");
+                assert!(failure.additional.is_empty());
+                let UnitIntakeCause::Refused(refusals) = failure.cause else { panic!("expected phase-one reference refusal"); };
+                assert_eq!(refusals.len(), 1);
+                assert_eq!(refusals[0].code, Code::MissingDeclaration);
+                assert_eq!(refusals[0].cause, cause);
+                assert_eq!(refusals[0].detail, format!("{} names {}, which is not a declared node", key(name), key("Absent")));
+            }
+        }
+    }
+
+    #[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
     fn actual_intake_charges_interfaces_first_and_connection_type_facts_once() {
         for reverse in [false, true] {
             let bytes = document(false, reverse);
