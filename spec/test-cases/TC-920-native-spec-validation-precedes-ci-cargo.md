@@ -1,12 +1,12 @@
 ---
-id: TC-914
+id: TC-920
 title: "Native specification validation precedes aggregate Cargo execution"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-002
     type: verifies
 ---
-# TC-914: Native specification validation precedes aggregate Cargo execution
+# TC-920: Native specification validation precedes aggregate Cargo execution
 
 ## Description
 

@@ -37,7 +37,7 @@ Rust crate, lockfile, toolchain and CI.
 
 Run the recorded toolchain with the locked minimal-feature build, tests, formatter and Clippy.
 
-Execute [TC-914](../test-cases/TC-914-native-spec-validation-precedes-ci-cargo.md)
+Execute [TC-920](../test-cases/TC-920-native-spec-validation-precedes-ci-cargo.md)
 as Rust controls using real Make and native Quire. Its Cargo process recorder
 measures invocation at the aggregate boundary; it does not qualify compilation.
 Run the default full scoped validation over the actual repository separately

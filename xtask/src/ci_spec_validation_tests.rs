@@ -76,7 +76,7 @@ fn refused(output: &Output, diagnostic: &str) {
     );
 }
 
-#[trace("TC-914", "NFR-002-AC-3")]
+#[trace("TC-920", "NFR-002-AC-3")]
 #[test]
 fn spec_validation_executes_native_schema_controls_and_fails_closed() {
     let fixture = owned_fixture();
@@ -153,7 +153,7 @@ fn spec_validation_executes_native_schema_controls_and_fails_closed() {
     );
 }
 
-#[trace("TC-914", "NFR-002-AC-1")]
+#[trace("TC-920", "NFR-002-AC-1")]
 #[test]
 fn full_ci_composes_the_unrestricted_scoped_validator() {
     let output = run(make(&workspace()).args(["-n", "ci"]));
@@ -171,7 +171,7 @@ fn full_ci_composes_the_unrestricted_scoped_validator() {
     );
 }
 
-#[trace("TC-914", "NFR-002-AC-4")]
+#[trace("TC-920", "NFR-002-AC-4")]
 #[test]
 fn native_fixtures_use_workspace_default_relative_and_absolute_targets() {
     let owner = owned_fixture();
@@ -257,7 +257,7 @@ const AGGREGATE_CARGO_CALLS: &[&str] = &[
     "run\t--locked\t-p\tarch-lint\t--\tqualified-core\t--qsl\t.",
 ];
 
-#[trace("TC-914", "NFR-002-AC-2")]
+#[trace("TC-920", "NFR-002-AC-2")]
 #[test]
 fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     let fixture = owned_fixture();
