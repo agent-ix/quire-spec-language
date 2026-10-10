@@ -9,9 +9,9 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-090
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-121
-    type: traces_to
+    type: references
   - target: ix://agent-ix/quire-exact/FR-369
-    type: depends_on
+    type: references
 ---
 # TC-918: Received typed kernel invariant provenance survives fault mapping
 
