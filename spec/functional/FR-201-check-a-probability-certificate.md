@@ -46,7 +46,7 @@ pub struct ProbabilityCertificate {
     pub kind: CertificateKind,                  // Lower, Upper, Exact, LongRun
     pub values: Vec<(ProductKey, Rational)>,
     pub ranking: Option<Vec<(ProductKey, u64)>>,  // Lower and Exact
-    pub policy: Option<Vec<(ProductKey, WitnessEntry)>> // closed FR-202 choices/distributions,
+    pub policy: Option<Vec<(ProductKey, WitnessEntry)>>, // closed FR-202 choices/distributions
     pub components: Option<Vec<ComponentCertificate>>, // LongRun: value and gain–bias per component
 }
 
