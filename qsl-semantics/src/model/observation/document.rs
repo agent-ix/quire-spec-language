@@ -999,8 +999,7 @@ fn admit_scalar(
 /// decides whether `absent`/`present` is admitted (see
 /// [`object_field_kind_matches`]'s doc). Parameters and results have no
 /// `FieldValue` slot to fill (they admit straight to a [`Value`] via
-/// [`admit_scalar`] plus [`field_kind_matches`]'s `ValueType::Option`
-/// reading), so this is the one caller [`admit_populations`] needs.
+/// [`admit_value`]), so this is the one caller [`admit_populations`] needs.
 fn admit_object_field(
     references: &mut References<'_>,
     raw: &SnapshotValue,
@@ -1108,6 +1107,78 @@ fn admit_form(
             "wrong-value-kind",
         )),
     }
+}
+
+/// Check 10's typed values, including genuine `Option` values and ordered
+/// sequences. Object-field presence remains a separate declaration-level
+/// rule in `admit_object_field`. Children are admitted in wire order on a
+/// heap worklist, before the shared exact-value constructors retain them.
+fn admit_value(
+    references: &mut References<'_>,
+    raw: &SnapshotValue,
+    value_type: &quire_exact::ValueType,
+) -> Result<Value, AdmissionRecord> {
+    enum Step<'a> {
+        Visit(RawForm<'a>, &'a quire_exact::ValueType),
+        Present(&'a quire_exact::ValueType),
+        Sequence(&'a quire_exact::CollectionType, usize),
+    }
+
+    let mut pending = vec![Step::Visit(raw.form(), value_type)];
+    let mut admitted = Vec::new();
+    while let Some(step) = pending.pop() {
+        match step {
+            Step::Visit(RawForm::Absent, quire_exact::ValueType::Option(payload)) => {
+                admitted.push(quire_exact::OptionValue::none((**payload).clone()));
+            }
+            Step::Visit(RawForm::Present(inner), quire_exact::ValueType::Option(payload)) => {
+                pending.push(Step::Present(payload));
+                pending.push(Step::Visit(inner.form(), payload));
+            }
+            Step::Visit(RawForm::Sequence(items), quire_exact::ValueType::Collection(kind)) => {
+                if kind.kind() != CollectionKind::Sequence {
+                    return Err(admission_record(
+                        Code::UnknownRequiredFeature,
+                        "unsupported-feature",
+                    ));
+                }
+                pending.push(Step::Sequence(kind, items.iter().len()));
+                pending.extend(
+                    items
+                        .iter()
+                        .rev()
+                        .map(|item| Step::Visit(item.form(), kind.element())),
+                );
+            }
+            Step::Visit(form, declared) => {
+                admitted.push(admit_form(references, form, declared, None)?);
+            }
+            Step::Present(payload) => {
+                let value = admitted.pop().ok_or_else(|| {
+                    admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                })?;
+                admitted.push(quire_exact::OptionValue::from_admitted(
+                    payload.clone(),
+                    Some(value),
+                ));
+            }
+            Step::Sequence(kind, count) => {
+                if kind.bound().is_some_and(|bound| {
+                    bound.violation(quire_exact::length_amount(count)).is_some()
+                }) {
+                    return Err(admission_record(Code::InvalidRuntimeInput, "invalid-value"));
+                }
+                let start = admitted.len().checked_sub(count).ok_or_else(|| {
+                    admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                })?;
+                let elements = admitted.split_off(start);
+                admitted.push(quire_exact::from_admitted(kind.clone(), elements));
+            }
+        }
+    }
+    admitted
+        .pop()
+        .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
 }
 
 /// Every `(population, key)` a reference value inside `raw` names (a
@@ -1714,7 +1785,7 @@ pub(super) fn admit_parameters(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_form(references, raw.form(), value_type, None)
+        let value = admit_value(references, raw, value_type)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         references.check_closure(raw).map_err(refuse)?;
         admitted.push((name.clone(), value));
@@ -1760,7 +1831,7 @@ pub(super) fn admit_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_form(references, raw.form(), value_type, None).map_err(refuse)?;
+            let value = admit_value(references, raw, value_type).map_err(refuse)?;
             references.check_closure(raw).map_err(refuse)?;
             Ok(Some(value))
         }
