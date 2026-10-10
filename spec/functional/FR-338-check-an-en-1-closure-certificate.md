@@ -62,8 +62,18 @@ pub enum CertificateLocus {
 }
 pub enum QueryPart { Unrolling, Base, Step }   // FR-314
 
-pub fn check_closure(request: &CertificateRequest<'_>, certificate: &ClosureCertificate)
-    -> Result<(), CertificateRejection>;
+pub enum TemporalCertificateCheck {
+    Accepted,
+    Rejected(CertificateRejection),
+    Stopped(IncompleteCause), // existing LimitReached{limit,value,setting} or Cancelled{source}
+}
+
+pub fn check_closure(
+    request: &CertificateRequest<'_>,
+    certificate: &ClosureCertificate,
+    limits: &ModelCheckLimits, // FR-126; subject meter/expansion limits remain in request
+    cancel: &Cancel,           // FR-276
+) -> TemporalCertificateCheck;
 ```
 
 `AutomatonStateKey` is the property-automaton translation's canonical
@@ -418,6 +428,13 @@ request's existing premise.
 
 This auxiliary construction SHALL be materialized lazily, with checked
 state/edge/automaton/evaluation budgets already applicable to the request.
+The core checks the same Cancel handle at each charge (FR-276), and records
+the actual request settings used. Exhaustion returns the closed typed
+`Stopped(IncompleteCause::LimitReached{limit,value,setting})`; cancellation
+returns `Stopped(IncompleteCause::Cancelled{source})`, with its actual
+Requested/Deadline source. These are the existing FR-127 stop payloads,
+not CertificateRejection, WitnessFails or an out-of-band exception. The
+settlement map consumes this third outcome as FR-127 specifies.
 The core explores no model state outside the supplied closure, but auxiliary
 configurations may multiply its states; certificate size alone is therefore
 not a bound on this acceptance work. A stopped acceptance check cannot
@@ -517,9 +534,13 @@ different materialization orders SHALL produce identical full octets.
 
 ## Outputs
 
-- `Ok(())` when the certificate is accepted.
-- `CertificateRejection{rule, at}` naming the first rule that failed
-  and the product state it failed at.
+- `TemporalCertificateCheck::Accepted` only when every required check completes.
+- `Rejected(CertificateRejection{rule, at})` naming an actual failed
+  certificate rule and its product state locus.
+- `Stopped(IncompleteCause)` carrying exactly the existing resource limit,
+  actual charged value and request setting, or cancellation source, before
+  completion. A stop is neither acceptance nor bad-certificate rejection;
+  FR-127 settles it `Incomplete` with those same fields.
 
 ## Behavior
 
@@ -553,7 +574,7 @@ different materialization orders SHALL produce identical full octets.
 | FR-338-AC-3 | Over FR-120-AC-9's `test/tallies` subject, a certificate holding `t1` for `always holds(true)` is rejected `BadState` at `t1`, whose expansion records `ContractUndetermined` for the undefined `pre Low`. | Test (TC-525) |
 | FR-338-AC-4 | The canonical octet vectors have exactly the specified state bodies and full `K_C` octets; reversing subset/window insertion order leaves bytes equal, distinct occurrence paths and differing live facts leave bytes unequal, and no graph enumeration index enters the key. | Test |
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
-| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one. | Test |
+| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 
 ## Dependencies

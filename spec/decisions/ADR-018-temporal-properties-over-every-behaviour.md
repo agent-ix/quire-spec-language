@@ -607,7 +607,12 @@ A counted exit does not make a zero-counted cycle harmless. This also
 amends PC-4's protocol acceptance membership for finite F/U carries.
 The core recomputes the auxiliary product lazily under explicit request
 budgets; neither a stopped check nor a finite depth can erase a remaining
-non-progress obligation.
+non-progress obligation. The closure/component checker boundary is
+FR-338's closed TemporalCertificateCheck: Accepted, Rejected with the
+existing certificate defect, or Stopped with the existing complete
+IncompleteCause resource/cancellation payload. FR-127 maps the third
+case directly to V-7, retaining the actual settings and source; no
+CertificateRejected or WitnessFails substitute is permitted.
 
 IV-3's earliest-deadline/furthest-extent subsumption and general offset
 sets are represented by FR-338's closed window alternatives. Exact

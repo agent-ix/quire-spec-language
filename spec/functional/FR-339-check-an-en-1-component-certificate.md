@@ -55,8 +55,12 @@ pub enum ProofCertificate {
     Component(ComponentCertificate),
 }
 
-pub fn check_components(request: &CertificateRequest<'_>, certificate: &ComponentCertificate)
-    -> Result<(), CertificateRejection>;
+pub fn check_components(
+    request: &CertificateRequest<'_>,
+    certificate: &ComponentCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> TemporalCertificateCheck; // FR-338; existing stop causes only
 ```
 
 `UnfairWeak`'s index is into the clause's resolved constraints: one per
@@ -65,15 +69,22 @@ constraint, in FR-123's order.
 
 ## Outputs
 
-- `Ok(())` when the certificate is accepted.
-- FR-338's `CertificateRejection{rule, at}` otherwise.
+- `Accepted` when closure and component checks complete successfully.
+- `Rejected(CertificateRejection{rule, at})` on a certificate defect.
+- `Stopped(IncompleteCause)` with the exact existing limit/value/setting or
+  cancellation source when checker work cannot complete (FR-338, FR-127).
 
 ## Behavior
 
 - The checker SHALL run FR-338's check on the certificate's closure,
   without the monitor-rejection part of `BadState`; a deadlocked state is
   not bad for a TP-4 item, whose terminal state reads by its stutter edge
-  (ADR-018 DL-6).
+  (ADR-018 DL-6). It SHALL pass the same request limits and Cancel handle
+  to the closure check, and immediately propagate `Rejected` or `Stopped`
+  unchanged. Component enumeration, partition and acceptance/fairness work
+  SHALL charge those same existing budgets and check cancellation at each
+  charge as FR-338 specifies. `Accepted` requires every component check
+  to finish; no stop is translated into a defect or an accepted proof.
 - The checker SHALL reject with `NotPartition` when the components do not
   partition the closure's reached states.
 - The checker SHALL reject with `BackwardEdge` when an edge it computed
