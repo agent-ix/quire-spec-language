@@ -549,11 +549,19 @@ current ratios. Censoring, activation and horizon/phase remain explicit.
 TA-3/TA-4 and SCH-2 additionally use FR-196's explicit new closed
 digital-model array: complete non-clock state, actual time unit, least
 common-denominator scale, object/field clock identities and checked
-values/caps, plus the actual optional non-resetting deadline. Timed
+values/caps, plus the actual optional non-resetting deadline and irreversible
+TS-5 idle observation control. Timed
 deadline control reads initial/discrete letters and advances elapsed time
 on delay edges, preserving same-timestamp steps and the inclusive bound.
-A pending residual timed race retains its winning scaled delay until
-resolution, applying the delay and discrete step once. Decided formula
+TS-5 tails retain repeated positive-delay terminal-stutter letters with
+current clock atoms; delay alone adds no ordinary predicate position. Tail
+control preserves positive delay before each stutter and excludes resumed
+operations, without fixing observation instants. Infinite observation
+stutters are TS-5 behavior admissibility, not new authored fairness.
+A timed residual discrete choice uses ordinary drawn at the already-delayed
+source state and resolves the discrete update once. No drawn-timed positive
+is admitted: workload multi-post-state races remain NotMarkov, and declared
+delay distributions under every scheduler remain DelayDistribution. Decided formula
 monitors have no fabricated remaining horizon; undecided event-position
 monitors retain it. This specifies representation absent from the former
 TA-3/TA-4 prose, without changing their admitted timed forms.

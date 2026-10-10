@@ -108,7 +108,7 @@ supplied model digest and check its domain before using it to resolve
 that form.
 
 For FR-204 the **new closed timed alternative** is
-`model = ["quire.simulation.state-key/v1",["digital",discrete,unit,scale,clocks,deadline]]`.
+`model = ["quire.simulation.state-key/v1",["digital",discrete,unit,scale,clocks,deadline,tail]]`.
 `discrete` is exactly the preceding complete simulation-state form for
 non-clock data/control/queues/roles/observations/bounds/memory. Clock fields
 are absent from that data form, rather than represented by fabricated kernel
@@ -143,10 +143,17 @@ forms without a deadline. A TA-4 deadline event uses exactly
 non-resetting clock in `0..D+1`, initially zero. Its cap is derived D+1;
 it is not an ordinary object clock and cannot be placed in `clocks`.
 The time unit, scale, complete clock identities/values/caps and actual
-optional deadline all participate in full identity. Ordinary untimed
-model forms cannot be substituted for this tagged form. Contextual
-admission still rederives the checked claim and its constants; this is
-no global equality across unrelated requests.
+optional deadline and tail control all participate in full identity.
+`tail` is exactly `"running"`, `"idle-ready"` or `"idle-delayed"`.
+Initially it is running. The two idle tags record TS-5's irreversible choice
+to end discrete operations and whether a positive delay has occurred since
+the last observation stutter. They are control facts, not kernel clock Values,
+a provider terminal flag or a bounded-profile closure marker. Idle-ready
+admits delay but no immediate stutter; idle-delayed admits another delay or
+one observation stutter, which returns to idle-ready. No idle state admits
+a model operation/reset. Ordinary untimed model forms cannot be substituted
+for this tagged form. Contextual admission still rederives the checked
+claim and its constants; this is no global equality across unrelated requests.
 
 `monitor` is null only for Reach, ExpectedReward and LongRunFraction.
 For bounded forms its closed alternatives are:
@@ -176,25 +183,61 @@ Until accepts iff B holds, rejects iff both B and A are false, and otherwise
 is pending. At each actual discrete post-step with t<=D, apply those same
 rules to its post-state predicates; discrete steps and resets do not
 advance or reset t. Equal-timestamp discrete steps remain distinct letters.
-Delay moves advance clocks/deadline but are not new predicate positions
+Ordinary delay moves advance clocks/deadline but are not new predicate positions
 (ADR-026 TS-3), so they leave a pending phase unchanged while t<=D. The
 first delay crossing D sets phase reject before any subsequent discrete
-letter; a race edge of k delay units then a discrete step applies that
+letter; an admitted workload race edge of k delay units then a discrete step applies that
 crossing before reading its endpoint. Success exactly at D accepts, while
 success after D cannot revive rejection. Accept/reject are absorbing
 product control, with no pending action/accumulator synthesized.
 
 At t=D a pending state SHALL NOT reject merely because its clock reached D:
-all admissible discrete steps at that timestamp remain available. If no
-admissible discrete step can meet the event before the horizon passes,
-TA-6 replay/closure must re-enumerate guards, urgency and time invariants,
-then close pending as reject. A quiescent terminal idle tail (TS-5) has no
-new predicate positions; an unsatisfied event closes reject and a satisfied
-one remains accept. A time-lock follows ADR-026 TD-2's separate item rather
-than inventing a delay edge or a false-extension letter. TA-5 zero-delay
-cycle refusal remains required. These timed moves do not use FR-338's
-counted event-position counters. Unsupported TT-2 shapes still refuse;
-this alternative admits no additional timed formula.
+all admissible discrete steps and TS-5 idle observation stutters at that
+timestamp remain available. If no admissible such letter can meet the event
+before the horizon passes, TA-6 replay/closure must re-enumerate guards,
+urgency, time invariants and idle control, then close pending as reject.
+A time-lock follows ADR-026 TD-2's separate item rather than inventing a
+delay edge or a false-extension letter. TA-5 zero-delay cycle refusal remains
+required. These timed moves do not use FR-338's counted event-position counters.
+Unsupported TT-2 shapes still refuse; this alternative admits no additional
+timed formula or new timed scheduler premise.
+
+A quiescent state SHALL retain ADR-026 TS-5's timed idle-tail alternative,
+even if the behavior chooses to end discrete operations there while later
+operations could otherwise be enabled. The first positive unit delay on
+that chosen tail changes running to idle-delayed. Subsequent tail delays
+advance every clock and the deadline exactly as ordinary delay does, and
+keep idle-delayed. At a chosen observation instant, an idle-delayed state
+emits one terminal-stutter letter from its **current clock valuation** and
+unchanged non-clock state, then becomes idle-ready. That observation has
+no reset or extra elapsed increment: the preceding positive delay was
+already applied. Each subsequent stutter requires another positive delay.
+The clock atoms permitted by DF-6 are evaluated at every such letter.
+Choosing when to observe retains every TS-5 positive-delay choice on the
+admitted digital grid; it does not force a letter after each delay unit.
+After entering idle mode no ordinary discrete operation may resume.
+
+An admitted infinite digital behavior either has infinitely many ordinary
+discrete observation letters and time diverges, or has finitely many such
+letters and then follows the irreversible idle-tail construction. A
+running delay-only suffix is not a substitute for the TS-5 extension.
+A digital idle-tail run is admitted exactly when it emits infinitely many
+such observation stutters; between them it takes a positive number of delay
+units. This represents TS-5's time-divergent repeated positive-delay stutters,
+not an additional authored fairness constraint. A delay-only infinite path
+with no more observation letters is not that TS-5 behavior and cannot be
+used as its witness. Conversely, arbitrarily long **finite** waits before
+the next stutter remain admitted; no observation period or progress bound
+is imposed. The core checks this existing behavior admissibility, including
+when consuming a lasso/policy/component, rather than dropping the tail or
+silently making infinite skipped observations a counterexample. At a truly
+quiescent terminal state, continuation uses these tails; there is no
+bounded-profile last-discrete-step closure or atomic false extension.
+Until/eventually control reads the tail stutters with the same inclusive-D
+rules as a discrete letter. Delay crossing still rejects before a later
+stutter, so a tail observation exactly at D can accept while one after D
+cannot. Time unit, capped clocks, deadline and idle phase remain in every
+key, including a decided control state.
 
 At model position zero, a measure is inactive unless A holds; when A
 holds it is active, or complete with magnitude zero when B also holds.
@@ -293,11 +336,16 @@ sums satisfy `0<=true_sum<=total_sum`. Imported violations refuse.
 
 `pending` is null at an ordinary model-position state, otherwise exactly
 `["drawn",schedule,random]` for a discrete draw at the current model state.
-For a residual post-state choice following a timed race whose winning
-delay has not yet been applied, the closed alternative is
-`["drawn-timed",schedule,random,k]`, with k the exact nonnegative scaled
-winning delay. This retains information needed to apply that actual race
-outcome; it is not a guessed delay or another random parameter. `schedule` is
+A timed every-scheduler residual choice uses this same ordinary drawn
+alternative at the **already delayed** digital source state. Under every
+scheduler, delay distributions are unsupported; the admitted digital route
+has separate unit-delay moves then enabled discrete draws. Under a workload,
+a given-delay race is one edge with its exact probability, delay and discrete
+endpoint; a draw with multiple post-states stops NotMarkov under the existing
+admission. It is not a positive pending race. There is no drawn-timed tag
+or retained unapplied winning delay alternative. Supplying one refuses.
+
+`schedule` is
 `[operation,receiver,arguments]`: operation is its existing WireNodeId
 in FR-322's exact NodeId object shape; receiver is the FR-181 reference
 triple object for its actual ObjectKey; arguments are its non-random
@@ -327,12 +375,11 @@ unchanged after the draw and before scheduler selection. Its schedule
 must be enabled there, its argument and random vector arities/types must
 match the checked operation, and that draw must have multiple actual
 post-states under SCH-2. The subsequent selected post-state advances
-model-position control and accumulated reward exactly once. A drawn-timed
-resolution first applies its k delay units (including deadline crossing),
-then its discrete reset/data/predicate update once; ordinary drawn applies
-no extra delay. Admission re-enumerates the actual conditioned race outcome
-and its probability, winning identity/delay and admissible post-states.
-Neither kind permits a delay/reset/letter advance at the intermediate. The checker
+model-position control and accumulated reward exactly once. In a timed
+ordinary drawn state the retained source clocks/deadline already include
+preceding delay moves; resolution applies only the actual discrete data/reset
+and predicate update, without repeating a delay or clock increment. No idle
+tail has an ordinary drawn action. The checker
 re-enumerates this relation; a provider cannot create a pending key
 merely by supplying a well-formed tuple. Distinct receiver, operation,
 non-random argument, random position/value or actual None/pending pair
@@ -377,9 +424,9 @@ Let S be its complete non-clock state with delivered false, U its actual
 ms UnitId, and I the resolved Msg::x clock identity for object m; these
 three existing semantic leaves are rederived, never invented digests.
 The **entire digital model body**, in its specified array order, is
-`["digital",S,U,"1",[[I,"0","3"]],["deadline","4","0"]]`
+`["digital",S,U,"1",[[I,"0","3"]],["deadline","4","0"],"running"]`
 initially and
-`["digital",S,U,"1",[[I,"1","3"]],["deadline","4","1"]]`
+`["digital",S,U,"1",[[I,"1","3"]],["deadline","4","1"],"running"]`
 after one unit delay. The independent expected numeric/string octets are
 `"1"`, clock cap `"3"` and deadline D `"4"`; S,U,I must be substituted as
 parsed canonical values, with no additional string/base64 layer. Cap 3 is
@@ -388,7 +435,7 @@ remain <=2 by the invariant. Arbitrary cap 2 is refused even though that
 projection covers those reachable valuations.
 
 At elapsed 2 after a losing send, the body is
-`["digital",S,U,"1",[[I,"0","3"]],["deadline","4","2"]]`
+`["digital",S,U,"1",[[I,"0","3"]],["deadline","4","2"],"running"]`
 and the monitor remains `["deadline","eventually","pending"]`.
 Two keys differing only in x=0 versus x=1, or t=2 versus t=3, differ;
 reversing object-clock discovery order normalizes to identical bytes.
@@ -400,9 +447,31 @@ if a subsequent send succeeds. Two discrete steps at t=2 leave the deadline
 clock 2; two unit delays with no discrete step advance it to 4 without
 creating predicate letters. An until deadline with A false/B false rejects
 at its discrete position even before D; B true at D accepts regardless of A.
-A residual race with winning delay 2 retains
-`["drawn-timed",schedule,random,"2"]`, differs from winning delay 1 and
-ordinary drawn, and applies clocks/deadline/reset exactly once on resolution.
+A real every-scheduler residual discrete choice after two delay units
+retains `["drawn",schedule,random]` at that already-delayed running model
+state. Its resolution does not advance the deadline again. A workload race
+with multiple post-states refuses NotMarkov; under every scheduler a declared
+delay distribution refuses DelayDistribution. Neither refusal is a pending
+positive, and `["drawn-timed",schedule,random,"2"]` is an unknown-tag negative.
+
+Idle-tail adverse vector: a checked quiescent object has x=0, no operations,
+no time invariant/urgency and claim `eventually[0,1] holds(x>=1)` under the
+timed profile. Its x cap is 2 and D is 1. Write J for its actual clock identity
+and T/V for its complete non-clock state/time unit. Initially the model body
+is `["digital",T,V,"1",[[J,"0","2"]],["deadline","1","0"],"running"]`.
+One positive tail delay gives
+`["digital",T,V,"1",[[J,"1","2"]],["deadline","1","1"],"idle-delayed"]`
+with monitor still pending. The terminal observation stutter at time1 emits
+x>=1 true, gives tail idle-ready at the same x/deadline values and accepts.
+Closing at the initial discrete position would incorrectly reject this
+admitted behavior. A next observation delayed until time2 instead rejects
+on crossing D before its true stutter. Both choices are admitted TS-5 tails;
+this vector states their different trace results, not a uniform probability
+or all-behaviors proof. A second stutter with no intervening positive delay,
+a reset on the stutter, resumed operations after entering idle mode, omitted
+idle control, and treating idle-delayed as an absorbing no-letter terminal
+all refuse. An infinite tail delay cycle with no more observation stutters
+fails TS-5 admissibility; arbitrarily long finite waits are preserved.
 Adverse inputs include missing/reordered/duplicate clock identities, reset
 of the deadline, wrong scale/cap, timed monitor local index, absent deadline
 for Deadline, an event-position formula wrapper for timed Deadline and

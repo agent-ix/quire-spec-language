@@ -43,8 +43,14 @@ Fixtures: ADR-024 §7.1 and §7.2 models and claims; `Link` with `Deliver`; the 
    compare FR-196's complete digital arrays after delay, loss/reset and
    same-time steps. Test success exactly at D, success after D, until
    prefix failure, terminal idle closure and no admissible same-time
-   success. Retain a real residual race winning delay in pending and
-   verify one delay/discrete advance at resolution. Refuse every timed
+   success including current-clock idle stutters. Test the quiescent
+   x>=1/D=1 tail with observations at time1 and time2, mandatory positive
+   delay before each stutter, irreversible idle control and infinitely
+   many observation letters on an admitted lasso. A real every-scheduler
+   residual discrete draw follows already applied unit delays and resolves
+   only its discrete update. Check workload multi-post-state race NotMarkov,
+   every-scheduler delay-distribution refusal and drawn-timed unknown-tag
+   refusal; none is a pending positive. Refuse every timed
    shape/clock/deadline negative; stop at the actual identity-byte/product
    budget and inspect the outcome.
 
@@ -71,4 +77,8 @@ Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
   identity/order/scale/caps and optional deadline match the exact digital
   arrays. Delays advance elapsed time without adding predicate positions;
   discrete resets preserve deadline time, success at D accepts and success
-  after D rejects. Pending race delay applies exactly once.
+  after D rejects. Idle stutters read their advanced clocks at chosen
+  positive-delay instants; time1 accepts x>=1/D=1, time2 rejects. A
+  delay-only tail without future observations is not admitted TS-5
+  evidence. Ordinary pending resolves no extra elapsed delay; the two
+  unsupported race cases remain refusals, and drawn-timed refuses.
