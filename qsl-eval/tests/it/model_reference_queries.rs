@@ -1592,10 +1592,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
         &parameters,
         &lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined),
     );
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
     assert_eq!(refusal.location, Location::at(Origin::Expression, &[1]));
 
     let parameters = [
@@ -1607,9 +1604,24 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
         &parameters,
         &lookup(ValueType::Reference(scenario.b), AbsenceMode::Undefined),
     );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+}
+
+fn assert_state_model_ill_typed(refusal: &CheckRefusal, expected: IllTypedCause, raw: &str) {
+    let CheckCause::StateModel(owner) = &refusal.cause else {
+        panic!("StateModel ownership: {refusal:?}");
+    };
     assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+        owner.family(),
+        qsl_semantics::family::FamilyKind::StateModel
+    );
+    assert_eq!(owner.cause, CheckCause::IllTyped(expected));
+    let code = owner.catalog_code().unwrap();
+    assert_eq!((code.code(), code.cause()), ("ill_typed", raw));
+    assert_eq!(code.prefix(), Some("state-model"));
+    assert_eq!(
+        qsl_foundation::diagnostic::category_of(&code),
+        Some(qsl_foundation::diagnostic::Category::Refusal)
     );
 }
 
@@ -1747,9 +1759,10 @@ fn all_instances_refuses_non_population_operand_as_ineligible() {
     let parameters = [("p", ValueType::Integer)];
     let expression = all_instances(ValueType::Reference(scenario.a));
     let refusal = check_refusal(&package, &parameters, &expression);
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    assert_state_model_ill_typed(
+        &refusal,
+        IllTypedCause::OperatorIneligible,
+        "operator-ineligible",
     );
 }
 
@@ -1763,9 +1776,10 @@ fn lookup_refuses_non_population_operand_as_ineligible() {
     ];
     let expression = lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined);
     let refusal = check_refusal(&package, &parameters, &expression);
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    assert_state_model_ill_typed(
+        &refusal,
+        IllTypedCause::OperatorIneligible,
+        "operator-ineligible",
     );
 }
 
