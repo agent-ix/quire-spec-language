@@ -838,7 +838,11 @@ impl InternalFault {
     /// `stage` and `invariant` are stable identifiers the raising site
     /// names, never derived from a display string or message (ADR-013 R-05).
     pub const fn new(stage: &'static str, invariant: &'static str) -> Self {
-        Self { stage, invariant, kernel_cause: None }
+        Self {
+            stage,
+            invariant,
+            kernel_cause: None,
+        }
     }
 
     /// A received kernel invariant, retaining its original typed provenance.
@@ -847,7 +851,11 @@ impl InternalFault {
         invariant: &'static str,
         cause: quire_exact::CheckedInvariantCause,
     ) -> Self {
-        Self { stage, invariant, kernel_cause: Some(cause) }
+        Self {
+            stage,
+            invariant,
+            kernel_cause: Some(cause),
+        }
     }
 
     /// The received kernel cause; QSL-owned invariant faults have no kernel cause.

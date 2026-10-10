@@ -3699,7 +3699,10 @@ fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
     );
     // `CheckedInvariant` is an internal fault, never a refusal record.
     assert_eq!(
-        evaluation(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted }).refusal_record(package.graph()),
+        evaluation(Refusal::CheckedInvariant {
+            cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted
+        })
+        .refusal_record(package.graph()),
         None
     );
 }
@@ -3756,67 +3759,122 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
             members: vec![member(object, "model.A")],
         };
         let binding = match admit_binding(
-            &view, &document, &p1_population_key(), GeneralizationClosure::Closed,
-            Some(1), &mut admission,
+            &view,
+            &document,
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(1),
+            &mut admission,
         ) {
             AdmissionOutcome::Admitted(binding) => binding,
             other => panic!("member admission must reach the bridge: {other:?}"),
         };
         let scenario = Scenario {
             universe: view.object_universe().identity(),
-            a: type_id(&view, "model.A"), b: type_id(&view, "model.B"),
+            a: type_id(&view, "model.A"),
+            b: type_id(&view, "model.B"),
             binding,
             model: AdmittedModel::new(&domain, &view).unwrap(),
         };
         let query = all_instances(ValueType::Reference(scenario.a));
         let graph = PackageDeclarations {
-            types: types(&scenario), models: vec![scenario.model.clone()],
+            types: types(&scenario),
+            models: vec![scenario.model.clone()],
             functions: vec![FunctionDeclaration::new(
                 "F",
-                vec![("p".to_owned(), TypeForm::new(qsl_forms::TypeFormHead::Population,
-                    crate::support::type_form::SPAN)
-                    .with_arguments(vec![TypeForm::name("M::A", crate::support::type_form::SPAN)])
-                    .with_bounds(vec!["1".to_owned()]))],
+                vec![(
+                    "p".to_owned(),
+                    TypeForm::new(
+                        qsl_forms::TypeFormHead::Population,
+                        crate::support::type_form::SPAN,
+                    )
+                    .with_arguments(vec![TypeForm::name(
+                        "M::A",
+                        crate::support::type_form::SPAN,
+                    )])
+                    .with_bounds(vec!["1".to_owned()]),
+                )],
                 TypeForm::collection(CollectionKind::Set, crate::support::type_form::SPAN)
-                    .with_arguments(vec![TypeForm::builtin(qsl_forms::BuiltinType::Reference,
-                        crate::support::type_form::SPAN)
-                        .with_arguments(vec![TypeForm::name("M::A", crate::support::type_form::SPAN)])])
+                    .with_arguments(vec![TypeForm::builtin(
+                        qsl_forms::BuiltinType::Reference,
+                        crate::support::type_form::SPAN,
+                    )
+                    .with_arguments(vec![TypeForm::name(
+                        "M::A",
+                        crate::support::type_form::SPAN,
+                    )])])
                     .with_bounds(vec!["0".to_owned(), "1".to_owned()]),
-                None, query.clone(),
+                None,
+                query.clone(),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source(),
-                qsl_foundation::IdentityLimits::default())
-        }.check(CheckingLimits::default()).unwrap();
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default())
+        .unwrap();
         let package = CheckedPackage::link(graph);
         let expression = check(&package, &[("p", ValueType::Population(Some(1)))], &query);
         let objects = population_environment(&scenario);
         for call in [false, true] {
             let mut prefix = vec![];
-            if call { prefix.push(ChargePoint::FunctionCall); }
-            prefix.extend([ChargePoint::PopulationVisit, ChargePoint::CollectionBound,
-                ChargePoint::CollectionResultRetain]);
+            if call {
+                prefix.push(ChargePoint::FunctionCall);
+            }
+            prefix.extend([
+                ChargePoint::PopulationVisit,
+                ChargePoint::CollectionBound,
+                ChargePoint::CollectionResultRetain,
+            ]);
             let mut input_meter = Meter::new(SCALAR_UNLIMITED);
             let input = if call {
-                package.call(&QualifiedName::unqualified("F").unwrap(),
-                    vec![Value::Boolean(true)], &objects, &mut input_meter)
+                package.call(
+                    &QualifiedName::unqualified("F").unwrap(),
+                    vec![Value::Boolean(true)],
+                    &objects,
+                    &mut input_meter,
+                )
             } else {
-                package.evaluate(&expression, vec![Value::Boolean(true)],
-                    &objects, &mut input_meter)
+                package.evaluate(
+                    &expression,
+                    vec![Value::Boolean(true)],
+                    &objects,
+                    &mut input_meter,
+                )
             };
-            assert!(matches!(input, Err(CallFailure::Input(InputRefusal::WrongValueKind { .. }))));
+            assert!(matches!(
+                input,
+                Err(CallFailure::Input(InputRefusal::WrongValueKind { .. }))
+            ));
             assert!(input_meter.admitted_charges().is_empty());
-            for cause in [quire_exact::CancelCause::Requested, quire_exact::CancelCause::Deadline] {
+            for cause in [
+                quire_exact::CancelCause::Requested,
+                quire_exact::CancelCause::Deadline,
+            ] {
                 let cancel = quire_exact::Cancel::new();
                 cancel.cancel(cause);
                 let mut cancelled = Meter::new(SCALAR_UNLIMITED).with_cancel(cancel.clone());
                 let result = if call {
-                    package.call(&QualifiedName::unqualified("F").unwrap(),
-                        vec![population_argument(&scenario)], &objects, &mut cancelled)
+                    package.call(
+                        &QualifiedName::unqualified("F").unwrap(),
+                        vec![population_argument(&scenario)],
+                        &objects,
+                        &mut cancelled,
+                    )
                 } else {
-                    package.evaluate(&expression, vec![population_argument(&scenario)],
-                        &objects, &mut cancelled)
-                }.expect("an earlier cancelled charge cannot reach the bridge fault");
-                assert!(matches!(result.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(_))));
+                    package.evaluate(
+                        &expression,
+                        vec![population_argument(&scenario)],
+                        &objects,
+                        &mut cancelled,
+                    )
+                }
+                .expect("an earlier cancelled charge cannot reach the bridge fault");
+                assert!(matches!(
+                    result.outcome,
+                    FamilyOutcome::Evaluated(Outcome::Incomplete(_))
+                ));
                 assert!(cancelled.admitted_charges().is_empty());
                 assert_eq!(cancel.tripped(), Some(cause));
             }
@@ -3824,8 +3882,12 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
             // The observer trips the real cancellation token on that poll;
             // neither the kernel result nor the bridge fault is substituted.
             for stopped in 1..prefix.len() {
-                for cause in [quire_exact::CancelCause::Requested, quire_exact::CancelCause::Deadline] {
-                    let token = std::sync::Arc::new(std::sync::Mutex::new(None::<quire_exact::Cancel>));
+                for cause in [
+                    quire_exact::CancelCause::Requested,
+                    quire_exact::CancelCause::Deadline,
+                ] {
+                    let token =
+                        std::sync::Arc::new(std::sync::Mutex::new(None::<quire_exact::Cancel>));
                     let observed = std::sync::Arc::downgrade(&token);
                     let polls = std::sync::atomic::AtomicUsize::new(0);
                     let cancel = quire_exact::Cancel::observing(move || {
@@ -3838,13 +3900,23 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                     *token.lock().unwrap() = Some(cancel.clone());
                     let mut meter = Meter::new(SCALAR_UNLIMITED).with_cancel(cancel.clone());
                     let result = if call {
-                        package.call(&QualifiedName::unqualified("F").unwrap(),
-                            vec![population_argument(&scenario)], &objects, &mut meter)
+                        package.call(
+                            &QualifiedName::unqualified("F").unwrap(),
+                            vec![population_argument(&scenario)],
+                            &objects,
+                            &mut meter,
+                        )
                     } else {
-                        package.evaluate(&expression, vec![population_argument(&scenario)],
-                            &objects, &mut meter)
-                    }.expect("later cancellation precedes the bridge fault");
-                    let FamilyOutcome::Evaluated(Outcome::Incomplete(record)) = result.outcome else {
+                        package.evaluate(
+                            &expression,
+                            vec![population_argument(&scenario)],
+                            &objects,
+                            &mut meter,
+                        )
+                    }
+                    .expect("later cancellation precedes the bridge fault");
+                    let FamilyOutcome::Evaluated(Outcome::Incomplete(record)) = result.outcome
+                    else {
                         panic!("later cancellation must stay Incomplete");
                     };
                     assert_eq!(record.charge_point, prefix[stopped]);
@@ -3863,14 +3935,19 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                 }
                 let arguments = vec![population_argument(&scenario)];
                 let result = if call {
-                    package.call(&QualifiedName::unqualified("F").unwrap(), arguments,
-                        &objects, &mut meter)
+                    package.call(
+                        &QualifiedName::unqualified("F").unwrap(),
+                        arguments,
+                        &objects,
+                        &mut meter,
+                    )
                 } else {
                     package.evaluate(&expression, arguments, &objects, &mut meter)
                 };
                 if denied < prefix.len() {
                     let evaluation = result.expect("earlier denial stays an evaluation");
-                    let FamilyOutcome::Evaluated(Outcome::Incomplete(record)) = evaluation.outcome else {
+                    let FamilyOutcome::Evaluated(Outcome::Incomplete(record)) = evaluation.outcome
+                    else {
                         panic!("denied query charge must remain Incomplete");
                     };
                     assert_eq!(record.charge_point, prefix[denied]);
@@ -3879,13 +3956,18 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                     assert_eq!(meter.admitted_charges(), prefix);
                     assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
                     if object.is_empty() {
-                        let CallFailure::Fault(fault) = result.expect_err("empty member reaches the real bridge") else {
+                        let CallFailure::Fault(fault) =
+                            result.expect_err("empty member reaches the real bridge")
+                        else {
                             panic!("bridge failure is a Fault, never Input");
                         };
                         assert_eq!(fault.stage(), "S6a");
                         assert_eq!(fault.invariant(), "model-query-object-identity-empty");
                         assert_eq!(fault.kernel_cause(), None);
-                        assert_eq!(fault.category(), qsl_foundation::diagnostic::Category::InternalFailure);
+                        assert_eq!(
+                            fault.category(),
+                            qsl_foundation::diagnostic::Category::InternalFailure
+                        );
                     } else {
                         let evaluation = result.expect("valid identity completes");
                         let Outcome::Completed(value) = evaluated(evaluation) else {
@@ -3902,53 +3984,105 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
 #[test]
 #[trace("TC-916", "FR-090-AC-14", "FR-090-AC-16")]
 fn model_query_shapes_fault_at_the_real_producers_without_added_query_charges() {
-    use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+    use qsl_semantics::value::model_query::{
+        evaluate_all_instances, evaluate_lookup, ModelQueryHalt,
+    };
     let scenario = scenario();
     let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let wrong = CollectionType::new(CollectionKind::Set, ValueType::Boolean,
-        Some(CardinalityBound::new(0, 3).unwrap()));
+    let wrong = CollectionType::new(
+        CollectionKind::Set,
+        ValueType::Boolean,
+        Some(CardinalityBound::new(0, 3).unwrap()),
+    );
     let result = evaluate_all_instances(&scenario.binding, &wrong, &mut meter);
-    let Err(ModelQueryHalt::Fault(fault)) = result else { panic!("wrong element shape faults"); };
+    let Err(ModelQueryHalt::Fault(fault)) = result else {
+        panic!("wrong element shape faults");
+    };
     assert_eq!(fault.invariant(), "model-query-reference-element-expected");
     assert_eq!(fault.kernel_cause(), None);
     assert!(meter.admitted_charges().is_empty());
-    let result = evaluate_lookup(&scenario.binding, scenario.a, scenario.a,
-        Value::Boolean(true), AbsenceMode::Empty, &ValueType::Boolean, &mut meter);
-    let Err(ModelQueryHalt::Fault(fault)) = result else { panic!("wrong reference shape faults"); };
+    let result = evaluate_lookup(
+        &scenario.binding,
+        scenario.a,
+        scenario.a,
+        Value::Boolean(true),
+        AbsenceMode::Empty,
+        &ValueType::Boolean,
+        &mut meter,
+    );
+    let Err(ModelQueryHalt::Fault(fault)) = result else {
+        panic!("wrong reference shape faults");
+    };
     assert_eq!(fault.invariant(), "model-query-reference-value-expected");
     assert!(meter.admitted_charges().is_empty());
     for object in ["a1", "missing"] {
         for correct in [false, true] {
-            let result_type = if correct { ValueType::option(ValueType::Reference(scenario.a)) }
-                else { ValueType::Reference(scenario.a) };
+            let result_type = if correct {
+                ValueType::option(ValueType::Reference(scenario.a))
+            } else {
+                ValueType::Reference(scenario.a)
+            };
             let mut meter = Meter::new(SCALAR_UNLIMITED);
-            let result = evaluate_lookup(&scenario.binding, scenario.a, scenario.a,
+            let result = evaluate_lookup(
+                &scenario.binding,
+                scenario.a,
+                scenario.a,
                 Value::Reference(object_reference(&scenario.universe, &scenario.a, object)),
-                AbsenceMode::Empty, &result_type, &mut meter);
-            assert_eq!(meter.admitted_charges(), [ChargePoint::LookupKey, ChargePoint::LookupResultRetain]);
-            assert_eq!(meter.consumed(LimitKind::ResultUnits), if object == "a1" { 2 } else { 1 });
+                AbsenceMode::Empty,
+                &result_type,
+                &mut meter,
+            );
+            assert_eq!(
+                meter.admitted_charges(),
+                [ChargePoint::LookupKey, ChargePoint::LookupResultRetain]
+            );
+            assert_eq!(
+                meter.consumed(LimitKind::ResultUnits),
+                if object == "a1" { 2 } else { 1 }
+            );
             if correct {
-                let Value::Option(option) = result.expect("correct option completes") else { panic!("option result"); };
+                let Value::Option(option) = result.expect("correct option completes") else {
+                    panic!("option result");
+                };
                 assert_eq!(option.payload().is_some(), object == "a1");
             } else {
-                let Err(ModelQueryHalt::Fault(fault)) = result else { panic!("actual post-query wrapping faults"); };
+                let Err(ModelQueryHalt::Fault(fault)) = result else {
+                    panic!("actual post-query wrapping faults");
+                };
                 assert_eq!(fault.stage(), "S6a");
                 assert_eq!(fault.invariant(), "model-query-option-result-expected");
                 assert_eq!(fault.kernel_cause(), None);
             }
             for point in [ChargePoint::LookupKey, ChargePoint::LookupResultRetain] {
-                let mut denied = Meter::new(SCALAR_UNLIMITED).with_injected_denial(quire_exact::InjectedDenial {
-                    point, occurrence: std::num::NonZeroU64::new(1).unwrap(),
-                });
-                let result = evaluate_lookup(&scenario.binding, scenario.a, scenario.a,
+                let mut denied = Meter::new(SCALAR_UNLIMITED).with_injected_denial(
+                    quire_exact::InjectedDenial {
+                        point,
+                        occurrence: std::num::NonZeroU64::new(1).unwrap(),
+                    },
+                );
+                let result = evaluate_lookup(
+                    &scenario.binding,
+                    scenario.a,
+                    scenario.a,
                     Value::Reference(object_reference(&scenario.universe, &scenario.a, object)),
-                    AbsenceMode::Empty, &result_type, &mut denied);
-                let Err(ModelQueryHalt::Stop(quire_semantic_value::stop::Stop::Incomplete(record))) = result else {
+                    AbsenceMode::Empty,
+                    &result_type,
+                    &mut denied,
+                );
+                let Err(ModelQueryHalt::Stop(quire_semantic_value::stop::Stop::Incomplete(record))) =
+                    result
+                else {
                     panic!("denial before wrapping remains Incomplete");
                 };
                 assert_eq!(record.charge_point, point);
-                assert_eq!(denied.admitted_charges(), if point == ChargePoint::LookupKey { &[][..] }
-                    else { &[ChargePoint::LookupKey][..] });
+                assert_eq!(
+                    denied.admitted_charges(),
+                    if point == ChargePoint::LookupKey {
+                        &[][..]
+                    } else {
+                        &[ChargePoint::LookupKey][..]
+                    }
+                );
             }
         }
     }

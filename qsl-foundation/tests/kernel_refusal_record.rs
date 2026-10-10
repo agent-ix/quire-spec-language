@@ -190,7 +190,12 @@ fn an_ieee_refusal_renders_widths_and_ordered_flags() {
 #[test]
 fn a_checked_invariant_builds_no_record() {
     assert_eq!(
-        kernel_refusal_record(&Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted }, Some(locus())),
+        kernel_refusal_record(
+            &Refusal::CheckedInvariant {
+                cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted
+            },
+            Some(locus())
+        ),
         None
     );
 }

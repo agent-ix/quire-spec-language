@@ -257,62 +257,126 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
     let left_declaration = enum_declaration("Left");
     let right_declaration = enum_declaration("Right");
     let span = qsl_foundation::Span { start: 0, end: 0 };
-    let source = Expression::binary(BinaryOperator::Equal, Expression::name("left"), Expression::name("right"));
+    let source = Expression::binary(
+        BinaryOperator::Equal,
+        Expression::name("left"),
+        Expression::name("right"),
+    );
     for mixed_declarations in [true, false] {
         let left = enum_value(&left_declaration, "DONE");
-        let right = enum_value(if mixed_declarations { &right_declaration } else { &left_declaration }, "READY");
+        let right = enum_value(
+            if mixed_declarations {
+                &right_declaration
+            } else {
+                &left_declaration
+            },
+            "READY",
+        );
         // Every declaration/member was canonically admitted above. Deliberately
         // violate only the checked binding's one-declaration member-list
         // prerequisite; the native comparator itself is not replaced.
-        let binding = EnumBinding { name: "State".to_owned(), declaration: left_declaration.clone(),
-            members: vec![left.clone(), right.clone()] };
+        let binding = EnumBinding {
+            name: "State".to_owned(),
+            declaration: left_declaration.clone(),
+            members: vec![left.clone(), right.clone()],
+        };
         let shape = ValueType::Enum(binding.shape());
         let declarations = PackageDeclarations {
             enums: vec![binding],
-            functions: vec![FunctionDeclaration::new("Compare", vec![
-                ("left".to_owned(), TypeForm::name("State", span)),
-                ("right".to_owned(), TypeForm::name("State", span)),
-            ], TypeForm::builtin(BuiltinType::Boolean, span), None, source.clone())],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_source(),
-                qsl_foundation::IdentityLimits::default())
+            functions: vec![FunctionDeclaration::new(
+                "Compare",
+                vec![
+                    ("left".to_owned(), TypeForm::name("State", span)),
+                    ("right".to_owned(), TypeForm::name("State", span)),
+                ],
+                TypeForm::builtin(BuiltinType::Boolean, span),
+                None,
+                source.clone(),
+            )],
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         };
         let package = CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
-        let checked = package.graph().check_expression(vec![("left".to_owned(), shape.clone()),
-            ("right".to_owned(), shape)], &source, None, CheckMode::Kernel, CheckingLimits::default()).unwrap();
-        let arguments = || vec![Value::Enum(EnumMember::new(left.variant(), 0)),
-            Value::Enum(EnumMember::new(right.variant(), 1))];
+        let checked = package
+            .graph()
+            .check_expression(
+                vec![
+                    ("left".to_owned(), shape.clone()),
+                    ("right".to_owned(), shape),
+                ],
+                &source,
+                None,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let arguments = || {
+            vec![
+                Value::Enum(EnumMember::new(left.variant(), 0)),
+                Value::Enum(EnumMember::new(right.variant(), 1)),
+            ]
+        };
         let objects = ObjectEnvironment::default();
         for call in [false, true] {
             let invoke = |args, meter: &mut Meter| {
-                if call { package.call(&QualifiedName::unqualified("Compare").unwrap(), args, &objects, meter) }
-                else { package.evaluate(&checked, args, &objects, meter) }
+                if call {
+                    package.call(
+                        &QualifiedName::unqualified("Compare").unwrap(),
+                        args,
+                        &objects,
+                        meter,
+                    )
+                } else {
+                    package.evaluate(&checked, args, &objects, meter)
+                }
             };
             let mut input_meter = Meter::new(UNLIMITED);
-            assert!(matches!(invoke(vec![Value::Boolean(true), Value::Boolean(true)], &mut input_meter),
-                Err(CallFailure::Input(quire_semantic_value::call::InputRefusal::WrongValueKind { .. }))));
+            assert!(matches!(
+                invoke(
+                    vec![Value::Boolean(true), Value::Boolean(true)],
+                    &mut input_meter
+                ),
+                Err(CallFailure::Input(
+                    quire_semantic_value::call::InputRefusal::WrongValueKind { .. }
+                ))
+            ));
             assert!(input_meter.admitted_charges().is_empty());
             let mut meter = Meter::new(UNLIMITED);
             let result = invoke(arguments(), &mut meter);
             let mut prefix = vec![];
-            if call { prefix.push(ChargePoint::FunctionCall); }
+            if call {
+                prefix.push(ChargePoint::FunctionCall);
+            }
             if mixed_declarations {
-                let Err(CallFailure::Fault(fault)) = result else { panic!("real scheduled comparator producer"); };
+                let Err(CallFailure::Fault(fault)) = result else {
+                    panic!("real scheduled comparator producer");
+                };
                 assert_eq!(fault.stage(), "S6a");
                 assert_eq!(fault.invariant(), "checked-program-invariant");
-                let Some(quire_exact::CheckedInvariantCause::ScheduledComparisonRefused { cause }) = fault.kernel_cause()
-                    else { panic!("nested cause wrapper was lost"); };
+                let Some(quire_exact::CheckedInvariantCause::ScheduledComparisonRefused { cause }) =
+                    fault.kernel_cause()
+                else {
+                    panic!("nested cause wrapper was lost");
+                };
                 assert_eq!(cause, IllTypedCause::DistinctEnumDeclarations);
                 assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
                 assert_eq!(meter.admitted_charges(), prefix);
                 if call {
                     let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
-                        point: ChargePoint::FunctionCall, occurrence: NonZeroU64::new(1).unwrap(),
+                        point: ChargePoint::FunctionCall,
+                        occurrence: NonZeroU64::new(1).unwrap(),
                     });
                     assert!(matches!(invoke(arguments(), &mut denied).unwrap().outcome,
                         FamilyOutcome::Evaluated(Outcome::Incomplete(record)) if record.charge_point == ChargePoint::FunctionCall));
                     assert!(denied.admitted_charges().is_empty());
-                    for cause in [quire_exact::CancelCause::Requested, quire_exact::CancelCause::Deadline] {
-                        let cancel = quire_exact::Cancel::new(); cancel.cancel(cause);
+                    for cause in [
+                        quire_exact::CancelCause::Requested,
+                        quire_exact::CancelCause::Deadline,
+                    ] {
+                        let cancel = quire_exact::Cancel::new();
+                        cancel.cancel(cause);
                         let mut stopped = Meter::new(UNLIMITED).with_cancel(cancel.clone());
                         assert!(matches!(invoke(arguments(), &mut stopped).unwrap().outcome,
                             FamilyOutcome::Evaluated(Outcome::Incomplete(record)) if record.charge_point == ChargePoint::FunctionCall));
@@ -321,9 +385,15 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
                     }
                 }
             } else {
-                assert!(matches!(result.unwrap().outcome,
-                    FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))));
-                prefix.extend([ChargePoint::EnumIdentityRead, ChargePoint::EnumIdentityRead, ChargePoint::EnumResultRetain]);
+                assert!(matches!(
+                    result.unwrap().outcome,
+                    FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+                ));
+                prefix.extend([
+                    ChargePoint::EnumIdentityRead,
+                    ChargePoint::EnumIdentityRead,
+                    ChargePoint::EnumResultRetain,
+                ]);
                 assert_eq!(meter.admitted_charges(), prefix);
             }
         }
@@ -1298,7 +1368,10 @@ fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
                     (
                         "id",
                         FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
-                            Outcome::Refused(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted })
+                            Outcome::Refused(Refusal::CheckedInvariant {
+                                cause:
+                                    quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted,
+                            })
                         })),
                     ),
                 ],
@@ -1306,7 +1379,12 @@ fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
             )
             .unwrap();
         // `id` is declared first, so its refusal wins and `inner` never runs.
-        assert!(matches!(outer, Outcome::Refused(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted })));
+        assert!(matches!(
+            outer,
+            Outcome::Refused(Refusal::CheckedInvariant {
+                cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted
+            })
+        ));
         assert!(!inner_ran.get());
         let only_inner = env
             .evaluate_record(

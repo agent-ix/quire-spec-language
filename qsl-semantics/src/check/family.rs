@@ -1773,7 +1773,10 @@ pub mod fixtures {
             C::GeneratedEnvironmentRejected,
             C::GeneratedDescriptorReconstructionFailed,
         ];
-        for cause in [IllTypedCause::TypeMismatch, IllTypedCause::OperatorIneligible] {
+        for cause in [
+            IllTypedCause::TypeMismatch,
+            IllTypedCause::OperatorIneligible,
+        ] {
             cases.extend([
                 C::ScheduledComparisonRefused { cause },
                 C::EqualityQuantityConversionRejected { cause },
@@ -1784,37 +1787,37 @@ pub mod fixtures {
         // The actual dependency enum is closed: adding a cause requires a fixture.
         for cause in &cases {
             match cause {
-                C::CollectionElementNotAdmitted |
-                C::DeferredResultNotAdmitted |
-                C::CanonicalKeyUnavailable |
-                C::BoundedDivisionExpected |
-                C::CollectionKindMismatch |
-                C::PopulationPair |
-                C::ValueKindMismatch |
-                C::CallDepthExceeded |
-                C::UnknownCheckedFunction |
-                C::ForeignCheckedExpression |
-                C::MeterBorrowConflict |
-                C::EqualityScheduleMismatch |
-                C::EqualityOperandSourceNotAdmitted |
-                C::EqualityOperandNonIntegralDecimal |
-                C::EqualityQuantityNonExactPlacement |
-                C::EqualityConversionShapeMismatch |
-                C::EqualityOperandTargetNotAdmitted |
-                C::EqualityUnitUnresolved |
-                C::EqualityEnumVariantUnresolved |
-                C::ExpectedIntegerPlacement |
-                C::GeneratedBodyPlaceholderInvoked |
-                C::GeneratedArgumentShapeMismatch |
-                C::GeneratedOperandKindUnsupported |
-                C::GeneratedUnexpectedOutcome |
-                C::GeneratedIntervalInvalid |
-                C::GeneratedEnvironmentRejected |
-                C::GeneratedDescriptorReconstructionFailed |
-                C::ScheduledComparisonRefused { .. } |
-                C::EqualityQuantityConversionRejected { .. } |
-                C::GeneratedTypeCheckRejected { .. } |
-                C::GeneratedEqualityCheckRejected { .. } => {}
+                C::CollectionElementNotAdmitted
+                | C::DeferredResultNotAdmitted
+                | C::CanonicalKeyUnavailable
+                | C::BoundedDivisionExpected
+                | C::CollectionKindMismatch
+                | C::PopulationPair
+                | C::ValueKindMismatch
+                | C::CallDepthExceeded
+                | C::UnknownCheckedFunction
+                | C::ForeignCheckedExpression
+                | C::MeterBorrowConflict
+                | C::EqualityScheduleMismatch
+                | C::EqualityOperandSourceNotAdmitted
+                | C::EqualityOperandNonIntegralDecimal
+                | C::EqualityQuantityNonExactPlacement
+                | C::EqualityConversionShapeMismatch
+                | C::EqualityOperandTargetNotAdmitted
+                | C::EqualityUnitUnresolved
+                | C::EqualityEnumVariantUnresolved
+                | C::ExpectedIntegerPlacement
+                | C::GeneratedBodyPlaceholderInvoked
+                | C::GeneratedArgumentShapeMismatch
+                | C::GeneratedOperandKindUnsupported
+                | C::GeneratedUnexpectedOutcome
+                | C::GeneratedIntervalInvalid
+                | C::GeneratedEnvironmentRejected
+                | C::GeneratedDescriptorReconstructionFailed
+                | C::ScheduledComparisonRefused { .. }
+                | C::EqualityQuantityConversionRejected { .. }
+                | C::GeneratedTypeCheckRejected { .. }
+                | C::GeneratedEqualityCheckRejected { .. } => {}
             }
         }
         cases

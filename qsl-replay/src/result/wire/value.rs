@@ -476,8 +476,10 @@ impl TypeLeafWire {
             ValueType::Population(maximum) => Self::Population {
                 maximum: maximum.map(|maximum| maximum.to_string()),
             },
-            ValueType::Option(_) | ValueType::Collection(_)
-            | ValueType::Uuid | ValueType::Timestamp => return None,
+            ValueType::Option(_)
+            | ValueType::Collection(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => return None,
         })
     }
 

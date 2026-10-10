@@ -558,7 +558,9 @@ fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
                 (
                     "a",
                     FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
-                        Outcome::Refused(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted })
+                        Outcome::Refused(Refusal::CheckedInvariant {
+                            cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted,
+                        })
                     })),
                 ),
             ],
@@ -567,7 +569,9 @@ fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
         .unwrap();
     assert!(matches!(
         outcome,
-        Outcome::Refused(Refusal::CheckedInvariant { cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted })
+        Outcome::Refused(Refusal::CheckedInvariant {
+            cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted
+        })
     ));
     assert!(!b_ran.get());
     assert!(meter.admitted_charges().is_empty());

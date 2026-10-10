@@ -127,11 +127,14 @@ impl CheckedBody {
         result: ValueType,
     ) -> Self {
         let ids: Vec<_> = (0..operands.len()).map(NodeId).collect();
-        let mut nodes: Vec<_> = operands.into_iter().map(|value_type| Node {
-            kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
-            value_type,
-            location: Location::root(quire_semantic_value::location::Origin::Expression),
-        }).collect();
+        let mut nodes: Vec<_> = operands
+            .into_iter()
+            .map(|value_type| Node {
+                kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                value_type,
+                location: Location::root(quire_semantic_value::location::Origin::Expression),
+            })
+            .collect();
         nodes.push(Node {
             kind: kind(&ids),
             value_type: result,

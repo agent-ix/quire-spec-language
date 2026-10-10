@@ -651,9 +651,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                     // An imported call site still locates at that call.
                     Halt::Located(at) => Self::stopped(
                         at.stop,
-                        Some(self.imported
-                            .first()
-                            .map_or(&at.location, |call| call.location())),
+                        Some(
+                            self.imported
+                                .first()
+                                .map_or(&at.location, |call| call.location()),
+                        ),
                     ),
                 };
             }
@@ -766,7 +768,11 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`]).
     fn stopped(stop: Stop, location: Option<&Location>) -> Result<Evaluation, InternalFault> {
         if let Stop::Refused(Refusal::CheckedInvariant { cause }) = stop {
-            return Err(InternalFault::from_kernel("S6a", "checked-program-invariant", cause));
+            return Err(InternalFault::from_kernel(
+                "S6a",
+                "checked-program-invariant",
+                cause,
+            ));
         }
         Ok(Evaluation {
             outcome: FamilyOutcome::Evaluated(outcome_from_stop(Err(stop))),
@@ -776,11 +782,17 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {
-        self.values.pop().ok_or_else(|| invariant("evaluation-value-stack-underflow"))
+        self.values
+            .pop()
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))
     }
 
     fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
-        let start = self.values.len().checked_sub(count).ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
+        let start = self
+            .values
+            .len()
+            .checked_sub(count)
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
         Ok(self.values.split_off(start))
     }
 
@@ -985,7 +997,9 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             Task::ChargeElement(_) => charge_element(self.meter).map_err(Into::into),
             Task::Return => {
-                self.frames.pop().ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
+                self.frames
+                    .pop()
+                    .ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
                 Ok(())
             }
             Task::DispatchGuard(guard) => {
@@ -996,7 +1010,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     node: _,
                 } = *guard;
                 let holds = self.pop_boolean()?;
-                self.frames.pop().ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
+                self.frames
+                    .pop()
+                    .ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
                 if !holds {
                     // ADR-013 O-16, FR-090-AC-11: a `StateModel` family-owned
                     // undefined result.
@@ -1036,7 +1052,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return Ok(());
             }
             NodeKind::Local(slot) => {
-                let value = self.slot(*slot)?.clone().ok_or_else(|| invariant("evaluation-local-value-unbound"))?;
+                let value = self
+                    .slot(*slot)?
+                    .clone()
+                    .ok_or_else(|| invariant("evaluation-local-value-unbound"))?;
                 self.values.push(value);
                 return Ok(());
             }
@@ -1249,7 +1268,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 let result = outcome_into_stop(
-                    evaluate_ieee(operation, *rounding, self.meter).map_err(|_| invariant("ieee-operation-rejected"))?,
+                    evaluate_ieee(operation, *rounding, self.meter)
+                        .map_err(|_| invariant("ieee-operation-rejected"))?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
                     self.record(node, ValueLoss::IeeeFlags(result.flags()));
@@ -1271,8 +1291,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ArithmeticOperator::Multiply => QuantityOperation::Multiply(l, r),
                     ArithmeticOperator::Divide => QuantityOperation::Divide(l, r),
                 };
-                let (outcome, unit) =
-                    evaluate_quantity_unit(operation, self.meter).map_err(|_| invariant("quantity-operation-rejected"))?;
+                let (outcome, unit) = evaluate_quantity_unit(operation, self.meter)
+                    .map_err(|_| invariant("quantity-operation-rejected"))?;
                 let quantity = outcome_into_stop(outcome)?;
                 // A later operation reads this result's unit by its id; the
                 // scope keeps one entry per distinct unit.
@@ -1323,7 +1343,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Composite(composite) = self.pop()? else {
                     return Err(invariant("field-composite-value-expected"));
                 };
-                let slot = composite.slots().get(*index).ok_or_else(|| invariant("field-slot-unresolved"))?;
+                let slot = composite
+                    .slots()
+                    .get(*index)
+                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let value = Self::project(slot, *optional, node.value_type(), false)?;
                 self.note_field(&composite, *index, &value);
                 value
@@ -1396,7 +1419,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let callable = self.graph.function_state(*function).ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                let callable = self
+                    .graph
+                    .function_state(*function)
+                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments = self.pop_many(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -1428,7 +1454,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .scope()
                     .imported_graph(callee.package)
                     .ok_or_else(|| invariant("evaluation-imported-graph-unresolved"))?;
-                let callable = library.function_state(*function).ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                let callable = library
+                    .function_state(*function)
+                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments = self.pop_many(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -1480,9 +1508,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                     let value = match slot {
                         RecordSlot::Absent => FieldValue::Absent,
                         RecordSlot::Null => FieldValue::Null,
-                        RecordSlot::Present(_) => {
-                            FieldValue::Present(values.next().ok_or_else(|| invariant("record-present-value-missing"))?)
-                        }
+                        RecordSlot::Present(_) => FieldValue::Present(
+                            values
+                                .next()
+                                .ok_or_else(|| invariant("record-present-value-missing"))?,
+                        ),
                     };
                     fields.push((field.name(), value));
                 }
@@ -1689,7 +1719,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .dispatch_operations()
                     .get(*operation)
                     .ok_or_else(|| invariant("dispatch-operation-unresolved"))?;
-                let table_ref = self.dispatch_tables.get(*table).ok_or_else(|| invariant("dispatch-table-unresolved"))?;
+                let table_ref = self
+                    .dispatch_tables
+                    .get(*table)
+                    .ok_or_else(|| invariant("dispatch-table-unresolved"))?;
                 charge_dispatch_select(self.meter, table_ref.candidate_count())?;
                 let candidate = table_ref
                     .linked_for(&subtype)
@@ -1911,7 +1944,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
             ),
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                OptionValue::present((**payload).clone(), value.clone()).map_err(|_| invariant("field-option-payload-rejected"))
+                OptionValue::present((**payload).clone(), value.clone())
+                    .map_err(|_| invariant("field-option-payload-rejected"))
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
                 Ok(OptionValue::none((**payload).clone()))
@@ -2131,7 +2165,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 step,
                 ..
             } => {
-                let current = iteration.accumulator.clone().ok_or_else(|| invariant("fold-accumulator-missing"))?;
+                let current = iteration
+                    .accumulator
+                    .clone()
+                    .ok_or_else(|| invariant("fold-accumulator-missing"))?;
                 *self.slot(*accumulator)? = Some(current);
                 *self.slot(*binder)? = Some(element);
                 step
@@ -2328,7 +2365,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         let NodeKind::Query { source, .. } = iteration.node.kind() else {
             return Err(invariant("query-stop-node-expected"));
         };
-        let position = iteration.next.checked_sub(1).ok_or_else(|| invariant("query-stop-position-invalid"))?;
+        let position = iteration
+            .next
+            .checked_sub(1)
+            .ok_or_else(|| invariant("query-stop-position-invalid"))?;
         let element = iteration
             .source
             .elements()
@@ -2344,7 +2384,9 @@ impl<'a, 'm> Machine<'a, 'm> {
         let provenance = self
             .provenance_of(&iteration.source, iteration.node.at(*source))
             .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "domain-has-an-occurrence")))?;
-        let index = provenance.position(position).ok_or_else(|| invariant("query-stop-provenance-position-invalid"))?;
+        let index = provenance
+            .position(position)
+            .ok_or_else(|| invariant("query-stop-provenance-position-invalid"))?;
         let report = StopReport {
             quantifier,
             index,
@@ -2418,7 +2460,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             },
             NodeKind::Fold { .. } => {
-                let accumulator = iteration.accumulator.ok_or_else(|| invariant("fold-accumulator-missing"))?;
+                let accumulator = iteration
+                    .accumulator
+                    .ok_or_else(|| invariant("fold-accumulator-missing"))?;
                 retain_accumulator(accumulator, self.meter)?
             }
             _ => return Err(invariant("iteration-node-invalid")),
@@ -2521,7 +2565,8 @@ mod tests {
     /// package and `F`'s checked identity, so a test can call
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`] directly -- the S6a
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
-    pub(super) fn population_function_package() -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
+    pub(super) fn population_function_package(
+    ) -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
         let domain_package = domain_package("bundle.qsl174-ac10-seam");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
@@ -3212,7 +3257,9 @@ mod tests {
         )
         .expect_err("operands outside their type with no witnessed read fault");
         assert_eq!(fault.invariant(), "checked-program-invariant");
-        assert_eq!(fault.kernel_cause(), Some(
-            quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted));
+        assert_eq!(
+            fault.kernel_cause(),
+            Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
+        );
     }
 }

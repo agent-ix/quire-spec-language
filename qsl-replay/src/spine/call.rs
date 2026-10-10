@@ -678,9 +678,13 @@ pub(crate) fn convert_outcome(
         FamilyOutcome::Evaluated(Outcome::Completed(_)) => Err(Box::new(RunRefusal::Fault(
             InternalFault::new("call", "boolean-or-integer-function-completes-that-kind"),
         ))),
-        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant { cause })) => Err(Box::new(
-            RunRefusal::Fault(InternalFault::from_kernel("S6a", "checked-program-invariant", cause)),
-        )),
+        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant { cause })) => {
+            Err(Box::new(RunRefusal::Fault(InternalFault::from_kernel(
+                "S6a",
+                "checked-program-invariant",
+                cause,
+            ))))
+        }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => Ok(CallOutcome::Refused(convert_refusal(
             record, None, location, sources,
         )?)),
