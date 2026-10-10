@@ -245,7 +245,6 @@ fn k2() -> Value {
                 "Money",
                 "money",
                 json!({
-                    "identityFields": [],
                     "fields": [field(p, "Money", "amount_minor", "ix://quire/native/Int"),
                                field(p, "Money", "currency", "ix://quire/native/String")],
                 }),
@@ -255,7 +254,7 @@ fn k2() -> Value {
                 "OrderPlaced",
                 "happened",
                 json!({
-                    "identityFields": [], "occurrenceField": identity(p, "OrderPlaced/occurred_at"),
+                    "occurrenceField": identity(p, "OrderPlaced/occurred_at"),
                     "fields": [field(p, "OrderPlaced", "occurred_at", &identity(p, "Instant")),
                                field(p, "OrderPlaced", "order_id", "ix://quire/native/UUID")],
                 }),
