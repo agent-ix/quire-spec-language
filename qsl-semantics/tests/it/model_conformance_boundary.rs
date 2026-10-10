@@ -91,29 +91,40 @@ fn check(document: &[u8], body: &str) -> Result<(), Vec<(Code, Option<&'static s
     })
 }
 
+/// The six R08 fixtures always enter through actual document admission and
+/// authored postcondition checking; callers supply no established facts.
+fn refinement_fixture(row: usize) -> (Vec<u8>, &'static str) {
+    let numeric = row >= 3;
+    let narrowed_name = if numeric { "cs" } else if row == 2 { "xr" } else { "xb" };
+    let bytes = document(|template| vec![
+        scalar(template, "Count", 9), scalar(template, "Small", 5),
+        object("A", None, vec![field("A", "x", "A", 0, Some(1), None),
+        field("A", "c", "Count", 1, Some(1), None)],
+        vec![writer("A", &["A/x", "A/c"], None)]),
+        object("B", Some("A"), vec![field("B", narrowed_name,
+        if numeric { "Small" } else if row == 2 { "B" } else { "A" },
+        if row == 2 { 0 } else { 1 }, Some(1), Some(if numeric { "A/c" } else { "A/x" }))],
+        if [1, 4, 5].contains(&row) { vec![writer("B", &["A/x", "A/c"], Some("A/set"))] } else { vec![] }),
+    ]);
+    let body = match row {
+        1 => "post QB using v on Config::B::set { present(self.xb) }",
+        4 => "post QC using v on Config::B::set { self.cs <= 5 }",
+        5 => "post QD using v on Config::B::set { self.cs <= 6 }",
+        _ => "function noop using v(): Boolean pure { true }",
+    };
+    (bytes, body)
+}
+
+pub(super) fn refinement_vector(row: usize) -> Result<(), Vec<(Code, Option<&'static str>)>> {
+    let (bytes, body) = refinement_fixture(row);
+    check(&bytes, body)
+}
+
 #[trace("FR-082-AC-4", "FR-082-AC-8", "QSpec-TC-196")]
 #[test]
 fn actual_postconditions_decide_all_six_refinement_vectors() {
     for (row, expected) in [(0, false), (1, true), (2, false), (3, false), (4, true), (5, false)] {
-        let numeric = row >= 3;
-        let narrowed_name = if numeric { "cs" } else if row == 2 { "xr" } else { "xb" };
-        let bytes = document(|template| vec![
-            scalar(template, "Count", 9), scalar(template, "Small", 5),
-            object("A", None, vec![field("A", "x", "A", 0, Some(1), None),
-                field("A", "c", "Count", 1, Some(1), None)],
-                vec![writer("A", &["A/x", "A/c"], None)]),
-            object("B", Some("A"), vec![field("B", narrowed_name,
-                if numeric { "Small" } else if row == 2 { "B" } else { "A" },
-                if row == 2 { 0 } else { 1 }, Some(1), Some(if numeric { "A/c" } else { "A/x" }))],
-                if [1, 4, 5].contains(&row) { vec![writer("B", &["A/x", "A/c"], Some("A/set"))] } else { vec![] }),
-        ]);
-        let body = match row {
-            1 => "post QB using v on Config::B::set { present(self.xb) }",
-            4 => "post QC using v on Config::B::set { self.cs <= 5 }",
-            5 => "post QD using v on Config::B::set { self.cs <= 6 }",
-            _ => "function noop using v(): Boolean pure { true }",
-        };
-        let result = check(&bytes, body);
+        let result = refinement_vector(row);
         if expected {
             assert_eq!(result, Ok(()), "R08 row {row}");
         } else {
@@ -515,4 +526,79 @@ fn second_selected_model_denial_withholds_first_models_completed_axis_failures()
         limit_kind: LimitKind::WorkUnits, limit: normalization_work + 3, consumed: normalization_work + 3,
         next_charge: 1, charge_point: ChargePoint::ConformanceAxis,
     }));
+}
+
+
+/// Independent costs: field f(T)+multiplicity+refinement is 3 (4 for B);
+/// the optional redefining writer adds arity/result/multiplicity 3 and
+/// two writes against two grants 4. Intake's observed N is carried into
+/// the real checker, with no reset or replacement meter.
+#[trace("FR-082-AC-4", "FR-082-AC-8", "QSpec-TC-196")]
+#[test]
+fn all_six_refinement_vectors_preserve_native_payload_and_same_operation_budget() {
+    use qsl_semantics::check::{CheckCause, PackageDeclarations, RefinementObligation};
+    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits};
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    use crate::model_operations::{config_unit_with_body, parse_and_build};
+
+    for (row, cost, denied_prefix, denied_charge, obligation) in [
+        (0, 3, 2, 1, Some(RefinementObligation::Presence)),
+        (1, 10, 9, 1, None),
+        (2, 4, 3, 1, Some(RefinementObligation::NoProofForm)),
+        (3, 3, 2, 1, Some(RefinementObligation::Domain)),
+        (4, 10, 6, 4, None),
+        (5, 10, 6, 4, Some(RefinementObligation::Domain)),
+    ] {
+        let (bytes, body) = refinement_fixture(row);
+        let (unit, packages) = config_unit_with_body(&bytes, body);
+        let probe = parse_and_build(&unit);
+        let baseline = admit_unit(&probe.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+            .expect("actual normalization prefix");
+        let n = baseline.consumed(LimitKind::WorkUnits);
+        let run = |budget| {
+            let built = parse_and_build(&unit);
+            let selected = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits {
+                work_units: budget, ..ModelNormalizationLimits::UNLIMITED
+            }).expect("normalization fits before the owning conformance charges");
+            assert_eq!(selected.consumed(LimitKind::WorkUnits), n);
+            let raw = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "r08", "fixture", "1"),
+                "unit.native", unit.as_bytes(), qsl_cst::Limits::default()).expect("actual source");
+            PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, Vec::new())
+                .expect("model-owned axes reach their real conformance stage")
+                .check(CheckingLimits::default())
+        };
+        let completed = run(n + cost);
+        if let Some(obligation) = obligation {
+            let refusals = completed.expect_err("the complete stage preserves the failed writer obligation");
+            assert_eq!(refusals.len(), 1);
+            let CheckCause::ModelConformance(failure) = &refusals[0].cause else {
+                panic!("actual native conformance payload required: {refusals:?}");
+            };
+            let member = if row >= 3 { "B/cs" } else if row == 2 { "B/xr" } else { "B/xb" };
+            let parent = if row >= 3 { "A/c" } else { "A/x" };
+            let writer = if row == 5 { "B/set" } else { "A/set" };
+            let key = |path| DeclarationKey { package: PACKAGE.to_owned(), node: identity(path) };
+            assert_eq!(failure.member, key(member));
+            assert_eq!(failure.parent, key(parent));
+            assert_eq!(failure.writer, Some(key(writer)));
+            assert_eq!(failure.obligation, Some(obligation));
+            assert_eq!(failure.axis, "refinement");
+            assert_eq!(failure.code, Code::UndefinedExpression);
+            assert_eq!(failure.cause, ModelRefusalCause::UnprovedRefinement);
+            assert_eq!(failure.member_origin, Some(origin(member)));
+            assert_eq!(failure.parent_origin, Some(origin(parent)));
+            assert_eq!(failure.writer_origin, Some(origin(writer)));
+        } else {
+            assert!(completed.is_ok(), "R08 row {row}: {completed:?}");
+        }
+        let refused = run(n + cost - 1).expect_err("the final owning charge does not fit");
+        assert_eq!(refused.len(), 1, "unfinished-stage failures stay private");
+        assert_eq!(refused[0].cause, CheckCause::ModelIncomplete(Incomplete {
+            limit_kind: LimitKind::WorkUnits, limit: n + cost - 1,
+            consumed: n + denied_prefix, next_charge: denied_charge,
+            charge_point: ChargePoint::ConformanceAxis,
+        }), "R08 row {row}");
+    }
 }

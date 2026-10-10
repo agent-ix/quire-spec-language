@@ -841,179 +841,33 @@ fn r08_base() -> Vec<DomainPackageRecord> {
 #[trace("TC-221", "FR-082-AC-4")]
 #[test]
 fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
-        "model.B.xb",
-        "model.B",
-        "model.A",
-        mult(1, Some(1)),
-        Some("model.A.x"),
-        vec![],
-    ));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08a"), records);
-    let redefining_key = DeclarationKey::fixture("model.B.xb");
-    let redefined_key = DeclarationKey::fixture("model.A.x");
-    match check_field_refinement_obligation(
-        &ModelIndex::build(domain_package.clone()),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
-            assert!(failures[0].detail.contains("field-presence"));
-        }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
-    }
+    assert_eq!(crate::model_conformance_boundary::refinement_vector(0), Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]));
 }
 
 #[trace("TC-221", "FR-082-AC-4")]
 #[test]
 fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
-        "model.B.xb",
-        "model.B",
-        "model.A",
-        mult(1, Some(1)),
-        Some("model.A.x"),
-        vec![],
-    ));
-    records.push(operation_redefining(
-        "model.B.set",
-        "model.B",
-        vec![],
-        None,
-        vec![],
-        vec![],
-        vec![],
-        vec![PostconditionClause::Presence {
-            field: DeclarationKey::fixture("model.B.xb"),
-        }],
-        Some("model.A.set"),
-    ));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08b"), records);
-    let redefining_key = DeclarationKey::fixture("model.B.xb");
-    let redefined_key = DeclarationKey::fixture("model.A.x");
-    match check_field_refinement_obligation(
-        &ModelIndex::build(domain_package.clone()),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Compatible) => {}
-        other => panic!("expected Compatible, got {other:?}"),
-    }
+    assert_eq!(crate::model_conformance_boundary::refinement_vector(1), Ok(()));
 }
 
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08c_an_object_typed_narrowing_has_no_proof_form() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
-        "model.B.xr",
-        "model.B",
-        "model.B",
-        mult(0, Some(1)),
-        Some("model.A.x"),
-        vec![],
-    ));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08c"), records);
-    let redefining_key = DeclarationKey::fixture("model.B.xr");
-    let redefined_key = DeclarationKey::fixture("model.A.x");
-    match check_field_refinement_obligation(
-        &ModelIndex::build(domain_package.clone()),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
-            assert!(failures[0].detail.contains("no-proof-form"));
-        }
-        other => panic!("expected Refused(no-proof-form), got {other:?}"),
-    }
+    assert_eq!(crate::model_conformance_boundary::refinement_vector(2), Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]));
 }
 
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
-        "model.B.cs",
-        "model.B",
-        "model.Small",
-        mult(1, Some(1)),
-        Some("model.A.c"),
-        vec![],
-    ));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08d"), records);
-    let redefining_key = DeclarationKey::fixture("model.B.cs");
-    let redefined_key = DeclarationKey::fixture("model.A.c");
-    match check_field_refinement_obligation(
-        &ModelIndex::build(domain_package.clone()),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
-            assert!(failures[0].detail.contains("field-domain"));
-        }
-        other => panic!("expected Refused(field-domain), got {other:?}"),
-    }
+    assert_eq!(crate::model_conformance_boundary::refinement_vector(3), Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]));
 }
 
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
-    let redefining_key = DeclarationKey::fixture("model.B.cs");
-    let redefined_key = DeclarationKey::fixture("model.A.c");
-
-    let contained = |upper: i128| {
-        let mut records = r08_base();
-        records.push(field_member_redefining(
-            "model.B.cs",
-            "model.B",
-            "model.Small",
-            mult(1, Some(1)),
-            Some("model.A.c"),
-            vec![],
-        ));
-        records.push(operation_redefining(
-            "model.B.set",
-            "model.B",
-            vec![],
-            None,
-            vec![],
-            vec![],
-            vec![],
-            vec![PostconditionClause::Comparison {
-                field: DeclarationKey::fixture("model.B.cs"),
-                operator: OrderingOperator::LessOrEqual,
-                literal: upper,
-            }],
-            Some("model.A.set"),
-        ));
-        DomainPackage::new(DomainPackageRef::fixture("bundle.r08ef"), records)
-    };
-
-    match check_field_refinement_obligation(
-        &ModelIndex::build(contained(5)),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Compatible) => {}
-        other => panic!("expected Compatible (e), got {other:?}"),
-    }
-    match check_field_refinement_obligation(
-        &ModelIndex::build(contained(6)),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
-            assert!(failures[0].detail.contains("field-domain"));
-        }
-        other => panic!("expected Refused (f), got {other:?}"),
-    }
+    assert_eq!(crate::model_conformance_boundary::refinement_vector(4), Ok(()));
+    assert_eq!(crate::model_conformance_boundary::refinement_vector(5),
+        Err(vec![(Code::UndefinedExpression, Some("unproved-refinement"))]));
 }
 
 /// FR-082-AC-9 (TC-911 step 3): a field of scalar type `Wide`
