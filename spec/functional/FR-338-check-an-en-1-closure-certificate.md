@@ -77,6 +77,15 @@ QSpec FR-331 owns the wire spelling of every `CertificateRule` and of every
 `HyperProductState` and FR-169's `ModelState`. It carries an
 `AutomatonStateKey` as the bytes of its canonical encoding.
 
+FR-338 and ADR-018 PC-3 do not yet specify that encoding's octet mapping.
+The owning `qsl-eval` translation must define the mapping and its canonical
+ordering before independent producers and checkers can compare these keys
+on the wire. A materialization index, an implementation's private encoding
+or Base64url transport samples do not supply that missing definition.
+This gap does not change any rejection rule or its required settlement.
+FR-163 additionally owns the labelled-transition-tuple and missing-member
+loci of its hyper checker; those failures are not all product-state failures.
+
 ## Outputs
 
 - `Ok(())` when the certificate is accepted.
