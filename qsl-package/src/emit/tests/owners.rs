@@ -6,16 +6,16 @@
 //! read back through IR's v2 reader.
 
 use qsl_semantics::check::{
-    checked_dispatch_operation, AdmittedModel, DispatchRoot, OperationClauses,
+    checked_dispatch_selected_operation, DispatchRoot, OperationClauses,
 };
-use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, NativeValueType,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::{EffectiveId, Integer};
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 
@@ -352,22 +352,12 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             query("Sub/size", "Sub", Some("Order/size")),
         ],
     );
-    let NormalizeOutcome::Completed(view) =
-        normalize(&package, ModelNormalizationLimits::UNLIMITED)
-    else {
-        panic!("acme/orders normalizes");
+    let ids = |selected: &SelectedModels| {
+        let id = |name: &str| selected[0].view.type_identities()[&model_key(name)];
+        (id("Order"), id("Sub"))
     };
-    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
-    let id = |name: &str| view.type_identities()[&model_key(name)];
-    let (order, sub) = (id("Order"), id("Sub"));
-    let types = TypeEnvironment::new(
-        [],
-        [
-            ObjectTypeDeclaration::new(order, "M::Order", Vec::new()),
-            ObjectTypeDeclaration::new(sub, "M::Sub", Vec::new()).with_supertypes(vec![order]),
-        ],
-    )
-    .expect("the acme object types admit");
+    // Each root below is a separate genuine admission operation. Read its
+    // type identities from that same owner before dispatch consumes it.
     let held = FunctionDeclaration::new(
         "held",
         vec![("r".to_owned(), TypeForm::name("M::Order", SPAN))],
@@ -378,23 +368,29 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
     let mut seen = BTreeSet::new();
     let mut model_nodes = BTreeSet::new();
     for root in ["Order/size", "Order/count", "Sub/size"] {
-        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-        let mut declarations = checked_dispatch_operation(
-            &view,
+        let selected = SelectedModels::fixture("M", SPAN, package.clone(),
+            ModelNormalizationLimits::UNLIMITED).expect("this root's genuine model admission");
+        let (order, sub) = ids(&selected);
+        let types = TypeEnvironment::new(
+            [],
+            [
+                ObjectTypeDeclaration::new(order, "M::Order", Vec::new()),
+                ObjectTypeDeclaration::new(sub, "M::Sub", Vec::new()).with_supertypes(vec![order]),
+            ],
+        )
+        .expect("the acme object types admit");
+        let mut declarations = checked_dispatch_selected_operation(
+            selected,
             &DispatchRoot {
                 key: model_key(root),
                 closure: GeneralizationClosure::Closed,
             },
             &clauses(order, sub),
             source(),
-            &mut meter,
             qsl_foundation::IdentityLimits::default(),
         )
         .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
-        declarations.types = types.clone();
-        if declarations.models.is_empty() {
-            declarations.models.push(model.clone());
-        }
+        declarations.types = types;
         declarations.functions.push(held.clone());
         let checked = CheckedPackage::link(
             declarations

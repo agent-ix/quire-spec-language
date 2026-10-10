@@ -173,6 +173,8 @@ pub use assemble::{
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{DispatchOperation, EnumBinding, PackageDeclarations, ResolvedSignatures};
+#[cfg(any(test, feature = "test-support"))]
+pub use checked_dispatch::checked_dispatch_selected_operation;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,

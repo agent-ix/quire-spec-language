@@ -18,18 +18,17 @@ use sha2::{Digest, Sha256};
 
 use super::super::{generated_location, LockEvidence, Lowering, SemanticGraph, SemanticNode};
 use super::*;
-use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
+use crate::check::checked_dispatch::{checked_dispatch_selected_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
 use crate::check::family::OccurrenceMap;
 use crate::check::{CheckedGraph, PackageDeclarations};
-use crate::model::accounting::{Meter, ModelNormalizationLimits};
+use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, RelationshipDirection,
     RelationshipEnd, RelationshipRecord, ValueTypeRef,
 };
-use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 
@@ -246,14 +245,22 @@ struct Acme {
     sub: EffectiveId,
 }
 
+impl Acme {
+    /// Every independent check starts a genuine admission operation from
+    /// the fixture's immutable original package. No authority is reused.
+    fn admit_for_check(&self) -> crate::model::intake::SelectedModels {
+        crate::model::intake::SelectedModels::fixture("M", SPAN,
+            self.view.domain_package().clone(), ModelNormalizationLimits::UNLIMITED)
+            .expect("the original acme package admits for this independent check")
+    }
+}
+
 fn admitted(version: &str) -> Acme {
     let package = acme(version);
-    let NormalizeOutcome::Completed(view) =
-        normalize(&package, ModelNormalizationLimits::UNLIMITED)
-    else {
-        panic!("acme/orders {version} normalizes");
-    };
-    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let selected = crate::model::intake::SelectedModels::fixture("M", SPAN,
+        package, ModelNormalizationLimits::UNLIMITED).expect("actual acme fixture admission");
+    let view = selected[0].view.clone();
+    let model = AdmittedModel::from_view(&view);
     let id = |name: &str| view.type_identities()[&key(name)];
     Acme {
         order: id("Order"),
@@ -325,9 +332,12 @@ fn function(
 }
 
 fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
+    let (entries, meter) = acme.admit_for_check().into_parts();
+    let models = entries.iter().map(|entry| AdmittedModel::from_view(&entry.view)).collect();
     PackageDeclarations {
         types: types(acme),
-        models: vec![acme.model.clone()],
+        models,
+        model_inputs: Some((entries, meter)),
         functions,
         ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
@@ -413,16 +423,14 @@ fn dispatch(acme: &Acme, root: &str) -> PackageDeclarations {
 
 /// [`dispatch`] over `clauses` in place of [`clauses`].
 fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> PackageDeclarations {
-    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    let mut declarations = checked_dispatch_operation(
-        &acme.view,
+    let mut declarations = checked_dispatch_selected_operation(
+        acme.admit_for_check(),
         &DispatchRoot {
             key: key(root),
             closure: GeneralizationClosure::Closed,
         },
         clauses,
         fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
@@ -950,8 +958,19 @@ fn a_version_only_change_keys_the_same_clause_functions() {
 #[test]
 fn two_admitted_versions_of_one_model_identity_refuse() {
     let (first, second) = (admitted("1.0.0"), admitted("2.0.0"));
-    let mut declarations = dispatch(&first, "Order/size");
-    declarations.models.push(second.model.clone());
+    let selected = crate::model::intake::SelectedModels::fixtures(vec![
+        ("First".to_owned(), SPAN, first.view.domain_package().clone()),
+        ("Second".to_owned(), SPAN, second.view.domain_package().clone()),
+    ], ModelNormalizationLimits::UNLIMITED).expect("both actual versions normalize in one operation");
+    assert_eq!(selected.len(), 2);
+    let versions: std::collections::BTreeSet<_> = selected.iter()
+        .map(|entry| entry.view.model_selection().version.as_str()).collect();
+    assert_eq!(versions, std::collections::BTreeSet::from(["1.0.0", "2.0.0"]));
+    let mut declarations = checked_dispatch_selected_operation(selected,
+        &DispatchRoot { key: key("Order/size"), closure: GeneralizationClosure::Closed },
+        &clauses(&first), fixture_source(), qsl_foundation::IdentityLimits::default())
+        .expect("dispatch retains both genuinely admitted versions");
+    declarations.types = types(&first);
     let refusals = declarations
         .check(CheckingLimits::default())
         .expect_err("two versions of one identity refuse");

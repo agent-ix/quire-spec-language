@@ -120,6 +120,41 @@ impl SelectedModels {
         self.meter.consumed(kind)
     }
 
+    /// A bounded test fixture admits all packages in one genuine operation.
+    /// Duplicate selected identities deliberately reach the checker's own
+    /// invariant refusal; no owner or meter is appended after admission.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixtures(mut offered: Vec<(String, Span, DomainPackage)>,
+        limits: ModelNormalizationLimits) -> Result<Self, UnitIntakeRefusal> {
+        offered.sort_by(|left, right| {
+            let left = &left.2.model_selection;
+            let right = &right.2.model_selection;
+            left.identity.as_bytes().cmp(right.identity.as_bytes())
+                .then_with(|| left.digest.cmp(&right.digest))
+        });
+        let packages: Vec<_> = offered.iter().map(|(_, _, package)| package.clone()).collect();
+        let mut meter = Meter::new(limits);
+        let views = normalize_packages(&packages, &mut meter).map_err(|failure| {
+            let cause = |ordinal: usize, cause| UnitIntakeRefusal {
+                alias: offered[ordinal].0.clone(), span: offered[ordinal].1,
+                cause, additional: Vec::new(),
+            };
+            match failure {
+                BatchDenial::Incomplete(ordinal, incomplete) =>
+                    cause(ordinal, UnitIntakeCause::Limit(incomplete)),
+                BatchDenial::Refused(refusals) => {
+                    let mut refusals = refusals.into_iter().map(|(ordinal, refusals)|
+                        cause(ordinal, UnitIntakeCause::Refused(refusals)));
+                    let mut first = refusals.next().expect("a refused batch has a refusing selection");
+                    first.additional.extend(refusals);
+                    first
+                }
+            }
+        })?;
+        Ok(Self { entries: views.into_iter().zip(offered).map(|(view, (alias, span, _))|
+            SelectedModel { alias, span, view, originals: OriginalInventory::empty() }).collect(), meter })
+    }
+
     /// A fixture uses the same private normalization producer and owns its
     /// actual admitted meter; it cannot pair an arbitrary view with a meter.
     #[cfg(any(test, feature = "test-support"))]

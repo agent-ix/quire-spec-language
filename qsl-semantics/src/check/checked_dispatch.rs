@@ -1167,6 +1167,31 @@ pub fn checked_dispatch_operation(
     })
 }
 
+
+/// Test fixtures retain the genuine selection admission owner while the
+/// existing bridge links its dispatch root on the same operation meter.
+#[cfg(any(test, feature = "test-support"))]
+pub fn checked_dispatch_selected_operation(
+    selected: crate::model::intake::SelectedModels,
+    root: &DispatchRoot,
+    clauses: &OperationClauses,
+    source: qsl_foundation::source::provenance::RawSourceRef,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
+    let (entries, mut meter) = selected.into_parts();
+    let Some(ordinal) = entries.iter().position(|entry|
+        entry.view.model_selection().identity == root.key.package) else {
+        return Err(unknown_candidate(&root.key));
+    };
+    let mut declarations = checked_dispatch_operation(&entries[ordinal].view,
+        root, clauses, source, &mut meter, identity)?;
+    for (position, entry) in entries.iter().enumerate() {
+        if position != ordinal { declarations.models.push(AdmittedModel::from_view(&entry.view)); }
+    }
+    declarations.model_inputs = Some((entries, meter));
+    Ok(declarations)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
