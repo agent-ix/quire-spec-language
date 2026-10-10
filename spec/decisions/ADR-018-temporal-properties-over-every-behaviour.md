@@ -582,6 +582,15 @@ LA-2. The key's encoding discriminator is not a new digest domain. Import
 requires canonical octets and context-resolved admissible facts, rather
 than accepting arbitrary bytes supplied by the provider.
 
+FR-338 preserves IV-2's pre-shift left-operand debt for open-upper until
+and its release dual; the finite IV-3 lower-bound convention remains
+unchanged. Under ADR-027 PB-3 it reads every protocol position while
+advancing interval distance only on counted steps, closing a finite
+upper-distance region after its zero-distance positions. Past truth
+updates at every letter; ages and bucket distances advance only when
+distance advances. Finite Boolean bucket transforms preserve chronological
+truth without an unbounded list of zero-distance positions.
+
 IV-3's earliest-deadline/furthest-extent subsumption and general offset
 sets are represented by FR-338's closed window alternatives. Exact
 arithmetic represents b+1 saturation even for u64::MAX b. Canonicalization

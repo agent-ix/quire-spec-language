@@ -90,7 +90,12 @@ octets, not a second state identity.
 is `[node,role,ordinal]`: `node` is FR-322's existing NodeId object,
 exactly `{"domain":"quire.checked-semantic-node/v1","digest":hex}`;
 `role` and `ordinal` are the checked clause's O-07 occurrence role and
-canonical decimal ordinal. The checker resolves this triple in the
+ordinal encoded as a JSON string in the checked O-07 u64 domain. Its
+lexical form is `"0"` or `[1-9][0-9]*`, with value at most
+`"18446744073709551615"`; JSON numbers, signs and leading zeros refuse.
+Thus checked ordinal 0 becomes `"0"`, never `0`; the u64 maximum is
+lexically admissible only when that actual occurrence exists, while
+`"18446744073709551616"` refuses. The checker resolves this triple in the
 request's recompiled package, rederives its checked formula and rejects a
 foreign occurrence. For the derived deadlock item, root is the closed
 alternative `["deadlock-freedom"]`, selecting the fixed formula below.
@@ -131,7 +136,7 @@ The closed alternatives for `state` are:
 
 | Form | Canonical array and meaning |
 | --- | --- |
-| TP-2 undecided | `["bounded", clock, branches]`; `clock` is `["origin",remaining]` or `["each"]`. `remaining` is the number of future positions still read by the root's checked horizon. Each branch carries every still-open activation; it is not only the newest activation. |
+| TP-2 undecided | `["bounded", clock, branches]`; `clock` is `["origin",remaining]` or `["each"]`. `remaining` is the remaining counted distance of the root's checked horizon. Each branch carries every still-open activation; it is not only the newest activation. |
 | TP-2 decided | `["accept"]` or `["reject"]`, absorbing under EN-5; under EN-1 `on each`, an accepted activation is removed from the live branches and new activations continue, so accepting one activation is not global acceptance. |
 | TP-1 / TP-3 / deadlock | `["safety", branches]`; these are the subset construction's viable elementary configurations of the formula itself after SM-6 trimming. The unique rejecting state is `["safety",[]]`. |
 | TP-4 | `["buchi", branch]`; one elementary configuration of the negated formula, with its acceptance membership. This is not a subset-determinized safety state. |
@@ -170,11 +175,14 @@ position and is not an authored operator.
 | `G A` | Require `A` now and carry the same `G A` to the next position. |
 | `A U B` | Require `B` now, or require `A` now and carry this `U` to the next position. |
 | `A R B` | Require `B` now and either require `A` now or carry this `R` to the next position. |
-| interval with lower `l>0` | Carry the same signed obligation with `l-1`; decrement finite upper, retain `open`. Nothing is required of an operand before the shift, as IV-3's `X^a` expansion specifies. |
-| `F[0,u] A`, finite `u` | Require `A` now, or, if `u>0`, carry `[0,u-1]`. At `u=0` the second branch is absent. |
-| `G[0,u] A`, finite `u` | Require `A` now; if `u>0`, also carry `[0,u-1]`. |
-| `A U[0,u] B`, finite `u` | Require `B` now, or, if `u>0`, require `A` now and carry `[0,u-1]`. |
-| `A R[0,u] B`, finite `u` | Require `B` now and either require `A` now or, if `u>0`, carry `[0,u-1]`; at zero require `B` only, the dual of finite until. |
+| finite interval with lower `l>0` | Carry without reading its operands until the lower distance is reached. Finite until/release retain FR-091's lower-bound convention, with no prefix operand debt. |
+| open-upper `F[l,open] A` / `G[l,open] A`, `l>0` | Carry the shift without reading A before the lower distance. |
+| `A U[l,open] B`, `l>0` | Require A at every prefix position before the lower distance, and carry the shift. This is IV-2's prefix conjunction followed by unbounded until. |
+| `A R[l,open] B`, `l>0` | Require A now and discharge, or carry the shift. This is the Boolean dual of the preceding until rule; B is not required in the prefix. |
+| `F[0,u] A`, finite `u` | Require A now, or carry the same debt until the distance region closes. An undisclosed F debt fails when a move would pass u. |
+| `G[0,u] A`, finite `u` | Require A now and carry until the region closes; discharge at its closed upper boundary. |
+| `A U[0,u] B`, finite `u` | Require B now, or require A now and carry until the region closes. An undisclosed U debt fails when a move would pass u. |
+| `A R[0,u] B`, finite `u` | Require B now and either require A now and discharge or carry. Discharge the surviving carry at the closed upper boundary, the dual of finite until. |
 | interval `[0,open]` | The corresponding unbounded rule. |
 
 Implication and equivalence use their checked Boolean definitions before
@@ -200,8 +208,16 @@ with an open obligation, in one of these alternatives:
 The entry represents the interval obligations of that occurrence: it is
 their canonical storage, not a second copy of them. Positive `F/U` use
 deadline and positive `G/R` extent; negative polarity uses the dual's
-kind. After a model step, offsets decrement as the table states, fulfilled
-obligations disappear, and a new activation adds its checked interval.
+kind. Offsets are measured from the last letter read, not pre-decremented for
+a presumed next step. Before reading a successor letter, subtract that
+edge's counted distance delta, saturating lower at zero. A finite debt
+whose upper would become negative closes before that out-of-window letter
+is read: an undisclosed F/U fails, a surviving G/R discharges. A debt with
+upper zero remains live across zero-distance successors, whose letters
+must still be read. Fulfilled obligations disappear, and a new activation
+adds its checked interval. Open-upper U/R shift entries retain the signed
+operator occurrence, which selects the prefix rule above; a shift counter
+alone never erases prefix debt.
 Only the common lower-zero/no-nested-interval shapes use the one-counter
 subsumption. General offset sets preserve distinct lower shifts and nested
 obligations; neither earliest nor largest alone represents them. A state
@@ -219,10 +235,52 @@ and updated once per model position. Its alternatives are:
 | --- | --- |
 | unbounded `once A` / `historically A` | `[o,"once",seen_true]` / `[o,"historically",seen_false]`, Boolean flags over all positions through the previous position. |
 | unbounded `A since B` / `A triggered B` | `[o,"since",previous_truth]` / `[o,"triggered",previous_truth]`; current since is `B or (A and previous_truth)`, current triggered is `B and (A or previous_truth)`. At origin previous since is false and previous triggered true. |
-| finite lower-zero `once[0,b] A` / `historically[0,b] A` | `[o,"last-true",age]` / `[o,"last-false",age]`; age is positions since the last true/false operand, saturated at `b+1`. Initialization reads the complete-history operand at the previous virtual position: age zero when it has the tracked truth and saturated age otherwise; constants remain constants there. |
+| finite lower-zero `once[0,b] A` / `historically[0,b] A` | `[o,"last-true",age]` / `[o,"last-false",age]`; age is counted distance since the last true/false operand, saturated at `b+1`. Initialization reads the complete-history operand at the previous virtual position: age zero when it has the tracked truth and saturated age otherwise; constants remain constants there. |
 | finite lower-zero `A since[0,b] B` / `A triggered[0,b] B` | `[o,"since-age",age]` / `[o,"triggered-age",age]`; since-age counts from the last B while A has held thereafter, resetting to saturated b+1 on a false A with no current B; triggered-age is the same counter for the dual `(not A) since[0,b] (not B)`, with its truth complemented. A current B resets since-age to zero even when A is false. |
-| other finite past interval | `[o,"history",operands]`; one `[operand_path,true_offsets]` per operand, in operand order, retaining exactly the set of its true positions at offsets `1..b` from the next position. Current truth is evaluated by FR-092's past interval definition using offset zero's current operand truth and these offsets. Offsets shift and those beyond `b` disappear after each position. |
-| past `[a,open]` | `[o,"shift-history",operands,tail]`; each operand retains true offsets `1..a`; `tail` is the corresponding unbounded once/historically flag or since/triggered previous truth at the position before that retained window. Evaluate the shifted unbounded operator at offset `a`; update window and tail once per position. |
+| other finite past interval | `[o,"history",operands]`; one `[operand_path,true_offsets]` per operand, in operand order, retaining exactly the set of its true positions at offsets `1..b` from the next position. Current truth is evaluated by FR-092's past interval definition using offset zero's current operand truth and these offsets. Offsets shift by the counted delta and those beyond `b` disappear. This ordinary-position form applies when every step counts; protocol general windows use the finite distance-summary form below. |
+| past `[a,open]` | `[o,"shift-history",operands,tail]`; each operand retains true offsets `1..a`; `tail` is the corresponding unbounded once/historically flag or since/triggered previous truth at the position before that retained window. Evaluate the shifted unbounded operator at offset `a`; update truth at each position and shift the window/tail only on counted distance. Protocol general windows use the distance-summary form below. |
+
+For protocol subjects, general finite past windows and shifted open past
+windows SHALL instead use `[o,"distance-history",buckets,tail]`. A bucket
+is `[distance,transform]`; buckets are a duplicate-free set sorted by their
+complete bytes, with distances 0..b for finite windows or 0..a for a shift.
+`transform` is exactly `[false_result,true_result]`, two Booleans giving
+the operator's update on the chronological positions at that distance,
+for each possible incoming truth. The one-position update is `z or A`
+for once, `z and A` for historically, `B or (A and z)` for since and
+`B and (A or z)` for triggered. Append a same-distance letter by function
+composition, not by retaining an unbounded list of positions. On a counted
+step increase bucket distances by one and create a distance-zero bucket;
+on an uncounted step compose into the existing zero bucket. To read a
+finite interval, compose buckets in chronological order (largest distance
+first) for distances a..b, starting false for once/since and true for
+historically/triggered. This preserves both mixed truth and the order of
+witness/prefix positions sharing a distance. For finite windows `tail` is
+null. For an open shift `tail` is the Boolean result of the same recurrence
+over all older positions; compose an evicted oldest bucket into it before
+removal, then compose retained buckets at distance at least a to evaluate
+the shifted operator. Before-origin buckets/tail follow the complete-history
+rule below. Empty buckets are absent, not invented false letters. Each
+bucket has only four possible Boolean transforms, so zero-distance cycles
+do not grow this memory without bound. The common lower-zero age counters
+remain the selected form where specified; their resets read every letter,
+but increments/saturation occur only on counted steps.
+
+The letter and distance updates SHALL be separate. An ordinary operation
+subject has delta one on each step. Under ADR-027 PB-2/PB-3 every protocol
+step supplies a letter and updates past truth, unbounded carries and `on each`
+activation, while only attempt/cattempt, event, activate, send and receive
+have delta one. Fork, join, finish, timeout, cend, duplicate, lose, spawn,
+retire, fence and memory steps have delta zero. Delta zero leaves origin
+horizon, future offsets/shifts and past ages unchanged; it does not suppress
+atom evaluation. A terminal stutter has delta one. A finite horizon's final
+distance region includes every zero-distance position before crossing;
+closure on a crossing evaluates no out-of-window letter. On an ordinary
+subject that region has one position and closes immediately after it.
+Terminal bounded false-extension supplies counted false letters through the
+remaining horizon and closes the last region; infinite-trace stutter supplies
+the actual terminal letter. Digital timed deadlines are FR-196/FR-204's
+separate timed relation, not this event-position distance algebra.
 
 For historical missing positions before origin, atoms read false and
 constants retain their checked truth; complete-history is not fabricated
@@ -297,12 +355,44 @@ after the encoded C and comma and ends with one additional `]`.
 | --- | --- |
 | `always holds(false)` bad prefix, TP-1 | `["safety",[]]` |
 | `always holds(true)`, TP-1, after a position | `["safety",[[[[[],"positive"]],[],[],[]]]]`; the retained root G obligation is carried. |
-| bounded `eventually[0,1] holds(p)`, on origin, p false at position zero | `["bounded",["origin","1"],[[[],[],[[[],"positive","deadline","0"]],[]]]]`; a deadline-zero obligation is tested at the next position. |
-| previous vector after p true at position one | `["accept"]`; false at that position gives `["reject"]`. |
+| bounded `eventually[0,1] holds(p)`, on origin, p false at position zero | `["bounded",["origin","1"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; the stored distance is from the letter just read. |
+| previous vector after p true at counted distance one | `["accept"]`; false gives `["reject"]` when that final distance region closes. A false fork before that counted step leaves clock/deadline 1 and does not reject. |
 | pending common `eventually[0,3] p` debts with remaining deadlines 1 and 3 | Retain `[[],"positive","deadline","1"]`, regardless of their insertion order; extent 3 would change the future and is refused. |
 | two distinct interval occurrences at `["0"]` and `["1"]` | Both windows remain even when their checked operands and counters are equal; changing either counter changes key bytes. |
 | a general offset set `{[0,2],[1,3]}` | Pairs encode `[["0","2"],["1","3"]]`; reversed materialization normalizes to these bytes, while that reversed array supplied as canonical input refuses. |
 | TP-4 `eventually holds(p)`, elementary negated G not-p carry | G is retained as `[[],"negative"]` with no least-fixed-point acceptance set for the dual G; this differs from a positive F carry lacking discharge. |
+
+A full-key independent byte oracle uses TC-525 step 3's checked `Counter`
+subject with no terminal declaration and ADR-018 DL-3's derived
+`always holds(not deadlocked)` item. At its initial value zero the carried
+G root has this **complete** UTF-8 key (one line, no newline in the key):
+
+```json
+["quire.automaton-state-key/v1",[["deadlock-freedom"],"quire.temporal.infinite-trace/v1","infinite",[]],["safety",[[[[[],"positive"]],[],[],[]]]]]
+```
+
+Every character is ASCII, so the displayed character sequence itself is
+the independent octet oracle, without invoking the encoder under test.
+The derived root has no clause ordinal and this item is genuinely
+parameter-free; its binding is exactly `[]`. Replacing the profile with
+`quire.temporal.event-position.false-extension/v1` changes the bytes and
+refuses for this derived item. Changing only the activation to `origin`
+also refuses. The clause-root lexical vector above independently checks
+string ordinal zero/max versus number zero/overflow.
+
+Additional semantic vectors: for `p until[1,*] q`, p false at origin and
+q true at distance one rejects immediately at origin; finite
+`p until[1,1] q` on the same letters accepts. The dual open release
+accepts when its left operand holds in the pre-shift prefix, regardless
+of its right operand there. For `eventually[0,1] p`, false origin, false
+fork, true counted operation accepts; replacing the fork with a counted
+operation closes the false final region before that later true letter.
+At distance one, a false letter followed by an uncounted p-true letter
+accepts; deleting the zero-distance carry is therefore an adverse change.
+A protocol past bucket with p true then false at one distance gives once
+transform `[true,true]` and historically `[false,false]`; reversing those
+letters for a since recurrence can change its transform, while no distance
+counter increments. These cases test truth updates independently of distance.
 
 These are normative prospective vectors, not a runtime qualification claim.
 Admission negatives include a foreign C, a node id used as an operand path,
@@ -349,7 +439,7 @@ different materialization orders SHALL produce identical full octets.
 | FR-338-AC-3 | Over FR-120-AC-9's `test/tallies` subject, a certificate holding `t1` for `always holds(true)` is rejected `BadState` at `t1`, whose expansion records `ContractUndetermined` for the undefined `pre Low`. | Test (TC-525) |
 | FR-338-AC-4 | The canonical octet vectors have exactly the specified state bodies and full `K_C` octets; reversing subset/window insertion order leaves bytes equal, distinct occurrence paths and differing live facts leave bytes unequal, and no graph enumeration index enters the key. | Test |
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
-| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; terminal false-extension gives the evaluator's same result, and on each retains an older unfulfilled activation after creating a new one. | Test |
+| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics, and on each retains an older unfulfilled activation after creating a new one. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 
 ## Dependencies

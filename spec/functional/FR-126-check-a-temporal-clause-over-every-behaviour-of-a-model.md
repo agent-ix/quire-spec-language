@@ -158,7 +158,10 @@ automaton states and the depth reached.
   algebra and encode them as its `AutomatonStateKey` octets. This is the
   normative basis for the translator's public state identity, including
   TP-4 states used by the component checker. A graph's local numbering
-  SHALL NOT substitute for it.
+  SHALL NOT substitute for it. The letter update SHALL occur on every
+  protocol position; interval distance SHALL advance only on ADR-027
+  PB-3 counted steps (terminal stutter included). FR-338 defines upper
+  distance-region closure and IV-2 open-upper until/release prefix debt.
 
 - For a `BoundedMltl` (TP-2) clause the engine SHALL build a deterministic
   finite monitor over positions, for activation `on origin` and for
