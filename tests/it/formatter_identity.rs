@@ -302,7 +302,7 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
     };
     assert_eq!(domains.len(), 1, "one original covering population");
     let (domain, kind) = domains.iter().next().unwrap();
-    assert_eq!(*kind, qsl_foundation::bound::DomainKind::Population);
+    assert_eq!(kind, qsl_foundation::bound::DomainKind::Population);
     let qsl_foundation::bound::DomainKey::Population { member_type, .. } = domain else {
         panic!("the requirement names its population's own member type");
     };
