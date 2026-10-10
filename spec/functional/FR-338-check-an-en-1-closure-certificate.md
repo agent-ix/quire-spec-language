@@ -428,6 +428,17 @@ request's existing premise.
 
 This auxiliary construction SHALL be materialized lazily, with checked
 state/edge/automaton/evaluation budgets already applicable to the request.
+For one closure/component checker invocation, the state counter charges each
+new canonical reached product state and each new paired auxiliary
+configuration once; the transition counter charges each newly materialized
+edge between those configurations once; the automaton counter charges each
+new canonical original/auxiliary structural automaton state once. Reuse by
+partition/component checking does not reset these counters or charge the
+same fact twice. Before an allocation/charge that would exceed a configured
+limit, stop at its actual consumed value, using the corresponding existing
+MaxStates/MaxTransitions/MaxAutomatonStates and request setting. Atom and
+enabledness evaluation use the subject's existing FR-120 evaluation meter
+and candidate limits, preserving their actual limit/value/setting on a stop.
 The core checks the same Cancel handle at each charge (FR-276), and records
 the actual request settings used. Exhaustion returns the closed typed
 `Stopped(IncompleteCause::LimitReached{limit,value,setting})`; cancellation
