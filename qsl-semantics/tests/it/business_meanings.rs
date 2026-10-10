@@ -36,11 +36,23 @@ fn origin(package: &str, node: &str) -> Value {
 }
 
 fn construct(name: &str, meaning: &str) -> Value {
+    let members = match meaning {
+        meaning::OBJECT_TYPE => json!({"identityFields": "required"}),
+        meaning::RECORD_VALUE_TYPE => json!({"identityFields": "optional"}),
+        meaning::EVENT_TYPE => json!({
+            "identityFields": "optional", "occurrenceField": "required",
+        }),
+        meaning::STATE_MACHINE => json!({"states": "required", "transitions": "required"}),
+        meaning::PROCESS => json!({"identityFields": "required", "steps": "required"}),
+        meaning::PERSISTENCE_INTERFACE => json!({"persists": "required"}),
+        meaning::NAMESPACE => json!({"members": "required", "vocabulary": "required"}),
+        _ => json!({}),
+    };
     json!({
         "kind": {"module": BUSINESS_MODULE, "name": name},
         "moduleVersion": "1.0.0",
         "construct": {
-            "identity": "none", "shape": "record", "members": {},
+            "identity": "none", "shape": "record", "members": members,
             "meaning": meaning,
         },
     })
