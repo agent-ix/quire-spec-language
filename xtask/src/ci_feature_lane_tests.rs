@@ -233,6 +233,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let other_checks = [
         "check-no-committed-binaries",
         "check-index-completeness",
+        "check-spec-validation",
         "ci-clean-build",
         "seam-probe",
         "string-edge",
