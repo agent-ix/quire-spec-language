@@ -178,9 +178,11 @@ ci-all-features:
 # rather than resting on a claim in prose. `cargo check` (not `build`) is
 # enough: the property under test is which dependencies the lib target
 # resolves, not that its object code is produced.
+CI_CLEAN_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/clean
+
 ci-clean-build:
-	cargo build --locked --workspace --no-default-features --target-dir target/clean
-	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir target/clean
+	cargo build --locked --workspace --no-default-features --target-dir "$(CI_CLEAN_TARGET_DIR)"
+	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir "$(CI_CLEAN_TARGET_DIR)"
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 
 # PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only
