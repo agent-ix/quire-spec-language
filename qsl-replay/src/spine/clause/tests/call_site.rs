@@ -100,7 +100,10 @@ fn private_call_site_operation_variants_keep_format_identity() {
         let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
         compile_config_version_unit(&unit, &packages);
     }
-    for (unit, packages) in [sub_field_unit_and_packages(), two_population_unit_and_packages()] {
+    for (unit, packages) in [
+        sub_field_unit_and_packages(),
+        two_population_unit_and_packages(),
+    ] {
         compile_config_version_unit(&unit, &packages);
     }
 }
@@ -119,7 +122,6 @@ fn two_population_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
     (unit, packages)
 }
-
 
 /// `call_site` over `unit` with `document` supplied, selecting `selection`.
 fn locate<S: crate::CallSiteSelection>(

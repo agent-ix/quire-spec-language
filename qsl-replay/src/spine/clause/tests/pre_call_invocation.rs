@@ -36,9 +36,15 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
 #[test]
 fn private_pre_call_source_keeps_format_identity() {
     let (unit, packages) = pre_call_unit_and_packages();
-    compose(source(), "pre-call-invocation.native", unit.as_bytes(), &packages,
-        &DependencyInput::default(), SpineLimits::default())
-        .expect("the original ParentPresent program emits");
+    compose(
+        source(),
+        "pre-call-invocation.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the original ParentPresent program emits");
 }
 
 /// What the post snapshot's digest finds in the snapshot provision.

@@ -130,11 +130,13 @@ pub fn frame_test_document() -> Vec<u8> {
 }
 
 /// The owning state test's original source/model fixture.
-pub const FRAME_CLAUSES: &str = "pre AttemptUpdatePre using v on Config::ConfigVersion::attemptUpdate \
+pub const FRAME_CLAUSES: &str =
+    "pre AttemptUpdatePre using v on Config::ConfigVersion::attemptUpdate \
     { true }\npost AttemptUpdatePost using v on Config::ConfigVersion::attemptUpdate { true }\n";
 
 /// The owning state test's original source/model fixture.
-pub const TC465_CLAUSES: &str = "invariant ParentOrder using v on Config::ConfigVersion at current { \
+pub const TC465_CLAUSES: &str =
+    "invariant ParentOrder using v on Config::ConfigVersion at current { \
     present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }\n\
     post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { \
     self.versionNumber = pre(self.versionNumber) }\n\
@@ -561,7 +563,6 @@ pub fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
         json!(["ix://example/config-version/ConfigVersion/versionNumber"]);
     serde_json::to_vec(&envelope).expect("valid JSON")
 }
-
 
 pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
 const PLACEHOLDER_DIGEST: &str =
