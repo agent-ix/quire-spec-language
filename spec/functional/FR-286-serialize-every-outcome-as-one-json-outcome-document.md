@@ -71,7 +71,15 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   - `{"kind": "completed", "value": V}`, where `V` is FR-100's value
     rendering: `{"kind": "boolean", "value": true|false}` or
     `{"kind": "integer", "decimal": "<ASCII decimal>"}` (FR-038's integer
-    spelling). A clause evaluation completes with its `Boolean` value.
+    spelling), or the existing canonical Reference value
+    `{"kind":"reference","universe":U,"type":T,"object_identity":O}`.
+    For a Reference completion, `U` and `T` are the actual returned shared
+    reference's universe and most-specific effective type, each as 64
+    lowercase hexadecimal characters; `O` is its exact nonempty UTF-8
+    object identity, without normalization, reminting or substitution by an
+    input reference. This reuses the kernel value wire Reference form; it
+    carries neither object state nor a Population binding. A clause
+    evaluation still completes with its `Boolean` value.
   - `{"kind": "undefined", "reason": "<reason>"}`, `reason` spelled as
     FR-100's undefined tables spell it, such as `sum-out-of-domain` or
     `precondition-false`.
@@ -144,8 +152,13 @@ The outcome document's bytes.
 | FR-286-AC-4 | FR-281-AC-7's `analyze` outcome serializes its item with category violation and cause `undefined-evaluation`, and the document holds no `undefined` label; FR-283-AC-5's `monitor` outcome serializes the same way; FR-100-AC-10's `execute` outcome serializes with category undefined and the label `undefined`. | Test (TC-770) |
 | FR-286-AC-5 | The `execute` outcome of FR-100-AC-1's `seven` serializes with `category` success and `result` `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`; FR-100-AC-10's empty `sum` with `category` undefined and `result` `{"kind": "undefined", "reason": "sum-out-of-domain"}`; FR-100-AC-6's `seven` with `work_units` 0 with `category` incomplete and `result` `{"kind": "incomplete", "limit": {"kind": "work_units", "bound": "0", "counter": "1", "field": "work_units"}}`. A `check` called with a `Cancel` already cancelled serializes with `category` incomplete, `last_stage` `null`, `items` `[]` and `result` `null`. | Test (TC-770) |
 | FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and one `package_id` artifact; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` for an unbuilt engine holds one diagnostic whose code serializes as `unimplemented_capability`, with `category` unsupported, `last_stage` `null`, and exits 21. | Test (TC-770) |
+| FR-286-AC-7 | TC-792's present lookup through the public spine run entry serializes through `OutcomeDocument::from_run` as one `quire-outcome/1` execute document, with category success, one compiled package artifact and `result` `{"kind":"completed","value":{"kind":"reference","universe":U,"type":T,"object_identity":O}}`. All three components equal the actual returned shared Reference. A second source-compiled Reference-valued function returning a different admitted reference from its input serializes the returned reference, not the input. The existing Boolean/Integer completions remain unchanged; no Reference completion is emitted as a `/2` clause truth or a Population payload. | Test |
 
 ## Status
+
+The Reference-completion amendment under QSL-665 is source-only; producer,
+serializer and consumer qualification for AC-7 remain UNRUN. Existing
+accounting-limit rendering and AC-5 remain their accounting owner's scope.
 
 Partial (QSL-592). AC-1, AC-2 and AC-5 are tested over real outcomes. AC-3
 and AC-4's `analyze` and `monitor` halves are tested over items built with

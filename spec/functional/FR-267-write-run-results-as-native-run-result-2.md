@@ -63,6 +63,13 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 
 ## Behavior
 
+- FR-100's typed Value-call result SHALL retain a completed Reference's
+  shared identity triple and every enclosing StateModel refusal's typed
+  attribution before serialization. This amendment leaves `/2` a clause
+  report or command-error wire; it SHALL NOT encode a Reference completion
+  as a Boolean claim's truth, add a Population binding to `/2`, or derive
+  admission from successful result decoding. Function outcomes use
+  FR-100's Reference form and the existing FR-286 outcome route.
 - The library serializer of an FR-109 `ClauseRunReport` SHALL write every
   clause-run result document with `format` `native-run-result/2`.
 - From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL write every command-error envelope
@@ -190,6 +197,11 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 
 ## References
 
+- The QSL-665 amendment is a source-only proposed contract. No Reference
+  result codec, native-runtime strict-reader support or TC-792 execution is
+  qualified by the prose. Existing accounting and Requested/Deadline
+  provenance retain their owners; QSL-656's reviewed source amendment is
+  reconciled independently of this result clarification.
 - Owning ticket: Linear QSL-389. Implementation: Linear QSL-45.
 - CG source-identity ownership: Linear QSL-688, choosing a CG-owned separate
   producer/artifact binding receipt; CG consumer specification: Linear IR-514.
