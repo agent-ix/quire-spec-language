@@ -1,50 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Process-boundary checks for the local conformance recipes, not vector evidence.
+//! QSL-190 launch/refusal regressions use synthetic output and claim no key-equality AC.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use ix_trace_rs::trace;
-
 mod checks;
 use checks::CHECKS;
 
 fn cargo_double() -> PathBuf {
-    static EXECUTABLE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
-    let directory = EXECUTABLE.get_or_init(|| {
-        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let target = std::env::var_os("CARGO_TARGET_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| workspace.join("target"));
-        let target = if target.is_absolute() {
-            target
-        } else {
-            workspace.join(target)
-        };
-        fs::create_dir_all(&target).unwrap();
-        let directory = tempfile::tempdir_in(target).unwrap();
-        let output = Command::new("rustc")
-            .args([
-                "--edition=2021",
-                "--crate-name",
-                "conformance_cargo_double",
-                "-D",
-                "warnings",
-            ])
-            .arg(workspace.join("xtask/src/ci_conformance_tests/cargo_double.rs"))
-            .arg("-o")
-            .arg(directory.path().join("cargo"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "compile Rust Cargo process double: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        directory
-    });
-    directory.path().join("cargo")
+    static EXECUTABLE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    EXECUTABLE
+        .get_or_init(|| {
+            let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+            let target = std::env::var_os("CARGO_TARGET_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| workspace.join("target"));
+            let target = if target.is_absolute() {
+                target
+            } else {
+                workspace.join(target)
+            };
+            // One deliberately reusable artifact in the caller-owned target. Recompile
+            // once per test process so source changes never reuse a stale executable.
+            let directory = target.join("ci-conformance-process-double");
+            fs::create_dir_all(&directory).unwrap();
+            let executable = directory.join("cargo");
+            let output = Command::new("rustc")
+                .args([
+                    "--edition=2021",
+                    "--crate-name",
+                    "conformance_cargo_double",
+                    "-D",
+                    "warnings",
+                ])
+                .arg(workspace.join("xtask/src/ci_conformance_tests/cargo_double.rs"))
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "compile Rust Cargo process double: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            executable
+        })
+        .clone()
 }
 
 struct Recipe {
@@ -55,11 +58,16 @@ struct Recipe {
 
 impl Recipe {
     fn new() -> Self {
+        Self::with_main_parent("")
+    }
+
+    fn with_main_parent(parent: &str) -> Self {
         let root = tempfile::tempdir().unwrap();
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         fs::copy(workspace.join("Makefile"), root.path().join("Makefile")).unwrap();
         // A linked worktree's common Git directory points back to the main clone.
-        let common = root.path().join("main-clone/.git");
+        let siblings = root.path().join(parent);
+        let common = siblings.join("main-clone/.git");
         fs::create_dir_all(&common).unwrap();
         let git = Command::new("git")
             .args(["init", "--quiet"])
@@ -79,7 +87,7 @@ impl Recipe {
         let bin = root.path().join("bin");
         fs::create_dir(&bin).unwrap();
         std::os::unix::fs::symlink(cargo_double(), bin.join("cargo")).unwrap();
-        let checkout = root.path().join("quire-specification");
+        let checkout = siblings.join("quire-specification");
         Self::checkout(&checkout);
         let log = root.path().join("calls");
         Self {
@@ -152,7 +160,6 @@ impl Recipe {
     }
 }
 
-#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn local_ci_runs_all_conformance_checks_from_a_linked_worktree() {
     let recipe = Recipe::new();
@@ -165,7 +172,52 @@ fn local_ci_runs_all_conformance_checks_from_a_linked_worktree() {
     recipe.assert_calls(&recipe.checkout);
 }
 
-#[trace("FR-092-AC-8", "TC-413")]
+#[test]
+fn default_checkout_under_a_main_clone_parent_with_spaces_runs_all_checks() {
+    let recipe = Recipe::with_main_parent("main clone parent with spaces");
+    let makefile = recipe.root.path().join("Makefile");
+    let original = fs::read_to_string(&makefile).unwrap();
+    // The prior list-based resolver must refuse this same valid OS-path layout.
+    let old_resolver = original
+        .lines()
+        .map(|line| {
+            if line.starts_with("SIBLINGS ?=") {
+                "SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&makefile, old_resolver).unwrap();
+    let refused = recipe.run("ci", None, "positive", 0);
+    println!(
+        "space-path old resolver actual Make exit: {:?}",
+        refused.status.code()
+    );
+    assert!(
+        !refused.status.success(),
+        "old resolver must expose the space-path regression"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("conformance:"));
+    assert!(
+        !recipe.log.exists(),
+        "old resolver must refuse before Cargo"
+    );
+    fs::write(&makefile, original).unwrap();
+    let output = recipe.run("ci", None, "positive", 0);
+    println!(
+        "space-path corrected resolver actual Make exit: {:?}",
+        output.status.code()
+    );
+    assert!(
+        output.status.success(),
+        "valid default checkout with spaces must run local ci: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    recipe.assert_calls(&recipe.checkout);
+}
+
 #[test]
 fn caller_checkout_override_is_used_and_exported() {
     let recipe = Recipe::new();
@@ -213,7 +265,6 @@ fn caller_checkout_override_is_used_and_exported() {
     );
 }
 
-#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn missing_empty_and_invalid_checkouts_fail_before_cargo() {
     for kind in ["missing-default", "empty", "missing-override", "invalid"] {
@@ -237,7 +288,6 @@ fn missing_empty_and_invalid_checkouts_fail_before_cargo() {
     }
 }
 
-#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn every_required_selection_rejects_zero_ignored_skip_missing_summary_and_failure() {
     for (index, (selection, _)) in CHECKS.iter().enumerate() {
@@ -262,7 +312,6 @@ fn every_required_selection_rejects_zero_ignored_skip_missing_summary_and_failur
     }
 }
 
-#[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn operation_summary_requires_positive_vector_counts() {
     let recipe = Recipe::new();
