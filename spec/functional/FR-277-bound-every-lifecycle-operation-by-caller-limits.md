@@ -22,9 +22,11 @@ relationships:
 
 Every bound a QSL lifecycle operation (FR-275) enforces SHALL be a field of
 the limits value the caller passes, with a published default the caller can
-replace (ADR-029 LC-4). Reaching a bound SHALL refuse with `LimitExceeded`
-(ADR-013 T-4), which names the limit, its configured value and the limits
-field that raises it, and is never read as success.
+replace (ADR-029 LC-4). Reaching a bound SHALL return the operation's specified
+limit outcome naming the limit, its configured value and the limits field that
+raises it, and is never read as success. The formatter's output budget follows
+FR-003's `resource_exhausted` outcome and FR-255's `format.output_bytes` row;
+the other lifecycle limit paths use `LimitExceeded` (ADR-013 T-4).
 
 Nesting depth is not a limit. Node, byte and work limits bound every stage,
 and no stage recurses on the native stack (ADR-030 D-1). ADR-030 owns the
@@ -38,7 +40,8 @@ as the limits type's `Default` value.
 
 ## Outputs
 
-On reaching a bound, `StageFailure::Limit(LimitExceeded)`; for `execute`'s
+On reaching a bound, `StageFailure::Limit(LimitExceeded)`, or for `format`,
+FR-003's typed `resource_exhausted` diagnostic; for `execute`'s
 accounting limits, the evaluation outcome `Incomplete` naming the counter;
 for `analyze`, each open FR-331 item settled `incomplete` with the limit as
 its cause.
@@ -50,6 +53,8 @@ FR-255 setting that sets the bound.
 
 - Each lifecycle operation shall read every bound it enforces from the
   limits value its caller passes.
+- The format operation shall read `output_bytes` from `FormatLimits`; the
+  settings operation shall route `format.output_bytes=<n>` to that field.
 - Each limits type shall give every field a published default that the
   caller replaces field by field.
 - When an operation reaches a bound, it shall return `LimitExceeded` naming
@@ -64,7 +69,7 @@ FR-255 setting that sets the bound.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758) |
+| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name, except that `format.output_bytes` returns FR-003's typed `resource_exhausted` diagnostic; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758, TC-931) |
 | FR-277-AC-2 | On a thread with the platform's default stack, a source whose body is a 100,000-term sum checks successfully when the caller raises `s3.nodes` to fit it, and with `s3.nodes` one below its node count refuses with `LimitExceeded` naming `s3.nodes`; no outcome names a depth. | Test (TC-758) |
 | FR-277-AC-3 | `execute` over an input whose work, with `work_units` set to one below what it needs, is denied returns the outcome `Incomplete` carrying the limit kind, the configured value, the counter at the failed charge (the consumed value with the denied amount) and the `accounting` field name that raises it. | Test (TC-758) |
 
@@ -74,6 +79,8 @@ FR-255 setting that sets the bound.
 - ADR-030 D-1: depth is not a limit.
 - ADR-013 T-4: `LimitExceeded`.
 - [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md): the locus a limit carries.
+- [FR-003](FR-003-format-native-source.md): the format operation and its
+  output-byte refusal.
 - [FR-275](FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md): the operations.
 - QSpec FR-300: explicit limits on every request.
 

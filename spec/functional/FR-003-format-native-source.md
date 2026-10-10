@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: "ix://agent-ix/quire-spec-language/US-035"
     type: traces_to
+  - target: "ix://agent-ix/quire-spec-language/FR-255"
+    type: depends_on
 ---
 # FR-003: Format validated source without changing token meaning
 
@@ -45,10 +47,14 @@ ADR-011 Rulings 2026-09-22, native-edition `format`).
 Formatting changes whitespace and normalizes layout to LF while retaining grouping and original token order. The library returns the complete string; the CLI writes it to stdout and leaves files untouched.
 
 The format(source) API applies the published default output limit of 1 MiB. The
-format_with_limit(source, output_bytes) API accepts any limit, including zero and
-values above the default, and uses it as given. A refusal at the limit names the
-limit, its value and format_with_limit as the way to raise it. The byte limit is
-inclusive and counts spaces, indentation, comments and the final newline.
+typed `FormatLimits.output_bytes` field is the `format.output_bytes` setting in
+FR-255, and `format_with_limits(source, limits)` consumes that value.
+`format_with_limit(source, output_bytes)` is the convenience form that builds
+the same limits value. Both forms accept any limit, including zero and values
+above the default, and use it as given. A refusal at the limit names
+`format.output_bytes`, its value and `format_with_limit` as the way to raise it.
+The byte limit is inclusive and counts spaces, indentation, comments and the
+final newline.
 Every append is checked before its growth; a refused operation returns no
 partial string. Allocation capacity is an implementation detail and is not a
 separate heap-accounting promise. Reuse the existing declarative token vocabulary.
@@ -69,6 +75,7 @@ checked package identity as checking the original source.
 | FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
 | FR-003-AC-8 | format and format_with_limit refuse a `ParsedSource` whose CST carries a recovery, and one that carries a diagnostic and no recovery, each with a typed cause and no output string; neither call panics. | Test (TC-404) |
 | FR-003-AC-9 | For each complete-V1 fixture unit in the repository's tests that checks, checking its formatted source through the S1 to S4 spine yields a checked package identity equal to the original's, and formatting the formatted source again yields identical bytes. | Test (TC-885) |
+| FR-003-AC-10 | `FormatLimits` maps its only field, `output_bytes`, to FR-255's `format.output_bytes` through `SettingLimits`; `with_output_bytes` changes only that field, and the settings operation's `format.output_bytes=<n>` operand supplies the resulting value to `format_with_limits`. | Test (TC-931) |
 
 ## Dependencies
 
@@ -76,6 +83,8 @@ checked package identity as checking the original source.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 (layer 1), §6.2 (`format` row) and §7.3 (M-6a row) set the input
   to the CST.
+- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) owns the
+  setting row and the shared limits/settings seam.
 - [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
 
 ## Status
