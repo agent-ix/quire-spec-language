@@ -9,6 +9,8 @@
 //! feature; `cargo test --all-features` turns it on. Gating the `mod` line
 //! keeps a default-feature build from compiling them at all.
 
+#[cfg(feature = "test-support")]
+mod business_meanings;
 mod complete_value_lock;
 mod identity_golden_vectors;
 mod ieee_profiles;
