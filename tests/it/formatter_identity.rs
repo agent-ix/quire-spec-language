@@ -10,7 +10,10 @@ use qsl_replay::spine::DependencyInput;
 use crate::support::front_end::emitted;
 
 #[path = "../../qsl-semantics/tests/it/model_operations.rs"]
-#[expect(dead_code, reason = "two model APIs belong to the owning observation tests")]
+#[expect(
+    dead_code,
+    reason = "two model APIs belong to the owning observation tests"
+)]
 mod semantic_models;
 
 // Reuse the owning model constructors and authored clause literals. Each case
@@ -34,9 +37,8 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
     let literal = |function, prefix| function_literal(fixture, function, prefix);
     match case {
         0..=4 => {
-            let document = models::config_version_document(
-                update(), Vec::new(), Vec::new(), json!([]),
-            );
+            let document =
+                models::config_version_document(update(), Vec::new(), Vec::new(), json!([]));
             let parent = source_literal(fixture, "PARENT_ORDER");
             let cycle = source_literal(fixture, "NO_CYCLE");
             let unchanged = source_literal(fixture, "VERSION_UNCHANGED");
@@ -49,7 +51,8 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
                     parent.replacen("ParentOrder", "ParentOrder2", 1)
                 ),
                 4 => literal(
-                    "a_postcondition_reads_result_typed_as_the_operations_result", "post R ",
+                    "a_postcondition_reads_result_typed_as_the_operations_result",
+                    "post R ",
                 ),
                 _ => unreachable!("bounded case range"),
             };
@@ -58,14 +61,18 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
         5..=6 => (
             models::config_version_document(
                 models::operation(
-                    "attemptUpdate", json!([]), Some("ix://quire/native/Boolean"),
+                    "attemptUpdate",
+                    json!([]),
+                    Some("ix://quire/native/Boolean"),
                     json!({
                         "modifies": [models::config_version_identity("versionNumber"),
                             models::config_version_identity("parent")],
                         "creates": [], "deletes": []
                     }),
                 ),
-                Vec::new(), Vec::new(), json!([]),
+                Vec::new(),
+                Vec::new(),
+                json!([]),
             ),
             literal(
                 "postconditions_of_an_operation_that_modifies_parent",
@@ -77,11 +84,16 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
                 models::operation(
                     "probe",
                     json!([models::operation_parameter(
-                        "probe", "target", "ix://example/config-version/ConfigVersion"
+                        "probe",
+                        "target",
+                        "ix://example/config-version/ConfigVersion"
                     )]),
-                    None, models::empty_frame(),
+                    None,
+                    models::empty_frame(),
                 ),
-                Vec::new(), Vec::new(), json!([]),
+                Vec::new(),
+                Vec::new(),
+                json!([]),
             ),
             literal(
                 "clauses_of_an_operation_with_a_reference_typed_parameter",
@@ -91,10 +103,16 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
         10..=11 => (
             models::config_version_document_with_operations(vec![
                 models::operation(
-                    "isStable", json!([]), Some("ix://quire/native/Boolean"), models::empty_frame(),
+                    "isStable",
+                    json!([]),
+                    Some("ix://quire/native/Boolean"),
+                    models::empty_frame(),
                 ),
                 models::operation(
-                    "versionTotal", json!([]), Some("ix://quire/native/Integer"), models::empty_frame(),
+                    "versionTotal",
+                    json!([]),
+                    Some("ix://quire/native/Integer"),
+                    models::empty_frame(),
                 ),
             ]),
             literal(
@@ -105,14 +123,21 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
         12 => {
             let document = models::config_version_document_with_operations(vec![
                 models::operation(
-                    "isStable", json!([]), Some("ix://quire/native/Boolean"), models::empty_frame(),
+                    "isStable",
+                    json!([]),
+                    Some("ix://quire/native/Boolean"),
+                    models::empty_frame(),
                 ),
                 models::operation(
-                    "isFresh", json!([]), Some("ix://quire/native/Boolean"), models::empty_frame(),
+                    "isFresh",
+                    json!([]),
+                    Some("ix://quire/native/Boolean"),
+                    models::empty_frame(),
                 ),
             ]);
             let bodies: Vec<_> = function_literals(
-                fixture, "two_operations_with_equal_frames_each_keep_their_own_frame_record",
+                fixture,
+                "two_operations_with_equal_frames_each_keep_their_own_frame_record",
             )
             .into_iter()
             .filter(|body| body.starts_with("post A ") && body.contains("isFresh"))
@@ -122,11 +147,23 @@ fn state_fixture(case: usize) -> (Vec<u8>, String) {
         }
         13..=15 => {
             let (function, prefix) = [
-                ("population_coverage_is_by_conformance_and_absent_when_none_covers", "invariant SubInvariant "),
-                ("population_domain_key_is_the_populations_own_member_type", "invariant SubInvariant "),
-                ("operation_visibility_on_subtypes_inherits_or_refuses_ambiguous", "post P "),
+                (
+                    "population_coverage_is_by_conformance_and_absent_when_none_covers",
+                    "invariant SubInvariant ",
+                ),
+                (
+                    "population_domain_key_is_the_populations_own_member_type",
+                    "invariant SubInvariant ",
+                ),
+                (
+                    "operation_visibility_on_subtypes_inherits_or_refuses_ambiguous",
+                    "post P ",
+                ),
             ][case - 13];
-            (models::subtype_document(update()), literal(function, prefix))
+            (
+                models::subtype_document(update()),
+                literal(function, prefix),
+            )
         }
         16 => (
             models::ambiguous_operation_document(),
@@ -154,15 +191,22 @@ fn state_fixture_identity(case: usize) {
         .unwrap_or_else(|refusals| panic!("state fixture {case}: original S3: {refusals:?}"));
     let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
         .unwrap_or_else(|refusal| panic!("state fixture {case}: original public S4: {refusal:?}"));
-    assert!(original.omitted().is_empty(), "state fixture {case}: S4 omitted nodes");
+    assert!(
+        original.omitted().is_empty(),
+        "state fixture {case}: S4 omitted nodes"
+    );
     let (source, packages) = semantic_models::config_unit_with_body(&document, &body);
     let spine = emitted(
         SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
-        "unit.native", source.as_bytes(), &packages, &DependencyInput::default(),
+        "unit.native",
+        source.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
     )
     .unwrap_or_else(|refusal| panic!("state fixture {case}: formatter spine: {refusal:?}"));
     assert_eq!(
-        original.package().package_id(), spine.package().package_id(),
+        original.package().package_id(),
+        spine.package().package_id(),
         "state fixture {case}: owning S4 and formatter spine must agree"
     );
 }
@@ -211,6 +255,11 @@ fn state_generated_occurrences_have_authored_regions() {
         .unwrap()
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("the original three clauses check before emission");
+    let authored_names = ["ParentOrder", "NoCycle", "VersionUnchanged"];
+    assert_eq!(graph.state_clauses().len(), authored_names.len());
+    for (clause, expected) in graph.state_clauses().iter().zip(authored_names) {
+        assert_eq!(clause.name(), expected, "original authored clause order");
+    }
     let mut generated_zero = 0;
     for (key, origin, location) in graph.occurrences() {
         if origin.role().as_str() != "generated" {
@@ -219,30 +268,59 @@ fn state_generated_occurrences_have_authored_regions() {
         if origin.ordinal() == 0 {
             generated_zero += 1;
         }
-        let node = graph.semantic_graph().node(key).expect("the occurrence names a node");
+        let node = graph
+            .semantic_graph()
+            .node(key)
+            .expect("the occurrence names a node");
         let region = graph.region(location).unwrap_or_else(|| {
             panic!(
                 "generated occurrence {key:?}/{origin:?} at {location:?} has no authored region; preimage={}",
                 std::str::from_utf8(node.preimage()).expect("canonical preimage is UTF-8")
             )
         });
-        assert_eq!(region.source(), graph.source(), "the region names the actual unit");
-        assert!(region.start() < region.end(), "generated occurrence must be placed");
-        let Origin::StateClause { name, .. } = &location.origin else {
+        assert_eq!(
+            region.source(),
+            graph.source(),
+            "the region names the actual unit"
+        );
+        assert!(
+            region.start() < region.end(),
+            "generated occurrence must be placed"
+        );
+        let Origin::StateClause { clause: name, index } = &location.origin else {
             panic!("generated state-fixture node must name its enclosing clause: {location:?}");
         };
-        assert_eq!(location.depth(), 0, "generated node uses the clause body root");
-        let declaration = source.find(&format!(" {name} using ")).expect("authored clause name");
+        let expected = authored_names
+            .get(*index)
+            .expect("the clause index names an original authored declaration");
+        assert_eq!(name.as_str(), *expected, "authored clause name and index");
+        assert_eq!(
+            graph.state_clauses()[*index].name(),
+            name.as_str(),
+            "the occurrence names its checked clause"
+        );
+        assert_eq!(
+            location.depth(),
+            0,
+            "generated node uses the clause body root"
+        );
+        let declaration = source
+            .find(&format!(" {name} using "))
+            .expect("authored clause name");
         let start = declaration + source[declaration..].find('{').unwrap() + 1;
         let end = start + source[start..].find('}').unwrap();
         let actual_start = usize::try_from(region.start()).unwrap();
         let actual_end = usize::try_from(region.end()).unwrap();
         assert_eq!(
-            &source[actual_start..actual_end], source[start..end].trim(),
+            &source[actual_start..actual_end],
+            source[start..end].trim(),
             "generated occurrence {key:?}/{origin:?}: exact authored enclosing body"
         );
     }
-    assert!(generated_zero > 0, "the original fixture exercises Generated ordinal 0");
+    assert!(
+        generated_zero > 0,
+        "the original fixture exercises Generated ordinal 0"
+    );
     let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
         .expect("actual public S4 requires all original occurrences to be located");
     assert!(original.omitted().is_empty());
