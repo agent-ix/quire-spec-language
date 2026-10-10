@@ -86,10 +86,10 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
   is emitted, and the unknown alias refuses `missing_declaration` /
   `missing-name` before lowering.
 - Step 10: the retained-key candidates are schema-valid but refuse
-  `invalid_package` / `stale-node-key`; the recomputed-key candidates have
-  current keys and proceed to reference, population-bound or compound-unit
-  semantic validation. The QSpec executable vector test records the three
-  changed digests and the retained-versus-recomputed distinction.
+  `invalid_package` / `stale-node-key`; the QSpec executable vector test also
+  records that each changed preimage has a fresh digest when its node id is
+  recomputed. Semantic admission or refusal of a malformed recomputed form is
+  outside this key-stage procedure.
 
 ## Status
 
