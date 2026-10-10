@@ -353,7 +353,8 @@ the request's checked formula, without trusting a producer's cycle claim.
 
 An auxiliary configuration is exactly `[phase,branch]`, where branch is
 the closed elementary configuration above for the **negated** checked
-formula. For origin activation phase is `"active"` throughout. For each
+formula. For origin or infinite activation phase is `"active"` throughout.
+For each
 activation phase is `"waiting"` or `"active"`: waiting updates the complete
 past closure at every letter and may choose that position as the start of
 one negated-root activation; active never returns to waiting or restarts.
