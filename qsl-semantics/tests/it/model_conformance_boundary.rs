@@ -847,3 +847,52 @@ fn one_actual_member_can_subset_and_redefine_the_same_parent() {
         assert_eq!(selected.consumed(LimitKind::DerivationFacts), 9);
     }
 }
+
+
+#[trace("FR-081-AC-1", "TC-213", "QSpec-TC-213")]
+#[test]
+fn original_inventory_keeps_type_and_operation_clauses_without_effective_authority() {
+    use std::collections::BTreeSet;
+    use qsl_semantics::model::accounting::{LimitKind, ModelNormalizationLimits};
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::model::key::DeclarationKey;
+    let clause = |name: &str, language: &str, generated: bool| json!({
+        "identity": identity(&format!("clause/{name}")), "language": language,
+        "clauseId": name, "text": "false", "origin": if generated {
+            json!({"generated": {"generatorIdentity": identity("generator"),
+                "generatorVersion": "2", "inputIdentities": [identity("A")]}})
+        } else { origin(&format!("clause/{name}")) },
+    });
+    let invariant = clause("A-Inv", "ocl", false);
+    let precondition = clause("A-Pre", "quire", false);
+    let postcondition = clause("A-Post", "ocl", true);
+    for reverse in [false, true] {
+        let bytes = document(|_| {
+            let mut operation = writer("A", &[], None);
+            operation["pre"] = json!([precondition.clone()]);
+            operation["post"] = json!([postcondition.clone()]);
+            let mut owner = object("A", None, vec![], vec![operation]);
+            owner["clauses"] = json!([invariant.clone()]);
+            let mut types = vec![owner, object("B", Some("A"), vec![], vec![])];
+            if reverse { types.reverse(); }
+            types
+        });
+        let (unit, packages) = crate::model_operations::config_unit_with_body(&bytes,
+            "function noop using v(): Boolean pure { true }");
+        let built = crate::model_operations::parse_and_build(&unit);
+        let selected = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+            .expect("clauses remain immutable original input, without fabricated checked facts");
+        let key = |path| DeclarationKey { package: PACKAGE.to_owned(), node: identity(path) };
+        assert_eq!(selected[0].original_keys().cloned().collect::<BTreeSet<_>>(), BTreeSet::from([
+            key("A"), key("B"), key("A/set"), key("clause/A-Inv"), key("clause/A-Pre"), key("clause/A-Post"),
+        ]));
+        for (name, expected) in [("A-Inv", &invariant), ("A-Pre", &precondition), ("A-Post", &postcondition)] {
+            assert_eq!(selected[0].original_node(&key(&format!("clause/{name}"))), Some(expected));
+            assert!(!selected[0].view.declarations().iter().any(|entry|
+                entry.preimage.original == key(&format!("clause/{name}"))), "original clauses gain no effective entry");
+        }
+        assert_eq!(selected.consumed(LimitKind::DeclarationRecords), 3);
+        assert_eq!(selected.consumed(LimitKind::EffectiveDeclarations), 4);
+        assert_eq!(selected.consumed(LimitKind::DerivationFacts), 5);
+    }
+}
