@@ -555,12 +555,24 @@ fn record_specialization_cycle_refuses_before_effective_view() {
             ),
         ],
     ));
-    assert_eq!(refusals.len(), 2, "each cyclic declaration refuses: {refusals:?}");
-    for (refusal, (ancestor, via)) in refusals.iter().zip([
-        ("Amount", "TaxedAmount"), ("TaxedAmount", "Amount"),
-    ]) {
-        assert_eq!(refusal.code, qsl_foundation::diagnostic::Code::InvalidModelBinding);
-        let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle { ancestor: actual, via: actual_via } = &refusal.cause else {
+    assert_eq!(
+        refusals.len(),
+        2,
+        "each cyclic declaration refuses: {refusals:?}"
+    );
+    for (refusal, (ancestor, via)) in refusals
+        .iter()
+        .zip([("Amount", "TaxedAmount"), ("TaxedAmount", "Amount")])
+    {
+        assert_eq!(
+            refusal.code,
+            qsl_foundation::diagnostic::Code::InvalidModelBinding
+        );
+        let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle {
+            ancestor: actual,
+            via: actual_via,
+        } = &refusal.cause
+        else {
             panic!("expected typed intake cycle cause: {refusal:?}");
         };
         assert_eq!(actual, &key(p, ancestor));
@@ -657,7 +669,12 @@ fn namespace_field_operation_quire_clause_and_supertypes_remain_refused() {
             let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else { panic!("expected located malformed namespace member"); };
             assert_eq!(node, &identity(p, if form == 0 { "Scope/name" } else { "Scope/close" }));
         } else {
-            assert_eq!(refusals[0].code, Code::UnsupportedConstruct, "form {form}: {:?}", refusals[0]);
+            assert_eq!(
+                refusals[0].code,
+                Code::UnsupportedConstruct,
+                "form {form}: {:?}",
+                refusals[0]
+            );
             let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause
             else {
                 panic!("expected namespace declaration-form refusal");
