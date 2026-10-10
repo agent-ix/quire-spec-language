@@ -810,3 +810,67 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
         }
     }
 }
+
+
+/// All supported member kinds use the same real normalization owner and
+/// qualify/inherit producer. Standalone systems verdicts are not used as
+/// evidence for these effective declarations or prices.
+#[trace("QSpec-TC-196", "QSpec-TC-213", "FR-082-AC-8")]
+#[test]
+fn all_member_kinds_qualify_and_inherit_with_exact_end_owner_entries() {
+    use std::collections::{BTreeMap, BTreeSet};
+    use qsl_semantics::model::accounting::LimitKind;
+    use qsl_semantics::model::intake::SelectedModels;
+    use qsl_semantics::model::key::{RULE_INHERIT, RULE_QUALIFY};
+    for reverse in [false, true] {
+        let package = fixture_y(|records| {
+            records.push(object_type("model.SysChild", None, vec!["model.Sys"]));
+            records.push(object_type("model.PumpChild", None, vec!["model.Pump"]));
+            if reverse { records.reverse(); }
+        });
+        let selected = SelectedModels::fixture("M", qsl_foundation::Span { start: 0, end: 1 },
+            package, ModelNormalizationLimits::UNLIMITED).expect("one actual all-kind normalization operation");
+        let view = &selected[0].view;
+        let owners: BTreeMap<_, _> = view.type_identities().iter()
+            .map(|(key, identity)| (*identity, key.clone())).collect();
+        let qualified: BTreeSet<_> = view.declarations().iter().filter(|entry|
+            entry.preimage.derivation.iter().any(|fact| fact.rule == RULE_QUALIFY))
+            .map(|entry| (entry.preimage.owner_effective_type.map(|owner| owners[&owner].clone()),
+                entry.preimage.original.clone())).collect();
+        let mut expected = BTreeSet::new();
+        for ty in ["model.Sys", "model.Pump", "model.Tank", "model.Flow", "model.Flow2",
+            "model.SysChild", "model.PumpChild"] {
+            expected.insert((None, DeclarationKey::fixture(ty)));
+        }
+        for (owner, members) in [
+            ("model.Sys", vec!["model.Sys.pump", "model.Sys.tank", "model.Sys.pump.out", "model.Sys.tank.in",
+                "model.Sys.pipe", "model.Pump.alloc", "model.rel.parts"]),
+            ("model.Pump", vec!["model.Pump.run", "model.Pump.alloc", "model.rel.home"]),
+            ("model.Flow", vec!["model.Flow.rate"]),
+        ] {
+            for member in members { expected.insert((Some(DeclarationKey::fixture(owner)), DeclarationKey::fixture(member))); }
+        }
+        assert_eq!(qualified, expected, "all original-owner qualification pairs, reverse={reverse}");
+        for (child, parent, members) in [
+            ("model.SysChild", "model.Sys", vec!["model.Sys.pump", "model.Sys.tank", "model.Sys.pump.out", "model.Sys.tank.in",
+                "model.Sys.pipe", "model.Pump.alloc", "model.rel.parts"]),
+            ("model.PumpChild", "model.Pump", vec!["model.Pump.run", "model.Pump.alloc", "model.rel.home"]),
+            ("model.Flow2", "model.Flow", vec!["model.Flow.rate"]),
+        ] {
+            let owner = view.type_identities()[&DeclarationKey::fixture(child)];
+            for member in members {
+                let entry = view.declarations().iter().find(|entry|
+                    entry.preimage.owner_effective_type == Some(owner)
+                        && entry.preimage.original == DeclarationKey::fixture(member)).expect("inherited member entry");
+                assert_eq!(entry.preimage.derivation.len(), 1);
+                assert_eq!(entry.preimage.derivation[0].rule, RULE_INHERIT);
+                assert_eq!(entry.preimage.derivation[0].inputs.iter().cloned().collect::<Vec<_>>(),
+                    vec![DeclarationKey::fixture(parent), DeclarationKey::fixture(member)]);
+            }
+        }
+        assert!(!view.declarations().iter().any(|entry| entry.preimage.original == DeclarationKey::fixture("model.Count")));
+        assert_eq!(selected.consumed(LimitKind::DeclarationRecords), 18);
+        assert_eq!(selected.consumed(LimitKind::EffectiveDeclarations), 29);
+        assert_eq!(selected.consumed(LimitKind::DerivationFacts), 32);
+    }
+}

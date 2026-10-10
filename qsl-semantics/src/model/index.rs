@@ -138,6 +138,10 @@ pub(crate) struct RecordIndex {
     member_owner: HashMap<DeclIdx, DeclIdx>,
     /// Each owner's field members, in record order.
     fields_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
+    /// Each original declaration's position in the admitted records.
+    declarations: HashMap<DeclIdx, usize>,
+    /// Every qualified feature and systems member, keyed by owning type.
+    members_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
     /// Each owner's operation members, in record order.
     operations_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
     /// Each owner's redefining members, in record order.
@@ -162,6 +166,8 @@ impl PartialEq for RecordIndex {
             && self.scalars == other.scalars
             && self.member_owner == other.member_owner
             && self.fields_by_owner == other.fields_by_owner
+            && self.declarations == other.declarations
+            && self.members_by_owner == other.members_by_owner
             && self.operations_by_owner == other.operations_by_owner
             && self.redefiners_by_owner == other.redefiners_by_owner
             && self.redefines == other.redefines
@@ -185,12 +191,14 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .chain([&operation.owner])
             .chain(&operation.redefines)
             .collect(),
+        DomainPackageRecord::Component(part) => vec![&part.key, &part.owning_type, &part.value_type],
+        DomainPackageRecord::Endpoint(port) => vec![&port.key, &port.owning_component, &port.value_type],
+        DomainPackageRecord::Relationship(relationship) => vec![&relationship.key,
+            &relationship.source.type_identity, &relationship.target.type_identity],
+        DomainPackageRecord::Allocation(allocation) => vec![&allocation.key,
+            &allocation.source_element, &allocation.target_element],
         DomainPackageRecord::RecordValueType(_)
         | DomainPackageRecord::ScalarType(_)
-        | DomainPackageRecord::Component(_)
-        | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
-        | DomainPackageRecord::Allocation(_)
         | DomainPackageRecord::Population(_) => vec![record.key()],
     }
 }
@@ -432,6 +440,8 @@ impl RecordIndex {
             scalars: HashMap::new(),
             member_owner: HashMap::new(),
             fields_by_owner: HashMap::new(),
+            declarations: HashMap::new(),
+            members_by_owner: HashMap::new(),
             operations_by_owner: HashMap::new(),
             redefiners_by_owner: HashMap::new(),
             redefines: HashMap::new(),
@@ -439,8 +449,12 @@ impl RecordIndex {
             keys: Vec::new(),
             positions: HashMap::new(),
         };
+        let mut element_owners = HashMap::new();
+        let mut ports = BTreeMap::new();
+        let mut end_members = Vec::new();
         for (record_position, record) in domain_package.records.iter().enumerate() {
             let own = at(record.key());
+            index.declarations.insert(own, record_position);
             match record {
                 DomainPackageRecord::ObjectType(object) => {
                     let flags = &mut index.flags[own.0];
@@ -448,11 +462,14 @@ impl RecordIndex {
                     flags.abstract_type |= object.abstract_type;
                     flags.non_root |= !object.supertypes.is_empty();
                     index.generals[own.0].extend(object.supertypes.iter().map(at));
+                    element_owners.insert(own, own);
                 }
                 DomainPackageRecord::FieldMember(field) => {
                     let owner = at(&field.owner);
                     index.flags[own.0].field_member = true;
                     index.member_owner.insert(own, owner);
+                    element_owners.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
                     index.fields_by_owner.entry(owner).or_default().push(own);
                     if let Some(target) = &field.redefines {
                         index.note_redefiner(owner, record_position, own, at(target));
@@ -463,6 +480,8 @@ impl RecordIndex {
                     let owner = at(&operation.owner);
                     index.flags[own.0].operation_member = true;
                     index.member_owner.insert(own, owner);
+                    element_owners.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
                     index
                         .operations_by_owner
                         .entry(owner)
@@ -480,15 +499,43 @@ impl RecordIndex {
                     index.flags[own.0].scalar_type = true;
                     index.scalars.insert(own, (scalar.lower, scalar.upper));
                 }
-                // FR-152 systems-model records and FR-153 population
-                // declarations are read by `crate::model::systems` and
-                // `crate::model::normalize` from the records themselves.
-                DomainPackageRecord::Component(_)
-                | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
-                | DomainPackageRecord::Allocation(_)
-                | DomainPackageRecord::Population(_) => {}
+                DomainPackageRecord::Component(part) => {
+                    let owner = at(&part.owning_type);
+                    element_owners.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
+                }
+                DomainPackageRecord::Endpoint(port) => { ports.insert(own, at(&port.owning_component)); }
+                DomainPackageRecord::Relationship(relationship) => {
+                    end_members.push((own, at(&relationship.source.type_identity),
+                        at(&relationship.target.type_identity), false));
+                }
+                DomainPackageRecord::Allocation(allocation) => {
+                    end_members.push((own, at(&allocation.source_element), at(&allocation.target_element), true));
+                }
+                DomainPackageRecord::Population(_) => {}
             }
+        }
+        // Resolve ports from the recorded owning part, then end-owner
+        // members. This reads the one index, not a second record scan or
+        // kind checker. Connection and allocation source ends come first.
+        for (port, part) in &ports {
+            if let Some(owner) = element_owners.get(part).copied() {
+                element_owners.insert(*port, owner);
+                index.members_by_owner.entry(owner).or_default().push(*port);
+            }
+        }
+        for (member, source, target, allocation) in end_members {
+            let connection = ports.contains_key(&source) && ports.contains_key(&target);
+            let ends = if allocation || connection { vec![source, target] } else { vec![source] };
+            for end in ends {
+                if let Some(owner) = element_owners.get(&end).copied() {
+                    index.members_by_owner.entry(owner).or_default().push(member);
+                }
+            }
+        }
+        for members in index.members_by_owner.values_mut() {
+            members.sort();
+            members.dedup();
         }
         index.keys = keys;
         index.positions = positions;
@@ -665,15 +712,14 @@ impl RecordIndex {
             .collect()
     }
 
-    /// Both kinds of directly owned model feature, ascending by original key.
+    /// All directly owned feature and systems declarations, ascending by
+    /// original key. A construct owned at both ends appears once per owner.
     pub(crate) fn sorted_direct_member_keys<'r>(&self, records: &'r [DomainPackageRecord],
         owner: &DeclarationKey) -> Vec<&'r DeclarationKey> {
-        let mut keys: Vec<_> = self.sorted_direct_fields(records, owner).into_iter()
-            .map(|field| &field.key).collect();
-        keys.extend(self.direct_operations(owner).iter().filter_map(|member|
-            operation_at(records, *self.operations.get(member)?).map(|operation| &operation.key)));
-        keys.sort();
-        keys
+        let Some(owner) = self.position(owner) else { return Vec::new(); };
+        let Some(members) = self.members_by_owner.get(&owner) else { return Vec::new(); };
+        members.iter().filter_map(|member| self.declarations.get(member))
+            .map(|position| records[*position].key()).collect()
     }
 
     /// `owner`'s directly declared operation members, in record order.
