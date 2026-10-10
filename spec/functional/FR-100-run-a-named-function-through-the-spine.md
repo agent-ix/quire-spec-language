@@ -359,7 +359,7 @@ exit 30.
   `quire_exact` types.
 
 The evaluator converts a `CheckedInvariant` stop to `Err(InternalFault)`
-at S6a, returning no `Evaluation` or refusal record (FR-096-AC-15).
+at S6a, returning no `Evaluation` or refusal record (FR-096-AC-19).
 `CheckedPackage::call` carries that fault as `CallFailure::Fault`, which
 `qsl_replay::spine::run` propagates. Its outcome mapping also defensively
 converts a constructed `Outcome::Refused(Refusal::CheckedInvariant)` to an
