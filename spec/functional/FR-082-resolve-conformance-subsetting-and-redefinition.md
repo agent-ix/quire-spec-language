@@ -101,11 +101,13 @@ cycle.
 
 ### The refinement obligation admits no partial pass
 
-A narrowing field redefinition SHALL be admitted only when an established
-postcondition fact proves the narrowing; absent that fact, the model checker
-SHALL refuse it with an unproved-refinement cause naming the missing
-obligation kind. The model checker SHALL NOT admit a narrowing redefinition
-on the strength of its declared shape alone.
+A narrowing field redefinition written by an exposed operation SHALL be
+admitted only when an established postcondition fact of that operation proves
+the narrowing; absent that fact, the model checker SHALL refuse it with an
+unproved-refinement cause naming the missing obligation kind. The model
+checker SHALL NOT discharge that writer's obligation on the strength of the
+field's declared shape alone. When no exposed operation writes the field,
+no writer refinement obligation arises.
 
 The field-domain obligation is decided over exact integers. The redefined
 field's declared scalar bounds and a postcondition's comparison literal are
