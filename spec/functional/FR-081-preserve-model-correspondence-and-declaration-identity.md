@@ -45,9 +45,10 @@ it.
   sha256-jcs)`.
 - The declared `supertypes`, `subsets` and `redefines` edges each original
   declaration carries as an inline property (never a second producer record).
-- The selected `quire.model.complete/v1` definition and its rule manifest
-  `quire.model.complete.rules/v1`.
-- `ModelNormalizationLimitsV1` of `quire.value.accounting/v1`.
+- The selected `quire.model.complete/v2` definition and its rule manifest
+  `quire.model.complete.rules/v2`.
+- `ModelNormalizationLimitsV1` of `quire.value.accounting/v2`, with unchanged
+  public object/member names and the replacement model-identity charge semantics.
 
 ## Outputs
 
@@ -78,7 +79,7 @@ fabricated effective entry or fact. Every effective entry and fact input SHALL
 refer to a key from this inventory. Retention introduces no additional
 effective-declaration or hash charge and no effective preimage member.
 
-Each effective declaration's identity is the `quire.model.effective-declaration/v1`
+Each effective declaration's identity is the `quire.model.effective-declaration/v2`
 digest quire-specification [FR-150](ix://agent-ix/quire-specification/FR-150)
 defines, over exactly `{version, owner_effective_type, original, derivation}`;
 this requirement does not restate that preimage. The model binder SHALL NOT
@@ -90,6 +91,45 @@ keys, SHALL yield distinct effective declarations; the binder SHALL NOT
 collapse those derived declarations by an identity-equivalence rule. An
 original whose kind has no selected derivation rule remains in the exact
 original inventory without acquiring an effective identity from this guarantee.
+
+The binder SHALL use the selected definition's closed key/block/range,
+literal/prefix and declaration-sequence grammar and its unique normal form.
+Its compressed preimages SHALL expand to every exact semantic fact, input key,
+rule and ordinal in phase/input/rule order with identical-fact multiplicity,
+with each distinct inheritance path
+retained. The binder SHALL eagerly compute ALL effective identities, hidden
+entries included, followed by every universe identity and the complete
+digest-ordered view identity. Shared helper commitments are not extra facts
+or effective declarations. This requirement delegates exact preimage grammar
+and factoring/tie-break rules to FR-150 and the selected model definition;
+it does not create a second identity writer.
+
+The retained view SHALL provide every declaration's compressed preimage and
+reachable exact key/block records as well as immutable originals/origins.
+The strict consumer boundary SHALL verify admitted selection, semantic
+normalization, canonical overlap/expansion, every eager digest and the complete
+inventory. A root-only view or requested-member proof is not that transport.
+The checked graph's structural NodeKey-to-DeclarationKey correspondence is
+not the full model effective view and SHALL NOT substitute for it.
+
+This initial norm draft SHALL NOT be adopted with the old wire/schema/vector
+bytes or old selected closure. The pre-release replacement requires one
+coherent selection, rule manifest, accounting, producer edge protocol, strict
+reader and caller-minted identity-domain cohort before any code cutover.
+Optional operation `redefines` is supported by the producer document schema
+and retained by the released selected-document IR reader; an older locked
+reader is not adoption of that capability. Before code cutover actual producer
+edges and origins SHALL survive selected-document admission, proper-ancestor
+normalization, full provenance/correspondence re-export and independent
+reconstruction under the same selected strict-reader contract. Kind, inherited
+target, cycle/conflict and signature/contract checks remain at their owning
+stages; absent, changed, malformed, dangling and ambiguous-edge controls remain.
+Schema support or fairness name resolution alone cannot establish this full
+round-trip, complete eager inventory or a bounded sole-writer export. Matched
+wire/schema/vectors/domains and admitted reader/transport costs remain
+prerequisites, not an unconditional replacement-readiness claim.
+The binder SHALL NOT introduce dual readers, old-digest transport, digest
+relabelling, compatibility shims or public API aliases for this replacement.
 
 ### Losing redefinitions are retained, not deleted
 
@@ -141,6 +181,40 @@ The model binder SHALL charge normalization work under
 denied, the binder SHALL return an incomplete result naming the exhausted
 charge point and SHALL expose no effective declaration for the run.
 
+The binder SHALL follow replacement accounting's declaration-first phase-5
+schedule, with separately admitted metadata scans, normal-form work, descriptor
+lookups/validation/pricing and each dependency's pre-encoding hash charge.
+It SHALL NOT compute type/helper hashes in phases 1–4, encode a node to discover
+its price, reserve bytes posthoc or use another canonical encoder. Its exact
+analytical template price SHALL equal the sole writer's encoded length before
+admitting the digest. A denied event performs none of its named work; a denied
+hash performs zero node encoding/hashing and no dependent work. Previously
+admitted preparation remains charged. Selection-local shared hits retain
+their lookup charges, never bypass the operation meter or create ambient state.
+Its delegated logical event interpreter includes every closed-template root,
+field/array/scalar read, original/owner/header slot, dependency reuse lookup and
+binding proof, range/provenance validation, retained-slot price and actual hash.
+Pricing's v charge covers its retained-slot reads without optional additional
+field events or text rescans. Metadata first use is the admitted selection-local
+key rank/field occurrence (or selection identity field), not equal text or
+physical interning. Different key ranks with equal package text are scanned
+separately; reuse of one occurrence retains the charged lookup without rescanning.
+All owner/root/universe/complete-sequence/dictionary orderings and prerequisite
+indexes use accounting's prescribed projections, bottom-up stable comparisons,
+logical moves and admissions. No physical search/sort choice changes the
+public event sequence or first denial. Normal form retains BOTH equal-input
+subset/redefine facts: for admitted subtype field `s` subsetting and redefining
+proper ancestor field `t`, `[s,t]` redefine precedes `[s,t]` subset by exact
+rule-identity bytes. A swapped-rule, dropped-occurrence or deduplicated candidate
+cannot pass canonical expansion; valid overlap alone cannot cause refusal.
+Existing canonical-expansion and exact-denial acceptance includes these adverse
+cases, metadata hits/misses and ordering prerequisites under different layouts,
+with byte-identical identities/traces and zero named/dependent work at denial.
+Phase-4 conflict order uses owning original keys as the accounting authority
+states, without changing the meaning of an effective member key. All existing
+logical counters, one-meter stage transfers and failure suppression remain
+unchanged; a later conformance refusal cannot replace an earlier hash denial.
+
 ## Constraints
 
 | ID | Constraint | Type | Validation |
@@ -151,16 +225,25 @@ charge point and SHALL expose no effective declaration for the run.
 
 ## Acceptance Criteria
 
+Existing procedures TC-213, TC-214, TC-215, TC-216, TC-217, TC-237 and TC-238
+retain their verifying relationships and criterion traces; method-only cells
+do not delete or replace those procedures. Their existing bytes alone do not
+qualify the replacement closure or the new adverse accounting cases.
+
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-081-AC-1 | Given a domain package admitted by FR-056, every original declaration key the binder's correspondence names is byte-identical to the key FR-056 admitted for it; no key in the correspondence is absent from, or added beyond, the admitted set. | Test (TC-213) |
-| FR-081-AC-2 | Two effective declarations derived from distinct original declaration keys are never equal, even when their declared shape (fields, types, multiplicities) is identical; each effective identity differs because its preimage's `original` component differs. | Test (TC-214) |
-| FR-081-AC-3 | Given a three-level chain where a base type declares a member and two of its descendants each independently redefine it, so that both redefinitions reach the most specific type's effective member, the more specific (descendant) redefiner's entry is the one a name resolves to, and the less specific redefiner's entry remains present in the correspondence with its own original key, derivation facts and effective identity readable rather than being deleted. | Test (TC-215) |
-| FR-081-AC-4 | Given two admitted domain packages that are byte-identical except for a `displayName`/title field on one declaration, every original key, effective identity and correspondence ordering the binder produces is byte-identical between the two runs. | Test (TC-216) |
-| FR-081-AC-5 | Given the same `DomainPackage` value and the same limits, two independent binder invocations — including invocations in two separate process runs — produce byte-identical original keys, effective identities and correspondence ordering, with no observable interaction between the runs. | Test (TC-217) |
-| FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
-| FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
+| FR-081-AC-1 | Given a domain package admitted by FR-056, every original declaration key the binder's correspondence names is byte-identical to the key FR-056 admitted for it; no key in the correspondence is absent from, or added beyond, the admitted set. | Test |
+| FR-081-AC-2 | Two effective declarations derived from distinct original declaration keys are never equal, even when their declared shape (fields, types, multiplicities) is identical; each effective identity differs because its preimage's `original` component differs. | Test |
+| FR-081-AC-3 | Given a three-level chain where a base type declares a member and two of its descendants each independently redefine it, so that both redefinitions reach the most specific type's effective member, the more specific (descendant) redefiner's entry is the one a name resolves to, and the less specific redefiner's entry remains present in the correspondence with its own original key, derivation facts and effective identity readable rather than being deleted. | Test |
+| FR-081-AC-4 | Given two admitted domain packages that are byte-identical except for a `displayName`/title field on one declaration, every original key, effective identity and correspondence ordering the binder produces is byte-identical between the two runs. | Test |
+| FR-081-AC-5 | Given the same `DomainPackage` value and the same limits, two independent binder invocations — including invocations in two separate process runs — produce byte-identical original keys, effective identities and correspondence ordering, with no observable interaction between the runs. | Test |
+| FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test |
+| FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test |
 | FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
+| FR-081-AC-9 | Expanding the canonical compressed provenance yields every ordered fact/input/rule/ordinal, including all hidden redefinitions and diamond paths; altered overlap, count, tail, ordinal meaning or alternative factoring cannot be admitted as the canonical correspondence. | Test |
+| FR-081-AC-10 | Every effective entry has its eager digest and retained preimage; complete view/universe computation includes them all. Missing provenance records or a root-only/requested-member proof transport cannot pass complete-view admission. | Test |
+| FR-081-AC-11 | Analytical closed-template prices agree with the sole writer for actual admitted strings; one-less or zero denial at preparation/hash charge points performs none of the denied work, including zero encoding/hashing of a denied node, while shared hits retain their prescribed lookup charges without rehashing. | Test |
+| FR-081-AC-12 | An old or mixed selection/schema/reader/accounting/domain cohort is not admitted as the replacement through digest relabelling, a compatibility reader or an API alias. | Inspection |
 
 ## Dependencies
 
