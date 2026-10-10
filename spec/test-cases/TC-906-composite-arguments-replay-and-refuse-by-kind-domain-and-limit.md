@@ -99,6 +99,9 @@ Requests are built from the unit's spine compile, as in TC-444.
    cause and phase before invocation. If the cause's native carrier/catalog
    projection is missing, report that mapping unavailable, never a guessed
    kernel cause or qualified default success.
+   Retain the peer's tiny falsifier: decimal domain [0,100], value 1@0 and
+   scale 2. Tiny numerical inputs do not remove the helper's temporary
+   allocation/cancellation qualification dependency.
 
 Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and

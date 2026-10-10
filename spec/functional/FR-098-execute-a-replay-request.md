@@ -211,9 +211,10 @@ through it, or a crate alias or glob import that reaches it.
   Counts SHALL be checked before the operation that would exceed them,
   preserving the successful per-argument prefix and denied next amount.
 - Membership and iterative type comparison SHALL use QSV's reviewed FR-109
-  event sequence and the independent cumulative
-  `supplied.admission_work_units` budget, including when invoked from
-  conversion. The original caller
+  value-visit/type-pair-link/child-schedule/descriptor-query event sequence
+  and the initiating phase's cumulative budget: conversion when invoked
+  from conversion, admission when invoked by direct/final admission.
+  One actual event SHALL NOT debit both phases. The original caller
   Cancel SHALL reach conversion, nested helpers, membership and the eventual
   call. A denial SHALL preserve its owning phase and FR-277 typed payload,
   with no later argument converted or evaluated. Union-specific event
@@ -234,15 +235,15 @@ successful prefix, never a fictitious limit.
 | Event | Exactly one unit before | Boundary/order |
 | --- | --- | --- |
 | Witness preflight | Reading one witness node's discriminant and validating its local shape/arity | Before resolving its declared type or visiting children; first invalid node stops all later work |
-| Descriptor inspection | Reading one declaration header, member descriptor or field/position descriptor from the selected package | Header before selected member/positions; positions in declaration order; each actual descriptor read counts, even if repeated |
-| Runtime type resolution | One actual runtime-type resolution helper invocation | Count the logical invocation once, including a cache hit; independently bounded type/link/registry inputs constrain its internal work under FR-277, without invented internal hooks |
+| Descriptor inspection | One logical descriptor query for a declaration header, member or field/position under QSV FR-109 | Header before selected member/positions; declaration order; preserve logical count on cache hits and count a delegated query only once |
+| Runtime type resolution | The actual logical type-pair/link or descriptor-query steps prescribed by QSV FR-109 for that resolution | No extra facade-invocation debit for the same delegated step; independently bounded type/link/registry inputs constrain unhooked internal work under FR-277 |
 | Witness materialization | Constructing one converted kernel node after its children | Postorder; no semantic evaluation charge; the same completed node counts once in the separate per-argument C counter |
 
 Retrieving a descriptor is a descriptor event, not a second runtime-type
 resolution event for that same read. Resolving a type expression reached
 from it is a separate actual step. Membership checks and structural type
-comparison SHALL be owned only by the admission budget; conversion SHALL
-not recount them as resolution. Nonconstant subordinate walks (including
+comparison SHALL retain the initiating phase's one budget owner; conversion
+SHALL not recount the same operation as resolution. Nonconstant subordinate walks (including
 leaf text/numeric validation, equality/deduplication and reference walks)
 SHALL use the logical helper events and independently bounded helper inputs
 of FR-277, with one budget owner. They SHALL NOT claim that one outer

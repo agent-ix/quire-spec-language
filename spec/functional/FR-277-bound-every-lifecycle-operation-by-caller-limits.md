@@ -89,8 +89,9 @@ Publishing or freezing this draft's review commit does not settle those gates.
   `admission_work_units` and `conversion_work_units` fields on its public
   checked-call/replay limits where the phase applies. Their units are the
   supplied-membership and conversion-helper events below, independently of
-  whatever evaluation limit the caller chooses. Proposed default hypotheses
-  are 262,144 admission units and 524,288 conversion units. The count basis
+  whatever evaluation limit the caller chooses. Numerical hypotheses under
+  review are 262,144 admission units and 524,288 conversion units; neither
+  is selected as a default or qualified ceiling. The count basis
   and confirmation status below
   are explicit; neither default is computed from a caller's evaluation
   allowance, an existing expression/declaration-work default, or a runtime
@@ -106,10 +107,12 @@ Publishing or freezing this draft's review commit does not settle those gates.
   published defaults under ADR-014 section 2; they are never unbounded.
   It SHALL NOT derive either bound from the evaluation allowance, multiply
   that allowance, reset helper spend between arguments, or bypass a phase.
-- Every helper event SHALL have exactly one helper-budget owner. A QSL
-  conversion invoking QSV membership SHALL pass the same admission budget
-  used for final checked-call admission. Descriptor inspection, runtime
-  type resolution and materialization SHALL use the conversion budget.
+- Every helper event SHALL have exactly one initiating-phase budget owner.
+  QSL conversion invoking QSV membership SHALL pass its conversion budget;
+  direct or final checked-call admission SHALL pass its admission budget.
+  A physical operation is charged once to that initiating phase, not both.
+  Descriptor inspection, runtime type resolution and materialization
+  initiated by conversion SHALL use the conversion budget.
   A bounded reusable QSV helper for these tasks SHALL receive that explicit
   owner budget; it SHALL NOT also spend admission work for the same event.
 - Admission SHALL preserve the reviewed released QSV trust boundary for
@@ -179,9 +182,9 @@ point. Merely storing a bound in replay `stage_limits` SHALL NOT reclassify
 it as B-3 (ADR-014 section 1). The retained per-argument node/occurrence
 bounds remain their existing B-2 `ScalarLimits` fields.
 
-### Proposed default basis and confirmation
+### Unselected numerical hypotheses and confirmation
 
-| Counter | Proposed fixed default hypothesis | Planning basis, not measured work | Planned headroom |
+| Counter | Unselected numerical hypothesis | Planning basis, not measured work | Planned headroom |
 | --- | --- | --- | --- |
 | Supplied admission helper units | 262,144 | Research predicts 69,997 membership events for the unchanged full Tree; conservatively allow two such passes if conversion membership and final call admission both actually run | 192,147 above one predicted pass; 122,150 above two (139,994), about 87% above the two-pass planning total |
 | Replay conversion helper units | 524,288 | Research predicts 129,994 events for the whole converter; QSV's additional hypothetical 32D+128 schedule at D=10,000 gives 320,128, not a proved event bound | 394,294 above the research prediction; 204,160 above the hypothetical schedule (about 64%) |
@@ -194,9 +197,9 @@ are planning hypotheses, not source-proven upper bounds or default
 recommendations from QSV. The released trusted boundary and original
 QSL-503 fixture must determine the approved schedule; TC-817's different
 Leaf/Node-with-two-Options fixture SHALL NOT substitute for it.
-They are new independently configurable pre-call defaults, not an increase
-to the evaluator's allowance. The 39,997 evaluator prediction justifies
-neither helper default and remains subject to the fixed TC-831 trace
+They are candidates for independent pre-call ceilings, NOT selected
+defaults or an increase to the evaluator's allowance. The 39,997 evaluator
+prediction justifies neither helper default and remains subject to the fixed TC-831 trace
 controls. No predicted total becomes a normative event count, observed
 result, mandatory extra pass or cache bypass. If the reviewed actual event
 contract or qualification fails these defaults, the settlement SHALL be
@@ -271,13 +274,18 @@ reviewed FR-109 contract. It SHALL NOT prescribe a nonexistent union API.
 
 | Actual step | Owner and count boundary | Cache/delegation rule |
 | --- | --- | --- |
-| Expected-type entry / actual-type comparison | Admission: one entry for the expected type, or one comparison of the expected/actual type pair at that site, not both for the same check | Iterative structural child pairs count when compared; a trusted nested value has no invented descendant checks |
-| Runtime value visit | Admission: one per occurrence actually inspected by the membership contract | Stop at the first invalid occurrence in the specified order; no event for an unvisited descendant |
-| Type resolution / declaration lookup | Conversion for witness runtime-type resolution; admission for membership types: one per actual resolution or lookup invocation | Cache hits spend the logical lookup unit; internal links/search comparisons are bounded by the independent type/registry input contract, not fabricated extra events |
-| Enum membership/rank lookup | Budget of the invoking phase: one per actual enum membership/rank helper invocation | Member inventory and key sizes must satisfy the independent input bound; skipped calls have no invented work |
-| Numeric range membership | Budget of the invoking phase: one per actual numeric membership helper invocation | All operand/domain/scale sizes must fit independent finite bounds; this event claims no per-limb hook |
-| Declaration-map / ancestor search | Budget of the invoking phase: one per actual public lookup/search invocation | Entry/key/ancestor sizes must fit independently bounded admitted inputs; do not separately debit a lookup already counted in type resolution |
-| Scheduling / reservation | Included in the event being scheduled, with fallible reservation before mutation | No extra scheduling debit; failed reservation retains the measured storage/capacity cause |
+| Logical value visit | Initiating phase: one per runtime occurrence actually inspected by QSV supplied membership | Existing trusted nested-value boundary and invalid-stop order; unvisited descendants cost no visit |
+| Logical type-pair/link step | Initiating phase: one per actual QSV structural type-pair or link step under FR-109 | No duplicate expected-type-entry charge; cache optimization preserves the logical count |
+| Logical child schedule | Initiating phase: one per actual child scheduling operation prescribed by QSV FR-109 | Count before fallible worklist reservation/mutation; do not also hide it inside a value visit |
+| Logical descriptor query | Initiating phase: one per descriptor query prescribed by QSV FR-109 | Cache hits preserve logical query count; QSL/QSV delegation does not count the same query twice |
+| Unhooked numeric/enum/registry subordinate operation | Included in its initiating logical check/query, with independently bounded helper inputs | No invented per-limb/key-comparison events; source proof must bound input-dependent work, temporary storage and cancellation behavior |
+
+These are descriptive event labels, not invented public enum/API spellings.
+QSL SHALL use QSV FR-109's actual published event definitions and ordering.
+QSL's separate witness preflight/materialization work remains FR-098-owned;
+its delegated QSV events use that same conversion phase budget. A later
+final-admission invocation is new actual work owned by admission, not a
+transfer of conversion spend or a reset within either phase.
 
 One performed logical comparison or lookup SHALL appear once, in its
 explicit owner budget. A facade/helper delegation that reaches the same
