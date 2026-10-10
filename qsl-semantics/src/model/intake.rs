@@ -4906,7 +4906,10 @@ mod tests {
                     span: None,
                 }
             );
-            assert_eq!(refusal.detail, format!("$.types[0].constraints[0]: {reason}"));
+            assert_eq!(
+                refusal.detail,
+                format!("$.types[0].constraints[0]: {reason}")
+            );
         }
     }
 
@@ -5240,8 +5243,11 @@ mod tests {
                 "inputIdentities": ["ix://acme/orders/Wide"],
             }},
         }]);
-        let refusals = read_records("acme/orders", &parse_document(document.to_string().as_bytes()))
-            .expect_err("upstream-valid enumeration is not implemented by QSL");
+        let refusals = read_records(
+            "acme/orders",
+            &parse_document(document.to_string().as_bytes()),
+        )
+        .expect_err("upstream-valid enumeration is not implemented by QSL");
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -5267,9 +5273,11 @@ mod tests {
             let (bytes, _) = wide_document("\"1000\"");
             let mut document: Value = serde_json::from_slice(&bytes).expect("valid fixture JSON");
             document["types"][0]["constraints"][position]["operands"]["value"] = number;
-            let refusals =
-                read_records("acme/orders", &parse_document(document.to_string().as_bytes()))
-                    .expect_err("integer operands require exact strings");
+            let refusals = read_records(
+                "acme/orders",
+                &parse_document(document.to_string().as_bytes()),
+            )
+            .expect_err("integer operands require exact strings");
             assert_eq!(refusals.len(), 1);
             assert_eq!(refusals[0].code, Code::InvalidModelBinding);
             assert!(refusals[0].detail.contains(&format!(
