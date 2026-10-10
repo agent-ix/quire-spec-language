@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parse/format round-trip boundaries and diagnostics for native syntax.
 use ix_trace_rs::trace;
+use qsl_cst::format::{
+    format, format_with_limit, format_with_limits, FormatLimits, FormatRefusal, OUTPUT_BYTE_CEILING,
+};
 use qsl_cst::ParsedSource;
 use qsl_foundation::{Code, Diagnostic, Phase, SourceIdentity};
-use quire_spec_language::format::{format, format_with_limit, FormatRefusal, OUTPUT_BYTE_CEILING};
 use quire_spec_language::{parse, Limits};
 
 fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnostic>> {
@@ -43,11 +45,33 @@ const COMPLETE: &str = concat!(
     "function inc using v(x: Digit): Int[0, 10] pure { x + 1 }\n",
 );
 
+#[trace("TC-016", "FR-003-AC-5", "FR-003-AC-6")]
+#[test]
+fn typed_format_limits_publish_a_replaceable_default() {
+    assert_eq!(FormatLimits::default().output_bytes, 1_048_576);
+    let parsed = parse_complete(COMPLETE);
+    for bound in [0, 1_048_576, usize::MAX] {
+        let limits = FormatLimits::default().with_output_bytes(bound);
+        assert_eq!(limits.output_bytes, bound);
+        assert_eq!(
+            format_with_limits(&parsed, limits),
+            format_with_limit(&parsed, bound)
+        );
+    }
+}
+
 #[trace("TC-016", "FR-003-AC-4", "FR-003-AC-5", "FR-003-AC-6")]
 #[test]
 fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
     let parsed = parse_complete(COMPLETE);
-    let expected = format(&parsed).unwrap();
+    let expected = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "// café: a multibyte comment counts in bytes\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "type Digit = Int [0, 9];\n",
+        "function inc using v (x : Digit) : Int [0, 10] pure {\n  x + 1\n}\n",
+    );
+    assert_eq!(format(&parsed).unwrap(), expected);
     assert!(expected.ends_with('\n'));
     for limit in 0..expected.len() {
         let refusal = format_with_limit(&parsed, limit).unwrap_err();
@@ -75,7 +99,7 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
 
 #[trace("TC-016", "FR-003-AC-4", "FR-003-AC-6")]
 #[test]
-fn formatter_cannot_raise_the_hard_content_ceiling() {
+fn formatter_uses_a_raised_content_ceiling_as_given() {
     let header = concat!(
         "language\"ix:native\"edition\"1-draft\";",
         "profile v=\"quire.value.complete/v1\";",
@@ -90,21 +114,43 @@ fn formatter_cannot_raise_the_hard_content_ceiling() {
     let parsed = parse_complete(&text);
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(parsed.source().text().len(), OUTPUT_BYTE_CEILING);
-    for limit in [OUTPUT_BYTE_CEILING, usize::MAX] {
-        let refusal = format_with_limit(&parsed, limit).unwrap_err();
-        assert_eq!(refusal.code(), Code::StageLimitExceeded);
-        assert_eq!(refusal.diagnostic().phase, Phase::Format);
-    }
+    let refusal = format_with_limit(&parsed, OUTPUT_BYTE_CEILING).unwrap_err();
+    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    assert_eq!(refusal.diagnostic().phase, Phase::Format);
     assert_eq!(
         format(&parsed).unwrap_err().code(),
         Code::StageLimitExceeded
     );
+    let expected_header = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "type Digit = Int [0, 9];\n",
+    );
+    let expected = format!(
+        "{expected_header}//{}\n",
+        "x".repeat(OUTPUT_BYTE_CEILING - header.len() - 2)
+    );
+    assert!(expected.len() > OUTPUT_BYTE_CEILING);
+    for limit in [expected.len(), usize::MAX] {
+        assert_eq!(format_with_limit(&parsed, limit).unwrap(), expected);
+    }
+    let refusal = format_with_limit(&parsed, expected.len() - 1).unwrap_err();
+    assert_eq!(
+        refusal.diagnostic().limit(),
+        Some(qsl_foundation::SyntaxLimit::SourceBytes {
+            bound: expected.len() - 1
+        })
+    );
+    let refusal = format(&parsed).unwrap_err();
+    assert!(refusal.to_string().contains("1048576"));
+    assert!(refusal.to_string().contains("FormatLimits.output_bytes"));
+    assert!(refusal.to_string().contains("format_with_limit"));
 }
 
-/// Everything in `src/format.rs` except its `mod tests` block and comment
+/// Everything in `qsl-cst/src/format.rs` except its `mod tests` block and comment
 /// lines, for the TC-404 step-1 edge scan.
 fn format_module_production_code() -> String {
-    let text = include_str!("../../src/format.rs");
+    let text = include_str!("../../qsl-cst/src/format.rs");
     let production = text
         .split_once("#[cfg(test)]\nmod tests {")
         .map_or(text, |(production, _)| production);
@@ -154,14 +200,13 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
     assert!(!uses.is_empty());
     for path in &uses {
         assert!(
-            ["qsl_cst", "qsl_foundation", "std"]
+            ["crate", "qsl_foundation", "std"]
                 .iter()
                 .any(|allowed| path.starts_with(allowed)),
             "use {path}"
         );
     }
     for forbidden in [
-        "crate::",
         "super::",
         "self::",
         "quire_spec_language",
@@ -169,14 +214,17 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
         "syntax::",
         "parser::",
     ] {
-        assert!(!code.contains(forbidden), "src/format.rs names {forbidden}");
+        assert!(
+            !code.contains(forbidden),
+            "qsl-cst/src/format.rs names {forbidden}"
+        );
     }
     // A crate-local `macro_rules!` macro reaches the root crate without a
     // path; only standard-library macros are invoked.
     for name in invoked_macros(&code) {
         assert!(
-            ["matches"].contains(&name.as_str()),
-            "src/format.rs invokes {name}!"
+            ["matches", "format"].contains(&name.as_str()),
+            "qsl-cst/src/format.rs invokes {name}!"
         );
     }
 }

@@ -66,6 +66,7 @@ mod exact_decimals;
 mod extracted_command;
 mod family_outcome_layering;
 mod formal_source;
+mod formatter_identity;
 // The handoff writer is behind its feature; the all-features lane runs this.
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;
