@@ -1108,6 +1108,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
     index: &RecordIndex,
+    domain_package: &DomainPackage,
     seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
 ) -> Vec<ModelRefusal> {
     let key = record.key();
@@ -1451,7 +1452,7 @@ fn validate_references(domain_package: &DomainPackage, index: &RecordIndex) -> V
         std::collections::HashSet::new();
     let mut refusals = Vec::new();
     for record in records {
-        refusals.extend(check_node(record, index, &mut seen_keys));
+        refusals.extend(check_node(record, index, domain_package, &mut seen_keys));
     }
     refusals
 }
