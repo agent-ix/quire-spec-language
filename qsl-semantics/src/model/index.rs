@@ -576,6 +576,11 @@ impl RecordIndex {
             .unwrap_or_default()
     }
 
+    /// Whether a record actually declares this key, rather than merely references it.
+    pub(crate) fn has_declaration(&self, key: &DeclarationKey) -> bool {
+        self.position(key).is_some_and(|position| self.declarations.contains_key(&position))
+    }
+
     /// Whether some `ObjectType` record declares `key`.
     pub(crate) fn is_object_type(&self, key: &DeclarationKey) -> bool {
         self.flags(key).object_type

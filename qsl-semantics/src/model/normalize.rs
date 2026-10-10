@@ -1259,13 +1259,30 @@ fn check_node<'a>(
                 }
             }
         }
-        // FR-152 systems-model records validate their own references
-        // independently (crate::model::systems); FR-150's phase 1 does
-        // not concern itself with them.
-        DomainPackageRecord::Component(_)
-        | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
-        | DomainPackageRecord::Allocation(_) => {}
+        DomainPackageRecord::Component(part) => {
+            check_system_reference(&mut refusals, index, &part.key, &part.owning_type,
+                ModelRefusalCause::UnknownOwner { member: part.key.clone(), owner: part.owning_type.clone() });
+            check_system_reference(&mut refusals, index, &part.key, &part.value_type,
+                ModelRefusalCause::UnknownMember { record: part.key.clone(), member: part.value_type.clone() });
+        }
+        DomainPackageRecord::Endpoint(port) => {
+            check_system_reference(&mut refusals, index, &port.key, &port.owning_component,
+                ModelRefusalCause::UnknownComponent { item: port.key.clone(), missing: port.owning_component.clone() });
+            check_system_reference(&mut refusals, index, &port.key, &port.value_type,
+                ModelRefusalCause::UnknownMember { record: port.key.clone(), member: port.value_type.clone() });
+        }
+        DomainPackageRecord::Relationship(relationship) => {
+            for (end, target) in [("source", &relationship.source.type_identity), ("target", &relationship.target.type_identity)] {
+                check_system_reference(&mut refusals, index, &relationship.key, target,
+                    ModelRefusalCause::UnknownEndpoint { end, relationship: relationship.key.clone(), missing: target.clone() });
+            }
+        }
+        DomainPackageRecord::Allocation(allocation) => {
+            for target in [&allocation.source_element, &allocation.target_element] {
+                check_system_reference(&mut refusals, index, &allocation.key, target,
+                    ModelRefusalCause::UnknownMember { record: allocation.key.clone(), member: target.clone() });
+            }
+        }
         // model-complete.md's "Populations" row: each member type names
         // a declared object type; a missing one refuses
         // `missing_declaration`/`missing-name`.
@@ -1315,6 +1332,24 @@ fn check_node<'a>(
         });
     }
     refusals
+}
+
+// Existence is a phase-one obligation; systems kind mapping checks a declared
+// node's meaning later. An interned referenced key is not a declaration.
+fn check_system_reference(
+    refusals: &mut Vec<ModelRefusal>,
+    index: &RecordIndex,
+    record: &DeclarationKey,
+    target: &DeclarationKey,
+    cause: ModelRefusalCause,
+) {
+    if !index.has_declaration(target) {
+        refusals.push(ModelRefusal {
+            code: Code::MissingDeclaration,
+            cause,
+            detail: format!("{} names {}, which is not a declared node", record.node, target.node),
+        });
+    }
 }
 
 /// Every FR-154 refusal the domain package's own nodes expose, in node

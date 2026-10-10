@@ -580,9 +580,8 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
         other => panic!("expected an interface-type refusal, got {other:?}"),
     }
     let after = meter.consumed(qsl_semantics::model::accounting::LimitKind::WorkUnits);
-    // Three systems.connection-condition charges, one flat work unit each
-    // (this module's recorded scope choice — see systems.rs's module doc —
-    // not FR-152's own f(Flow)/f(Flow2) derivation-fact pricing).
+    // Direction and multiplicity cost one each; the flow-source interface
+    // Flow has one derivation fact, so its type condition also costs one.
     assert_eq!(after - before, 3);
 
     // Retyping the flow SOURCE (pump.out) to Flow2 instead: Flow2 conforms
