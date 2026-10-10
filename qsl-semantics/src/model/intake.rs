@@ -1444,7 +1444,9 @@ fn business_generalization_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> Option<ModelRefusal> {
-    use agent_ix_semantic_ir::constructs::{CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE, UNRESOLVED_CONSTRUCT_REF};
+    use agent_ix_semantic_ir::constructs::{
+        CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE, UNRESOLVED_CONSTRUCT_REF,
+    };
     let rest = located.pointer.strip_prefix("/ir/types/")?;
     let (position, member) = rest.split_once('/')?;
     if member != "supertypes" && !member.starts_with("supertypes/") {
@@ -1461,25 +1463,42 @@ fn business_generalization_refusal(
     let meanings = meaning_index(&document.tree).ok()?;
     let resolved = meanings.get(&(kind.0.to_owned(), kind.1.to_owned()))?;
     if resolved == meaning::NAMESPACE
-        && [UNRESOLVED_CONSTRUCT_REF, CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE].contains(&located.code)
+        && [
+            UNRESOLVED_CONSTRUCT_REF,
+            CONSTRUCT_TARGET_KIND,
+            SUPERTYPE_CYCLE,
+        ]
+        .contains(&located.code)
         && !ctx.array_field("supertypes").ok()?.is_empty()
     {
-        return Some(unsupported_at(node, &ctx.at, format!("{}:supertypes", meaning::NAMESPACE)));
+        return Some(unsupported_at(
+            node,
+            &ctx.at,
+            format!("{}:supertypes", meaning::NAMESPACE),
+        ));
     }
     if resolved != meaning::RECORD_VALUE_TYPE || located.code != SUPERTYPE_CYCLE {
         return None;
     }
     // The actual declared edges, not diagnostic prose, identify the closing
     // edge. Each node is visited once, so even a hostile cyclic graph terminates.
-    let graph: BTreeMap<&str, &Value> = types.iter().filter_map(|value| {
-        Some((value.get("identity")?.as_str()?, value))
-    }).collect();
+    let graph: BTreeMap<&str, &Value> = types
+        .iter()
+        .filter_map(|value| Some((value.get("identity")?.as_str()?, value)))
+        .collect();
     let mut pending = vec![owner];
     let mut visited = std::collections::BTreeSet::new();
     while let Some(current) = pending.pop() {
-        if !visited.insert(current) { continue; }
+        if !visited.insert(current) {
+            continue;
+        }
         let value = graph.get(current)?;
-        for parent in value.get("supertypes").and_then(Value::as_array).into_iter().flatten() {
+        for parent in value
+            .get("supertypes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let parent = parent.as_str()?;
             if parent == owner {
                 let package = document.tree.get("package")?.get("identity")?.as_str()?;
@@ -1489,7 +1508,10 @@ fn business_generalization_refusal(
                         ancestor: declaration_key(package, owner),
                         via: declaration_key(package, current),
                     },
-                    detail: format!("{}: record generalization returns to {owner} through {current}", located.pointer),
+                    detail: format!(
+                        "{}: record generalization returns to {owner} through {current}",
+                        located.pointer
+                    ),
                 });
             }
             pending.push(parent);
