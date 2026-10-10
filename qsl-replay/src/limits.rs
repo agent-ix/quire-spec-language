@@ -526,7 +526,7 @@ mod tests {
 
     /// FR-255-AC-8: each accounting setting sets its counter alone, no
     /// operand gives the table's defaults, and `u64::MAX` is a bound.
-    #[trace("TC-914", "FR-255-AC-8")]
+    #[trace("TC-951", "FR-255-AC-8")]
     #[test]
     fn each_accounting_setting_sets_its_counter_alone() {
         let table = accounting_table();
@@ -572,7 +572,7 @@ mod tests {
 
     /// FR-255-AC-9: the grammar, duplicate and overflow rules of the stage
     /// settings hold for the accounting names.
-    #[trace("TC-914", "FR-255-AC-9")]
+    #[trace("TC-951", "FR-255-AC-9")]
     #[test]
     fn a_malformed_accounting_operand_is_a_usage_refusal_naming_it() {
         for (operands, operand, cause) in [
@@ -611,7 +611,7 @@ mod tests {
 
     /// FR-255-AC-10: a `stage_limits` counter entry replaces that counter of
     /// the request's accounting limits and no other.
-    #[trace("TC-914", "FR-255-AC-10")]
+    #[trace("TC-951", "FR-255-AC-10")]
     #[test]
     fn a_stage_limits_counter_replaces_only_that_accounting_counter() {
         let base = crate::spine::default_accounting(77);

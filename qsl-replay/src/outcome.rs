@@ -1178,7 +1178,7 @@ mod tests {
     /// operation returns for `work_units=0` settles `Incomplete` naming the
     /// counter, bound, count and setting; under `work_units=1000000` it
     /// completes with 7.
-    #[trace("TC-914", "FR-255-AC-7")]
+    #[trace("TC-951", "FR-255-AC-7")]
     #[test]
     fn a_reached_budget_set_by_operand_names_its_setting() {
         let run_under = |operand: &str| {

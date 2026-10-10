@@ -1,5 +1,5 @@
 ---
-id: TC-914
+id: TC-951
 title: "Accounting budgets are settable by counter name and a reached budget names its setting"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
     type: verifies
 ---
-# TC-914: Accounting budgets are settable by counter name and a reached budget names its setting
+# TC-951: Accounting budgets are settable by counter name and a reached budget names its setting
 
 ## Description
 
@@ -52,7 +52,7 @@ Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100
    with `{"work_units": 7}`, with `{}`, and with no `accounting`, and read
    the accounting limits of the `Call` handed to `qsl_replay::spine::run`.
 
-Tag the tests `#[trace("TC-914", "FR-255-AC-7")]`, `#[trace("TC-914", "FR-255-AC-8")]`, `#[trace("TC-914", "FR-255-AC-9")]`, `#[trace("TC-914", "FR-255-AC-10")]`, `#[trace("TC-914", "FR-255-AC-11")]`, `#[trace("TC-914", "FR-100-AC-13")]`.
+Tag the tests `#[trace("TC-951", "FR-255-AC-7")]`, `#[trace("TC-951", "FR-255-AC-8")]`, `#[trace("TC-951", "FR-255-AC-9")]`, `#[trace("TC-951", "FR-255-AC-10")]`, `#[trace("TC-951", "FR-255-AC-11")]`, `#[trace("TC-951", "FR-100-AC-13")]`.
 
 ## Expected Results
 

@@ -544,7 +544,12 @@ names different artifacts in each.
 | TC-911 | Field refinement decides wide integer domains and literals exactly | Unit | P1 | FR-056-AC-16, FR-082-AC-9 | ✅ |
 | TC-912 | The IR wire round-trips integer bounds and literals up to i128 | Integration | P1 | FR-033-AC-6 | 🚧 |
 | TC-913 | A wide-range source recompiles to its package_id and replays | Integration | P1 | FR-098-AC-11 | ✅ |
-| TC-914 | Accounting budgets are settable by counter name and a reached budget names its setting | Integration | P1 | FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-13 | 🚧 |
+| TC-914 | Registry allocation failure preserves its native measurement through QSL admission | Integration | P1 | FR-082-AC-10, FR-082-AC-11, FR-082-AC-12, FR-082-AC-13 | 🚧 |
+| TC-919 | An empty model-query object identity is an internal fault | Unit | P1 | FR-090-AC-13, FR-090-AC-16, FR-090-AC-17 | 🚧 |
+| TC-916 | Model-query shape breaks have QSL-owned fault routes | Unit | P1 | FR-090-AC-14, FR-090-AC-16 | 🚧 |
+| TC-917 | Evaluator invariant producers have explicit QSL classifications | Unit | P1 | FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18, FR-096-AC-15 | 🚧 |
+| TC-918 | Received typed kernel invariant provenance survives fault mapping | Unit | P1 | FR-096-AC-19, FR-090-AC-17 | 🚧 |
+| TC-951 | Accounting budgets are settable by counter name and a reached budget names its setting | Integration | P1 | FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-13 | 🚧 |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 |

@@ -1121,7 +1121,7 @@ mod tests {
     /// limits: ten counters at 1 to 10, one counter with the rest at
     /// `u64::MAX`, and `{}` or no `accounting` at the defaults.
     #[test]
-    #[trace("TC-914", "FR-100-AC-13")]
+    #[trace("TC-951", "FR-100-AC-13")]
     fn call_accounting_reaches_the_call_as_its_limits() {
         let limits = |text: &str| {
             let call: wire::Call = serde_json::from_str(text).expect("a call");

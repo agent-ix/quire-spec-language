@@ -460,14 +460,14 @@ fn tc_906_the_node_limit_stops_the_replay_before_the_call() {
     assert_eq!(raised.charges(), unlimited.charges());
 }
 
-/// FR-255-AC-10 (TC-914): a `stage_limits` entry `work_units` is the
+/// FR-255-AC-10 (TC-951): a `stage_limits` entry `work_units` is the
 /// call's `work_units` whatever the request's accounting limits give it,
 /// and every other counter keeps the request's value; for FR-098-AC-9's
 /// counterexample the entry one below the node count settles `NoValue`
 /// naming `work_units`, and raised to fit the replay runs.
-#[trace("TC-914", "FR-255-AC-10")]
+#[trace("TC-951", "FR-255-AC-10")]
 #[test]
-fn tc_914_a_stage_limits_counter_entry_sets_the_budget() {
+fn tc_951_a_stage_limits_counter_entry_sets_the_budget() {
     let fixture = fixture(NESTED);
     let value = outer(&fixture, int(7), vec![int(1), int(2)]);
     let nodes = 9_u64;

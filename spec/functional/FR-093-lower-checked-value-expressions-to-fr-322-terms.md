@@ -17,6 +17,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-094
     type: traces_to
+  - target: ix://agent-ix/quire-specification/FR-440
+    type: depends_on
 ---
 # FR-093: Lower checked Value expressions to FR-322 nodes with catalogued operations
 
@@ -169,7 +171,7 @@ to `x`'s node.
 | `Quantity(operator)` | `binary` | `quire.op.quantity.add`, `.sub`, `.mul`, `.div` | | `[ref(l), ref(r)]` |
 | `Ieee(operator)` of width `w` | `binary` | `quire.op.ieee.float32.*` or `quire.op.ieee.float64.*` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(l), ref(r)]` |
 | `Order(operator, kind)` (`<`, `<=`, `>`, `>=`) | `binary` | `quire.op.<f>.lt`, `.le`, `.gt`, `.ge`, where `<f>` is `integer`, `rational`, `decimal`, `enum`, `text` or `quantity` for `kind` `Integers`, `Rationals`, `Decimals`, `Enums`, `Texts`, `Quantities` | for `text`: law `text_profile`, mode `text_profile` = the operands' profile | `[ref(l), ref(r)]` |
-| `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity` or `reference`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `structural`: leaves `operand:0`, the compared type's text-leaf list | `[ref(l), ref(r)]` |
+| `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity` or `reference`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple, union or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `structural`: leaves `operand:0`, the compared type's text-leaf list | `[ref(l), ref(r)]` |
 | `Coerce(e, interval)` (an integer admitted into an `Int[..]` that does not contain its type) | `convert` | `quire.op.numeric.narrow` | member `type_argument{declaration: T(Int[interval])}` | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand type is an exact numeric type other than the target | `convert` | `quire.op.numeric.convert` | member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` (Quantity conversion) | `[ref(e)]` |
@@ -241,15 +243,15 @@ keys to one id whichever family lowers the clause that holds it.
 
 `check` SHALL build the **text-leaf list** of a type by walking it from an
 empty path and appending leaves in the order the walk reaches them. The walk
-keeps the **open composites**: each declared record or tuple whose fields or
-positions it is walking, with the number of segments the path had when the
-walk entered it. At a type `U` and a path `p`:
+keeps the **open composites**: each declared record, tuple or union whose
+fields, positions or member payloads it is walking, with the number of
+segments the path had when the walk entered it. At a type `U` and a path `p`:
 
 1. `Text[min, max; profile]`: append the text leaf
    `{path: p, laws: [the text_profile law], mode: {kind: "text_profile", value: profile}}`.
 2. `Option<V>`, or `K<V>` or `K<V>[min, max]` for a collection kind `K`:
    walk `V` at `p` + `inner`.
-3. A declared record or tuple `C` that is open, entered at `d` segments:
+3. A declared record, tuple or union `C` that is open, entered at `d` segments:
    append the **recursion leaf**
    `{path: p + "recursion:d", laws: [], mode: null}` when a `Text` type is
    reachable from `C`, and nothing otherwise. The walk does not enter `C`
@@ -257,17 +259,34 @@ walk entered it. At a type `U` and a path `p`:
 4. A declared record `C` that is not open: open `C` at the length of `p`;
    for each field in declaration order, walk a required field `f: V`'s `V`
    at `p` + `field:f` and an optional field `f: V?`'s `V` at `p` + `field:f`
-   + `inner`; then close `C`. A record or tuple `C` from which no `Text`
-   type is reachable is not entered, here or in step 5, and appends nothing.
+   + `inner`; then close `C`. A record, tuple or union `C` from which no
+   `Text` type is reachable is not entered, here or in steps 5 and 6, and
+   appends nothing.
 5. A declared tuple `C` that is not open: open `C` at the length of `p`;
    walk each position `n`'s type, in position order, at `p` + `position:n`;
    then close `C`.
-6. Any other type: nothing.
+6. A declared union `C` that is not open: open `C` at the length of `p`;
+   for each member `m` in member declaration order, walk each payload
+   position `n`'s type in position order at `p` + `member:m` + `position:n`;
+   then close `C`. A nullary member contributes nothing. This walks every
+   declared member, independently of any value's active member.
+7. Any other type: nothing.
 
-A `Text` type is **reachable** from `C` when some sequence of steps 2, 4
-and 5, applied without regard to open composites, leads from `C` to a
+A `Text` type is **reachable** from `C` when some finite sequence of steps
+2, 4, 5 and 6, applied without regard to open composites, leads from `C` to a
 `Text` type. A type alias walks as its resolved type (FR-091). `d` is
 written as its canonical decimal string, as FR-322 writes `position:n`.
+
+`member:m` contains the exact declared member identifier, with the same
+identifier spelling as FR-440's union type binding. The payload index `n`
+starts at zero and uses canonical decimal spelling. These are two distinct
+path segments; the member is neither a record field nor a tuple position.
+The path identifies a member relative to its enclosing union type; it
+carries no union node key, `VariantId`, member ordinal or active-value tag.
+Member identity remains (union identity, member identifier), as FR-319
+requires. The type and its identity remain bound by the application's
+operand/result types; the leaf list does not identify the whole type.
+Two union types can therefore have the same text-leaf list.
 
 An optional field's path passes through `inner` because the field's slot
 holds a value of its `Option<V>` node: FR-092 types the field by that node,
@@ -291,9 +310,10 @@ The list has these properties:
 
 - **Finite.** A composite is open at most once at a time, so a path enters
   each declared composite of the package at most once, passes between two
-  entries only the finitely many `inner`, `field` and `position` segments
-  of one field or position type, and ends at the first reentry. The walk
-  runs over an explicit heap stack, one frame per entered type (FR-258).
+  entries only the finitely many `inner`, `field`, `member` and `position`
+  segments of one field, position or member payload type, and ends at the
+  first reentry. The walk runs over an explicit heap stack, one frame per
+  entered type (FR-258).
   Because rule 3 ends each path at its first reentry, a recursive type's
   walk is as deep as its composites' nesting.
 - **Lossless.** The expanded leaf set is computed from the list alone, so
@@ -301,10 +321,10 @@ The list has these properties:
   and profile. Two types whose text leaves differ in any path or profile
   therefore have different lists.
 - **Without recursion.** A walk that reaches no open composite appends no
-  recursion leaf. Its leaves are FR-322's text leaves, except that an
-  optional field's path passes through `inner` (a QSL proposal, ADR-013
-  QC-24). A recursive composite that reaches no `Text` type, such as
-  FR-092's `List`, adds no leaf.
+  recursion leaf. Its text leaves use `inner` for an optional field and
+  `member:<identifier>` for a union payload; these paths await a QSpec
+  FR-322 extension (ADR-013 QC-24). A recursive composite that reaches no
+  `Text` type, such as FR-092's `List`, adds no leaf.
 - **Independent of keys and group order.** `d` counts path segments. It is
   not a FR-092 group ordinal, and the list names no node, so an application
   node's leaves do not depend on its operand types' recursion group order or
@@ -327,11 +347,56 @@ pass the limit stops with a stage limit of kind node count, reported as
 stops on a limit, before it reads any leaf's law, so a stage limit comes
 before `missing-selection`.
 
+These rules apply equally to union payloads reached from `operand:0`,
+`inner:0` and `result_inner`: the selected type starts at the empty path,
+so selecting a collection's element type adds no leading `inner`; walking
+the collection type itself does. `result_inner` still yields no leaves for
+a `sequence` result. A member's declared text profile governs its leaves,
+including members not active in a compared value. The walk and reachability
+computation retain FR-258's explicit heap stack and NFR-011's checking
+ceilings, with no fixed depth cap. Each entered union is a composite work
+charge, and leaf path work includes `member:m` bytes. At every stage-limit
+or work charge, the lifecycle operation polls cancellation under
+[FR-276](FR-276-cancel-a-lifecycle-operation.md); cancellation returns its
+cause and no partial artifact.
+
 For `record Node { label: Text[0, 8; binary-utf8]; next: Node?; }`, the list
 is `field:label`, a text leaf with mode `binary-utf8`, then
 `field:next`, `inner`, `recursion:0`. The expanded leaf set holds
 `field:label`, `field:next`/`inner`/`field:label`, and so on down every
 chain of `next` fields.
+
+### Union text-leaf vectors
+
+These vectors fix the leaf list independently of node identity preimages.
+The lock selects the same text definition as the Recursive text-leaf
+vectors: `{authority: "agent-ix", identity: "quire.value.text.unicode-17.0.0/v1"}`.
+In the table, `N(p)` is exactly
+`{"path":p,"laws":[{"role":"text_profile","definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"}}],"mode":{"kind":"text_profile","value":"nfc"}}`;
+`B(p)` is the same object with mode value `"binary-utf8"`; `R(p)` is exactly
+`{"path":p,"laws":[],"mode":null}`. Every displayed path is an ordered JSON
+array of literal UTF-8 segment strings, with no normalization, escaping of
+the colon, inserted separator or omitted segment. Lists are in walk order.
+
+| Vector | Declarations and walked type | Complete leaves, in order |
+| --- | --- | --- |
+| U1 | `union Empty { None, Done }`; `Empty` | `[]` |
+| U2 | `union Choice { Right(Text[0, 8; binary-utf8], Text[0, 8; nfc]), Left(Text[0, 8; nfc]), Empty }`; `Choice` | `B(["member:Right","position:0"])`, `N(["member:Right","position:1"])`, `N(["member:Left","position:0"])` |
+| U3 | `union Wrapped { Item(Option<Sequence<Text[0, 8; nfc]>[0, 2]>), Empty }`; `Option<Wrapped>` | `N(["inner","member:Item","position:0","inner","inner"])` |
+| U4 | `union Chain { End(Text[0, 8; nfc]), Next(Option<Chain>) }`; `Chain` | `N(["member:End","position:0"])`, `R(["member:Next","position:0","inner","recursion:0"])` |
+| U5 | U4's `Chain`; `Option<Chain>` | `N(["inner","member:End","position:0"])`, `R(["inner","member:Next","position:0","inner","recursion:1"])` |
+| U6 | `union Silent { End, Next(Option<Silent>) }`; `Silent` | `[]` |
+| U7 | `union Link { End(Text[0, 8; binary-utf8]), More(Cell) }`; `record Cell { tag: Text[0, 8; nfc]; next: Link?; }`; `Link` | `B(["member:End","position:0"])`, `N(["member:More","position:0","field:tag"])`, `R(["member:More","position:0","field:next","inner","recursion:0"])` |
+
+For U2, renaming `Left` to `Other` changes only the corresponding path's
+`member:Left` segment to `member:Other`. Declaring `Left` before `Right`
+moves its leaf before both `Right` leaves; no lexicographic member sort is
+performed. Swapping `Right`'s payload types exchanges the profiles at
+`position:0` and `position:1`. Source `case` arm order changes none of
+these lists. U4 expands to `End`'s text at every finite chain of `Next`
+payloads with its `nfc` profile; U7 expands both profiles through every
+finite `More`/`next` chain. Existing record/tuple, optional-field and E14
+to E17 recursive vectors retain their paths, profiles and order.
 
 ### Who builds the lowering
 
@@ -731,11 +796,21 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the lock's `edition` and each `definition_selections` row as the `DefinitionLock` catalog's row of that role, exactly `{authority, identity}` with no revision and no digest. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row, and the lock's `definition_selections` holds it. IR's v2 reader admits both packages. | Test (TC-416) |
 | FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and on their `identity_projection` entries: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The key of every emitted structural node recomputed from the wire node alone, its `owner` included, equals its `node_id`, and each `Tree` group's label recomputes from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
 | FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; their `package_id`s differ, and IR's v2 reader admits both. QSL writes the declarations with the qualified names `["Point"]` and `["List"]` (FR-092 D1), so these `Point`, `List` and `Integer` nodes are the corresponding nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
+| FR-093-AC-23 | Structural equality and inequality over each Union text-leaf vector U1 to U7 carry exactly that vector's complete ordered leaf list, with the selected text definition and stated profiles. U2's rename, member reorder, payload swap and source arm reorder give exactly the changes the vectors state. | Test |
+| FR-093-AC-24 | For each `K` of `Set`, `Bag` and `OrderedSet`, structural equality over `K<Choice>` (U2) carries U2's leaves with one leading `inner` on every path; `contains` over that collection carries U2's leaves without that prefix (`inner:0`). A catalogued `result_inner` operation yielding `K<Choice>` carries U2's leaves without that prefix, while one yielding `Sequence<Choice>` carries `[]`. Structural equality over `Sequence<Choice>` still carries U2's leaves with one leading `inner`. | Test |
+| FR-093-AC-25 | U2 and U4 with no selected text-profile definition refuse `missing_declaration`/`missing-selection` naming `text_profile` and yield no node; U2 still refuses when both compared values select `Empty`. When a selected node or work ceiling is exhausted by these walks, checking stops with `stage_limit_exceeded` and the corresponding `node-count-exceeded` or `work-budget-exceeded` cause before resolving leaf laws, yielding no node; every appended text or recursion leaf costs one node, every entered union costs composite work, and every leaf's full path bytes count toward work. | Test |
+| FR-093-AC-26 | Cancelling a lifecycle `check` during a Union text-leaf walk stops at the next charge with `StageFailure::Cancelled` retaining the requested cause and no output artifact (FR-276). Existing AC-10 and AC-11 Record/Tuple and optional-inner vectors remain byte-identical. | Test |
 
 ## Dependencies
 
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): type, parameter
   and function nodes, the structural-node preimage and the literal spellings.
+- [FR-319](FR-319-key-union-member-and-case-nodes.md) and
+  [FR-323](FR-323-key-union-values-in-collections.md): union identity,
+  equality and canonical collection keys; QSpec
+  [FR-440](ix://agent-ix/quire-specification/FR-440) and
+  [FR-322](ix://agent-ix/quire-specification/FR-322): union nodes, the
+  catalog's leaf sources and the shared leaf path vocabulary.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §2.2 E3 (keys minted at E3), §2.4 (lock evidence and law `DefinitionRef`s),
   §3 FB-13, §6.1 (a family's emission arm under `package`).
@@ -774,7 +849,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
   §5.1: no catch-all arm; §3 and §4.3: a postcondition, and the `Pre` read
   inside it, belong to the `ProtocolClause` family, which lowers them with
   #218 (designed in #223).
-- QSpec FR-143: the recursive records whose text-leaf walk rule 3 ends.
+- QSpec FR-143: the recursive composites whose text-leaf walk rule 3 ends.
 - The `recursion:d` leaf segment and an optional field's `inner` segment:
   FR-322's `LeafSegment` admits `field:<name>`, `position:<n>` and `inner`,
   and names no leaf form for a recursive composite. Both are QSL proposals
@@ -784,6 +859,13 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
   without `inner` refuses its leaves.
 
 ## Status
+
+The Union text-leaf amendment (QSL-680, AC-23 to AC-26) is specified here;
+its cross-repository QSpec/catalog/schema settlement and QSL implementation
+qualification remain separate. These criteria do not claim implementation
+coverage. The amendment extends the walk with `member:<identifier>` and
+includes unions in reentry and reachability; it grants no fallback encoding
+for a reader whose admitted leaf grammar lacks the segment.
 
 Specified, including the text-leaf walk and its recursion
 leaf. Implemented (#384): `check` lowers each checked node in

@@ -1684,14 +1684,14 @@ fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses_for_a_valu
     assert!(matches!(report.result(), ValueParityResult::Agrees { .. }));
 }
 
-/// FR-255-AC-11 (TC-914): two requests that reach the same effective
+/// FR-255-AC-11 (TC-951): two requests that reach the same effective
 /// accounting limits, one wholly in `accounting_limits` and one with
 /// `work_units` and `value_occurrences` only as `stage_limits` entries over
 /// other values, give the same claim identity, settlement and charges, with
 /// limits that fit and with `work_units` too small.
-#[trace("TC-914", "FR-255-AC-11")]
+#[trace("TC-951", "FR-255-AC-11")]
 #[test]
-fn tc_914_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges() {
+fn tc_951_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges() {
     for work_units in [UNLIMITED.work_units, 0] {
         let effective = ScalarLimits {
             work_units,
