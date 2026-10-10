@@ -163,6 +163,36 @@ fn malformed_format_setting_operands_refuse_before_any_stage() {
     assert_eq!(refusal.cause, UsageCause::Repeated);
 }
 
+#[trace("TC-931", "FR-003-AC-10", "FR-255-AC-3", "FR-255-AC-4")]
+#[test]
+fn the_settings_operation_supplies_the_actual_formatter_limits() {
+    use qsl_foundation::{Setting, SettingLimits};
+    use qsl_replay::CallerLimits;
+
+    let parsed = parse_complete(COMPLETE);
+    assert!(parsed.is_admissible());
+    let complete = format(&parsed).unwrap();
+    let bytes = complete.len();
+    let mut limits = FormatLimits::default();
+    assert_eq!(limits.bounds(), vec![(Setting::FormatOutputBytes, 1_048_576)]);
+    assert!(!limits.set_bound(Setting::S1Tokens, 3));
+    assert_eq!(limits, FormatLimits::default());
+    assert!(limits.set_bound(Setting::FormatOutputBytes, u64::try_from(bytes).unwrap()));
+    assert_eq!(limits.output_bytes, bytes);
+    assert_eq!(limits.with_output_bytes(0).bounds(), vec![(Setting::FormatOutputBytes, 0)]);
+    for bound in [0, bytes - 1, bytes, bytes + 1, 1_048_577] {
+        let operand = format!("format.output_bytes={bound}");
+        let caller = CallerLimits::from_operands([operand.as_str()]).unwrap();
+        assert_eq!(caller.format.output_bytes, bound);
+        let result = format_with_limits(&parsed, caller.format);
+        if bound < bytes {
+            assert!(matches!(result, Err(FormatRefusal::OutputBudgetExhausted(_))));
+        } else {
+            assert_eq!(result.unwrap(), complete);
+        }
+    }
+}
+
 #[trace("TC-016", "FR-003-AC-5", "FR-003-AC-6")]
 #[test]
 fn typed_format_limits_publish_a_replaceable_default() {
@@ -197,9 +227,8 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
             matches!(refusal, FormatRefusal::OutputBudgetExhausted(_)),
             "limit {limit}"
         );
-        // The output byte ceiling is `SyntaxLimit::SourceBytes`,
-        // one of the four kinds that map onto `stage_limit_exceeded`.
-        assert_eq!(refusal.code(), Code::StageLimitExceeded, "limit {limit}");
+        // Formatting retains the shared InputBytes cause with its resource code.
+        assert_eq!(refusal.code(), Code::ResourceExhausted, "limit {limit}");
         let diagnostic = refusal.diagnostic();
         assert_eq!(diagnostic.phase, Phase::Format);
         assert_eq!(&diagnostic.source, parsed.source().identity());
@@ -233,11 +262,11 @@ fn formatter_uses_a_raised_content_ceiling_as_given() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(parsed.source().text().len(), OUTPUT_BYTE_CEILING);
     let refusal = format_with_limit(&parsed, OUTPUT_BYTE_CEILING).unwrap_err();
-    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
     assert_eq!(refusal.diagnostic().phase, Phase::Format);
     assert_eq!(
         format(&parsed).unwrap_err().code(),
-        Code::StageLimitExceeded
+        Code::ResourceExhausted
     );
     let expected_header = concat!(
         "language \"ix:native\" edition \"1-draft\";\n",

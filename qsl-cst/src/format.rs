@@ -10,7 +10,7 @@ use crate::{
     CompleteCause, CompleteCode, CompleteDiagnostic, CstToken, ParsedSource, TokenClass, TokenKind,
 };
 use qsl_foundation::source::MAX_SOURCE_BYTES;
-use qsl_foundation::{Phase, Span};
+use qsl_foundation::{Phase, Setting, SettingLimits, Span};
 
 /// The default output-byte ceiling: 1 MiB, replaceable by the caller.
 pub const OUTPUT_BYTE_CEILING: usize = MAX_SOURCE_BYTES;
@@ -31,10 +31,26 @@ impl Default for FormatLimits {
 }
 
 impl FormatLimits {
+    const OUTPUT_SETTING: Setting = Setting::FormatOutputBytes;
+
     /// Replace the output-byte bound with the supplied value, including zero.
     pub fn with_output_bytes(mut self, output_bytes: usize) -> Self {
         self.output_bytes = output_bytes;
         self
+    }
+}
+
+impl SettingLimits for FormatLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![(Self::OUTPUT_SETTING, u64::try_from(self.output_bytes).unwrap_or(u64::MAX))]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        if setting != Self::OUTPUT_SETTING {
+            return false;
+        }
+        self.output_bytes = usize::try_from(bound).unwrap_or(usize::MAX);
+        true
     }
 }
 
@@ -50,7 +66,7 @@ pub enum FormatRefusal {
     /// The diagnostic is the input's first diagnostic.
     DiagnosedSource(Box<CompleteDiagnostic>),
     /// The formatted text would exceed the selected output-byte ceiling
-    /// (`stage_limit_exceeded`/`input-bytes-exceeded`).
+    /// (`resource_exhausted`/`input-bytes-exceeded`).
     OutputBudgetExhausted(Box<CompleteDiagnostic>),
     /// An established S1 invariant does not hold: a recovery with no
     /// diagnostic, or a token span that is not a UTF-8 slice of the source
@@ -282,9 +298,12 @@ impl<'a> Output<'a> {
                 span,
                 qsl_foundation::SyntaxLimit::SourceBytes { bound: self.limit },
             );
+            diagnostic.code = CompleteCode::ResourceExhausted;
+            let actual = u128::try_from(self.text.len()).unwrap_or(u128::MAX)
+                .saturating_add(u128::try_from(value.len()).unwrap_or(u128::MAX));
             diagnostic.message = format!(
-                "output byte ceiling of {} bytes exhausted; raise FormatLimits.output_bytes with format_with_limit",
-                self.limit
+                "format output-byte limit {} reached ({} emitted UTF-8 bytes); raise {} with FormatLimits.output_bytes or format_with_limit",
+                self.limit, actual, FormatLimits::OUTPUT_SETTING.name()
             );
             return Err(FormatRefusal::OutputBudgetExhausted(diagnostic));
         }

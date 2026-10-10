@@ -182,7 +182,10 @@ impl CompleteCause {
             Self::CorrespondenceLoss => code == CompleteCode::InvalidProjectionCorrespondence,
             Self::EstablishedInvariantBroken => code == CompleteCode::RuntimeInvariant,
             Self::Host(cause) => cause.code() == code,
-            Self::StageLimit(_) => code == CompleteCode::StageLimitExceeded,
+            Self::StageLimit(kind) => {
+                code == CompleteCode::StageLimitExceeded
+                    || (kind == LimitKind::InputBytes && code == CompleteCode::ResourceExhausted)
+            }
         }
     }
 }

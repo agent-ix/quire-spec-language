@@ -71,12 +71,13 @@ impl StageLimits {
     }
 
     /// Reads the wire entries, refusing the first whose name is no setting
-    /// of FR-255's table or is `replay.input_bytes`.
+    /// of FR-255's table, is `replay.input_bytes`, or belongs to formatting,
+    /// which replay does not run.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
         let mut limits = BTreeMap::new();
         for (name, bound) in entries {
             match Setting::from_name(&name) {
-                Some(setting) if setting != Setting::ReplayInputBytes => {
+                Some(setting) if !matches!(setting, Setting::ReplayInputBytes | Setting::FormatOutputBytes) => {
                     limits.insert(setting, bound);
                 }
                 _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
