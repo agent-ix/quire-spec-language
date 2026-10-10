@@ -414,7 +414,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
                 DispatchCandidate {
                     body: 0,
                     precondition: guarded.then_some(1),
-                    precondition_clauses: vec![],
+                    precondition_clauses: guarded.then_some(1).into_iter().collect(),
                 },
             )],
             1,
@@ -1345,14 +1345,21 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let expected =
         ValueType::Int(IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap());
-    let base = object_package(expected, quire_exact::Presence::Required);
+    let (types, model) = admitted_owner_fixture(vec![
+        quire_semantic_value::declaration::FieldDeclaration::new(
+            "edge",
+            expected.clone(),
+            quire_exact::Presence::Required,
+        ),
+    ]);
     let operand = || Expression::field(Expression::deref(Expression::name("receiver")), "edge");
     let expression = Expression::binary(BinaryOperator::Equal, operand(), operand());
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
         qsl_foundation::IdentityLimits::default(),
     );
-    declarations.types = base.graph().scope().types().clone();
+    declarations.types = types;
+    declarations.models.push(model);
     declarations.functions.push(FunctionDeclaration::new(
         "Compare",
         vec![(
