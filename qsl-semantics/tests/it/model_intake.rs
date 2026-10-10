@@ -142,7 +142,7 @@ fn every_corpus_package_admits_under_its_recorded_digest() {
             (
                 "architecture",
                 architecture,
-                "aed361978b4f0fcc5b7ca5d7dfc95abb32023913d563f9a08101065e6ef48ee0",
+                "4090c5dd0982184b93a3488998b9c3e6830c0fb7cf447f0946a8494524f716a8",
             ),
         ];
         for (name, bytes, recorded) in corpus {
