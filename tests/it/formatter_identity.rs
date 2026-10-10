@@ -28,18 +28,29 @@ fn private_tc465_identity(document: Vec<u8>) {
 fn private_state_source_identity(document: Vec<u8>, body: &str) {
     let declarations = semantic_models::admit_and_assemble_with_body(&document, body)
         .expect("the original private TC465 fixture assembles");
-    let graph = declarations.check(quire_semantic_value::checking::CheckingLimits::default())
+    let graph = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("original private TC465 S3: {refusals:?}"));
     let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
         .unwrap_or_else(|refusal| panic!("original private TC465 public S4: {refusal:?}"));
-    assert!(original.omitted().is_empty(), "private TC465 original S4 omissions");
+    assert!(
+        original.omitted().is_empty(),
+        "private TC465 original S4 omissions"
+    );
     let (text, packages) = semantic_models::config_unit_with_body(&document, body);
     let checked = emitted(
         SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
-        "unit.native", text.as_bytes(), &packages, &DependencyInput::default(),
-    ).unwrap_or_else(|refusal| panic!("private TC465 formatter spine: {refusal:?}"));
-    assert_eq!(checked.package_id(), original.package().package_id(),
-        "the formatter oracle uses the owning private TC465 model view");
+        "unit.native",
+        text.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("private TC465 formatter spine: {refusal:?}"));
+    assert_eq!(
+        checked.package_id(),
+        original.package().package_id(),
+        "the formatter oracle uses the owning private TC465 model view"
+    );
 }
 
 macro_rules! private_tc465_cases {
@@ -77,7 +88,10 @@ private_tc465_cases! {
 #[trace("FR-003-AC-9")]
 #[test]
 fn private_frame_clause_source_keeps_format_identity() {
-    private_state_source_identity(semantic_models::frame_test_document(), semantic_models::FRAME_CLAUSES);
+    private_state_source_identity(
+        semantic_models::frame_test_document(),
+        semantic_models::FRAME_CLAUSES,
+    );
 }
 
 macro_rules! private_argument_cases {
@@ -102,27 +116,44 @@ private_argument_cases! {
 fn protocol_attempt_identity(declarations: &str) {
     let text = format!("{}{declarations}\n", protocol_attempt_fixture::HEADER);
     let compile = |text: &str, revision: &str| {
-        let parsed = qsl_cst::parse(SourceIdentity::new("a", "u", "git", revision),
-            "unit.native", text.as_bytes(), qsl_cst::Limits::default()).unwrap();
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", revision),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .unwrap();
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
         let forms = qsl_forms::build_unit(&parsed).unwrap();
         let declarations = qsl_semantics::check::PackageDeclarations::assemble(
-            parsed.source().reference().clone(), forms,
-            vec![protocol_attempt_fixture::m_actor_model()], Vec::new(),
-        ).expect("the actual original SelectedModel resolves the protocol");
-        let graph = declarations.check(quire_semantic_value::checking::CheckingLimits::default())
+            parsed.source().reference().clone(),
+            forms,
+            vec![protocol_attempt_fixture::m_actor_model()],
+            Vec::new(),
+        )
+        .expect("the actual original SelectedModel resolves the protocol");
+        let graph = declarations
+            .check(quire_semantic_value::checking::CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{revision}: protocol S3 refuses: {refusals:?}"));
         let emission = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
-            .unwrap_or_else(|refusal| panic!("{revision}: protocol public S4 refuses: {refusal:?}"));
+            .unwrap_or_else(|refusal| {
+                panic!("{revision}: protocol public S4 refuses: {refusal:?}")
+            });
         assert!(emission.omitted().is_empty(), "protocol S4 omissions");
         (parsed, emission.package().package_id())
     };
     let (parsed, original) = compile(&text, "1");
     let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX).unwrap();
     let (reparsed, formatted_id) = compile(&formatted, "1-formatted");
-    assert_eq!(qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(), formatted,
-        "private protocol second-pass bytes");
-    assert_eq!(formatted_id, original, "private protocol checked package identity");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "private protocol second-pass bytes"
+    );
+    assert_eq!(
+        formatted_id, original,
+        "private protocol checked package identity"
+    );
 }
 
 #[trace("FR-003-AC-9")]
@@ -141,9 +172,19 @@ fn private_protocol_shared_binder_keeps_format_identity() {
 #[test]
 fn private_protocol_named_contract_keeps_format_identity() {
     let source = include_str!("../../qsl-semantics/src/check/protocol_clause.rs");
-    let template = function_literal(source, "an_empty_contracts_list_binds_with_no_refusal", "post Done ");
-    let declarations = template.replacen("{}", &protocol_attempt_fixture::attempt_flow("Flow", "Done"), 1)
-        .replace("{{", "{").replace("}}", "}");
+    let template = function_literal(
+        source,
+        "an_empty_contracts_list_binds_with_no_refusal",
+        "post Done ",
+    );
+    let declarations = template
+        .replacen(
+            "{}",
+            &protocol_attempt_fixture::attempt_flow("Flow", "Done"),
+            1,
+        )
+        .replace("{{", "{")
+        .replace("}}", "}");
     protocol_attempt_identity(&declarations);
 }
 

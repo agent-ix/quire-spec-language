@@ -53,7 +53,12 @@ fn compose(
     limits: SpineLimits,
 ) -> Result<ComposedUnit, Box<crate::spine::CompileRefusal>> {
     let original = crate::spine::compose(
-        identity.clone(), path, bytes, packages, dependencies, limits,
+        identity.clone(),
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
     )?;
     let parsed = qsl_cst::parse(identity.clone(), path, bytes, limits.source)
         .expect("the original fixture passed S1");
@@ -64,18 +69,29 @@ fn compose(
     let mut formatted_identity = identity;
     formatted_identity.revision.push_str("-formatted");
     let reparsed = qsl_cst::parse(
-        formatted_identity.clone(), path, formatted.as_bytes(), formatted_limits.source,
-    ).expect("formatted S1 retains the owning limits");
+        formatted_identity.clone(),
+        path,
+        formatted.as_bytes(),
+        formatted_limits.source,
+    )
+    .expect("formatted S1 retains the owning limits");
     assert_eq!(
         qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
         formatted,
         "{path}: private fixture second-pass bytes",
     );
     let checked = crate::spine::compose(
-        formatted_identity, path, formatted.as_bytes(), packages, dependencies, formatted_limits,
-    ).unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
+        formatted_identity,
+        path,
+        formatted.as_bytes(),
+        packages,
+        dependencies,
+        formatted_limits,
+    )
+    .unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
     assert_eq!(
-        checked.emitted.package_id(), original.emitted.package_id(),
+        checked.emitted.package_id(),
+        original.emitted.package_id(),
         "{path}: private fixture formatting changed checked package identity",
     );
     Ok(original)
@@ -90,9 +106,15 @@ fn private_clause_source_generators_keep_format_identity() {
         ("step2.native", config_version_step2_unit_and_packages()),
         ("step3.native", config_version_step3_unit_and_packages()),
     ] {
-        compose(source(), path, unit.as_bytes(), &packages,
-            &DependencyInput::default(), SpineLimits::default())
-            .unwrap_or_else(|refusal| panic!("{path}: original fixture refuses: {refusal:?}"));
+        compose(
+            source(),
+            path,
+            unit.as_bytes(),
+            &packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{path}: original fixture refuses: {refusal:?}"));
     }
 }
 

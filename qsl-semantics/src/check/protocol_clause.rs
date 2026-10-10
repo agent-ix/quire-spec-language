@@ -854,7 +854,6 @@ mod tests {
             .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
     }
 
-
     /// S1, S2 and the assembler over `declarations` (against
     /// [`m_actor_model`]), expecting the assembler to refuse.
     fn assembly_errors(declarations: &str) -> Vec<crate::check::AssemblyError> {
