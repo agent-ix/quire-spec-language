@@ -150,7 +150,7 @@ impl Recipe {
             .env("CONFORMANCE_DOUBLE_MODE", mode)
             .env("CONFORMANCE_DOUBLE_FAIL_AT", fail_at.to_string());
         if let Some(path) = override_dir {
-            make.arg(format!("QSPEC_DIR={}", path.display()));
+            make.env("QSPEC_DIR", path);
         }
         // Run the real ci dependency graph, confining other lanes to their own tests.
         if target == "ci" {
@@ -205,13 +205,16 @@ fn caller_checkout_override_is_used_and_exported() {
     fs::remove_dir_all(&recipe.checkout).unwrap();
     let override_dir = recipe.root.path().join("caller checkout");
     Recipe::checkout(&override_dir);
-    let output = recipe.run("ci", Some(&override_dir), "positive", 0);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    recipe.assert_calls(&override_dir);
+    for path in [override_dir.as_path(), Path::new("caller checkout")] {
+        let _ = fs::remove_file(&recipe.log);
+        let output = recipe.run("ci", Some(path), "positive", 0);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        recipe.assert_calls(&override_dir);
+    }
     let exported = Command::new("make")
         .current_dir(recipe.root.path())
         .args([
