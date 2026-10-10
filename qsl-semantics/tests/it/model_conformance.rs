@@ -211,6 +211,76 @@ fn operation_axes_charge_the_selected_type_facts_and_complete_effect_comparisons
     }
 }
 
+#[trace("FR-082-AC-3", "QSpec-TC-196")]
+#[test]
+fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record() {
+    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind};
+
+    for branching in [false, true] {
+        let mut records = vec![object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", if branching { vec!["model.B", "model.D"] } else { vec!["model.B"] }),
+            field_member("model.A.n", "model.A", "model.A", mult(0, Some(1))),
+            field_member_redefining("model.B.n", "model.B", "model.C", mult(0, Some(1)),
+                Some("model.A.n"), vec![])];
+        if branching { records.push(object_type("model.D", vec![])); }
+        let package = DomainPackage::new(DomainPackageRef::fixture("test/ancestor-axis"), records);
+        let view = match normalize(&package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("structural fixture must normalize: {other:?}"),
+        };
+        let edges = if branching { 3 } else { 2 };
+        let work = if branching { 4 } else { 3 };
+        for limit in [0, edges - 1, edges] {
+            let mut meter = Meter::new(ModelNormalizationLimits {
+                ancestor_steps: limit, ..ModelNormalizationLimits::UNLIMITED
+            });
+            let result = check_field_redefinition(view.model_index(), &DeclarationKey::fixture("model.B.n"),
+                &DeclarationKey::fixture("model.A.n"), &mut meter);
+            if limit == edges {
+                assert_eq!(result, ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible));
+                assert_eq!(meter.consumed(LimitKind::WorkUnits), work + 1);
+            } else {
+                assert_eq!(result, ConformanceCheckOutcome::Incomplete(Incomplete {
+                    limit_kind: LimitKind::AncestorSteps, limit, consumed: limit, next_charge: 1,
+                    charge_point: ChargePoint::ModelAncestorEdge,
+                }));
+                assert_eq!(meter.consumed(LimitKind::WorkUnits), work,
+                    "admitted owning axis is retained before the denied edge");
+            }
+        }
+    }
+}
+
+#[trace("FR-082-AC-3", "QSpec-TC-196")]
+#[test]
+fn an_unavailable_owning_axis_wins_before_an_unavailable_ancestor_edge() {
+    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind};
+    let package = DomainPackage::new(DomainPackageRef::fixture("test/ancestor-precedence"), vec![
+        object_type("model.A", vec![]), object_type("model.B", vec!["model.A"]),
+        field_member("model.A.n", "model.A", "model.A", mult(0, Some(1))),
+        field_member_redefining("model.B.n", "model.B", "model.B", mult(0, Some(1)),
+            Some("model.A.n"), vec![]),
+    ]);
+    let index = ModelIndex::build(package);
+    for work_units in [0, 2] {
+        let mut meter = Meter::new(ModelNormalizationLimits {
+            ancestor_steps: 0, work_units, ..ModelNormalizationLimits::UNLIMITED
+        });
+        let result = check_field_redefinition(&index, &DeclarationKey::fixture("model.B.n"),
+            &DeclarationKey::fixture("model.A.n"), &mut meter);
+        let expected = if work_units == 0 {
+            Incomplete { limit_kind: LimitKind::WorkUnits, limit: 0, consumed: 0,
+                next_charge: 2, charge_point: ChargePoint::ConformanceAxis }
+        } else {
+            Incomplete { limit_kind: LimitKind::AncestorSteps, limit: 0, consumed: 0,
+                next_charge: 1, charge_point: ChargePoint::ModelAncestorEdge }
+        };
+        assert_eq!(result, ConformanceCheckOutcome::Incomplete(expected));
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), work_units);
+    }
+}
+
 fn bundle_h(mut records: Vec<DomainPackageRecord>) -> DomainPackage {
     records.extend(fixture_h_base());
     DomainPackage::new(DomainPackageRef::fixture("bundle.h"), records)
