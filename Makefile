@@ -95,6 +95,9 @@ cargo-deny-bans:
 
 SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)
 QSPEC_DIR ?= $(SIBLINGS)/quire-specification
+# Cargo runs tests from each package directory, so relative caller paths must
+# be resolved before exporting them. Keep invalid inputs for the refusal below.
+override QSPEC_DIR := $(shell if [ -d "$(QSPEC_DIR)" ]; then cd "$(QSPEC_DIR)" && pwd -P; else printf '%s' "$(QSPEC_DIR)"; fi)
 export QSPEC_DIR
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
