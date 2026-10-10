@@ -41,6 +41,12 @@ are prospective qualification procedures; this artifact claims no execution.
    the terminal stutter letter instead of bounded false-extension. At
    origin compare `historically[0,1] holds(p)` for p true with
    `historically[0,1] true`, distinguishing missing atomic history from constants.
+   Also read open `p until[1,*] q` and finite `p until[1,1] q` on
+   p-false origin/q-true distance one and check their different prefix
+   semantics and release dual. Insert a false fork before the counted
+   p-true step; at distance one insert an uncounted p-true letter after
+   a false letter. Compare all horizons/ages before and after a memory
+   step, and compare mixed-truth protocol past bucket transforms.
 8. Admit u64::MAX interval bounds and b+1 saturation; reach the actual
    automaton-state/identity-byte budget while encoding a reachable state.
 
@@ -61,6 +67,9 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 - Step 7: accept then reject respectively; terminal semantics match the
   evaluator and a new activation does not erase an older open debt.
   The two historical origin cases are false and true respectively.
+  Open until rejects at origin while finite until accepts; release
+  preserves its dual. Fork/memory letters do not reduce distance, and
+  a final-region zero-distance true letter can satisfy the pending F.
 - Step 8: exact mathematical strings, including b+1 above u64::MAX;
   an explicit resource stop gives no truncated/default key.
 
