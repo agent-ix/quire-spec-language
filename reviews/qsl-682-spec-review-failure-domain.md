@@ -123,3 +123,26 @@ scope:
 Direct changed-file Quire validation passed (1/1 grammar-clean; 4/9 criteria property-extractable). Installed quire 0.36.2 engine 0.50.2, quoin 0.28.3; module spec-artifacts-process@b82e42e893612b4b4ee94127714b4577ee893502. Module discovery emitted DuplicateArchetype ADR/Plan/Review/SpecReview/Standard, DuplicateInverseEdge part_of and semantic.inline-data-schema advisories, retained in changed-validation.log. No applicable AssuranceProfile found. Native code builds/tests and enforced workflow were outside this spec-only scope. Automated Jev is unavailable; manual AC falsifiability only. Available reviewer model metadata is GPT-6 (no more specific model identifier exposed); no guessed version.
 
 Computed matrix completed (metadata only, exit 0): FR262 AC1/2/4/5/6/7/8 untagged; AC3/9 method-without-symbol. AC1/2 gaps are inherited; AC3-9 are explicitly future downstream obligations. No full-coverage claim. RT PR111 FR273 at 19ce9e7f3e7c206fe8ca1bf555fb742576ddcaa2 was read directly and agrees on shared meter, order and explicit frames.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3c796045f789a3222cc7cb1164bc121beb3595c5 |
+
+## Disposition round 1
+
+Reviewed 3c796045f789a3222cc7cb1164bc121beb3595c5. SPEC MERGEABLE PASS. Exact checked-closure registry ownership, exclusive admission, first-successful-Begin permanent seal, failed-Begin open behavior, ordered internal admission outcomes, all-duplicate refusal, unchanged bindings on refusal, no factory invocation or meter use on registration, frozen nested/current/later sessions and no reopening after terminal/drop now resolve FND-001. Concrete AC3 exercises duplicate including the same factory, failed/successful Begin, sealed-before-duplicate and different-identity rejection, later sessions and terminal behavior. Cancellation, completed-input validation, function.call accounting and fresh-session exhaustion rules remain unchanged. No new findings across all eight selected lenses.
+
+After excerpt:
+
+```text
+A second binding SHALL be refused even when it supplies the same factory or
+an equally valid factory; registration is neither replacement nor idempotent
+acceptance. A refused registration SHALL leave every binding unchanged.
+Registration SHALL neither invoke a factory nor participate in the application
+meter. Once sealed, the registry SHALL retain its bindings for every session
+that uses it, including nested applications not yet reached. Selecting a new
+set of factories requires a fresh registry and fresh sessions, rather than
+changing an existing session's binding view.
+```
