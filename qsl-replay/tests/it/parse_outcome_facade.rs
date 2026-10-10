@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-278, FR-286: a driver serializes actual parse results through the
 //! public replay facade, preserving the producer's diagnostics.
+//! These parse regressions supplement the check, package and execute
+//! acceptance tests; they establish no compile-composition or I2 parity.
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::StageFailure;
@@ -58,7 +60,7 @@ fn diagnostic(refusal: &CompileRefusal) -> Value {
 
 /// Parsing the admitted fixture produces syntax only, without a package or
 /// evaluation payload.
-#[trace("FR-286-AC-1", "FR-286-AC-3", "FR-278-AC-1")]
+#[trace("FR-286-AC-3")]
 #[test]
 fn a_driver_serializes_parse_success_at_s2_without_artifacts() {
     let source = identity();
@@ -84,7 +86,7 @@ fn a_driver_serializes_parse_success_at_s2_without_artifacts() {
 
 /// Both S1 syntax refusal and S2 unsupported forms retain the actual
 /// producer's code, cause, message and located source region.
-#[trace("FR-278-AC-2", "FR-286-AC-2", "FR-286-AC-3")]
+#[trace("FR-278-AC-2", "FR-286-AC-3")]
 #[test]
 fn a_driver_serializes_parse_refusals_with_the_original_locus() {
     let source = identity();
@@ -208,7 +210,7 @@ fn a_driver_serializes_each_reached_parse_limit() {
 
 /// Actual parse calls with requested or deadline cancellation have no
 /// reached stage and preserve the cancel cause.
-#[trace("FR-276-AC-1", "FR-286-AC-5", "FR-286-AC-3")]
+#[trace("FR-276-AC-1", "FR-286-AC-3")]
 #[test]
 fn a_driver_serializes_requested_and_deadline_parse_cancellation() {
     let source = identity();
