@@ -643,6 +643,42 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
 }
 
 #[test]
+#[trace("TC-917", "FR-090-AC-16")]
+fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() {
+    let receiver = reference();
+    let reference_type = ValueType::Reference(receiver.object_type());
+    let sequence_type = quire_exact::CollectionType::new(CollectionKind::Sequence, reference_type.clone(), None);
+    let sequence = quire_exact::from_admitted(sequence_type.clone(), vec![Value::Reference(receiver.clone())]);
+    let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
+    let field = FieldRef::new(receiver.object_type(), "edge");
+    for (value_type, stored) in [(reference_type.clone(), Value::Reference(receiver.clone())),
+        (ValueType::collection(sequence_type), sequence)] {
+        let package = object_package(value_type.clone(), quire_exact::Presence::Required);
+        let graph = package.graph();
+        let closure = quire_semantic_value::object_closure::ObjectClosure::new(graph.scope().types(),
+            [(receiver.clone(), vec![("edge", FieldValue::Present(stored))])], &[]).unwrap();
+        let objects = ObjectEnvironment::new(closure);
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+        let targets = machine.edge_targets(literal.root(), &receiver, &field)
+            .unwrap_or_else(|_| panic!("admitted required edge"));
+        assert_eq!(targets, vec![receiver.clone()]);
+        let attribute = CheckedBody::fixture(vec![reference_type.clone()], |ids| NodeKind::Attribute {
+            reference: ids[0], field: field.clone(), optional: false, derefed: false,
+        }, value_type);
+        machine.values.push(Value::Reference(receiver.clone()));
+        machine.apply(attribute.root()).unwrap_or_else(|_| panic!("admitted attribute read"));
+        match machine.pop().unwrap_or_else(|_| panic!("attribute result")) {
+            Value::Reference(value) => assert_eq!(value, receiver),
+            Value::Collection(value) => assert!(matches!(value.elements(), [Value::Reference(value)] if value == &receiver)),
+            _ => panic!("attribute changed its admitted value kind"),
+        }
+        drop(machine);
+        assert!(meter.admitted_charges().is_empty());
+    }
+}
+
+#[test]
 #[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
 fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
