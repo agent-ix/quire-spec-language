@@ -387,7 +387,6 @@ name.
 | FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test |
 | FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test |
 | FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test |
-
 | FR-096-AC-19 | For each typed kernel CheckedInvariantCause, a received CheckedInvariant at S6a returns an InternalFault with stage `S6a`, invariant `checked-program-invariant` and the identical typed cause payload as accessible provenance through public call, public evaluate and replay fault mappings; kernel code and cause accessors remain absent. | Test |
 
 ## Dependencies

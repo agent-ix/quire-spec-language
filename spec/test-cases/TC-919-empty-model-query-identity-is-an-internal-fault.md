@@ -22,7 +22,8 @@ an admitted ObjectReference that the ObjectId constructor forbids.
    object identity is the empty string, a matching universe and maximum one.
    Call and evaluate a checked `allInstances<T>(p)` through the public package
    APIs with a recorded binding identity and matching maximum. Observe the
-   actual bridge failure, diagnostic and meter events.
+   actual bridge failure, diagnostic and meter events separately for call
+   and evaluate; use a body containing only this query and no nested call.
 2. Reach that same bridge from the selected-key path and the successful
    lookup-key path using private raw-key fixtures. For lookup use an empty
    `ReferenceKey` at the raw query/bridge seam, not a forged ObjectId. Record
@@ -42,10 +43,15 @@ Step 1 reaches S6a and returns `CallFailure::Fault`, code `runtime_invariant`,
 category internal failure, stage `S6a`, invariant
 `model-query-object-identity-empty`. There is no Evaluation, refusal record,
 partial successful collection, fabricated identity or synthetic kernel cause.
-The public allInstances run charges its entry FunctionCall, PopulationVisit,
-CollectionBound and CollectionResultRetain in the ordinary order. For its
-single selected member, retention accounts for the two result units (the
-collection and member), exactly once, before the bridge fails.
+For `CheckedPackage::call`, the event prefix is entry FunctionCall, then
+PopulationVisit, CollectionBound and CollectionResultRetain. For
+`CheckedPackage::evaluate`, Machine has no entry FunctionCall charge: the
+prefix is PopulationVisit, CollectionBound and CollectionResultRetain only.
+Both APIs retain these actual query charges in order, and retention accounts
+for the two result units (the collection and its single selected member),
+exactly once, before the bridge fails. Neither adds a bridge/fault charge;
+evaluate does not acquire call's entry charge and call does not charge entry
+twice.
 
 Step 2 returns the same S6a fault. Lookup preserves LookupKey and the already
 performed LookupResultRetain charge (one result unit bare, two for Option),
