@@ -84,9 +84,12 @@ defines, over exactly `{version, owner_effective_type, original, derivation}`;
 this requirement does not restate that preimage. The model binder SHALL NOT
 read a `title`, `displayName` or any other presentation field when computing
 an identity, a key, a digest, an ordering or a resolution decision. Two
-admitted declarations with equal declared shape but distinct original
-declaration keys SHALL always yield distinct effective declarations; the
-binder SHALL NOT collapse them by an identity-equivalence rule.
+admitted declarations for which the selected normalization rules derive
+effective entries, with equal declared shape but distinct original declaration
+keys, SHALL yield distinct effective declarations; the binder SHALL NOT
+collapse those derived declarations by an identity-equivalence rule. An
+original whose kind has no selected derivation rule remains in the exact
+original inventory without acquiring an effective identity from this guarantee.
 
 ### Losing redefinitions are retained, not deleted
 
