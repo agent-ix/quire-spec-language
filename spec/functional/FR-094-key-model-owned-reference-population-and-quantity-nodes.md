@@ -156,9 +156,9 @@ environment are exactly the admitted effective views' `type_identities`
 values, so every admitted `Reference<T>` maps to one `DeclarationKey`.
 
 A model declaration node's body names no member, so the type of a `field` or
-`operation` member is not in the graph. ADR-013 QC-25 asks QSpec how a
-reader derives it for FR-322's `member` result form and `member_of`
-constraint. The `Attribute` projection over a `deref` result is QC-24's.
+`operation` member is not in the graph. QSpec FR-322 settles how a reader
+derives it for FR-322's `member` result form and `member_of` constraint. The
+`Attribute` projection over a `deref` result is QC-24's.
 
 ### Model correspondence
 
@@ -700,9 +700,10 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §5.1: no catch-all arm.
 - QSpec: `ModelOwner` and its vectors (FR-322-AC-28; ADR-013 QC-3), the
-  `reference` and `alias` composite forms, the `model_population` domain
-  form, the `compound_unit` scalar form and the model operation entries of
-  `schema.json` and `operation-catalog.json`; FR-322-AC-62 settles the
+  the alias-forwarding rule and `reference` composite form, the
+  `model_population` domain form, the `compound_unit` scalar form and the
+  model operation entries of `schema.json` and `operation-catalog.json`;
+  FR-322-AC-62 settles the
   forwarding, bodies, anonymous ownership and refusal rules for these forms.
 
 ## Status
