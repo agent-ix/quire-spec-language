@@ -96,7 +96,6 @@ pub struct Lane {
     pub empty: &'static [EmptySuite],
 }
 
-const NO_TEST_ITEM: &str = "no #[test] item in the target's sources";
 const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 
 /// Measured from the retained `make ci` log of the QSL#670 gate (the
