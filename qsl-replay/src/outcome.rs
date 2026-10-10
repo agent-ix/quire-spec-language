@@ -4,7 +4,8 @@
 //! serializer.
 //!
 //! A driver writes a document with a constructor over the operation's own
-//! outcome ([`OutcomeDocument::from_check`], [`OutcomeDocument::from_package`],
+//! outcome ([`OutcomeDocument::from_parse`], [`OutcomeDocument::from_check`],
+//! [`OutcomeDocument::from_package`],
 //! [`OutcomeDocument::from_replay`]), or, for the operations whose outcome
 //! types live above this crate (`prove`, `analyze`, `monitor`), with
 //! [`OutcomeDocument::settled`] over their items; [`OutcomeDocument::to_bytes`]
@@ -38,7 +39,7 @@ use crate::proof_result::{
 use crate::result::ReplayResult;
 use crate::spine::{
     CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
-    FrontEndFailure, RunRefusal, SpineStage,
+    FrontEndFailure, ParsedSource, RunRefusal, SpineStage,
 };
 use crate::ReplayRefusal;
 
@@ -685,6 +686,16 @@ impl OutcomeDocument {
     /// The document's diagnostics.
     pub fn diagnostics(&self) -> &[OutcomeDiagnostic] {
         &self.diagnostics
+    }
+
+    /// The document of a `parse` outcome: success at S2, with no items,
+    /// diagnostics, artifacts or evaluation result; a failure uses the
+    /// front-end's category, stage and diagnostic without running a stage.
+    pub fn from_parse(result: &Result<Staged<ParsedSource>, FrontEndFailure>) -> Self {
+        match result {
+            Ok(_) => Self::new(Operation::Parse, Some(OutcomeStage::S2), Category::Success),
+            Err(failure) => Self::from_failure(Operation::Parse, failure),
+        }
     }
 
     /// The document of a `check` outcome: success at S4, which mints no
