@@ -69,7 +69,7 @@ pub enum FormatRefusal {
     /// The diagnostic is the input's first diagnostic.
     DiagnosedSource(Box<CompleteDiagnostic>),
     /// The formatted text would exceed the selected output-byte ceiling
-    /// (`stage_limit_exceeded`/`input-bytes-exceeded`).
+    /// (`resource_exhausted`/`input-bytes-exceeded`).
     OutputBudgetExhausted(Box<CompleteDiagnostic>),
     /// An established S1 invariant does not hold: a recovery with no
     /// diagnostic, or a token span that is not a UTF-8 slice of the source
@@ -301,9 +301,12 @@ impl<'a> Output<'a> {
                 span,
                 qsl_foundation::SyntaxLimit::SourceBytes { bound: self.limit },
             );
+            diagnostic.code = CompleteCode::ResourceExhausted;
+            let actual = u128::try_from(self.text.len()).unwrap_or(u128::MAX)
+                .saturating_add(u128::try_from(value.len()).unwrap_or(u128::MAX));
             diagnostic.message = format!(
-                "output byte ceiling of {} bytes exhausted; raise FormatLimits.output_bytes with format_with_limit",
-                self.limit
+                "format output-byte limit {} reached ({} emitted UTF-8 bytes); raise {} with FormatLimits.output_bytes or format_with_limit",
+                self.limit, actual, FormatLimits::OUTPUT_SETTING.name()
             );
             return Err(FormatRefusal::OutputBudgetExhausted(diagnostic));
         }
