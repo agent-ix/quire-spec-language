@@ -38,6 +38,10 @@ pub enum DeclarationKind {
     ValueType,
     /// A record value type: named fields and no identity (FR-208).
     RecordValueType,
+    /// An authored clause member.
+    Clause,
+    /// An original namespace.
+    Namespace,
     /// A field member of an object type.
     Field,
     /// An operation member of an object type.
@@ -165,8 +169,13 @@ impl AdmittedPackage {
                     .role
                     .as_deref()
                     .map(|name| (relationship.source.type_identity.node.as_str(), name)),
+                DomainPackageRecord::Clause(member) => {
+                    member_identity_name(&member.owner.node, &key.node)
+                        .map(|name| (member.owner.node.as_str(), name))
+                }
                 DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::Namespace(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
@@ -294,6 +303,8 @@ impl AdmittedPackage {
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
+            DomainPackageRecord::Clause(_) => DeclarationKind::Clause,
+            DomainPackageRecord::Namespace(_) => DeclarationKind::Namespace,
             DomainPackageRecord::ScalarType(_) => DeclarationKind::ValueType,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted

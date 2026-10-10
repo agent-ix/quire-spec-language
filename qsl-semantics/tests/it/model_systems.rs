@@ -303,6 +303,7 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
         records.push(DomainPackageRecord::RecordValueType(
             qsl_semantics::model::domain_package::RecordValueTypeRecord {
                 key: DeclarationKey::fixture("model.Money"),
+                supertypes: Vec::new(),
             },
         ));
         records.push(relationship(
