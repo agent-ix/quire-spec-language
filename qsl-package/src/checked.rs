@@ -564,13 +564,13 @@ mod tests {
     #[trace("TC-248", "FR-088-AC-2", "TC-417", "FR-094-AC-2")]
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {
-        use qsl_semantics::check::{AdmittedModel, NodeTag};
+        use qsl_semantics::check::NodeTag;
         use qsl_semantics::model::accounting::ModelNormalizationLimits;
         use qsl_semantics::model::domain_package::{
             DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
         };
         use qsl_semantics::model::key::DeclarationKey;
-        use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+        use qsl_semantics::model::intake::SelectedModels;
         use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
         let declaration = DeclarationKey::fixture("model.A");
@@ -583,17 +583,14 @@ mod tests {
                 supertypes: Vec::new(),
             })],
         );
-        let NormalizeOutcome::Completed(view) =
-            normalize(&domain_package, ModelNormalizationLimits::UNLIMITED)
-        else {
-            panic!("the one-type domain package normalizes");
-        };
+        let selected = SelectedModels::fixture("M", qsl_foundation::Span { start: 0, end: 0 },
+            domain_package, ModelNormalizationLimits::UNLIMITED).expect("the one-type domain package admits");
+        let view = &selected[0].view;
         let a = view.type_identities()[&declaration];
         let span = qsl_foundation::Span { start: 0, end: 0 };
         let graph = PackageDeclarations {
             types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(a, "M::A", vec![])])
                 .expect("one object type admits"),
-            models: vec![AdmittedModel::new(&domain_package, &view).expect("the view is its own")],
             functions: vec![qsl_forms::FunctionDeclaration::new(
                 "f",
                 vec![("r".to_owned(), qsl_forms::TypeForm::name("M::A", span))],
@@ -601,9 +598,10 @@ mod tests {
                 None,
                 qsl_forms::Expression::boolean(true),
             )],
-            ..PackageDeclarations::new(
+            ..PackageDeclarations::fixture_with_selected_models(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),
+                selected,
             )
         }
         .check(CheckingLimits::default())

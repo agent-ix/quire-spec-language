@@ -259,6 +259,20 @@ pub struct PackageDeclarations {
 }
 
 impl PackageDeclarations {
+    /// Test fixture declarations retaining the genuine admission operation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_with_selected_models(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        identity: qsl_foundation::IdentityLimits,
+        selected: crate::model::intake::SelectedModels,
+    ) -> Self {
+        let (entries, meter) = selected.into_parts();
+        let mut declarations = Self::new(source, identity);
+        declarations.models = entries.iter().map(|entry| super::AdmittedModel::from_view(&entry.view)).collect();
+        declarations.model_inputs = Some((entries, meter));
+        declarations
+    }
+
     /// A package declared by the source unit `source` names, with no
     /// declaration yet and no lock evidence, whose node identities encode
     /// under `identity`.

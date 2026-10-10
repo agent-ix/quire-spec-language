@@ -21,7 +21,7 @@ use qsl_forms::{
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
+    object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     OperationClauses,
 };
 use qsl_semantics::check::{
@@ -926,12 +926,13 @@ fn ab_bridge_declarations(
     pb: Option<Expression>,
 ) -> PackageDeclarations {
     let domain_package = bridge_bundle();
-    let view = bridge_view(&domain_package);
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+        ModelNormalizationLimits::UNLIMITED).expect("the actual bridge document admits");
+    let view = &selected[0].view;
     let a_type = view_type(&view, "model.A");
     let b_type = view_type(&view, "model.B");
     let clauses = ab_bridge_clauses(a_type, pa, pb);
-    let mut meter =
-        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root_key = if receiver_type == b_type {
         DeclarationKey::fixture("model.B.size")
     } else {
@@ -941,12 +942,11 @@ fn ab_bridge_declarations(
         key: root_key,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &view,
+    let mut declarations = qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
@@ -1539,9 +1539,10 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         .insert(b.clone(), Expression::boolean(false));
 
     let domain_package = bridge_bundle();
-    let view = bridge_view(&domain_package);
-    let mut meter =
-        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+        ModelNormalizationLimits::UNLIMITED).expect("the actual bridge document admits");
+    let view = &selected[0].view;
     let root = DispatchRoot {
         // #204 round 1, M5: rooted at `b`, not the family's original `a` --
         // `B`'s own effective member for "size" is `B.size`, and this test
@@ -1550,12 +1551,11 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         key: b.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &view,
+    let mut declarations = qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
@@ -1795,23 +1795,23 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 #[test]
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let domain_package = bridge_bundle();
-    let view = bridge_view(&domain_package);
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+        ModelNormalizationLimits::UNLIMITED).expect("the actual bridge document admits");
+    let view = &selected[0].view;
     let a_type = view_type(&view, "model.A");
     let b_type = view_type(&view, "model.B");
     let clauses = bridge_clauses(a_type);
-    let mut meter =
-        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &view,
+    let mut declarations = qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
@@ -1921,23 +1921,23 @@ fn inherited_only_clauses(receiver_type: EffectiveId) -> OperationClauses {
 #[test]
 fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines() {
     let domain_package = inherited_only_bridge_bundle();
-    let view = bridge_view(&domain_package);
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+        ModelNormalizationLimits::UNLIMITED).expect("the actual bridge document admits");
+    let view = &selected[0].view;
     let a_type = view_type(&view, "model.A");
     let c_type = view_type(&view, "model.C");
     let clauses = inherited_only_clauses(a_type);
-    let mut meter =
-        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &view,
+    let mut declarations = qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| {
@@ -2018,21 +2018,21 @@ fn not_a_query_bundle(result: Option<OperationResult>, effect: OperationEffect) 
 /// Runs `checked_dispatch_operation` against `not_a_query_bundle`'s own
 /// `model.A.size` and returns the refusal it must produce.
 fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal {
-    let view = bridge_view(domain_package);
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+        ModelNormalizationLimits::UNLIMITED).expect("the actual bridge document admits");
+    let view = &selected[0].view;
     let a_type = view_type(&view, "model.A");
     let clauses = inherited_only_clauses(a_type);
-    let mut meter =
-        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    checked_dispatch_operation(
-        &view,
+    qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .expect_err("a non-query dispatch target must refuse, not link")
@@ -2134,7 +2134,10 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
             }),
         ],
     );
-    let view = bridge_view(&domain_package);
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture("M",
+        qsl_foundation::Span { start: 0, end: 0 }, domain_package.clone(),
+        ModelNormalizationLimits::UNLIMITED).expect("the actual bridge document admits");
+    let view = &selected[0].view;
     let a_type = view_type(&view, "model.A");
     let b_type = view_type(&view, "model.B");
     let mut clauses = OperationClauses::default();
@@ -2150,18 +2153,15 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
             .own_body
             .insert(operation.clone(), Expression::integer(1_i64));
     }
-    let mut meter =
-        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         key: a.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let refusal = checked_dispatch_operation(
-        &view,
+    let refusal = qsl_semantics::check::checked_dispatch_selected_operation(
+        selected,
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
-        &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
     .expect_err("neither candidate declares a result: the family must refuse, not link");

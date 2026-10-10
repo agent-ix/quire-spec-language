@@ -2525,10 +2525,9 @@ mod tests {
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
     fn population_function_package() -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
         let domain_package = domain_package("bundle.qsl174-ac10-seam");
-        let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-            NormalizeOutcome::Completed(view) => view,
-            other => panic!("expected a completed effective view, got {other:?}"),
-        };
+        let selected = qsl_semantics::model::intake::SelectedModels::fixture("M", SPAN,
+            domain_package, ModelNormalizationLimits::UNLIMITED).expect("the actual fixture package admits");
+        let view = &selected[0].view;
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
@@ -2545,11 +2544,8 @@ mod tests {
             ],
         )
         .expect("one object type admits cleanly");
-        let model = qsl_semantics::check::AdmittedModel::new(&domain_package, &view)
-            .expect("the view is the domain package's own");
         let graph = PackageDeclarations {
             types,
-            models: vec![model],
             functions: vec![FunctionDeclaration::new(
                 "F",
                 vec![(
@@ -2565,9 +2561,10 @@ mod tests {
                     Expression::name("p".to_owned()),
                 )),
             )],
-            ..PackageDeclarations::new(
+            ..PackageDeclarations::fixture_with_selected_models(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),
+                selected,
             )
         }
         .check(CheckingLimits::default())
@@ -2819,10 +2816,9 @@ mod tests {
                 ),
             ],
         );
-        let view = match normalize(&a_with_field, ModelNormalizationLimits::UNLIMITED) {
-            NormalizeOutcome::Completed(view) => view,
-            other => panic!("expected a completed effective view, got {other:?}"),
-        };
+        let selected = qsl_semantics::model::intake::SelectedModels::fixture("M", SPAN,
+            a_with_field, ModelNormalizationLimits::UNLIMITED).expect("the actual fixture package admits");
+        let view = &selected[0].view;
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
@@ -2843,14 +2839,12 @@ mod tests {
             ],
         )
         .expect("one object type with one field admits cleanly");
-        let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
-            .expect("the view is the domain package's own");
         let graph = PackageDeclarations {
             types,
-            models: vec![model],
-            ..PackageDeclarations::new(
+            ..PackageDeclarations::fixture_with_selected_models(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),
+                selected,
             )
         }
         .check(CheckingLimits::default())
@@ -2928,10 +2922,9 @@ mod tests {
                 ),
             ],
         );
-        let view = match normalize(&a_with_field, ModelNormalizationLimits::UNLIMITED) {
-            NormalizeOutcome::Completed(view) => view,
-            other => panic!("expected a completed effective view, got {other:?}"),
-        };
+        let selected = qsl_semantics::model::intake::SelectedModels::fixture("M", SPAN,
+            a_with_field, ModelNormalizationLimits::UNLIMITED).expect("the actual fixture package admits");
+        let view = &selected[0].view;
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
@@ -2952,14 +2945,12 @@ mod tests {
             ],
         )
         .expect("one object type with one field admits cleanly");
-        let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
-            .expect("the view is the domain package's own");
         let graph = PackageDeclarations {
             types,
-            models: vec![model],
-            ..PackageDeclarations::new(
+            ..PackageDeclarations::fixture_with_selected_models(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),
+                selected,
             )
         }
         .check(CheckingLimits::default())
