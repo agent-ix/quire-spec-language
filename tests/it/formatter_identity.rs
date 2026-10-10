@@ -47,7 +47,7 @@ fn private_state_source_identity(document: Vec<u8>, body: &str) {
     )
     .unwrap_or_else(|refusal| panic!("private TC465 formatter spine: {refusal:?}"));
     assert_eq!(
-        checked.package_id(),
+        checked.package().package_id(),
         original.package().package_id(),
         "the formatter oracle uses the owning private TC465 model view"
     );
