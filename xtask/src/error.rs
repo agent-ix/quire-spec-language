@@ -268,13 +268,22 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    /// `cargo test --no-run --message-format=json` printed a line that starts
-    /// like a message and is not JSON.
+    /// `cargo test --no-run --message-format=json` printed messages the guard
+    /// cannot take suite identities from.
     #[error("test-suites: cannot read cargo's build messages: {source}")]
     TestSuitesArtifacts {
-        /// The underlying parse failure.
+        /// What was wrong with them.
         #[source]
-        source: serde_json::Error,
+        source: crate::test_suites::ArtifactError,
+    },
+    /// The cargo arguments select a run the guard cannot enumerate.
+    #[error(
+        "test-suites: {flag} is not supported: cargo cannot list a doc-only run with --no-run, \
+         so its suites cannot be checked"
+    )]
+    TestSuitesUnsupportedSelection {
+        /// The refused flag.
+        flag: &'static str,
     },
     /// `cargo` exited unsuccessfully; this error exits with its status.
     #[error("test-suites: `{step}` failed ({})", .status.map_or_else(|| "killed by a signal".to_owned(), |code| format!("exit status {code}")))]
@@ -326,7 +335,9 @@ impl Error {
             | Self::CanonicalTypesCargoMetadata { .. }
             | Self::CanonicalTypesMetadataJson { .. }
             | Self::CanonicalTypesMetadata { .. } => Code::Metadata,
-            Self::TestSuitesUnknownLane { .. } => Code::Usage,
+            Self::TestSuitesUnknownLane { .. } | Self::TestSuitesUnsupportedSelection { .. } => {
+                Code::Usage
+            }
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
         }
