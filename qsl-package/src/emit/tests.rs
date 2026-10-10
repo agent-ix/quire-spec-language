@@ -3062,23 +3062,44 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
     assert_eq!(emission.omitted, []);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
-        "program.native", unit.as_bytes(), qsl_cst::Limits::default(),
-    ).expect("the original attempt passed S1");
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the original attempt passed S1");
     let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
         .expect("the admitted attempt formats");
     let reparsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1-formatted"),
-        "program.native", formatted.as_bytes(), qsl_cst::Limits::default(),
-    ).expect("the formatted attempt parses");
-    assert_eq!(qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(), formatted,
-        "attempt second-pass bytes");
+        qsl_foundation::SourceIdentity::new(
+            "agent-ix",
+            "test:qsl-309",
+            "fixture",
+            "fixture:1-formatted",
+        ),
+        "program.native",
+        formatted.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the formatted attempt parses");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "attempt second-pass bytes"
+    );
     let formatted_graph = check_attempt_unit_revision(&formatted, with_sub, "fixture:1-formatted")
         .unwrap_or_else(|refusals| panic!("formatted attempt refuses: {refusals:?}"));
     let formatted_emission = emit_checked(&CheckedPackage::link(formatted_graph))
         .expect("the formatted attempt emits through public S4");
-    assert_eq!(formatted_emission.omitted, [], "formatted attempt S4 omissions");
-    assert_eq!(formatted_emission.package().package_id(), emission.package().package_id(),
-        "attempt formatting changed checked package identity");
+    assert_eq!(
+        formatted_emission.omitted,
+        [],
+        "formatted attempt S4 omissions"
+    );
+    assert_eq!(
+        formatted_emission.package().package_id(),
+        emission.package().package_id(),
+        "attempt formatting changed checked package identity"
+    );
     AttemptEmission {
         attempt,
         clauses,

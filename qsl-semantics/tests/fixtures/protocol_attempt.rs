@@ -14,8 +14,8 @@ pub fn shared_binder_protocols() -> String {
 
 use semantics::model::accounting::ModelNormalizationLimits;
 use semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
-    OperationEffect, OperationMemberRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord,
 };
 use semantics::model::intake::SelectedModel;
 use semantics::model::key::DeclarationKey;

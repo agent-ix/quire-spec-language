@@ -27,40 +27,22 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::model_operations::{
-    tc464_flag_source,
-    tc464_sub_target_source,
-    tc464_integer_argument_source,
-    tc465_creates_subtype_document,
-    TC465_CLAUSES,
-    FRAME_CLAUSES,
-    frame_test_document,
-    tc465_deep_hierarchy_document,
-    attempt_update_modifies_version_number,
-    attempt_update_modifies_version_and_parent,
-    probe_operation,
-    with_unrelated_population,
-    tc465_document_with,
-    tc465_document,
-    tc465_document_with_frame_modifies_parent_only,
-    tc465_document_with_set_field,
-    tc465_document_with_note_type,
-    tc465_document_with_tag_type_sharing_a_field_name,
-    tc465_document_with_sub_redefining_version_number,
-    tc465_document_with_sub_subtype,
-    add_sub_type,
-    tc465_document_with_archive_population,
-    with_archive_population,
-    tc465_document_with_archive_population_and_narrow_frame,
-    admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
+    add_sub_type, admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
+    attempt_update_modifies_version_and_parent, attempt_update_modifies_version_number,
     config_unit_with_body, config_version_document, config_version_document_with_operations,
-    config_version_document_with_population, empty_frame, operation,
-    subtype_document, subtype_document_with_two_member_population,
-    version_number_bound,
+    config_version_document_with_population, empty_frame, frame_test_document, operation,
+    probe_operation, subtype_document, subtype_document_with_two_member_population,
+    tc464_flag_source, tc464_integer_argument_source, tc464_sub_target_source,
+    tc465_creates_subtype_document, tc465_deep_hierarchy_document, tc465_document,
+    tc465_document_with, tc465_document_with_archive_population,
+    tc465_document_with_archive_population_and_narrow_frame,
+    tc465_document_with_frame_modifies_parent_only, tc465_document_with_note_type,
+    tc465_document_with_set_field, tc465_document_with_sub_redefining_version_number,
+    tc465_document_with_sub_subtype, tc465_document_with_tag_type_sharing_a_field_name,
+    version_number_bound, with_archive_population, with_unrelated_population, FRAME_CLAUSES,
+    TC465_CLAUSES,
 };
 use serde_json::json;
-
-
-
 
 /// Assembles and checks `body` (the unit's trailing declarations, e.g.
 /// state clauses) against `document`, or every refusal's catalog code --
@@ -1115,8 +1097,6 @@ fn operation_visibility_on_subtypes_inherits_or_refuses_ambiguous() {
 // so `parent` is a field outside `modifies` (check 11.3's own fixture).
 // ---------------------------------------------------------------------------
 
-
-
 fn frame_document_digest(bytes: &[u8]) -> [u8; 32] {
     let document = quire_canonical::read(bytes, u64::MAX).expect("test fixture is JSON");
     *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
@@ -2065,7 +2045,6 @@ fn tc464_step5_a_non_reference_parameter_requires_no_population() {
 // declared supertypes graph, and refuses `wrong-value-kind` otherwise.
 // ---------------------------------------------------------------------------
 
-
 /// A complete `archive` holding the one `Sub` object `k`.
 fn archive_with_sub_object() -> serde_json::Value {
     json!({
@@ -2251,13 +2230,6 @@ fn tc464_step5_an_incomplete_pre_call_snapshot_is_incomplete() {
 // `VersionUnchanged` (`attemptUpdate`'s postcondition) are its two clauses.
 // ---------------------------------------------------------------------------
 
-
-
-
-
-
-
-
 /// SR-750 FND-007 round 2: a grant on `ConfigVersion::versionNumber` (the
 /// invocation's own `attemptUpdate` modifies exactly that field) never
 /// authorizes a write to `Tag::versionNumber` -- a same-named field of an
@@ -2374,12 +2346,6 @@ fn a_write_to_a_field_that_redefines_a_modifies_grant_admits() {
         panic!("expected admission, got {failure:?}");
     }
 }
-
-
-
-
-
-
 
 fn tc465_model_digest_hex(document: &[u8]) -> String {
     let packages = qsl_semantics::model::intake::package_input([document]);
