@@ -105,7 +105,8 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
     EmptySuite {
         source: "qsl-attrs/src/lib.rs",
         kind: SuiteKind::Tests,
-        reason: "proc-macro crate with no unit tests; its tests are the compile_fail integration target",
+        reason:
+            "proc-macro crate with no unit tests; its tests are the compile_fail integration target",
     },
     EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -313,8 +314,7 @@ impl Artifacts {
                     },
                 );
             }
-            if let (Some(true), Some(name)) =
-                (target["doctest"].as_bool(), target["name"].as_str())
+            if let (Some(true), Some(name)) = (target["doctest"].as_bool(), target["name"].as_str())
             {
                 artifacts.doc_libraries.insert(
                     name.replace('-', "_"),
@@ -386,16 +386,18 @@ fn parse_summary(line: &str) -> Option<Summary> {
         return None;
     }
     let mut fields = counts.split("; ");
-    let mut count = |suffix: &str| -> Option<u64> {
-        fields.next()?.strip_suffix(suffix)?.parse().ok()
-    };
+    let mut count =
+        |suffix: &str| -> Option<u64> { fields.next()?.strip_suffix(suffix)?.parse().ok() };
     let passed = count(" passed")?;
     let failed = count(" failed")?;
     let ignored = count(" ignored")?;
     let measured = count(" measured")?;
     Some(Summary {
         passed,
-        summed: passed.checked_add(failed)?.checked_add(ignored)?.checked_add(measured)?,
+        summed: passed
+            .checked_add(failed)?
+            .checked_add(ignored)?
+            .checked_add(measured)?,
     })
 }
 
@@ -468,7 +470,11 @@ impl<'a> RunParser<'a> {
         let Some(section) = self.current.take() else {
             return;
         };
-        let Section { id, running, summary } = section;
+        let Section {
+            id,
+            running,
+            summary,
+        } = section;
         let Some(summary) = summary else {
             self.findings.push(Finding::NoSummary { suite: id });
             return;
@@ -572,7 +578,11 @@ fn read_artifacts(
 ) -> Result<Artifacts> {
     let mut command = Command::new(cargo());
     command
-        .args(["test", "--no-run", "--message-format=json-render-diagnostics"])
+        .args([
+            "test",
+            "--no-run",
+            "--message-format=json-render-diagnostics",
+        ])
         .args(cargo_args)
         .current_dir(workspace_root)
         .stdin(Stdio::null())
@@ -580,7 +590,9 @@ fn read_artifacts(
     if let Some(target_dir) = target_dir {
         command.env("CARGO_TARGET_DIR", target_dir);
     }
-    let output = command.output().map_err(io_error("cannot spawn cargo test --no-run"))?;
+    let output = command
+        .output()
+        .map_err(io_error("cannot spawn cargo test --no-run"))?;
     if !output.status.success() {
         return Err(cargo_failed("cargo test --no-run", output.status));
     }
@@ -606,12 +618,18 @@ fn run_tests(
         .current_dir(workspace_root)
         .env("CARGO_TERM_COLOR", "never")
         .stdin(Stdio::null())
-        .stdout(writer.try_clone().map_err(io_error("cannot share the output pipe"))?)
+        .stdout(
+            writer
+                .try_clone()
+                .map_err(io_error("cannot share the output pipe"))?,
+        )
         .stderr(writer);
     if let Some(target_dir) = target_dir {
         command.env("CARGO_TARGET_DIR", target_dir);
     }
-    let mut child = command.spawn().map_err(io_error("cannot spawn cargo test"))?;
+    let mut child = command
+        .spawn()
+        .map_err(io_error("cannot spawn cargo test"))?;
     // The command owns the pipe's write ends; reading reaches EOF only once
     // the child's copies are the last ones.
     drop(command);
@@ -630,7 +648,9 @@ fn run_tests(
         let line = String::from_utf8_lossy(&buffer);
         parser.feed(line.trim_end_matches(['\n', '\r']));
     }
-    let status = child.wait().map_err(io_error("cannot wait for cargo test"))?;
+    let status = child
+        .wait()
+        .map_err(io_error("cannot wait for cargo test"))?;
     if status.success() {
         Ok(())
     } else {
@@ -654,7 +674,11 @@ pub fn run_lane(
     let (suites, findings) = parser.finish();
     let findings = evaluate(lane, &artifacts, &suites, findings);
     if !findings.is_empty() {
-        let mut summary = format!("test-suites: lane {}: {} finding(s)\n", lane.name, findings.len());
+        let mut summary = format!(
+            "test-suites: lane {}: {} finding(s)\n",
+            lane.name,
+            findings.len()
+        );
         for finding in &findings {
             summary.push_str(&format!("  {finding}\n"));
         }
@@ -674,19 +698,32 @@ pub fn run_lane(
 
 /// `cargo xtask test-suites <lane> [<cargo test args>]`.
 pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<String> {
-    let known = || LANES.iter().map(|lane| lane.name).collect::<Vec<_>>().join(", ");
-    let (name, cargo_args) = operands
-        .split_first()
-        .ok_or_else(|| Error::TestSuitesUnknownLane {
-            lane: String::new(),
-            known: known(),
-        })?;
+    let known = || {
+        LANES
+            .iter()
+            .map(|lane| lane.name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let (name, cargo_args) =
+        operands
+            .split_first()
+            .ok_or_else(|| Error::TestSuitesUnknownLane {
+                lane: String::new(),
+                known: known(),
+            })?;
     let name = name.to_string_lossy();
     let lane = lane_named(&name).ok_or_else(|| Error::TestSuitesUnknownLane {
         lane: name.to_string(),
         known: known(),
     })?;
-    run_lane(workspace_root, lane, cargo_args, None, &mut io::stdout().lock())
+    run_lane(
+        workspace_root,
+        lane,
+        cargo_args,
+        None,
+        &mut io::stdout().lock(),
+    )
 }
 
 #[cfg(test)]
@@ -775,7 +812,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     fn lane(empty: &'static [EmptySuite]) -> Lane {
-        Lane { name: "test", empty }
+        Lane {
+            name: "test",
+            empty,
+        }
     }
 
     const DECLARES_ATTRS: &[EmptySuite] = &[
@@ -850,7 +890,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
     #[test]
     fn a_declared_suite_that_did_not_run_fails() {
-        let log = REAL_LOG.split("   Doc-tests").next().expect("without doctests");
+        let log = REAL_LOG
+            .split("   Doc-tests")
+            .next()
+            .expect("without doctests");
         assert_eq!(
             check(&lane(DECLARES_ATTRS), log),
             vec![format!("{EMPTY_DOC}: declared empty, but it did not run")]
@@ -868,9 +911,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             "{findings:?}"
         );
         assert!(
-            findings
-                .iter()
-                .any(|finding| finding == "qsl-cst/src/lib.rs: built as a test target but never ran"),
+            findings.iter().any(
+                |finding| finding == "qsl-cst/src/lib.rs: built as a test target but never ran"
+            ),
             "{findings:?}"
         );
     }
@@ -951,28 +994,36 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         for lane in LANES {
             let ids: BTreeSet<SuiteId> = lane.empty.iter().map(EmptySuite::id).collect();
             assert_eq!(ids.len(), lane.empty.len(), "{}", lane.name);
-            assert!(lane.empty.iter().all(|empty| !empty.reason.trim().is_empty()));
+            assert!(lane
+                .empty
+                .iter()
+                .all(|empty| !empty.reason.trim().is_empty()));
         }
     }
 
     #[test]
     fn an_unknown_lane_is_a_usage_error() {
         let error = run(Path::new(ROOT), &[OsString::from("nonsense")]).expect_err("unknown lane");
-        assert!(matches!(error, Error::TestSuitesUnknownLane { .. }), "{error}");
+        assert!(
+            matches!(error, Error::TestSuitesUnknownLane { .. }),
+            "{error}"
+        );
         assert_eq!(error.exit_code(), 2);
     }
 
     #[test]
     fn make_ci_calls_the_guard_for_each_lane_with_its_original_cargo_arguments() {
-        let makefile = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../Makefile"),
-        )
-        .expect("Makefile");
+        let makefile =
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../Makefile"))
+                .expect("Makefile");
         for (lane, arguments) in [
             ("default-workspace", "--locked --workspace"),
             ("default-qsl-semantics", "--locked -p qsl-semantics"),
             ("default-qsl-cst", "--locked -p qsl-cst"),
-            ("all-features-workspace", "--locked --workspace --all-features"),
+            (
+                "all-features-workspace",
+                "--locked --workspace --all-features",
+            ),
         ] {
             let recipe =
                 format!("\tcargo run --locked --package xtask -- test-suites {lane} {arguments}\n");
@@ -1003,7 +1054,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[workspace]\n",
             );
             write("src/lib.rs", "pub fn f() {}\n");
-            write("tests/it.rs", &format!("#[test]\nfn t() {{ {test_body} }}\n"));
+            write(
+                "tests/it.rs",
+                &format!("#[test]\nfn t() {{ {test_body} }}\n"),
+            );
             dir
         }
 
@@ -1022,7 +1076,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
         fn run_fixture(dir: &tempfile::TempDir, empty: &'static [EmptySuite]) -> Result<String> {
             let target = dir.path().join("target");
-            run_lane(dir.path(), &lane(empty), &[], Some(&target), &mut io::sink())
+            run_lane(
+                dir.path(),
+                &lane(empty),
+                &[],
+                Some(&target),
+                &mut io::sink(),
+            )
         }
 
         #[test]
@@ -1033,7 +1093,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 panic!("expected a suite finding, got {error}");
             };
             assert!(summary.contains("src/lib.rs: 0 tests passed"), "{summary}");
-            assert!(summary.contains("src/lib.rs (doctests): 0 tests passed"), "{summary}");
+            assert!(
+                summary.contains("src/lib.rs (doctests): 0 tests passed"),
+                "{summary}"
+            );
             assert!(!summary.contains("tests/it.rs"), "{summary}");
             assert_eq!(error.exit_code(), 1);
         }
@@ -1042,14 +1105,20 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         fn declared_empty_suites_pass_a_real_cargo_run() {
             let dir = project("");
             let summary = run_fixture(&dir, LIB_EMPTY).expect("declared lane passes");
-            assert!(summary.contains("1 suites ran tests, 2 declared empty"), "{summary}");
+            assert!(
+                summary.contains("1 suites ran tests, 2 declared empty"),
+                "{summary}"
+            );
         }
 
         #[test]
         fn a_failing_test_returns_cargos_own_exit_code() {
             let dir = project("panic!(\"boom\")");
             let error = run_fixture(&dir, LIB_EMPTY).expect_err("failing test");
-            assert!(matches!(error, Error::TestSuitesCargoFailed { .. }), "{error}");
+            assert!(
+                matches!(error, Error::TestSuitesCargoFailed { .. }),
+                "{error}"
+            );
             assert_eq!(error.exit_code(), 101);
         }
 
@@ -1057,7 +1126,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         fn a_build_failure_returns_cargos_own_exit_code() {
             let dir = project("this does not compile");
             let error = run_fixture(&dir, LIB_EMPTY).expect_err("build failure");
-            assert!(matches!(error, Error::TestSuitesCargoFailed { .. }), "{error}");
+            assert!(
+                matches!(error, Error::TestSuitesCargoFailed { .. }),
+                "{error}"
+            );
             assert_ne!(error.exit_code(), 0);
         }
     }
