@@ -43,8 +43,3 @@ Tag the tests `#[trace("TC-720", "FR-255-AC-1")]`, `#[trace("TC-720", "FR-255-AC
 - Step 3: each field maps to one name; the names are distinct; their union
   equals the table; each builder call changes only its own field.
 
-## Status
-
-Implemented for the pre-existing rows covered by FR-255 Status; the pending
-`format.output_bytes` row and its formatter/settings seam are exercised by
-TC-931 after QSL-605. Steps 2 and 3 are implemented.

@@ -36,6 +36,3 @@ Tag each test `#[trace("TC-829", "<AC id>")]`.
 - Step 6: refused by the reference walk with its existing code, before
   evaluation.
 
-## Status
-
-Planned.

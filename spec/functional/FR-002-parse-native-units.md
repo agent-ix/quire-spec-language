@@ -40,6 +40,3 @@ Token recognition is declarative. Expression precedence uses the approved gramma
 - [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../src/parser.rs) supplies the scoped context.
 
-## Status
-
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

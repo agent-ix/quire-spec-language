@@ -28,6 +28,3 @@ Tag each test `#[trace("TC-824", "<AC id>")]`.
   own; the `area` unit yields no record for the `case` or its
   exhaustiveness obligation.
 
-## Status
-
-Planned.

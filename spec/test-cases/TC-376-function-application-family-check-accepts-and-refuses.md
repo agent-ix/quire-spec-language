@@ -36,18 +36,3 @@ the crate's catalogued refusal cause. Scope: FR-065-AC-4.
 - Step 3: the call is refused with a missing-name cause naming `nowhere`.
 - Step 4: the call is refused with a type-mismatch cause.
 
-## Status
-
-Backed, all four steps: `check_application_accepts_a_well_typed_call`,
-`check_application_refuses_wrong_arity`,
-`check_application_refuses_an_unknown_name` and
-`check_application_refuses_a_type_mismatched_argument`
-(`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
-`#[trace("TC-376", "FR-065-AC-4")]`. Each builds an `Expression::Call` and checks it
-through `Typer::infer`, so each fails when `Application`'s callee
-resolution, arity check or parameter typing is removed.
-
-FR-065-AC-4 is a behavioural criterion under the
-[testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-(Peter, 2026-09-22). The rule that the `Call` arm holds no logic of its own
-is FR-065-CON-3, verified by inspection, not by this test case.

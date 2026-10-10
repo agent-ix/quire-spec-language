@@ -49,10 +49,3 @@ between positions.
 - `f(1)`: step 2 refuses with exactly one refusal, and steps 2, 3 and 4 all
   refuse with `ill_typed` / `type-mismatch`.
 
-## Status
-
-Backed by `a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measure`
-(`qsl-eval/tests/it/call_verdicts.rs`, tagged `TC-164` / `FR-065-AC-5`). It
-replaces TC-164's earlier procedure (a compiled-symbol search and an `E0004`
-compile-fail fixture), which asserted code shape rather than behaviour and
-which ADR-012 §4.3 contradicts.

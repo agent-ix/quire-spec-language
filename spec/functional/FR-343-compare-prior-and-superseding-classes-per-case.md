@@ -82,6 +82,3 @@ order, that matches, which is FR-452's result over FR-342's classes:
 - QSpec FR-452 (STD-117).
 - Specification ticket QSL-386; implementation ticket QSL-40.
 
-## Status
-
-Specified; not yet implemented -- TC-863 to TC-865 planned.

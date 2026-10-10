@@ -40,6 +40,11 @@ the design authority; this requirement adds no rule of its own.
 - The kernel field shapes `CollectionType.bound: Option<CardinalityBound>`
   and `ValueType::Population(Option<u64>)` (ADR-014 N-3).
 
+FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
+an unbounded population its own node, lowering one refuses with
+`UnrepresentableBound` rather than writing the bare set node an unbounded
+`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal.
+
 ## Inputs
 
 - A claim's argument and bound-variable types, each with the wire id of the
@@ -94,20 +99,3 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
   the witness envelope's `run_limits` and `FiniteBound` declared domains.
 - IR's v2 lowering, the `qsl-package` dependency, for AC-6.
 
-## Status
-
-Specified and implemented. TC-436 to TC-439 and TC-441 pass
-locally. FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
-an unbounded population its own node, lowering one refuses with
-`UnrepresentableBound` rather than writing the bare set node an unbounded
-`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 passes: every fixture agrees, including
-`Flags`, `RangedTree` and `Mixed`, which depend on IR's `requires-bound`
-being position-sensitive and requiring a bound for a recursive type. For
-`RangedTree`, IR's first unbounded node is a member of the recursion group
-of the root QSL names `Recursive`. The
-quantity fixture `Measure` is emitted with its unit and dimension nodes,
-and it agrees: QSL classifies it `Unbounded`, and IR requires a bound for
-a unit type (IR-450). FR-097-AC-6's per-application-node agreement
-(TC-440 step 4) passes: IR lowers the inner `+` of `(x + 1) + n` and
-requires a bound for the outer `+`, and the records outside the agreement
-have their extents asserted.

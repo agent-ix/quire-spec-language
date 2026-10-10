@@ -79,6 +79,3 @@ tests in `qsl-eval/src/simulation/`.
 
 Tag each test `#[trace("TC-454", "FR-101-AC-n")]` with its AC.
 
-## Status
-
-✅ Implemented; every step passes locally under the `choice` preimage member.

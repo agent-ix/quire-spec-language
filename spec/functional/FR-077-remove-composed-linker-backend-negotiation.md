@@ -93,14 +93,3 @@ accepted by this function.
   candidates and routing now live, replacing the linker's prior direct read
   of backend support.
 
-## Status
-
-Specified under
-[quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Not yet implemented; `linking::composed::requests` still reads a
-caller-declared backend's support at `requests::report` on `main`.
-Implementation is unconditional: the prior four-kind compatibility path is
-removed, not preserved behind a flag (owner ruling on
-[quire-spec-language#229](https://github.com/agent-ix/quire-spec-language/issues/229),
-recorded in
-[quire-specification#116](https://github.com/agent-ix/quire-specification/issues/116)).

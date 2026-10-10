@@ -44,6 +44,3 @@ Tag each test `#[trace("TC-826", "<AC id>")]`.
   type checking.
 - Step 5: TC-262's verdicts.
 
-## Status
-
-Planned.

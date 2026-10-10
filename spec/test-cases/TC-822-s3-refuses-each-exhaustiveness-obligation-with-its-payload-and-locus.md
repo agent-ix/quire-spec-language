@@ -35,6 +35,3 @@ Each refuses `undefined_expression`/`unproved-exhaustiveness` naming
 - Step 4: `missing-arm`, at the `case`.
 - Step 5: TC-264's verdicts.
 
-## Status
-
-Planned.

@@ -61,9 +61,3 @@ existing closed shared-reference schemas are not silently extended here.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) bounds each pass.
 - This requirement's identity uses its own typed-record encoding, which is not RFC 8785. The IR/JCS digest domains keep their own domain labels and golden vectors, and their RFC 8785 encoding comes from `quire-canonical` (ADR-013 §2).
 
-## Status
-
-The manifest's source identity carries the two source labels of FR-001, so the independently authored hash vectors of FR-021-AC-1 change. Implemented for the four-label identity (ADR-013 §7 S-4b), with the `minimal`, `controls` and `multiple` vectors regenerated from the independent recipe with authority `agent-ix` and revision namespace `draft`. Remaining work (implementation, Linear QSL-381): the manifest drops the revision labels and the three vectors are regenerated from the recipe without them (QSpec STD-150).
-
-Draft producer contract. Review, implementation, independent vectors and shared
-consumer adoption are required before their corresponding qualification claims.

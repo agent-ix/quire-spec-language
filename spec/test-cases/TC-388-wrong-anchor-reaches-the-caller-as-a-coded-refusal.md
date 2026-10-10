@@ -47,6 +47,3 @@ Tag the test `#[trace("FR-090-AC-7", "TC-388")]`.
 - Step 3 does not panic, and its result matches step 4's pattern;
   `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
 
-## Status
-
-Planned; no test backs this case.

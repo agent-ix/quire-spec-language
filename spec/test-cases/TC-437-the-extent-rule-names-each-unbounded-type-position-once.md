@@ -35,6 +35,3 @@ Verify `classify_extent` against the ADR-014 §4 extent rule. Scope: FR-097-AC-2
 - Step 5: an internal fault, never `Bounded`.
 - Step 6: its requirements carry the classified extent.
 
-## Status
-
-Backed: `qsl-semantics/src/family/requirements.rs`, `tests` module.

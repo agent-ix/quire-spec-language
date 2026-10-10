@@ -111,16 +111,3 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   setting `dependency.import_edges`; input bytes, setting
   `dependency.source_bytes`. The 200-library chain compiles.
 
-## Status
-
-Step 8 (FR-099-AC-7) is pending. Steps 1 to 6 pass locally: `qsl-replay`
-`spine::dependency_tests`, and `qsl-cst` `an_import_names_only_its_library_identity`
-for step 2's import spellings. Step 5's `g::f(3)` result was amended to
-expect the `Int[0, 9]` conversion node. Step 7
-(the CLI `libraries` member, FR-027-AC-10) passes locally:
-`tests/it/compile_command.rs`
-`a_complete_v1_request_supplies_its_libraries_to_the_spine`,
-`malformed_libraries_refuse_as_invalid_request`,
-`a_library_refusal_renders_over_the_library_source`,
-`a_cycle_inside_the_libraries_renders_over_the_library_source` and
-`sixty_four_libraries_exceed_the_file_limit`.

@@ -117,14 +117,6 @@ package and dependency inputs.
   clause-run document and the command-error envelope.
 - QSpec FR-301 (exit codes).
 
-## Status
-
-Specified; not yet implemented -- TC-891 planned. Lands with the deletion of
-native `run` (ADR-031 R-1). That change also deletes the per-file `sha256:`
-digests the native-v1 request selections carry and their checks (FR-026,
-FR-027, FR-100): a request names its files, and the command reads their
-bytes as they are.
-
 ## References
 
 - Owning ticket: Linear QSL-389 (plan slice E19-CLI).

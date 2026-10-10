@@ -34,6 +34,3 @@ Tag each test `#[trace("TC-823", "<AC id>")]`.
 - Steps 5 and 6: only `ill_typed`/`type-mismatch` at the scrutinee,
   expected "a declared union".
 
-## Status
-
-Planned.

@@ -51,6 +51,3 @@ Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
   `FormsCause::UnrepresentedConstruct` at the qualified edge
   `Config::ConfigVersion::parent`. No other step refuses.
 
-## Status
-
-Planned. The code waits for the other lane's work in `qsl-forms`.

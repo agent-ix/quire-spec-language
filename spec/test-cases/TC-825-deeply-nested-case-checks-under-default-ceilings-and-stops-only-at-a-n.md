@@ -30,6 +30,3 @@ Tag each test `#[trace("TC-825", "<AC id>")]`.
 - Step 3: checks.
 - No outcome names a nesting-depth limit.
 
-## Status
-
-Planned.

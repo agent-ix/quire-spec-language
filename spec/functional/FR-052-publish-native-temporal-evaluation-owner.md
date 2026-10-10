@@ -15,7 +15,7 @@ relationships:
 
 ## Description
 
-**RETIRED (M-6d), which deletes `protocol_artifact::native_temporal::{request,result}` and its only test, `tests/it/native_temporal_owner.rs` (see Status below).**
+**RETIRED (M-6d), which deletes `protocol_artifact::native_temporal::{request,result}` and its only test, `tests/it/native_temporal_owner.rs`.**
 
 When a downstream bridge supplies one finite native evaluation input for an
 FR-051 checked temporal subject, the compiler SHALL publish canonical bounded
@@ -136,16 +136,3 @@ constructor-private checked temporal subject and its admitted v2 package.
 Quire Observation remains the authority for external observation references;
 Contract IR constructs and cross-checks the owner request and joins the result.
 
-## Status
-
-Implemented locally with both canonical schemas, bounded strict readers,
-formula-wide native evaluation, direct correction lineage and all eleven TC-140
-controls passing in the full serial Rust suite. Remaining work: #95. Review and
-merge precede Contract IR FR-026 consumption of the owner API.
-
-**Retired (M-6d).** `protocol_artifact::native_temporal::{request,
-result}` and its only test, `tests/it/native_temporal_owner.rs`, are deleted:
-with the spine `ProtocolClause` frame slices landed, the spine `ProtocolClause` path no
-longer needs this producer/consumer round trip, and nothing outside the
-deleted module's own tests called it. All acceptance criteria above are
-retired for the reason given at FR-052-AC-1.

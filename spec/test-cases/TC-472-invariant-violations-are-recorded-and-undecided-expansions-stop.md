@@ -100,6 +100,3 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   `ContractUndetermined { <touch>, Some(<t1's digest>), LowPost,
   Undefined(SumOutOfDomain) }`.
 
-## Status
-
-Planned.

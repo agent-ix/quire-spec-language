@@ -92,6 +92,3 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
   The `probe` invocation with a result value admits, and `ReachesTarget`
   is `true` under it and under `PreCall`.
 
-## Status
-
-Planned.

@@ -38,8 +38,3 @@ Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
   `label` `identity`, not a file error.
 - Step 4: exit 0, then exit 20.
 
-## Status
-
-Partial. The four-label form passed locally under ADR-013 §7 slice S-4b,
-with step 3's `blank-label` cause and `label` field (FR-001) asserted. The
-two-label form stated here waits on the CLI change (FR-010 Status).

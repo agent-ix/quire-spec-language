@@ -152,10 +152,3 @@ source map (FR-095).
 - IR `lower` returns no form for any `state` node, so these nodes
   reach no backend. That is IR's own work (ADR-012 §8, §15.7).
 
-## Status
-
-Specified. STD-111 landed, and the emission is implemented: AC-1,
-AC-2, AC-4 and AC-5 are covered. AC-3 is covered: the package reads back through I2, including its
-`quire.op.model.reaches_field` application's reference-edge check. AC-6
-(fault-injected all-or-nothing emission) is covered, by
-`qsl-package`'s generic mechanism test and `qsl-replay`'s frame-node test.

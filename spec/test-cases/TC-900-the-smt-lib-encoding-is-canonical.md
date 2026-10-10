@@ -43,6 +43,3 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 5: pairwise distinctness of copies 0 to 2; for the TP-3 item, `m0`
   to `m2` with the monitor steps.
 
-## Status
-
-🚧 Planned.

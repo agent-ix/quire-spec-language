@@ -40,6 +40,3 @@ Tag each test `#[trace("TC-833", "<AC id>")]`.
 - Step 3: `true`, `false`; `contains` is `true`; `filter` keeps both `Rect`
   occurrences in order; `count` is 2.
 
-## Status
-
-Planned.

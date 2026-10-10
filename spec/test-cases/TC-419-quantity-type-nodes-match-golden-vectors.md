@@ -66,6 +66,3 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
   and `Time` and its preimage holds both terms; `mps` is typed by
   `Velocity`; IR admits the package.
 
-## Status
-
-Implemented (#384). The tests back every step.

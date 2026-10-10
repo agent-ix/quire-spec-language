@@ -57,8 +57,5 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
   and the schema accepts it.
 - Step 4: `invalid-request`, exit 20.
 
-## Status
-
-Partial. The four-label form of steps 1 to 4 passes locally (ADR-013 §7 slice S-4b), with step 2's `blank-label` cause and `label` field (FR-001) asserted. The two-label form of steps 1 to 4 stated here waits on the request and output identity change (FR-026 and FR-027 Status, Linear QSL-381). Step 5 is planned, since the code still reads the body record's old revision fields (FR-031 Status, QSL-381).
-
 Step 2's blank-label refusal renders a byte-0 span in the run output: the native `Diagnostic`'s retained debt (FR-001, "Where an S0 refusal is located"), not this requirement's behaviour.
+

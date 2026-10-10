@@ -15,8 +15,9 @@ Verify the behavior of `Value`'s function-declaration checking entry point
 calls): given a real declaration, it accepts a well-typed body, correctly
 reports every call the body makes, and refuses a body whose type disagrees with the
 declared result. This test verifies accept/refuse behavior, not the presence
-or absence of any pre-migration symbol; see this test case's own Status
-section for why.
+or absence of any pre-migration symbol. FR-065-AC-7 (TC-380) is the
+criterion for the contract hook's verdict, and FR-065-AC-5 (TC-164) is the
+criterion for call verdicts across entry points.
 
 ## Test Procedure
 
@@ -39,14 +40,3 @@ section for why.
   against the declared result and is refused only because that obligation
   is unproved.
 
-## Status
-
-Backed, all three steps:
-`check_declaration_body_accepts_a_well_typed_declaration_and_reports_its_calls`,
-`check_declaration_body_refuses_an_ill_typed_body` and
-`check_declaration_body_refuses_an_undefined_body`
-(`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
-`#[trace("TC-377")]`. This test case verifies FR-065's declaration-checking
-behaviour generally; FR-065-AC-7 (TC-380) is the criterion for the contract
-hook's verdict and FR-065-AC-5 (TC-164) is the criterion for call verdicts
-across entry points.

@@ -33,11 +33,3 @@ node key. Scope: FR-065-AC-7.
 - Step 2: the hook admits `f`, and `f`'s identity is FR-092 vector F1,
   `dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79`.
 
-## Status
-
-Backed on main by `value_function_family_check_refuses_an_ill_typed_body`
-(step 1, `qsl-semantics/src/check/family.rs`, `checking_tests`) and
-`value_function_family_checks_through_the_contract` (step 2,
-`qsl-eval/src/value/expression/family.rs`, `family_contract_tests`), both
-tagged `#[trace("TC-380", "FR-065-AC-7")]`. Step 2 also asserts
-that `f`'s checked identity is FR-092 vector F1 (#384).

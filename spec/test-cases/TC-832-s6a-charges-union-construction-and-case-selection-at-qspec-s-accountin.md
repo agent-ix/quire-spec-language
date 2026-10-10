@@ -29,6 +29,3 @@ Tag each test `#[trace("TC-832", "<AC id>")]`.
 - Step 2: stops at the last listed point with
   `incomplete { limit_kind: work_units }`.
 
-## Status
-
-Planned.

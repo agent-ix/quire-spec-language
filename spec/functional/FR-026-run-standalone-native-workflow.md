@@ -30,6 +30,13 @@ the driver's verbs land; the outcome document is FR-286's `quire-outcome/1`)
 and exit statuses. The members, outcome and exit
 contract below apply to `0-draft` programs.
 
+The code applies fixed 1 MiB, 64-file and
+8 MiB ceilings; they become the configurable `request_bytes` and
+`dependent_bytes` limits above (FR-026-AC-4).
+
+The request and result identities still carry `revision_namespace` and
+`revision` until the QSL-381 change (QSpec STD-150).
+
 ## Inputs
 
 A JSON object with format and request fields. The closed request names model
@@ -121,10 +128,3 @@ including incomplete native, model, package and runtime input failures.
 - [FR-024](FR-024-read-native-runtime-artifacts.md): selected runtime artifact intake.
 - [FR-023](FR-023-run-native-packages.md): native execution and retained outcomes.
 
-## Status
-
-Remaining work (implementation): the code applies fixed 1 MiB, 64-file and
-8 MiB ceilings; they become the configurable `request_bytes` and
-`dependent_bytes` limits above (FR-026-AC-4).
-
-FR-026-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation, Linear QSL-381): the request and result identities drop `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".

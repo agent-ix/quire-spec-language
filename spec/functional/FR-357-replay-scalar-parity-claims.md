@@ -189,6 +189,3 @@ request the default refuses (TC-904).
 - [FR-069](FR-069-implement-typed-proof-result-envelope.md): the terminal
   values and inconclusive causes.
 
-## Status
-
-Implemented. TC-904 passes locally.

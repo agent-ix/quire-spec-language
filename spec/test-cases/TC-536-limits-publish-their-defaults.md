@@ -43,6 +43,3 @@ Tag the tests `#[trace("TC-536", "FR-101-AC-15")]` and
 - Step 3: the FR-126-AC-1 outcomes; `Stopped{ResourceExhausted,
   {MaxStates, 2}}`.
 
-## Status
-
-🚧 Steps 1 and 2 for `Limits` pass locally (`tc_536_exploration_limits_publish_their_defaults`); the `ModelCheckLimits` half (FR-126-AC-8) is not yet implemented.

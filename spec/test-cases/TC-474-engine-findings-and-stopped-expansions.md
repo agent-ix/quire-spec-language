@@ -75,6 +75,3 @@ categories, `#[trace("TC-474", "FR-097-AC-5")]`.
   `"f"` in its findings; the edited trace refuses
   `ReplayError::FindingMismatch { step: 1 }`.
 
-## Status
-
-✅ Implemented in `qsl-eval/tests/it/finite_simulation.rs` (`tc_474_*`); passes locally.

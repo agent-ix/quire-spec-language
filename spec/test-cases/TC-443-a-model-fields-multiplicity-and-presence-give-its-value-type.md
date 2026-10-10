@@ -45,8 +45,3 @@ outside `required`/`optional`. Scope: FR-056-AC-10.
   `IntakeMalformedDeclaration`, naming the offending value or that
   `presence` is missing or not a string.
 
-## Status
-
-Backed: `qsl-semantics/src/check/assemble/tests.rs` (step 1, each test
-tagged `#[trace("TC-443", "FR-056-AC-10")]`) and
-`qsl-semantics/src/model/intake.rs` (step 2, same tag).

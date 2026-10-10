@@ -37,6 +37,3 @@ Tag the tests `#[trace("TC-724", "FR-257-AC-1")]`, `#[trace("TC-724", "FR-257-AC
 - Step 2: both build, and every anchor resolves in the scope FR-112 gives it.
 - Step 3: `build_unit` takes no limit set, and the form builds.
 
-## Status
-
-Planned.

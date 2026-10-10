@@ -45,6 +45,9 @@ exist"; ruling on QSL-229). Its model half is I1 (FR-056), which spine
 lock's edition and definition selections come from the same catalog
 through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
+Layer selection (AC-7, AC-8) and AC-1's layer-closure lock
+rows are not yet implemented.
+
 ## Inputs
 
 - The unit's profile selections as S2 carries them
@@ -199,18 +202,3 @@ edge therefore compile to distinct packages.
 - QSpec FR-453 and QSpec FR-001 (header selection of each layer and its
   restricted admission).
 
-## Status
-
-Implemented, apart from the remaining work below, and backed by the
-TC-490 tests (`a_header_profile_resolves_by_identity_against_the_root_row`
-and `a_token_after_a_header_profile_identity_is_a_syntax_error`,
-`qsl-replay/src/spine.rs`). A header profile is
-`profile <alias> = "<identity>";` and resolves by identity alone.
-
-The emitted lock rows are `{authority, identity}`, with no revision and no
-digest, and `DefinitionLock` names each catalog definition the same way
-(`CatalogRole::identity`), compared with QSpec's lock by AC-9; the `quire-specification` crate dependency is
-deleted.
-
-Remaining work: layer selection (AC-7, AC-8) and AC-1's layer-closure lock
-rows are not yet implemented.

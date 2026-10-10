@@ -1044,29 +1044,6 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   writer's graph order, which QSL's emission sets to the group order
   (FR-093).
 
-## Status
-
-Specified, including recursion groups and declared composite
-handles. Implemented (#384): `check` keys every node by this requirement's preimages in
-`qsl-semantics/src/check/node_key/` and `qsl-semantics/src/check/lowering.rs`,
-recursion groups included (`node_key::group_keys`, which names members by
-handle, and the lowering's drafts, keyed in dependency order), and gives a
-declared composite's checked type node its key. TC-413 and TC-414 back AC-1
-to AC-12 and CON-2 there, and the FR-146 recursive-function tests of
-`qsl-eval/tests/it/total_functions.rs` pass. Keying a group is charged to the
-checking stage's work budget. An option or collection type whose node is a
-member of a recursion group is that member wherever it is named after the
-group is keyed (FR-093's P15 and P16 are typed at G17).
-
-AC-13, the `predicate` function node and a source enum's nodes, is
-implemented: lowering writes `predicate` for a declaration of kind
-`Predicate` outside a recursion group, and a source enum's declaration and
-member nodes reach lowering through the assembler's `enums`.
-
-QSL-642's wide integers (AC-14, AC-15) are implemented: integer values are
-decimal strings, and a counter is a JSON number up to 2^53-1 and its decimal
-string beyond.
-
 ## Open Questions
 
 - **FR-092-OQ-1: How does an in-group application node's key tell two

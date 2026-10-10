@@ -37,6 +37,3 @@ Tag the tests `#[trace("TC-735", "FR-262-AC-2")]`.
 - Step 4: the clone compares equal and hashes equal, and formatting and
   drops complete.
 
-## Status
-
-Planned.

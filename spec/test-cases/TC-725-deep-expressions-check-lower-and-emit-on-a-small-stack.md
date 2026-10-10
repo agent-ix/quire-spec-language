@@ -39,14 +39,3 @@ Tag the tests `#[trace("TC-725", "FR-258-AC-1")]`, `#[trace("TC-725", "FR-258-AC
   holds a term of its own stratum or a higher one, and every composite
   subterm is a `reference` to its own node.
 
-## Status
-
-Backed. Step 1: `a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack`
-(`qsl-package/src/emit/tests/deep_bodies.rs`, from source through S1) and
-`a_100000_deep_checked_body_clones_compares_formats_and_drops_on_a_small_stack`
-(`qsl-semantics/src/check/ir.rs`). Step 2:
-`every_lowered_body_is_in_the_stratified_grammar`
-(`qsl-semantics/src/check/lowering/tests/deep_bodies.rs`) for TC-415, the
-same walk inside the step 1 test for AC-1, and
-`the_stratum_walk_refuses_a_nested_composite`
-(`qsl-semantics/src/check/stratum.rs`) for the oracle itself.

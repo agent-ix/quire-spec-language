@@ -185,8 +185,3 @@ version-2 entry point for compensation assessment. QSL remains the sole owner of
 native expression evaluation; the consumer neither reparses nor mirrors the
 admitted graph.
 
-## Status
-
-Remaining work (implementation): `src/state/input.rs`
-`OBSERVATION_CONTRACT_REVISION` still pins the observation contract by
-revision; the pin is deleted.

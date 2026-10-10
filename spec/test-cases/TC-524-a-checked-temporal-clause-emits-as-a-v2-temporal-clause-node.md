@@ -51,6 +51,3 @@ Tag the tests `#[trace("TC-524", "FR-337-AC-n")]`.
   `missing_declaration`/`missing-name`; `ill_typed`/`operator-ineligible`;
   each at FR-370's locus.
 
-## Status
-
-🚧 Planned.

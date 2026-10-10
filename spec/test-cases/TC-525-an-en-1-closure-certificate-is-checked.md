@@ -93,6 +93,3 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   value/setting or cancellation source; FR-127 settles Incomplete with
   those fields, never Accepted or CertificateRejected.
 
-## Status
-
-🚧 Planned.

@@ -42,6 +42,9 @@ already-admitted `Witness`. CG builds the envelope from its backend run, and
 its backend adapter parses the backend output into the transcript `parse`
 admits.
 
+A `union` value text decodes, but a replay cannot convert one until S6a
+admits union arguments (QSL-503).
+
 ## Inputs
 
 - A `WitnessPacket` carrying `source: ReplaySource` and its O-25 members
@@ -271,12 +274,3 @@ length of its escaped value text.
   [FR-072](FR-072-implement-typed-replay-result.md)'s per-item result embeds
   the QSpec FR-351 record this envelope's `Witness` arm decodes.
 
-## Status
-
-Implemented: `qsl_replay::WitnessEnvelope`, verified by TC-180 to TC-186.
-Witness value texts (FR-070-AC-8 to FR-070-AC-13, QSL-640, QSL-647) are
-implemented in `qsl_replay::WitnessValue` and `Witness::decode`, and the
-envelope's reader bound is raised through the `ReplayLimits` argument of
-`WitnessEnvelope::reconstruct` (`replay.input_bytes`): TC-905 and TC-736 (AC-10) pass locally. A `union`
-value text decodes, but a replay cannot convert one until S6a admits union
-arguments (QSL-503): that end-to-end case is pending QSL-503.

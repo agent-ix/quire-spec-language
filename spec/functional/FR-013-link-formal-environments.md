@@ -73,7 +73,3 @@ equality and Boolean roots remain FR-006's subsequent checking phase.
 - [FR-010](FR-010-report-native-outcomes.md) owns the shared native diagnostic envelope.
 - [IT-005](../integration/IT-005-qualify-native-model-consumption.md) requires real public IR consumption.
 
-## Status
-
-Concrete LC02 linking contract. Successful resolution alone is not the complete
-healthy/violating/refused state workflow, reference evaluation or backend proof.

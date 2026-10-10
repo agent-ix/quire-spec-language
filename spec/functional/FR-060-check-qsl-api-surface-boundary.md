@@ -252,36 +252,3 @@ each list can only shrink.
   crate-level FB-05 exception this requirement's T12-A rule verifies at the
   module level.
 
-## Status
-
-Specified and implemented under
-[#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
-`arch-lint api-surface` subcommand (`tools/arch-lint/api_surface.rs`, its
-own workspace crate `arch-lint`), with a per-rule role (`--qsl`/`--cg`) and
-a `node_key_of(` call pattern added at #249 review (R1, HIGH-2/MEDIUM-4).
-T12-B, T12-C and T12-D match tokens in shipped code, with T12-B's and
-T12-C's named debt lists (Behavior, "T12-B and T12-C: shipped code and debt
-lists"; "Scanning method and its stated limitations").
-
-Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
-
-- T12-A is CG-role and live: its target `qsl-replay/src/lib.rs` exists, and
-  with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
-  not evaluated and the run exits 2 while the other three rules run.
-- T12-B passes with an empty debt list. The six
-  `value::enumeration`, `value::unit` and `value::node` entries and
-  the `value::model_query` entry were removed by deleting their mints. The
-  list's last entry, `qsl-eval`'s `value/expression/family.rs`
-  `decode_v2`, went the same way: deleting qsl-eval's second v2 producer
-  (`checked-function-package/v2`) deleted the mint with it. The node-key mints are under `check`
-  (`check::node_key`), so T12-B passes.
-- T12-C passes with an empty debt list and no call site outside `model`.
-- T12-D passes with zero call sites. Its only `PopulationId::from_digest`
-  outside `model`, `qsl-eval/src/value/expression/evaluate.rs`, is a test literal
-  inside `#[cfg(test)]`.
-
-The facade's compile entry, `qsl_replay::compile_package` (FR-060-AC-5 to
-AC-7, TC-908), is implemented.
-
-Remediating the debt-list sites is #211/#213's work, not this requirement's.
-Remaining work: #211.

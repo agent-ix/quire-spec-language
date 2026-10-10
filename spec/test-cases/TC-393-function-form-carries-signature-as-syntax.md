@@ -47,6 +47,3 @@ Tag the test `#[trace("FR-091-AC-2", "TC-393")]`.
 - Step 4 finds no `ValueType` and no `NodeKey`, including inside `Option`,
   `Vec` or `Box` wrappers.
 
-## Status
-
-Backed by `qsl-forms/tests/it/value_forms.rs`: `a_function_form_carries_its_signature_as_syntax` (steps 1 to 3). Step 4 is covered by `qsl-forms/tests/it/identity_free_forms.rs`, which scans every shipped item of `qsl-forms` for `ValueType` and `NodeKey`.

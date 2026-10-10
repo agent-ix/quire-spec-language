@@ -43,6 +43,3 @@ versions and Quire availability remain unchanged.
 - [US-004](../usecase/US-004-reuse-existing-toolchain.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../docs/source-correspondence.md) supplies the scoped context.
 
-## Status
-
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

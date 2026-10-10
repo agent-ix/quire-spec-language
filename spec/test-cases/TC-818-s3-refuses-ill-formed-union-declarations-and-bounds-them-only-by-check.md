@@ -37,6 +37,3 @@ Tag each test `#[trace("TC-818", "<AC id>")]`.
   the `CheckingLimits` field; then admitted. No nesting-depth limit kind
   appears anywhere.
 
-## Status
-
-Planned.

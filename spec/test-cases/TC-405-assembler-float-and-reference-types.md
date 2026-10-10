@@ -60,13 +60,3 @@ Tag steps 1–3 with `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, step 
   `unknown_required_feature`/`unsupported-feature` and returns no
   `PackageDeclarations`. Neither refusal names or infers a rounding mode.
 
-## Status
-
-Step 4 is backed by `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses`. Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_types_are_admitted_and_reference_types_are_refused`; resolution of the mode is `check::type_form` `float_types_carry_their_rounding_mode`, and evaluation under each mode is `qsl-eval` `float_rounding::the_evaluator_applies_the_rounding_mode_the_float_type_carries`. Step 2 is backed by those and by `qsl-forms` `a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode` (bare `Float64` and `Float32`, no rounding mode on the type form).
-
-Step 5 records the missing QSL-285 refusal control; no backing test is claimed
-until the implementation adds it. QSpec FR-322's "Model-owned members" step 4
-does not assign a member type to `Float32` or `Float64`, and says a declared
-type outside its table gives the member no type. The QSL refusal remains the
-capability result already specified by FR-056; it does not choose an implicit
-`exact` mode.

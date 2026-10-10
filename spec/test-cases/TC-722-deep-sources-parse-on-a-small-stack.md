@@ -31,6 +31,3 @@ Tag the tests `#[trace("TC-722", "FR-256-AC-1")]`.
 
 - Step 1: each input parses, and the thread completes.
 
-## Status
-
-Passed locally: `qsl-cst/tests/it/deep_sources.rs`.

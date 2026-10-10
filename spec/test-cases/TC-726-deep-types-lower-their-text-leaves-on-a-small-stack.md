@@ -42,10 +42,3 @@ Tag the tests `#[trace("TC-726", "FR-258-AC-2")]` and `#[trace("TC-726", "FR-258
 - Step 4: the walk enters `2 × 1,001 + 1` visits, no more than twice the
   work units it charged, plus one.
 
-## Status
-
-Backed: `a_100000_deep_option_lowers_its_text_leaf_on_a_small_stack`,
-`a_100000_record_chain_lowers_its_text_leaf_on_a_small_stack` and
-`a_100000_deep_option_type_keys_on_a_small_stack` and
-`the_text_leaf_walk_enters_two_visits_per_charged_record`
-(`qsl-semantics/src/check/lowering/tests/depth.rs`).

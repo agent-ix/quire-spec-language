@@ -72,6 +72,3 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   `observations` and `bounds` are `{"type":"map","entries":[]}`. The two
   keys differ.
 
-## Status
-
-Planned.

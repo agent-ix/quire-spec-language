@@ -107,6 +107,12 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
+Steps 12 and 13 are not implemented yet (QSL-638): the emitter writes no
+`owner` member until IR-646 adds it to `CheckedSemanticNodeV2`. AC-7 is
+unmet as worded until then: step 2's test supplies the owner (`a`, `u`)
+itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
+`owner` member.
+
 ## Expected Results
 
 - Step 2: every recomputed key equals the node's `node_id`.
@@ -167,31 +173,3 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   the `Integer` id is equal, the `package_id`s differ, and IR admits both
   (FR-093-AC-22).
 
-## Status
-
-Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs`.
-Step 8 implemented (`emit/tests.rs` and
-`checked_v2::tests::conformance_dependency_selection_vectors`).
-Step 9 implemented (`the_lock_selects_the_catalog_definitions`).
-Step 10 implemented in `qsl-package/src/emit/tests.rs`
-(`enum_members_no_literal_names_are_placed_under_an_ordered_comparison`,
-`an_ordered_comparison_of_enum_parameters_reads_back_verified`,
-`enum_members_no_literal_names_are_placed_under_an_equality`,
-`types_no_function_names_are_placed_at_their_declared_names`,
-`a_node_two_unnamed_types_share_is_placed_at_the_least_name`,
-`a_node_a_state_clause_places_does_not_move_to_a_type_name`).
-Step 11 implemented in `qsl-package/src/emit/tests/admission_corpus.rs`
-(`every_emitted_node_family_is_admitted_at_its_package_id`).
-Step 7 is implemented in `qsl-package/src/emit/tests/golden.rs`
-(`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
-`FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are
-compared, and IR's v2 reader admits each emitted package. It compares every
-member including `mode` (`float64.add` under `toward-zero` and `nearest-even`)
-and skips, by name, the fixture identities no row lowers in a
-function body.
-
-Steps 12 and 13 are not implemented yet (QSL-638): the emitter writes no
-`owner` member until IR-646 adds it to `CheckedSemanticNodeV2`. AC-7 is
-unmet as worded until then: step 2's test supplies the owner (`a`, `u`)
-itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
-`owner` member.

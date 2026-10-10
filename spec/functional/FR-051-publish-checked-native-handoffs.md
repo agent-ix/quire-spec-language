@@ -144,14 +144,3 @@ the cycle-free `quire-contract-model` package under its existing dependency
 key; it does not depend on the compatibility bridge package that consumes these
 handoffs.
 
-## Status
-
-Implemented for `quire-spec-language#90` under the reviewed `tl-syntax#52`
-ecosystem architecture; temporal activation-guard selection is extended by
-`quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired
-(M-6d), which deletes `protocol_artifact::checked_predicate` and
-`protocol_artifact::temporal_subject` along with their only tests (formerly in
-`tests/it/compiled_protocol_v2.rs`, which remains for its unrelated TC-138
-coverage); the spine `ProtocolClause` path no longer needs this handoff.
-FR-051-AC-6 states the still-live production-dependency-graph fact, which
-`arch-lint direction` (FR-059) verifies.
