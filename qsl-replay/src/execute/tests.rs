@@ -1779,6 +1779,71 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
     // contract; that refusal is intentionally not loosened for this fixture.
 }
 
+#[test]
+#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
+fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::{EnumBinding, PackageDeclarations};
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use qsl_semantics::value::enumeration::{AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
+    use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
+    use quire_exact::{ChargePoint, EnumMember, Meter, NodeKey, Value, ValueType};
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+    let limits = qsl_foundation::IdentityLimits::default();
+    let owner = NodeOwner::Definition(OwnerSubject { authority: "test".to_owned(), identity: "nested-cause".to_owned() });
+    let owners = OwnerSelection::new([owner.clone()]);
+    let admit = |name: &str, case: &str| {
+        let preimage = EnumDeclarationPreimage::new(owner.clone(), vec![name.to_owned()], false,
+            vec!["DONE".to_owned(), "READY".to_owned()]).unwrap();
+        let key = NodeKey::from_digest(preimage.digest(limits).unwrap());
+        let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners, limits).unwrap();
+        let preimage = EnumMemberPreimage::new(key, case).unwrap();
+        let key = NodeKey::from_digest(preimage.digest(limits).unwrap());
+        let member = declaration.admit_member(&preimage, key, limits).unwrap();
+        (declaration, member)
+    };
+    let (declaration, left) = admit("Left", "DONE");
+    let (_, right) = admit("Right", "READY");
+    // Violate only the checked binding's declaration/member-list prerequisite;
+    // all retained members were actually admitted, and the comparator runs.
+    let binding = EnumBinding { name: "State".to_owned(), declaration, members: vec![left.clone(), right.clone()] };
+    let shape = ValueType::Enum(binding.shape());
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let source = Expression::binary(BinaryOperator::Equal, Expression::name("left"), Expression::name("right"));
+    let declarations = PackageDeclarations {
+        enums: vec![binding], functions: vec![FunctionDeclaration::new("Compare", vec![
+            ("left".to_owned(), TypeForm::name("State", span)), ("right".to_owned(), TypeForm::name("State", span)),
+        ], TypeForm::builtin(BuiltinType::Boolean, span), None, source.clone())],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(), limits)
+    };
+    let package = qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    let expression = package.graph().check_expression(vec![("left".to_owned(), shape.clone()),
+        ("right".to_owned(), shape)], &source, None, CheckMode::Kernel, CheckingLimits::default()).unwrap();
+    let objects = ObjectEnvironment::default();
+    for call in [false, true] {
+        let mut meter = Meter::new(UNLIMITED);
+        let arguments = vec![Value::Enum(EnumMember::new(left.variant(), 0)), Value::Enum(EnumMember::new(right.variant(), 1))];
+        let failure = if call {
+            package.call(&QualifiedName::unqualified("Compare").unwrap(), arguments, &objects, &mut meter)
+        } else { package.evaluate(&expression, arguments, &objects, &mut meter) }
+            .expect_err("real scheduled comparator rejects distinct declarations");
+        let refusal = call_failure_to_replay_refusal(failure);
+        let ReplayRefusal::Fault(fault) = &refusal else { panic!("nested kernel fault became a refusal"); };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), "checked-program-invariant");
+        let Some(quire_exact::CheckedInvariantCause::ScheduledComparisonRefused { cause }) = fault.kernel_cause()
+            else { panic!("nested comparator wrapper was lost"); };
+        assert_eq!(cause, quire_exact::IllTypedCause::DistinctEnumDeclarations);
+        assert_eq!(refusal.code(), Code::RuntimeInvariant);
+        let terminal = TerminalValue::from_replay_refusal(&refusal);
+        assert!(matches!(terminal, TerminalValue::Failed));
+        assert_eq!(terminal.category(), Category::InternalFailure);
+        let prefix: &[ChargePoint] = if call { &[ChargePoint::FunctionCall] } else { &[] };
+        assert_eq!(meter.admitted_charges(), prefix);
+    }
+}
+
 /// The unit FR-357's tests replay: `inc`, `dec`, `dbl` and `neg` are
 /// unbounded-integer functions over one `+`, `-`, `*` and unary `-`, `inv` is
 /// `Rational`-valued, and `small` is a predicate.

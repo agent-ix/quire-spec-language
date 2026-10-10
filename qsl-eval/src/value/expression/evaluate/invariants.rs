@@ -111,6 +111,11 @@ fn earlier_charge_controls<'a>(package: &'a qsl_package::CheckedPackage,
     }
 }
 
+fn finish_tasks(machine: &mut Machine<'_, '_>) -> Result<(), Halt> {
+    while let Some(task) = machine.tasks.pop() { machine.step(task)?; }
+    Ok(())
+}
+
 fn checked_dispatch_package() -> qsl_package::CheckedPackage {
     use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{DispatchCandidate, DispatchOperation, PackageDeclarations};
@@ -190,6 +195,57 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         });
 }
 
+#[test]
+#[trace("TC-917", "FR-090-AC-16")]
+fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
+    use qsl_semantics::check::DispatchCandidate;
+    let package = checked_dispatch_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let receiver = reference();
+    let node = CheckedBody::fixture(vec![ValueType::Reference(receiver.object_type())],
+        |ids| NodeKind::Dispatch { receiver: ids[0], operation: 0, table: 0, arguments: vec![] }, ValueType::Boolean);
+    for guarded in [true, false] {
+        let tables = [DispatchTable::new(vec![(receiver.object_type(), DispatchCandidate {
+            body: 0, precondition: guarded.then_some(1), precondition_clauses: vec![],
+        })], 1)];
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, &tables);
+        machine.values.push(Value::Reference(receiver.clone()));
+        machine.apply(node.root()).unwrap_or_else(|_| panic!("linked dispatch"));
+        finish_tasks(&mut machine).unwrap_or_else(|_| panic!("linked callable bodies"));
+        assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
+        assert!(machine.frames.is_empty());
+        drop(machine);
+        let mut expected = vec![ChargePoint::DispatchSelect, ChargePoint::FunctionCall];
+        if guarded { expected.push(ChargePoint::FunctionCall); }
+        assert_eq!(meter.admitted_charges(), expected);
+    }
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+    machine.frames.push(vec![Some(Value::Reference(receiver.clone()))]);
+    machine.values.push(Value::Boolean(true));
+    machine.step(Task::DispatchGuard(Box::new(DispatchGuard {
+        body_function: 0, arguments: vec![Value::Reference(receiver.clone())],
+        failure: PreconditionFailure { operation: "step".to_owned(), selected: "Body".to_owned(),
+            receiver: receiver.clone() }, node: node.root(),
+    }))).unwrap_or_else(|_| panic!("linked guard body"));
+    finish_tasks(&mut machine).unwrap_or_else(|_| panic!("guard result"));
+    assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
+    drop(machine);
+    assert_eq!(meter.admitted_charges(), [ChargePoint::FunctionCall]);
+    let node = CheckedBody::fixture(vec![ValueType::Reference(receiver.object_type())],
+        |ids| NodeKind::Call { function: 0, arguments: vec![ids[0]] }, ValueType::Boolean);
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+    machine.values.push(Value::Reference(receiver));
+    machine.apply(node.root()).unwrap_or_else(|_| panic!("local callable"));
+    finish_tasks(&mut machine).unwrap_or_else(|_| panic!("local call result"));
+    assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
+    drop(machine);
+    assert_eq!(meter.admitted_charges(), [ChargePoint::FunctionCall]);
+}
+
 fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
     use quire_semantic_value::unit::{DimensionNode, NominalDeclaration, UnitGraph, UnitNode};
     let dimension_a = quire_exact::NodeKey::from_digest([0xa1; 32]);
@@ -243,8 +299,19 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         quire_semantic_value::checking::CheckingLimits::default()).unwrap());
     let node = body(|_| NodeKind::ImportedCall { callee,
         function: usize::MAX, arguments: vec![] });
-    probe_package!("evaluation-callable-unresolved", m, package,
+    probe_package!("evaluation-callable-unresolved", m, &package,
         ObjectEnvironment::default(), [], { m.apply(node.root()) });
+    let node = body(|_| NodeKind::ImportedCall { callee, function: 0, arguments: vec![] });
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+    machine.apply(node.root()).unwrap_or_else(|_| panic!("admitted imported callable"));
+    finish_tasks(&mut machine).unwrap_or_else(|_| panic!("imported body result"));
+    assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
+    assert!(machine.imported.is_empty());
+    drop(machine);
+    assert_eq!(meter.admitted_charges(), [ChargePoint::FunctionCall]);
 }
 
 #[test]
@@ -269,9 +336,10 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
     let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
     let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
     machine.units = UnitScope::new(&units);
-    assert!(!machine.order(OrderingOperator::Less, OrderedKind::Quantities, &left, &left).unwrap());
+    assert!(!machine.order(OrderingOperator::Less, OrderedKind::Quantities, &left, &left)
+        .unwrap_or_else(|_| panic!("same-unit comparison")));
     machine.values = vec![left.clone(), left.clone()];
-    machine.apply(node.root()).unwrap();
+    machine.apply(node.root()).unwrap_or_else(|_| panic!("same-unit addition"));
     let Value::Quantity(sum) = machine.values.pop().unwrap() else { panic!("quantity sum"); };
     let Value::Quantity(left) = left else { unreachable!() };
     assert_eq!(sum.magnitude(), &Rational::from_integer(Integer::from(2_i64)));
@@ -316,7 +384,7 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
             assert_eq!(fault.stage(), "S6a");
             assert_eq!(fault.kernel_cause(), None);
         } else {
-            result.unwrap();
+            result.unwrap_or_else(|_| panic!("valid provenance position"));
             assert_eq!(machine.trail.as_ref().unwrap()
                 .provenance(&Value::Collection(i.source.clone())).unwrap().position(0), Some(0));
         }
@@ -527,7 +595,8 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
         let graph = package.graph();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let m = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
-        assert!(m.edge_targets(literal.root(), &reference(), &field).unwrap().is_empty());
+        assert!(m.edge_targets(literal.root(), &reference(), &field)
+            .unwrap_or_else(|_| panic!("optional empty edge")).is_empty());
         assert!(meter.admitted_charges().is_empty());
     }
 }
@@ -606,6 +675,15 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                 FieldValue::Present(Value::Integer(Integer::from(stored))))])], &[]).unwrap();
         let objects = ObjectEnvironment::new(closure);
         for call in [false, true] {
+            let mut input_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let input = if call {
+                package.call(&QualifiedName::unqualified("Compare").unwrap(), vec![Value::Boolean(true)], &objects, &mut input_meter)
+            } else {
+                package.evaluate(&checked, vec![Value::Boolean(true)], &objects, &mut input_meter)
+            };
+            assert!(matches!(input, Err(CallFailure::Input(
+                quire_semantic_value::call::InputRefusal::WrongValueKind { .. }))));
+            assert!(input_meter.admitted_charges().is_empty());
             let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
             let arguments = vec![Value::Reference(reference())];
             let result = if call {
@@ -622,6 +700,27 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                 assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
                 let expected: &[ChargePoint] = if call { &[ChargePoint::FunctionCall] } else { &[] };
                 assert_eq!(meter.admitted_charges(), expected);
+                if call {
+                    let mut denied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                        .with_injected_denial(quire_exact::InjectedDenial {
+                            point: ChargePoint::FunctionCall, occurrence: std::num::NonZeroU64::new(1).unwrap(),
+                        });
+                    let outcome = package.call(&QualifiedName::unqualified("Compare").unwrap(),
+                        vec![Value::Reference(reference())], &objects, &mut denied).unwrap();
+                    assert!(matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                        if record.charge_point == ChargePoint::FunctionCall));
+                    assert!(denied.admitted_charges().is_empty());
+                    for cause in [quire_exact::CancelCause::Requested, quire_exact::CancelCause::Deadline] {
+                        let cancel = quire_exact::Cancel::new(); cancel.cancel(cause);
+                        let mut stopped = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED).with_cancel(cancel.clone());
+                        let outcome = package.call(&QualifiedName::unqualified("Compare").unwrap(),
+                            vec![Value::Reference(reference())], &objects, &mut stopped).unwrap();
+                        assert!(matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                            if record.charge_point == ChargePoint::FunctionCall));
+                        assert_eq!(cancel.tripped(), Some(cause));
+                        assert!(stopped.admitted_charges().is_empty());
+                    }
+                }
             } else {
                 assert!(matches!(result.unwrap().outcome,
                     qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))));
@@ -717,6 +816,64 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
     ] {
         probe!("evaluation-apply-node-invalid", m, [], { m.apply(root.root()) });
     }
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-16")]
+fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix() {
+    let (package, _) = super::tests::population_function_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, graph.dispatch_tables());
+    machine.values.push(Value::Boolean(true));
+    assert!(matches!(machine.pop().unwrap_or_else(|_| panic!("pop")), Value::Boolean(true)));
+    machine.values = vec![Value::Boolean(false), Value::Integer(Integer::one()), Value::Boolean(true)];
+    let values = machine.pop_many(2).unwrap_or_else(|_| panic!("pop_many"));
+    assert!(matches!(values.as_slice(), [Value::Integer(value), Value::Boolean(true)] if value == &Integer::one()));
+    assert!(matches!(machine.values.as_slice(), [Value::Boolean(false)]));
+    assert!(!machine.pop_boolean().unwrap_or_else(|_| panic!("Boolean extraction")));
+    machine.values.push(Value::Integer(Integer::one()));
+    assert_eq!(machine.pop_integer().unwrap_or_else(|_| panic!("Integer extraction")), Integer::one());
+    let rational = Rational::new(Integer::one(), Integer::from(2_i64)).unwrap();
+    machine.values.push(Value::Rational(rational.clone()));
+    assert_eq!(machine.pop_rational().unwrap_or_else(|_| panic!("Rational extraction")), rational);
+    let decimal = Decimal::new(Integer::from(125_i64), 2);
+    machine.values.push(Value::Decimal(decimal.clone()));
+    assert_eq!(machine.pop_decimal().unwrap_or_else(|_| panic!("Decimal extraction")), decimal);
+    let source = collection(vec![Value::Boolean(true)]);
+    machine.values.push(Value::Collection(source.clone()));
+    assert!(Arc::ptr_eq(&machine.pop_collection().unwrap_or_else(|_| panic!("collection extraction")), &source));
+    machine.frames.push(vec![Some(Value::Boolean(true)), Some(Value::Boolean(false))]);
+    assert!(matches!(machine.slot(0).unwrap_or_else(|_| panic!("bound slot")), Some(Value::Boolean(true))));
+    let local = body(|_| NodeKind::Local(0));
+    machine.eval(local.root()).unwrap_or_else(|_| panic!("bound local"));
+    assert!(matches!(machine.pop().unwrap_or_else(|_| panic!("local result")), Value::Boolean(true)));
+    let branch = body(|ids| NodeKind::If { condition: ids[0], then: ids[0], otherwise: ids[1] });
+    machine.values.push(Value::Boolean(false));
+    machine.step(Task::Branch(branch.root())).unwrap_or_else(|_| panic!("checked branch"));
+    finish_tasks(&mut machine).unwrap_or_else(|_| panic!("branch result"));
+    assert!(matches!(machine.pop().unwrap_or_else(|_| panic!("branch pop")), Value::Boolean(false)));
+    machine.step(Task::Return).unwrap_or_else(|_| panic!("existing return frame"));
+    assert!(machine.frames.is_empty());
+    assert!(machine.values.is_empty());
+    let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
+    let result = machine.drive(literal.root()).unwrap();
+    assert!(matches!(result.outcome, FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))));
+    drop(machine);
+    assert!(meter.admitted_charges().is_empty());
+}
+
+#[test]
+#[trace("TC-917", "FR-090-AC-16")]
+fn valid_required_and_optional_projection_preserves_values_without_a_charge() {
+    let slot = FieldValue::Present(Value::Boolean(true));
+    let required = Machine::project(&slot, false, &ValueType::Boolean, false)
+        .unwrap_or_else(|_| panic!("required projection"));
+    assert!(matches!(required, Value::Boolean(true)));
+    let optional = Machine::project(&slot, true, &ValueType::option(ValueType::Boolean), false)
+        .unwrap_or_else(|_| panic!("optional projection"));
+    assert!(matches!(optional, Value::Option(value) if matches!(value.payload(), Some(Value::Boolean(true)))));
 }
 
 #[test]
