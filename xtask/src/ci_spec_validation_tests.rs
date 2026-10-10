@@ -38,13 +38,17 @@ fn owned_fixture() -> tempfile::TempDir {
 }
 
 fn make(root: &Path) -> Command {
+    make_with_file(root, &workspace().join("Makefile"))
+}
+
+fn make_with_file(root: &Path, file: &Path) -> Command {
     let mut command = Command::new("/usr/bin/make");
     command
         .current_dir(root)
         .arg("--no-print-directory")
         .arg("-rR")
         .arg("-f")
-        .arg(workspace().join("Makefile"))
+        .arg(file)
         .env_remove("MAKEFLAGS")
         .env_remove("MFLAGS")
         .env_remove("MAKEFILES")
@@ -212,12 +216,46 @@ fn native_fixtures_use_workspace_default_relative_and_absolute_targets() {
 const CARGO_RECORDER: &str = r#"
 use std::io::Write;
 fn main() {
-    let path = std::env::var_os("SPEC_GATE_CARGO_CALLS").expect("owned call log");
+    let executable = std::env::args_os().next().unwrap();
+    let name = std::path::Path::new(&executable).file_name().unwrap();
+    let cargo = name == "cargo";
+    let variable = if cargo { "SPEC_GATE_CARGO_CALLS" } else { "SPEC_GATE_PRECHECK_CALLS" };
+    let path = std::env::var_os(variable).expect("owned call log");
     let mut log = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
-    let call = format!("{}\n", std::env::args().skip(1).collect::<Vec<_>>().join("\t"));
+    let call = if cargo {
+        std::env::args().skip(1).collect::<Vec<_>>().join("\t")
+    } else {
+        name.to_str().unwrap().to_owned()
+    };
+    let call = format!("{call}\n");
     log.write_all(call.as_bytes()).unwrap();
 }
 "#;
+
+// Independent complete invocation inventory: default (7), all-feature (2),
+// clean (3, including the two target-dir calls added below), four xtask probes,
+// deny, docs and three architecture checks. No Cargo prerequisite is excluded.
+const AGGREGATE_CARGO_CALLS: &[&str] = &[
+    "fmt\t--all\t--\t--check",
+    "clippy\t--locked\t--workspace\t--all-targets\t--\t-D\twarnings",
+    "test\t--locked\t--workspace",
+    "clippy\t--locked\t-p\tqsl-semantics\t--all-targets\t--\t-D\twarnings",
+    "test\t--locked\t-p\tqsl-semantics",
+    "clippy\t--locked\t-p\tqsl-cst\t--all-targets\t--\t-D\twarnings",
+    "test\t--locked\t-p\tqsl-cst",
+    "clippy\t--locked\t--workspace\t--all-targets\t--all-features\t--\t-D\twarnings",
+    "test\t--locked\t--workspace\t--all-features",
+    "run\t--locked\t--no-default-features\t--\tparse\tagent-ix\ttest:parent\tfixture\tfixture:1\ttests/fixtures/parent.native",
+    "run\t--package\txtask\t--\tseam-probe",
+    "run\t--package\txtask\t--\tstring-edge",
+    "run\t--package\txtask\t--\troute-lint",
+    "run\t--package\txtask\t--\tchecked-input",
+    "deny\t--workspace\tcheck\tbans\t--config\tdeny.toml",
+    "doc\t--locked\t--workspace\t--no-deps\t--all-features",
+    "run\t--locked\t-p\tarch-lint\t--\tcanonical-encoder\t--qsl\t.",
+    "run\t--locked\t-p\tarch-lint\t--\tapi-surface\t--qsl\t.\t--qsl-only",
+    "run\t--locked\t-p\tarch-lint\t--\tqualified-core\t--qsl\t.",
+];
 
 #[trace("TC-914", "NFR-002-AC-2")]
 #[test]
@@ -238,51 +276,117 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
             .arg(bin.join("cargo")),
     );
     assert!(compiler.status.success(), "compile native process recorder");
+    // cargo-deny is probed for executable presence only; the real recipe's
+    // `cargo deny` invocation goes through the Cargo recorder, with no install.
+    std::os::unix::fs::symlink(bin.join("cargo"), bin.join("cargo-deny")).unwrap();
+    // The two non-Cargo prerequisites use native invocation seams. Their
+    // underlying binary/index audits are not qualified by this boundary test.
+    let tools = root.join("tools");
+    std::fs::create_dir(&tools).unwrap();
+    for name in ["check-no-committed-binaries.sh", "check-index-completeness.sh"] {
+        std::os::unix::fs::symlink(bin.join("cargo"), tools.join(name)).unwrap();
+    }
     let path = std::env::join_paths(
         std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
     .unwrap();
     let calls = root.join("cargo calls");
+    let prechecks = root.join("precheck calls");
+    let target = root.join("target");
+    let aggregate = |file: &Path, scheduling: &[&str]| {
+        let mut command = make_with_file(root, file);
+        command
+            .args(scheduling)
+            .arg("ci")
+            .env("PATH", &path)
+            .env("CARGO_TARGET_DIR", &target)
+            .env_remove("CI_DEFAULT_TARGET_DIR")
+            .env_remove("CI_ALL_TARGET_DIR")
+            .env_remove("CI_CLEAN_TARGET_DIR")
+            .env("SPEC_GATE_CARGO_CALLS", &calls)
+            .env("SPEC_GATE_PRECHECK_CALLS", &prechecks);
+        command
+    };
+    let makefile = workspace().join("Makefile");
     for scheduling in [&["-j1"][..], &["-j4"][..], &["-j4", "-k"][..]] {
-        let aggregate = || {
-            let mut command = make(root);
-            command
-                .args(scheduling)
-                .args([
-                    "-o",
-                    "check-no-committed-binaries",
-                    "-o",
-                    "check-index-completeness",
-                    "-o",
-                    "cargo-deny-bans",
-                    "ci",
-                ])
-                .env("PATH", &path)
-                .env("SPEC_GATE_CARGO_CALLS", &calls);
-            command
-        };
         std::fs::write(&document, VALID.replace("id: NFR-999\n", "")).unwrap();
-        let negative = run(&mut aggregate());
+        let negative = run(&mut aggregate(&makefile, scheduling));
         refused(&negative, "1 document(s) failed structural validation");
         assert!(
             !calls.exists(),
             "invalid native spec must prevent ALL Cargo calls"
         );
+        assert!(
+            !prechecks.exists(),
+            "validation precedes non-Cargo checks too"
+        );
 
         std::fs::write(&document, VALID).unwrap();
         assert!(
-            run(&mut aggregate()).status.success(),
+            run(&mut aggregate(&makefile, scheduling)).status.success(),
             "restored aggregate reaches Cargo"
         );
         let recorded = std::fs::read_to_string(&calls).unwrap();
-        for operation in [
-            "fmt\t", "clippy\t", "test\t", "build\t", "check\t", "doc\t", "run\t",
-        ] {
-            assert!(
-                recorded.lines().any(|line| line.starts_with(operation)),
-                "missing {operation}: {recorded}"
-            );
-        }
+        let mut actual: Vec<_> = recorded.lines().map(str::to_owned).collect();
+        let mut expected: Vec<_> = AGGREGATE_CARGO_CALLS
+            .iter()
+            .map(|call| (*call).to_owned())
+            .collect();
+        let clean = target.join("clean");
+        expected.push(format!(
+            "build\t--locked\t--workspace\t--no-default-features\t--target-dir\t{}",
+            clean.display()
+        ));
+        expected.push(format!(
+            "check\t--locked\t-p\tquire-spec-language\t--lib\t--no-default-features\t--features\thandoff-writer\t--target-dir\t{}",
+            clean.display()
+        ));
+        actual.sort();
+        expected.sort();
+        assert_eq!(
+            actual, expected,
+            "every aggregate Cargo invocation must be observed"
+        );
+        let recorded = std::fs::read_to_string(&prechecks).unwrap();
+        let mut actual: Vec<_> = recorded.lines().collect();
+        actual.sort();
+        assert_eq!(
+            actual,
+            ["check-index-completeness.sh", "check-no-committed-binaries.sh"]
+        );
         std::fs::remove_file(&calls).unwrap();
+        std::fs::remove_file(&prechecks).unwrap();
     }
+
+    // Mutation sensitivity: alter only the deny target's validation edge in an
+    // owned copy. Native Quire still refuses, but deny alone now invokes Cargo;
+    // the unchanged zero-call oracle above must reject this graph.
+    let source = std::fs::read_to_string(&makefile).unwrap();
+    let edge = "$(CI_CHECKS): | check-spec-validation";
+    assert_eq!(
+        source.matches(edge).count(),
+        1,
+        "one aggregate barrier declaration"
+    );
+    let mutant = root.join("deny-edge-only.Makefile");
+    std::fs::write(
+        &mutant,
+        source.replace(
+            edge,
+            "$(filter-out cargo-deny-bans,$(CI_CHECKS)): | check-spec-validation",
+        ),
+    )
+    .unwrap();
+    std::fs::write(&document, VALID.replace("id: NFR-999\n", "")).unwrap();
+    let negative = run(&mut aggregate(&mutant, &["-j4", "-k"]));
+    refused(&negative, "1 document(s) failed structural validation");
+    assert_eq!(
+        std::fs::read_to_string(&calls).unwrap(),
+        "deny\t--workspace\tcheck\tbans\t--config\tdeny.toml\n",
+        "removing only deny's barrier must violate the zero-Cargo oracle"
+    );
+    assert!(
+        !prechecks.exists(),
+        "other prerequisite barriers remain intact"
+    );
 }
