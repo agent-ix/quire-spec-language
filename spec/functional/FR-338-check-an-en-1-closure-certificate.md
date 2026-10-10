@@ -297,9 +297,10 @@ when the history window shifts. The guessed polarity is checked through the
 same expansion and Büchi acceptance as every future obligation. This keeps
 past/future nesting faithful to SM-7/SM-8 without retaining model states.
 
-`acceptance` is the set of `[o,s]` unbounded least-fixed-point obligations
-(`F`/`U`, or their signed dual) whose acceptance set this elementary state
-belongs to. The closure has one generalized Büchi acceptance set per such
+`acceptance` is the set of `[o,s]` least-fixed-point occurrences whose
+acceptance set this elementary state belongs to: unbounded `F`/`U` or
+their signed dual, plus finite `F`/`U` on protocol subjects as below. This state
+membership is explicit. The closure has one generalized Büchi acceptance set per such
 signed occurrence. A branch belongs to it when that occurrence is not
 carried from this position, or its current expansion discharged it through
 its operand/right operand. A carried least-fixed-point obligation with no
