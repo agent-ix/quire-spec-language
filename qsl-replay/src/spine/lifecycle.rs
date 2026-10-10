@@ -104,7 +104,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
+use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
@@ -355,9 +355,9 @@ impl ParsedSource {
 
 /// The domain packages a unit's `model` declarations selected, admitted at
 /// I1, with the package documents they were admitted from.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct AdmittedModels {
-    models: Vec<SelectedModel>,
+    models: SelectedModels,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
@@ -471,7 +471,7 @@ pub fn select(
 /// dependency input and `limits`.
 pub fn check(
     parsed: &ParsedSource,
-    models: &AdmittedModels,
+    models: AdmittedModels,
     dependencies: &DependencyInput,
     lock: &LockEvidence,
     limits: SpineLimits,
@@ -504,7 +504,7 @@ pub fn check(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package = resolution.check_unit(parsed, models.models.clone(), lock)?;
+        let package = resolution.check_unit(parsed, models.models, lock)?;
         *work = resolution.work;
         Ok(CheckedUnit {
             package,
@@ -615,7 +615,7 @@ fn select_models(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
-) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
+) -> Result<SelectedModels, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
     admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel).map_err(
         |refusal| {
@@ -752,7 +752,7 @@ struct Resolution<'a> {
 struct Frame {
     raw: RawSourceRef,
     unit: ParsedUnit,
-    models: Vec<SelectedModel>,
+    models: Option<SelectedModels>,
     lock: LockEvidence,
     /// The index of the import being resolved.
     next: usize,
@@ -761,12 +761,12 @@ struct Frame {
 }
 
 impl Frame {
-    fn new(parsed: &ParsedSource, models: Vec<SelectedModel>, lock: LockEvidence) -> Self {
+    fn new(parsed: &ParsedSource, models: SelectedModels, lock: LockEvidence) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
-            models,
+            models: Some(models),
             lock,
             next: 0,
             admitted: Vec::with_capacity(imports),
@@ -864,7 +864,7 @@ impl<'a> Resolution<'a> {
         let limits = self.limits;
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
-        let models = std::mem::take(&mut frame.models);
+        let models = frame.models.take().expect("a finishing frame owns its admitted models");
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
         resolve_profiles(&unit.selections().profiles).map_err(|refusals| {
@@ -929,7 +929,7 @@ impl<'a> Resolution<'a> {
     fn check_unit(
         &mut self,
         parsed: &ParsedSource,
-        models: Vec<SelectedModel>,
+        models: SelectedModels,
         lock: &LockEvidence,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let mut root = Frame::new(parsed, models, lock.clone());

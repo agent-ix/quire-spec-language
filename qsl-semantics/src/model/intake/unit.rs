@@ -16,10 +16,10 @@ use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
 
 use super::{admit_located, read_records, PackageDocument};
-use crate::model::accounting::{Incomplete, ModelNormalizationLimits};
+use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
 use crate::model::domain_package::{DomainPackage, DomainPackageRef};
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
-use crate::model::normalize::{normalize_with_cancel, EffectiveView, NormalizeOutcome, Refusals};
+use crate::model::normalize::{normalize_packages, BatchDenial, EffectiveView, Refusals};
 
 /// One `model` declaration of a unit, admitted at I1: its alias, the span
 /// of its declaration and its domain package's effective view.
@@ -31,6 +31,48 @@ pub struct SelectedModel {
     pub span: Span,
     /// The admitted domain package's effective view.
     pub view: EffectiveView,
+}
+
+/// One model-admission operation. Only intake constructs a nonempty owner;
+/// assembly consumes it and carries its meter into checking.
+#[derive(Debug)]
+pub struct SelectedModels {
+    entries: Vec<SelectedModel>,
+    meter: Meter,
+}
+
+impl Default for SelectedModels {
+    fn default() -> Self {
+        Self { entries: Vec::new(), meter: Meter::new(ModelNormalizationLimits::default()) }
+    }
+}
+
+impl std::ops::Deref for SelectedModels {
+    type Target = [SelectedModel];
+    fn deref(&self) -> &Self::Target { &self.entries }
+}
+
+impl SelectedModels {
+    pub(crate) fn into_parts(self) -> (Vec<SelectedModel>, Meter) { (self.entries, self.meter) }
+
+    /// A fixture uses the same private normalization producer and owns its
+    /// actual admitted meter; it cannot pair an arbitrary view with a meter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(alias: &str, span: Span, package: DomainPackage,
+        limits: ModelNormalizationLimits) -> Result<Self, UnitIntakeRefusal> {
+        let mut meter = Meter::new(limits);
+        let packages = [package];
+        let views = normalize_packages(&packages, &mut meter).map_err(|failure| {
+            let cause = match failure {
+                BatchDenial::Refused(mut refusals) => UnitIntakeCause::Refused(refusals.remove(0).1),
+                BatchDenial::Incomplete(_, incomplete) => UnitIntakeCause::Limit(incomplete),
+            };
+            UnitIntakeRefusal { alias: alias.to_owned(), span, cause, additional: Vec::new() }
+        })?;
+        Ok(Self { entries: views.into_iter().map(|view| SelectedModel {
+            alias: alias.to_owned(), span, view,
+        }).collect(), meter })
+    }
 }
 
 /// Why I1 admitted no domain package for one `model` declaration.
@@ -71,6 +113,9 @@ pub struct UnitIntakeRefusal {
     pub span: Span,
     /// The typed cause.
     pub cause: UnitIntakeCause,
+    /// Other selections' failures from this same completed stage, in
+    /// canonical selection order. An unfinished stage carries none.
+    pub additional: Vec<UnitIntakeRefusal>,
 }
 
 /// No byte limit: how [`package_input`] reads a document to key it.
@@ -107,7 +152,7 @@ pub fn admit_unit(
     selections: &[ModelSelection],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
-) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
+) -> Result<SelectedModels, UnitIntakeRefusal> {
     admit_unit_with_cancel(selections, packages, limits, &Cancel::new())
 }
 
@@ -118,11 +163,12 @@ pub fn admit_unit_with_cancel(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
-) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
+) -> Result<SelectedModels, UnitIntakeRefusal> {
     let refuse = |selection: &ModelSelection, cause| UnitIntakeRefusal {
         alias: selection.alias.clone(),
         span: selection.span,
         cause,
+        additional: Vec::new(),
     };
     let mut offered = Vec::with_capacity(selections.len());
     for selection in selections {
@@ -138,6 +184,8 @@ pub fn admit_unit_with_cancel(
             },
         ));
     }
+    offered.sort_by(|(_, a), (_, b)| a.identity.as_bytes().cmp(b.identity.as_bytes())
+        .then_with(|| a.digest.cmp(&b.digest)));
     let admitted = admit_located(
         &offered,
         |(_, offered_ref)| offered_ref,
@@ -151,32 +199,43 @@ pub fn admit_unit_with_cancel(
             UnitIntakeCause::Refused(Refusals::new(refusal, Vec::new())),
         )
     })?;
-    admitted
-        .into_iter()
-        .map(|((selection, _), package_ref, document)| {
-            let records = read_records(&package_ref.identity, &document).map_err(|refusals| {
+    let mut owners = Vec::with_capacity(admitted.len());
+    let mut selected_packages = Vec::with_capacity(admitted.len());
+    let mut reader_failures = Vec::new();
+    for ((selection, _), package_ref, document) in admitted {
+        match read_records(&package_ref.identity, &document) {
+            Ok(records) => {
+                owners.push(selection);
+                selected_packages.push(DomainPackage::new(package_ref, records));
+            }
+            Err(refusals) => {
                 let cause = Refusals::try_from(refusals)
                     .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);
-                refuse(selection, cause)
-            })?;
-            let view = match normalize_with_cancel(
-                &DomainPackage::new(package_ref, records),
-                limits,
-                cancel,
-            ) {
-                NormalizeOutcome::Completed(view) => view,
-                NormalizeOutcome::Refused(refusals) => {
-                    return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))
-                }
-                NormalizeOutcome::Incomplete(incomplete) => {
-                    return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
-                }
-            };
-            Ok(SelectedModel {
-                alias: selection.alias.clone(),
-                span: selection.span,
-                view,
-            })
-        })
-        .collect()
+                reader_failures.push(refuse(selection, cause));
+            }
+        }
+    }
+    if !reader_failures.is_empty() {
+        let mut first = reader_failures.remove(0);
+        first.additional = reader_failures;
+        return Err(first);
+    }
+    let mut meter = Meter::new(limits).with_cancel(cancel.clone());
+    let views = normalize_packages(&selected_packages, &mut meter).map_err(|failure| {
+        match failure {
+            BatchDenial::Incomplete(ordinal, incomplete) => refuse(owners[ordinal], UnitIntakeCause::Limit(incomplete)),
+            BatchDenial::Refused(refusals) => {
+                let mut failures = refusals.into_iter().map(|(ordinal, refusals)|
+                    refuse(owners[ordinal], UnitIntakeCause::Refused(refusals)));
+                let mut first = failures.next().expect("a refused stage has a refusal");
+                first.additional = failures.collect();
+                first
+            }
+        }
+    })?;
+    Ok(SelectedModels {
+        entries: owners.into_iter().zip(views).map(|(selection, view)| SelectedModel {
+            alias: selection.alias.clone(), span: selection.span, view,
+        }).collect(), meter,
+    })
 }

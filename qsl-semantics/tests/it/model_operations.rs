@@ -844,7 +844,7 @@ pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
 fn admit(
     document: &[u8],
 ) -> Result<
-    Vec<qsl_semantics::model::intake::SelectedModel>,
+    qsl_semantics::model::intake::SelectedModels,
     qsl_semantics::model::intake::UnitIntakeRefusal,
 > {
     let (unit, packages) = config_unit(document);

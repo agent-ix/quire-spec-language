@@ -228,7 +228,7 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
         .into_value();
     let checked = crate::spine::check(
         &parsed,
-        &models,
+        models,
         &crate::spine::DependencyInput::default(),
         &crate::spine::LockEvidence::default(),
         limits,

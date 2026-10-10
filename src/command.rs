@@ -613,7 +613,7 @@ fn complete(
         .into_value();
     let checked = qsl_replay::spine::check(
         &parsed,
-        &models,
+        models,
         &dependencies,
         &qsl_replay::spine::LockEvidence::default(),
         limits,

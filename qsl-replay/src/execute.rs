@@ -775,7 +775,7 @@ pub(crate) fn run_spine(
         .into_value();
     let checked = spine::check(
         &parsed,
-        &models,
+        models,
         dependencies,
         &spine::LockEvidence::default(),
         limits,

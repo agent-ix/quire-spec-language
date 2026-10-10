@@ -63,7 +63,7 @@ use quire_exact::Presence;
 
 mod unit;
 pub use unit::{
-    admit_unit, admit_unit_with_cancel, package_input, SelectedModel, UnitIntakeCause,
+    admit_unit, admit_unit_with_cancel, package_input, SelectedModel, SelectedModels, UnitIntakeCause,
     UnitIntakeRefusal,
 };
 

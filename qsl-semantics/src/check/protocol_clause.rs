@@ -759,9 +759,8 @@ mod tests {
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
         OperationMemberRecord,
     };
-    use crate::model::intake::SelectedModel;
+    use crate::model::intake::SelectedModels;
     use crate::model::key::DeclarationKey;
-    use crate::model::normalize::{normalize, NormalizeOutcome};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -777,7 +776,7 @@ mod tests {
     /// which now runs for every protocol) resolves rather than refusing at
     /// assembly. This module's FR-113 tests still exercise anchor
     /// resolution and binder shadowing only; FR-114 touches neither.
-    fn m_actor_model() -> SelectedModel {
+    fn m_actor_model() -> SelectedModels {
         let key = |name: &str| DeclarationKey {
             package: "example/protocol-fixture".to_owned(),
             node: format!("ix://example/protocol-fixture/{name}"),
@@ -819,16 +818,9 @@ mod tests {
                 }),
             ],
         );
-        let NormalizeOutcome::Completed(view) =
-            normalize(&package, ModelNormalizationLimits::UNLIMITED)
-        else {
-            panic!("the M::Actor fixture normalizes");
-        };
-        SelectedModel {
-            alias: "M".to_owned(),
-            span: qsl_foundation::Span { start: 0, end: 0 },
-            view,
-        }
+        SelectedModels::fixture("M", qsl_foundation::Span { start: 0, end: 0 },
+            package, ModelNormalizationLimits::UNLIMITED)
+            .expect("the M::Actor fixture normalizes")
     }
 
     /// S1, S2 and the assembler over `declarations`, against
@@ -851,7 +843,7 @@ mod tests {
         let assembled = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
             unit,
-            vec![m_actor_model()],
+            m_actor_model(),
             Vec::new(),
         )
         .unwrap_or_else(|refusal| panic!("{declarations}: the assembler refuses: {refusal:?}"));

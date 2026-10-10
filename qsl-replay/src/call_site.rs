@@ -441,7 +441,7 @@ pub fn call_site<'a, S: CallSiteSelection>(
         .into_value();
     let checked = spine::check(
         &parsed,
-        &models,
+        models,
         dependencies,
         &spine::LockEvidence::default(),
         limits,

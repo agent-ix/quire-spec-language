@@ -62,7 +62,7 @@ use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
     ValueTypeRef,
 };
-use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
+use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel, SelectedModels};
 use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
 use crate::value::enumeration::{
@@ -1233,7 +1233,7 @@ impl PackageDeclarations {
     pub fn assemble(
         source: RawSourceRef,
         unit: ParsedUnit,
-        models: Vec<SelectedModel>,
+        models: SelectedModels,
         imports: Vec<AdmittedImport>,
     ) -> Result<Self, AssemblyRefusal> {
         Self::assemble_with_limits(source, unit, models, imports, AssemblyLimits::default())
@@ -1243,7 +1243,7 @@ impl PackageDeclarations {
     pub fn assemble_with_limits(
         source: RawSourceRef,
         unit: ParsedUnit,
-        models: Vec<SelectedModel>,
+        models: SelectedModels,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
     ) -> Result<Self, AssemblyRefusal> {
@@ -1258,7 +1258,7 @@ impl PackageDeclarations {
     pub fn assemble_with_cancel(
         source: RawSourceRef,
         unit: ParsedUnit,
-        models: Vec<SelectedModel>,
+        models: SelectedModels,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
         cancel: &Cancel,
@@ -1696,6 +1696,7 @@ impl PackageDeclarations {
         package.types = types;
         package.operations = operations;
         package.models = admitted;
+        package.model_inputs = Some(models.into_parts());
         package.aliases = unit
             .aliases
             .iter()

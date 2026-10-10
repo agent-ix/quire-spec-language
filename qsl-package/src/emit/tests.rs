@@ -2893,14 +2893,13 @@ fn e4_refuses_a_conflicting_diamond() {
 /// non-trivial frame for a real attempt to bind against. With `with_sub`,
 /// the package also declares `Sub`, specializing `ConfigVersion` and
 /// inheriting `attemptUpdate` (FR-114-AC-4).
-fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::SelectedModel {
+fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::SelectedModels {
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
         NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
     };
     use qsl_semantics::model::key::DeclarationKey;
-    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 
     let key = |name: &str| DeclarationKey {
         package: "example/config-version".to_owned(),
@@ -2958,16 +2957,9 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         },
         records,
     );
-    let NormalizeOutcome::Completed(view) =
-        normalize(&package, ModelNormalizationLimits::UNLIMITED)
-    else {
-        panic!("the ConfigVersion fixture normalizes");
-    };
-    qsl_semantics::model::intake::SelectedModel {
-        alias: "Config".to_owned(),
-        span: SPAN,
-        view,
-    }
+    qsl_semantics::model::intake::SelectedModels::fixture("Config", SPAN,
+        package, ModelNormalizationLimits::UNLIMITED)
+        .expect("the ConfigVersion fixture normalizes")
 }
 
 /// A unit declaring [`config_version_model`]'s `Config` alias, then
@@ -3012,7 +3004,7 @@ fn check_attempt_unit(
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    PackageDeclarations::assemble(raw, unit, vec![config_version_model(with_sub)], Vec::new())
+    PackageDeclarations::assemble(raw, unit, config_version_model(with_sub), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
 }

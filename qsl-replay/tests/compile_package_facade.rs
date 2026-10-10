@@ -58,7 +58,7 @@ fn spine_run(
         .into_value();
     let checked = spine::check(
         &parsed,
-        &models,
+        models,
         &DependencyInput::default(),
         &spine::LockEvidence::default(),
         limits,

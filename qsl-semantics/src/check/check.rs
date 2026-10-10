@@ -147,8 +147,9 @@ impl ResolvedSignatures {
 }
 
 /// The closed declarations of one package that expressions resolve against.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PackageDeclarations {
+    pub(crate) model_inputs: Option<(Vec<crate::model::intake::SelectedModel>, crate::model::accounting::Meter)>,
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
@@ -266,6 +267,7 @@ impl PackageDeclarations {
         identity: qsl_foundation::IdentityLimits,
     ) -> Self {
         Self {
+            model_inputs: None,
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
