@@ -53,8 +53,8 @@ use quire_semantic_value::location::{Location, Origin};
 
 /// The obligation belonging to one immediate-parent field pair and one
 /// exposed writer. Both proof forms may fail independently.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RefinementObligation {
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RefinementObligation {
     Presence,
     Domain,
     NoProofForm,

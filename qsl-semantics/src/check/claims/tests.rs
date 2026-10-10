@@ -37,7 +37,7 @@ fn check(declarations: &str) -> Checked {
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the unit assembles")
@@ -676,7 +676,7 @@ fn family_check(
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the unit assembles");

@@ -512,6 +512,10 @@ pub struct StageLimitCause {
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
+    /// A completed model conformance stage retains every axis failure.
+    ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
+    /// An unfinished model stage exposes its exact five-field denial.
+    ModelIncomplete(crate::model::accounting::Incomplete),
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
@@ -641,6 +645,8 @@ pub enum CheckCause {
 /// broke it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
+    /// The private intake owner lost its corresponding assembled model.
+    MissingAdmittedModel(String),
     /// A `Reference<T>`'s `EffectiveId` is no `type_identities` value of an
     /// admitted domain package's effective view.
     UnknownEffectiveId(EffectiveId),
@@ -709,6 +715,7 @@ impl KeyFault {
     /// The violated invariant's stable identifier (ADR-013 T-4).
     pub fn invariant(&self) -> &'static str {
         match self {
+            Self::MissingAdmittedModel(_) => "intake-owner-has-assembled-model",
             Self::UnknownEffectiveId(_) => "reference-target-admitted",
             Self::UnadmittedPackage(_) => "declaration-package-admitted",
             Self::EmptyNode(_) => "declaration-node-nonempty",
@@ -843,6 +850,8 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
+            Self::ModelConformance(failure) => failure.code,
+            Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
                 Code::IllTyped
             }
@@ -881,6 +890,8 @@ impl CheckCause {
     /// The closed cause tag, where the code has one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::ModelConformance(failure) => Some(failure.cause.as_str()),
+            Self::ModelIncomplete(incomplete) => Some(incomplete.limit_kind.setting().kind().catalog_cause()),
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),

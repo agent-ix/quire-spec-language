@@ -2032,9 +2032,7 @@ pub(crate) fn normalize_packages(
     for (ordinal, state) in states {
         match finish(state, meter) {
             Ok(body) => {
-                let NormalizeOutcome::Completed(view) = into_outcome(Ok(body),
-                    || Arc::new(packages[ordinal].clone())) else { unreachable!("completed body"); };
-                views.push(view);
+                views.push(completed_view(body, Arc::new(packages[ordinal].clone())));
             }
             Err(Denial::Refused(refusals)) => failures.push((ordinal, refusals)),
             Err(Denial::Incomplete(incomplete)) => return Err(BatchDenial::Incomplete(ordinal, incomplete)),
@@ -2975,6 +2973,17 @@ fn normalize_body(
     (body, meter)
 }
 
+fn completed_view((body, records): (ViewBody, RecordIndex), package: Arc<DomainPackage>) -> EffectiveView {
+    let type_fact_counts = body.declarations.iter()
+        .filter(|entry| entry.preimage.owner_effective_type.is_none())
+        .map(|entry| (entry.preimage.original.clone(), length_amount(entry.preimage.derivation.len())))
+        .collect();
+    EffectiveView {
+        index: Arc::new(ModelIndex::from_parts(package, records, type_fact_counts)),
+        body,
+    }
+}
+
 /// The outcome of a normalization whose completed body is paired with the
 /// package `package` supplies, called only when normalization completed.
 fn into_outcome(
@@ -2982,17 +2991,7 @@ fn into_outcome(
     package: impl FnOnce() -> Arc<DomainPackage>,
 ) -> NormalizeOutcome {
     match body {
-        Ok((body, records)) => {
-            let type_fact_counts = body.declarations.iter()
-                .filter(|entry| entry.preimage.owner_effective_type.is_none())
-                .map(|entry| (entry.preimage.original.clone(),
-                    length_amount(entry.preimage.derivation.len())))
-                .collect();
-            NormalizeOutcome::Completed(EffectiveView {
-                index: Arc::new(ModelIndex::from_parts(package(), records, type_fact_counts)),
-                body,
-            })
-        }
+        Ok(body) => NormalizeOutcome::Completed(completed_view(body, package())),
         Err(Denial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
         // `Denial::Refused` already carries `Refusals` (L1
         // finding, PR #228 round 2 review): every raise site builds it

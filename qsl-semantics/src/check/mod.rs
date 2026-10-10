@@ -79,6 +79,7 @@ mod facts;
 mod family;
 mod field_refinement;
 mod identity;
+mod model_conformance;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
 #[cfg(any(test, feature = "test-support"))]
@@ -203,6 +204,8 @@ pub use identity::{
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
+pub use field_refinement::RefinementObligation;
+pub use model_conformance::ModelConformanceFailure;
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause,
@@ -827,6 +830,7 @@ impl PackageDeclarations {
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
+        let model_inputs = self.model_inputs;
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
         let object_nodes = object_types
@@ -1121,6 +1125,21 @@ impl PackageDeclarations {
         }
         if !refusals.is_empty() {
             return Err(refusals);
+        }
+        if let Some((selected, mut model_meter)) = model_inputs {
+            match model_conformance::check(&selected, &mut model_meter, &models, &state_clause_forms, &typed_clauses) {
+                Ok(()) => {},
+                Err(model_conformance::StageDenial::MissingModel(identity)) => return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::MissingAdmittedModel(identity))),
+                }]),
+                Err(model_conformance::StageDenial::Incomplete(incomplete)) => return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression), cause: CheckCause::ModelIncomplete(incomplete),
+                }]),
+                Err(model_conformance::StageDenial::Refused(failures)) => return Err(failures.into_iter().map(|failure| CheckRefusal {
+                    location: root(Origin::Expression), cause: CheckCause::ModelConformance(Box::new(failure)),
+                }).collect()),
+            }
         }
         // FR-113: each protocol declaration's scoped anchors, resolved
         // through its nested control scopes (`check::protocol_clause`), and

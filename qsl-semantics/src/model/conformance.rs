@@ -173,6 +173,11 @@ fn charge_axis(meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::ConformanceAxis))
 }
 
+/// Refinement follows a field pair's multiplicity axis exactly once.
+pub(crate) fn charge_refinement_axis(meter: &mut Meter) -> Result<(), Incomplete> {
+    charge_axis(meter)
+}
+
 fn charge_type_axis(index: &ModelIndex, value_type: &crate::model::domain_package::ValueTypeRef,
     meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::ConformanceAxis).work(index.type_fact_count(value_type)))

@@ -48,7 +48,7 @@ fn assemble_as(
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
 }
@@ -1630,7 +1630,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
             unit,
-            Vec::new(),
+            crate::model::intake::SelectedModels::default(),
             Vec::new(),
             crate::check::AssemblyLimits {
                 decimal_scale: 4,
