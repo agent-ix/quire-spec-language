@@ -498,6 +498,7 @@ pub struct ResultLimit {
     bound: String,
     counter: String,
     field: &'static str,
+    setting: &'static str,
 }
 
 impl From<&CallIncomplete> for ResultLimit {
@@ -507,6 +508,7 @@ impl From<&CallIncomplete> for ResultLimit {
             bound: incomplete.record.limit.to_string(),
             counter: incomplete.counter().to_string(),
             field: incomplete.limits_field(),
+            setting: incomplete.setting().name(),
         }
     }
 }
@@ -1172,6 +1174,48 @@ mod tests {
         );
     }
 
+    /// FR-255-AC-7: `seven` under the accounting limits the settings
+    /// operation returns for `work_units=0` settles `Incomplete` naming the
+    /// counter, bound, count and setting; under `work_units=1000000` it
+    /// completes with 7.
+    #[trace("TC-951", "FR-255-AC-7")]
+    #[test]
+    fn a_reached_budget_set_by_operand_names_its_setting() {
+        let run_under = |operand: &str| {
+            let accounting = crate::CallerLimits::from_operands([operand])
+                .expect("a settings operand")
+                .accounting
+                .0;
+            let call = Call {
+                function: "seven".to_owned(),
+                arguments: Vec::new(),
+                accounting,
+            };
+            let (_, outcome) = run(
+                SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+                "unit.native",
+                FIXTURE.as_bytes(),
+                &BTreeMap::new(),
+                &DependencyInput::default(),
+                SpineLimits::default(),
+                &call,
+                &Cancel::new(),
+            )
+            .expect("seven runs");
+            json_of(&OutcomeDocument::from_call(&outcome))["result"].clone()
+        };
+        assert_eq!(
+            run_under("work_units=0"),
+            json!({"kind": "incomplete", "limit": {
+                "kind": "work_units", "bound": "0", "counter": "1",
+                "field": "work_units", "setting": "work_units"}})
+        );
+        assert_eq!(
+            run_under("work_units=1000000"),
+            json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
+        );
+    }
+
     /// FR-286-AC-5: `seven` completes with integer 7 in the `result`
     /// member, and a `check` under an already cancelled handle is incomplete
     /// with no last stage and a null `result`.
@@ -1234,7 +1278,8 @@ mod tests {
                 "diagnostics": [],
                 "artifacts": [],
                 "result": {"kind": "incomplete", "limit": {
-                    "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units"}},
+                    "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units",
+                    "setting": "work_units"}},
             })
         );
 

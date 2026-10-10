@@ -25,7 +25,7 @@ use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::Code;
 use qsl_foundation::IntakeLimits;
-use qsl_foundation::Setting;
+use qsl_foundation::{AccountingSetting, Setting, SettingName};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
@@ -54,49 +54,75 @@ impl StateEnvironment {
 /// name (FR-255) to the bound the proving run configured, so a request never
 /// silently substitutes QSL's own compiled-in defaults for the proving run's
 /// actual limits (TC-185). A setting with no entry runs at its published
-/// default. Decode admits only settings of FR-255's table other than
-/// `replay.input_bytes`.
+/// default. Decode admits every setting of FR-255's tables other than
+/// `replay.input_bytes` and `format.output_bytes`. An entry named for an
+/// accounting counter replaces the request's accounting limit for that counter
+/// (FR-255 Behavior 14).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct StageLimits(BTreeMap<Setting, u64>);
+pub struct StageLimits {
+    stages: BTreeMap<Setting, u64>,
+    accounting: BTreeMap<AccountingSetting, u64>,
+}
 
 impl StageLimits {
-    /// The entries as `(setting, bound)`, in setting order.
+    /// The stage entries as `(setting, bound)`, in setting order.
     pub fn iter(&self) -> impl Iterator<Item = (Setting, u64)> + '_ {
-        self.0.iter().map(|(setting, bound)| (*setting, *bound))
+        self.stages
+            .iter()
+            .map(|(setting, bound)| (*setting, *bound))
     }
 
-    /// The bound the request gives `setting`, if it carries an entry.
+    /// The accounting-counter entries as `(setting, bound)`, in table order.
+    pub fn accounting_entries(&self) -> impl Iterator<Item = (AccountingSetting, u64)> + '_ {
+        self.accounting
+            .iter()
+            .map(|(setting, bound)| (*setting, *bound))
+    }
+
+    /// The bound the request gives the stage `setting`, if it carries an
+    /// entry.
     pub fn bound(&self, setting: Setting) -> Option<u64> {
-        self.0.get(&setting).copied()
+        self.stages.get(&setting).copied()
     }
 
     /// Reads the wire entries, refusing the first whose name is no setting
-    /// of FR-255's table or is `replay.input_bytes`.
+    /// of FR-255's tables or is `replay.input_bytes`.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
-        let mut limits = BTreeMap::new();
+        let mut limits = Self::default();
         for (name, bound) in entries {
-            match Setting::from_name(&name) {
-                Some(setting) if setting != Setting::ReplayInputBytes => {
-                    limits.insert(setting, bound);
+            match SettingName::from_name(&name) {
+                Some(SettingName::Stage(setting)) if setting != Setting::ReplayInputBytes => {
+                    limits.stages.insert(setting, bound);
+                }
+                Some(SettingName::Accounting(setting)) => {
+                    limits.accounting.insert(setting, bound);
                 }
                 _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
             }
         }
-        Ok(Self(limits))
+        Ok(limits)
     }
 
     /// The entries as wire `name -> bound`.
     fn to_wire(&self) -> BTreeMap<String, u64> {
-        self.0
+        let stages = self
+            .stages
             .iter()
-            .map(|(setting, bound)| (setting.name().to_owned(), *bound))
-            .collect()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound));
+        let accounting = self
+            .accounting
+            .iter()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound));
+        stages.chain(accounting).collect()
     }
 }
 
 impl FromIterator<(Setting, u64)> for StageLimits {
     fn from_iter<T: IntoIterator<Item = (Setting, u64)>>(entries: T) -> Self {
-        Self(entries.into_iter().collect())
+        Self {
+            stages: entries.into_iter().collect(),
+            accounting: BTreeMap::new(),
+        }
     }
 }
 
@@ -239,7 +265,9 @@ impl ReplayRequest {
     pub fn state_environment(&self) -> &StateEnvironment {
         &self.state_environment
     }
-    /// The accounting limits the replay run itself is charged against.
+    /// The accounting limits the replay run itself is charged against: the
+    /// wire's `accounting_limits` with each counter its `stage_limits` names
+    /// replaced by the entry (FR-255 Behavior 14).
     pub fn accounting_limits(&self) -> ScalarLimits {
         self.accounting_limits
     }
@@ -256,6 +284,25 @@ impl ReplayRequest {
     /// recompilation input's bytes (FR-071-AC-2).
     pub fn byte_provision(&self) -> &ByteProvision {
         &self.byte_provision
+    }
+}
+
+impl ReplayRequestWire {
+    /// The accounting limits the replay runs under and any identity binds
+    /// (FR-255 Behavior 14): `accounting_limits` with each counter a
+    /// `stage_limits` entry names replaced by the entry's bound. Computed
+    /// here once; [`ReplayRequest::accounting_limits`] returns it, so the
+    /// split between the two members never reaches a claim.
+    pub fn effective_accounting_limits(&self) -> ScalarLimits {
+        crate::limits::AccountingLimits::with_entries(
+            self.accounting_limits,
+            self.stage_limits.iter().filter_map(|(name, bound)| {
+                match SettingName::from_name(name) {
+                    Some(SettingName::Accounting(setting)) => Some((setting, *bound)),
+                    _ => None,
+                }
+            }),
+        )
     }
 }
 
@@ -292,8 +339,9 @@ pub struct ReplayRequestWire {
     /// The accounting limits the replay run itself is charged against.
     pub accounting_limits: ScalarLimits,
     /// The stage limits copied from the proving run: setting name (FR-255)
-    /// to bound. Decode refuses a name that is no setting of the table, and
-    /// `replay.input_bytes`.
+    /// to bound. Decode refuses a name that is no setting of either table,
+    /// and `replay.input_bytes`. A name that is an accounting counter
+    /// replaces that counter of `accounting_limits`.
     pub stage_limits: BTreeMap<String, u64>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
@@ -615,8 +663,11 @@ impl ReplayRequest {
         if wire.backend.is_empty() {
             return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
+        // Once, before the wire is taken apart: this is the value the call
+        // runs under and any claim binds (FR-255 Behavior 14).
+        let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
-        let intake = CallerLimits::for_request(&stage_limits, limits)
+        let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)
             .spine
             .model
             .intake;
@@ -726,7 +777,7 @@ impl ReplayRequest {
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
             backend: Backend::new(wire.backend),
             state_environment: wire.state_environment,
-            accounting_limits: wire.accounting_limits,
+            accounting_limits,
             stage_limits,
             declared_domains: wire.declared_domains,
             byte_provision,

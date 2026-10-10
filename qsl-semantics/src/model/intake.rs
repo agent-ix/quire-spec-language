@@ -6360,6 +6360,9 @@ mod tests {
         let operand = format!("intake.input_bytes={}", bound + 1);
         for (setting, value) in qsl_foundation::setting::parse_operands([operand.as_str()]).unwrap()
         {
+            let qsl_foundation::SettingName::Stage(setting) = setting else {
+                panic!("intake.input_bytes is a stage setting");
+            };
             assert!(operated.set_bound(setting, value));
         }
         assert_eq!(operated, raised);

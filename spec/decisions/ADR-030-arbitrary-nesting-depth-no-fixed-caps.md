@@ -215,7 +215,7 @@ under a larger limit.
 6. **Catalogs.** The `stage_limit_exceeded` row of the native diagnostics
    catalog carries the setting name with the limit kind and bound (overlap
    item O-5). An `incomplete` outcome names its accounting counter, which is
-   already its setting under `quire.value.accounting/v1`.
+   its setting at every entry point (FR-255, QSpec FR-461 Behavior 6).
 
 ### D-4. Components in QSL's lane
 

@@ -460,6 +460,43 @@ fn tc_906_the_node_limit_stops_the_replay_before_the_call() {
     assert_eq!(raised.charges(), unlimited.charges());
 }
 
+/// FR-255-AC-10 (TC-951): a `stage_limits` entry `work_units` is the
+/// call's `work_units` whatever the request's accounting limits give it,
+/// and every other counter keeps the request's value; for FR-098-AC-9's
+/// counterexample the entry one below the node count settles `NoValue`
+/// naming `work_units`, and raised to fit the replay runs.
+#[trace("TC-951", "FR-255-AC-10")]
+#[test]
+fn tc_951_a_stage_limits_counter_entry_sets_the_budget() {
+    let fixture = fixture(NESTED);
+    let value = outer(&fixture, int(7), vec![int(1), int(2)]);
+    let nodes = 9_u64;
+    let mut wire = fixture.input("p", value.clone());
+    wire.accounting_limits.work_units = 10_000;
+    wire.stage_limits.insert("work_units".to_owned(), nodes - 1);
+    let request = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).expect("decodes");
+    assert_eq!(request.accounting_limits().work_units, nodes - 1);
+    assert_eq!(
+        request.accounting_limits().value_occurrences,
+        wire.accounting_limits.value_occurrences
+    );
+    let result = replay(wire, ReplayLimits::default()).expect("the replay runs");
+    let incomplete = result.limit().expect("the Incomplete outcome");
+    assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+    assert_eq!(incomplete.limit, nodes - 1);
+    assert!(matches!(
+        result.disagreement(),
+        Some(crate::result::DisagreementCause::NoValue { .. })
+    ));
+
+    let mut raised = fixture.input("p", value.clone());
+    raised.accounting_limits.work_units = 0;
+    raised.stage_limits.insert("work_units".to_owned(), 10_000);
+    let raised = assert_reproduced(replay(raised, ReplayLimits::default()));
+    let unlimited = assert_reproduced(replay(fixture.input("p", value), ReplayLimits::default()));
+    assert_eq!(raised.charges(), unlimited.charges());
+}
+
 const LEAVES: &str = "enum Color { BLUE, GREEN, RED }\n\
      enum Shade { DARK, LIGHT }\n\
      function ec using v(c: Color): Boolean pure { false }\n\

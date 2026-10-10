@@ -63,7 +63,7 @@ A `ClauseRunRequest`:
   model object type, resolved in the current snapshot `snapshot` names;
 - an optional expected `package_id`;
 - `SpineLimits`, `ObservationLimits` and the evaluation meter budget
-  (FR-100's `work_units`).
+  (FR-100's `accounting`).
 
 ## Outputs
 

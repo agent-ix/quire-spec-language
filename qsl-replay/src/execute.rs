@@ -531,7 +531,11 @@ pub fn replay(
     replay_limits: ReplayLimits,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
@@ -719,9 +723,10 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
 /// entry above `replay.input_bytes` refuses before the recompile.
 pub(crate) fn request_limits(
     stage_limits: &StageLimits,
+    accounting: ScalarLimits,
     replay: ReplayLimits,
 ) -> Result<CallerLimits, ReplayRefusal> {
-    let limits = CallerLimits::for_request(stage_limits, replay);
+    let limits = CallerLimits::for_request(stage_limits, accounting, replay);
     if let Some(requested) = stage_limits.bound(Setting::S1InputBytes) {
         if requested > replay.input_bytes {
             return Err(ReplayRefusal::LimitAboveReader(LimitAboveReader {

@@ -59,7 +59,11 @@ fn prepare(
     replay_limits: ReplayLimits,
 ) -> Result<Prepared, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let site = locate(
         &compiled,

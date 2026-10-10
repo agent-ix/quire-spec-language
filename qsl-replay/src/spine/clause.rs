@@ -200,7 +200,7 @@ pub struct ClauseRunRequest {
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The evaluation meter's accounting limits (FR-100's `work_units`).
+    /// The evaluation meter's accounting limits (FR-100's `accounting` object).
     pub accounting: ScalarLimits,
 }
 

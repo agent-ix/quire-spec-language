@@ -191,7 +191,11 @@ pub fn replay_frame(
     replay_limits: ReplayLimits,
 ) -> Result<FrameReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
+    let limits = super::request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
     let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
