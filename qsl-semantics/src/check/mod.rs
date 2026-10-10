@@ -45,9 +45,8 @@
 //! module's own `checked_dispatch` submodule (a private module, not
 //! resolvable as an intra-doc link, matching this crate's own convention;
 //! see [`checked_dispatch_operation`] for its re-exported entry point), and
-//! `model::conformance::check_field_refinement_obligation` moved to this
-//! module's own `field_refinement` submodule (see
-//! [`check_field_refinement_obligation`]) -- `check` (layer-3-later)
+//! refinement consumes retained source facts inside this module's own
+//! private `field_refinement` submodule. `check` (layer-3-later)
 //! importing from `model` (layer-3-earlier) is the *forward* direction
 //! §6.1's order permits, not a reverse edge, so `model_check_edges`
 //! (`xtask`'s TC-176 scan) is empty from here on. `grep -rn "use crate::check"
@@ -178,7 +177,6 @@ pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
 };
-pub use field_refinement::check_field_refinement_obligation;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 pub use region::DeclarationRegions;

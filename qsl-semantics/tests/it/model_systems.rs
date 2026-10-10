@@ -154,7 +154,6 @@ fn operation_run() -> DomainPackageRecord {
         parameters: vec![],
         result: None,
         effect: OperationEffect::default(),
-        own_postcondition_clauses: vec![],
         has_body: true,
         redefines: None,
     })

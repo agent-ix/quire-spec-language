@@ -185,7 +185,6 @@ fn query_over(
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
-        own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(key),
     })

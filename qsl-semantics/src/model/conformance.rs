@@ -5,77 +5,22 @@
 //! `quire.model.conformance.effect/v1` and
 //! `quire.model.conformance.refinement/v1`).
 //!
-//! This module works directly against the [`ModelIndex`] of a
-//! caller-constructed [`crate::model::domain_package::DomainPackage`], not
-//! [`crate::model::normalize`]'s [`crate::model::normalize::EffectiveView`]:
-//! the caller builds that index once per package and passes it to every
-//! check, so a package that normalization would refuse can still be
-//! checked. It builds its own
-//! [`crate::model::key::EffectiveDeclarationPreimage`]-shaped queries over
-//! the domain package's field/operation members' own inline `redefines`/
-//! `subsets` properties (`model-complete.md`:161/162), so field
-//! redefinition (already exposed by `normalize`'s phase 4) and operation
-//! redefinition (out of scope there, see its module docs) are checked
-//! uniformly here.
+//! Standalone axes use one shared model index and caller-owned meter.
+//! Normalization owns structural target resolution for fields and
+//! operations; its completed view supplies the qualify/inherit facts that
+//! price each type axis. Package checking composes these axes after every
+//! genuine source clause has completed, and consumes only that checker's
+//! retained facts for exposed writers' refinement obligations.
 //!
-//! Scope decisions, recorded rather than left implicit:
+//! Every axis is exhaustive when its charge admits. An owning work charge
+//! precedes each bounded ancestor walk, and any denial withholds the
+//! unfinished stage's failures. The operation contract construction is
+//! Liskov-correct by its inherited disjunction/conjunction and does not
+//! require a separate implication check.
 //!
-//! - The `precondition`/`postcondition` axes never refuse (FR-151: contracts
-//!   are Liskov-correct "by construction," combined as a disjunction/
-//!   conjunction, never checked for an implication) — this module charges
-//!   `conformance.axis` for both and never inspects their content.
-//! - The refinement obligation (`quire.model.conformance.refinement/v1`)
-//!   needs the writing operation's *established* postcondition facts.
-//!   `crate::model` has no FR-146 expression parser, so a postcondition
-//!   clause is not parsed from source: the caller states one accepted
-//!   single-relation guard form directly, as
-//!   [`crate::model::domain_package::PostconditionClause`]. What a clause
-//!   actually establishes is not caller-trusted, though —
-//!   `crate::check::check_field_refinement_obligation` (ADR-011 §7.3 M-2,
-//!   Moved to `check` from this module, the only `conformance` code
-//!   that read `value::expression`/`check` facts) rebuilds the small typed guard
-//!   tree each clause describes and runs it through `crate::check`'s own
-//!   FR-146 fact-derivation primitive (`established_field_fact`), the
-//!   identical guard-fact propagation a real checked postcondition's
-//!   `Definedness::walk` already uses, then decides discharge from what
-//!   that derivation actually proves. It reads the shared
-//!   [`ModelIndex`] and reaches back into this module's [`AxisFailure`],
-//!   [`ConformanceOutcome`] and `missing_member`, the last widened to
-//!   `pub(crate)` for exactly that call
-//!   (`check` sits above `model` in ADR-011 §6.1's layer-3 order, so `check`
-//!   depending back on `model` is legal; the reverse was not).
-//! - Each type axis charges the actual qualify/inherit fact count of its
-//!   tested object type, or one for value-domain conversion. Normalized
-//!   indexes reuse the view's derived facts. Effect pricing counts every
-//!   frame-entry/grant comparison and each written-field redefinition link;
-//!   a successful comparison never suppresses a later required comparison.
-//!   Owning axis work admits before a bounded ancestor walk follows an edge.
-//!
-//! - `resolve_redefinition_target` resolves a redefining member's own single
-//!   inline `redefines` property (`model-complete.md`:162) against exactly
-//!   the one target it names: either that target is a genuinely inherited
-//!   member and the call resolves, or it is not and the call refuses
-//!   `redefinition-target` with [`RedefinitionTargetOutcome::Refused`]'s
-//!   `candidate` naming the `(redefining, stated target)` pair. There is no
-//!   "several distinct valid targets" shape to rule on: a member names at
-//!   most one `redefines` target, never a set of candidates to choose among.
-//!
-//!   TC-196 R07's other shape — two distinct redefining members (e.g. `B/z`
-//!   and `B/z2`) contending for the identical single inherited target — is
-//!   *not* checked by `resolve_redefinition_target`: nothing in `src/`
-//!   called it, so per-redefiner queries here could never see the sibling
-//!   that contends with them. That shape is instead detected where a model
-//!   actually normalizes through it, `normalize`'s own phase 4
-//!   (`apply_redefinitions`'s undominated-edges branch), which already has
-//!   every sibling redefiner of a contended target in view, for both
-//!   **field** and **operation** members alike (#173): a winner if one
-//!   redefiner's owner dominates every other, otherwise a typed
-//!   `derivation-conflict`/`redefinition-target` refusal. `normalize`'s
-//!   phase 4 still grows [`crate::model::normalize::EffectiveView`] for
-//!   field redefinition only (see its own module doc); the operation case
-//!   shares its dominance search but contributes no view entry, matching
-//!   this module's own per-axis operation conformance checking, which stays
-//!   here.
+//! [`resolve_redefinition_target`] remains a standalone single-target
+//! query. The package path uses normalization's one global phase-four
+//! authority for inherited target eligibility and competing redefiners.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"

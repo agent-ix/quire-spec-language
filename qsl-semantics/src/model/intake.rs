@@ -1865,9 +1865,8 @@ fn read_operation_member(
             })
         }
     };
-    // `pre` is shape-checked as an array here; its clauses are FR-146
-    // expressions, which `crate::model` does not parse (see
-    // `domain_package::PostconditionClause`), so nothing is kept from it.
+    // `pre` is shape-checked here. Genuine source clauses are parsed and
+    // checked later; model records carry no caller-provided proof facts.
     ctx.array_field("pre")?;
     // FR-103: `frame` (model-complete.md's Frames row). An absent frame, or
     // one whose three members are all absent or empty, reads as the empty
@@ -1899,10 +1898,6 @@ fn read_operation_member(
         // Resolved from `pending` by `resolve_pending_frames`, once every
         // node of the document is read; the empty effect until then.
         effect: OperationEffect::default(),
-        // FR-146's expression parser is out of scope for `crate::model`
-        // (`domain_package::PostconditionClause`'s own module docs); this
-        // reader states none rather than inventing one.
-        own_postcondition_clauses: Vec::new(),
         has_body: false,
         redefines: ctx.opt_str_field("redefines").map(|target| declaration_key(package, target)),
     })

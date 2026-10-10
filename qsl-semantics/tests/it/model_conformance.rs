@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-196: conformance, redefinition and subsetting axes (FR-151), the
-//! static/structural subset this rung builds. See
-//! `src/model/conformance.rs`'s module docs for the recorded scope
-//! decisions (no FR-146 evaluator, no exact per-axis work-unit costs).
+//! TC-196: exact standalone conformance axes and composed refinement
+//! through genuinely admitted source clauses. All pricing uses the owning
+//! meter and the actual normalized qualify/inherit facts.
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::check_field_refinement_obligation;
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::conformance::{
     check_field_redefinition, check_operation_redefinition, check_subsetting,
@@ -16,14 +14,13 @@ use qsl_semantics::model::conformance::{
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, PostconditionClause, ScalarTypeRecord, ValueTypeRef,
+    OperationResult, ScalarTypeRecord, ValueTypeRef,
 };
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
-use quire_exact::OrderingOperator;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
@@ -94,7 +91,6 @@ fn operation(
     modifies: Vec<&str>,
     creates: Vec<&str>,
     deletes: Vec<&str>,
-    own_postcondition_clauses: Vec<PostconditionClause>,
 ) -> DomainPackageRecord {
     operation_redefining(
         identity,
@@ -104,7 +100,6 @@ fn operation(
         modifies,
         creates,
         deletes,
-        own_postcondition_clauses,
         None,
     )
 }
@@ -121,7 +116,6 @@ fn operation_redefining(
     modifies: Vec<&str>,
     creates: Vec<&str>,
     deletes: Vec<&str>,
-    own_postcondition_clauses: Vec<PostconditionClause>,
     redefines: Option<&str>,
 ) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
@@ -144,7 +138,6 @@ fn operation_redefining(
             creates: creates.into_iter().map(DeclarationKey::fixture).collect(),
             deletes: deletes.into_iter().map(DeclarationKey::fixture).collect(),
         },
-        own_postcondition_clauses,
         has_body: true,
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -167,7 +160,6 @@ fn fixture_h_base() -> Vec<DomainPackageRecord> {
             Some(("model.B", mult(1, Some(1)))),
             vec!["model.A.x"],
             vec!["model.A"],
-            vec![],
             vec![],
         ),
     ]
@@ -192,7 +184,7 @@ fn operation_axes_charge_the_selected_type_facts_and_complete_effect_comparisons
                 if row == 3 { mult(0, Some(1)) } else { mult(1, Some(1)) })),
             if row == 3 { vec!["model.B.y"] } else if row == 9 { vec!["model.B.w"] } else { vec![] },
             if [2, 4].contains(&row) { vec!["model.B"] } else { vec![] },
-            vec![], vec![], Some("model.A.op")));
+            vec![], Some("model.A.op")));
         let package = DomainPackage::new(DomainPackageRef::fixture("bundle.h"), records);
         let view = match normalize(&package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
@@ -496,7 +488,6 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
         vec![],
         vec!["model.B"],
         vec![],
-        vec![],
         Some("model.A.op"),
     )]);
     let redefining_key = DeclarationKey::fixture("model.B.op");
@@ -522,7 +513,6 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
         vec![("model.B.op.p1", "model.B", mult(1, Some(1)))],
         Some(("model.A", mult(0, Some(1)))),
         vec!["model.B.y"],
-        vec![],
         vec![],
         vec![],
         Some("model.A.op"),
@@ -584,7 +574,6 @@ fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
         Some(("model.B", mult(1, Some(1)))),
         vec![],
         vec!["model.B"],
-        vec![],
         vec![],
         Some("model.A.op"),
     )]);
@@ -833,7 +822,6 @@ fn r08_base() -> Vec<DomainPackageRecord> {
             vec!["model.A.x", "model.A.c"],
             vec![],
             vec![],
-            vec![],
         ),
     ]
 }
@@ -896,9 +884,9 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
             field_member_redefining("ix://test/orders/B/fn", "ix://test/orders/B", "ix://test/orders/Narrow",
                 mult(1, Some(1)), Some("ix://test/orders/A/f"), vec![]),
             operation("ix://test/orders/A/set", "ix://test/orders/A", vec![], None,
-                vec!["ix://test/orders/A/f"], vec![], vec![], vec![]),
+                vec!["ix://test/orders/A/f"], vec![], vec![]),
             operation_redefining("ix://test/orders/B/set", "ix://test/orders/B", vec![], None,
-                vec!["ix://test/orders/A/f"], vec![], vec![], vec![], Some("ix://test/orders/A/set")),
+                vec!["ix://test/orders/A/f"], vec![], vec![], Some("ix://test/orders/A/set")),
         ]);
         let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
         let unit = format!("language \"ix:native\" edition \"1-draft\";\n\
@@ -1014,7 +1002,6 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
                 vec!["model.A.x"],
                 vec![],
                 vec![],
-                vec![],
             ),
             operation_redefining(
                 "model.C.op",
@@ -1022,7 +1009,6 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
                 vec![],
                 None,
                 vec!["model.C.x"],
-                vec![],
                 vec![],
                 vec![],
                 Some("model.A.op"),
@@ -1084,7 +1070,6 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
                 vec!["model.A.x"],
                 vec![],
                 vec![],
-                vec![],
             ),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
                 key: DeclarationKey::fixture("model.B.op"),
@@ -1096,7 +1081,6 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
-                own_postcondition_clauses: vec![],
                 has_body: true,
                 redefines: Some(DeclarationKey::fixture("model.A.op")),
             }),
@@ -1161,7 +1145,6 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
                 vec!["model.A.x"],
                 vec![],
                 vec![],
-                vec![],
             ),
             operation_redefining(
                 "model.C.op",
@@ -1169,7 +1152,6 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
                 vec![],
                 None,
                 vec!["model.C.x"],
-                vec![],
                 vec![],
                 vec![],
                 Some("model.A.op"),
@@ -1245,7 +1227,6 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
                 vec!["model.A.x"],
                 vec![],
                 vec![],
-                vec![],
             ),
             operation_redefining(
                 "model.C.op",
@@ -1253,7 +1234,6 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
                 vec![],
                 None,
                 vec!["model.C.x"],
-                vec![],
                 vec![],
                 vec![],
                 Some("model.A.op"),

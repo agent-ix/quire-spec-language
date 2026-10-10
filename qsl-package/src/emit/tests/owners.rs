@@ -252,7 +252,6 @@ fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecor
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
-        own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(model_key),
     })
