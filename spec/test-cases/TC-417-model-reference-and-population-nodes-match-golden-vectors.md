@@ -85,13 +85,10 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 - Step 9: both aliases name the already settled R1 or PO1 node, no alias node
   is emitted, and the unknown alias refuses `missing_declaration` /
   `missing-name` before lowering.
-- Step 10: each retained-key candidate is schema-valid and its retained digest
-  differs from the changed preimage digest; the QSpec executable vector test
-  records that each changed preimage has a fresh digest when its node id is
-  recomputed. Full-package stale-key refusal is covered for the existing
-  reference mutation by TC-233. Semantic admission or refusal of malformed
-  recomputed population or compound-unit forms is outside this key-stage
-  procedure.
+- Step 10: each mutation first retains its original id for the stale-key
+  check, then recomputes the changed id. The reader refuses the scalar
+  reference target, negative population bound and noncanonical compound-unit
+  term order as semantic-shape errors after key freshness succeeds.
 
 ## Status
 
