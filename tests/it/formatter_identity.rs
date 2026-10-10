@@ -271,7 +271,10 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
             );
             if let Some(region) = root_region {
                 assert_eq!(region.source(), graph.source(), "original anchor source");
-                assert!(region.start() < region.end(), "real anchor span is nonempty");
+                assert!(
+                    region.start() < region.end(),
+                    "real anchor span is nonempty"
+                );
                 let start = usize::try_from(region.start()).unwrap();
                 let end = usize::try_from(region.end()).unwrap();
                 let bytes = source
@@ -288,7 +291,9 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
             }
         }
     }
-    eprintln!("state fixture 13: unresolved Generated count={unresolved_generated}; strict S4 next");
+    eprintln!(
+        "state fixture 13: unresolved Generated count={unresolved_generated}; strict S4 next"
+    );
 }
 
 macro_rules! state_identity_tests {
