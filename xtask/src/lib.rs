@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Workspace `xtask`: `cargo xtask seam-probe`, `cargo xtask string-edge`,
-//! `cargo xtask route-lint` and `cargo xtask checked-input`, the gates
+//! `cargo xtask route-lint`, `cargo xtask checked-input` and `cargo xtask
+//! test-suites`, the gates
 //! `make ci` runs standalone (the `Makefile` targets of the same names), and
 //! `cargo xtask canonical-types`, run on demand.
 //! `import_graph`, `definition_scan` and `typestate_scan` are plain library
@@ -15,6 +16,7 @@ pub mod import_graph;
 pub mod route_lint;
 pub mod seam_probe;
 pub mod string_edge;
+pub mod test_suites;
 pub mod typestate_scan;
 
 pub use error::{Error, Result};
