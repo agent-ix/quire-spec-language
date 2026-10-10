@@ -195,7 +195,7 @@ fn a_driver_serializes_format_output_limit_with_original_cause() {
     let FormatRefusal::OutputBudgetExhausted(diagnostic) = result.as_ref().unwrap_err() else {
         panic!("zero output bytes must exhaust the output budget");
     };
-    assert_eq!(diagnostic.code, Code::StageLimitExceeded);
+    assert_eq!(diagnostic.code, Code::ResourceExhausted);
     assert_eq!(
         diagnostic.cause,
         CompleteCause::StageLimit(LimitKind::InputBytes)
@@ -204,7 +204,7 @@ fn a_driver_serializes_format_output_limit_with_original_cause() {
         diagnostic.limit(),
         Some(SyntaxLimit::SourceBytes { bound: 0 })
     );
-    assert!(diagnostic.message.contains("0 bytes"));
+    assert!(diagnostic.message.contains("format output-byte limit 0"));
     assert!(diagnostic.message.contains("format_with_limit"));
     assert_refusal(&result, Category::Incomplete, "incomplete", 22);
 }
