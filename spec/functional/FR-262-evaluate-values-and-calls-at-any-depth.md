@@ -61,8 +61,11 @@ leaf extraction and host registration are not claimed to be implemented.
 
 The shared interface belongs to QSL, in a leaf crate in its own repository.
 It SHALL use `core` and `alloc` and forbid unsafe code. QSL's existing std
-evaluator remains the semantic reference; the no_std replacement is a separate
-implementation milestone. RT and CG SHALL consume this interface, without
+evaluator remains the semantic reference behind that interface. The interface
+deliverable (IR-583) precedes checked-term separation (IR-586); the no_std
+evaluator implementation behind it is a later milestone (IR-590), after that
+separation and the other no_std prerequisites. Accepting the interface SHALL
+NOT imply availability of a no_std evaluator. RT and CG SHALL consume this interface, without
 depending on evaluator internals.
 
 For this extraction, [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)'s
@@ -70,8 +73,21 @@ layer 5 remains the S6a family, simulation and checked-package adapter owner.
 The shared core sits below it, without dependencies on QSL's checker, package,
 model-intake, routing, replay or backend crates. Separating constructor-private
 checked-term types and runtime model-admission dependencies from the checker
-precedes extraction. That separation SHALL preserve checking authority, source
+precedes extraction of the no_std evaluator implementation, rather than
+definition of the interface. That separation SHALL preserve checking authority, source
 locations, declaration identities, model correspondence and proof closure.
+
+When replacing RT's ported function-application implementation, RT SHALL
+consume an implementation of this interface that actually runs under its
+`no_std + alloc` target and supplies the required evaluation, checked-input
+and generated-body surface. This is the IR-590 implementation deliverable,
+not merely IR-583's interface crate with the std reference adapter. The complete
+RT migration SHALL wait for that implementation and its consumer acceptance
+checks; adopting the interface alone cannot complete deletion of RT's evaluator
+copy. A std consumer can adopt IR-583's seam earlier. The later default-evaluator
+swap is a separate milestone; it is not required for RT to consume an already
+accepted no_std implementation. This allocation grants no interim-copy exception
+and introduces no compatibility shim or second lowering.
 
 When registering a host function, the core SHALL bind a resumable body factory
 to an exact callable identity and signature already admitted in the selected
@@ -169,11 +185,13 @@ and JIT preparation retain their existing contracts.
 | FR-262-AC-6 | For AC-4's mixed-body chain let `w` be reference work spend. Limit `w` completes; `w - 1` returns the reference located incomplete result and denied charge, keeps earlier spend and leaves the denied charge unrecorded. No subsequent step can run a suspended body; a fresh invocation at `w` completes with static totality unchanged. | Test |
 | FR-262-AC-7 | Cancelling after a child request is saved, before the next transition, returns `CallFailure::Cancelled` with no further charge or body execution. In a direct-return caller, a child refusal or undefined outcome propagates with reference location/loss behavior and runs no subsequent body work; dropping the session executes no continuation. | Test |
 | FR-262-AC-8 | A body performs charged work, saves a local, requests a child and continues with its returned value. Each body transition and child occurs exactly once across steps; prepared-entry execution matches the synchronous reference, including a kernel loss record, and unsupported preparation stays a pre-application disposition. | Test |
+| FR-262-AC-9 | An interface crate with only a std reference adapter does not satisfy RT's complete evaluator migration. That migration consumes the shared implementation with std disabled on RT's governed no_std target, supplies checked-input and generated-body evaluation through this interface, and leaves no RT-local evaluator copy or compatibility re-export. | Inspection |
 
 ## Dependencies
 
-- Shared interface ownership: QSL-682 and IR-583; checked-term extraction:
-  IR-586. RT consumes this contract in
+- Shared interface ownership: QSL-682 then IR-583; checked-term extraction:
+  IR-586 after the interface; no_std evaluator implementation: IR-590 after
+  its prerequisites. RT consumes this contract in
   `ix://agent-ix/quire-contract-runtime/FR-273` (IR-512); its resumable-body
   implementation is downstream work.
 
