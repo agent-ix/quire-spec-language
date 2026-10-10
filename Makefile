@@ -159,21 +159,23 @@ use-remote:
 # Explicit children keep feature-lane executables separate even on warm runs.
 # Every command receives its lane's directory; tooling outside these lanes
 # continues to use the caller's root and its own Cargo feature selection.
-CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-default-features
-CI_ALL_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-all-features
+# Export path data before the shell parses a recipe; expanding a quoted shell
+# variable preserves quotes, backticks and dollars without interpreting them.
+export CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-default-features
+export CI_ALL_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-all-features
 
 ci-default-features:
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo fmt --all -- --check
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo clippy --locked --workspace --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo test --locked --workspace
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo test --locked -p qsl-semantics
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo test --locked -p qsl-cst
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo fmt --all -- --check
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo clippy --locked --workspace --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo test --locked --workspace
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo test --locked -p qsl-semantics
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$$CI_DEFAULT_TARGET_DIR" cargo test --locked -p qsl-cst
 
 ci-all-features:
-	CARGO_TARGET_DIR="$(CI_ALL_TARGET_DIR)" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	CARGO_TARGET_DIR="$(CI_ALL_TARGET_DIR)" cargo test --locked --workspace --all-features
+	CARGO_TARGET_DIR="$$CI_ALL_TARGET_DIR" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+	CARGO_TARGET_DIR="$$CI_ALL_TARGET_DIR" cargo test --locked --workspace --all-features
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.

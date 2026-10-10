@@ -61,9 +61,7 @@ fn workspace() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()
 }
 
-fn cargo_double() -> PathBuf {
-    static DIRECTORY: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
-    let directory = DIRECTORY.get_or_init(|| {
+fn cargo_double() -> tempfile::TempDir {
         let target = std::env::var_os("CARGO_TARGET_DIR")
             .filter(|root| !root.is_empty())
             .map(PathBuf::from)
@@ -90,12 +88,12 @@ fn cargo_double() -> PathBuf {
             String::from_utf8_lossy(&output.stderr)
         );
         directory
-    });
-    directory.path().join("cargo")
 }
 
 struct Recipe {
     directory: tempfile::TempDir,
+    // All child processes have been joined before this owner is dropped.
+    cargo_directory: tempfile::TempDir,
 }
 
 impl Recipe {
@@ -107,8 +105,9 @@ impl Recipe {
         )
         .unwrap();
         fs::create_dir(directory.path().join("bin")).unwrap();
-        std::os::unix::fs::symlink(cargo_double(), directory.path().join("bin/cargo")).unwrap();
-        Self { directory }
+        let cargo_directory = cargo_double();
+        std::os::unix::fs::symlink(cargo_directory.path().join("cargo"), directory.path().join("bin/cargo")).unwrap();
+        Self { directory, cargo_directory }
     }
 
     fn run(&self, targets: &[&str], root: Option<&str>, overrides: &[&str]) -> String {
@@ -127,6 +126,8 @@ impl Recipe {
             .env_remove("CARGO_TARGET_DIR")
             .env_remove("CI_DEFAULT_TARGET_DIR")
             .env_remove("CI_ALL_TARGET_DIR")
+            .env_remove("CI_CLEAN_TARGET_DIR")
+            .env("FEATURE_LANE_PATH_VALUE", "expanded-canary")
             .env("FEATURE_LANE_CALL_LOG", &log)
             .env(
                 "PATH",
@@ -157,6 +158,7 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
 }
 
 #[test]
+#[trace("NFR-005")]
 fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
     let recipe = Recipe::new();
     for root in [
@@ -166,6 +168,11 @@ fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
         Some("owned target"),
         Some("/tmp/owned-target"),
         Some("/tmp/owned target"),
+        Some("owned \"target\""),
+        Some("/tmp/owned`literal-backtick`"),
+        Some("owned ${FEATURE_LANE_PATH_VALUE}"),
+        Some("/tmp/owned $FEATURE_LANE_PATH_VALUE"),
+        Some("owned 'single quote' \\ slash; * ? [x]"),
     ] {
         let parent = root.filter(|root| !root.is_empty()).unwrap_or("target");
         let calls = recipe.run(&["ci-default-features", "ci-all-features"], root, &[]);
@@ -176,9 +183,14 @@ fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
             "each lane must use its isolated child for every command"
         );
     }
+    let helper_directory = recipe.cargo_directory.path().to_path_buf();
+    assert!(helper_directory.join("cargo").is_file());
+    drop(recipe);
+    assert!(!helper_directory.exists(), "fixture teardown removes its compiled helper");
 }
 
 #[test]
+#[trace("NFR-005")]
 fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
     let recipe = Recipe::new();
     assert_eq!(
@@ -202,9 +214,70 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         expected("default override", DEFAULT_COMMANDS)
             + &expected("/tmp/all override", ALL_COMMANDS)
     );
+    for path in [
+        "caller target",
+        "caller \"quote\"",
+        "caller`literal-backtick`",
+        "caller ${FEATURE_LANE_PATH_VALUE}",
+        "caller $FEATURE_LANE_PATH_VALUE",
+        "caller 'quote' \\ slash; * ? [x]",
+    ] {
+        // Make's command-line assignment grammar requires doubled dollars.
+        // Command::args passes these bytes directly, without a shell launcher.
+        let root = format!("CARGO_TARGET_DIR={}", path.replace('$', "$$"));
+        assert_eq!(
+            recipe.run(&["ci-default-features", "ci-all-features"], Some("ignored"), &[&root]),
+            expected(&format!("{path}/ci-default-features"), DEFAULT_COMMANDS)
+                + &expected(&format!("{path}/ci-all-features"), ALL_COMMANDS)
+        );
+        let default = format!("CI_DEFAULT_TARGET_DIR={}", path.replace('$', "$$"));
+        let all_path = format!("/tmp/{path}");
+        let all = format!("CI_ALL_TARGET_DIR={}", all_path.replace('$', "$$"));
+        assert_eq!(
+            recipe.run(&["ci-default-features", "ci-all-features"], Some("ignored"), &[&default, &all]),
+            expected(path, DEFAULT_COMMANDS) + &expected(&all_path, ALL_COMMANDS)
+        );
+    }
 }
 
 #[test]
+#[trace("NFR-005")]
+fn routing_oracle_rejects_safe_path_and_command_mutations() {
+    let recipe = Recipe::new();
+    let makefile = recipe.directory.path().join("Makefile");
+    let original = fs::read_to_string(&makefile).unwrap();
+    let root = "caller \"quote\" ${FEATURE_LANE_PATH_VALUE}";
+    let oracle = expected(&format!("{root}/ci-default-features"), DEFAULT_COMMANDS)
+        + &expected(&format!("{root}/ci-all-features"), ALL_COMMANDS);
+    assert_eq!(recipe.run(&["ci-default-features", "ci-all-features"], Some(root), &[]), oracle);
+    for (before, after) in [
+        (
+            "export CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-default-features",
+            "export CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)",
+        ),
+        (
+            "export CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-default-features",
+            "export CI_DEFAULT_TARGET_DIR = $(subst \",,$(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target))/ci-default-features",
+        ),
+        (
+            "cargo test --locked --workspace\n",
+            "cargo test --locked --workspace --all-features\n",
+        ),
+    ] {
+        // Mutate only the fixture copy, retaining safe shell-variable expansion.
+        // No control ever runs path contents through the unsafe reviewed recipes.
+        assert_eq!(original.matches(before).count(), 1, "one intended mutation site");
+        fs::write(&makefile, original.replacen(before, after, 1)).unwrap();
+        let observed = recipe.run(&["ci-default-features", "ci-all-features"], Some(root), &[]);
+        assert_ne!(observed, oracle, "complete literal-path/argv oracle rejects the mutant");
+        fs::write(&makefile, &original).unwrap();
+        assert_eq!(fs::read_to_string(&makefile).unwrap(), original, "exact fixture restore");
+        assert_eq!(recipe.run(&["ci-default-features", "ci-all-features"], Some(root), &[]), oracle);
+    }
+}
+
+#[test]
+#[trace("NFR-005")]
 fn repeated_switches_in_both_directions_keep_each_lane_directory() {
     let recipe = Recipe::new();
     for targets in [
@@ -228,6 +301,7 @@ fn repeated_switches_in_both_directions_keep_each_lane_directory() {
 }
 
 #[test]
+#[trace("NFR-005")]
 fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let recipe = Recipe::new();
     let other_checks = [
