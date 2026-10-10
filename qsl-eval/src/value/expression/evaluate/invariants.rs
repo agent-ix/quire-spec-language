@@ -31,24 +31,27 @@ macro_rules! probe_package {
         let graph = package.graph();
         let objects = $objects;
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let mut $machine = Machine::new(
-            graph.scope(),
-            graph,
-            &objects,
-            &mut meter,
-            graph.dispatch_tables(),
-        );
-        let result: Result<(), Halt> = $action;
-        let fault = match result {
-            Err(Halt::Fault(fault)) => fault,
-            Err(_) => panic!("producer returned an ordinary halt: {}", $identifier),
-            Ok(()) => panic!("producer was not reached: {}", $identifier),
+        let fault = {
+            let mut __probe_machine_storage = Machine::new(
+                graph.scope(),
+                graph,
+                &objects,
+                &mut meter,
+                graph.dispatch_tables(),
+            );
+            let $machine = &mut __probe_machine_storage;
+            let result: Result<(), Halt> = $action;
+            let fault = match result {
+                Err(Halt::Fault(fault)) => fault,
+                Err(_) => panic!("producer returned an ordinary halt: {}", $identifier),
+                Ok(()) => panic!("producer was not reached: {}", $identifier),
+            };
+            assert_eq!(fault.stage(), "S6a");
+            assert_eq!(fault.invariant(), $identifier);
+            assert_eq!(fault.kernel_cause(), None);
+            assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
+            fault
         };
-        assert_eq!(fault.stage(), "S6a");
-        assert_eq!(fault.invariant(), $identifier);
-        assert_eq!(fault.kernel_cause(), None);
-        assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
-        drop($machine);
         let expected: &[ChargePoint] = &$charges;
         assert_eq!(meter.admitted_charges(), expected, "{}", $identifier);
     }};
@@ -87,16 +90,17 @@ fn iteration<'a>(node: CheckedNode<'a>) -> Box<Iteration<'a>> {
 
 fn reference() -> ObjectReference {
     let (package, _) = super::tests::population_function_package();
+    let object_type = package
+        .graph()
+        .scope()
+        .types()
+        .object_types()
+        .next()
+        .unwrap()
+        .key();
     ObjectReference::new(
         quire_exact::UniverseId::from_digest([0; 32]),
-        package
-            .graph()
-            .scope()
-            .types()
-            .object_types()
-            .next()
-            .unwrap()
-            .key(),
+        object_type,
         quire_exact::ObjectId::new("receiver").unwrap(),
     )
 }
@@ -1457,7 +1461,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
 #[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
 fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
     let location = Location::root(Origin::Expression);
-    for cause in qsl_semantics::check::family::fixtures::received_kernel_causes() {
+    for cause in qsl_semantics::check::received_kernel_causes() {
         let refusal = Refusal::CheckedInvariant { cause };
         assert_eq!(refusal.code(), None);
         assert_eq!(refusal.cause(), None);
@@ -1627,12 +1631,14 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
     );
     let decimal = Decimal::new(Integer::from(125_i64), 2);
     machine.values.push(Value::Decimal(decimal.clone()));
+    let extracted = machine
+        .pop_decimal()
+        .unwrap_or_else(|_| panic!("Decimal extraction"));
     assert_eq!(
-        machine
-            .pop_decimal()
-            .unwrap_or_else(|_| panic!("Decimal extraction")),
-        decimal
+        extracted.normalized().coefficient(),
+        &Integer::from(125_i64)
     );
+    assert_eq!(extracted.normalized().scale(), 2);
     let source = collection(vec![Value::Boolean(true)]);
     machine.values.push(Value::Collection(source.clone()));
     assert!(Arc::ptr_eq(
