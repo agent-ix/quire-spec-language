@@ -50,4 +50,3 @@ map is wired to the assembler.
 - Step 4: no region for either.
 - Step 5: no region -- the position was read from the unit, but its
   embedded span names no single region of the document.
-

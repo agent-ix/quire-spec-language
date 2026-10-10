@@ -50,4 +50,3 @@ Tag the test `#[trace("FR-091-AC-1", "TC-392")]`.
 - The unit's selections hold one profile selection, with alias `v`, its
   definition reference as written and the `Profile` span from step 4, and
   no import or model selection.
-

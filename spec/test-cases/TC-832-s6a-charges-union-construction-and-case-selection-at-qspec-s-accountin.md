@@ -28,4 +28,3 @@ Tag each test `#[trace("TC-832", "<AC id>")]`.
   binding and none for the unselected arms.
 - Step 2: stops at the last listed point with
   `incomplete { limit_kind: work_units }`.
-

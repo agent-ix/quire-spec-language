@@ -490,4 +490,3 @@ undefined cause type.
 - ADR-012 §14.1 lists `Relation`'s non-native evaluability
   (FR-062-AC-6). FR-090-AC-4 specifies it as a property of S6a's input type;
   which ticket builds that type is a ticketing question, not a design one.
-

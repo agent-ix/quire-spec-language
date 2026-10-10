@@ -59,4 +59,3 @@ Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
   not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`.
 - Step 4's code is
   `CatalogCode::new("invalid_runtime_input", "absent-key")`.
-

@@ -39,4 +39,3 @@ Scope: FR-062-AC-7, FR-096-AC-11.
 
 Tag the tests `#[trace("TC-378", "FR-062-AC-7")]` and
 `#[trace("TC-378", "FR-096-AC-11")]`.
-

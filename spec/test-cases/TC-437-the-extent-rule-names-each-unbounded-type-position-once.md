@@ -34,4 +34,3 @@ Verify `classify_extent` against the ADR-014 §4 extent rule. Scope: FR-097-AC-2
 - Step 4: node-count limit, bound 2, actual 3; ceiling 3 admits.
 - Step 5: an internal fault, never `Bounded`.
 - Step 6: its requirements carry the classified extent.
-

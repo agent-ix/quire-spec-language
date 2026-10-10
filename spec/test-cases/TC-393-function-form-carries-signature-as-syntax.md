@@ -46,4 +46,3 @@ Tag the test `#[trace("FR-091-AC-2", "TC-393")]`.
 - Measure `Name("x")`; body `Binary{Add, Name("x"), Integer(1)}`.
 - Step 4 finds no `ValueType` and no `NodeKey`, including inside `Option`,
   `Vec` or `Box` wrappers.
-

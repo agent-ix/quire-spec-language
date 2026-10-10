@@ -74,4 +74,3 @@ categories, `#[trace("TC-474", "FR-097-AC-5")]`.
 - Step 6: the trace is `0 → 2`, ending `NoSuccessors` at step 1 with
   `"f"` in its findings; the edited trace refuses
   `ReplayError::FindingMismatch { step: 1 }`.
-

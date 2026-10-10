@@ -411,4 +411,3 @@ checker's definition permissions. Their ownership is decided in #211.
   requirement's "Kind applicability" table. #211 decides the QSL
   carrier member for the vocabulary identity and the ownership of the other QSL
   types named for capabilities.
-

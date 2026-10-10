@@ -42,4 +42,3 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
   `k`'s `+` record (rooted at `n` through the guard), IR's predicate is not
   asserted; the records' extents are asserted: `Bounded` for the `*`, and
   `Unbounded` with one `Integer` domain at `n` for `k`'s `+`.
-

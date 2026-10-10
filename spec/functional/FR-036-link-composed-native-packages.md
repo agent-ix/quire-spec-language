@@ -170,4 +170,3 @@ domain-package model declarations, and
 [IT-012](../integration/IT-012-domain-package-model-intake.md) owns the real
 quire-rs and FCD crate integration. L3 predicate evaluation and the family engines may proceed
 against the same bound identities; this specification does not invent those engines.
-

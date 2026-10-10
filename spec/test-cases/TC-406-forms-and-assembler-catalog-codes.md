@@ -52,4 +52,3 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   cause returns the STD-112 cause once QSpec publishes it.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
-

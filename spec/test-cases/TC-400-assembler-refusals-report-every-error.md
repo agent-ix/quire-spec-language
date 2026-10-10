@@ -46,4 +46,3 @@ Tag the test `#[trace("FR-091-AC-14", "FR-091-AC-15", "FR-091-AC-16", "FR-091-AC
   `definition-cycle`, naming `A` and `B`.
 - Step 5 gives an alias-cycle error with the same code, naming `C`.
 - No step returns a `PackageDeclarations` value.
-

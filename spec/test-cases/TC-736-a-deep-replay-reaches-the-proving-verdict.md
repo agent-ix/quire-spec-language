@@ -48,4 +48,3 @@ Tag the tests `#[trace("TC-736", "FR-263-AC-1")]` and
 - Step 3: the entry decodes, and every walk over the decoded value completes
   with no stack overflow. The envelope one byte over its bound refuses
   `BoundExceeded` naming `replay.input_bytes`.
-

@@ -84,4 +84,3 @@ limit's value.
 
 - ADR-017 §2 RF-2 "Compile classification", RF-3.
 - Specification tickets QSL-386, QSL-387; implementation ticket QSL-40.
-

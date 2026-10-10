@@ -60,4 +60,3 @@ that the walk never reaches completes `true`.
   `graph.result-retain` (2 expansions); (b) `Completed(false)`; (c)
   `Completed(false)`; (d) `Completed(true)`; (e) `Incomplete` with
   `resource_exhausted` each time.
-

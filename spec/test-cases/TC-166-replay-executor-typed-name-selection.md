@@ -48,4 +48,3 @@ FR-065-AC-6.
   `QualifiedName`; it does not fall back to matching any function by a
   display-name string comparison.
 - Step 4: resolution reads only the recompiled package's declaration table.
-

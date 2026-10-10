@@ -37,4 +37,3 @@ Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
 - Step 3: exit 20 with `invalid_source_identity`, cause `blank-label`,
   `label` `identity`, not a file error.
 - Step 4: exit 0, then exit 20.
-

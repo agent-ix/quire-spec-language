@@ -375,4 +375,3 @@ not scanned.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md) is the
   first family slice to implement this contract, for function declaration
   and application.
-

@@ -45,4 +45,3 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
   declaration's region; the synthesized function's limit has no locus.
 - Step 4: kind work budget, bound `W`, actual the spend the denied charge
   would have reached, the declaration's region.
-

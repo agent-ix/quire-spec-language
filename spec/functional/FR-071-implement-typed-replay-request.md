@@ -159,4 +159,3 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   staleness check, and the function call itself, are explicitly out of this
   requirement's scope; this requirement owns only the decode-time
   byte-vs-declared-digest integrity check (AC-6).
-

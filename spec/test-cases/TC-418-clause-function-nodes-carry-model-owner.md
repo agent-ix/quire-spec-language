@@ -62,4 +62,3 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
   keys to C1.
 - Step 5: the keys equal step 1's.
 - Step 6: no `_` arm.
-

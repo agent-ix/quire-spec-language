@@ -51,4 +51,3 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 - Step 4: each variant gives one triple, no two share one, each triple
   decodes back to its variant, (`state`, `frame`) decodes to none, and
   `StateTransition` gives (`state`, `transition`); no mutant survives.
-

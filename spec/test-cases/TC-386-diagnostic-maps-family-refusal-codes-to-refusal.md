@@ -41,4 +41,3 @@ Tag the test `#[trace("FR-090-AC-5", "TC-386")]`.
 - The step-3 table names neither the crate that defines `FamilyOutcome` nor
   any crate at layer 3 or above. It may name `quire-exact`, because ADR-011
   §6.1 lets F depend on K.
-

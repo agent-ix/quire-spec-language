@@ -46,4 +46,3 @@ Tag the test `#[trace("FR-091-AC-22", "TC-412")]`.
 - Step 3 returns a refusal holding a duplicate-alias error, code
   `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection
   spans, and no `PackageDeclarations` value.
-

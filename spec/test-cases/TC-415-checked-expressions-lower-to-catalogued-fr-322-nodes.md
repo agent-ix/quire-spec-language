@@ -146,4 +146,3 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. The two
   unguarded `value(o)` bodies each refuse with
   `undefined_expression`/`unproved-presence` alone; the guarded one checks.
-

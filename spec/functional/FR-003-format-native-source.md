@@ -81,4 +81,3 @@ checked package identity as checking the original source.
   §6.1 (layer 1), §6.2 (`format` row) and §7.3 (M-6a row) set the input
   to the CST.
 - [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
-

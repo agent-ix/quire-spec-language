@@ -48,4 +48,3 @@ Tag the tests `#[trace("TC-848", "<AC id>")]`.
 - Step 3: stage `evaluate`, `unsupported`, exit 21, cause
   `unsupported_projection`/`missing-fairness-premise` naming `fair weak
   whole inc`.
-

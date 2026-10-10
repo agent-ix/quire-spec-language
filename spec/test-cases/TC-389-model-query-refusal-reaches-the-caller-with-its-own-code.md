@@ -53,4 +53,3 @@ Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
 - Step 2 does not panic, and its result matches step 3's pattern;
   `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
 - Step 4 finds no field of type `qsl_foundation::diagnostic::Code`.
-

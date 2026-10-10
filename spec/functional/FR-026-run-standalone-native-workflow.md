@@ -127,4 +127,3 @@ including incomplete native, model, package and runtime input failures.
 - [FR-025](FR-025-compile-rule-model-source.md): public model source frontend.
 - [FR-024](FR-024-read-native-runtime-artifacts.md): selected runtime artifact intake.
 - [FR-023](FR-023-run-native-packages.md): native execution and retained outcomes.
-

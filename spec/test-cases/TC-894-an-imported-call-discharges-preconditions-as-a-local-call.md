@@ -44,4 +44,3 @@ local `function f2 using v(x: Int[0, 9]): Boolean pure { x < 5 }`.
   `[test/geometry]`, carrying `undefined_expression`/`unproved-nonzero` at
   the divisor `x` in the library's source. No refusal is raised at the
   call `g::f(y)`, and no package is emitted.
-

@@ -41,4 +41,3 @@ Tag the test `#[trace("FR-088-AC-12", "TC-411")]`.
 - Step 3: each `UnitId` carries the vector's digest under the
   `quire.value.compound-unit/v1` label.
 - Step 4: C-30 refuses the key.
-

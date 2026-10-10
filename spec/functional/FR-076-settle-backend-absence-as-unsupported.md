@@ -91,4 +91,3 @@ elsewhere.
   [quire-specification#116](https://github.com/agent-ix/quire-specification/issues/116):
   "a claim no registered backend can discharge settles `unsupported` with a
   warning, never a hold."
-

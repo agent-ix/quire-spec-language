@@ -47,4 +47,3 @@ locus hashes the bytes in the test.
 - Step 3: kind input bytes and no locus.
 - Step 4: a refusal with no locus.
 - Step 5: the envelope refusal carries the native code `noncanonical_wire`, not `invalid_package`.
-

@@ -44,4 +44,3 @@ outside `required`/`optional`. Scope: FR-056-AC-10.
 - Step 2: every case refuses `invalid_model_binding` with
   `IntakeMalformedDeclaration`, naming the offending value or that
   `presence` is missing or not a string.
-

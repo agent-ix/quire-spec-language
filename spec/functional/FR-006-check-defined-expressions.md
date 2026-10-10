@@ -38,4 +38,3 @@ The checker consumes the reviewed finite-state semantics. Presence facts cannot 
 
 - [US-002](../usecase/US-002-link-exact-models.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../README.md) supplies the scoped context.
-

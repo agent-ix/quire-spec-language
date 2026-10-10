@@ -111,4 +111,3 @@ cause's code is always `stage_limit_exceeded` and its cause the limit kind's
   `semantic_type` is `{term: "group_reference", ordinal: 1}`.
 - Step 10: D1 both times, the checked type node's id is D1 both times, and
   no supplied key appears.
-

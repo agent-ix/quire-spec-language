@@ -48,4 +48,3 @@ between positions.
   and 4 all refuse with `missing-name` naming `nowhere`.
 - `f(1)`: step 2 refuses with exactly one refusal, and steps 2, 3 and 4 all
   refuse with `ill_typed` / `type-mismatch`.
-

@@ -143,4 +143,3 @@ by Contract IR, Quire Observation, Quire Protocol and the TL crates. QSL pins
 the cycle-free `quire-contract-model` package under its existing dependency
 key; it does not depend on the compatibility bridge package that consumes these
 handoffs.
-

@@ -82,4 +82,3 @@ establish all-input validity or backend cost parity.
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) supplies the user need.
 - [IT-006](../integration/IT-006-native-reference-workflow.md) qualifies this API milestone.
 - [IT-002](../integration/IT-002-native-state-workflow.md) retains the full compiled-model/backend objective.
-

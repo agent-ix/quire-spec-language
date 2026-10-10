@@ -99,4 +99,3 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   finding. `LowPost`: no `touch` successor, and `t1` has
   `ContractUndetermined { <touch>, Some(<t1's digest>), LowPost,
   Undefined(SumOutOfDomain) }`.
-

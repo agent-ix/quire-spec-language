@@ -33,4 +33,3 @@ Tag each test `#[trace("TC-823", "<AC id>")]`.
 - Step 4: only `ill_typed` at `1 + true`.
 - Steps 5 and 6: only `ill_typed`/`type-mismatch` at the scrutinee,
   expected "a declared union".
-

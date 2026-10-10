@@ -179,4 +179,3 @@ key of its own: it calls `quire_exact::member_equal` and
 - **Downstream:** none within this ticket's scope.
 - quire-specification's AD-016 kernel row is amended to match (QC-21), by an
   issue filed against agent-ix/quire-specification, not by this repository.
-

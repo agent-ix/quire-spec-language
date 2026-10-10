@@ -30,4 +30,3 @@ Tag each test `#[trace("TC-815", "<AC id>")]`.
   `[w, h]`, `[]`, and their bodies and spans.
 - Step 3: an `Expression::Call` and an `Expression::Name`; no construction
   form exists.
-

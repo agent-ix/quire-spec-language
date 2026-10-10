@@ -54,4 +54,3 @@ spelling.
   `fault.category() == Category::InternalFailure`. It never returns an
   `Ok(e)` whose `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(_))`
   or a `FamilyOutcome::FamilyEvaluated`, and it does not panic.
-

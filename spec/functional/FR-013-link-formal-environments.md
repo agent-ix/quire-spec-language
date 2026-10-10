@@ -72,4 +72,3 @@ equality and Boolean roots remain FR-006's subsequent checking phase.
 - [FR-006](FR-006-check-defined-expressions.md) owns actual typing and definedness after linkage.
 - [FR-010](FR-010-report-native-outcomes.md) owns the shared native diagnostic envelope.
 - [IT-005](../integration/IT-005-qualify-native-model-consumption.md) requires real public IR consumption.
-

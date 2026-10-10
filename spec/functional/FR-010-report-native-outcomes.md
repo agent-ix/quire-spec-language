@@ -85,4 +85,3 @@ The refusal line's keys are in one fixed order, the field order of the CLI's ref
 
 - [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../src/main.rs) supplies the scoped context.
-

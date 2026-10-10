@@ -83,4 +83,3 @@ Diagnostic detail capacity and a separate terminal stop reason follow
 - [FR-016](FR-016-check-native-clauses.md) owns static judgments and input obligations.
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) traces to StR-001.
 - [IT-006](../integration/IT-006-native-reference-workflow.md) exercises the native pipeline.
-

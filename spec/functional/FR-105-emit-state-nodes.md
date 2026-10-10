@@ -151,4 +151,3 @@ source map (FR-095).
   FR-102 to FR-104 and FR-106 to FR-109 read the in-process `CheckedPackage`.
 - IR `lower` returns no form for any `state` node, so these nodes
   reach no backend. That is IR's own work (ADR-012 §8, §15.7).
-

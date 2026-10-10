@@ -50,4 +50,3 @@ Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
   `Pre(Field(SelfRef, versionNumber))`; `Expression::Result`; and
   `FormsCause::UnrepresentedConstruct` at the qualified edge
   `Config::ConfigVersion::parent`. No other step refuses.
-

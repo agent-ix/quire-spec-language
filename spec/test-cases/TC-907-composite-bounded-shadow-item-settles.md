@@ -145,4 +145,3 @@ rational leaf until text-profile selection exists (QSL-646).
   two digests.
 - Step 11: equal for the sent claim and unequal for each changed member.
 - Step 12: `LimitAboveReader` under the default, a settlement when raised.
-

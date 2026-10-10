@@ -36,4 +36,3 @@ and FR-097-AC-9 (kind emission).
 - Step 4: each emitted proof bound carries a kind, `population`, `integer`
   and `recursive` respectively, and each kind's `finite_kind` equals its
   bound's kind.
-

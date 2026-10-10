@@ -59,4 +59,3 @@ Scope: NFR-011-M-1 to NFR-011-M-4.
 - Step 5: the long-name package stops with a limit of kind work budget,
   bound 16777216; the
   short-name package is admitted.
-

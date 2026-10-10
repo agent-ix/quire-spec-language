@@ -412,4 +412,3 @@ TC-786).
   `1-draft.8`: the kernel refusal codes, causes and fields.
 - QSpec FR-145: a `sum` seed or running total outside `N`'s domain is a
   located undefined outcome.
-

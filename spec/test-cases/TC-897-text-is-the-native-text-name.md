@@ -44,4 +44,3 @@ Start from a domain package whose object type `Note` declares a field
 - Step 4: refused `invalid_model_binding`/`malformed-declaration` at
   `label`, naming `ix://quire/native/String`.
 - Step 5: the same outcomes at the parameter and at the result.
-

@@ -81,4 +81,3 @@ order, that matches, which is FR-452's result over FR-342's classes:
   `incomplete` or `unsupported` at any stage is unresolved), RF-5.
 - QSpec FR-452 (STD-117).
 - Specification ticket QSL-386; implementation ticket QSL-40.
-

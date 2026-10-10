@@ -172,4 +172,3 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
 - Step 13: the `Point` ids differ, the `List` labels and member ids differ,
   the `Integer` id is equal, the `package_id`s differ, and IR admits both
   (FR-093-AC-22).
-

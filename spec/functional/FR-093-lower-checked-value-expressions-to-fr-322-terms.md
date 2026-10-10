@@ -790,4 +790,3 @@ emitter then writes it. Until then AC-7 is unmet as worded: its test
   against the published `LeafSegment` pattern refuses a package holding a
   recursion leaf, and a reader that derives an optional field's leaf
   without `inner` refuses its leaves.
-

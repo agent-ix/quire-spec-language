@@ -38,4 +38,3 @@ Tag the tests `#[trace("TC-725", "FR-258-AC-1")]`, `#[trace("TC-725", "FR-258-AC
 - Step 2: no `application` argument, `aggregate` member or `binding` value
   holds a term of its own stratum or a higher one, and every composite
   subterm is a `reference` to its own node.
-

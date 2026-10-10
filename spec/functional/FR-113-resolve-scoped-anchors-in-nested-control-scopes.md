@@ -164,4 +164,3 @@ refused node kinds) still refuses, whether or not its anchors resolve.
   `WrongTargetKind` and `IncompatibleReference`), with scope issues that
   carry no catalog code; M-6d deletes that checker once this
   requirement's checker replaces it.
-

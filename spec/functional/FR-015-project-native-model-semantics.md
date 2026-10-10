@@ -102,4 +102,3 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 - [FR-006](FR-006-check-defined-expressions.md) and [FR-016](FR-016-check-native-clauses.md) own subsequent typing and definedness.
 - [NFR-005](../non-functional/NFR-005-rust-verification-paths.md) requires Rust production and qualification.
 - [IT-005](../integration/IT-005-qualify-native-model-consumption.md) owns actual IR consumption and the rule-model qualification.
-

@@ -65,4 +65,3 @@ both successors exist"; ruling on QSL-229):
   item under any feature combination.
 - Step 4: every scenario maps to a backing test. A scenario with none
   fails this step.
-

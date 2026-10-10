@@ -98,4 +98,3 @@ an FR-331 terminal value.
   parallel category or outcome type.
 - **Downstream**: [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md)
   carries the counterexample this envelope's `violation` category names.
-

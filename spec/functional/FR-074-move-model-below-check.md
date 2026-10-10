@@ -202,4 +202,3 @@ definitions, before and after the move.
   requirement relocates into `check` for the first time.
 - [US-009](../usecase/US-009-trust-a-single-check-authority-unreachable-from-evaluation.md).
 - GitHub agent-ix/quire-spec-language#241.
-

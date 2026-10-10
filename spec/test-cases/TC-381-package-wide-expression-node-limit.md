@@ -39,4 +39,3 @@ the code string itself.
 - Step 3: the package stops with `StageFailure::Limit` of kind node count,
   bound 4, code `stage_limit_exceeded`/`node-count-exceeded`; the reported
   bound is the caller's configured value, not a remaining amount.
-

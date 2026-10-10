@@ -147,4 +147,3 @@ passed to FR-344's report.
 - QSpec half: QSpec FR-452 and FR-290 (the claim-form row and the
   V1-TOOL-011 re-trace), STD-117.
 - Implementation ticket QSL-40; specification ticket QSL-386.
-

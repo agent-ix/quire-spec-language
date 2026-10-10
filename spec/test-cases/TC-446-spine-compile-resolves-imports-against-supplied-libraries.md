@@ -110,4 +110,3 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   no package; at 3 the compile succeeds; edge count, bound 2, actual 3,
   setting `dependency.import_edges`; input bytes, setting
   `dependency.source_bytes`. The 200-library chain compiles.
-

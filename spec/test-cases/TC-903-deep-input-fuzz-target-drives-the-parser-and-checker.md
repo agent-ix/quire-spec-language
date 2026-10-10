@@ -33,4 +33,3 @@ past it.
 
 - Every input returns a result or a stated limit outcome naming its setting.
 - No input panics, aborts or overflows the stack.
-

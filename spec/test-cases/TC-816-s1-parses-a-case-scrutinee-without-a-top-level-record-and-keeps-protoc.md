@@ -29,4 +29,3 @@ Tag each test `#[trace("TC-816", "<AC id>")]`.
 - Step 2: parses, scrutinee the parenthesized record value.
 - Step 3: the expression `case` and the protocol `case` produce their two
   different CST productions; the protocol parse is unchanged.
-

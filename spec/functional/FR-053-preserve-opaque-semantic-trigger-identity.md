@@ -90,4 +90,3 @@ facts into the FR-300 binding.
 - QSpec FR-093 and FR-230 establish semantic-trigger and obligation identity.
 - QSpec FR-300 establishes the wider activation-binding contract consumed by
   QProtocol.
-

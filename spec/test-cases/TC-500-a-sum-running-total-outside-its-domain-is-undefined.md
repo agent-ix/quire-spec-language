@@ -39,4 +39,3 @@ Tag the tests `#[trace("TC-500", "FR-096-AC-14")]`.
 - Step 2: completes with `3`.
 - Step 3: `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`,
   `Evaluation.location` the summand node, with no addition charged.
-

@@ -47,4 +47,3 @@ Tag the test `#[trace("FR-091-AC-18", "TC-401")]`.
 - Under (`a`, `u`) again, the `Point` key, the `Pair` key and `px`'s node id
   equal step 1's. Under (`a`, `w`), all three differ from step 1's.
 - Step 5 finds no such item.
-

@@ -76,4 +76,3 @@ path; that PR deletes step 2 with it (ADR-012 §15.8).
   emits.
 - Step 6: every direct run's report carries that `package_id`, and the bytes admit
   through I04 `read`.
-

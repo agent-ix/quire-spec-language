@@ -276,4 +276,3 @@ enforced (see `tests/it/name_resolution_confinement.rs`'s own module doc).
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - ADR-013 §8 OQ-B, OQ-D and OQ-F; QSpec FR-141, FR-142 and FR-144
   (`ix://agent-ix/quire-specification/FR-141`, `FR-142`, `FR-144`).
-

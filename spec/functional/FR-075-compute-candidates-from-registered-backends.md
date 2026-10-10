@@ -260,4 +260,3 @@ were added.
   property test (FR-075-AC-2, evidenced by TC-194) as part of the ADR-012
   §5.3 registry evidence obligations, and the `cargo-deny`/lint gates that
   enforce FR-075-CON-1.
-

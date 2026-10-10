@@ -46,4 +46,3 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
   `ConfigVersion` node; both clauses reference that anchor.
 - Step 4: the compile refuses; no package bytes and no `state` node are
   emitted.
-

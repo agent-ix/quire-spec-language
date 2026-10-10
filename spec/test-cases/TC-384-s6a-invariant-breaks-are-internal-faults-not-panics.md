@@ -64,4 +64,3 @@ the two steps' invariant identifiers asserted distinct.
 - Neither step returns an `Ok(e)` whose `e.outcome` is a
   `FamilyOutcome::FamilyEvaluated` or
   `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
-

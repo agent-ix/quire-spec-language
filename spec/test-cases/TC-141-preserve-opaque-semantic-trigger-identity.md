@@ -37,4 +37,3 @@ Every mutation changes identity or refuses at the source boundary. Neither
 reader translates versions, invents a string nor returns partial temporal
 truth. Every typed axis and completeness view retains the exact evidence
 reference and value admitted into the request.~~
-

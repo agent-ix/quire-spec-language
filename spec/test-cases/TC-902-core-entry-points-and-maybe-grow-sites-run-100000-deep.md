@@ -42,4 +42,3 @@ Run steps 1, 3 and 4 on a thread spawned with a 512 KiB stack.
   core crate's edge to `qsl-walk-grow`.
 - Steps 3 and 4: each recursion completes.
 - Step 5: `maybe_grow` runs its closure as a plain call.
-

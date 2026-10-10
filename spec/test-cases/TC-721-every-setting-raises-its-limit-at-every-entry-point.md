@@ -39,4 +39,3 @@ Tag the tests `#[trace("TC-721", "FR-255-AC-4")]`, `#[trace("TC-721", "FR-255-AC
   stage runs.
 - Step 3: each stage ran at FR-255's defaults, and the recorded effective
   limits equal them.
-

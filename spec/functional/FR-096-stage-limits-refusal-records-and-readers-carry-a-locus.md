@@ -429,4 +429,3 @@ until that wiring lands.
   placed as a temporary `DecimalType` `Decimal[lo, hi; 0, 0]`; its record
   SHALL still render the declared `Int[lo, hi]`, not that placement, which
   FR-096-AC-8's `InexactDecimal` example checks.
-

@@ -98,4 +98,3 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 - [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md) AC-3:
   the witness envelope's `run_limits` and `FiniteBound` declared domains.
 - IR's v2 lowering, the `qsl-package` dependency, for AC-6.
-

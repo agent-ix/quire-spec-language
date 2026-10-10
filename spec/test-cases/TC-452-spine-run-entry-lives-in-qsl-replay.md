@@ -173,4 +173,3 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   `from_run` document has `category` incomplete, `last_stage` `null`,
   `result` `null` and one diagnostic with code `cancelled`, whose cause is
   `requested` for (a) and `deadline` for (b).
-

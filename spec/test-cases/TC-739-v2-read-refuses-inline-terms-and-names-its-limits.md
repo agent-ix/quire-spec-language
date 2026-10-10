@@ -39,4 +39,3 @@ the raise through FR-255's settings operation by TC-721.
   read verifies.
 - Step 3: refused with code `malformed_wire`, with no limit outcome and no
   outcome naming a depth.
-
