@@ -25,13 +25,23 @@ fn cargo_double() -> PathBuf {
         fs::create_dir_all(&target).unwrap();
         let directory = tempfile::tempdir_in(target).unwrap();
         let output = Command::new("rustc")
-            .args(["--edition=2021", "--crate-name", "conformance_cargo_double", "-D", "warnings"])
+            .args([
+                "--edition=2021",
+                "--crate-name",
+                "conformance_cargo_double",
+                "-D",
+                "warnings",
+            ])
             .arg(workspace.join("xtask/src/ci_conformance_tests/cargo_double.rs"))
             .arg("-o")
             .arg(directory.path().join("cargo"))
             .output()
             .unwrap();
-        assert!(output.status.success(), "compile Rust Cargo process double: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "compile Rust Cargo process double: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         directory
     });
     directory.path().join("cargo")
