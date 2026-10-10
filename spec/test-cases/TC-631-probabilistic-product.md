@@ -39,7 +39,14 @@ Fixtures: ADR-024 §7.1 and §7.2 models and claims; `Link` with `Deliver`; the 
 8. Supply each FR-196 admission negative; compare Reach/ExpectedReward/
    LongRunFraction actual None with a fabricated zero accumulator, and
    compare digital timed states differing only in one clock/deadline.
-   Stop at the actual identity-byte/product budget and inspect the outcome.
+   Derive Retx clock identities/caps/scale from the checked declarations;
+   compare FR-196's complete digital arrays after delay, loss/reset and
+   same-time steps. Test success exactly at D, success after D, until
+   prefix failure, terminal idle closure and no admissible same-time
+   success. Retain a real residual race winning delay in pending and
+   verify one delay/discrete advance at resolution. Refuse every timed
+   shape/clock/deadline negative; stop at the actual identity-byte/product
+   budget and inspect the outcome.
 
 Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
 
@@ -60,4 +67,8 @@ Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
   retains the source monitor/accumulator and resolution advances once.
 - Step 8: malformed/context-inapplicable forms refuse; exact-only forms
   retain real None and timed model keys retain clocks. A resource stop
-  gives no truncated/default key or fabricated pending tuple.
+  gives no truncated/default key or fabricated pending tuple. Clock
+  identity/order/scale/caps and optional deadline match the exact digital
+  arrays. Delays advance elapsed time without adding predicate positions;
+  discrete resets preserve deadline time, success at D accepts and success
+  after D rejects. Pending race delay applies exactly once.

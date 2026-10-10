@@ -105,26 +105,96 @@ existing model digest in this same domain may continue to name a model
 state in traces; a certificate's complete product key contains the full
 canonical model form. A strict consumer SHALL recompute any separately
 supplied model digest and check its domain before using it to resolve
-that form. For FR-204's digital timed product the model form retains the
-digital clock vector, caps and deadline clock, with the existing timed
-state's canonical order; a projection to the untimed model aliases
-different future delay moves and is refused.
+that form.
+
+For FR-204 the **new closed timed alternative** is
+`model = ["quire.simulation.state-key/v1",["digital",discrete,unit,scale,clocks,deadline]]`.
+`discrete` is exactly the preceding complete simulation-state form for
+non-clock data/control/queues/roles/observations/bounds/memory. Clock fields
+are absent from that data form, rather than represented by fabricated kernel
+Values: ADR-026 CK-4 prohibits clock values in the value kernel. `unit` is
+the model's actual CK-1 time UnitId in the closed unit form below. `scale`
+is a positive canonical decimal integer: FR-204's least common denominator
+of all model/claim time constants after exact conversion to that unit
+(including resets and admitted discrete delay supports). One digital unit
+is 1/scale of that unit. A different multiple is not an alternate encoding.
+
+`clocks` is the complete finite CK-2 universe of clock entries
+`[clock_identity,value,cap]`. `clock_identity` is
+`[declaring_type_node,field_identifier,receiver]`: the checked declaring
+object type's existing NodeId, its exact declared field Identifier, and
+that object's complete FR-181 reference triple. The field Identifier is
+resolved in that type; no new clock-node digest or display-name alias is
+invented. Entries are sorted by ascending canonical clock-identity bytes,
+with exactly one entry per actual object/clock field. Clock identity is
+independent of object allocation/field traversal order; symmetry moves the
+receiver and its clock together (ADR-026 §15). `value` and `cap` are canonical
+nonnegative integer strings, `0<=value<=cap`. The checker rederives cap as
+one plus that clock's largest scaled compared constant; a clock with no
+comparison has cap one. A reset sets `min(scaled_reset,cap)`. A delay of k
+sets `min(value+k,cap)`; unit-delay edges use k=1. Cap is present and checked,
+not provider chosen. Non-clock frames and clock resets both follow TS-2.
+Missing/extra/duplicate clocks, wrong receivers/types/fields/caps, alternate
+scale/unit, noncanonical strings and values beyond cap refuse.
+
+`deadline` is null exactly for the admitted timed Reach/expected-elapsed
+forms without a deadline. A TA-4 deadline event uses exactly
+`["deadline",D,t]`: D is the exact scaled closed bound, t the extra
+non-resetting clock in `0..D+1`, initially zero. Its cap is derived D+1;
+it is not an ordinary object clock and cannot be placed in `clocks`.
+The time unit, scale, complete clock identities/values/caps and actual
+optional deadline all participate in full identity. Ordinary untimed
+model forms cannot be substituted for this tagged form. Contextual
+admission still rederives the checked claim and its constants; this is
+no global equality across unrelated requests.
 
 `monitor` is null only for Reach, ExpectedReward and LongRunFraction.
 For bounded forms its closed alternatives are:
 
 | Event/measure | Canonical monitor |
 | --- | --- |
-| bounded formula | `["formula",automaton_key]`, where `automaton_key` is the parsed complete FR-338 canonical key array, not its local u32 index, digest or transport base64url string. Its context selects this checked formula, profile, origin activation and actual binding. |
+| bounded event-position formula | `["formula",automaton_key]`, where `automaton_key` is the parsed complete FR-338 canonical key array, not its local u32 index, digest or transport base64url string. Its context selects this checked formula, profile, origin activation and actual binding. |
+| timed deadline event | `["deadline",kind,phase]`, where kind is `"eventually"` or `"until"` and phase is `"pending"`, `"accept"` or `"reject"`; D and the exact elapsed clock are retained in the model member above, never inferred from a position horizon. |
 | accumulate / steps comparison or quantile | `["measure",remaining,phase]`, with remaining future model positions in `0..h` and phase one of `"inactive"`, `"active"`, `"complete"`, `"censored"`, `"unactivated"`. The last three phases are decided and absorbing. |
 | fraction comparison or mean of fraction | `["fraction",remaining,phase]`, with phase `"collecting"` or `"complete"`; remaining is the number of included positions whose contribution is still unread, initially `h+1`, including position zero. Completion has remaining `"0"`. |
 
-Every monitor SHALL retain its exact remaining horizon. Quantiles use
+Every undecided event-position monitor SHALL retain its exact remaining
+horizon/debts. A decided FR-338 `["accept"]`/`["reject"]` is absorbing and
+has no remaining counter; it SHALL NOT be wrapped in a fabricated horizon.
+Measure alternatives retain their explicit remaining/control through
+completion, and fraction completion retains zero as specified. A timed
+deadline monitor instead uses the model's exact deadline clock. Quantiles use
 the same measure control for both non-strict `M<=c` and strict `M<c`
 transforms; the checked claim selects the comparison. A model state's
 current predicate truth is re-evaluated, never copied from a provider
 index. The control phase is not inferred from a reward magnitude alone:
 a completed zero measure differs from an active zero measure.
+
+A timed deadline SHALL be initialized by reading the initial discrete
+position at t=0. Eventually accepts iff P holds; otherwise it is pending.
+Until accepts iff B holds, rejects iff both B and A are false, and otherwise
+is pending. At each actual discrete post-step with t<=D, apply those same
+rules to its post-state predicates; discrete steps and resets do not
+advance or reset t. Equal-timestamp discrete steps remain distinct letters.
+Delay moves advance clocks/deadline but are not new predicate positions
+(ADR-026 TS-3), so they leave a pending phase unchanged while t<=D. The
+first delay crossing D sets phase reject before any subsequent discrete
+letter; a race edge of k delay units then a discrete step applies that
+crossing before reading its endpoint. Success exactly at D accepts, while
+success after D cannot revive rejection. Accept/reject are absorbing
+product control, with no pending action/accumulator synthesized.
+
+At t=D a pending state SHALL NOT reject merely because its clock reached D:
+all admissible discrete steps at that timestamp remain available. If no
+admissible discrete step can meet the event before the horizon passes,
+TA-6 replay/closure must re-enumerate guards, urgency and time invariants,
+then close pending as reject. A quiescent terminal idle tail (TS-5) has no
+new predicate positions; an unsatisfied event closes reject and a satisfied
+one remains accept. A time-lock follows ADR-026 TD-2's separate item rather
+than inventing a delay edge or a false-extension letter. TA-5 zero-delay
+cycle refusal remains required. These timed moves do not use FR-338's
+counted event-position counters. Unsupported TT-2 shapes still refuse;
+this alternative admits no additional timed formula.
 
 At model position zero, a measure is inactive unless A holds; when A
 holds it is active, or complete with magnitude zero when B also holds.
@@ -222,7 +292,12 @@ Unweighted counts satisfy `0<=true_count<=position_count<=h+1`; weighted
 sums satisfy `0<=true_sum<=total_sum`. Imported violations refuse.
 
 `pending` is null at an ordinary model-position state, otherwise exactly
-`["drawn",schedule,random]`. `schedule` is
+`["drawn",schedule,random]` for a discrete draw at the current model state.
+For a residual post-state choice following a timed race whose winning
+delay has not yet been applied, the closed alternative is
+`["drawn-timed",schedule,random,k]`, with k the exact nonnegative scaled
+winning delay. This retains information needed to apply that actual race
+outcome; it is not a guessed delay or another random parameter. `schedule` is
 `[operation,receiver,arguments]`: operation is its existing WireNodeId
 in FR-322's exact NodeId object shape; receiver is the FR-181 reference
 triple object for its actual ObjectKey; arguments are its non-random
@@ -252,7 +327,12 @@ unchanged after the draw and before scheduler selection. Its schedule
 must be enabled there, its argument and random vector arities/types must
 match the checked operation, and that draw must have multiple actual
 post-states under SCH-2. The subsequent selected post-state advances
-model-position control and accumulated reward exactly once. The checker
+model-position control and accumulated reward exactly once. A drawn-timed
+resolution first applies its k delay units (including deadline crossing),
+then its discrete reset/data/predicate update once; ordinary drawn applies
+no extra delay. Admission re-enumerates the actual conditioned race outcome
+and its probability, winning identity/delay and admissible post-states.
+Neither kind permits a delay/reset/letter advance at the intermediate. The checker
 re-enumerates this relation; a provider cannot create a pending key
 merely by supplying a well-formed tuple. Distinct receiver, operation,
 non-random argument, random position/value or actual None/pending pair
@@ -292,6 +372,43 @@ JSON values, not an additional JSON/base64 string layer.
 | repeated model key | Changing only formula remaining horizon, activation, exact sum, phase or pending receiver changes P's octets; reversing graph discovery order changes none. |
 | typed draw identity | Positive and negative IEEE zero bits differ; two NaN payloads differ; option None differs from a present value; a reference with another universe differs even with the same object identity bytes. |
 
+Timed vectors use ADR-028 §15.5's actual checked Retx/Deadline context.
+Let S be its complete non-clock state with delivered false, U its actual
+ms UnitId, and I the resolved Msg::x clock identity for object m; these
+three existing semantic leaves are rederived, never invented digests.
+The **entire digital model body**, in its specified array order, is
+`["digital",S,U,"1",[[I,"0","3"]],["deadline","4","0"]]`
+initially and
+`["digital",S,U,"1",[[I,"1","3"]],["deadline","4","1"]]`
+after one unit delay. The independent expected numeric/string octets are
+`"1"`, clock cap `"3"` and deadline D `"4"`; S,U,I must be substituted as
+parsed canonical values, with no additional string/base64 layer. Cap 3 is
+TA-3's largest comparison 2 plus one; undelivered reachable valuations
+remain <=2 by the invariant. Arbitrary cap 2 is refused even though that
+projection covers those reachable valuations.
+
+At elapsed 2 after a losing send, the body is
+`["digital",S,U,"1",[[I,"0","3"]],["deadline","4","2"]]`
+and the monitor remains `["deadline","eventually","pending"]`.
+Two keys differing only in x=0 versus x=1, or t=2 versus t=3, differ;
+reversing object-clock discovery order normalizes to identical bytes.
+A successful send at t=4 has monitor `["deadline","eventually","accept"]`;
+a losing send at t=4 stays pending while same-time admissible moves are
+considered, then closes reject when no such success is possible. A unit
+delay from t=4 yields t=5 and `["deadline","eventually","reject"]`, even
+if a subsequent send succeeds. Two discrete steps at t=2 leave the deadline
+clock 2; two unit delays with no discrete step advance it to 4 without
+creating predicate letters. An until deadline with A false/B false rejects
+at its discrete position even before D; B true at D accepts regardless of A.
+A residual race with winning delay 2 retains
+`["drawn-timed",schedule,random,"2"]`, differs from winning delay 1 and
+ordinary drawn, and applies clocks/deadline/reset exactly once on resolution.
+Adverse inputs include missing/reordered/duplicate clock identities, reset
+of the deadline, wrong scale/cap, timed monitor local index, absent deadline
+for Deadline, an event-position formula wrapper for timed Deadline and
+acceptance justified only by a post-D predicate. Terminal closure and a
+resource stop must preserve the same complete digital form.
+
 These vectors prescribe prospective qualification, not implementation PASS.
 All four components must be round-tripped by each consumer, including
 rejection loci, with no model-only shortcut.
@@ -312,7 +429,9 @@ rejection loci, with no model-only shortcut.
 - For a bounded event, the product SHALL pair each model state with the
   state of FR-126's deterministic monitor for the formula, read at model
   states only, never at intermediate states, with FR-126's closure at
-  terminal model states. Accepting and rejecting monitor states SHALL be
+  terminal model states. Timed deadlines SHALL instead use the closed
+  digital model and deadline control/advance/closure defined above, through
+  FR-204. Accepting and rejecting monitor states SHALL be
   absorbing decided states.
 - For a bounded measure, the product key SHALL retain the complete
   canonical monitor and accumulator above, with its actual activation,
@@ -347,7 +466,7 @@ rejection loci, with no model-only shortcut.
 | FR-196-AC-6 | Every worked vector produces the specified canonical component and full P octets; changing any present component changes identity where specified, and reversing discovery order changes none. Certificate values, ranks, policy, bias and rejection retain the same complete representation. | Test |
 | FR-196-AC-7 | Steps/reward above-bound values normalize uniquely while equality, unactivation, active zero, completion and censoring remain distinct; both exact weighted sums remain distinct for pairs (1,2)/(2,4) and their subsequent ratios are 2/3 and 3/5. | Test |
 | FR-196-AC-8 | Pending identity retains the actual operation node, receiver, non-random arguments and drawn vector in declared order; the empty drawn vector differs from None, and no monitor/accumulator advance occurs at the intermediate. | Test |
-| FR-196-AC-9 | Every listed admission negative refuses before certificate membership; exact-only forms retain actual None, timed model keys retain all digital clocks and deadline facts, and a budget stop produces no default/truncated product key. | Analysis |
+| FR-196-AC-9 | Every listed admission negative refuses before certificate membership; exact-only forms retain actual None, timed model keys retain all digital clocks and deadline facts, and a budget stop produces no default/truncated product key. | Test |
 
 ## Dependencies
 

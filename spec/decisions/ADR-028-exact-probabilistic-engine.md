@@ -546,6 +546,17 @@ unique representation and is superseded by the single above-bound tag.
 XF-3's exact weighted sums are retained separately: pairs (1,2) and (2,4)
 cannot coalesce before a later weighted contribution, despite equal
 current ratios. Censoring, activation and horizon/phase remain explicit.
+TA-3/TA-4 and SCH-2 additionally use FR-196's explicit new closed
+digital-model array: complete non-clock state, actual time unit, least
+common-denominator scale, object/field clock identities and checked
+values/caps, plus the actual optional non-resetting deadline. Timed
+deadline control reads initial/discrete letters and advances elapsed time
+on delay edges, preserving same-timestamp steps and the inclusive bound.
+A pending residual timed race retains its winning scaled delay until
+resolution, applying the delay and discrete step once. Decided formula
+monitors have no fabricated remaining horizon; undecided event-position
+monitors retain it. This specifies representation absent from the former
+TA-3/TA-4 prose, without changing their admitted timed forms.
 The change authors identity and prospective vectors; it claims no
 translator, exact provider or strict-reader qualification.
 
