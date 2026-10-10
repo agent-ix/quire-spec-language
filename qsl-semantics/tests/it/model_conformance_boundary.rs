@@ -369,6 +369,8 @@ fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins(
         (key("Count"), baseline["types"][2]["origin"].clone()),
         (key("A/x"), baseline["types"][0]["fields"][0]["origin"].clone()),
         (key("A/set"), baseline["types"][0]["operations"][0]["origin"].clone()),
+        (key("Count/constraints/min"), baseline["types"][2]["constraints"][0]["origin"].clone()),
+        (key("Count/constraints/max"), baseline["types"][2]["constraints"][1]["origin"].clone()),
     ].into_iter().collect();
     let mut baseline_ids = None;
     let mut baseline_view = None;
@@ -406,7 +408,7 @@ fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins(
         let mut offered = BTreeMap::new();
         for ty in input["types"].as_array().expect("types") {
             let mut nodes = vec![ty];
-            for collection in ["fields", "operations"] {
+            for collection in ["fields", "operations", "constraints"] {
                 if let Some(entries) = ty.get(collection).and_then(Value::as_array) { nodes.extend(entries); }
             }
             for node in nodes {
@@ -415,6 +417,12 @@ fn original_inventory_retains_scalar_and_exact_per_key_source_generated_origins(
             }
         }
         assert_eq!(retained, offered, "actual origin retention vector {row}");
+        let count = input["types"].as_array().expect("types").iter()
+            .find(|node| node["identity"] == identity("Count")).expect("original scalar");
+        for (position, keyword) in ["min", "max"].into_iter().enumerate() {
+            assert_eq!(selection.original_node(&key(&format!("Count/constraints/{keyword}"))),
+                Some(&count["constraints"][position]), "exact original constraint node, row={row}");
+        }
         if row < 3 { assert_eq!(retained, expected); } else { assert_ne!(retained, expected, "origin mutant {row}"); }
         let entries = selection.view.declarations();
         let effective_originals: BTreeSet<_> = entries.iter().map(|entry| entry.preimage.original.clone()).collect();
