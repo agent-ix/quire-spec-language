@@ -235,7 +235,7 @@ successful prefix, never a fictitious limit.
 | --- | --- | --- |
 | Witness preflight | Reading one witness node's discriminant and validating its local shape/arity | Before resolving its declared type or visiting children; first invalid node stops all later work |
 | Descriptor inspection | Reading one declaration header, member descriptor or field/position descriptor from the selected package | Header before selected member/positions; positions in declaration order; each actual descriptor read counts, even if repeated |
-| Runtime type resolution | Examining one type-expression node or following one named-type declaration edge to determine the expected kernel type | Iterative declared child order; each examined node/edge counts once for that resolution, including a cache hit's lookup edge; an unvisited branch spends nothing |
+| Runtime type resolution | One actual runtime-type resolution helper invocation | Count the logical invocation once, including a cache hit; independently bounded type/link/registry inputs constrain its internal work under FR-277, without invented internal hooks |
 | Witness materialization | Constructing one converted kernel node after its children | Postorder; no semantic evaluation charge; the same completed node counts once in the separate per-argument C counter |
 
 Retrieving a descriptor is a descriptor event, not a second runtime-type
@@ -244,9 +244,9 @@ from it is a separate actual step. Membership checks and structural type
 comparison SHALL be owned only by the admission budget; conversion SHALL
 not recount them as resolution. Nonconstant subordinate walks (including
 leaf text/numeric validation, equality/deduplication and reference walks)
-SHALL use an explicitly bounded shared helper with its specified elementary
-events and the single budget of its owner. They SHALL NOT hide an unbounded
-walk inside one event. Their event contract SHALL be agreed with the shared
+SHALL use the logical helper events and independently bounded helper inputs
+of FR-277, with one budget owner. They SHALL NOT claim that one outer
+event bounds an unbounded internal walk. Their input/event contract SHALL be agreed with the shared
 helper owner before this contract is frozen; QSL prescribes no missing
 union descriptor signature. Semantic conversion-node counting SHALL remain
 one per converted node, independently of all such helper events.

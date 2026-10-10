@@ -89,8 +89,9 @@ Publishing or freezing this draft's review commit does not settle those gates.
   `admission_work_units` and `conversion_work_units` fields on its public
   checked-call/replay limits where the phase applies. Their units are the
   supplied-membership and conversion-helper events below, independently of
-  whatever evaluation limit the caller chooses. Each proposed default
-  hypothesis is 262,144 units. The count basis and confirmation status below
+  whatever evaluation limit the caller chooses. Proposed default hypotheses
+  are 262,144 admission units and 524,288 conversion units. The count basis
+  and confirmation status below
   are explicit; neither default is computed from a caller's evaluation
   allowance, an existing expression/declaration-work default, or a runtime
   measured count. They SHALL permit the unchanged full TC-830/831/906 Tree
@@ -183,10 +184,16 @@ bounds remain their existing B-2 `ScalarLimits` fields.
 | Counter | Proposed fixed default hypothesis | Planning basis, not measured work | Planned headroom |
 | --- | --- | --- | --- |
 | Supplied admission helper units | 262,144 | Research predicts 69,997 membership events for the unchanged full Tree; conservatively allow two such passes if conversion membership and final call admission both actually run | 192,147 above one predicted pass; 122,150 above two (139,994), about 87% above the two-pass planning total |
-| Replay conversion helper units | 262,144 | Research predicts 129,994 events for the whole converter, including descriptor and final membership work; use this unsplit total conservatively for planning the QSL-owned conversion subset | 132,150 above that planning total, about 102% above it |
+| Replay conversion helper units | 524,288 | Research predicts 129,994 events for the whole converter; QSV's additional hypothetical 32D+128 schedule at D=10,000 gives 320,128, not a proved event bound | 394,294 above the research prediction; 204,160 above the hypothetical schedule (about 64%) |
 
 These fixed powers of two are chosen from the supplied-fixture research
 scale with explicit room for the still-reviewed helper/event boundary.
+The corresponding hypothetical admission schedule 16D+64 gives 160,064
+at D=10,000, leaving 102,080 units (about 64%) below 262,144. These formulas
+are planning hypotheses, not source-proven upper bounds or default
+recommendations from QSV. The released trusted boundary and original
+QSL-503 fixture must determine the approved schedule; TC-817's different
+Leaf/Node-with-two-Options fixture SHALL NOT substitute for it.
 They are new independently configurable pre-call defaults, not an increase
 to the evaluator's allowance. The 39,997 evaluator prediction justifies
 neither helper default and remains subject to the fixed TC-831 trace
@@ -200,7 +207,7 @@ default adequacy remains outstanding. Exact/one-less acceptance uses actual
 approved event sequences A and H, not these predictions. The full unchanged
 fixture's default success is required independently of this planning rationale.
 That check is falsifiable: failure of the approved event trace to fit either
-262,144 hypothesis, failure to reach evaluation at 39,996/39,997, or failure
+262,144/524,288 hypotheses, failure to reach evaluation at 39,996/39,997, or failure
 of the unchanged fixture under proposed defaults refutes the proposal.
 
 Normative-settlement gates: peer confirmation of the proposed defaults,
@@ -255,7 +262,9 @@ charge point, drop phase information or privately extend QSpec's envelope.
 
 ### Logical events and bounded subordinate work
 
-Each following actual step SHALL cost one unit in the owning helper budget.
+The selected proposal is logical events plus independently bounded helper
+inputs. Each following actual logical step SHALL cost one unit in the owning
+helper budget; it is not a measurement of internal limb/key comparisons.
 This table assigns QSL integration ownership; QSV's supplied-membership
 event ordering, trusted-value boundary and union baseline remain its
 reviewed FR-109 contract. It SHALL NOT prescribe a nonexistent union API.
@@ -264,52 +273,57 @@ reviewed FR-109 contract. It SHALL NOT prescribe a nonexistent union API.
 | --- | --- | --- |
 | Expected-type entry / actual-type comparison | Admission: one entry for the expected type, or one comparison of the expected/actual type pair at that site, not both for the same check | Iterative structural child pairs count when compared; a trusted nested value has no invented descendant checks |
 | Runtime value visit | Admission: one per occurrence actually inspected by the membership contract | Stop at the first invalid occurrence in the specified order; no event for an unvisited descendant |
-| Type link / declaration lookup | Conversion when resolving a witness's runtime type; admission when resolving membership types: one per actual link followed or lookup attempted | A cache hit still spends its logical lookup unit; no second descriptor debit for that same read |
-| Enum rank scan | Budget of the invoking conversion/admission helper: one per candidate rank/member compared | Cache hit spends lookup; a skipped scan has no invented scan units |
-| Numeric range helper | Budget of the invoking conversion/admission helper: one per elementary digit/limb comparison or arithmetic step, in the shared helper's reviewed order | Variable-size work cannot hide behind one logical comparison |
-| Declaration-map / ancestor search | Budget of the invoking helper: one per actual key comparison or binary-search comparison, alongside the distinct logical lookup | Admitted declaration size bounds storage/search domain; it is not a free-work allowance or a seed for any counter |
+| Type resolution / declaration lookup | Conversion for witness runtime-type resolution; admission for membership types: one per actual resolution or lookup invocation | Cache hits spend the logical lookup unit; internal links/search comparisons are bounded by the independent type/registry input contract, not fabricated extra events |
+| Enum membership/rank lookup | Budget of the invoking phase: one per actual enum membership/rank helper invocation | Member inventory and key sizes must satisfy the independent input bound; skipped calls have no invented work |
+| Numeric range membership | Budget of the invoking phase: one per actual numeric membership helper invocation | All operand/domain/scale sizes must fit independent finite bounds; this event claims no per-limb hook |
+| Declaration-map / ancestor search | Budget of the invoking phase: one per actual public lookup/search invocation | Entry/key/ancestor sizes must fit independently bounded admitted inputs; do not separately debit a lookup already counted in type resolution |
 | Scheduling / reservation | Included in the event being scheduled, with fallible reservation before mutation | No extra scheduling debit; failed reservation retains the measured storage/capacity cause |
 
-One performed comparison or lookup SHALL appear once, in the explicit
-owner budget passed to its shared helper. Repeating an actual operation
+One performed logical comparison or lookup SHALL appear once, in its
+explicit owner budget. A facade/helper delegation that reaches the same
+lookup is one event, not a facade event plus a helper event. Repeating an actual operation
 counts a new event; returning an already computed result cannot trigger a
 fabricated second visit. Successful helper spend SHALL not reset on a
-cache hit, helper return or argument boundary. Cancellation SHALL be polled
-before every elementary step, including uncached link walks and scans.
-Before freeze, shared helper contracts SHALL establish the deterministic
-ordering and bound for these variable-size steps against admitted type,
-declaration and numeric sizes. The public ceiling SHALL remain a caller
+cache hit, helper return or argument boundary. Original Cancel SHALL be
+polled before each scheduled logical step and after an invoked helper
+returns, before any subsequent mutation or event. This promises no callback
+inside an unhooked helper and no wall-clock cancellation latency. The public ceiling SHALL remain a caller
 choice, never a derived multiplier of those sizes or the evaluation bound.
 
-### Unsatisfied helper API enabling contract
+### Selected independently bounded helper-input contract
 
-The granular numeric/search rows above are proposed enabling requirements,
-not descriptions of released helper capabilities. Released kernel Boolean
+Released kernel Boolean
 numeric membership and QSV declaration-map/ancestor search expose no
-per-limb/per-comparison WorkBudget or original-Cancel hooks. One outer event
-around those calls SHALL NOT be presented as bounding or cancelling their
-internal work. QSL SHALL NOT copy their algorithms or extend private
+per-limb/per-comparison WorkBudget or original-Cancel hooks. Their logical
+event limits bound invocation counts only. The separate helper-input contract
+must establish a finite bound on each invocation's internal work before the
+logical schedule can claim bounded traversal. QSL SHALL NOT copy their algorithms or extend private
 declaration budgets to manufacture those hooks.
 
-The proposed feasible ownership boundary is an owner-provided public
-bounded helper contract: the kernel owner defines numeric/range work units
-and failure/cancellation boundaries; QSV owns supplied membership,
-declaration lookup and ancestor search. Each helper receives the explicit
-budget of the invoking admission/conversion phase and the original Cancel,
-preserves its existing semantic result and trusted-value boundary, and
-returns its actual successful work and typed denied step or original
-storage/capacity/cancellation cause. QSL owns delegation and phase projection,
-not a duplicate implementation. No helper operation spends two owner budgets.
+| Helper input | Required independent bound and source proof | Owner boundary |
+| --- | --- | --- |
+| Numeric membership | Finite stored numeric size for every value and domain endpoint, and finite scale/exponent inputs; prove the released operation terminates with work bounded by those sizes | QSV identifies the actual kernel operation and public/admitted size access; kernel owns semantics, QSL supplies the invoking phase context |
+| Enum / registry / ancestor search | Finite admitted member/declaration/ancestor entry counts and key-content sizes; connect actual immutable environment sizes to its effective caller-configured admission/byte limits | QSV registry and membership contract, after IR-713; no guessed descriptor/signature |
+| Type resolution / structural comparison | Finite reachable type-node/link counts and bounded scalar/key content, with source-proven cycle/termination behavior; no type nesting-depth ceiling | QSV's existing admitted-type boundary; QSL conversion owns its actual descriptor/materialization invocations |
+| Witness helper inputs | Finite replay encoded bytes and complete semantic occurrence/node counts; subordinate numeric/type/registry helpers additionally satisfy the rows above | QSL FR-098/263 and QSV's helper-input contract; occurrence/node limits alone do not bound an arbitrarily large numeric leaf |
 
-Common review must choose between that enabling API contract and a revised
-logical-event contract with independently bounded helper inputs. The latter
-must name the actual published numeric-size/declaration-entry/content bounds
-and prove they bound each uncancellable internal operation; admitted-size
-language alone is insufficient, and new guessed caps are not allowed.
-Neither choice is established by the released source. Until the common
-choice and its owner contract are reviewed, the granular rows do not claim
-available caller hooks, bounded cancellation latency or an operating norm.
+These bounds must identify the actual existing published limits fields or
+an explicitly owned helper-input amendment, their effective finite values,
+and a bounded way to establish the input sizes before the unhooked operation.
+A claim that inputs are merely admitted is not that proof. Replay's byte
+limit alone is not proof about a direct caller's kernel values. Missing
+size access/bounds or an unproved terminating type chain remains an explicit
+source gate; no implicit unbounded input or free cached work is allowed.
 
+QSV must establish a finite work function for each bounded helper input.
+Then a finite number of admitted logical invocations, each on independently
+bounded inputs, bounds total helper work without pretending to count its
+internal comparisons. This reasoning is a proposal, not an established
+released-source proof or a request for a new kernel API. If QSV's source
+proof cannot establish it, main SHALL route the precise bounded-helper API
+gap to Luna's IR plan and preserve the QSL-503 blocking edge. It SHALL NOT
+implement a copied helper or silently change event units. Draft publication
+and independent review may proceed while that enabling gap is unresolved.
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |

@@ -81,6 +81,15 @@ Requests are built from the unit's spine compile, as in TC-444.
    typed payload with the independent next-event sequence. Include a
    logical cache-hit lookup and an admitted nested value to detect a free
    lookup or unauthorized descendant revalidation.
+8. For numeric membership, enum/registry/ancestor lookup and type resolution,
+   bind each logical helper invocation to FR-277's independent input-size
+   contract. Inspect the actual published size fields/effective bounds and
+   source-backed termination/work proof. A replay byte ceiling alone must
+   not qualify direct kernel inputs. Test exact/one-less supported input
+   bounds separately from A/H; cancellation before entry and on helper
+   return must preserve the original cause. Do not claim an internal
+   per-limb/comparison callback that the helper does not expose. A missing
+   size/termination proof is an explicit shared source gate, not a pass.
 
 Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and
@@ -120,10 +129,17 @@ Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
   denied work remains unspent. Wrong next-event metadata, cancellation as a
   limit, storage as a limit, fresh Cancel, fake FunctionCall or cache bypass
   fails the control.
+- Step 8: finite invocation count plus independently bounded helper inputs
+  establishes bounded work only when the owner's source proof is available.
+  No unbounded numeric leaf, type-link cycle, registry key or member scan
+  may hide behind a logical event. If the proof fails, record the exact
+  owning IR helper-contract gap and preserve QSL-503's blocking edge; the
+  draft and its review remain a proposal. No copied helper or fake outer
+  work/cancellation claim is accepted.
 
 ## Status
 
 Passed locally, `qsl-replay/src/execute/tests/composite.rs`, except the union cases
 (pending QSL-503) and a quantity-typed parameter in source (pending STD-113).
-This historical status does not cover QSL-681 steps 5-7: those controls are
+This historical status does not cover QSL-681 steps 5-8: those controls are
 proposed and unexecuted, pending shared event, union and wire alignment.
