@@ -721,7 +721,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
             if fault.stage() == "S6a" && fault.invariant() == "checked-program-invariant"
     ));
 
-    for cause in qsl_semantics::check::family::fixtures::received_kernel_causes() {
+    for cause in qsl_semantics::check::received_kernel_causes() {
         let err = convert(FamilyOutcome::Evaluated(Outcome::Refused(
             Refusal::CheckedInvariant { cause },
         )))

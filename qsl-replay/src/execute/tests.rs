@@ -1623,7 +1623,7 @@ fn a_call_fault_settles_as_a_replay_fault_not_a_refusal() {
 #[test]
 #[trace("TC-918", "FR-096-AC-19")]
 fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
-    for cause in qsl_semantics::check::family::fixtures::received_kernel_causes() {
+    for cause in qsl_semantics::check::received_kernel_causes() {
         let scalar = crate::scalar::evaluated(quire_exact::Outcome::Refused(
             quire_exact::Refusal::CheckedInvariant { cause },
         ));
