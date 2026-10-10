@@ -27,7 +27,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::model_operations::{
-    add_sub_type, admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
+    admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
     attempt_update_modifies_version_and_parent, attempt_update_modifies_version_number,
     config_unit_with_body, config_version_document, config_version_document_with_operations,
     config_version_document_with_population, empty_frame, frame_test_document, operation,
@@ -39,7 +39,7 @@ use crate::model_operations::{
     tc465_document_with_frame_modifies_parent_only, tc465_document_with_note_type,
     tc465_document_with_set_field, tc465_document_with_sub_redefining_version_number,
     tc465_document_with_sub_subtype, tc465_document_with_tag_type_sharing_a_field_name,
-    version_number_bound, with_archive_population, with_unrelated_population, FRAME_CLAUSES,
+    version_number_bound, with_unrelated_population, FRAME_CLAUSES,
     TC465_CLAUSES,
 };
 use serde_json::json;
