@@ -57,6 +57,13 @@ pub(super) fn config_version_unit() -> Unit {
     unit_for(unit, config_version_domain_document())
 }
 
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_frame_source_variants_keep_format_identity() {
+    let _ = config_version_unit();
+    let _ = parent_modifying_unit();
+}
+
 /// The ConfigVersion domain package with `attemptUpdate`'s frame also
 /// modifying `parent`.
 fn parent_modifying_unit() -> Unit {

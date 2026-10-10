@@ -754,82 +754,14 @@ mod tests {
         CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, Scope, Signatures,
     };
     use super::{CheckedProtocol, ProtocolAnchorCause, ProtocolNodeId, ShadowedDeclaration};
-    use crate::model::accounting::ModelNormalizationLimits;
-    use crate::model::domain_package::{
-        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-        OperationMemberRecord,
-    };
-    use crate::model::intake::SelectedModel;
-    use crate::model::key::DeclarationKey;
-    use crate::model::normalize::{normalize, NormalizeOutcome};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::TypeEnvironment;
 
-    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
-        model M = \"example/protocol-fixture\" version \"1\" digest \
-        \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
-
-    /// `M::Actor` and its own `op` and `other` operations (no parameters,
-    /// no result, an empty frame), normalized to a [`SelectedModel`] aliased `M` --
-    /// the FR-114 fixture, so every `attempt ... on M::Actor::op` this
-    /// module's fixtures already write (FR-114's own assembler resolution,
-    /// which now runs for every protocol) resolves rather than refusing at
-    /// assembly. This module's FR-113 tests still exercise anchor
-    /// resolution and binder shadowing only; FR-114 touches neither.
-    fn m_actor_model() -> SelectedModel {
-        let key = |name: &str| DeclarationKey {
-            package: "example/protocol-fixture".to_owned(),
-            node: format!("ix://example/protocol-fixture/{name}"),
-        };
-        let package = DomainPackage::new(
-            DomainPackageRef {
-                identity: "example/protocol-fixture".to_owned(),
-                version: "1".to_owned(),
-                digest: [0_u8; 32],
-            },
-            vec![
-                DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                    key: key("Actor"),
-                    interface_features: None,
-                    abstract_type: false,
-                    supertypes: Vec::new(),
-                }),
-                DomainPackageRecord::OperationMember(OperationMemberRecord {
-                    key: key("Actor/op"),
-                    owner: key("Actor"),
-                    parameters: Vec::new(),
-                    result: None,
-                    effect: OperationEffect::default(),
-                    own_postcondition_clauses: Vec::new(),
-                    has_body: false,
-                    redefines: None,
-                }),
-                // A second operation, so FR-114-AC-3's "a `pre` clause of a
-                // different operation" case has one to anchor at.
-                DomainPackageRecord::OperationMember(OperationMemberRecord {
-                    key: key("Actor/other"),
-                    owner: key("Actor"),
-                    parameters: Vec::new(),
-                    result: None,
-                    effect: OperationEffect::default(),
-                    own_postcondition_clauses: Vec::new(),
-                    has_body: false,
-                    redefines: None,
-                }),
-            ],
-        );
-        let NormalizeOutcome::Completed(view) =
-            normalize(&package, ModelNormalizationLimits::UNLIMITED)
-        else {
-            panic!("the M::Actor fixture normalizes");
-        };
-        SelectedModel {
-            alias: "M".to_owned(),
-            span: qsl_foundation::Span { start: 0, end: 0 },
-            view,
-        }
+    mod attempt_fixture {
+        use crate as semantics;
+        include!("../../tests/fixtures/protocol_attempt.rs");
     }
+    use attempt_fixture::{attempt_flow, m_actor_model, shared_binder_protocols, HEADER};
 
     /// S1, S2 and the assembler over `declarations`, against
     /// [`m_actor_model`]'s own `M::Actor::op`: FR-113's checker
@@ -922,22 +854,6 @@ mod tests {
             .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
     }
 
-    /// A protocol `name` made only of parts the checker covers in
-    /// full (`super::content`): one role, a `run sequence` holding one
-    /// `attempt` of `M::Actor::op` with `contracts [contracts]`, and a
-    /// `finish`, every body the bare literal `true`.
-    fn attempt_flow(name: &str, contracts: &str) -> String {
-        format!(
-            "protocol {name} using v over (input: Boolean) on origin {{\n\
-             role R on M::Actor;\n\
-             run sequence Main {{\n\
-             attempt Tried by R on M::Actor::op contracts [{contracts}] \
-             as (tried: Boolean) {{ true }};\n\
-             }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}"
-        )
-    }
 
     /// S1, S2 and the assembler over `declarations` (against
     /// [`m_actor_model`]), expecting the assembler to refuse.
@@ -2160,13 +2076,7 @@ mod tests {
     #[trace("TC-512", "FR-113-AC-5")]
     #[test]
     fn two_protocols_sharing_an_ordinary_binder_name_both_check() {
-        let first =
-            attempt_flow("First", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
-        let second =
-            attempt_flow("Second", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
-        let combined = format!("{first}\n{second}");
-        // Both protocols are made only of fully checked parts, so
-        // the whole package checks: neither refuses `Shadow`.
+        let combined = shared_binder_protocols();
         let checked = checks(&combined);
         let names: Vec<&str> = checked
             .protocols()
