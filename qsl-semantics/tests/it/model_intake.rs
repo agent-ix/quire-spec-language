@@ -479,7 +479,7 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     };
     let count = key(package_identity, "ix://agent-ix/architecture/Count");
     assert!(records.contains(&DomainPackageRecord::RecordValueType(
-        RecordValueTypeRecord { key: count.clone() }
+        RecordValueTypeRecord { key: count.clone(), supertypes: Vec::new() }
     )));
     let field = |node: &str| {
         records
