@@ -237,9 +237,9 @@ fn k2() -> Value {
                                field(p, "Order", "total", &identity(p, "Money"))],
                 }),
             ),
-            // Retain the declared Timestamp binding. The upstream wire's closed
-            // scalar vocabulary must be aligned before this fixture can admit.
-            definition(p, "Instant", "value", json!({"scalar": "Timestamp"})),
+            // The IR scalar tag datetime retains the declared native Timestamp
+            // binding; its wire spelling is distinct from the native type name.
+            definition(p, "Instant", "value", json!({"scalar": "datetime"})),
             definition(
                 p,
                 "Money",
