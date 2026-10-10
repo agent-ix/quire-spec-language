@@ -658,3 +658,84 @@ pub(super) fn malformed_numeric_domain() {
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause, ModelRefusalCause::MalformedDeclaration);
 }
+
+
+/// Same displayed member/operation names in another genuine selection
+/// cannot donate checked facts to this selection's exposed writer.
+pub(super) fn cross_selection_refinement_decoy(row: usize) {
+    use qsl_semantics::check::{CheckCause, PackageDeclarations, RefinementObligation};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::admit_unit;
+    use qsl_semantics::model::key::{hex, DeclarationKey};
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    use crate::model_operations::{package_input, parse_and_build};
+
+    let numeric = row == 0;
+    let bytes = document(|template| vec![scalar(template, "Count", 9), scalar(template, "Small", 5),
+        object("A", None, vec![field("A", "x", if numeric { "Count" } else { "A" },
+            if numeric { 1 } else { 0 }, Some(1), None)],
+            vec![writer("A", &["A/x"], None)]),
+        object("B", Some("A"), vec![field("B", "xb", if numeric { "Small" } else { "A" },
+            1, Some(1), Some("A/x"))], vec![])]);
+    let mut decoy: Value = serde_json::from_slice(&bytes).unwrap();
+    decoy["types"][3]["operations"] = json!([writer("B",
+        &[if row % 2 == 0 { "A/x" } else { "B/xb" }], Some("A/set"))]);
+    let mut proof_context = "B";
+    let mut proof_operation = "set";
+    let mut proof_field = "xb";
+    match row {
+        3 => {
+            decoy["types"][3]["operations"][0]["identity"] = json!(identity("B/write"));
+            decoy["types"][3]["operations"][0]["name"] = json!("write");
+            proof_operation = "write";
+        }
+        4 => {
+            // A same-named operation on an unrelated owner is checked too;
+            // it is not a member of either B writer's lineage.
+            decoy["types"].as_array_mut().unwrap().push(object("C", None,
+                vec![field("C", "x", "A", 0, Some(1), None)],
+                vec![writer("C", &["C/x"], None)]));
+        }
+        5 => { proof_context = "A"; proof_field = "x"; }
+        6 => {
+            decoy["types"][3]["fields"][0]["identity"] = json!(identity("B/yn"));
+            decoy["types"][3]["fields"][0]["name"] = json!("yn");
+            proof_field = "yn";
+        }
+        _ => {},
+    }
+    let decoy = serde_json::to_vec(&decoy).unwrap();
+    let decoy = String::from_utf8(decoy).unwrap().replace(PACKAGE, "example/other").into_bytes();
+    let first_digest = package_input([bytes.as_slice()]).into_keys().next().unwrap();
+    let other_digest = package_input([decoy.as_slice()]).into_keys().next().unwrap();
+    let packages = package_input([bytes.as_slice(), decoy.as_slice()]);
+    let proof = if numeric { format!("self.{proof_field} <= 5") }
+        else { format!("present(self.{proof_field})") };
+    for reverse in [false, true] {
+        let mut selections = vec![
+            format!("model Original = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";", hex(&first_digest)),
+            format!("model Decoy = \"example/other\" version \"1.0.0\" digest \"sha256-jcs:{}\";", hex(&other_digest)),
+        ];
+        if reverse { selections.reverse(); }
+        let unit = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{}\npost Proof using v on Decoy::{proof_context}::{proof_operation} {{ {proof} }}\n", selections.join("\n"));
+        let built = parse_and_build(&unit);
+        let selected = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits::UNLIMITED)
+            .expect("both actual model selections admit");
+        let raw = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "tc-196", "decoys", "1"),
+            "unit.native", unit.as_bytes(), qsl_cst::Limits::default()).unwrap();
+        let refused = PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, vec![])
+            .expect("model-owned refinement waits for genuine facts")
+            .check(CheckingLimits::default()).expect_err("other selection's postcondition cannot prove original's writer");
+        assert_eq!(refused.len(), 1, "the decoy's own proof succeeds");
+        let CheckCause::ModelConformance(failure) = &refused[0].cause else { panic!("{refused:?}"); };
+        let key = |path| DeclarationKey { package: PACKAGE.to_owned(), node: identity(path) };
+        assert_eq!(failure.member, key("B/xb"));
+        assert_eq!(failure.parent, key("A/x"));
+        assert_eq!(failure.writer, Some(key("A/set")));
+        assert_eq!(failure.obligation, Some(if numeric { RefinementObligation::Domain }
+            else { RefinementObligation::Presence }));
+        assert_eq!(failure.cause, ModelRefusalCause::UnprovedRefinement);
+        assert_eq!(failure.member_origin, Some(origin("B/xb")));
+        assert_eq!(failure.writer_origin, Some(origin("A/set")));
+    }
+}
