@@ -762,7 +762,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// Converts a stop to an `Evaluation`. A kernel `CheckedInvariant` is an
     /// S6a invariant break, an `InternalFault` and never a refusal record
-    /// (FR-096-AC-15, observed through
+    /// (FR-096-AC-19, observed through
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`]).
     fn stopped(stop: Stop, location: Option<&Location>) -> Result<Evaluation, InternalFault> {
         if let Stop::Refused(Refusal::CheckedInvariant { cause }) = stop {
