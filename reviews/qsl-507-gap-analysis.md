@@ -3,7 +3,7 @@ id: SR-2450
 title: "QSL-507 gap analysis of PR #669 (FR-325-AC-1 to AC-4, TC-835, QSpec FR-362 fairness grammar)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@282388e134159b7c4ee59feab69ccb4f10839048; PR #669 diff against origin/main (merge base b8981dc2); spec/functional/FR-325-parse-temporal-operators-with-an-optional-interval.md; spec/test-cases/TC-835-s2-parses-temporal-operators-with-an-optional-interval.md; context: spec/functional/FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md, spec/functional/FR-257-build-forms-at-any-depth.md, QSpec spec/functional/temporal/FR-362-apply-fairness-constraints.md (qspec-main-ro fbd6ea0f)"
+scope: "agent-ix/quire-spec-language app version 0.2.0; PR #669; gap-analysis; review pass and disposition passes 1 to 2; spec/functional/FR-325-parse-temporal-operators-with-an-optional-interval.md; spec/test-cases/TC-835-s2-parses-temporal-operators-with-an-optional-interval.md; context: spec/functional/FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md, spec/functional/FR-257-build-forms-at-any-depth.md, QSpec spec/functional/temporal/FR-362-apply-fairness-constraints.md (qspec-main-ro)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-325
@@ -81,7 +81,7 @@ literally. The silent S3 acceptance is recorded in SR-2449 FND-001.
 
 ## New findings (disposition pass 1)
 
-Reviewed at agent-ix/quire-spec-language@07631d03dcd2da522baaa2e6c9f3e57fc5995dc0 (fix commits 958a07c5b, b177f238a, 07631d03d). Computed matrix: `quoin matrix --json` (quoin 0.28.3, quire 0.36.2, engine 0.50.2) at this head. FR-325-AC-1 to AC-6 are each bound to exactly one value-asserting TC-835 test, except AC-2, which has two.
+Disposition pass 1, agent-ix/quire-spec-language app version 0.2.0, PR #669. Computed matrix: `quoin matrix --json` (quoin 0.28.3, quire 0.36.2, engine 0.50.2) for this pass. FR-325-AC-1 to AC-6 are each bound to exactly one value-asserting TC-835 test, except AC-2, which has two.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
@@ -89,12 +89,12 @@ Reviewed at agent-ix/quire-spec-language@07631d03dcd2da522baaa2e6c9f3e57fc5995dc
 
 ## Dispositions
 
-Disposition pass 1, reviewed at agent-ix/quire-spec-language@07631d03dcd2da522baaa2e6c9f3e57fc5995dc0.
+Disposition pass 1, agent-ix/quire-spec-language app version 0.2.0, PR #669.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 958a07c5b (spec), with 07631d03d (code and test): FR-325 "Outputs" now lists "its capture forms" as `CaptureForm{parameter, value, span}`. "Behavior" adds "S2 SHALL build one capture form per `capture`, in source order", and new FR-325-AC-6 and TC-835 step 6 cover it. S2 builds the form, and `captures_build_their_type_value_and_span_beside_an_unchanged_formula` is the AC-6 binder. |
-| FND-002 | fixed | 958a07c5b (spec), with 07631d03d (test): new FR-325-AC-5 states three fairness forms (kind, granularity, operation, span) in source order, and TC-835 step 5 covers it. `fairness_constraints_build_their_kind_granularity_operation_and_span` asserts all four fields for each of the three constraints, with the span sliced from the source. Who resolves an unwritten kind is a separate defect, recorded as SR-2451 FND-001. |
-| FND-003 | fixed | 958a07c5b: FR-325-AC-4 now reads "Two units that differ only in the selected profile identity ... padded so their headers have equal length and the clause starts at the same byte offset, build equal S2 forms for the clause, compared by `PartialEq` and by their `Debug` rendering". TC-835 step 4 matches. The test asserts the equal offset, `PartialEq` and `Debug` equality. |
+| FND-001 | fixed | Spec, code and test: FR-325 "Outputs" now lists "its capture forms" as `CaptureForm{parameter, value, span}`. "Behavior" adds "S2 SHALL build one capture form per `capture`, in source order", and new FR-325-AC-6 and TC-835 step 6 cover it. S2 builds the form, and `captures_build_their_type_value_and_span_beside_an_unchanged_formula` is the AC-6 binder. |
+| FND-002 | fixed | Spec and test: new FR-325-AC-5 states three fairness forms (kind, granularity, operation, span) in source order, and TC-835 step 5 covers it. `fairness_constraints_build_their_kind_granularity_operation_and_span` asserts all four fields for each of the three constraints, with the span sliced from the source. Who resolves an unwritten kind is a separate defect, recorded as SR-2451 FND-001. |
+| FND-003 | fixed | FR-325-AC-4 now reads "Two units that differ only in the selected profile identity ... padded so their headers have equal length and the clause starts at the same byte offset, build equal S2 forms for the clause, compared by `PartialEq` and by their `Debug` rendering". TC-835 step 4 matches. The test asserts the equal offset, `PartialEq` and `Debug` equality. |
 | FND-004 | still-open | New this round. The test is still traced to FR-091-AC-8, and no AC states the interim temporal refusal. |
-| FND-004 | fixed | f7c91f4dc (disposition pass 2, reviewed at f7c91f4dccac3f8c412570786ed79c7b2ff8958c): the `#[trace("FR-091-AC-8", "TC-396")]` attribute is removed from `each_temporal_clause_refuses_as_not_yet_implemented` (qsl-semantics/src/check/assemble/tests.rs:303-307). The test itself is kept unchanged, and still asserts both clauses' causes, spans, `UnsupportedConstruct` and `not-yet-implemented`. The test is now untraced, as the round-1 fix option allowed. It no longer inflates FR-091-AC-8's binders: those are back to the two FR-091-AC-8 tests. The repo has no rule requiring every test to carry a trace, and one other test in that file is untraced. QSL-508 deletes the refusal and this test together. |
+| FND-004 | fixed | Disposition pass 2: the `#[trace("FR-091-AC-8", "TC-396")]` attribute is removed from `each_temporal_clause_refuses_as_not_yet_implemented` (qsl-semantics/src/check/assemble/tests.rs:303-307). The test itself is kept unchanged, and still asserts both clauses' causes, spans, `UnsupportedConstruct` and `not-yet-implemented`. The test is now untraced, as the round-1 fix option allowed. It no longer inflates FR-091-AC-8's binders: those are back to the two FR-091-AC-8 tests. The repo has no rule requiring every test to carry a trace, and one other test in that file is untraced. QSL-508 deletes the refusal and this test together. |

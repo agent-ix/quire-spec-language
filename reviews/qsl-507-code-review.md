@@ -3,7 +3,7 @@ id: SR-2449
 title: "Code review of quire-spec-language PR #669: T1 temporal forms with an optional interval (QSL-507)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@282388e134159b7c4ee59feab69ccb4f10839048; PR #669 diff against origin/main (merge base b8981dc2): qsl-cst/src/cst.rs, qsl-cst/src/grammar.rs, qsl-cst/src/parser.rs, qsl-cst/src/token.rs, qsl-cst/tests/it/complete_grammar.rs, qsl-forms/src/dispatch.rs, qsl-forms/src/lib.rs, qsl-forms/src/syntax.rs, qsl-forms/src/temporal_clause.rs, qsl-forms/src/value.rs, qsl-forms/tests/it/main.rs, qsl-forms/tests/it/protocol_clause_forms.rs, qsl-forms/tests/it/temporal_clause_forms.rs, qsl-forms/tests/it/value_forms.rs, qsl-semantics/src/check/assemble.rs, qsl-semantics/src/check/check.rs, tests/fixtures/parser-differential/baseline.txt; context: tests/it/compile_command.rs, tests/it/parser_differential.rs, qsl-semantics/src/check/refusal.rs, qsl-semantics/src/check/protocol_clause.rs"
+scope: "agent-ix/quire-spec-language app version 0.2.0; PR #669; code-review with rust-review lane; review pass and disposition pass 1: qsl-cst/src/cst.rs, qsl-cst/src/grammar.rs, qsl-cst/src/parser.rs, qsl-cst/src/token.rs, qsl-cst/tests/it/complete_grammar.rs, qsl-forms/src/dispatch.rs, qsl-forms/src/lib.rs, qsl-forms/src/syntax.rs, qsl-forms/src/temporal_clause.rs, qsl-forms/src/value.rs, qsl-forms/tests/it/main.rs, qsl-forms/tests/it/protocol_clause_forms.rs, qsl-forms/tests/it/temporal_clause_forms.rs, qsl-forms/tests/it/value_forms.rs, qsl-semantics/src/check/assemble.rs, qsl-semantics/src/check/check.rs, tests/fixtures/parser-differential/baseline.txt; context: tests/it/compile_command.rs, tests/it/parser_differential.rs, qsl-semantics/src/check/refusal.rs, qsl-semantics/src/check/protocol_clause.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-325
@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-507. PR: quire-spec-language#669, head 282388e1, one review pass.
+Ticket: QSL-507. PR: quire-spec-language#669, app version 0.2.0, one review pass.
 The Rust lane (rust-review) is folded into this file. Reviewer-only: no
 builds were run (the build lock is busy). Each finding below was traced by
 reading the code, not by running it.
@@ -53,7 +53,7 @@ root first, operands queued so the leftmost one is mapped first), and for
 unary and binary operators with and without an interval. Each operator's
 `span` and `operator_span` are its own.
 
-**Reserved words and the bound.** QSpec FR-362 (qspec-main-ro fbd6ea0f) gives
+**Reserved words and the bound.** QSpec FR-362 (qspec-main-ro) gives
 the same `fairness` EBNF and says that `fair`, `weak`, `strong` and `whole`
 are reserved words of the temporal facet. Reserving them across the whole
 complete-edition vocabulary matches how this codebase already reserves the
@@ -63,7 +63,7 @@ repo uses one of the four words as an identifier. Neither do the five
 consumer repos (see the public API section below).
 
 **The `unexpected` arm at value.rs:1006.** The ticket was written against
-9647e5a8. At that commit, line 1006 of qsl-forms/src/value.rs is
+its original baseline. At that baseline, line 1006 of qsl-forms/src/value.rs is
 `| Production::TemporalClause`, inside the catch-all arm of the `Value`
 expression mapping (`Mapping::map`). That arm returns `Err(unexpected(node))`
 for every production that is not an expression. The mapping cannot meet a
@@ -103,13 +103,13 @@ also changes the rendering of mutated inputs with a bad bound. So may the new
 **Consumer grep.** Fresh `git fetch`, then
 `git grep origin/main -- '*.rs'` for `qsl_cst::`, `qsl_forms::`,
 `use qsl_cst`, `use qsl_forms`, `PackageDeclarations {`, every new or changed
-type name, `Production::` and `TokenKind::`. The SHAs grepped were:
+type name, `Production::` and `TokenKind::`. The repositories grepped were:
 
-- quire-integration 80431da1
-- quire-driver 5cddd5f6
-- quire-contract-codegen e5cbe075
-- quire-contract-ir 87737121
-- quire-protocol 8b1dc4ef
+- quire-integration
+- quire-driver
+- quire-contract-codegen
+- quire-contract-ir
+- quire-protocol
 
 The only QSL use is in quire-integration `tests/qsl_model_owner_admission.rs`,
 which calls `qsl_cst::parse`, `qsl_forms::build_unit` and
@@ -156,11 +156,11 @@ AC for them (see SR-2450). `IntervalForm.span` is also required by FR-325
 
 ## Dispositions
 
-Disposition pass 1, reviewed at agent-ix/quire-spec-language@07631d03dcd2da522baaa2e6c9f3e57fc5995dc0 (fix commits 958a07c5b, b177f238a, 07631d03d; branch rebased onto base b24dbda01 before this pass). Each outcome was checked against the code at that head, not against the PR body or ticket text. The Rust lane of the fix round is clean: no `unsafe`, `unwrap`, `expect` or panic in non-test code, and the new `capture_form` reuses the bounded `only`/`parameter_form`/`expression_form` helpers.
+Disposition pass 1, agent-ix/quire-spec-language app version 0.2.0, PR #669. Each outcome was checked against the code for that pass, not against the PR body or ticket text. The Rust lane of the fix round is clean: no `unsafe`, `unwrap`, `expect` or panic in non-test code, and the new `capture_form` reuses the bounded `only`/`parameter_form`/`expression_form` helpers.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | b177f238a: `Unit::new` turns each `DeclarationForm::Temporal` into `AssemblyError { cause: AssemblyCause::UnimplementedTemporalClause { name }, span }` at the declaration's full span (assemble.rs:575-580). `code()` gives `UnsupportedConstruct` and the catalog subcode is `not-yet-implemented` (assemble.rs:372, 443). `assemble` seeds `errors` with these refusals (assemble.rs:1289), and nothing can return before the unconditional `if !errors.is_empty() { return refuse(errors) }` at assemble.rs:1487, so a unit with a temporal clause always refuses. The field `PackageDeclarations::temporal_clauses` is deleted (check.rs). `each_temporal_clause_refuses_as_not_yet_implemented` pins two clauses, each at its own span, with the code and catalog code. qsl-replay's spine message has the matching arm. The test's trace tag is wrong, and that is recorded as SR-2450 FND-004. |
-| FND-002 | fixed | b177f238a: the TC-435 `forms`-stage case is now `synthesis Syn using v grammar M::G domain M::D satisfies { true };`. No family claims that spelling, so the case still refuses at `forms` with `unsupported_construct`, exit 21 (tests/it/compile_command.rs:572-578). |
-| FND-003 | fixed | 07631d03d: the capture refusal is gone. S2 now builds `CaptureForm { parameter, value, span }` for each capture, in source order (temporal_clause.rs:54-57, 86-93). `captures_build_their_type_value_and_span_beside_an_unchanged_formula` (FR-325-AC-6) asserts each capture's name, declared type, value span and own span, and that the formula is unchanged up to spans. A capture can no longer be dropped silently while the tests stay green. |
-| FND-004 | fixed | b177f238a: `tests/fixtures/parser-differential/baseline.txt` (300 lines), its comparing tests, its recorder and `make test-differential` are deleted. `tests/it/parser_differential.rs` keeps only the seeded generator check (TC-012), which asserts that each family yields both admitted and refused parses. No spec, plan or Makefile reference to the baseline remains. |
+| FND-001 | fixed | `Unit::new` turns each `DeclarationForm::Temporal` into `AssemblyError { cause: AssemblyCause::UnimplementedTemporalClause { name }, span }` at the declaration's full span (assemble.rs:575-580). `code()` gives `UnsupportedConstruct` and the catalog subcode is `not-yet-implemented` (assemble.rs:372, 443). `assemble` seeds `errors` with these refusals (assemble.rs:1289), and nothing can return before the unconditional `if !errors.is_empty() { return refuse(errors) }` at assemble.rs:1487, so a unit with a temporal clause always refuses. The field `PackageDeclarations::temporal_clauses` is deleted (check.rs). `each_temporal_clause_refuses_as_not_yet_implemented` pins two clauses, each at its own span, with the code and catalog code. qsl-replay's spine message has the matching arm. The test's trace tag is wrong, and that is recorded as SR-2450 FND-004. |
+| FND-002 | fixed | the TC-435 `forms`-stage case is now `synthesis Syn using v grammar M::G domain M::D satisfies { true };`. No family claims that spelling, so the case still refuses at `forms` with `unsupported_construct`, exit 21 (tests/it/compile_command.rs:572-578). |
+| FND-003 | fixed | the capture refusal is gone. S2 now builds `CaptureForm { parameter, value, span }` for each capture, in source order (temporal_clause.rs:54-57, 86-93). `captures_build_their_type_value_and_span_beside_an_unchanged_formula` (FR-325-AC-6) asserts each capture's name, declared type, value span and own span, and that the formula is unchanged up to spans. A capture can no longer be dropped silently while the tests stay green. |
+| FND-004 | fixed | `tests/fixtures/parser-differential/baseline.txt` (300 lines), its comparing tests, its recorder and `make test-differential` are deleted. `tests/it/parser_differential.rs` keeps only the seeded generator check (TC-012), which asserts that each family yields both admitted and refused parses. No spec, plan or Makefile reference to the baseline remains. |
