@@ -29,8 +29,11 @@ relationships:
 When a model form evaluates inside a `Value` function body or a
 `ProtocolClause` body at S6a and raises a model refusal or a model undefined
 cause, the evaluator SHALL report that cause as a `StateModel`-owned cause,
-rendered with the `state-model` catalog prefix, inside the enclosing family's
-result.
+with `state-model` cause-family attribution, inside the enclosing family's
+result. Here the prefix denotes the cause's owning family, not a prefix
+added to `CatalogCode.code`: a refusal retains the unchanged
+`ModelRefusal::catalog_code()` required by FR-090. For absent refused lookup
+that code/cause pair is exactly `invalid_runtime_input` / `absent-key`.
 
 ## Inputs
 
@@ -50,9 +53,12 @@ carries the `StateModel` cause unchanged.
 The evaluator SHALL carry each model cause ADR-013 O-16 assigns to
 `StateModel` (for example `PreconditionFalse`, the `absent refused` `lookup`
 refusal, and the `ancestor-steps` resource refusal of ADR-016 SC-6) in the
-enclosing family's result as a `StateModel` cause. Its catalog code SHALL
-render with the `state-model` prefix and never with the enclosing family's
-prefix. Its O-16 category SHALL be the category of the `FamilyResult` arm that
+enclosing family's result as a `StateModel` cause. Its typed cause-family
+attribution SHALL be `StateModel`, never the enclosing family; its catalog
+code and cause SHALL retain their owning spellings unchanged, without an
+added family prefix or fallback. For undefined results the owning
+`UndefinedCoded` reason and payload remain unchanged. Its O-16 category
+SHALL be the category of the `FamilyResult` arm that
 carries it (`Refused` → refusal, `Undefined` → undefined), as ADR-012 §13.5
 Q210-3 maps it. The S6a family kind is unchanged: the cause travels in the
 enclosing family's result.
@@ -61,8 +67,13 @@ enclosing family's result.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-301-AC-1 | A `Value` function whose body performs `lookup<T>(p, r)` with an `absent refused` key evaluates to a `FamilyResult::Refused` whose cause renders with the `state-model` prefix, not the `value` prefix, and whose category is refusal. | Test (TC-792) |
-| FR-301-AC-2 | A state clause whose body makes a dispatched call whose selected precondition is false evaluates to `FamilyResult::Undefined` with cause `precondition-false` rendered with the `state-model` prefix, not the `protocol-clause` prefix, and category undefined. | Test (TC-792) |
+| FR-301-AC-1 | A `Value` function whose body performs `lookup<T>(p, r)` with an `absent refused` key evaluates to a `FamilyResult::Refused` carrying the actual StateModel-owned model-query cause, not a Value-owned substitute. Its unchanged catalog code/cause is exactly `invalid_runtime_input` / `absent-key`, its owning binding/key fields and lookup locus are retained, and its category is refusal. | Test |
+| FR-301-AC-2 | A state clause whose body makes a dispatched call whose selected precondition is false evaluates to `FamilyResult::Undefined` with StateModel-owned cause `precondition-false`, not a ProtocolClause-owned substitute. Its owning operation, selected method, receiver and call locus remain unchanged, and its category is undefined. | Test |
+
+Both criteria retain TC-792 and its separate Value lookup and dispatched
+clause procedures. Exact catalog spelling and typed cause-family ownership
+are independent assertions: neither a generic code nor a fabricated
+`state-model` code prefix establishes the latter.
 
 ## Dependencies
 
