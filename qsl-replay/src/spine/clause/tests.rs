@@ -1409,7 +1409,7 @@ fn config_version_domain_document_with_operations(
     let parent_identity = format!("{config_version}/parent");
     let operation_identity = format!("{config_version}/attemptUpdate");
     let population = config_version_population_identity();
-    let bound = |keyword: &str, value: i64| {
+    let bound = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{version_number}/constraints/{keyword}"),
             "keyword": keyword,
@@ -1522,7 +1522,7 @@ fn config_version_domain_document_with_operations(
                 "extensions": [],
                 "unknownPolicy": "reject",
                 "scalar": "integer",
-                "constraints": [bound("min", 0), bound("max", 1000)],
+                "constraints": [bound("min", "0"), bound("max", "1000")],
             },
             {
                 "identity": config_version,

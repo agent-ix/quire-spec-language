@@ -112,7 +112,7 @@ fn fcd_fixtures_dir() -> &'static Path {
 /// package FR-056's tests admit still admits under the `sha256-jcs` digest
 /// it had. The digests are SHA-256 over each document's RFC 8785 text,
 /// computed outside this crate; the architecture document is the one FCD's
-/// real lift produces at the pinned rev (68ace480).
+/// real lift produces at the pinned exact-numeric rev (c620d6be).
 #[trace("TC-730", "FR-260-AC-1")]
 #[test]
 fn every_corpus_package_admits_under_its_recorded_digest() {
@@ -142,7 +142,7 @@ fn every_corpus_package_admits_under_its_recorded_digest() {
             (
                 "architecture",
                 architecture,
-                "aed361978b4f0fcc5b7ca5d7dfc95abb32023913d563f9a08101065e6ef48ee0",
+                "4090c5dd0982184b93a3488998b9c3e6830c0fb7cf447f0946a8494524f716a8",
             ),
         ];
         for (name, bytes, recorded) in corpus {

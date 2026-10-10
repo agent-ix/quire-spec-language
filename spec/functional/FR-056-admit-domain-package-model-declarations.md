@@ -16,6 +16,7 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-272, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-142, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-143, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-144, type: depends_on }
 ---
 # FR-056: Admit domain packages as Quire model declarations
 
@@ -483,18 +484,40 @@ If a `typeRef` names an undeclared native name, then intake SHALL refuse it with
 refuse it with `unsupported_construct`/`declaration-form` at the member,
 naming the parameter.
 
+Semantic IR numeric value sites SHALL use the encoding of filament-core-data
+[FR-144](ix://agent-ix/filament-core-data/FR-144)'s Canonical spellings and
+Value sites rules: every `Integer` bound operand (`min`, `max`,
+`exclusiveMin`, `exclusiveMax`), default and `enumValues` item is a canonical
+integer string at every magnitude, never a JSON number; every `Decimal`
+value site is a canonical decimal string within its declared decimal policy,
+never a JSON number. This is an IR encoding rule, not a grant of QSL support
+for Decimal or enumeration semantics. A reader refusal SHALL end intake
+before any declaration, retaining its diagnostics as stated above.
+
 A scalar type bound to `Integer` gives the value type `Int[lower, upper]`
-from its `min` and `max` constraints. Each bound's operand value is an
-exact integer in `i128::MIN..=i128::MAX`, the ceiling FR-091 fixes, written
-either as a JSON integer, which the number rule above admits only within
-±2^53, or as a canonical decimal string (no leading zero, no `+`, `-` only
-before a nonzero value). A bound beyond ±2^53, such as a full `u64`'s
-`18446744073709551615`, arrives as a decimal string; the same bound
-written as a JSON number still refuses `noncanonical_wire`/`inexact-integer`.
+from its bounds. Each bound's operand value is an exact integer in
+`i128::MIN..=i128::MAX`, the ceiling FR-091 fixes, written as a canonical
+integer string (`0`, or an optional `-` followed by a nonzero digit and
+zero or more digits; no leading zero, `+`, whitespace, fraction or exponent).
+The small operands `"0"` and `"1000"` use the same encoding as a full
+`u64`'s `"18446744073709551615"`. A JSON-number operand such as `0` or
+`1000` refuses `invalid_model_binding`/`malformed-declaration` with the
+reader's `agent-ix.semantic-ir.INVALID_OPERAND` diagnostic at the operand.
+A whole JSON number beyond ±2^53 still refuses earlier with
+`noncanonical_wire`/`inexact-integer` at its document pointer, before the
+Semantic IR operand check. No absent encoding or safe-magnitude exception
+authorizes JSON-number integer operands.
 Intake SHALL NOT narrow a bound to a smaller width. If a bound's string is
 not canonical, or its value lies outside `i128::MIN..=i128::MAX`, then
 intake SHALL refuse it with `invalid_model_binding`/`malformed-declaration`
 at the scalar type, naming the constraint and the written value.
+
+This rule SHALL NOT change independently specified instance encodings,
+JSON-integer counters (including multiplicities, length operands, source
+positions and decimal-policy precision/scale), or `Float32`/`Float64` IR
+value sites, which remain JSON numbers subject to the number rules above.
+In particular, the generated safe-integer instance-wire number encoding in
+filament-core-data FR-144 is distinct from its integer IR value-site encoding.
 
 If an admitted package declares a record the type environment does not
 represent (a systems part, port or allocation, or a
@@ -545,7 +568,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-13 | The one parse refuses a document holding `18446744073709551616`, `-18446744073709551616`, `1e20`, `9.007199254740993e15`, `9007199254740993` or `-9007199254740993` at `/package/count` with `noncanonical_wire`/`inexact-integer` and `document_pointer` `/package/count`; one holding `1e20` at member `c~d` of the first element of member `a/b` names `/a~1b/0/c~0d`, and one holding such numbers at `/b` and then `/a/0` names `/b`. The same document holding `9007199254740992` or `-9007199254740992` at `/package/count` is admitted. Documents that differ only in holding `18446744073709551615` or `18446744073709551616`, each offered under the `sha256-jcs` digest of the same document holding `18446744073709552000`, which they shared before this rule, refuse `noncanonical_wire`/`inexact-integer` at `/package/count`, never `stale_dependency`/`byte-digest-mismatch`; a field whose multiplicity `upper` is 2^60 + 1 refuses the same way at that bound's pointer under the digest it used to admit under and under its raw digest. | Test (TC-145) |
 | FR-056-AC-14 | The one parse refuses a document holding `9007199254740993.5`, `0.1000000000000000000001`, `1e-400`, `-1e-400` or `4.9e-324` at `/package/count` with `noncanonical_wire`/`inexact-number` and `document_pointer` `/package/count`; the same document holding `9007199254740993`, which fits both cases, refuses `inexact-integer`, as does `1e20`; and a document holding `0.5` at `/a/0` and `1e-400` at `/a/1` names `/a/1`. The same document holding `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`, `1e15` or `9007199254740991` at `/package/count` is admitted, with the digest of the RFC 8785 text of the same value. A document holding `0.1000000000000000000001` at `/package/count`, offered under the `sha256-jcs` digest of the same document holding `0.1`, refuses `noncanonical_wire`/`inexact-number`, and the document holding `0.1` admits under it. The double nearest `1125899906842624.25` has two equally close shortest texts: a document holding `1125899906842624.2` (the even digit, RFC 8785's text) at `/package/count` is admitted, as are `1500000000000000.2` and `2.9802322387695312e-8`, and one holding `1125899906842624.3`, `1500000000000000.3` or `2.9802322387695313e-8` refuses `noncanonical_wire`/`inexact-number`. | Test (TC-145) |
 | FR-056-AC-15 | The derived view of an admitted document holds, for each non-whole number, the correctly rounded double of its text, the double its `sha256-jcs` digest encodes: a document holding `1.5e-300` admits, and its tree holds the double `1.5e-300` reads as, whatever `serde_json`'s own float parse reads. | Test (TC-145) |
-| FR-056-AC-16 | A domain package whose scalar type `Wide` is bound to `Integer` with `min` the JSON integer `0` and `max` the string `"18446744073709551615"` is admitted, and `Wide` resolves to `Int[0, 18446744073709551615]` exactly. With `max` the string `"9223372036854775808"` it resolves to `Int[0, 9223372036854775808]`. With `max` the JSON number `18446744073709551615` the read refuses `noncanonical_wire`/`inexact-integer` at that number's pointer; with `max` the string `"170141183460469231731687303715884105728"` (`i128::MAX + 1`) or the noncanonical string `"0018"`, intake refuses `invalid_model_binding`/`malformed-declaration` at the scalar type, naming the constraint and the value. | Test (TC-911) |
+| FR-056-AC-16 | A domain package whose scalar type `Wide` is bound to `Integer` with `min` the canonical string `"0"` and `max` the canonical string `"18446744073709551615"` is admitted, and `Wide` resolves to `Int[0, 18446744073709551615]` exactly. With `max` the string `"9223372036854775808"` it resolves to `Int[0, 9223372036854775808]`; with `max` the string `"1000"` it resolves to `Int[0, 1000]`. With `min` the JSON number `0` or `max` the JSON number `1000`, intake refuses `invalid_model_binding`/`malformed-declaration`, retaining the reader's `agent-ix.semantic-ir.INVALID_OPERAND` diagnostic at that operand and admitting no declaration. With `max` the JSON number `18446744073709551615` the read refuses `noncanonical_wire`/`inexact-integer` at that number's pointer; with `max` the string `"170141183460469231731687303715884105728"` (`i128::MAX + 1`) or the noncanonical string `"0018"`, intake refuses `invalid_model_binding`/`malformed-declaration` at the scalar type, naming the constraint and the value. | Test |
 | FR-056-AC-17 | The canonical native controls below admit exactly the stated UUID and Timestamp payloads, retain their distinct native identities and refuse the stated alternatives without normalization. K2's `Instant` resolves to `Timestamp`; changing that binding to `Int` gives TC-235 M04 run 5's `invalid_model_binding`/`malformed-declaration` at `OrderPlaced`'s `TypeDefinition.occurrenceField`, rather than an admitted substitute. | Test |
 | FR-056-AC-18 | TC-235 M17 run 1 retains `TaxedMoney`'s inherited `amount_minor`, `currency` and invariant `NonNegative`, its own `tax_minor`, and conformance to `Money`: its stated value is admitted at `Order/total` and wherever a parameter or result names `Money`, yet is unequal to the stated `Money` value because their most-specific types differ. M17 runs 2 and 3 retain the exact wrong-meaning and specialization-cycle refusals, including the cycle list, rather than object-reference or Boolean substitutes. | Test |
 | FR-056-AC-19 | Offering K2 bytes that the actual Semantic IR reader refuses retains every reader diagnostic and exposes no declaration, effective view or `normalize.record` charge. No downstream native binding repairs a reader refusal. Once the reader contract admits those inputs, K2's version `1`, unused `population` construct, Timestamp binding and all TC-235 vectors remain unchanged; native payload admission alone does not establish their declaration counts, refusals, normalization or runtime results. | Test |
