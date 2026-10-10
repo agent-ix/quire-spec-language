@@ -64,7 +64,7 @@ impl OriginalInventory {
                     package: package.to_owned(), node: identity.to_owned(),
                 }, pointer.clone());
             }
-            for collection in ["fields", "operations", "params", "relationships", "constraints", "pre", "post"] {
+            for collection in ["fields", "operations", "params", "relationships", "constraints", "clauses", "pre", "post"] {
                 if let Some(entries) = node.get(collection).and_then(serde_json::Value::as_array) {
                     pending.extend(entries.iter().enumerate().map(|(ordinal, child)|
                         (child, format!("{pointer}/{collection}/{ordinal}"))));
