@@ -47,7 +47,7 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::conformance::multiplicity_conforms;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
-    PortDirection, RelationshipRecord,
+    PortDirection, RelationshipRecord, ValueTypeRef,
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
@@ -173,18 +173,6 @@ fn unsupplied(capability: &'static str, item: &str) -> ModelRefusal {
     }
 }
 
-/// An endpoint's owning component, or a relationship end's endpoint, names a
-/// key absent from the domain package entirely (finding #6): distinct from a key
-/// that IS declared but resolves to [`Kind::None`], which is a real
-/// [`wrong_export`] refusal, not a dangling one.
-fn dangling(cause: ModelRefusalCause, missing: &str, item: &str) -> ModelRefusal {
-    ModelRefusal {
-        code: Code::DanglingReference,
-        cause,
-        detail: format!("{item} names {missing}, which is not declared in this domain package"),
-    }
-}
-
 fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::SystemsKind))
 }
@@ -237,6 +225,10 @@ pub fn classify(
     let mut edge_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut refusals: Vec<ModelRefusal> = Vec::new();
 
+    let mut interfaces: Vec<_> = interface_types.iter().collect();
+    interfaces.sort();
+    for _ in interfaces { charge_kind(meter)?; }
+
     for component in &components {
         charge_kind(meter)?;
         let kind = if component.has_part_signature {
@@ -250,37 +242,36 @@ pub fn classify(
 
     for endpoint in &endpoints {
         charge_kind(meter)?;
-        let kind = match &endpoint.direction {
-            None => {
-                refusals.push(unsupplied("port-direction", &endpoint.key.node));
-                Kind::None
-            }
-            Some(_) => match component_kinds.get(&endpoint.owning_component) {
-                None => {
-                    refusals.push(dangling(
-                        ModelRefusalCause::UnknownComponent {
-                            item: endpoint.key.clone(),
-                            missing: endpoint.owning_component.clone(),
-                        },
-                        &endpoint.owning_component.node,
-                        &endpoint.key.node,
-                    ));
-                    Kind::None
-                }
-                Some(&Kind::Part) => Kind::Port,
-                Some(&owner_kind) => {
-                    refusals.push(wrong_export(Kind::Part, owner_kind, &endpoint.key.node));
-                    Kind::None
-                }
-            },
-        };
-        endpoint_kinds.insert(endpoint.key.clone(), kind);
+        let mut valid = true;
+        if endpoint.direction.is_none() {
+            refusals.push(unsupplied("port-direction", &endpoint.key.node));
+            valid = false;
+        }
+        let owner_kind = if interface_types.contains(&endpoint.owning_component) {
+            Kind::Interface
+        } else { component_kinds.get(&endpoint.owning_component).copied().unwrap_or(Kind::None) };
+        if owner_kind != Kind::Part {
+            refusals.push(wrong_export(Kind::Part, owner_kind, &endpoint.key.node));
+            valid = false;
+        }
+        let interface_kind = if interface_types.contains(&endpoint.value_type) {
+            Kind::Interface
+        } else { component_kinds.get(&endpoint.value_type).copied().unwrap_or(Kind::None) };
+        if interface_kind != Kind::Interface {
+            refusals.push(wrong_export(Kind::Interface, interface_kind, &endpoint.key.node));
+            valid = false;
+        }
+        endpoint_kinds.insert(endpoint.key.clone(), if valid { Kind::Port } else { Kind::None });
     }
 
     for relationship in &relationships {
-        charge_kind(meter)?;
         let source_is_type = object_types.contains(&relationship.source.type_identity);
         let target_is_type = object_types.contains(&relationship.target.type_identity);
+        if source_is_type && target_is_type {
+            edge_kinds.insert(relationship.key.clone(), Kind::None);
+            continue;
+        }
+        charge_kind(meter)?;
         // FR-208-AC-9: a relationship end names an object type or a Port; a
         // record value type is a declared type of neither meaning, so each
         // such end refuses malformed and the other end is not resolved.
@@ -313,15 +304,10 @@ pub fn classify(
             ] {
                 match endpoint_kinds.get(&end.type_identity) {
                     None => {
-                        refusals.push(dangling(
-                            ModelRefusalCause::UnknownEndpoint {
-                                end: label,
-                                relationship: relationship.key.clone(),
-                                missing: end.type_identity.clone(),
-                            },
-                            &end.type_identity.node,
-                            &format!("{} end of {}", label, relationship.key.node),
-                        ));
+                        let actual = if interface_types.contains(&end.type_identity) { Kind::Interface }
+                            else { component_kinds.get(&end.type_identity).copied().unwrap_or(Kind::None) };
+                        refusals.push(wrong_export(Kind::Port, actual,
+                            &format!("{} end of {}", label, relationship.key.node)));
                         ends_ok = false;
                     }
                     Some(&Kind::Port) => {}
@@ -584,7 +570,8 @@ pub fn check_connection(
 
     // Condition 2: flow-source interface type conforms to flow-target
     // interface type (bidirectional: the two interface types are equal).
-    if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::SystemsConnectionCondition)) {
+    if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::SystemsConnectionCondition)
+        .work(index.type_fact_count(&ValueTypeRef::Package(flow_source.value_type.clone())))) {
         return ConnectionCheckOutcome::Incomplete(incomplete);
     }
     let interface_ok = if matches!(
@@ -593,14 +580,13 @@ pub fn check_connection(
     ) {
         flow_source.value_type == flow_target.value_type
     } else {
-        match index.conforms(
+        match index.conformance_walk(
             &flow_source.value_type,
             &flow_target.value_type,
             meter.limits().ancestor_steps,
-            qsl_foundation::Setting::ModelAncestorSteps,
         ) {
             Ok(conforms) => conforms,
-            Err(refusal) => return ConnectionCheckOutcome::Refused(refusal),
+            Err(incomplete) => return ConnectionCheckOutcome::Incomplete(incomplete),
         }
     };
     if !interface_ok {

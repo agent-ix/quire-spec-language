@@ -146,7 +146,8 @@ impl SelectedModels {
         });
         let packages: Vec<_> = offered.iter().map(|(_, _, package)| package.clone()).collect();
         let mut meter = Meter::new(limits);
-        let views = normalize_packages(&packages, &mut meter).map_err(|failure| {
+        let views = normalize_packages(&packages, &mut meter)
+            .and_then(|views| { check_systems_packages(&views, &mut meter)?; Ok(views) }).map_err(|failure| {
             let cause = |ordinal: usize, cause| UnitIntakeRefusal {
                 alias: offered[ordinal].0.clone(), span: offered[ordinal].1,
                 cause, additional: Vec::new(),
@@ -174,7 +175,8 @@ impl SelectedModels {
         limits: ModelNormalizationLimits) -> Result<Self, UnitIntakeRefusal> {
         let mut meter = Meter::new(limits);
         let packages = [package];
-        let views = normalize_packages(&packages, &mut meter).map_err(|failure| {
+        let views = normalize_packages(&packages, &mut meter)
+            .and_then(|views| { check_systems_packages(&views, &mut meter)?; Ok(views) }).map_err(|failure| {
             let cause = match failure {
                 BatchDenial::Refused(mut refusals) => UnitIntakeCause::Refused(refusals.remove(0).1),
                 BatchDenial::Incomplete(_, incomplete) => UnitIntakeCause::Limit(incomplete),
@@ -214,6 +216,52 @@ impl UnitIntakeCause {
             Self::Invariant => Code::RuntimeInvariant,
         }
     }
+}
+
+/// The completed systems stage shares the normalization operation's meter
+/// and index. No failures from an unfinished stage escape a denied charge.
+fn check_systems_packages(views: &[EffectiveView], meter: &mut Meter) -> Result<(), BatchDenial> {
+    use crate::model::domain_package::DomainPackageRecord;
+    use crate::model::systems::{classify, check_connection, check_allocation,
+        Kind, ConnectionCheckOutcome, ConnectionOutcome, AllocationCheckOutcome};
+    let mut failures = Vec::new();
+    for (ordinal, view) in views.iter().enumerate() {
+        let classification = classify(view.domain_package(), meter)
+            .map_err(|incomplete| BatchDenial::Incomplete(ordinal, incomplete))?;
+        let mut refused = classification.refusals.clone();
+        let mut connections: Vec<_> = view.domain_package().records.iter().filter_map(|record| {
+            if let DomainPackageRecord::Relationship(edge) = record {
+                (classification.actual_kind(&edge.key) == Kind::Connection).then_some(&edge.key)
+            } else { None }
+        }).collect();
+        connections.sort();
+        for key in connections {
+            match check_connection(view.model_index(), &classification, key, meter) {
+                ConnectionCheckOutcome::Incomplete(incomplete) => return Err(BatchDenial::Incomplete(ordinal, incomplete)),
+                ConnectionCheckOutcome::Refused(refusal) => refused.push(refusal),
+                ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(conditions)) =>
+                    refused.extend(conditions.into_iter().map(|condition| crate::model::normalize::ModelRefusal {
+                        code: condition.code, cause: condition.cause, detail: condition.detail,
+                    })),
+                ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted) => {},
+            }
+        }
+        let mut allocations: Vec<_> = view.domain_package().records.iter().filter_map(|record| {
+            if let DomainPackageRecord::Allocation(edge) = record { Some(&edge.key) } else { None }
+        }).collect();
+        allocations.sort();
+        for key in allocations {
+            match check_allocation(&classification, key, meter) {
+                AllocationCheckOutcome::Incomplete(incomplete) => return Err(BatchDenial::Incomplete(ordinal, incomplete)),
+                AllocationCheckOutcome::Refused(refusal) => refused.push(refusal),
+                AllocationCheckOutcome::Admitted => {},
+            }
+        }
+        if !refused.is_empty() {
+            failures.push((ordinal, Refusals::try_from(refused).expect("a completed failing stage has refusals")));
+        }
+    }
+    if failures.is_empty() { Ok(()) } else { Err(BatchDenial::Refused(failures)) }
 }
 
 /// I1's refusal: the `model` declaration it concerns and why.
@@ -335,7 +383,8 @@ pub fn admit_unit_with_cancel(
         return Err(first);
     }
     let mut meter = Meter::new(limits).with_cancel(cancel.clone());
-    let views = normalize_packages(&selected_packages, &mut meter).map_err(|failure| {
+    let views = normalize_packages(&selected_packages, &mut meter)
+        .and_then(|views| { check_systems_packages(&views, &mut meter)?; Ok(views) }).map_err(|failure| {
         match failure {
             BatchDenial::Incomplete(ordinal, incomplete) => refuse(owners[ordinal], UnitIntakeCause::Limit(incomplete)),
             BatchDenial::Refused(refusals) => {
