@@ -6,12 +6,14 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/US-002, type: implements }
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: traces_to }
   - { target: ix://agent-ix/quire-specification/AD-006, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-149, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-150, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-151, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-152, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-153, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-154, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-208, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-272, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-142, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-143, type: depends_on }
 ---
