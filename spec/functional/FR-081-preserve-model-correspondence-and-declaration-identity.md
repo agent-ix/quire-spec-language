@@ -23,7 +23,8 @@ relationships:
 When the model binder normalizes the original declarations
 [FR-056](FR-056-admit-domain-package-model-declarations.md) admits from one
 domain package, it SHALL derive one immutable correspondence between each
-original declaration and the declaration derived from it. Every original
+original declaration and the effective declarations, where selected rules
+derive them. Every original
 declaration key SHALL survive unchanged in that correspondence. Every derived
 declaration SHALL carry a normalized identity computed only from the
 correspondence's own preimage. No identity, key or ordering the binder
@@ -52,7 +53,8 @@ it.
 
 An immutable original-to-effective view — one `EffectiveId`-keyed entry per
 resolved effective declaration, each retaining its original declaration key
-and an ordered derivation-fact trail — or a typed refusal or incomplete
+and an ordered derivation-fact trail, together with the complete retained
+original declaration inventory — or a typed refusal or incomplete
 result.
 
 ## Behavior
@@ -68,15 +70,26 @@ admitted declaration itself carries it.
 
 ### Effective identity is a normalized digest over the correspondence, never over display text
 
+The correspondence owner SHALL retain the exact intake inventory and actual
+FCD origins, separately from its effective-entry set. Phase-2 qualification
+applies only to the kinds selected by QSpec `model-complete.md`; a scalar,
+clause or population without a qualify rule remains an original without a
+fabricated effective entry or fact. Every effective entry and fact input SHALL
+refer to a key from this inventory. Retention introduces no additional
+effective-declaration or hash charge and no effective preimage member.
+
 Each effective declaration's identity is the `quire.model.effective-declaration/v1`
 digest quire-specification [FR-150](ix://agent-ix/quire-specification/FR-150)
 defines, over exactly `{version, owner_effective_type, original, derivation}`;
 this requirement does not restate that preimage. The model binder SHALL NOT
 read a `title`, `displayName` or any other presentation field when computing
 an identity, a key, a digest, an ordering or a resolution decision. Two
-admitted declarations with equal declared shape but distinct original
-declaration keys SHALL always yield distinct effective declarations; the
-binder SHALL NOT collapse them by an identity-equivalence rule.
+admitted declarations for which the selected normalization rules derive
+effective entries, with equal declared shape but distinct original declaration
+keys, SHALL yield distinct effective declarations; the binder SHALL NOT
+collapse those derived declarations by an identity-equivalence rule. An
+original whose kind has no selected derivation rule remains in the exact
+original inventory without acquiring an effective identity from this guarantee.
 
 ### Losing redefinitions are retained, not deleted
 
@@ -147,6 +160,7 @@ charge point and SHALL expose no effective declaration for the run.
 | FR-081-AC-5 | Given the same `DomainPackage` value and the same limits, two independent binder invocations — including invocations in two separate process runs — produce byte-identical original keys, effective identities and correspondence ordering, with no observable interaction between the runs. | Test (TC-217) |
 | FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
+| FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
 
 ## Dependencies
 
