@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Actual Make recipe routing, separate from real extraction qualification.
+//! NFR-013 / TC-915: actual Make routing, separate from real extraction qualification.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -165,7 +165,7 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
 }
 
 #[test]
-#[trace("NFR-005")]
+#[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-2", "NFR-013-AC-3")]
 fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
     let recipe = Recipe::new();
     for root in [
@@ -178,6 +178,7 @@ fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
         Some("owned \"target\""),
         Some("/tmp/owned`literal-backtick`"),
         Some("owned ${FEATURE_LANE_PATH_VALUE}"),
+        Some("owned $(FEATURE_LANE_PATH_VALUE)"),
         Some("/tmp/owned $FEATURE_LANE_PATH_VALUE"),
         Some("owned 'single quote' \\ slash; * ? [x]"),
     ] {
@@ -200,7 +201,7 @@ fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
 }
 
 #[test]
-#[trace("NFR-005")]
+#[trace("TC-915", "NFR-013-AC-2", "NFR-013-AC-3")]
 fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
     let recipe = Recipe::new();
     assert_eq!(
@@ -229,6 +230,7 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         "caller \"quote\"",
         "caller`literal-backtick`",
         "caller ${FEATURE_LANE_PATH_VALUE}",
+        "caller $(FEATURE_LANE_PATH_VALUE)",
         "caller $FEATURE_LANE_PATH_VALUE",
         "caller 'quote' \\ slash; * ? [x]",
     ] {
@@ -259,7 +261,7 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
 }
 
 #[test]
-#[trace("NFR-005")]
+#[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-2", "NFR-013-AC-3")]
 fn routing_oracle_rejects_safe_path_and_command_mutations() {
     let recipe = Recipe::new();
     let makefile = recipe.directory.path().join("Makefile");
@@ -298,7 +300,7 @@ fn routing_oracle_rejects_safe_path_and_command_mutations() {
 }
 
 #[test]
-#[trace("NFR-005")]
+#[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-3")]
 fn repeated_switches_in_both_directions_keep_each_lane_directory() {
     let recipe = Recipe::new();
     for targets in [
@@ -322,7 +324,7 @@ fn repeated_switches_in_both_directions_keep_each_lane_directory() {
 }
 
 #[test]
-#[trace("NFR-005")]
+#[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-3")]
 fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let recipe = Recipe::new();
     let other_checks = [
@@ -351,7 +353,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
 }
 
 #[test]
-#[trace("FR-042-AC-15", "FR-050-AC-8")]
+#[trace("TC-915", "NFR-013-AC-3", "FR-042-AC-15", "FR-050-AC-8")]
 fn clean_and_core_tooling_retain_their_own_target_and_features() {
     let recipe = Recipe::new();
     assert_eq!(
