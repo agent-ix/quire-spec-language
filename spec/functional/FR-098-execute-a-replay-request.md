@@ -182,7 +182,7 @@ through it, or a crate alias or glob import that reaches it.
   (ADR-014 B-2), not stage limits. FR-255 names each by its counter name,
   which is its setting, and a `stage_limits` entry of that name replaces
   the request's accounting-limits value for that counter (FR-255
-  Behavior 10). These checks, the call and every identity that binds the
+  Behavior 14). These checks, the call and every identity that binds the
   request's limits use the resulting effective accounting limits. When
   a count exceeds its limit, the replay SHALL settle, with no call, as
   FR-277 settles `execute` reaching an accounting limit: the evaluation

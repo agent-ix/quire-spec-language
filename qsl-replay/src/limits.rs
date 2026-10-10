@@ -34,7 +34,7 @@ impl Default for AccountingLimits {
 
 impl AccountingLimits {
     /// The accounting limits a replay's call runs under (FR-255
-    /// Behavior 10): `base`, the request's own accounting limits, with each
+    /// Behavior 14): `base`, the request's own accounting limits, with each
     /// counter an entry names at the entry's bound.
     pub(crate) fn with_entries(
         base: ScalarLimits,
@@ -47,7 +47,7 @@ impl AccountingLimits {
         limits.0
     }
 
-    /// The setting that raises `counter`'s bound (FR-255 Behavior 9).
+    /// The setting that raises `counter`'s bound (FR-255 Behavior 13).
     #[must_use]
     pub const fn setting_of(counter: Counter) -> AccountingSetting {
         match counter {
@@ -128,7 +128,7 @@ pub struct CallerLimits {
 }
 
 impl CallerLimits {
-    /// The settings operation (FR-255 Behavior 6): the limits with each
+    /// The settings operation (FR-255 Behavior 10): the limits with each
     /// `<name>=<value>` operand's setting at its value, and every other
     /// limit at its default.
     ///
@@ -158,7 +158,7 @@ impl CallerLimits {
     /// built), and every other setting at the request's entry or its
     /// default. `accounting` is the request's own accounting limits; the
     /// result's [`Self::accounting`] is those with each counter a
-    /// `stage_limits` entry names replaced (FR-255 Behavior 10).
+    /// `stage_limits` entry names replaced (FR-255 Behavior 14).
     pub(crate) fn for_request(
         stage_limits: &crate::request::StageLimits,
         accounting: ScalarLimits,

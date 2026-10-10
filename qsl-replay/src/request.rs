@@ -55,8 +55,9 @@ impl StateEnvironment {
 /// silently substitutes QSL's own compiled-in defaults for the proving run's
 /// actual limits (TC-185). A setting with no entry runs at its published
 /// default. Decode admits every setting of FR-255's tables other than
-/// `replay.input_bytes`. An entry named for an accounting counter replaces
-/// the request's accounting limit for that counter (FR-255 Behavior 10).
+/// `replay.input_bytes` and `format.output_bytes`. An entry named for an
+/// accounting counter replaces the request's accounting limit for that counter
+/// (FR-255 Behavior 14).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StageLimits {
     stages: BTreeMap<Setting, u64>,
@@ -266,7 +267,7 @@ impl ReplayRequest {
     }
     /// The accounting limits the replay run itself is charged against: the
     /// wire's `accounting_limits` with each counter its `stage_limits` names
-    /// replaced by the entry (FR-255 Behavior 10).
+    /// replaced by the entry (FR-255 Behavior 14).
     pub fn accounting_limits(&self) -> ScalarLimits {
         self.accounting_limits
     }
@@ -288,7 +289,7 @@ impl ReplayRequest {
 
 impl ReplayRequestWire {
     /// The accounting limits the replay runs under and any identity binds
-    /// (FR-255 Behavior 10): `accounting_limits` with each counter a
+    /// (FR-255 Behavior 14): `accounting_limits` with each counter a
     /// `stage_limits` entry names replaced by the entry's bound. Computed
     /// here once; [`ReplayRequest::accounting_limits`] returns it, so the
     /// split between the two members never reaches a claim.
@@ -663,7 +664,7 @@ impl ReplayRequest {
             return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
         // Once, before the wire is taken apart: this is the value the call
-        // runs under and any claim binds (FR-255 Behavior 10).
+        // runs under and any claim binds (FR-255 Behavior 14).
         let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
         let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)

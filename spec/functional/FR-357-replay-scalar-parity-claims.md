@@ -90,7 +90,7 @@ request the default refuses (TC-904).
   is the obligation identity, the `package_id` as supplied, the function, the
   `source` bindings as supplied, the request's effective accounting limits
   (its accounting limits overlaid by its `stage_limits` counter entries,
-  FR-255 Behavior 10), never either member alone, and the generated
+  FR-255 Behavior 14), never either member alone, and the generated
   outcome. A
   `ScalarAgrees` claim identity is the report's `claim()`.
 - When the operator entry settles a claim, it SHALL check the claim's preimage

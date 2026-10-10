@@ -248,7 +248,7 @@ pub enum UsageCause {
 }
 
 /// The settings operation's usage refusal: it names the offending operand and
-/// no stage runs (FR-255 Behavior 6).
+/// no stage runs (FR-255 Behavior 10).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("usage: {cause:?} in `--limit {operand}`")]
 pub struct UsageRefusal {

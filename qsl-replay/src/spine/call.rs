@@ -187,7 +187,7 @@ impl CallIncomplete {
     }
 
     /// The setting that raises this bound at every entry point (FR-255
-    /// Behavior 9): the exhausted counter's.
+    /// Behavior 13): the exhausted counter's.
     pub fn setting(&self) -> qsl_foundation::AccountingSetting {
         crate::limits::AccountingLimits::setting_of(self.record.limit_kind)
     }
