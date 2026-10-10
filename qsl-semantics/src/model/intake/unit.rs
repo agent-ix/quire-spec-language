@@ -459,8 +459,9 @@ mod systems_operation_controls {
     }
     fn normalization_prefix(bytes: &[u8]) -> u64 {
         let document = PackageDocument::parse(bytes, UNBOUNDED).unwrap();
-        let records = read_records(PACKAGE, &document).unwrap();
-        let package = DomainPackage::new(DomainPackageRef { identity: PACKAGE.to_owned(), version: "1.0.0".to_owned(), digest: document.jcs_digest }, records);
+        let package_identity = document.tree["package"]["identity"].as_str().unwrap();
+        let records = read_records(package_identity, &document).unwrap();
+        let package = DomainPackage::new(DomainPackageRef { identity: package_identity.to_owned(), version: "1.0.0".to_owned(), digest: document.jcs_digest }, records);
         let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
         normalize_packages(&[package], &mut meter).unwrap();
         meter.consumed(LimitKind::WorkUnits)
@@ -519,4 +520,52 @@ mod systems_operation_controls {
                 limit: bound, consumed, next_charge: next, charge_point: point }));
         }
     }
+
+    #[trace("QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
+    fn actual_systems_stage_reports_all_models_canonically_and_discards_unfinished_failures() {
+        for reverse in [false, true] {
+            for deny in [false, true] {
+                let first = document(true, false);
+                let second = String::from_utf8(document(!deny, true)).unwrap()
+                    .replace(PACKAGE, "example/systems-z").into_bytes();
+                let packages = package_input([first.as_slice(), second.as_slice()]);
+                let digest_first = crate::model::key::hex(&PackageDocument::parse(&first, UNBOUNDED).unwrap().jcs_digest);
+                let digest_second = crate::model::key::hex(&PackageDocument::parse(&second, UNBOUNDED).unwrap().jcs_digest);
+                let mut selections = vec![format!("model Z = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest_first}\";"),
+                    format!("model A = \"example/systems-z\" version \"1.0.0\" digest \"sha256-jcs:{digest_second}\";")];
+                if reverse { selections.reverse(); }
+                let text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{}\nfunction noop using v(): Boolean pure {{ true }}\n", selections.join("\n"));
+                let parsed = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "systems", "fixture", "2"),
+                    "unit.native", text.as_bytes(), qsl_cst::Limits::default()).unwrap();
+                assert!(parsed.diagnostics().is_empty());
+                let built = qsl_forms::build_unit(&parsed).unwrap();
+                let prefix = normalization_prefix(&first) + normalization_prefix(&second);
+                let bound = if deny { prefix + 7 } else { u64::MAX };
+                let refused = admit_unit(&built.selections().models, &packages, ModelNormalizationLimits {
+                    work_units: bound, ..ModelNormalizationLimits::UNLIMITED }).expect_err("systems stage completes all selected models or exposes only its first unavailable charge");
+                if deny {
+                    assert_eq!(refused.alias, "A");
+                    assert!(refused.additional.is_empty());
+                    assert_eq!(refused.cause, UnitIntakeCause::Limit(Incomplete { limit_kind: LimitKind::WorkUnits,
+                        limit: bound, consumed: bound, next_charge: 1, charge_point: ChargePoint::SystemsKind }));
+                } else {
+                    assert_eq!(refused.alias, "Z", "selection identity order precedes aliases/source order");
+                    assert_eq!(refused.additional.len(), 1);
+                    assert_eq!(refused.additional[0].alias, "A");
+                    for (failure, package) in [(&refused, PACKAGE), (&refused.additional[0], "example/systems-z")] {
+                        let UnitIntakeCause::Refused(refusals) = &failure.cause else { panic!("expected completed systems failures"); };
+                        assert_eq!(refusals.len(), 3);
+                        assert!(refusals.iter().all(|refusal| refusal.code == Code::InvalidModelBinding && refusal.cause == ModelRefusalCause::WrongExport));
+                        assert_eq!(refusals.iter().map(|refusal| refusal.detail.clone()).collect::<Vec<_>>(), vec![
+                            format!("ix://{package}/Out: required kind Part, actual kind none"),
+                            format!("ix://{package}/Out: required kind Interface, actual kind none"),
+                            format!("source end of ix://{package}/Link: required kind Port, actual kind none"),
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+
 }
