@@ -568,4 +568,24 @@ mod systems_operation_controls {
         }
     }
 
+
+    #[trace("QSpec-TC-213", "FR-082-AC-8")]
+    #[test]
+    fn actual_intake_ancestor_denial_stays_in_normalization_and_direct_walk_keeps_exact_payload() {
+        let bytes = document(false, false);
+        let (unit, packages) = selection(&bytes);
+        let refusal = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits {
+            ancestor_steps: 0, ..ModelNormalizationLimits::UNLIMITED }).expect_err("normalization encounters this edge before systems can run");
+        assert!(refusal.additional.is_empty());
+        let expected = Incomplete { limit_kind: LimitKind::AncestorSteps, limit: 0,
+            consumed: 0, next_charge: 1, charge_point: ChargePoint::ModelAncestorEdge };
+        assert_eq!(refusal.cause, UnitIntakeCause::Limit(expected));
+        let selected = admit_unit(&unit.selections().models, &packages, ModelNormalizationLimits::UNLIMITED).unwrap();
+        let declaration = |name| crate::model::key::DeclarationKey { package: PACKAGE.to_owned(), node: key(name) };
+        // This is an explicitly direct walk seam control on the real shared
+        // index, not a fictitious reachable systems-stage meter denial.
+        assert_eq!(selected[0].view.model_index().conformance_walk(&declaration("ISub"), &declaration("I"), 0), Err(expected));
+        assert_eq!(selected[0].view.model_index().conformance_walk(&declaration("ISub"), &declaration("I"), 1), Ok(true));
+    }
+
 }
