@@ -177,7 +177,7 @@ v2 spelling of the correspondence is ADR-013 QC-25.
 
 | Checked type | `node_tag` / `semantic_form` | `semantic_type` | Body |
 |---|---|---|---|
-| `Reference<T>` | `composite_type` / `reference` | itself | `aggregate{[reference(T's model node)]}` |
+| `Reference<T>` | `composite_type` / `reference` | itself | `aggregate{[reference(T's model declaration node)]}`; scalar, value, function and other non-model targets are refused by the checked-package reader |
 | `Population<T>[N]` | `bounded_domain` / `model_population` | the `Set<Reference<T>>` node | binding `max` = `N` |
 
 `N` is an integer literal typed at the `Integer` node (FR-092 T2), spelled as
@@ -280,7 +280,9 @@ domain:
   `quire.value.compound-unit/v1` preimage (ascending root-unit node key). A
   term is `aggregate{[binding "unit" = reference(the root unit's node),
   binding "exponent" = the exponent as an integer literal typed at the
-  `Integer` node]}`. The dimensionless unit's body is `aggregate{[]}`.
+  `Integer` node]}`. Each root reference names a targetless canonical nominal
+  unit whose `semantic_type` is its dimension node. The dimensionless unit's
+  body is `aggregate{[]}`.
 
 `check` reads a compound unit's terms from the `CompoundUnit` that the check
 stage's unit scope holds for its `UnitId`: the package's unit table, or the
@@ -679,7 +681,7 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
 | FR-094-AC-9 | A source alias `Ref = Reference<M::Order>` and `Bucket = Population<M::Order>[3]` resolve before lowering: every parameter and result using either alias names R1 or PO1 exactly, no alias node is emitted, and an alias naming no declared type refuses `missing_declaration`/`missing-name` before a node key is requested. | Test (TC-417); QSpec FR-322-AC-62 executable vectors |
-| FR-094-AC-10 | The derived-form mutation vectors `RM-REF-TARGET`, `RM-POP-MAX` and `RM-CU-ORDER` retain the original node id for the stale-key check, then recompute the changed digest before semantic validation. The checked-package reader refuses scalar, function and value reference targets; negative bounds and arbitrary-set populations; and non-self-typed, non-root or noncanonical compound-unit forms as `invalid_package` semantic-shape refusals. | Test (TC-417, TC-419); QSpec `tc_322_recomputed_derived_forms_refuse_semantic_mutations` |
+| FR-094-AC-10 | The derived-form mutation vectors `RM-REF-TARGET`, `RM-POP-MAX` and `RM-CU-ORDER` retain the original node id for the stale-key check, then recompute the changed digest before semantic validation. The checked-package reader refuses scalar, function and value reference targets; negative bounds and arbitrary-set populations; and non-self-typed, non-root or noncanonical compound-unit forms as `invalid_package` semantic-shape refusals. The accepted U2 vector uses the actual targetless nominal `unit-metre` and `unit-second` roots, whose `semantic_type` is their dimension key; the reader admits that vector before the reordered-term mutation is applied. | Test (TC-417, TC-419); QSpec `tc_322_recomputed_derived_forms_refuse_semantic_mutations` |
 
 ## Dependencies
 
