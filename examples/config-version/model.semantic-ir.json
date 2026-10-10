@@ -86,7 +86,7 @@
           "identity": "ix://example/config-version/VersionNumber/constraints/min",
           "keyword": "min",
           "operands": {
-            "value": 0
+            "value": "0"
           },
           "appliesTo": "ix://quire/native/Integer",
           "diagnosticCode": "bound.min",
@@ -104,7 +104,7 @@
           "identity": "ix://example/config-version/VersionNumber/constraints/max",
           "keyword": "max",
           "operands": {
-            "value": 1000
+            "value": "1000"
           },
           "appliesTo": "ix://quire/native/Integer",
           "diagnosticCode": "bound.max",
