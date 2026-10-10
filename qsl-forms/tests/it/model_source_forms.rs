@@ -72,11 +72,17 @@ fn lookup_retains_target_operands_explicit_absence_and_spans() {
         assert_eq!(spans.span(spans.root()), Some(span(&source, &body)));
         assert_eq!(
             spans.span(spans.child(spans.root(), 0).unwrap()),
-            Some(span(&source, "p"))
+            Some(Span {
+                start: span(&source, "(p, r)").start + 1,
+                end: span(&source, "(p, r)").start + 2,
+            })
         );
         assert_eq!(
             spans.span(spans.child(spans.root(), 1).unwrap()),
-            Some(span(&source, "r"))
+            Some(Span {
+                start: span(&source, "(p, r)").start + 4,
+                end: span(&source, "(p, r)").start + 5,
+            })
         );
     }
 }

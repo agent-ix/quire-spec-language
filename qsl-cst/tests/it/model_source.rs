@@ -111,14 +111,21 @@ fn model_sources_keep_the_existing_budget_refusals() {
         Limits::default().with_nodes(1),
         Limits::default().with_work_units(0),
     ] {
-        let parsed = parse(&text, limits);
-        assert!(!parsed.is_admissible());
-        assert_eq!(
-            parsed.diagnostics()[0].code,
-            CompleteCode::StageLimitExceeded
-        );
-        assert!(parsed.diagnostics()[0].limit().is_some());
-        assert_eq!(parsed.effective_limits(), limits);
+        let diagnostic = match qsl_cst::parse(
+            SourceIdentity::new("test", "model-syntax", "test", "1"),
+            "model-syntax.native",
+            text.as_bytes(),
+            limits,
+        ) {
+            Ok(parsed) => {
+                assert!(!parsed.is_admissible());
+                assert_eq!(parsed.effective_limits(), limits);
+                parsed.diagnostics()[0].clone()
+            }
+            Err(diagnostic) => *diagnostic,
+        };
+        assert_eq!(diagnostic.code, CompleteCode::StageLimitExceeded);
+        assert!(diagnostic.limit().is_some());
     }
     let refusal = qsl_cst::parse(
         SourceIdentity::new("test", "model-syntax", "test", "1"),
