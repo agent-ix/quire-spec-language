@@ -92,6 +92,35 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     (unit, document)
 }
 
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_call_site_operation_variants_keep_format_identity() {
+    for clauses in [false, true] {
+        let (unit, document) = two_operation_unit(clauses);
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+        compile_config_version_unit(&unit, &packages);
+    }
+    for (unit, packages) in [sub_field_unit_and_packages(), two_population_unit_and_packages()] {
+        compile_config_version_unit(&unit, &packages);
+    }
+}
+
+fn sub_field_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
+    let unit = insert_clause_after(
+        &unit,
+        "VersionUnchanged",
+        "invariant SubAlpha using v on Config::Sub at current { self.alpha <= self.zeta }",
+    );
+    (unit, packages)
+}
+
+fn two_population_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
+    (unit, packages)
+}
+
+
 /// `call_site` over `unit` with `document` supplied, selecting `selection`.
 fn locate<S: crate::CallSiteSelection>(
     unit: &str,
@@ -586,12 +615,7 @@ fn field(model: &str, object: &str, field: &str) -> crate::FieldName {
 #[trace("TC-516", "FR-121-AC-18")]
 #[test]
 fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
-    let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
-    let unit = insert_clause_after(
-        &unit,
-        "VersionUnchanged",
-        "invariant SubAlpha using v on Config::Sub at current { self.alpha <= self.zeta }",
-    );
+    let (unit, packages) = sub_field_unit_and_packages();
     let compiled = compile_config_version_unit(&unit, &packages);
     let graph = compiled.package.graph();
     let config_version = wire(config_version_node_key(graph));
@@ -810,7 +834,7 @@ fn population(model: &str, population: &str) -> crate::PopulationName {
 #[trace("TC-516", "FR-121-AC-21")]
 #[test]
 fn call_site_keys_a_population_as_its_requirement_records_do() {
-    let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
+    let (unit, packages) = two_population_unit_and_packages();
     let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };

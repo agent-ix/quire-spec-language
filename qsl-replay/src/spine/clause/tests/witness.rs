@@ -124,6 +124,13 @@ fn witness_unit() -> Unit {
     unit_for(witness_unit_text(), config_version_domain_document())
 }
 
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_witness_and_codec_sources_keep_format_identity() {
+    let _ = witness_unit();
+    let _ = codec_unit();
+}
+
 /// A snapshot of the `witness` fixture: `low` holds `root` (0) and `child`
 /// (1, parent `root`); `high` holds `root` (0), `mid` (600, parent `root`)
 /// and `leaf` (700, parent `mid`).
