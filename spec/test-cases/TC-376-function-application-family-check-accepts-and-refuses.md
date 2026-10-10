@@ -35,4 +35,3 @@ the crate's catalogued refusal cause. Scope: FR-065-AC-4.
   match).
 - Step 3: the call is refused with a missing-name cause naming `nowhere`.
 - Step 4: the call is refused with a type-mismatch cause.
-

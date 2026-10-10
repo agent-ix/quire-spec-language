@@ -24,4 +24,3 @@ Verify `explore::Outcome::category()`. Scope: FR-097-AC-5.
 - Step 2: `BoundReached{depth: 1}` with frontier [1], category
   inconclusive.
 - Step 3: `Cancelled` with frontier [0], category incomplete.
-

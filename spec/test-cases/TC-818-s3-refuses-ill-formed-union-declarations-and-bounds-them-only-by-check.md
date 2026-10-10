@@ -36,4 +36,3 @@ Tag each test `#[trace("TC-818", "<AC id>")]`.
 - Step 6: `StageFailure::Limit`, kind work budget, the configured bound and
   the `CheckingLimits` field; then admitted. No nesting-depth limit kind
   appears anywhere.
-

@@ -49,4 +49,3 @@ Tag the test `#[trace("FR-084-AC-7", "TC-410")]`.
   in that order, and the three differ.
 - Each object component is the member's authored identity bytes (`b1`,
   `e1`, `x1`).
-

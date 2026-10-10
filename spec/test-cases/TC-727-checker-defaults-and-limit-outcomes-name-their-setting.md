@@ -44,4 +44,3 @@ Tag the tests `#[trace("TC-727", "FR-258-AC-3")]`, `#[trace("TC-727", "FR-258-AC
 - Step 3: `stage_limit_exceeded`/`work-budget-exceeded`, bound `w - 1`,
   count `w`, setting `s3.work_units`, at the declaration's span; at `w` the
   declaration's own charge is admitted and a later lowering charge stops it.
-

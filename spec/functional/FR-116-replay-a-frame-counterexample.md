@@ -136,4 +136,3 @@ payload.
 The decode
 from IR's witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49.
-

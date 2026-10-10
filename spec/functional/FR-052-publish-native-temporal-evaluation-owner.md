@@ -135,4 +135,3 @@ FR-043/044 own native evaluation and activation semantics. FR-051 supplies the
 constructor-private checked temporal subject and its admitted v2 package.
 Quire Observation remains the authority for external observation references;
 Contract IR constructs and cross-checks the owner request and joins the result.
-

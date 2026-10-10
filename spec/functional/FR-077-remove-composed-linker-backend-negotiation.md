@@ -92,4 +92,3 @@ accepted by this function.
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md) is where
   candidates and routing now live, replacing the linker's prior direct read
   of backend support.
-

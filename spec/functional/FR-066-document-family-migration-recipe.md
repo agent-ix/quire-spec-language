@@ -103,4 +103,3 @@ against the document's actual, current content.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md) supplies
   the worked example this recipe cites.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
-

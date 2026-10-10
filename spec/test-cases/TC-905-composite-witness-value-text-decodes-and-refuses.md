@@ -116,4 +116,3 @@ Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
   of 3,000,026 bytes, and the encoding is one finished value whose buffers
   together hold at least 1,000,026 bytes, each with a capacity smaller than
   3,000,026 bytes.
-

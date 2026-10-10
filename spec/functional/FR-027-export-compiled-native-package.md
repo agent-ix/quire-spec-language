@@ -136,4 +136,3 @@ Library source files count toward `dependent_bytes`.
 - [FR-278](FR-278-parse-select-check-and-package-as-library-operations.md): the library operations the command encodes.
 - [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): the exit function.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver CLI.
-

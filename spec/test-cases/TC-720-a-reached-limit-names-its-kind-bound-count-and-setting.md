@@ -42,4 +42,3 @@ Tag the tests `#[trace("TC-720", "FR-255-AC-1")]`, `#[trace("TC-720", "FR-255-AC
   with FR-096's locus of the node whose entry failed.
 - Step 3: each field maps to one name; the names are distinct; their union
   equals the table; each builder call changes only its own field.
-

@@ -62,4 +62,3 @@ SR-511 FND-007 found the version-bump framing unsupported by QSpec.
 - Step 6: every `VariantId` differs from step 2, and every rank and the
   visiting order equal step 3.
 - Step 7: C-30 refuses the key.
-

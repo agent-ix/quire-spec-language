@@ -39,4 +39,3 @@ criterion for call verdicts across entry points.
   `present` obligation, not a type-mismatch cause -- the body type-checks
   against the declared result and is refused only because that obligation
   is unproved.
-

@@ -71,4 +71,3 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
   no `package_id`.
 - Step 7: `evaluate`, `violation`, `UndefinedEvaluation{cause:
   division-by-zero}`, no `truth`, exit 10.
-

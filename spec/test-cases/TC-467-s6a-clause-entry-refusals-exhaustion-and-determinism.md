@@ -37,4 +37,3 @@ Tag the tests `#[trace("TC-467", "FR-107-AC-n")]`.
 - Step 3: equal `Evaluation`s and equal charge logs.
 - Step 4: E0004 at exactly the checked-in S6a seam list, which names the
   `ProtocolClause` arm.
-

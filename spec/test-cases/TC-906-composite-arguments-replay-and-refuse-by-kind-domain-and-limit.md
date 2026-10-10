@@ -73,4 +73,3 @@ depends on STD-113.
   Each defect refuses `WrongValueKind` naming position 0, before the call.
   `deref` settles `inconclusive` with cause `NoValue`, since a replayed
   function has no object environment.
-

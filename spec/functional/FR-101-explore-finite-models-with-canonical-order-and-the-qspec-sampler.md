@@ -390,4 +390,3 @@ repository (this repository's TC-210 is a witness-envelope case).
   `quire-canonical`; `sha2` stays a dev dependency.
 - [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md): the
   extent rule and `Outcome::category()`.
-

@@ -47,4 +47,3 @@ Tag the test `#[trace("FR-091-AC-31", "TC-482")]`.
   `27315` and `2`, each with its span.
 - Step 4: a unit form with scale `rational` `1`, `1`, no target and no
   offset.
-

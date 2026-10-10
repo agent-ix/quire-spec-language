@@ -213,4 +213,3 @@ comment.
 - [FR-062](FR-062-implement-checked-family-contract.md) defines the four
   closed enums this requirement's probe targets.
 - [US-006](../usecase/US-006-extend-a-family-without-breaking-seams.md).
-

@@ -699,4 +699,3 @@ identity refuses as an internal fault.
   The `ModelOwner` structural preimage, the `compound_unit` form, the
   `model_population` body and family, the `clause` binding and the v2
   correspondence spelling are QSL proposals (QC-25, QC-26).
-

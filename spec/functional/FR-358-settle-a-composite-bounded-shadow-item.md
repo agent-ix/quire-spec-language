@@ -436,4 +436,3 @@ exists (QSL-646).
 - CG FR-015 (the harness and its own identity record), CG FR-028-AC-17
   (strengths), AC-24 (the refinement ceiling), and AC-2 and AC-3 (the backend ceiling), CG FR-029-AC-17 and AC-24 (the interim rows
   this replaces, and CG's precedence), and CG FR-033 (the claim CG builds).
-

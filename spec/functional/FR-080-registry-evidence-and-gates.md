@@ -114,4 +114,3 @@ checked-in `E0004` locations when the probe feature is enabled.
 - [FR-063](FR-063-exhaustive-family-extension-seam-probe.md) is the existing
   seam-probe mechanism (S1-S4) this requirement's S7 probe follows the same
   pattern as.
-

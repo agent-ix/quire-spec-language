@@ -81,4 +81,3 @@ opaque strings or inferring kinds from diagnostic messages.
 [Compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35) owns this
 L2 implementation slice. Predicate evaluation and family execution remain their
 existing roadmap tickets; this requirement does not claim them from parsing.
-

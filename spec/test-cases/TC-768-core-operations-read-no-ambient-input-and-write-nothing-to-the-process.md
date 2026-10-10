@@ -27,4 +27,3 @@ Tag the tests `#[trace("TC-768", "<AC id>")]`.
 - Step 1: the outcomes are recorded.
 - Step 2: the outcomes equal step 1's, the captured stdout and stderr are empty, and the child exits only when the harness ends it.
 - Step 3: the first scan names each site's file, line and category; the second finds nothing.
-

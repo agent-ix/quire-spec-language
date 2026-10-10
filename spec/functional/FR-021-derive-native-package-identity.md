@@ -60,4 +60,3 @@ existing closed shared-reference schemas are not silently extended here.
 - [FR-020](FR-020-read-and-rebind-native-packages.md) owns strict reconstruction.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) bounds each pass.
 - This requirement's identity uses its own typed-record encoding, which is not RFC 8785. The IR/JCS digest domains keep their own domain labels and golden vectors, and their RFC 8785 encoding comes from `quire-canonical` (ADR-013 §2).
-

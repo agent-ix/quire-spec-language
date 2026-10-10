@@ -53,4 +53,3 @@ Tag the tests `#[trace("TC-461", "FR-104-AC-n")]`.
   operation's frame, each keyed by that operation's own frame occurrence,
   never merged and never a fault, whether the two operations' frame records
   differ (`Integer` vs `Boolean`) or coincide (both `Boolean`).
-

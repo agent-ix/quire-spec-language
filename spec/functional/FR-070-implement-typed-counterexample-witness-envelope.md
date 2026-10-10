@@ -273,4 +273,3 @@ length of its escaped value text.
   this envelope's members into the replay request;
   [FR-072](FR-072-implement-typed-replay-result.md)'s per-item result embeds
   the QSpec FR-351 record this envelope's `Witness` arm decodes.
-

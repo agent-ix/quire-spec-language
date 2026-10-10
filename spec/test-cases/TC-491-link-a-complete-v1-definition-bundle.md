@@ -58,4 +58,3 @@ dependency edges between them.
   `resource_exhausted`/`insufficient-next-charge`; the raised ceiling
   admits.
 - Step 7: every pair is listed by `quire.native.diagnostics/v1`.
-

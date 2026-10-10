@@ -247,4 +247,3 @@ relocated to `tests/`, `xtask` or anywhere else instead of being deleted.
   exhaustiveness (FR-067-AC-4); this requirement does not re-verify it by
   inspection.
 - [US-007](../usecase/US-007-trust-a-single-s2-forms-producer.md).
-

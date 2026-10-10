@@ -59,4 +59,3 @@ Tag steps 1–3 with `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, step 
 - Step 5 refuses at the unit's `model` declaration with
   `unknown_required_feature`/`unsupported-feature` and returns no
   `PackageDeclarations`. Neither refusal names or infers a rounding mode.
-

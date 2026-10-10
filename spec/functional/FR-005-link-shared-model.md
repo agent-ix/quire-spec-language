@@ -57,4 +57,3 @@ general Filament model authority is introduced.
 
 - [US-002](../usecase/US-002-link-exact-models.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../README.md) supplies the scoped context.
-

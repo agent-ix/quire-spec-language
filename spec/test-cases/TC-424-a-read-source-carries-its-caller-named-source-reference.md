@@ -66,4 +66,3 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 7: each refuses with `invalid_source_map`, host cause
   `EditPredecessor`, `ForeignNode` and `RequestRevision` respectively, and
   no region; none is `invalid_source_identity`.
-

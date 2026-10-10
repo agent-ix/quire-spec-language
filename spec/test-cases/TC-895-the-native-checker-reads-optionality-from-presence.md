@@ -33,4 +33,3 @@ field `f`. A native unit binds `x: T` and is checked once per row:
   the unguarded `value(x.f)` refuses `undefined_expression`.
 - Step 3: `x.f` types as an option of a sequence of at most one Boolean,
   and `present(x.f)` checks.
-

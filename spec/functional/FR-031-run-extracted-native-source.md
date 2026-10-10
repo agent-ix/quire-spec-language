@@ -82,4 +82,3 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 
 - [FR-026](FR-026-run-standalone-native-workflow.md): existing bounded command intake and runtime reports.
 - [FR-030](FR-030-consume-quire-extraction.md): actual optional Quire consumer.
-

@@ -105,4 +105,3 @@ FR-105's and are pending STD-111, as FR-105's are.
 - QSpec FR-013 (a caller cannot enlarge a frame), FR-340 (frame body),
   `choreography-surface.md` (the `attempt` row), `state-contract.md`.
 - STD-111 (QSpec) for the emitted spellings, as FR-105 states.
-

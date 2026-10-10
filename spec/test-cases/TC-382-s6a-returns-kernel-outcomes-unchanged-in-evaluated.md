@@ -61,4 +61,3 @@ it holds with `assert_eq!`.
 - Step 5: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Incomplete(i))`,
   where `i`'s charge point is `ChargePoint::FunctionCall`.
 - No step returns a `FamilyOutcome::FamilyEvaluated` or `Err(_)`.
-

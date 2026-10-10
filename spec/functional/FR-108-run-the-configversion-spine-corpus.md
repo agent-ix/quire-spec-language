@@ -151,4 +151,3 @@ the same two objects through `sameIdentity`, over the same snapshot data
   `package_id` half run over the in-process `CheckedPackage` and need none of
   it. AC-6's I04 `read` half needs `quire-contract-model`'s
   `reaches_field` reference-edge check.
-

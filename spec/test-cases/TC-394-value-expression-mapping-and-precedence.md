@@ -45,4 +45,3 @@ Tag the test `#[trace("FR-091-AC-3", "TC-394")]`.
 - Step 4 reads `Query` with `BinderQuery::Map` for both `map` and
   `collect`, and `AllInstances` whose target is a type form with
   qualified-name head `M::T`.
-

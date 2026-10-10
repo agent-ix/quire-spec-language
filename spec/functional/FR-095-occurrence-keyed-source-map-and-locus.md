@@ -108,4 +108,3 @@ RFC 6901 JSON pointer.
   and `WireNodeId` this requirement's package source map is read through.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - QSpec FR-322 (`ix://agent-ix/quire-specification/FR-322`).
-

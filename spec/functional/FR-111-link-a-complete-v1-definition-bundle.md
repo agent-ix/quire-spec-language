@@ -157,4 +157,3 @@ names the field, its bound, the count reached and its setting
 QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
 typed-node schema member of an extension definition yet; FR-354 reads them
 once QSpec does.
-

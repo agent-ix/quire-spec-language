@@ -35,4 +35,3 @@ Tag each test `#[trace("TC-829", "<AC id>")]`.
 - Step 5: admitted; the run returns 6.
 - Step 6: refused by the reference walk with its existing code, before
   evaluation.
-

@@ -58,4 +58,3 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 4: each unit refuses with exactly one unit-graph topology error naming the
   declarations it concerns, and no `PackageDeclarations`. Its catalog code
   is the STD-112 cause.
-

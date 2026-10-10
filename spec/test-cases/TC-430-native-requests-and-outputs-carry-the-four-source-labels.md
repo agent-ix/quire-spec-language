@@ -58,4 +58,3 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 - Step 4: `invalid-request`, exit 20.
 
 Step 2's blank-label refusal renders a byte-0 span in the run output: the native `Diagnostic`'s retained debt (FR-001, "Where an S0 refusal is located"), not this requirement's behaviour.
-

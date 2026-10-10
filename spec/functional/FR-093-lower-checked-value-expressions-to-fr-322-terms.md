@@ -857,4 +857,3 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
   against the published `LeafSegment` pattern refuses a package holding a
   recursion leaf, and a reader that derives an optional field's leaf
   without `inner` refuses its leaves.
-

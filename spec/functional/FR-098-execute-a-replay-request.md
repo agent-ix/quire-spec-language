@@ -257,4 +257,3 @@ STD-113; the quantity conversion is tested directly.
   input and the S4 source resolution; ADR-015 D-4.
 - ADR-013 O-25, O-26, C-11, C-13, OQ-5; ADR-011 §2.1 E9, §4, §6.1.
 - QSpec FR-323 (`byte_provision`, `replay`).
-

@@ -273,4 +273,3 @@ QSL-345.
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §15.4, §15.7: the state field and population domain keys.
 - ADR-015 D-1: the dependency input.
-

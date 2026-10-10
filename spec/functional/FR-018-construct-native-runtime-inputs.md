@@ -63,4 +63,3 @@ can select an exact digest. Limits and accounting follow
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) supplies the operator need.
 - [FR-007](FR-007-validate-runtime-inputs.md) consumes artifacts without trusting construction as model validation.
 - Existing SourceIdentity, ByteDigest, IR RequirementRef/SymbolName and serde_json/sha2 dependencies are reused.
-

@@ -37,4 +37,3 @@ re-evaluated results yield constructor-private views. Future and past
 truth/support match FR-043; every invalid contract, identity, axis,
 population, correction or resource mutation returns one typed failure and no
 partial request, result or Boolean.~~
-

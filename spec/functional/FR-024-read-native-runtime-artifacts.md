@@ -101,4 +101,3 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 - [FR-023](FR-023-run-native-packages.md): native execution of admitted artifacts.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): shared closed JSON record adapter.
 - [Input contract](../../docs/native-runtime-inputs.md): complete native-state-input/1 fields.
-

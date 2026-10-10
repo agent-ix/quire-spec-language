@@ -71,4 +71,3 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   and `c1`'s `identity` is `6331`. `control`, `queues`, `roles`,
   `observations` and `bounds` are `{"type":"map","entries":[]}`. The two
   keys differ.
-

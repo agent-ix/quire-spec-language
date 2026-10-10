@@ -83,4 +83,3 @@ criteria each step backs.
   `qualification_catalog` rows in order; its selection rules, trigger
   vocabulary and refusal codes equal QSpec's; QSpec's selection vectors give
   their recorded outcomes (FR-110-AC-9).
-

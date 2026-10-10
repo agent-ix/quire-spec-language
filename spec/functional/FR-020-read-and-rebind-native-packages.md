@@ -73,4 +73,3 @@ digest cannot bypass derivation checks.
 - [FR-004](FR-004-verify-source-maps.md) and [FR-014](FR-014-bind-native-formal-source.md) retain explicit source correspondence.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) bounds intake.
 - [IT-007](../integration/IT-007-native-package-reconstruction.md) qualifies reconstruction through actual runtime observations.
-

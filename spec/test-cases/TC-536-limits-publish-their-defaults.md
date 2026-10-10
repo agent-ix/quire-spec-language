@@ -42,4 +42,3 @@ Tag the tests `#[trace("TC-536", "FR-101-AC-15")]` and
 - Step 2: `Exhaustive`; `Outcome::Bounded` at `Limit::States`, value 2.
 - Step 3: the FR-126-AC-1 outcomes; `Stopped{ResourceExhausted,
   {MaxStates, 2}}`.
-

@@ -251,4 +251,3 @@ each list can only shrink.
 - [FR-059](FR-059-check-backend-dependency-direction.md) establishes the
   crate-level FB-05 exception this requirement's T12-A rule verifies at the
   module level.
-

@@ -32,4 +32,3 @@ node key. Scope: FR-065-AC-7.
   diagnostic sink holds no entry.
 - Step 2: the hook admits `f`, and `f`'s identity is FR-092 vector F1,
   `dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79`.
-

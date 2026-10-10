@@ -39,4 +39,3 @@ Tag the test `#[trace("FR-091-AC-10", "TC-403")]`.
 - `Multiply` covers `(a + b) * c`. `Add` covers `a + b`, without the
   parentheses.
 - Every node carries a span, and each span lies inside its parent's.
-

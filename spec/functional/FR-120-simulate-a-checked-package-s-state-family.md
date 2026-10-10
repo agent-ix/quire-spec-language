@@ -532,4 +532,3 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
-

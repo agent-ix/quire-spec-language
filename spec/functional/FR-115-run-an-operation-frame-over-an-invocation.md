@@ -115,4 +115,3 @@ clause under test.
 - FR-069 and FR-070 (the violation verdict with its witness).
 - QSpec FR-013 (frame enforcement), `native-diagnostics.md`
   (`frame_violation`, `population_delta_mismatch`).
-

@@ -33,4 +33,3 @@ Tag each test `#[trace("TC-819", "<AC id>")]`.
   refusal each.
 - Step 3: the same verdicts as in a function body, under each clause kind.
 - Step 4: TC-262's verdicts.
-

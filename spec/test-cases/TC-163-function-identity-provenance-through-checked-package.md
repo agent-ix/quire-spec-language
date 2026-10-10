@@ -53,4 +53,3 @@ FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
 - Step 6: `both`'s identity is FR-092 vector F2 and the call's is E2, in
   domain `quire.checked-semantic-node/v1`; each QSpec operation vector's
   recomputed key equals its recorded `sha256`.
-

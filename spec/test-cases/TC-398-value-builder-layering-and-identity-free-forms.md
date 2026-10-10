@@ -62,4 +62,3 @@ dependency check covers `[dev-dependencies]` too:
 requires `[dependencies]` to be exactly `qsl-cst`, `qsl-foundation` and
 `quire-exact`, and refuses any other workspace crate in
 `[dev-dependencies]`.
-

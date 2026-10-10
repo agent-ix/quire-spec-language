@@ -231,4 +231,3 @@ label set makes non-empty. `EditPredecessor`, `ForeignNode` and
   reference): the `invalid_source_identity` row, its causes `blank-label`
   and `empty-path`, and the `label` payload spelling; QSpec FR-272-AC-12.
 - [Detailed contract or implementation evidence](../../qsl-foundation/src/source.rs) supplies the scoped context.
-

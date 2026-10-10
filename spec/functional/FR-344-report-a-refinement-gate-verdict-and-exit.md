@@ -120,4 +120,3 @@ their exits.
   case), RF-5.
 - Specification tickets QSL-386, QSL-387; implementation tickets QSL-40,
   QSL-39.
-

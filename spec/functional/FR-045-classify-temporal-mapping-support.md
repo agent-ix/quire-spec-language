@@ -152,4 +152,3 @@ encode. Naming them is not discharging them.
   `ix://agent-ix/quire-specification/FR-095` — the TL formula, valuation request
   and correspondence record — depends on `quire-contract-ir#63`,
   `quire-contract-ir#64` and actual TL capability, and is not implemented here.
-

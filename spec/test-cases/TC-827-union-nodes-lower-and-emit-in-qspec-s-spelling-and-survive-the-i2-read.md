@@ -29,4 +29,3 @@ Tag each test `#[trace("TC-827", "<AC id>")]`.
 - Step 2: recompiled `package_id` equals the emitted one.
 - Step 3: the union node and every node naming it are omitted with
   `UnsupportedForm`; no partial body is written.
-

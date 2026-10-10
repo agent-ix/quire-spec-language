@@ -57,4 +57,3 @@ Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "TC-396")]`.
   unresolved-type-name error naming `M::T`, code
   `missing_declaration`/`missing-name`.
 - No step-3 refusal has code `unsupported_construct`.
-

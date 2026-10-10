@@ -80,4 +80,3 @@ applies its own node limit as an additional guard over already checked packages.
 
 - [US-004](../usecase/US-004-reuse-existing-toolchain.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../README.md) supplies the scoped context.
-

@@ -198,4 +198,3 @@ binding receipt when CG consumes the serialized result.
   driver read it with `read_clause_run_request` and call `run_clause`. It
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
   ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
-

@@ -37,4 +37,3 @@ Tag the test `#[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]`.
   second pass gives identical bytes.
 - Every step-4 call returns a refusal with a typed cause and no string, and
   none panics.
-

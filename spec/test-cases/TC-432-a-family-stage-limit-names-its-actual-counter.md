@@ -35,4 +35,3 @@ charge `w` with the same measure `check` uses:
   returns `Limit(WorkBudget, bound w, actual 2w)`.
 - Step 3: `Limit(InputBytes, bound 0, actual b')`: the counter is the
   measured metric, not the bound plus one.
-

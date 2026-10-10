@@ -44,4 +44,3 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 - Step 3 compiles, which shows the seam's family parameter is that type.
   Each call returns `Err(fault)` for the unresolved identity, and none
   panics.
-

@@ -49,4 +49,3 @@ they described does not exist.
 
 FR-051-AC-6 (live): `arch-lint direction` reports no FB-05 edge into QSL and
 no FB-11 cycle.
-

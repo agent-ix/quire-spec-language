@@ -225,4 +225,3 @@ comparisons, external constants or indirect branch dataflow.
   the same scan in their own repositories, over the same rule; this
   requirement builds the attribute and the scan tool that #141 and #86
   invoke, not their own edge inventories.
-

@@ -94,4 +94,3 @@ Tag the tests with the AC ids they back and `TC-481`.
 - Step 11: N1 is a `scalar_type`/`enum` node with
   `declaration.qualified_name` `["Status"]`, and N2 a `value`/`enum_value`
   node.
-

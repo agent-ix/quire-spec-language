@@ -41,4 +41,3 @@ Tag the tests `#[trace("TC-726", "FR-258-AC-2")]` and `#[trace("TC-726", "FR-258
 - Step 3: the parameter is keyed, and the thread completes.
 - Step 4: the walk enters `2 × 1,001 + 1` visits, no more than twice the
   work units it charged, plus one.
-
