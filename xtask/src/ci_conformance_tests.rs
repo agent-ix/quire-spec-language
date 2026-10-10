@@ -22,6 +22,7 @@ const CHECKS: [(&str, &str); 12] = [
 ];
 
 // The launcher only forwards process context. All double behavior lives in Rust.
+/// Trace: FR-092-AC-8
 #[test]
 fn cargo_double() {
     let Ok(log) = std::env::var("CONFORMANCE_DOUBLE_LOG") else {
@@ -31,12 +32,19 @@ fn cargo_double() {
     let mut words = args.split_whitespace();
     words.find(|word| *word == "--exact").expect("exact flag");
     let selection = words.next().expect("exact selection");
-    let index = CHECKS.iter().position(|(name, _)| *name == selection).expect("required selection");
+    let index = CHECKS
+        .iter()
+        .position(|(name, _)| *name == selection)
+        .expect("required selection");
     assert!(args.starts_with("test --locked -p "));
     assert!(args.contains(" -- --exact "));
     assert!(args.ends_with(" --nocapture"));
     let mut calls = fs::read_to_string(&log).unwrap_or_default();
-    calls.push_str(&format!("{}\t{}\n", selection, std::env::var("QSPEC_DIR").unwrap()));
+    calls.push_str(&format!(
+        "{}\t{}\n",
+        selection,
+        std::env::var("QSPEC_DIR").unwrap()
+    ));
     fs::write(log, calls).unwrap();
     println!("selected: {selection}");
     let fail_at = std::env::var("CONFORMANCE_DOUBLE_FAIL_AT").unwrap();
@@ -46,14 +54,22 @@ fn cargo_double() {
         "positive".to_owned()
     };
     match mode.as_str() {
-        "no-summary" => {},
-        "zero-vectors" => println!("conformance: 0 of 0 QSpec operation vectors match (process double)"),
+        "no-summary" => {}
+        "zero-vectors" => {
+            println!("conformance: 0 of 0 QSpec operation vectors match (process double)")
+        }
         _ => println!("{}", CHECKS[index].1),
     }
     match mode.as_str() {
-        "zero-tests" => println!("test result: ok. 0 passed; 0 failed; 0 ignored; 1 filtered out; finished in 0.00s"),
-        "ignored" => println!("test result: ok. 0 passed; 0 failed; 1 ignored; 0 filtered out; finished in 0.00s"),
-        _ => println!("test result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0.00s"),
+        "zero-tests" => println!(
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 1 filtered out; finished in 0.00s"
+        ),
+        "ignored" => println!(
+            "test result: ok. 0 passed; 0 failed; 1 ignored; 0 filtered out; finished in 0.00s"
+        ),
+        _ => println!(
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0.00s"
+        ),
     }
     if mode == "skip" {
         println!("skipped: QSPEC_DIR not set");
@@ -75,13 +91,21 @@ impl Recipe {
         // A linked worktree's common Git directory points back to the main clone.
         let common = root.path().join("main-clone/.git");
         fs::create_dir_all(&common).unwrap();
-        let git = Command::new("git").args(["init", "--quiet"]).arg(common.parent().unwrap()).output().unwrap();
+        let git = Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(common.parent().unwrap())
+            .output()
+            .unwrap();
         assert!(git.status.success());
         let worktree_git = common.join("worktrees/recipe");
         fs::create_dir_all(&worktree_git).unwrap();
         fs::write(worktree_git.join("commondir"), "../..\n").unwrap();
         fs::write(worktree_git.join("HEAD"), "ref: refs/heads/recipe\n").unwrap();
-        fs::write(root.path().join(".git"), format!("gitdir: {}\n", worktree_git.display())).unwrap();
+        fs::write(
+            root.path().join(".git"),
+            format!("gitdir: {}\n", worktree_git.display()),
+        )
+        .unwrap();
         let bin = root.path().join("bin");
         fs::create_dir(&bin).unwrap();
         let executable = std::env::current_exe().unwrap();
@@ -91,7 +115,11 @@ impl Recipe {
         let checkout = root.path().join("quire-specification");
         Self::checkout(&checkout);
         let log = root.path().join("calls");
-        Self { root, checkout, log }
+        Self {
+            root,
+            checkout,
+            log,
+        }
     }
 
     fn checkout(path: &Path) {
@@ -103,10 +131,21 @@ impl Recipe {
 
     fn run(&self, target: &str, override_dir: Option<&Path>, mode: &str, fail_at: usize) -> Output {
         let mut make = Command::new("make");
-        make.current_dir(self.root.path()).args(["--no-print-directory", "-rR", target])
-            .env_remove("QSPEC_DIR").env_remove("SIBLINGS")
-            .env_remove("MAKEFLAGS").env_remove("MFLAGS").env_remove("MAKEFILES")
-            .env("PATH", std::env::join_paths(std::iter::once(self.root.path().join("bin")).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))).unwrap())
+        make.current_dir(self.root.path())
+            .args(["--no-print-directory", "-rR", target])
+            .env_remove("QSPEC_DIR")
+            .env_remove("SIBLINGS")
+            .env_remove("MAKEFLAGS")
+            .env_remove("MFLAGS")
+            .env_remove("MAKEFILES")
+            .env(
+                "PATH",
+                std::env::join_paths(
+                    std::iter::once(self.root.path().join("bin"))
+                        .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+                )
+                .unwrap(),
+            )
             .env("CONFORMANCE_DOUBLE_LOG", &self.log)
             .env("CONFORMANCE_DOUBLE_MODE", mode)
             .env("CONFORMANCE_DOUBLE_FAIL_AT", fail_at.to_string());
@@ -115,7 +154,22 @@ impl Recipe {
         }
         // Run the real ci dependency graph, confining other lanes to their own tests.
         if target == "ci" {
-            for prerequisite in ["check-no-committed-binaries", "check-index-completeness", "ci-default-features", "ci-all-features", "ci-clean-build", "seam-probe", "string-edge", "route-lint", "checked-input", "cargo-deny-bans", "ci-docs", "arch-lint-canonical-encoder", "arch-lint-api-surface-qsl", "arch-lint-qualified-core"] {
+            for prerequisite in [
+                "check-no-committed-binaries",
+                "check-index-completeness",
+                "ci-default-features",
+                "ci-all-features",
+                "ci-clean-build",
+                "seam-probe",
+                "string-edge",
+                "route-lint",
+                "checked-input",
+                "cargo-deny-bans",
+                "ci-docs",
+                "arch-lint-canonical-encoder",
+                "arch-lint-api-surface-qsl",
+                "arch-lint-qualified-core",
+            ] {
                 make.args(["-o", prerequisite]);
             }
         }
@@ -123,7 +177,10 @@ impl Recipe {
     }
 
     fn assert_calls(&self, checkout: &Path) {
-        let expected: String = CHECKS.iter().map(|(name, _)| format!("{name}\t{}\n", checkout.display())).collect();
+        let expected: String = CHECKS
+            .iter()
+            .map(|(name, _)| format!("{name}\t{}\n", checkout.display()))
+            .collect();
         assert_eq!(fs::read_to_string(&self.log).unwrap_or_default(), expected, "local ci must execute all twelve exact conformance selections with the resolved checkout");
     }
 }
@@ -133,7 +190,11 @@ impl Recipe {
 fn local_ci_runs_all_conformance_checks_from_a_linked_worktree() {
     let recipe = Recipe::new();
     let output = recipe.run("ci", None, "positive", 0);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     recipe.assert_calls(&recipe.checkout);
 }
 
@@ -145,18 +206,41 @@ fn caller_checkout_override_is_used_and_exported() {
     let override_dir = recipe.root.path().join("caller checkout");
     Recipe::checkout(&override_dir);
     let output = recipe.run("ci", Some(&override_dir), "positive", 0);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     recipe.assert_calls(&override_dir);
-    let exported = Command::new("make").current_dir(recipe.root.path())
-        .args(["--no-print-directory", "-f", "Makefile", "-f", "-", "export-probe"])
+    let exported = Command::new("make")
+        .current_dir(recipe.root.path())
+        .args([
+            "--no-print-directory",
+            "-f",
+            "Makefile",
+            "-f",
+            "-",
+            "export-probe",
+        ])
         .arg(format!("QSPEC_DIR={}", override_dir.display()))
-        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
     use std::io::Write;
     let mut exported = exported;
-    exported.stdin.take().unwrap().write_all(b"export-probe:\n\t@printenv QSPEC_DIR\n").unwrap();
+    exported
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"export-probe:\n\t@printenv QSPEC_DIR\n")
+        .unwrap();
     let output = exported.wait_with_output().unwrap();
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), override_dir.to_str().unwrap());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        override_dir.to_str().unwrap()
+    );
 }
 
 /// Trace: FR-092-AC-8
@@ -167,7 +251,10 @@ fn missing_empty_and_invalid_checkouts_fail_before_cargo() {
         let invalid = recipe.root.path().join("invalid");
         fs::create_dir(&invalid).unwrap();
         let override_dir = match kind {
-            "missing-default" => { fs::remove_dir_all(&recipe.checkout).unwrap(); None },
+            "missing-default" => {
+                fs::remove_dir_all(&recipe.checkout).unwrap();
+                None
+            }
             "empty" => Some(Path::new("")),
             "missing-override" => Some(Path::new("absent")),
             "invalid" => Some(invalid.as_path()),
@@ -183,14 +270,24 @@ fn missing_empty_and_invalid_checkouts_fail_before_cargo() {
 /// Trace: FR-092-AC-8
 #[test]
 fn every_required_selection_rejects_zero_ignored_skip_missing_summary_and_failure() {
-    for index in 0..CHECKS.len() {
+    for (index, (selection, _)) in CHECKS.iter().enumerate() {
         for mode in ["zero-tests", "ignored", "skip", "no-summary", "nonzero"] {
             let recipe = Recipe::new();
             let output = recipe.run("conformance", None, mode, index);
-            assert!(!output.status.success(), "selection {index} must reject {mode}");
+            assert!(
+                !output.status.success(),
+                "selection {index} must reject {mode}"
+            );
             let calls = fs::read_to_string(&recipe.log).unwrap();
-            assert_eq!(calls.lines().count(), index + 1, "must stop at the refusing selection");
-            assert!(String::from_utf8_lossy(&output.stdout).contains(CHECKS[index].0), "the required test must actually have been selected");
+            assert_eq!(
+                calls.lines().count(),
+                index + 1,
+                "must stop at the refusing selection"
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains(selection),
+                "the required test must actually have been selected"
+            );
         }
     }
 }
@@ -200,6 +297,9 @@ fn every_required_selection_rejects_zero_ignored_skip_missing_summary_and_failur
 fn operation_summary_requires_positive_vector_counts() {
     let recipe = Recipe::new();
     let output = recipe.run("conformance", None, "zero-vectors", 0);
-    assert!(!output.status.success(), "a zero-vector operation summary must fail");
+    assert!(
+        !output.status.success(),
+        "a zero-vector operation summary must fail"
+    );
     assert!(String::from_utf8_lossy(&output.stderr).contains("vector check did not run"));
 }
