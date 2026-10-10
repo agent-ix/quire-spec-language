@@ -649,7 +649,11 @@ fn expressions(g: &mut Grammar) {
         s(vec![
             r(P::Primary),
             star(c(vec![
-                s(vec![x("."), member()]),
+                s(vec![
+                    x("."),
+                    member(),
+                    opt(s(vec![x("("), opt(list(|| r(P::Expression))), x(")")])),
+                ]),
                 s(vec![x("["), r(P::Expression), x("]")]),
             ])),
         ]),
@@ -829,6 +833,23 @@ fn expressions(g: &mut Grammar) {
                 x(")"),
             ]),
             r(P::CollectionCall),
+            s(vec![
+                x("lookup"),
+                x("<"),
+                r(P::TypeReference),
+                x(">"),
+                x("("),
+                r(P::Expression),
+                x(","),
+                r(P::Expression),
+                x(")"),
+                x("absent"),
+                c(vec![
+                    literal("undefined"),
+                    literal("empty"),
+                    literal("refused"),
+                ]),
+            ]),
             s(vec![
                 x("size"),
                 opt(s(vec![x("<"), r(P::TypeReference), x(">")])),
