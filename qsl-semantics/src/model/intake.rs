@@ -1904,7 +1904,7 @@ fn read_operation_member(
         // reader states none rather than inventing one.
         own_postcondition_clauses: Vec::new(),
         has_body: false,
-        redefines: None,
+        redefines: ctx.opt_str_field("redefines").map(|target| declaration_key(package, target)),
     })
 }
 

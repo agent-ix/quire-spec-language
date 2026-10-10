@@ -111,6 +111,7 @@ struct Ancestry {
 pub struct ModelIndex {
     package: Arc<DomainPackage>,
     records: RecordIndex,
+    type_fact_counts: BTreeMap<DeclarationKey, u64>,
 }
 
 /// The positional index [`ModelIndex`] keeps over its package's records.
@@ -203,18 +204,84 @@ impl ModelIndex {
     pub fn build(domain_package: impl Into<Arc<DomainPackage>>) -> Self {
         let package = domain_package.into();
         let records = RecordIndex::build(&package);
-        Self { package, records }
+        let type_fact_counts = records.type_fact_counts();
+        Self { package, records, type_fact_counts }
     }
 
     /// `package` with `records`, the index normalization already built over
     /// it.
-    pub(crate) fn from_parts(package: Arc<DomainPackage>, records: RecordIndex) -> Self {
+    pub(crate) fn from_parts(package: Arc<DomainPackage>, records: RecordIndex,
+        type_fact_counts: BTreeMap<DeclarationKey, u64>) -> Self {
         debug_assert_eq!(
             records.record_count,
             package.records.len(),
             "the record index was built over this package's records"
         );
-        Self { package, records }
+        Self { package, records, type_fact_counts }
+    }
+
+    /// Actual qualify/inherit fact count for an object type; non-object
+    /// value-domain conversion is priced as one work unit.
+    pub(crate) fn type_fact_count(&self, value_type: &ValueTypeRef) -> u64 {
+        value_type.as_package().and_then(|key| self.type_fact_counts.get(key)).copied().unwrap_or(1)
+    }
+
+    /// FR-151 conformance after its owning axis charge has admitted.
+    /// Every walk has its own edge ceiling; its denial does not refund work.
+    pub(crate) fn conformance_walk(&self, s: &DeclarationKey, t: &DeclarationKey,
+        limit: u64) -> Result<bool, crate::model::accounting::Incomplete> {
+        if s == t { return Ok(true); }
+        let Some(start) = self.records.position(s) else { return Ok(false); };
+        let mut stack = vec![start];
+        let mut expanded = std::collections::HashSet::new();
+        let mut consumed = 0;
+        while let Some(current) = stack.pop() {
+            if !expanded.insert(current) { continue; }
+            for general in &self.records.generals[current.0] {
+                if consumed == limit {
+                    return Err(crate::model::accounting::Incomplete {
+                        limit_kind: crate::model::accounting::LimitKind::AncestorSteps,
+                        limit, consumed, next_charge: 1,
+                        charge_point: crate::model::accounting::ChargePoint::ModelAncestorEdge,
+                    });
+                }
+                consumed += 1;
+                if self.records.key(*general) == t { return Ok(true); }
+                stack.push(*general);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Object reachability or exact native/scalar domain conversion.
+    pub(crate) fn value_conformance_walk(&self, s: &ValueTypeRef, t: &ValueTypeRef,
+        limit: u64) -> Result<bool, crate::model::accounting::Incomplete> {
+        match (s, t) {
+            (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
+            (ValueTypeRef::Package(a), ValueTypeRef::Package(b)) => {
+                match (self.scalar_bounds(a), self.scalar_bounds(b)) {
+                    (Some((lo, hi)), Some((parent_lo, parent_hi))) =>
+                        Ok(parent_lo <= lo && hi <= parent_hi),
+                    (Some(_), None) | (None, Some(_)) => Ok(false),
+                    (None, None) => self.conformance_walk(a, b, limit),
+                }
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// All declared field redefinition links followed by an effect test,
+    /// including the written member itself; cycles remain bounded by records.
+    pub(crate) fn field_lineage(&self, field: &DeclarationKey) -> Vec<&DeclarationKey> {
+        let Some(mut current) = self.records.position(field) else { return Vec::new(); };
+        let mut path = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(current) {
+            path.push(self.records.key(current));
+            let Some(next) = self.records.redefines.get(&current) else { break; };
+            current = *next;
+        }
+        path
     }
 
     /// The indexed package.
@@ -310,6 +377,35 @@ fn operation_at(
 }
 
 impl RecordIndex {
+    /// Count every declared inheritance path using one explicit-stack
+    /// dynamic program. Structural normalization refuses cycles before its
+    /// resulting view is passed to conformance.
+    fn type_fact_counts(&self) -> BTreeMap<DeclarationKey, u64> {
+        let mut counts: HashMap<DeclIdx, u64> = HashMap::new();
+        for key in self.object_types() {
+            let Some(start) = self.position(key) else { continue; };
+            let mut active = std::collections::HashSet::new();
+            let mut stack = vec![(start, false)];
+            while let Some((current, closing)) = stack.pop() {
+                if counts.contains_key(&current) { continue; }
+                if closing {
+                    let count = self.generals[current.0].iter().fold(1_u64,
+                        |sum, general| sum.saturating_add(counts.get(general).copied().unwrap_or(u64::MAX)));
+                    counts.insert(current, count);
+                    active.remove(&current);
+                } else if active.insert(current) {
+                    stack.push((current, true));
+                    for general in self.generals[current.0].iter().rev() {
+                        if !counts.contains_key(general) { stack.push((*general, false)); }
+                    }
+                } else {
+                    counts.insert(current, u64::MAX);
+                }
+            }
+        }
+        counts.into_iter().map(|(key, count)| (self.key(key).clone(), count)).collect()
+    }
+
     /// Reads `domain_package`'s records once into the index.
     pub(crate) fn build(domain_package: &DomainPackage) -> Self {
         let mut keys: Vec<DeclarationKey> = domain_package

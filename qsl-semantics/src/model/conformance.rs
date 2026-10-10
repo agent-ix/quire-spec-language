@@ -44,13 +44,13 @@
 //!   `pub(crate)` for exactly that call
 //!   (`check` sits above `model` in ADR-011 §6.1's layer-3 order, so `check`
 //!   depending back on `model` is legal; the reverse was not).
-//! - Exact per-axis work-unit costs (FR-151's `f(T)` formula, the length of
-//!   a type's own derivation array) are not reproduced: computing `f(T)`
-//!   here would require this module to re-walk `normalize`'s ancestor
-//!   graph per axis, and FR-151's own worked examples price authored
-//!   operation bodies this rung does not model. Every `conformance.axis`
-//!   charge costs a flat one work unit; this is a recorded scope choice,
-//!   not silent drift from the spec's numbers.
+//! - Each type axis charges the actual qualify/inherit fact count of its
+//!   tested object type, or one for value-domain conversion. Normalized
+//!   indexes reuse the view's derived facts. Effect pricing counts every
+//!   frame-entry/grant comparison and each written-field redefinition link;
+//!   a successful comparison never suppresses a later required comparison.
+//!   Owning axis work admits before a bounded ancestor walk follows an edge.
+//!
 //! - `resolve_redefinition_target` resolves a redefining member's own single
 //!   inline `redefines` property (`model-complete.md`:162) against exactly
 //!   the one target it names: either that target is a genuinely inherited
@@ -175,6 +175,11 @@ fn charge_axis(meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::ConformanceAxis))
 }
 
+fn charge_type_axis(index: &ModelIndex, value_type: &crate::model::domain_package::ValueTypeRef,
+    meter: &mut Meter) -> Result<(), Incomplete> {
+    meter.charge(Charge::new(ChargePoint::ConformanceAxis).work(index.type_fact_count(value_type)))
+}
+
 pub(crate) fn missing_member(cause: ModelRefusalCause, identity: &str, role: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::DanglingReference,
@@ -212,14 +217,13 @@ pub fn check_field_redefinition(
 
     let mut failures = Vec::new();
 
-    if let Err(incomplete) = charge_axis(meter) {
+    if let Err(incomplete) = charge_type_axis(index, &redefining.value_type, meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    match index.value_type_conforms(
+    match index.value_conformance_walk(
         &redefining.value_type,
         &redefined.value_type,
         meter.limits().ancestor_steps,
-        qsl_foundation::Setting::ModelAncestorSteps,
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -231,7 +235,7 @@ pub fn check_field_redefinition(
                 redefining.value_type, redefined.value_type
             ),
         }),
-        Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
+        Err(incomplete) => return ConformanceCheckOutcome::Incomplete(incomplete),
     }
 
     if let Err(incomplete) = charge_axis(meter) {
@@ -291,14 +295,13 @@ pub fn check_subsetting(
 
     let mut failures = Vec::new();
 
-    if let Err(incomplete) = charge_axis(meter) {
+    if let Err(incomplete) = charge_type_axis(index, &subsetting.value_type, meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    match index.value_type_conforms(
+    match index.value_conformance_walk(
         &subsetting.value_type,
         &subsetted.value_type,
         meter.limits().ancestor_steps,
-        qsl_foundation::Setting::ModelAncestorSteps,
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -313,7 +316,7 @@ pub fn check_subsetting(
                 subsetting.value_type, subsetted.value_type
             ),
         }),
-        Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
+        Err(incomplete) => return ConformanceCheckOutcome::Incomplete(incomplete),
     }
 
     if let Err(incomplete) = charge_axis(meter) {
@@ -396,14 +399,13 @@ pub fn check_operation_redefinition(
         {
             let display_index = i + 1; // parameter 0 is the receiver, never checked here.
 
-            if let Err(incomplete) = charge_axis(meter) {
+            if let Err(incomplete) = charge_type_axis(index, &dp.value_type, meter) {
                 return ConformanceCheckOutcome::Incomplete(incomplete);
             }
-            match index.value_type_conforms(
+            match index.value_conformance_walk(
                 &dp.value_type,
                 &rp.value_type,
                 meter.limits().ancestor_steps,
-                qsl_foundation::Setting::ModelAncestorSteps,
             ) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
@@ -419,7 +421,7 @@ pub fn check_operation_redefinition(
                         dp.value_type, rp.value_type
                     ),
                 }),
-                Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
+                Err(incomplete) => return ConformanceCheckOutcome::Incomplete(incomplete),
             }
 
             if let Err(incomplete) = charge_axis(meter) {
@@ -443,16 +445,19 @@ pub fn check_operation_redefinition(
     }
 
     // Result type.
-    if let Err(incomplete) = charge_axis(meter) {
+    let result_work = match (&redefining.result, &redefined.result) {
+        (Some(result), Some(_)) => index.type_fact_count(&result.value_type),
+        _ => 1,
+    };
+    if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::ConformanceAxis).work(result_work)) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
     match (&redefining.result, &redefined.result) {
         (Some(rr), Some(dr)) => {
-            match index.value_type_conforms(
+            match index.value_conformance_walk(
                 &rr.value_type,
                 &dr.value_type,
                 meter.limits().ancestor_steps,
-                qsl_foundation::Setting::ModelAncestorSteps,
             ) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
@@ -461,7 +466,7 @@ pub fn check_operation_redefinition(
                     cause: ModelRefusalCause::VarianceResult,
                     detail: format!("{} does not conform to {}", rr.value_type, dr.value_type),
                 }),
-                Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
+                Err(incomplete) => return ConformanceCheckOutcome::Incomplete(incomplete),
             }
         }
         (None, None) => {}
@@ -499,13 +504,30 @@ pub fn check_operation_redefinition(
     // ([`ModelIndex::redefinition_reaches`]; QSL #171) -- not just one hop, since
     // model-complete.md:56/:64 make a multi-hop chain like `C.x -> B.x ->
     // A.x` legal with no direct `C.x -> A.x` record.
-    if let Err(incomplete) = charge_axis(meter) {
+    let mut effect_work = 0_u64;
+    for write in &redefining.effect.modifies {
+        let path = index.field_lineage(write);
+        let links = path.len().saturating_sub(1);
+        effect_work = effect_work.saturating_add(quire_exact::length_amount(redefined.effect.modifies.len())
+            .saturating_mul(quire_exact::length_amount(links).saturating_add(1)));
+    }
+    for (entries, grants) in [(&redefining.effect.creates, &redefined.effect.creates),
+        (&redefining.effect.deletes, &redefined.effect.deletes)] {
+        for entry in entries {
+            effect_work = effect_work.saturating_add(index.type_fact_count(
+                &crate::model::domain_package::ValueTypeRef::Package(entry.clone()))
+                .saturating_mul(quire_exact::length_amount(grants.len())));
+        }
+    }
+    if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::ConformanceAxis).work(effect_work.max(1))) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
     for write in &redefining.effect.modifies {
-        let covered = index.redefinition_reaches(write, |candidate| {
-            redefined.effect.modifies.contains(candidate)
-        });
+        let path = index.field_lineage(write);
+        let mut covered = false;
+        for grant in &redefined.effect.modifies {
+            covered |= path.iter().any(|candidate| *candidate == grant);
+        }
         if !covered {
             failures.push(AxisFailure {
                 axis: "effect",
@@ -527,18 +549,16 @@ pub fn check_operation_redefinition(
         for entry in create {
             let mut covered = false;
             for grant in grants {
-                match index.conforms(
+                match index.conformance_walk(
                     entry,
                     grant,
                     meter.limits().ancestor_steps,
-                    qsl_foundation::Setting::ModelAncestorSteps,
                 ) {
                     Ok(true) => {
                         covered = true;
-                        break;
                     }
                     Ok(false) => {}
-                    Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
+                    Err(incomplete) => return ConformanceCheckOutcome::Incomplete(incomplete),
                 }
             }
             if !covered {

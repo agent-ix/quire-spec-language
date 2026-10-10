@@ -2851,10 +2851,17 @@ fn into_outcome(
     package: impl FnOnce() -> Arc<DomainPackage>,
 ) -> NormalizeOutcome {
     match body {
-        Ok((body, records)) => NormalizeOutcome::Completed(EffectiveView {
-            index: Arc::new(ModelIndex::from_parts(package(), records)),
-            body,
-        }),
+        Ok((body, records)) => {
+            let type_fact_counts = body.declarations.iter()
+                .filter(|entry| entry.preimage.owner_effective_type.is_none())
+                .map(|entry| (entry.preimage.original.clone(),
+                    length_amount(entry.preimage.derivation.len())))
+                .collect();
+            NormalizeOutcome::Completed(EffectiveView {
+                index: Arc::new(ModelIndex::from_parts(package(), records, type_fact_counts)),
+                body,
+            })
+        }
         Err(Denial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
         // `Denial::Refused` already carries `Refusals` (L1
         // finding, PR #228 round 2 review): every raise site builds it
