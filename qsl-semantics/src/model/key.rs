@@ -450,7 +450,7 @@ impl EffectiveDeclarationPreimage {
 
     /// Whether `derivation` is well-formed: every fact's `ordinal` matches
     /// its array position (`unsorted-derivation`), and no two facts retain
-    /// the same input path twice (`duplicate-path`) — TC-195 N10's
+    /// the same rule and input path twice (`duplicate-path`) — TC-195 N10's
     /// `invalid_mutations` named these "refused by the semantic check", i.e.
     /// this engine's own job over an already-constructed preimage (for
     /// example one read back from a checked-package `model_correspondence`
@@ -478,7 +478,9 @@ impl EffectiveDeclarationPreimage {
         }
         for earlier in 0..self.derivation.len() {
             for later in (earlier + 1)..self.derivation.len() {
-                if self.derivation[earlier].inputs == self.derivation[later].inputs {
+                if self.derivation[earlier].rule == self.derivation[later].rule
+                    && self.derivation[earlier].inputs == self.derivation[later].inputs
+                {
                     return Err((
                         ModelRefusalCause::DuplicatePath {
                             original: self.original.clone(),
