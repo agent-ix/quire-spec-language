@@ -878,71 +878,54 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
 #[trace("TC-911", "FR-082-AC-9")]
 #[test]
 fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
-    let redefining_key = DeclarationKey::fixture("model.B.fn");
-    let redefined_key = DeclarationKey::fixture("model.A.f");
-    let package_stating = |literal: i128| {
-        DomainPackage::new(
-            DomainPackageRef::fixture("bundle.wide"),
-            vec![
-                object_type("model.A", vec![]),
-                object_type("model.B", vec!["model.A"]),
-                scalar_type("model.Wide", 0, i128::from(u64::MAX)),
-                scalar_type("model.Narrow", 0, 9_223_372_036_854_775_808),
-                field_member("model.A.f", "model.A", "model.Wide", mult(1, Some(1))),
-                operation(
-                    "model.A.set",
-                    "model.A",
-                    vec![],
-                    None,
-                    vec!["model.A.f"],
-                    vec![],
-                    vec![],
-                    vec![],
-                ),
-                field_member_redefining(
-                    "model.B.fn",
-                    "model.B",
-                    "model.Narrow",
-                    mult(1, Some(1)),
-                    Some("model.A.f"),
-                    vec![],
-                ),
-                operation_redefining(
-                    "model.B.set",
-                    "model.B",
-                    vec![],
-                    None,
-                    vec![],
-                    vec![],
-                    vec![],
-                    vec![PostconditionClause::Comparison {
-                        field: DeclarationKey::fixture("model.B.fn"),
-                        operator: OrderingOperator::LessOrEqual,
-                        literal,
-                    }],
-                    Some("model.A.set"),
-                ),
-            ],
-        )
-    };
-    match check_field_refinement_obligation(
-        &ModelIndex::build(package_stating(9_223_372_036_854_775_808)),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Compatible) => {}
-        other => panic!("expected Compatible at 2^63, got {other:?}"),
-    }
-    match check_field_refinement_obligation(
-        &ModelIndex::build(package_stating(9_223_372_036_854_775_809)),
-        &redefining_key,
-        &redefined_key,
-    ) {
-        Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
-            assert!(failures[0].detail.contains("field-domain"));
+    use qsl_semantics::check::{CheckCause, PackageDeclarations, RefinementObligation};
+    use qsl_semantics::model::intake::SelectedModels;
+    use quire_semantic_value::checking::CheckingLimits;
+    use crate::model_operations::parse_and_build;
+
+    // The exact record fixture avoids a lossy JCS encoding above 2^53,
+    // while its source clauses use the normal parser and checker.
+    for (literal, succeeds) in [(9_223_372_036_854_775_808_i128, true),
+        (9_223_372_036_854_775_809, false)] {
+        let package = DomainPackage::new(DomainPackageRef::fixture("bundle.wide"), vec![
+            object_type("ix://test/orders/A", vec![]),
+            object_type("ix://test/orders/B", vec!["ix://test/orders/A"]),
+            scalar_type("ix://test/orders/Wide", 0, i128::from(u64::MAX)),
+            scalar_type("ix://test/orders/Narrow", 0, 9_223_372_036_854_775_808),
+            field_member("ix://test/orders/A/f", "ix://test/orders/A", "ix://test/orders/Wide", mult(1, Some(1))),
+            field_member_redefining("ix://test/orders/B/fn", "ix://test/orders/B", "ix://test/orders/Narrow",
+                mult(1, Some(1)), Some("ix://test/orders/A/f"), vec![]),
+            operation("ix://test/orders/A/set", "ix://test/orders/A", vec![], None,
+                vec!["ix://test/orders/A/f"], vec![], vec![], vec![]),
+            operation_redefining("ix://test/orders/B/set", "ix://test/orders/B", vec![], None,
+                vec!["ix://test/orders/A/f"], vec![], vec![], vec![], Some("ix://test/orders/A/set")),
+        ]);
+        let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
+        let unit = format!("language \"ix:native\" edition \"1-draft\";\n\
+            profile v = \"quire.value.complete/v1\";\n\
+            model M = \"test/orders\" version \"1\" digest \"sha256-jcs:{digest}\";\n\
+            post Q using v on M::B::set {{ self.fn <= {literal} }}\n");
+        let selected = SelectedModels::fixture("M", qsl_foundation::Span { start: 0, end: 1 },
+            package, ModelNormalizationLimits::UNLIMITED).expect("actual private normalization owner");
+        let built = parse_and_build(&unit);
+        let raw = qsl_cst::parse(qsl_foundation::SourceIdentity::new("test", "tc-911", "fixture", "1"),
+            "unit.native", unit.as_bytes(), qsl_cst::Limits::default()).expect("source admits");
+        let declarations = PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, vec![])
+            .expect("model-owned narrowing waits for its checked clause");
+        let result = declarations.check(CheckingLimits::default());
+        if succeeds { assert!(result.is_ok(), "exact 2^63 bound: {result:?}"); }
+        else {
+            let refused = result.expect_err("2^63+1 does not fit the narrowed interval");
+            assert_eq!(refused.len(), 1);
+            let CheckCause::ModelConformance(failure) = &refused[0].cause else {
+                panic!("actual refinement failure: {refused:?}");
+            };
+            assert_eq!(failure.cause, ModelRefusalCause::UnprovedRefinement);
+            assert_eq!(failure.obligation, Some(RefinementObligation::Domain));
+            assert_eq!(failure.member, DeclarationKey::fixture("ix://test/orders/B/fn"));
+            assert_eq!(failure.parent, DeclarationKey::fixture("ix://test/orders/A/f"));
+            assert_eq!(failure.writer, Some(DeclarationKey::fixture("ix://test/orders/B/set")));
         }
-        other => panic!("expected Refused (field-domain) at 2^63 + 1, got {other:?}"),
     }
 }
 
