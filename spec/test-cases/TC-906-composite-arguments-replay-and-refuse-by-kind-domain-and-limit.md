@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-277
+    type: verifies
 ---
 # TC-906: Composite and leaf-family arguments replay, and refuse by kind, by domain and at the request's limits
 
@@ -16,7 +18,8 @@ replays a nested-record counterexample from both arms. Each kind, identity
 and domain defect refuses `WrongValueKind` before the call, and the
 `value_occurrences` and `work_units` limits stop the replay before the call, settling `Incomplete` by counter name.
 
-Scope: FR-098-AC-8, FR-098-AC-9, FR-098-AC-10.
+Scope: FR-098-AC-8, FR-098-AC-9, FR-098-AC-10, FR-098-AC-12,
+FR-277-AC-4, FR-277-AC-5.
 
 ## Test Procedure
 
@@ -50,9 +53,39 @@ Requests are built from the unit's spine compile, as in TC-444.
    in another unit; a reference whose `object_type` is another type's.
    Finally, replay `deref(v: Reference<T>)`, which reads a field of `v`.
 
+5. Replay the unchanged full TC-830 step 4 Tree through both Input and
+   Witness public replay arms, using the TC-831 recursive sum and FR-357's
+   existing value-parity entry for a non-Boolean selection. First require
+   default success and direct/replay equality of evaluation charge traces.
+   Independently count semantic occurrences, converted nodes C and the
+   approved conversion helper sequence H. Repeat occurrence bounds 29,998
+   and 29,999, accounting work bounds C-1 and C, conversion helper bounds
+   H-1 and H, and admission helper A-1/A controls from TC-830. Isolate each
+   bound with all other pre-call bounds permitting progress. A C-bound
+   success means conversion succeeds; require enough evaluation work for
+   a completed replay. Then hold all pre-call bounds sufficient and run
+   the TC-831 evaluation 39,996/39,997 controls. The research prediction
+   129,994 is neither H nor a runtime result.
+6. Bind multiple composite arguments in declared parameter order. Count
+   C and occurrences independently per argument, but A/H cumulatively
+   across the whole operation and all delegated helpers. Choose a helper
+   bound that permits the first argument and denies an actual event of
+   the next; repeat at the exact total. Verify that no membership/helper
+   total seeds C and that delegation spends each actual event once in its
+   owner budget.
+7. At preflight, descriptor inspection, type resolution, materialization
+   and delegated membership boundaries, cancel the original handle before
+   work and during later arguments/helpers, with Requested and Deadline.
+   Exercise zero bounds, checked counter overflow, wrong kind/domain and
+   measured storage/capacity failure before mutation. Compare the complete
+   typed payload with the independent next-event sequence. Include a
+   logical cache-hit lookup and an admitted nested value to detect a free
+   lookup or unauthorized descendant revalidation.
+
 Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and
-`#[trace("TC-906", "FR-098-AC-10")]`.
+`#[trace("TC-906", "FR-098-AC-10")]`. Steps 5-7 additionally bind
+`FR-098-AC-12`, `FR-277-AC-4` and `FR-277-AC-5` by their criterion IDs.
 
 ## Expected Results
 
@@ -70,8 +103,27 @@ Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
   Each defect refuses `WrongValueKind` naming position 0, before the call.
   `deref` settles `inconclusive` with cause `NoValue`, since a replayed
   function has no object environment.
+- Step 5: the unchanged full Tree completes by default and at the exact
+  independent bounds. Each pre-call denial settles incomplete/
+  inconclusive/NoValue with zero evaluation consumption and the correct
+  QSL phase limit record, never a fabricated kernel FunctionCall. C remains
+  per-argument converted nodes. Evaluation controls reach the evaluator
+  and have TC-831's actual charge sequence and denial. Wire assertions
+  require the reviewed shared phase projection; an unavailable projection
+  is reported unavailable, never treated as a passing serialization.
+- Step 6: successful helper spend is cumulative; semantic counters retain
+  their per-argument rule. No argument/helper reset, double debit or partial
+  success. Exact helper ceiling permits progress when other bounds fit.
+- Step 7: original cancellation cause with no partial replay output;
+  invalid input retains WrongValueKind and its existing refusal boundary.
+  Limit/storage/capacity remain distinct and zero-evaluation outcomes;
+  denied work remains unspent. Wrong next-event metadata, cancellation as a
+  limit, storage as a limit, fresh Cancel, fake FunctionCall or cache bypass
+  fails the control.
 
 ## Status
 
 Passed locally, `qsl-replay/src/execute/tests/composite.rs`, except the union cases
 (pending QSL-503) and a quantity-typed parameter in source (pending STD-113).
+This historical status does not cover QSL-681 steps 5-7: those controls are
+proposed and unexecuted, pending shared event, union and wire alignment.

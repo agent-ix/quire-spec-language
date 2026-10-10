@@ -63,12 +63,24 @@ SC-R3).
 
 ## Acceptance Criteria
 
+Supplied admission SHALL use the distinct public `supplied.admission_work_units`
+ceiling and caller-owned cumulative traversal budget of FR-277, retaining
+the original Cancel across helpers and all arguments. Its membership/type
+comparison units and invalid-stop order SHALL follow the reviewed QSV
+FR-109 contract. Membership work SHALL NOT use the evaluator's work ceiling
+or fabricate a FunctionCall charge. "Before any charge" in this requirement
+means before any semantic evaluation charge; truthful helper spend up to a
+refusal remains observable in its owning pre-call phase. Union-specific
+units depend on the reviewed QSV declaration/member/type-comparison baseline,
+not the released bool-only admission API or source-predicted totals.
+
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-321-AC-1 | Running `area` with a supplied `Shape` argument refuses `invalid_runtime_input`/`wrong-value-kind`, with no evaluation and no charge, for each of: a union value whose key is a union of another package; a `VariantId` that is not a `Shape` member (another union's, or an enum's); `Rect` with one payload value; `Circle` with payload `true`. A `Rect(2, 3)` argument is admitted and the run returns 6. | Test (TC-829) |
 | FR-321-AC-2 | Over a union `Holder { Some(Reference<M::T>), Nothing }`, a supplied `Holder::Some` whose reference has no target in a declared-complete population is refused by the reference walk with its existing code, before evaluation. | Test (TC-829) |
 | FR-321-AC-3 | `Shape::Empty`, `Shape::Circle(4)` and a `Tree` value of depth 3 each convert to their v2 `union_value` spelling and back to an equal kernel value. | Test (TC-830) |
 | FR-321-AC-4 | A supplied `Tree` value 10,000 levels deep is admitted, converted and compared equal to itself under the default run limits without a host stack overflow. With the run's value-occurrence limit set one below the value's occurrence count, admission returns that limit by name with its configured value. | Test (TC-830) |
+| FR-321-AC-5 | For TC-830's unchanged full Tree, semantic occurrence limits 29,998 and 29,999 respectively deny and admit. With occurrence and other bounds permitting progress, admission helper ceiling A-1 denies its actual next event and A admits, where A is the reviewed membership event sequence counted independently of the evaluator. Each pre-call failure has FR-277's typed phase payload and zero evaluation consumption. Multi-argument controls retain cumulative helper spend and the original caller Cancel. | Test |
 
 ## Dependencies
 
