@@ -703,16 +703,23 @@ impl OutcomeDocument {
     /// The document of a `format` outcome. The complete UTF-8 text stays in
     /// the staged success value; this non-execute document has no result or
     /// artifacts. S2 is the reporting default, not a stage run by this adapter.
-    /// Refusals retain their original typed diagnostic and catalog category.
+    /// Refusals retain their original typed diagnostic and catalog category;
+    /// internal failures report no stage (FR-286).
     pub fn from_format(result: &Result<Staged<String>, FormatRefusal>) -> Self {
         match result {
             Ok(_) => Self::new(Operation::Format, Some(OutcomeStage::S2), Category::Success),
             Err(refusal) => {
                 let diagnostic = refusal.diagnostic();
+                let category = diagnostic.code.category();
+                let stage = if category == Category::InternalFailure {
+                    None
+                } else {
+                    Some(OutcomeStage::S2)
+                };
                 Self::new(
                     Operation::Format,
-                    Some(OutcomeStage::S2),
-                    diagnostic.code.category(),
+                    stage,
+                    category,
                 )
                 .with_diagnostics(vec![OutcomeDiagnostic::new(
                     Some(diagnostic.cause.as_str()),

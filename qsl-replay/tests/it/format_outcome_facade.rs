@@ -224,6 +224,31 @@ fn a_driver_serializes_a_constructed_format_invariant_failure() {
         "language".len(),
         "constructed format invariant detail",
     );
+    assert_eq!(diagnostic.code, Code::RuntimeInvariant);
+    assert_eq!(diagnostic.cause, CompleteCause::EstablishedInvariantBroken);
+    assert!(!diagnostic.message.is_empty());
+    let region = diagnostic.region.as_ref().expect("the actual source span");
+    assert!(region.start() < region.end());
+    let original = *diagnostic.clone();
     let result = Err(FormatRefusal::BrokenInvariant(diagnostic));
-    assert_refusal(&result, Category::InternalFailure, "internal-failure", 30);
+    let document = OutcomeDocument::from_format(&result);
+    assert_eq!(document.category(), Category::InternalFailure);
+    assert_eq!(document.category().exit_code(), 30);
+    let json = document_json(&document);
+    assert_eq!(json["last_stage"], Value::Null);
+    assert_eq!(json.as_object().unwrap().len(), 8);
+    assert_eq!(
+        json,
+        json!({
+            "format": "quire-outcome/1",
+            "operation": "format",
+            "last_stage": null,
+            "category": "internal-failure",
+            "items": [],
+            "diagnostics": [diagnostic_json(&original)],
+            "artifacts": [],
+            "result": null
+        })
+    );
+    assert_eq!(result.as_ref().unwrap_err().diagnostic(), &original);
 }
