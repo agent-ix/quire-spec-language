@@ -358,6 +358,17 @@ exit 30.
   takes and returns are `qsl_replay`, `qsl_foundation`, `qsl_semantics` or
   `quire_exact` types.
 
+The evaluator converts a `CheckedInvariant` stop to `Err(InternalFault)`
+at S6a, returning no `Evaluation` or refusal record (FR-096-AC-19).
+`CheckedPackage::call` carries that fault as `CallFailure::Fault`, which
+`qsl_replay::spine::run` propagates. Its outcome mapping also defensively
+converts a constructed `Outcome::Refused(Refusal::CheckedInvariant)` to an
+`InternalFault`, as FR-100-AC-9 requires.
+
+Every exit status is FR-285's `Category::exit_code` of the outcome's
+category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
+TC-786).
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -404,31 +415,3 @@ exit 30.
   `1-draft.8`: the kernel refusal codes, causes and fields.
 - QSpec FR-145: a `sum` seed or running total outside `N`'s domain is a
   located undefined outcome.
-
-## Status
-
-Remaining work (implementation, with the native-run deletion change, FR-312):
-the code still requires a `sha256:` source digest on each source selection
-and checks the file against it; both go, and the command reads each named
-file's bytes as they are.
-
-Implemented. `qsl_replay::spine::run` and the CLI `run` command render the
-outcome mapping, the internal-failure path (`CheckedInvariant`,
-`CallFailure::Fault`, an unresolvable locus, each exiting 30 directly), and
-locus resolution over the program's and every supplied library's source.
-Every kernel refusal but `CheckedInvariant` renders its record (`code`,
-`cause`, `fields` and `locus`), and a `sum` seed or running total outside
-`N`'s domain, including an empty sum whose `N` does not admit `0`, is
-`Undefined::SumOutOfDomain` rather than `IntegerOutOfDomain`.
-
-The conversion of `CheckedInvariant` to an `InternalFault` is
-`qsl_replay::spine::run`'s, since the evaluator still returns it as a
-refusal (FR-096 Status).
-
-Every exit status is FR-285's `Category::exit_code` of the outcome's
-category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
-TC-786).
-
-Remaining work (implementation, Linear QSL-381): the program selection and the `source`
-member still carry the revision namespace and revision; they carry the two
-FR-001 labels (QSpec STD-150).

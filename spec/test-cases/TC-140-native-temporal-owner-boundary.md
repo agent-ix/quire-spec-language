@@ -37,10 +37,3 @@ re-evaluated results yield constructor-private views. Future and past
 truth/support match FR-043; every invalid contract, identity, axis,
 population, correction or resource mutation returns one typed failure and no
 partial request, result or Boolean.~~
-
-## Status
-
-Retired (M-6d): `tests/it/native_temporal_owner.rs` is deleted,
-and FR-052 (the requirement this test case verified) is retired in full.
-Previously: all eleven traced controls passed locally with the full serial
-no-default-feature suite, strict Clippy and formatting.

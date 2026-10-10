@@ -44,6 +44,13 @@ FR-100 already owns the spine run's argument binding and its S6a outcome
 mapping. This requirement reuses both by reference and adds only object
 arguments, observations and the claim reading of a Boolean result.
 
+AC-7's `UndefinedEvaluation{cause}` record is not implemented. The I3
+extracted-source input is `ClauseRunSource::Extracted`, behind
+`qsl-replay`'s `quire-extraction` feature.
+
+AC-8 specifies the CG consumer boundary owned by Linear QSL-688 and IR-514;
+it does not claim implementation of CG's external receipt verification.
+
 ## Inputs
 
 A `ClauseRunRequest`:
@@ -198,14 +205,3 @@ binding receipt when CG consumes the serialized result.
   driver read it with `read_clause_run_request` and call `run_clause`. It
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
   ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
-
-## Status
-
-AC-1 through AC-6 are implemented. AC-7's `UndefinedEvaluation{cause}` record remains
-unimplemented (the undefined evaluation's
-category `undefined` and exit 10 are implemented). The I3 extracted-source input is
-`ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
-feature.
-
-AC-8 specifies the CG consumer boundary owned by Linear QSL-688 and IR-514;
-it does not claim implementation of CG's external receipt verification.

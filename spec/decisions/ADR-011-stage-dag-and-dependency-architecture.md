@@ -18,17 +18,6 @@ relationships:
 ---
 # ADR-011: QSL stage DAG and crate/module dependency architecture (ARCH-10)
 
-## Status
-
-Accepted, 2026-09-23 (proposed 2026-09-19). The §7.3 crate
-extraction X-1 to X-10 has landed, and ADR-011-OQ-2 is ruled. The owner
-widened FB-05 on 2026-10-01 with a shared `no_std` leaf class and layer SV
-(X-11). Amended by ADR-030 (FR-356): the walker toolkit `quire-walk`, layer
-W, joins that class (its own repository, `agent-ix/quire-walk`), and the std-only `maybe_grow` crate `qsl-walk-grow`,
-layer WG, sits outside the qualified core. Owning ticket: agent-ix/quire-spec-language#209 (ARCH-10),
-epic #205, Layer 1. Acceptance is tested by the change-scenario gate #212.
-Supersedes nothing.
-
 ## Context
 
 #209 asks for the legal compilation and execution stages of QSL V1, what each
@@ -121,6 +110,10 @@ Terms used below:
   constructs a value of a checked type.
 - **Reference semantics**: the QSL evaluator whose result defines what a
   checked package means. #205 assigns reference semantics to QSL.
+
+Amended by ADR-030 (FR-356): the walker toolkit `quire-walk`, layer
+W, joins the shared `no_std` leaf class (its own repository, `agent-ix/quire-walk`), and the std-only `maybe_grow` crate `qsl-walk-grow`,
+layer WG, sits outside the qualified core.
 
 ## Decision
 

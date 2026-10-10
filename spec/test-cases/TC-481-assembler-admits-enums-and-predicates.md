@@ -94,13 +94,3 @@ Tag the tests with the AC ids they back and `TC-481`.
 - Step 11: N1 is a `scalar_type`/`enum` node with
   `declaration.qualified_name` `["Status"]`, and N2 a `value`/`enum_value`
   node.
-
-## Status
-
-Backed by `check::assemble` tests in `qsl-semantics`
-(`enums_are_admitted_with_nominal_keys_over_the_units_owner`,
-`enum_types_and_members_check_and_a_case_the_enum_lacks_refuses`,
-`enum_and_type_name_errors_are_all_reported`,
-`a_predicate_assembles_as_a_function_of_kind_predicate`,
-`predicate_and_enum_nodes_lower_to_their_fr_092_forms`) and by
-`qsl-eval/tests/it/source_call.rs` (the `CheckedPackage::call` steps 3 and 7).

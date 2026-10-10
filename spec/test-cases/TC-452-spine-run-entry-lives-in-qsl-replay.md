@@ -173,13 +173,3 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   `from_run` document has `category` incomplete, `last_stage` `null`,
   `result` `null` and one diagnostic with code `cancelled`, whose cause is
   `requested` for (a) and `deadline` for (b).
-
-## Status
-
-Passed locally. Every undefined outcome exits 10 (FR-285):
-`undefined_kernel_reasons_render_and_exit_10` asserts it, and the code test
-for FR-100-AC-10 carries TC-786's tag. Earlier, step 4's `ForeignReference` row updated, now
-that the kernel variant carries both universes. Step 4's ten
-kernel records, asserted by code, cause, exact fields and
-locus, and step 5's `sum-out-of-domain` reason, for both an empty `q` and a
-non-empty out-of-domain running total, passed.

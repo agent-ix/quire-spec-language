@@ -81,10 +81,3 @@ requirement is required to keep in sync.
   copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s
   own `division`/`ieee` (moved in by X-1, #213 S-1) never carried them" to
   this requirement.
-
-## Status
-
-Specified under
-[quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Implemented: `value::ieee` and `value::division` define
-no `negotiate_*` function and no `IeeeBackendCapabilities` type.

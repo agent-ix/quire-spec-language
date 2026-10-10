@@ -30,7 +30,3 @@ Tag each test `#[trace("TC-820", "<AC id>")]`.
   candidate.
 - Step 4: resolves to the declaring union's member.
 - Step 5: an enum member and a tuple construction, as without unions.
-
-## Status
-
-Planned.

@@ -154,25 +154,13 @@ rule and a row in this table.
 | FR-255-AC-5 | The settings operation given `s9.nodes=1`, given `s3.nodes=ten`, given `s3.nodes=-1`, and given `s3.nodes=5` and `s3.nodes=6` together, each returns a usage refusal naming the offending operand, and no stage runs. | Test (TC-721) |
 | FR-255-AC-6 | A compile with no limit configured at any entry point runs each stage at the defaults the table lists, and the effective limits a checked package records equal those defaults. | Test (TC-721) |
 
-## Status
-
-The setting table, the one-mapping-per-limits-type rule, the builders, the
-settings operation, a request's `stage_limits` and the defaults are
-implemented (TC-720, TC-721). Backing of the criteria:
-
-- FR-255-AC-1 is stage-driven for the step ceilings and the byte limits: the step
-  ceilings (`model.ancestor_steps`, `admission.ancestor_steps`,
-  `model.family_steps`) carry their setting and the count reached in the
-  model refusal cause itself, and `intake.input_bytes` in the intake
-  refusal (FR-260-AC-4).
-- FR-255-AC-3 compares the limits types against the table in this file.
-- FR-255-AC-4 is stage-driven through the settings operation and a request's
-  `stage_limits` for `s1.tokens`, `s3.nodes`, `s3.work_units` and
-  `identity.input_bytes`, and through the stage's own limit raise for
-  `library.*`, `admission.population_members`, `admission.work_units` and
-  `model.dispatch_candidates`; every other row is checked at the entry
-  points (the setting is accepted and sets its field) and not re-run
-  through its stage.
+FR-255-AC-4 is stage-driven through the settings operation and a request's
+`stage_limits` for `s1.tokens`, `s3.nodes`, `s3.work_units` and
+`identity.input_bytes`, and through the stage's own limit raise for
+`library.*`, `admission.population_members`, `admission.work_units` and
+`model.dispatch_candidates`; every other row is checked at the entry
+points (the setting is accepted and sets its field) and not re-run
+through its stage.
 
 ## Dependencies
 

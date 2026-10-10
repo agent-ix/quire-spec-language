@@ -145,14 +145,11 @@ The outcome document's bytes.
 | FR-286-AC-5 | The `execute` outcome of FR-100-AC-1's `seven` serializes with `category` success and `result` `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`; FR-100-AC-10's empty `sum` with `category` undefined and `result` `{"kind": "undefined", "reason": "sum-out-of-domain"}`; FR-100-AC-6's `seven` with `work_units` 0 with `category` incomplete and `result` `{"kind": "incomplete", "limit": {"kind": "work_units", "bound": "0", "counter": "1", "field": "work_units"}}`. A `check` called with a `Cancel` already cancelled serializes with `category` incomplete, `last_stage` `null`, `items` `[]` and `result` `null`. | Test (TC-770) |
 | FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and one `package_id` artifact; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` for an unbuilt engine holds one diagnostic whose code serializes as `unimplemented_capability`, with `category` unsupported, `last_stage` `null`, and exits 21. | Test (TC-770) |
 
-## Status
-
-Partial (QSL-592). AC-1, AC-2 and AC-5 are tested over real outcomes. AC-3
-and AC-4's `analyze` and `monitor` halves are tested over items built with
-the public outcome builders, because layer A has no `AnalyzeOutcome` or
-`MonitorOutcome` yet. Remaining: QSL-596 (FR-281, `analyze`) and QSL-597
-(FR-283, `monitor`) each re-run TC-770 steps 3 and 4 over their real
-outcomes.
+AC-3 and AC-4's `analyze` and `monitor` halves are tested over items
+built with the public outcome builders, because layer A has no
+`AnalyzeOutcome` or `MonitorOutcome` yet. QSL-596 (FR-281, `analyze`) and
+QSL-597 (FR-283, `monitor`) each re-run TC-770 steps 3 and 4 over their
+real outcomes.
 
 ## Dependencies
 

@@ -38,6 +38,13 @@ Deleting `Value::Population` would remove that evaluation path; moving
 This requirement follows the O-14 `VariantId` precedent instead: the kernel
 carries an opaque identity, and `model` keeps the binding.
 
+The code still mints over the three-fact preimage (domain package
+selection, `population_key`, admission role), so two bindings that differ
+only in members, declared maximum or pre binding share an id today, and
+`ObjectEnvironment::with_population` refuses the second with
+`PopulationConflict`. [ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
+ID-5 decided the seven-member preimage the Behavior section now states.
+
 ## Inputs
 
 - An admitted `PopulationDocument` and the domain package, view,
@@ -172,36 +179,3 @@ key of its own: it calls `quire_exact::member_equal` and
 - **Downstream:** none within this ticket's scope.
 - quire-specification's AD-016 kernel row is amended to match (QC-21), by an
   issue filed against agent-ix/quire-specification, not by this repository.
-
-## Status
-
-Specified by ADR-013 O-13's Population row. The kernel half
-implements
-`PopulationId` and `Value::Population(PopulationId)` in `quire-exact`
-(FR-089-AC-2 and TC-292 of
-`agent-ix/quire-exact`), with kernel `admits`, `plan_pairs` and `compare_keys`
-refusing a population pair (FR-089-AC-6 and TC-297 of
-`agent-ix/quire-exact`). The other
-half (`model` minting and the evaluator's resolution step) implements
-FR-089-AC-1, FR-089-AC-3, FR-089-AC-4 and FR-089-AC-5 (TC-291, TC-293,
-TC-294, TC-295, TC-296; all `✅ Passed locally`): `model::population::
-mint_population_id` mints a `PopulationId` at admission time
-(`admit_binding`/`admit_invocation`), `ObjectEnvironment` records the
-`PopulationId` -> `PopulationBinding` correspondence
-(`with_population`/`resolve_population`), and `CheckedPackage::call`/
-`evaluate`'s own argument-admission `validate` (`qsl-eval/src/value/expression/
-mod.rs`) resolves and compares the declared maximum for every
-`Population<T>[N]` parameter, refusing an unresolved identity or a
-mismatched maximum whether or not the checked body consumes it; the
-evaluator's own `Machine::resolve_population` (`qsl-eval/src/value/expression/
-evaluate.rs`) performs the identical resolution at its `allInstances`/
-`lookup` consumption sites, kept as defence in depth.
-
-The code still mints over the three-fact preimage (domain package
-selection, `population_key`, admission role), so two bindings that differ
-only in members, declared maximum or pre binding share an id today, and
-`ObjectEnvironment::with_population` refuses the second with
-`PopulationConflict`. [ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
-ID-5 decided the seven-member preimage the Behavior section now states.
-AC-1 as amended and AC-7 are pending. Remaining work: ADR-016 G-3 (QSL-68,
-#120).

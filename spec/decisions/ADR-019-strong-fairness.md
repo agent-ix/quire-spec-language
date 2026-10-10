@@ -24,21 +24,6 @@ relationships:
 ---
 # ADR-019: Strong fairness of operations
 
-## Status
-
-Proposed, 2026-10-01. It builds on ADR-018. It follows ADR-018's rulings: unmarked fairness
-granularity is `whole` (ADR-018 FA-6), deadlocks are reported by a derived
-deadlock-freedom item (ADR-018 DL-1 to DL-7), and the infinite-trace profile
-admits interval operators nested under unbounded ones (ADR-018 IV-1 to IV-7).
-The owner's rulings on this record's own draft questions are in §9. The owning ticket and related
-work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. QSpec FR-360 is the infinite-trace result disposition
-vocabulary, as in ADR-018. Item ids `SY-`, `SF-`, `FS-`, `BE-`,
-`SV-`, `QS-` and `AM-` are local to this record. Other artifacts cite them as
-`ADR-019 FS-2`.
-
 ## Context
 
 ADR-018 gives a temporal claim over a model subject an every-behaviour
@@ -64,6 +49,12 @@ QSpec FR-161 states that fairness filters the admitted infinite traces before
 evaluation and that the fairness set enters every proof and counterexample
 identity (FR-161-AC-5). QSpec FR-362 settles a missing fairness premise
 `unsupported`, cause `unsupported_projection`/`missing-fairness-premise`.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. QSpec FR-360 is the infinite-trace result disposition
+vocabulary, as in ADR-018. Item ids `SY-`, `SF-`, `FS-`, `BE-`,
+`SV-`, `QS-` and `AM-` are local to this record. Other artifacts cite them as
+`ADR-019 FS-2`.
 
 ## Decision
 

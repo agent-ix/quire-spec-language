@@ -38,7 +38,3 @@ moves from `invariant` to `temporal`.
 - Step 3: both bodies build their forms, and no S2 outcome names a depth.
 - Step 4: the E0004 locations equal the checked-in S2 list, unchanged: a
   state clause has no match over a probed enum, so it adds no new location.
-
-## Status
-
-Planned.

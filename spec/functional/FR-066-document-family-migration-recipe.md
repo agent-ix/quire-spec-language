@@ -89,6 +89,10 @@ from the ADRs.
 | FR-066-AC-3 | The recipe states the removal condition in the same terms as ADR-011 §7.3 M-6e (the old composed-checker path is deleted in the PR that lands the S3 family checker and S4 emission) and names, for each of `StateModel`, `SumCase`, `TemporalTrace`, `ProtocolClause` and `Relation`, at least one implementing ticket from ADR-012 §14.1. | Inspection (TC-165) |
 | FR-066-AC-4 | The recipe's worked example section names at least one actual test file and one actual deleted symbol from the function-application migration ([FR-065](FR-065-migrate-function-application-to-checked-family.md)'s implementation), not a hypothetical placeholder. | Inspection (TC-165) |
 
+The
+verification method for all four ACs is Inspection, done at PR readiness
+against the document's actual, current content.
+
 ## Dependencies
 
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §3
@@ -99,24 +103,3 @@ from the ADRs.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md) supplies
   the worked example this recipe cites.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
-
-## Status
-
-Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214).
-Implemented as [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md),
-citing FR-065's implementation for its worked-example section.
-
-**By Acceptance Criterion:** all four ACs are verified by
-inspection of the checked-in recipe document
-([docs/family-migration-recipe.md](../../docs/family-migration-recipe.md))
-against each AC's own wording, not by an automated test: a programmatic
-`include_str!` check over this prose (attempted and then dropped in this
-same review round) only re-asserts the presence of particular wording, so
-it fails on a rewording and passes over a recipe whose content has gone
-stale in a way no wording check catches -- exactly what happened to this
-document's own seam-probe paragraph (AC-1), which kept naming a seam that
-had since been deleted while every wording-level check of it still passed.
-That staleness is fixed as part of this same review round; the
-verification method for all four ACs is Inspection, done at PR readiness
-against the document's actual, current content.

@@ -115,16 +115,3 @@ clause under test.
 - FR-069 and FR-070 (the violation verdict with its witness).
 - QSpec FR-013 (frame enforcement), `native-diagnostics.md`
   (`frame_violation`, `population_delta_mismatch`).
-
-## Status
-
-Specified and implemented. The
-checked graph records each operation a clause or attempt names with its frame
-node (`CheckedGraph::operation_frame`, resolved by `TypeEnvironment::operation`
-as FR-104 resolves a clause's operation). `admit_frame_invocation` runs
-FR-106's checks 1 and 3 to 10, and the `ProtocolClause` S6a `evaluate` arm
-(`CheckedPackageEvaluation::evaluate_frame`) runs check 11 through the same
-`decide_frame` a clause run's admission uses. `run_clause`'s `Frame`
-selection reports a change outside the frame as
-`ClauseDisposition::FrameViolation` with its `FrameWitness`. AC-1 to AC-5 are
-tested (TC-514).

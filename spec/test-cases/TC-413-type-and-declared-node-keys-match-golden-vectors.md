@@ -80,6 +80,12 @@ selection whose alias is `v`.
 
 Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+
 ## Expected Results
 
 - Step 1: the bytes and keys equal FR-092 vectors T1 to T8.
@@ -105,20 +111,3 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
   `semantic_type` is `{term: "group_reference", ordinal: 1}`.
 - Step 10: D1 both times, the checked type node's id is D1 both times, and
   no supplied key appears.
-
-## Status
-
-Implemented (#384). The tests back steps 1 to 10
-(`qsl-semantics/src/check/lowering/tests.rs`, `lowering/tests/depth.rs`,
-`lowering/tests/differential.rs` and `check/node_key/tests.rs`), recursion
-groups and the declared record's own key included.
-
-`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
-`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
-stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
-cause's code is always `stage_limit_exceeded` and its cause the limit kind's
-(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-Step 5 is backed by `check/lowering/tests/depth.rs` and
-`check/lowering/tests/identity_depth.rs`: a 100,000-deep `Option` type keys
-on a 512 KiB stack to the keys it has on 8 MiB, and the 30-record and
-1,000-record chains check.

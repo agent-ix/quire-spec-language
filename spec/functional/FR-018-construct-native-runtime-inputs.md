@@ -12,6 +12,9 @@ relationships:
 
 When a native runtime draft is supplied, the input constructor shall produce an immutable byte-bound artifact after its structural checks succeed.
 
+The artifact identity still carries the four-label identity until
+QSL-381 drops `revision_namespace` and `revision` (QSpec STD-150).
+
 ## Inputs
 
 SnapshotDraft or InvocationDraft, SourceIdentity labels and ArtifactLimits.
@@ -60,14 +63,3 @@ can select an exact digest. Limits and accounting follow
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) supplies the operator need.
 - [FR-007](FR-007-validate-runtime-inputs.md) consumes artifacts without trusting construction as model validation.
 - Existing SourceIdentity, ByteDigest, IR RequirementRef/SymbolName and serde_json/sha2 dependencies are reused.
-
-## Status
-
-FR-018-AC-8 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation, Linear QSL-381): the artifact identity drops `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed.
-
-Qualified construction API, reviewed in SR-096. TC-055–057 pass with
-21 public API tests and a role-separation compile-fail doctest. Model-aware
-validation and reference execution are qualified by SR-097 and SR-098;
-Task-015 owns the native API review/handoff. B retains portable ArtifactRef
-and result envelopes; this contract creates no new portable authority, semantic
-digest or input decoder.

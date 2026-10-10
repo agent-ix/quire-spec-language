@@ -532,9 +532,3 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
-
-## Status
-
-Specified; not yet implemented. TC-471 to TC-473
-planned. FR-056's bound scalar reader, which every AC's fixture uses, is
-on main.

@@ -52,7 +52,3 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   cause returns the STD-112 cause once QSpec publishes it.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
-
-## Status
-
-Steps 1 and 2 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The duplicate-enum-member and nominal-admission causes are backed by `the_enum_causes_have_their_catalog_codes`. The dimension and unit causes are backed by `the_dimension_and_unit_causes_have_their_catalog_codes`; the unit-graph topology row waits on STD-112.

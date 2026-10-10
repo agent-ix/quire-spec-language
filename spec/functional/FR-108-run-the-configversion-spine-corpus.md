@@ -151,9 +151,3 @@ the same two objects through `sameIdentity`, over the same snapshot data
   `package_id` half run over the in-process `CheckedPackage` and need none of
   it. AC-6's I04 `read` half needs `quire-contract-model`'s
   `reaches_field` reference-edge check.
-
-## Status
-
-Specified. AC-1 to AC-6 are implemented. AC-6's I04 `read`
-half admits the emitted package, including the `reaches_field` application
-the FR-108 unit's `ParentOrder` cycle predicate lowers to.

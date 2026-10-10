@@ -670,6 +670,9 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
 
+A check with two admitted versions of one domain package
+identity refuses as an internal fault.
+
 ## Dependencies
 
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): the
@@ -696,20 +699,3 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
   The `ModelOwner` structural preimage, the `compound_unit` form, the
   `model_population` body and family, the `clause` binding and the v2
   correspondence spelling are QSL proposals (QC-25, QC-26).
-
-## Status
-
-Specified, with AC-6's quotient units corrected and the content-only
-`ModelOwner` (QSpec FR-322-AC-28). Implemented (#384):
-`qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
-`Reference`, `Population`, clause-function and quantity type nodes, and
-builds each declared unit's and dimension's nominal node, `check`
-records the model correspondence, `check::checked_dispatch_operation` gives
-each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
-scope keeps its formed units until lowering has keyed them. TC-417, TC-418
-and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there; AC-8 is backed in `qsl-package/src/emit/extent_agreement.rs`. ADR-012 §4.3
-places an operation's postconditions with `ProtocolClause`, so the clause functions
-this requirement keys are exactly the invariant, precondition and body
-functions `DeclaredClauseKind` names. AC-1's and AC-5's `2.0.0` halves
-assert the same keys as `1.0.0`. A check with two admitted versions of one domain package
-identity refuses as an internal fault.

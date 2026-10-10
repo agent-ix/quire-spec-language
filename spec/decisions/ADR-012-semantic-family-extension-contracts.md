@@ -20,40 +20,6 @@ relationships:
 ---
 # ADR-012: Semantic-family extension and dispatch contracts (ARCH-11)
 
-## Status
-
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#210
-(ARCH-11), epic #205, Layer 1. Acceptance is decided at the architecture
-change-scenario gate #212. Supersedes nothing.
-
-This record is the `/specify` output for #210. Its `/spec-review` (all
-analyses, SR-474 to SR-481) is in
-[`spec/reviews/family-extension/`](../reviews/family-extension/base.md).
-
-Amended 2026-09-26: §15 maps state clauses, frames,
-operation anchors and observations onto this contract. It is the state share
-of the #220 mapping that §14.1 hands to #120, #121 and #164, and it
-is the design FR-102 to FR-109 implement. The rest of the #220 mapping (the
-model graph, the static/runtime boundary, identity across phases, finite
-exploration and the owner of each gap) is
-[ADR-016](ADR-016-state-model-finite-execution-mapping.md).
-
-Amended 2026-09-29 (ARCH-41, #221). §16 maps sum types and `case`
-onto this contract, following QSpec's merged design (AD-015, FR-143,
-FR-146). It corrects the `SumCase` diagnostics in §3 and §12.1, and the S6a
-sentence in §2. SC-Q1 is ruled: option (a) (ADR-013 OQ-I, 2026-09-29).
-
-Amended 2026-10-01 (sum/case FR pass): §16.5's limit row and §16.8's Limits
-row no longer name a nesting-depth limit for `case`. Nesting of any depth is
-admitted, bounded only by caller-configured checking ceilings (QSpec FR-146;
-owner ruling 2026-10-01 that depth is never a limit kind). FR-313 and FR-316 to FR-324
-implement §16. §16.10 states the QSpec rules SC-G1 to SC-G7 that §16 relies
-on: QSpec FR-440, FR-441, FR-143, FR-144 and FR-146.
-
-Amended 2026-10-01: §15.4 keys a state field's proof-bound domain under its
-declaring object type's node, by the field's name ordinal, and §15.7 keys a
-population by its own `DomainKey::Population` subject (ADR-014 §4).
-
 ## Context
 
 #210 requires QSL semantic families to extend the compiler and the proof

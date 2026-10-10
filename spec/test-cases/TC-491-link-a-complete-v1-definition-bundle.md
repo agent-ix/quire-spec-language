@@ -58,10 +58,3 @@ dependency edges between them.
   `resource_exhausted`/`insufficient-next-charge`; the raised ceiling
   admits.
 - Step 7: every pair is listed by `quire.native.diagnostics/v1`.
-
-## Status
-
-Implemented: `library::bundle_tests` and
-`library::bundle::tests::resolved_graph_identity_matches_its_golden_vector`
-(`qsl-semantics/src/library/`) back steps 1-7, each tagged `TC-491`, its
-`FR-111-AC-n` and the `QSpec-FR-131`/`QSpec-FR-339` tags it carried.

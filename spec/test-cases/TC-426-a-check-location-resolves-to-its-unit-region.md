@@ -36,6 +36,12 @@ Scope: FR-096-AC-1.
 
 Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
 
+A span the map splits (layout deletions) resolves to no single region.
+No production caller builds a multi-segment map today. No production
+caller sets `embedding` yet either, so a real embedded-document unit
+still resolves under its own body reference until `qsl-source`'s document
+map is wired to the assembler.
+
 ## Expected Results
 
 - Step 2: the spans of `if a then b else c + d`, `c + d`, `d` and `n`, each
@@ -44,20 +50,3 @@ Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
 - Step 4: no region for either.
 - Step 5: no region -- the position was read from the unit, but its
   embedded span names no single region of the document.
-
-## Status
-
-Passed locally. Steps 2 and 4 are backed by `qsl-semantics` `check::region`
-tests. Step 3 (a body embedded in a document, C-21) is backed by
-`an_embedded_body_resolves_its_locations_under_the_document_shifted`:
-`PackageDeclarations::embedding` carries the body's `SourceMap`,
-compared against the map's own body identity (never the caller's) before
-it is trusted, and the declarations, the regions taken from them and the
-checked package resolve each location under the document's `RawSourceRef`,
-shifted by `k`. A span the map splits (layout deletions) resolves to no
-single region -- FR-096's fourth no-region case, added and backed directly
-against the resolver (`a_span_the_embedding_splits_has_no_region`); no
-production caller builds a multi-segment map today. No production caller
-sets `embedding` yet either, so a real embedded-document unit still
-resolves under its own body reference until `qsl-source`'s document map is
-wired to the assembler.

@@ -113,13 +113,3 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   removed entry refuses `Recompile` carrying
   `missing_import`/`missing-selection` at the import; the second source
   refuses `SourceCount(2)`. None yields a verdict.
-
-## Status
-
-Passed locally, `qsl-replay/src/execute/tests.rs`, for
-steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally:
-`tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
-and `tc_444_dependency_entries_refuse_by_the_d4_rules`.
-
-Step 5's whitespace-only authority passes locally with `invalid_source_identity`,
-cause `blank-label` and `label` `authority` (FR-001).

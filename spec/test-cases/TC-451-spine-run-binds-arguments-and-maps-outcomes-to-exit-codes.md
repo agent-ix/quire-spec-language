@@ -23,8 +23,8 @@ The unit declares `edition "1-draft"`, `type Digit = Int[0, 9]`,
 `record Point { x: Digit; y: Digit; }`,
 `lt(a: Digit, b: Digit): Boolean { a < b }`,
 `flag(b: Boolean): Boolean { b }`, `id(x: Digit): Digit { x }`,
-`px(p: Point): Digit { p.x }`, `origin(): Point` (a function whose declared
-result is a record) and `seven(): Digit { 7 }`.
+`px(p: Point): Digit { p.x }`, `corner(p: Point): Point { p }` (a function
+whose declared result is a record) and `seven(): Digit { 7 }`.
 
 1. Run `lt` with `b = 3` given before `a = 5`; `flag(1)`; `id(4)`.
 2. Run `flag(2)`, `id(12)` and `px(1)`.
@@ -32,7 +32,7 @@ result is a record) and `seven(): Digit { 7 }`.
    argument.
 4. Run `id` with `value` `true`, `"7"`, `1.5` and `9223372036854775808`.
 5. Run `function` `nope`, `module.seven`, `""`, `seven.` and `7x`; run
-   `origin`.
+   `corner` with `p = 0`.
 6. Run a `1-draft` source with a syntax error; run a `1-draft` source
    declaring `inv(x: Digit): Boolean { 1 / x > 0 }`.
 7. Run `seven` with `work_units` 0.
@@ -40,6 +40,13 @@ result is a record) and `seven(): Digit { 7 }`.
 Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
 `#[trace("TC-451", "FR-100-AC-5")]` (steps 5 and 6) and
 `#[trace("TC-451", "FR-100-AC-6")]` (step 7).
+
+FND-012: `origin` is a reserved keyword
+(`qsl-cst`'s token table), so the fixture's record-result function is
+named `corner`, not `origin`, in `tests/fixtures/spine-run.native`; every
+fixture name above is exact. Nothing about the scenario changes --
+still a function whose declared result is a record, still refusing
+`unsupported_construct` before any call.
 
 ## Expected Results
 
@@ -56,19 +63,10 @@ Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
 - Step 4: each refuses `invalid-request` at stage `request`, exit 20, empty
   stdout.
 - Step 5: each name refuses `missing_declaration` at stage `call`, exit 20,
-  empty stdout, `details` `{"function": <that string>}`; `origin` refuses
+  empty stdout, `details` `{"function": <that string>}`; `corner` refuses
   `unsupported_construct` at stage `call`, exit 21, empty stdout,
-  `details` `{"function": "origin"}`, before any call.
+  `details` `{"function": "corner"}`, before any call.
 - Step 6: the syntax error refuses `invalid_syntax` at stage `source`; `inv`
   refuses `ill_typed` at stage `check` (integer `/` with no `Rational`
   expected type); each exits 20 with empty stdout.
 - Step 7: outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22.
-
-## Status
-
-Passed locally. FND-012: `origin` is a reserved keyword
-(`qsl-cst`'s token table), so the fixture's record-result function is
-named `corner`, not `origin`, in `tests/fixtures/spine-run.native`; every
-other fixture name above is exact. Nothing about the scenario changes --
-still a function whose declared result is a record, still refusing
-`unsupported_construct` before any call.

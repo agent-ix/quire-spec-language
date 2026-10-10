@@ -45,7 +45,3 @@ Tag the test `#[trace("FR-091-AC-3", "TC-394")]`.
 - Step 4 reads `Query` with `BinderQuery::Map` for both `map` and
   `collect`, and `AllInstances` whose target is a type form with
   qualified-name head `M::T`.
-
-## Status
-
-Backed by `qsl-forms/tests/it/value_forms.rs`: `each_expression_construct_maps_to_its_variant` and `grouping_and_associativity_come_from_the_cst`.

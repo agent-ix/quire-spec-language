@@ -844,29 +844,13 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 Run Quire over this exact repository scope and execute the serial Rust gates in
 both feature configurations. Use independently authored expected values and real
-existing emitters/consumers at integration boundaries. Historical finite-state
-acceptance covers healthy, violating and refused/incomplete workflows. TC-113–
-121 cover composed parsing, linkage, checking and the `/1` emitter; TC-122–125
-cover L5; TC-126–137 cover the consolidated L3/L4/L6 and state-input contracts;
-TC-138 covers the strict `/2` temporal selection extension. TC-145–148 and IT-012
-cover domain-package model intake through the real quire-rs and FCD crates. TC-135 proves only A's byte-exact compiler-to-
-B intake contribution; D's research #39/#49 owns the later version-locked
-aggregate campaign with accepted B/F revisions. A passed earlier stage cannot
+existing emitters/consumers at integration boundaries. TC-135 proves only A's
+byte-exact compiler-to-B intake contribution. A passed earlier stage cannot
 qualify an unexecuted later one.
 
 ## 13. Change Management
 
 The user requested /specify and /spec-review for all work. Existing implementation is being specified retrospectively and remains subject to findings. Further dependent implementation waits for the required review and accepted shared contracts. Historical fixture and profile bytes remain immutable under their selected bindings.
-
-## 14. Lifecycle Status
-
-Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. The owner also adopted specification PR8 for internal implementation. Accepted IR ADR-0054 subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
-
-The PR10 model/checker scope is now qualified under Plan-005 and SR-083–087.
-TM-003 contains its 35 qualified cases; the earlier planned status above is
-historical. The LC03 packet adds FR-018, expands FR-007/008, and defines NFR-006,
-IT-006 and TM-004. Its 23 runtime cases are planned. Its input/evaluation API
-specification does not close LC02/FS03 acceptance or replace IT-002.
 
 ## 15. Governance Notes
 

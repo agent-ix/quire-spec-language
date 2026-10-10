@@ -78,13 +78,3 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
   `[dev-dependencies]` may also name `qsl-forms` and `qsl-cst`, and no other workspace
   crate. The root crate names
   `qsl-eval` in none of its tables: no root-crate code calls layer 5 yet.
-
-## Status
-
-`✅ Passed locally`. Backed by the four tests in
-`tests/it/family_outcome_layering.rs`, over `xtask::definition_scan::scan_dirs`
-and `xtask::import_graph::resolved_paths`.
-
-Step 4's `qsl-eval` set gained `quire-canonical` and `serde`
-(FR-101): `qsl-eval/Cargo.toml` and the assertion in
-`tests/it/family_outcome_layering.rs` were updated in the same change.

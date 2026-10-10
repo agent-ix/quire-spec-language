@@ -139,7 +139,3 @@ typed kernel failure classes while projecting their existing QSL code/cause
 and retaining the full nested origin. The original positive and negative
 canonical-payload controls remain required; this table adds diagnostic and
 boundary assertions, not weaker admission alternatives.
-
-## Status
-
-🚧 Planned.

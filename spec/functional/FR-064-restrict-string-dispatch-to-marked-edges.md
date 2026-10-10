@@ -43,6 +43,10 @@ enforced by a running check rather than by convention alone.
 
 ## Behavior
 
+Detector scope: a comparison is branch-gating when it feeds an
+`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
+chain, is a match arm's own value, or is a `strip_prefix` call.
+
 ### The marker attribute
 
 `#[string_edge]` SHALL be a tool attribute applicable to a function. It
@@ -107,33 +111,7 @@ than accept it into the allow-list.
 | FR-064-AC-5 | Given one allow-list entry whose comparison result feeds an `if`/`match` condition that selects between two different code paths, and one entry whose comparison result feeds only a logged message, `xtask string-edge` rejects the first (naming its file and line) and accepts the second. A test attempts to add each of the five ADR-010 §4.3 production dispatch sites (named in this requirement's Behavior) as an allow-list entry and asserts the tool rejects all five; a wrong implementation that allow-lists all five to force a clean scan does not satisfy this criterion. | Test (TC-162) |
 | FR-064-AC-6 | The lint gate's own target list (the `Makefile`) names `string-edge` as a prerequisite of the gate it runs in, whose own recipe runs `cargo xtask string-edge`, and `xtask string-edge`'s non-zero exit propagates to that gate's own exit through `make`'s ordinary prerequisite-failure semantics -- a `.PHONY` aggregate target depending on a target whose recipe can fail. Both halves are checked directly: a grep-shaped check over the real `Makefile` confirms the prerequisite naming and the recipe, and a minimal fixture `Makefile` of the same aggregate/prerequisite shape demonstrates a failed prerequisite failing the aggregate target (and a succeeding one not failing it). | Test (TC-162) |
 
-## Dependencies
-
-- [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §9
-  (string dispatch rule and the edge table, which cites ADR-010 §4.3's five
-  production dispatch sites this requirement's allow-list rejection names).
-- [FR-062](FR-062-implement-checked-family-contract.md).
-- [US-006](../usecase/US-006-extend-a-family-without-breaking-seams.md).
-- agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 run
-  the same scan in their own repositories, over the same rule; this
-  requirement builds the attribute and the scan tool that #141 and #86
-  invoke, not their own edge inventories.
-
-## Status
-
-**Implemented, with a stated residual.** `#[string_edge]` and `xtask
-string-edge` are built, `string-edge` is a prerequisite of `make ci` (the
-lint gate), and `cargo xtask string-edge` reports no unmarked, unlisted
-occurrence over the whole workspace. The detector resolves both a string
-literal and a comparison, method call or `match` arm against a named
-same-crate `const NAME: &str` (the string-value clause): `const
-NAME: &str` at module, `impl` and trait scope, matched by its last path
-segment. Every occurrence the scan finds is either a `#[string_edge]`-marked
-edge (an intake reader, a typed wire reader, CLI argument parsing, or a
-source scanner doing its one total conversion) or was converted onto a
-closed enum or typed identity. The allow-list is empty.
-
-Residual: the Behavior clause asks for a report on any comparison between a
+The Behavior clause asks for a report on any comparison between a
 `&str`/`String` value and *any other* such value, and any `match` whose
 scrutinee is a string. The detector covers a literal and a same-crate named
 constant on one side; it does not resolve a comparison between two bindings
@@ -143,20 +121,6 @@ constant) or a constant defined in another crate. Both shapes are
 undetected today, not merely unmarked -- the scan cannot see them to report
 them. Extending the detector to those shapes is unticketed follow-up work,
 not scope this requirement claims to close.
-
-A re-measurement against a clean scan found 53 named-constant
-occurrences across roughly 35 functions the literal-only scan could not see.
-Wire, contract-version and format checks (the large majority) are marked
-`#[string_edge]`, each a genuine one-shot admission edge. Two sites got a
-real typed conversion rather than a mark, because a wire enum already
-existed to decode into instead of comparing forms directly:
-`qsl-semantics/src/check/lowering.rs`'s `name == FUNCTION_PARAMETERS` reads
-the parameters binding positionally (it is always the function node's first
-member, by construction, not merely by name); and `qsl-package/src/emit.rs`'s
-`semantic_form() == ENUM_VALUE_FORM` decodes through IR's existing
-`CheckedNodeKind::decode`/`ValueForm::EnumValue`, the same closed vocabulary
-`form_is_supported` already uses one line above it, rather than comparing
-the wire form string a second time.
 
 `qsl-semantics/src/check/claims.rs`'s `identity == NARROW`/`SCALAR_FAMILIES`
 compares (SR-758 FND-005) are marked `#[string_edge]`
@@ -171,41 +135,14 @@ would make the distinction load-bearing, documented at each site rather
 than removed, since FR-322 states the underlying rule as a property of the
 node kind, not as a fact this tree's current inputs happen to make trivial.
 
-Detector scope: a comparison is branch-gating when it feeds an
-`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
-chain, is a match arm's own value, or is a `strip_prefix` call.
+## Dependencies
 
-**By Acceptance Criterion, with the tracking tags in
-`xtask/src/string_edge.rs` (all `TC-162`):**
-- FR-064-AC-1: backed.
-- FR-064-AC-2: backed
-  (`allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again`).
-- FR-064-AC-3: backed (`cfg_test_module_is_not_scanned`,
-  `file_level_test_modules_are_skipped_only_when_declared_cfg_test`).
-- FR-064-AC-4: backed
-  (`a_non_empty_report_exits_non_zero_a_clean_scan_exits_zero`).
-- FR-064-AC-5: backed for the sites in the tree. The two-entry and
-  five-site-shape halves are synthetic fixtures tagged `FR-064-AC-5`, and
-  `named_string_consts_are_resolved_like_literals` covers the string-value
-  clause's own synthetic shapes (a module const, an assoc const, a method
-  call and a match arm). The real-site half is
-  `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
-  which scans the real files with marks ignored and asserts the ADR-010 §4.3
-  dispatch strings still compared in the tree are branch-gating and rejected
-  as allow-list entries: `CanonicalizationDomain::from_str`
-  (`"filament-canonical-json-1"`), `AdapterArtifact::try_from`
-  (`"quire.state.authority-adapter"`) and `clock_binding_name` (`"clock:"`);
-  the same test also covers a real named-constant site the
-  re-measurement found (`operation_role`'s `identity == NARROW`,
-  `qsl-semantics/src/check/claims.rs`), proving the const-resolving detector,
-  not only the literal one, finds it. The `"quire.protocol.finite-global/v1"`
-  profile is registry data matched by the registry table, and the
-  `"allocation"` site is gone from the tree.
-  `combinator_terms_arm_values_and_prefix_gates_are_branch_gating` covers the
-  widened shapes.
-- FR-064-AC-6: backed (`the_real_makefile_wires_string_edge_into_ci`,
-  `a_failed_prerequisite_fails_the_aggregate_target`; the gate itself is
-  `make ci`).
-
-Six of six acceptance criteria are backed, and the Behavior clause on
-string-value comparisons is built (above).
+- [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §9
+  (string dispatch rule and the edge table, which cites ADR-010 §4.3's five
+  production dispatch sites this requirement's allow-list rejection names).
+- [FR-062](FR-062-implement-checked-family-contract.md).
+- [US-006](../usecase/US-006-extend-a-family-without-breaking-seams.md).
+- agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 run
+  the same scan in their own repositories, over the same rule; this
+  requirement builds the attribute and the scan tool that #141 and #86
+  invoke, not their own edge inventories.

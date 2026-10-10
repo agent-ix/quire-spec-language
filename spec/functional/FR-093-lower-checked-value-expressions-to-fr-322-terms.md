@@ -44,6 +44,13 @@ QSpec references (`ix://agent-ix/quire-specification`, by reference): FR-322 "Op
 `proposals/checked-package-v2/operation-catalog.json` and the operator-class
 semantic forms its qualification tests fix.
 
+The Union text-leaf amendment (QSL-680, AC-23 to AC-26) is specified here;
+its cross-repository QSpec/catalog/schema settlement and QSL implementation
+qualification remain separate. These criteria do not claim implementation
+coverage. The amendment extends the walk with `member:<identifier>` and
+includes unions in reentry and reachability; it grants no fallback encoding
+for a reader whose admitted leaf grammar lacks the segment.
+
 ## Inputs
 
 - A checked function declaration: its parameters, its checked body and
@@ -801,6 +808,14 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-25 | U2 and U4 with no selected text-profile definition refuse `missing_declaration`/`missing-selection` naming `text_profile` and yield no node; U2 still refuses when both compared values select `Empty`. When a selected node or work ceiling is exhausted by these walks, checking stops with `stage_limit_exceeded` and the corresponding `node-count-exceeded` or `work-budget-exceeded` cause before resolving leaf laws, yielding no node; every appended text or recursion leaf costs one node, every entered union costs composite work, and every leaf's full path bytes count toward work. | Test |
 | FR-093-AC-26 | Cancelling a lifecycle `check` during a Union text-leaf walk stops at the next charge with `StageFailure::Cancelled` retaining the requested cause and no output artifact (FR-276). Existing AC-10 and AC-11 Record/Tuple and optional-inner vectors remain byte-identical. | Test |
 
+No FR-093 AC backs the `Pre` row; the `ProtocolClause`
+postcondition lowering backs it. Remaining work: #218, and the `owner`
+member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet:
+IR adds `owner` to its `CheckedSemanticNodeV2` first (IR-646), and the
+emitter then writes it. Until then AC-7 is unmet as worded: its test
+(`every_written_node_recomputes_to_its_node_id`) supplies the owner (`a`,
+`u`) itself instead of reading it from the node's `owner` member.
+
 ## Dependencies
 
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): type, parameter
@@ -857,58 +872,3 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
   against the published `LeafSegment` pattern refuses a package holding a
   recursion leaf, and a reader that derives an optional field's leaf
   without `inner` refuses its leaves.
-
-## Status
-
-The Union text-leaf amendment (QSL-680, AC-23 to AC-26) is specified here;
-its cross-repository QSpec/catalog/schema settlement and QSL implementation
-qualification remain separate. These criteria do not claim implementation
-coverage. The amendment extends the walk with `member:<identifier>` and
-includes unions in reentry and reachability; it grants no fallback encoding
-for a reader whose admitted leaf grammar lacks the segment.
-
-Specified, including the text-leaf walk and its recursion
-leaf. Implemented (#384): `check` lowers each checked node in
-`qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and TC-415
-backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14, AC-15 and CON-1. The
-text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
-leaf to the node limit before any leaf's law is read, and keys the Recursive
-text-leaf vectors. The lowering spells an integer literal as a decimal string and gives
-`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is the M-4 emitter, in `qsl-package/src/emit.rs`:
-TC-416 backs AC-7, AC-9, AC-12, AC-17, AC-18, AC-19, AC-20 and CON-2 there. The IR reader
-admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
-and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
-so a function with parameters and a recursive function are written whole
-and read back Verified. The emission omits a node whose form IR's v2
-vocabulary lacks, a node naming a node the checked graph does not hold,
-a nominal node whose owner the lock does not select (a definition-owned
-unit or dimension node, so a compound unit over one), and every node that
-names an omitted one;
-AC-7 and AC-12 are checked on every node the arm writes, omitted or not.
-AC-13 is backed:
-`conformance_emitted_application_nodes_match_qspec_positive_fixtures`
-(`qsl-package/src/emit/tests/golden.rs`, run by `make conformance`) emits a
-function for each fixture operation a row lowers and compares 13 fixture
-application nodes on the AC's members, and IR's v2 reader admits each emitted
-package. The fixtures' two `quire.op.ieee.float64.add` nodes carry `mode`
-`toward-zero` and `nearest-even`; `ValueType::Float` carries the mode
-(FR-091-OQ-4), so the golden test writes one `Float64[mode]` function per mode
-and compares `mode` on every member. The fixture identities no row lowers in a function
-body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decimal`,
-`model.reaches` and the `model.*` rows AC-3 excludes) are skipped by name. The
-`dependencies` rule is specified. Ownership, decided here: `check` builds
-the lowering and the keys; the M-4 emitter serializes the lowered nodes
-and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
-postcondition lowering backs it. Remaining work: #218, and the `owner`
-member of AC-21 and AC-22 (QSL-638), which the emitter does not write yet:
-IR adds `owner` to its `CheckedSemanticNodeV2` first (IR-646), and the
-emitter then writes it. Until then AC-7 is unmet as worded: its test
-(`every_written_node_recomputes_to_its_node_id`) supplies the owner (`a`,
-`u`) itself instead of reading it from the node's `owner` member.
-
-The emitter writes `diagnostics.catalog`, each lock definition and each law
-`definition` as the identity-only `DefinitionRef`: AC-17 states it for
-`diagnostics.catalog`, AC-20 for the lock rows and the law `definition`
-(`the_lock_selects_the_catalog_definitions` and
-`a_law_names_its_definition_by_authority_and_identity`,
-`qsl-package/src/emit/tests.rs`).

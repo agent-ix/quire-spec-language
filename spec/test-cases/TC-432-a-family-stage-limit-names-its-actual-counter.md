@@ -35,10 +35,3 @@ charge `w` with the same measure `check` uses:
   returns `Limit(WorkBudget, bound w, actual 2w)`.
 - Step 3: `Limit(InputBytes, bound 0, actual b')`: the counter is the
   measured metric, not the bound plus one.
-
-## Status
-
-Backed: `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
-`work_budget_kind_refuses_from_a_denied_meter_charge`
-(`qsl-semantics/src/check/family.rs`), each tagged
-`#[trace("TC-432", "FR-062-AC-12")]`.

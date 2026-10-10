@@ -102,8 +102,3 @@ the encoded-size bound.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
 - Step 17: cause `Encoding` for the first, `Obligation` for the second.
 - Step 18: the digest `4c36290f8830ff25cbb3915fa955b093f802fb801de2074415a6c4884fc9659f` for the entry; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
-
-## Status
-
-Implemented. The tests are in `qsl-replay` (`execute/tests.rs`, `scalar.rs`,
-`proof_result.rs`).

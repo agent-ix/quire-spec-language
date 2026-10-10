@@ -87,10 +87,3 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
   (`ix://agent-ix/quire-spec-language/ADR-011`).
 - [FR-060](FR-060-check-qsl-api-surface-boundary.md) checks the FB-05
   exception's call-site boundary.
-
-## Status
-
-Specified and implemented under
-[#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
-`arch-lint direction` subcommand (`tools/arch-lint/graph.rs`,
-`tools/arch-lint/metadata.rs`).

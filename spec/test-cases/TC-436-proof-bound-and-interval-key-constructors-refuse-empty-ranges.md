@@ -38,7 +38,3 @@ FR-097-AC-1 and FR-097-AC-9 (wire spellings).
 - Step 4: each kind writes as `collection`, `population`, `integer`,
   `recursive`, `loop`, `infinite-trace` or `quantity` and reads back to
   itself; `Collection` and `infinite_trace` read as no kind.
-
-## Status
-
-Backed: `qsl-foundation/src/bound.rs`, `tests` module.
