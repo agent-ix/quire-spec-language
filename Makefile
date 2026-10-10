@@ -156,18 +156,24 @@ use-remote:
 # not gated on the feature compile and pass without it. These are the only
 # two workspace crates with a `test-support` feature; `quire-exact`'s own
 # default-feature gate runs in its repository.
+# Explicit children keep feature-lane executables separate even on warm runs.
+# Every command receives its lane's directory; tooling outside these lanes
+# continues to use the caller's root and its own Cargo feature selection.
+CI_DEFAULT_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-default-features
+CI_ALL_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/ci-all-features
+
 ci-default-features:
-	cargo fmt --all -- --check
-	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo test --locked --workspace
-	cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
-	cargo test --locked -p qsl-semantics
-	cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
-	cargo test --locked -p qsl-cst
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo fmt --all -- --check
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo clippy --locked --workspace --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo test --locked --workspace
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo test --locked -p qsl-semantics
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$(CI_DEFAULT_TARGET_DIR)" cargo test --locked -p qsl-cst
 
 ci-all-features:
-	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	cargo test --locked --workspace --all-features
+	CARGO_TARGET_DIR="$(CI_ALL_TARGET_DIR)" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+	CARGO_TARGET_DIR="$(CI_ALL_TARGET_DIR)" cargo test --locked --workspace --all-features
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
@@ -195,7 +201,7 @@ ci-docs:
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored), and builds on the pinned stable toolchain with no sanitizer:
+# gitignored), and builds on the stable toolchain with no sanitizer:
 # QSL's crates forbid `unsafe`, so the run checks panics, aborts
 # and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000
