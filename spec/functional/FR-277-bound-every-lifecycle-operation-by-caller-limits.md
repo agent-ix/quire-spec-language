@@ -281,6 +281,35 @@ ordering and bound for these variable-size steps against admitted type,
 declaration and numeric sizes. The public ceiling SHALL remain a caller
 choice, never a derived multiplier of those sizes or the evaluation bound.
 
+### Unsatisfied helper API enabling contract
+
+The granular numeric/search rows above are proposed enabling requirements,
+not descriptions of released helper capabilities. Released kernel Boolean
+numeric membership and QSV declaration-map/ancestor search expose no
+per-limb/per-comparison WorkBudget or original-Cancel hooks. One outer event
+around those calls SHALL NOT be presented as bounding or cancelling their
+internal work. QSL SHALL NOT copy their algorithms or extend private
+declaration budgets to manufacture those hooks.
+
+The proposed feasible ownership boundary is an owner-provided public
+bounded helper contract: the kernel owner defines numeric/range work units
+and failure/cancellation boundaries; QSV owns supplied membership,
+declaration lookup and ancestor search. Each helper receives the explicit
+budget of the invoking admission/conversion phase and the original Cancel,
+preserves its existing semantic result and trusted-value boundary, and
+returns its actual successful work and typed denied step or original
+storage/capacity/cancellation cause. QSL owns delegation and phase projection,
+not a duplicate implementation. No helper operation spends two owner budgets.
+
+Common review must choose between that enabling API contract and a revised
+logical-event contract with independently bounded helper inputs. The latter
+must name the actual published numeric-size/declaration-entry/content bounds
+and prove they bound each uncancellable internal operation; admitted-size
+language alone is insufficient, and new guessed caps are not allowed.
+Neither choice is established by the released source. Until the common
+choice and its owner contract are reviewed, the granular rows do not claim
+available caller hooks, bounded cancellation latency or an operating norm.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
