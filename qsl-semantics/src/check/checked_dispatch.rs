@@ -637,13 +637,19 @@ impl<'r> Scope<'r> {
         } else {
             name.to_owned()
         };
-        self.binders.push((name.to_owned(), used.clone()));
+        self.bind_as(name, &used);
+        used
+    }
+
+    /// Case arm binders remain authored declarations (FR-313); only the
+    /// scrutinee and body references participate in dispatch substitution.
+    fn bind_as(&mut self, name: &str, used: &str) {
+        self.binders.push((name.to_owned(), used.to_owned()));
         self.shadows
             .entry(name.to_owned())
             .or_default()
-            .push(used.clone());
-        *self.in_use.entry(used.clone()).or_default() += 1;
-        used
+            .push(used.to_owned());
+        *self.in_use.entry(used.to_owned()).or_default() += 1;
     }
 
     /// Leave the innermost binder's scope. A name it frees that is some
@@ -685,6 +691,12 @@ enum Rewrite {
     /// Bind the `slot`th binder of the node ([`ExprNode::binders`]) for the scope
     /// about to be entered ([`Scope::bind`]).
     Bind(ExprId, usize),
+    /// Bind an arm identifier as authored, without respelling it.
+    PreserveBind {
+        node: ExprId,
+        arm: usize,
+        binder: usize,
+    },
     /// Leave the innermost binder's scope.
     Unbind,
 }
@@ -742,6 +754,20 @@ impl Renaming<'_, '_, '_> {
                     return;
                 };
                 match node.node() {
+                    ExprNode::Case(case) => {
+                        children.push(Rewrite::Node(case.scrutinee));
+                        for (index, arm) in case.arms.iter().enumerate() {
+                            children.extend((0..arm.binders.len()).map(|binder| {
+                                Rewrite::PreserveBind {
+                                    node: id,
+                                    arm: index,
+                                    binder,
+                                }
+                            }));
+                            children.push(Rewrite::Node(arm.body));
+                            children.extend(arm.binders.iter().map(|_| Rewrite::Unbind));
+                        }
+                    }
                     ExprNode::Name(name) => {
                         if let Some(slot) = self.names.get_mut(id.index()) {
                             *slot = Some(self.scope.resolve(name, self.rename));
@@ -784,6 +810,14 @@ impl Renaming<'_, '_, '_> {
                 }
             }
             Rewrite::Unbind => self.scope.unbind(),
+            Rewrite::PreserveBind { node, arm, binder } => {
+                if let Some(ExprNode::Case(case)) = self.tree.get(node).map(|node| node.node()) {
+                    if let Some(source) = case.arms.get(arm).and_then(|arm| arm.binders.get(binder))
+                    {
+                        self.scope.bind_as(&source.name, &source.name);
+                    }
+                }
+            }
         }
     }
 }
@@ -1657,11 +1691,13 @@ mod tests {
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
         ]);
+        forms.push(case_source("case x { A(z): x + z; B: x; }"));
         forms
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 31] = [
+    const FORM_NAMES: [&str; 32] = [
+        "Case",
         "Boolean",
         "Integer",
         "Rational",
@@ -1701,6 +1737,7 @@ mod tests {
     #[deny(clippy::wildcard_enum_match_arm)]
     fn form_name(expression: &Expression) -> &'static str {
         match expression.root_node() {
+            ExprNode::Case(_) => "Case",
             ExprNode::Boolean(_) => "Boolean",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
@@ -1733,6 +1770,64 @@ mod tests {
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
         }
+    }
+
+    fn case_source(body: &str) -> Expression {
+        let text = format!("language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(x: U): Integer pure {{ {body} }}");
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("test", "case", "git", "1"),
+            "case.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds case");
+        let qsl_forms::DeclarationForm::Function(function) = unit.forms()[0].form() else {
+            panic!("function")
+        };
+        function.body.clone()
+    }
+
+    #[trace("TC-815", "FR-313-AC-2")]
+    #[test]
+    fn dispatch_substitution_walks_case_children_and_preserves_each_arm_binding() {
+        let source = case_source("case x { A(z): x + z; B(x): x; C: case x { D(k): x + k; }; }");
+        let renamed = substitute_names(
+            &source,
+            &BTreeMap::from([("x".to_owned(), "receiver".to_owned())]),
+        );
+        let ExprNode::Case(case) = renamed.root_node() else {
+            panic!("case")
+        };
+        assert_eq!(
+            renamed.at(case.scrutinee).node(),
+            &ExprNode::Name("receiver".into())
+        );
+        assert_eq!(case.arms[0].binders[0].name, "z");
+        assert_eq!(case.arms[1].binders[0].name, "x");
+        assert_eq!(
+            renamed.at(case.arms[1].body).node(),
+            &ExprNode::Name("x".into())
+        );
+        let ExprNode::Binary { left, right, .. } = renamed.at(case.arms[0].body).node() else {
+            panic!("binary body")
+        };
+        assert_eq!(renamed.at(*left).node(), &ExprNode::Name("receiver".into()));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name("z".into()));
+        let ExprNode::Case(inner) = renamed.at(case.arms[2].body).node() else {
+            panic!("inner case")
+        };
+        assert_eq!(
+            renamed.at(inner.scrutinee).node(),
+            &ExprNode::Name("receiver".into())
+        );
+        assert_eq!(inner.arms[0].binders[0].name, "k");
+        let ExprNode::Binary { left, right, .. } = renamed.at(inner.arms[0].body).node() else {
+            panic!("inner binary")
+        };
+        assert_eq!(renamed.at(*left).node(), &ExprNode::Name("receiver".into()));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name("k".into()));
     }
 
     /// The rename walk's task stack grows by at most a constant per

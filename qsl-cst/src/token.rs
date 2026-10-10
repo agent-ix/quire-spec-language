@@ -168,7 +168,7 @@ vocabulary! {
     Star => "*", Slash => "/", Qualify => "::", NotEqual => "!=", LessEqual => "<=", GreaterEqual => ">=";
     complete:
     Import => "import", Dimension => "dimension", Unit => "unit", Ordered => "ordered",
-    Enum => "enum", Record => "record", Tuple => "tuple", Type => "type",
+    Enum => "enum", Record => "record", Tuple => "tuple", Union => "union", Type => "type",
     Function => "function", Pure => "pure", Decreases => "decreases",
     IntegerType => "Integer", IntType => "Int", RationalType => "Rational",
     DecimalType => "Decimal", Float32Type => "Float32", Float64Type => "Float64",

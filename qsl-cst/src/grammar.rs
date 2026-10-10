@@ -271,6 +271,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::EnumDeclaration),
         r(P::RecordDeclaration),
         r(P::TupleDeclaration),
+        r(P::UnionDeclaration),
         r(P::AliasDeclaration),
         r(P::FunctionDeclaration),
         r(P::Predicate),
@@ -466,6 +467,24 @@ fn source_and_types(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::UnionDeclaration,
+        s(vec![
+            x("union"),
+            ident(),
+            x("{"),
+            list(|| r(P::UnionMember)),
+            opt(x(",")),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::UnionMember,
+        s(vec![
+            ident(),
+            opt(s(vec![x("("), list(|| r(P::TypeReference)), x(")")])),
+        ]),
+    );
+    g.insert(
         P::AliasDeclaration,
         s(vec![
             x("type"),
@@ -586,6 +605,7 @@ fn expressions(g: &mut Grammar) {
                 x("else"),
                 r(P::Expression),
             ]),
+            r(P::CaseExpression),
             r(P::Implication),
         ]),
     );
@@ -799,6 +819,27 @@ fn expressions(g: &mut Grammar) {
             ]),
         ]),
     );
+    g.insert(
+        P::CaseExpression,
+        s(vec![
+            x("case"),
+            r(P::ScrutineeExpression),
+            x("{"),
+            plus(r(P::CaseArm)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::CaseArm,
+        s(vec![
+            r(P::QualifiedName),
+            opt(s(vec![x("("), list(|| r(P::CaseBinder)), x(")")])),
+            x(":"),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(P::CaseBinder, ident());
     let args = s(vec![x("("), opt(list(|| r(P::Expression))), x(")")]);
     g.insert(
         P::Primary,
@@ -880,6 +921,74 @@ fn expressions(g: &mut Grammar) {
             r(P::QualifiedName),
         ]),
     );
+    scrutinee_rules(g);
+}
+
+/// Derive the scrutinee precedence tree from the ordinary expression rules.
+/// Only unbracketed expression edges are restricted. Primary's delimited
+/// operands (parentheses, calls, indexes and constructors) keep ordinary
+/// expressions, so their records are admitted. Separate productions preserve
+/// the interpreter's production/position memo key (FR-256).
+fn scrutinee_rules(g: &mut Grammar) {
+    const PAIRS: &[(P, P)] = &[
+        (P::Expression, P::ScrutineeExpression),
+        (P::Implication, P::ScrutineeImplication),
+        (P::Disjunction, P::ScrutineeDisjunction),
+        (P::Conjunction, P::ScrutineeConjunction),
+        (P::Comparison, P::ScrutineeComparison),
+        (P::Sum, P::ScrutineeSum),
+        (P::Product, P::ScrutineeProduct),
+        (P::Unary, P::ScrutineeUnary),
+        (P::Postfix, P::ScrutineePostfix),
+        (P::Primary, P::ScrutineePrimary),
+    ];
+    fn copy(rule: &Rule, delimited: bool) -> Rule {
+        match rule {
+            Rule::Terminal(terminal) => Rule::Terminal(terminal.clone()),
+            Rule::Production(production) => r(if delimited {
+                *production
+            } else {
+                PAIRS
+                    .iter()
+                    .find_map(|(base, restricted)| (base == production).then_some(*restricted))
+                    .unwrap_or(*production)
+            }),
+            Rule::Sequence(rules) => s(rules.iter().map(|rule| copy(rule, delimited)).collect()),
+            Rule::Choice(rules) => c(rules
+                .iter()
+                .filter(|rule| !matches!(rule, Rule::Production(P::RecordValue)))
+                .map(|rule| copy(rule, delimited))
+                .collect()),
+            Rule::Optional(rule) => opt(copy(rule, delimited)),
+            Rule::Repeat {
+                rule,
+                minimum,
+                commit_on_progress,
+            } => Rule::Repeat {
+                rule: Box::new(copy(rule, delimited)),
+                minimum: *minimum,
+                commit_on_progress: *commit_on_progress,
+            },
+        }
+    }
+    for &(base, restricted) in PAIRS {
+        let rule = g.get(&base).expect("expression rule was installed");
+        // Postfix's Primary edge is unbracketed; its later Expression
+        // operands are indexes or call arguments and remain unrestricted.
+        let restricted_rule = if base == P::Postfix {
+            let Rule::Sequence(rules) = rule else {
+                unreachable!("postfix is a sequence")
+            };
+            s(rules
+                .iter()
+                .enumerate()
+                .map(|(index, rule)| copy(rule, index != 0))
+                .collect())
+        } else {
+            copy(rule, base == P::Primary)
+        };
+        g.insert(restricted, restricted_rule);
+    }
 }
 
 fn temporal(g: &mut Grammar) {

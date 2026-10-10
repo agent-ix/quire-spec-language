@@ -6,4 +6,5 @@
 mod identity_free_forms;
 mod model_source_forms;
 mod protocol_clause_forms;
+mod sum_case_forms;
 mod value_forms;

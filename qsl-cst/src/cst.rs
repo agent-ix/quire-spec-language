@@ -109,10 +109,13 @@ productions! {
     TypeReference, QualifiedName, ModelName, TypeName, OperationName, ParameterType,
     RoundingMode, TextProfile,
     DimensionDeclaration, DimensionTerm, UnitDeclaration, EnumDeclaration,
-    EnumMember, RecordDeclaration, Field, TupleDeclaration, AliasDeclaration,
+    EnumMember, RecordDeclaration, Field, TupleDeclaration, UnionDeclaration, UnionMember, AliasDeclaration,
     FunctionDeclaration, Predicate, Parameter, StateClause, Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,
-    Postfix, Primary, ExactNumber, FloatValue,
+    Postfix, Primary, CaseExpression, CaseArm, CaseBinder,
+    ScrutineeExpression, ScrutineeImplication, ScrutineeDisjunction,
+    ScrutineeConjunction, ScrutineeComparison, ScrutineeSum, ScrutineeProduct,
+    ScrutineeUnary, ScrutineePostfix, ScrutineePrimary, ExactNumber, FloatValue,
     #[doc = "`0x` followed by exactly 8 hexadecimal digits: the bit-exact `float32` literal payload in `float32(bits: <Hex32>)`."]
     Hex32,
     #[doc = "`0x` followed by exactly 16 hexadecimal digits: the bit-exact `float64` literal payload in `float64(bits: <Hex64>)`."]

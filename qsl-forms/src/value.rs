@@ -21,11 +21,11 @@ use quire_exact::{CollectionKind, Integer};
 use super::dispatch::{Construct, FormsCause, FormsRefusal};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
-    Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
-    DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    ExactNumberForm, ExactNumberKind, ExprId, ExprNode, Expression, ExpressionBuilder,
-    FieldInitializer, FunctionDeclaration, NameForm, RecordFieldForm, RecordForm, TermOperator,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType, CaseForm,
+    DeclarationForm, DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
+    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId, ExprNode, Expression,
+    ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm, RecordFieldForm,
+    RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -569,6 +569,7 @@ enum Shape {
     Name(String),
     Let(String),
     If,
+    Case(Vec<ArmSyntax>, Span),
     Binary(BinaryOperator),
     Negate,
     Not,
@@ -609,6 +610,13 @@ enum Shape {
 
 /// The built subexpressions of one node, consumed in order.
 struct Operands(std::vec::IntoIter<ExprId>);
+
+/// Case arm metadata before the iterative builder assigns a body handle.
+struct ArmSyntax {
+    member: NameForm,
+    binders: Vec<DeclaredName>,
+    span: Span,
+}
 
 impl Operands {
     fn next(&mut self) -> Option<ExprId> {
@@ -659,6 +667,26 @@ impl Shape {
                     then: operands.next()?,
                     otherwise: operands.next()?,
                 }
+            }
+            Self::Case(arms, span) => {
+                arity(arms.len() + 1)?;
+                let scrutinee = operands.next()?;
+                let arms = arms
+                    .into_iter()
+                    .map(|arm| {
+                        Some(ArmForm {
+                            member: arm.member,
+                            binders: arm.binders,
+                            body: operands.next()?,
+                            span: arm.span,
+                        })
+                    })
+                    .collect::<Option<_>>()?;
+                ExprNode::Case(CaseForm {
+                    scrutinee,
+                    arms,
+                    span,
+                })
             }
             Self::Binary(operator) => {
                 arity(2)?;
@@ -926,16 +954,25 @@ impl<'c> Mapping<'c> {
         let node = task.node;
         let items = items(self.cst, node);
         match node.production() {
-            Production::Expression => self.expression(task, &items),
+            Production::Expression | Production::ScrutineeExpression => {
+                self.expression(task, &items)
+            }
+            Production::CaseExpression => self.case(task, &items),
             Production::Implication
             | Production::Disjunction
             | Production::Conjunction
             | Production::Comparison
             | Production::Sum
-            | Production::Product => self.chain(task, &items),
-            Production::Unary => self.unary(task, &items),
-            Production::Postfix => self.postfix(task, &items),
-            Production::Primary => self.primary(task, &items),
+            | Production::Product
+            | Production::ScrutineeImplication
+            | Production::ScrutineeDisjunction
+            | Production::ScrutineeConjunction
+            | Production::ScrutineeComparison
+            | Production::ScrutineeSum
+            | Production::ScrutineeProduct => self.chain(task, &items),
+            Production::Unary | Production::ScrutineeUnary => self.unary(task, &items),
+            Production::Postfix | Production::ScrutineePostfix => self.postfix(task, &items),
+            Production::Primary | Production::ScrutineePrimary => self.primary(task, &items),
             Production::CompleteUnit
             | Production::Header
             | Production::Profile
@@ -958,6 +995,10 @@ impl<'c> Mapping<'c> {
             | Production::RecordDeclaration
             | Production::Field
             | Production::TupleDeclaration
+            | Production::UnionDeclaration
+            | Production::UnionMember
+            | Production::CaseArm
+            | Production::CaseBinder
             | Production::AliasDeclaration
             | Production::FunctionDeclaration
             | Production::Predicate
@@ -1039,7 +1080,20 @@ impl<'c> Mapping<'c> {
 
     fn expression(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
-        let operands = nodes_of(items, Production::Expression);
+        let operands = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Node(child)
+                    if matches!(
+                        child.production(),
+                        Production::Expression | Production::ScrutineeExpression
+                    ) =>
+                {
+                    Some(*child)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         match items.first() {
             Some(Item::Token(token)) if token.spelling() == b"let" => {
                 let name = tokens_of(items, TokenKind::Identifier)
@@ -1063,6 +1117,27 @@ impl<'c> Mapping<'c> {
             }
             Some(Item::Token(_) | Item::Node(_)) | None => Err(unexpected(node)),
         }
+    }
+
+    fn case(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
+        let mut children = vec![only(items, Production::ScrutineeExpression, task.node)?];
+        let mut arms = Vec::new();
+        for arm in nodes_of(items, Production::CaseArm) {
+            let arm_items = self::items(self.cst, arm);
+            let member = name_form(self.cst, only(&arm_items, Production::QualifiedName, arm)?)?;
+            let binders = nodes_of(&arm_items, Production::CaseBinder)
+                .into_iter()
+                .map(|binder| declared_name(&self::items(self.cst, binder), binder))
+                .collect::<Result<_, FormsRefusal>>()?;
+            let body = only(&arm_items, Production::Expression, arm)?;
+            arms.push(ArmSyntax {
+                member,
+                binders,
+                span: arm.span(),
+            });
+            children.push(body);
+        }
+        self.with_children(Shape::Case(arms, task.node.span()), &task, children)
     }
 
     /// A binary precedence level: `o0 op1 o1 op2 o2 ...`. `implies` nests
@@ -1453,6 +1528,21 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Call(name), &task, arguments)
             }
             Production::CollectionCall => self.collection_call(task, child, &items),
+            Production::UnionDeclaration
+            | Production::UnionMember
+            | Production::CaseExpression
+            | Production::CaseArm
+            | Production::CaseBinder
+            | Production::ScrutineeExpression
+            | Production::ScrutineeImplication
+            | Production::ScrutineeDisjunction
+            | Production::ScrutineeConjunction
+            | Production::ScrutineeComparison
+            | Production::ScrutineeSum
+            | Production::ScrutineeProduct
+            | Production::ScrutineeUnary
+            | Production::ScrutineePostfix
+            | Production::ScrutineePrimary => Err(unexpected(child)),
             Production::CompleteUnit
             | Production::Header
             | Production::Profile

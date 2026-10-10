@@ -946,6 +946,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Rational(..)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
+                | ExprNode::Case(_)
                 | ExprNode::If { .. }
                 | ExprNode::Binary { .. }
                 | ExprNode::Negate(_)

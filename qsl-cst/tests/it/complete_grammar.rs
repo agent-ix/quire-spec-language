@@ -32,6 +32,8 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::RecordDeclaration,
     Production::Field,
     Production::TupleDeclaration,
+    Production::UnionDeclaration,
+    Production::UnionMember,
     Production::AliasDeclaration,
     Production::FunctionDeclaration,
     Production::Predicate,
@@ -48,6 +50,19 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::Unary,
     Production::Postfix,
     Production::Primary,
+    Production::CaseExpression,
+    Production::CaseArm,
+    Production::CaseBinder,
+    Production::ScrutineeExpression,
+    Production::ScrutineeImplication,
+    Production::ScrutineeDisjunction,
+    Production::ScrutineeConjunction,
+    Production::ScrutineeComparison,
+    Production::ScrutineeSum,
+    Production::ScrutineeProduct,
+    Production::ScrutineeUnary,
+    Production::ScrutineePostfix,
+    Production::ScrutineePrimary,
     Production::ExactNumber,
     Production::FloatValue,
     Production::Hex32,
@@ -134,6 +149,7 @@ fn parse(id: &str, text: &str) -> ParsedSource {
 
 fn corpus() -> Vec<(&'static str, String)> {
     vec![
+        ("sum-case", source("union Shape { Empty, Circle(Integer), Rect(Integer, Integer), } function area using Complete(s: Shape): Integer pure { case s { Circle(r): r; Shape::Rect(w, h): w * h; Empty: 0; } }")),
         (
             "values",
             source(
