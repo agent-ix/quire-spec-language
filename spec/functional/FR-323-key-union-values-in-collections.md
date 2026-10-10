@@ -11,6 +11,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-321
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-093
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-143
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-144
@@ -51,6 +53,14 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
   contains a union.
 - The checker SHALL admit a `Sequence<U>`, which needs no key; the evaluator
   keeps its occurrence order.
+- When an operation's catalog entry names `operand:0`, `inner:0` or
+  `result_inner` as its leaf source, the checker SHALL derive its leaves by
+  [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)'s
+  text-leaf walk, including every union member's positional payload and
+  pinned text profile. Leaf order follows type declaration order and
+  payload position order; it does not follow a collection's runtime element
+  order. The `result_inner` source applies only to set, bag and ordered-set
+  results, as FR-093 defines.
 - A union whose payload contains a type with no FR-144 key (such as an
   IEEE-bearing type) SHALL make a set, bag or ordered set of it refuse
   `ill_typed`/`operator-ineligible` at S3, on the same path as an

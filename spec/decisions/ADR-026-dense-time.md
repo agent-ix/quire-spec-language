@@ -17,6 +17,8 @@ relationships:
     type: relates_to
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/FR-251
+    type: relates_to
   - target: ix://agent-ix/quire-specification/FR-090
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-142
@@ -392,12 +394,23 @@ A timed claim reaches an embedded target as a runtime monitor, built by the
 runtime repository, and as code obligations, built by CG. This section fixes
 what QSL hands them.
 
+QSL-685 chooses a plan that carries executable topology. The normative
+shape and falsifying controls are in
+[FR-251](../functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md).
+Its checked payload follows the existing E5/S5 generation path; this choice
+does not add an RT dependency on QSL's checker or a separate temporal
+interpreter in RT. The driver and IR admit the complete plan before RT's
+`build(plan)` creates fresh monitor state.
+
 | ID | Rule |
 | --- | --- |
 | MN-1 | **Tick-based monitors.** On a target a timed claim is monitored under the timestamped-event profile (DC-2): positions are observed events, and time stamps are integer ticks of a declared unit read from a monotonic hardware counter. The monitor's clock binding names the counter, its unit and its width (QSpec FR-252). |
 | MN-2 | **Sound rounding.** Each dense constant of the claim converts to ticks, and each observed instant is the closed interval its tick covers, widened by the declared clock uncertainty (QSpec FR-160). An interval bound decides true or false only when every instant in those intervals agrees; otherwise the obligation stays three-valued, pending or indeterminate as QSpec FR-160 states. Rounding never turns an uncertain boundary into a decided one. |
 | MN-3 | **Memory from an event rate.** A past-time or bounded-future interval operator keeps the events inside its window (Basin, Klaedtke and Zălinescu; Ho, Ouaknine and Worrell). The monitor's buffer capacity is computed statically from the formula and a caller-set maximum event rate per unit: for each buffered subformula, the rate times the window length plus one. The rate is a B-2 run limit of the monitor (ADR-014) that the caller sets, with a published default of one event per microsecond; the buffer size follows from it. |
 | MN-4 | **Overflow and faults.** An event that would exceed a buffer is never dropped: the obligations it affects settle `Incomplete(LimitReached{limit, value, setting})` naming the event-rate limit, V-7. Tick differences are computed modulo the counter's width, against a caller-stated maximum gap between consecutive readings below `2^width` ticks, so wraparound is decided; a target whose maximum gap is not below `2^width` is refused, `GapExceedsWidth`. A difference above the maximum gap, from a reading that runs backwards or a missed reading, is a monitor fault, `Failed`, `ReadingGapExceeded`, and never a verdict. |
+| MN-5 | **Executable plan.** The plan owns its exact checked clause subject, activation/captures, atom bodies, ordered operator/subformula topology, typed state and complete initialization/event/watermark transition bodies, plus intervals, buffers, clock binding, uncertainty, rate and maximum gap. QSL determines their temporal meaning. IR/CG lower or generate the prescribed bodies through E5/S5; RT executes them without deriving operator updates from graph tags, names or resource tables. Unsupported executable content is disposed before build and yields no partial monitor. |
+| MN-6 | **Build and identity.** `build(plan)` receives one admitted immutable executable plan and no additional clause or evaluator callback. The driver binds admission to its independently selected checked package/clause and target; RT owns or retains the complete plan and allocates isolated mutable state. Atom/subformula IDs are subject-scoped, results retain obligation origins and the target premises, and live state cannot be rebound. FR-252's `PlanId` selects the complete immutable plan within driver ownership, including its program and premises. |
+| MN-7 | **Fault ownership.** Incomplete or inconsistent program/target bindings fail admission before initialization. RT allocation/initialization failures yield no usable monitor; invalid event/progress inputs leave state unchanged. Executor invariant failure is `Failed`, never a property verdict, and terminates the monitor. QSL owns disagreement between the prescribed program and its reference evaluator; RT/CG own incorrect execution of that program. Ordinary counter polling creates neither an event position nor a watermark; progress is admitted under QSpec FR-094/FR-160. |
 | KG-1 | **Monitor agreement.** QSL writes a monitor-agreement obligation, handed to CG (OV-13), that the monitor's step function agrees with the layer-5 reference evaluator (SM-1) on every trace of up to `k` events with symbolic integer time stamps, `k` the obligation's stated horizon, a method parameter of the request with a published default of 8; the discharged obligation holds for traces up to that length. |
 | KG-2 | **Tick arithmetic.** QSL writes obligations, handed to CG, that tick arithmetic never panics or overflows, that modular differences are correct across wraparound, and that no buffer exceeds MN-3's capacity under the declared rate. |
 | KG-3 | **Timestamp contracts.** For a contract that relates timestamp parameters, such as "when `now − start > d` the timeout branch is taken", QSL writes an obligation over symbolic integers, handed to CG. |
@@ -439,7 +452,7 @@ what QSL hands them.
 | OV-10 | Task sets and schedulability: the `taskset` grammar (RT-1), the `schedulable` and `response` claims (RT-3), the QSpec FR-290 capability kind `schedulability`, and the closed-form evidence wire (RT-7) | QSpec FR-419 |
 | OV-11 | QSpec FR-193: the source form of continuous variables and flows that QSL lowers, and HY-2's verdict map with `BoundedSolver` and `SolverInconclusive` | QSpec FR-193 |
 | OV-12 | The zone certificate wire (CF-1, CF-2) and its place in QSpec FR-331; ADR-011's E11 carrying a certificate to S8 as it carries a counterexample (CF-4) | QSpec FR-418; ADR-011 when requirements follow |
-| OV-13 | The monitor contract handed to the runtime repository (MN-1 to MN-4) and the CG obligation shapes (KG-1 to KG-4) | runtime and CG repositories |
+| OV-13 | FR-251's complete executable monitor plan, build inputs, identity and fault boundary (MN-1 to MN-7), and CG obligation shapes (KG-1 to KG-4). QSL owns checked temporal meaning; the driver admits the selected package/clause/target, IR/CG lower or generate its program through E5/S5, and RT builds from that plan without inferring semantics. | QSL FR-251 (QSL-685); runtime IR-519 and CG repositories |
 | OV-14 | ADR-018 §1 `ProofBasis` and `InconclusiveCause`: `ZoneCertified`, `ClosedForm`, `BoundedSolver`, and the causes `NoAdmittedBehaviour`, `LassoNotConcretized`, `CertificateRejected`, `SufficientTestFailed` and `SolverInconclusive` | QSL, amended here |
 
 ## Consequences
@@ -516,6 +529,11 @@ Each amended text carries an "Amended by ADR-026" note.
   replays exactly.
 - **Floating-point delay sampling.** Not taken. Every sampled delay is an
   exact rational from a recorded grid (SS-2), so a sample replays exactly.
+- **Resource-only monitor plan plus a separately supplied checked clause.**
+  Not taken for MN-5 to MN-7: the plan carries the closed executable
+  program and its checked subject so RT build has one admitted input and
+  no formula-to-transition inference step. The driver retains the existing
+  independently selected package/clause binding at admission.
 
 ## References
 
