@@ -40,7 +40,7 @@ fn cargo_double() {
         .expect("required selection");
     assert!(args.starts_with("test --locked -p "));
     assert!(args.contains(" -- --exact "));
-    assert!(args.ends_with(" --nocapture"));
+    assert!(args.ends_with(" --format terse --nocapture"));
     let mut calls = fs::read_to_string(&log).unwrap_or_default();
     calls.push_str(&format!(
         "{}\t{}\n",
