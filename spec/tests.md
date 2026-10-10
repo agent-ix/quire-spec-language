@@ -33,6 +33,7 @@ names different artifacts in each.
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
+| TC-950 | Native CI accepts only declared genuine empty suites | Integration | P1 | NFR-014-AC-1, NFR-014-AC-2, NFR-014-AC-3, NFR-014-AC-4, NFR-014-AC-5, NFR-014-AC-6, NFR-014-AC-7, NFR-014-AC-8, NFR-014-AC-9, NFR-014-AC-10 | 🚧 Planned; validation and execution pending |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-6, FR-059-AC-8, FR-059-AC-9 | ✅ |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ |

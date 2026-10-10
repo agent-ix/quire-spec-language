@@ -924,6 +924,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT |
 
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR |
+| [NFR-014](non-functional/NFR-014-check-native-ci-suite-emptiness.md) | NFR |
 | [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT |
 | [FR-013](functional/FR-013-link-formal-environments.md) | FR |
 | [FR-014](functional/FR-014-bind-native-formal-source.md) | FR |
