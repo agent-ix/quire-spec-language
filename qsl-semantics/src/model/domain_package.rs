@@ -62,6 +62,45 @@ pub struct ObjectTypeRecord {
 pub struct RecordValueTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
+    /// Declared ancestors of this same business meaning.
+    pub supertypes: Vec<DeclarationKey>,
+}
+
+/// An authored clause member. Its language and text are retained verbatim;
+/// retaining a clause does not parse or evaluate it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseRecord {
+    /// The clause's original member key.
+    pub key: DeclarationKey,
+    /// The original declaration owning this clause.
+    pub owner: DeclarationKey,
+    /// The authored language identifier.
+    pub language: String,
+    /// The exact authored expression text.
+    pub text: String,
+}
+
+/// One authored namespace vocabulary entry, in declaration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamespaceTerm {
+    /// The authored term.
+    pub term: String,
+    /// Its authored documentation.
+    pub doc: String,
+    /// The exact FCD origin, including generated or source provenance.
+    pub origin: serde_json::Value,
+}
+
+/// A namespace is one original declaration, never an effective type or an
+/// object universe. Membership and vocabulary are data, not declarations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamespaceRecord {
+    /// The original namespace node key.
+    pub key: DeclarationKey,
+    /// Declared members, preserving authored order.
+    pub members: Vec<DeclarationKey>,
+    /// Declared vocabulary, preserving authored order.
+    pub vocabulary: Vec<NamespaceTerm>,
 }
 
 /// QSL's own closed native value-type vocabulary: the unparameterized
@@ -508,6 +547,10 @@ pub enum DomainPackageRecord {
     FieldMember(FieldMemberRecord),
     /// A record value type (FR-208).
     RecordValueType(RecordValueTypeRecord),
+    /// An authored clause member (FR-208).
+    Clause(ClauseRecord),
+    /// An original namespace with no effective type (FR-208).
+    Namespace(NamespaceRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
@@ -532,6 +575,8 @@ impl DomainPackageRecord {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
+            Self::Clause(record) => &record.key,
+            Self::Namespace(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,

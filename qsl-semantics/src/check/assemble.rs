@@ -673,6 +673,8 @@ fn model_object_types(
                 }
             }
             DomainPackageRecord::RecordValueType(_)
+            | DomainPackageRecord::Clause(_)
+            | DomainPackageRecord::Namespace(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
