@@ -349,7 +349,9 @@ pub(super) fn derive(
             | ValueType::Text(_)
             | ValueType::Quantity(_)
             | ValueType::Reference(_)
-            | ValueType::Population(_) => {
+            | ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => {
                 found.insert(key(), Authored::Whole);
             }
         }

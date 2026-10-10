@@ -610,10 +610,11 @@ pub(crate) fn evaluated(outcome: Outcome<Value>) -> Result<Evaluated, InternalFa
             | Refusal::IeeeNotExact { .. }
             | Refusal::IeeeNanPayloadNotRepresentable { .. }
             | Refusal::ForeignReference { .. } => Evaluated::Outcome(ScalarOutcome::OtherRefusal),
-            Refusal::CheckedInvariant => {
-                return Err(InternalFault::new(
+            Refusal::CheckedInvariant { cause } => {
+                return Err(InternalFault::from_kernel(
                     "replay",
                     "scalar-evaluation-keeps-its-checked-invariants",
+                    cause,
                 ))
             }
         },

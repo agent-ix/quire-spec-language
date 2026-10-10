@@ -370,7 +370,9 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Float(_)
-        | ValueType::Population(_) => false,
+        | ValueType::Population(_)
+        | ValueType::Uuid
+        | ValueType::Timestamp => false,
     }
 }
 

@@ -536,7 +536,9 @@ pub(crate) fn argument_value(
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Reference(_)
-        | ValueType::Population(_) => Err(wrong()),
+        | ValueType::Population(_)
+        | ValueType::Uuid
+        | ValueType::Timestamp => Err(wrong()),
     }
 }
 
@@ -676,9 +678,13 @@ pub(crate) fn convert_outcome(
         FamilyOutcome::Evaluated(Outcome::Completed(_)) => Err(Box::new(RunRefusal::Fault(
             InternalFault::new("call", "boolean-or-integer-function-completes-that-kind"),
         ))),
-        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant)) => Err(Box::new(
-            RunRefusal::Fault(InternalFault::new("S6a", "checked-program-invariant")),
-        )),
+        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant { cause })) => {
+            Err(Box::new(RunRefusal::Fault(InternalFault::from_kernel(
+                "S6a",
+                "checked-program-invariant",
+                cause,
+            ))))
+        }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => Ok(CallOutcome::Refused(convert_refusal(
             record, None, location, sources,
         )?)),
