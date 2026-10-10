@@ -32,7 +32,8 @@ Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15.
    `Rational[-9, 9; 1, 9]`, `Text[1, 8; nfc]`, an integer target
    `Int[0, 9]` for `InexactDecimal`, a `binary32` `IeeeNotExact` whose
    `nearest-even` flags are inexact and overflow, and a `binary64` to
-   `binary32` NaN conversion. Build one from a kernel `CheckedInvariant`.
+   `binary32` NaN conversion. Attempt a record from a received kernel
+   `CheckedInvariant { cause }` using an actual typed kernel cause.
 5. Build a `DivisionOutOfDomain` record for consumer domain `Int[0, 9]`
    with the quotient as the exposed member and with the remainder.
 6. Evaluate `not x` for `x: Boolean` through the S6a seam with an Integer
@@ -55,5 +56,5 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
   `binary32` with `flags` `overflow,inexact`; and `expected` `binary32` with
   `actual` `binary64`. `CheckedInvariant` builds no record.
 - Step 5: causes `quotient-outside-domain` and `remainder-outside-domain`, each with `expected` `Int[0, 9]`.
-- Step 6: `Err(InternalFault)` naming `S6a` and `checked-program-invariant`,
-  and no `Evaluation`.
+- Step 6: `Err(InternalFault)` naming `S6a` and `boolean-value-expected`,
+  with no synthetic kernel provenance, `Evaluation` or refusal record.
