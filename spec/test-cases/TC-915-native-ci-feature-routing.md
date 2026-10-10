@@ -29,8 +29,14 @@ not compile a workspace or qualify compiler feature behavior.
 2. Run `explicit_roots_and_lane_overrides_are_one_quoted_argument` for
    command-line root precedence and both explicit lane overrides, including
    the same metacharacter classes. Pass assignments as direct Rust process
-   arguments, doubling literal dollars for GNU Make assignment grammar;
-   environment roots retain their raw bytes (AC-2/3).
+   arguments. Supply the desired raw `CARGO_TARGET_DIR` bytes unchanged and
+   compare every received child path and complete argv: one-dollar roots
+   remain one dollar and independently supplied doubled-dollar roots remain
+   two, including before braces or parentheses. For explicit
+   `CI_DEFAULT_TARGET_DIR` and `CI_ALL_TARGET_DIR` overrides, double each
+   desired dollar for recursive GNU Make assignment decoding and independently
+   compare the decoded path bytes. Environment roots retain their raw bytes
+   (AC-2/3).
 3. Run `repeated_switches_in_both_directions_keep_each_lane_directory` twice
    in each direction with one caller root; compare every actual command's
    directory and complete argv (AC-1/3).

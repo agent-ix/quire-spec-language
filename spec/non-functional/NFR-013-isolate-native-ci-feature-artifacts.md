@@ -26,13 +26,19 @@ from Make's working directory. An explicit GNU Make command-line assignment
 of `CI_DEFAULT_TARGET_DIR` or `CI_ALL_TARGET_DIR` selects that lane's complete
 directory instead of appending a child.
 
-Environment `CARGO_TARGET_DIR` values supply literal path bytes. GNU Make
-command-line assignments use Make's assignment grammar: a literal dollar is
-encoded as `$$`, including before braces or parentheses. After that decoding,
-path contents remain data at the shell/process boundary. A caller launching
-Make through a shell also owns quoting its invocation; the Rust fixture passes
-assignments directly through `Command::args`. This contract does not interpret
-path bytes as shell commands or expand references to environment variables.
+Environment and GNU Make command-line `CARGO_TARGET_DIR` values supply the
+original raw caller path bytes. One dollar remains one dollar; `$$` remains
+two dollars, including before braces or parentheses. The root is captured
+without evaluating embedded Make expressions or environment references.
+
+Explicit GNU Make command-line `CI_DEFAULT_TARGET_DIR` and
+`CI_ALL_TARGET_DIR` overrides retain recursive Make assignment decoding:
+each desired literal dollar is encoded as `$$`, including before braces or
+parentheses. The decoded lane path remains data at the shell/process boundary.
+A caller launching Make through a shell also owns quoting its invocation;
+the Rust fixture passes assignments directly through `Command::args`. Quoted
+shell-variable transport does not execute path contents or expand their
+embedded environment references.
 
 The existing lane commands, in order, are:
 
@@ -50,8 +56,9 @@ The existing lane commands, in order, are:
 
 The feature-lane routing change leaves non-feature targets on their existing
 artifact and feature policy. In particular, `ci-clean-build` retains its
-separate `clean` child (or explicit clean override), no-default-feature build,
-library-only `handoff-writer` check and no-default-feature parse invocation.
+separate `clean` child of the caller's `CARGO_TARGET_DIR` (falling back to
+`target` for an unset or empty root), no-default-feature build, library-only
+`handoff-writer` check and no-default-feature parse invocation.
 The parse invocation and core xtask tools retain the caller root. No Cargo
 flag, CI check or aggregate dependency order is changed by this routing policy.
 
@@ -67,15 +74,15 @@ product feature or changing the hosted-workflow policy.
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Violations of the lane routing and command-preservation criteria | 0 | 0 | Test (TC-915) |
+| Violations of the lane routing and command-preservation criteria | 0 | 0 | Test |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| NFR-013-AC-1 | Without explicit lane overrides, every command selects its lane's distinct child of the owned parent root, including repeated default-to-all and all-to-default switches using the same root. | Test (TC-915) |
-| NFR-013-AC-2 | Every feature command receives the selected caller-root child or explicit lane override as literal path data under the environment and GNU Make assignment grammar above, including spaces, double quotes, backticks and dollar forms, without executing path contents. | Test (TC-915) |
-| NFR-013-AC-3 | Feature routing preserves the nine Cargo argument vectors and their order above, default versus all-feature selection, default-before-all reachability from `ci`, and the existing non-feature and clean artifact/feature policy. | Test (TC-915) |
+| NFR-013-AC-1 | Without explicit lane overrides, every command selects its lane's distinct child of the owned parent root, including repeated default-to-all and all-to-default switches using the same root. | Test |
+| NFR-013-AC-2 | Every feature command receives the selected caller-root child or explicit lane override as literal path data under the raw-root and lane-override assignment contracts above, including spaces, double quotes, backticks and dollar forms, without executing path contents. | Test |
+| NFR-013-AC-3 | Feature routing preserves the nine Cargo argument vectors and their order above, default versus all-feature selection, default-before-all reachability from `ci`, and the existing non-feature and clean artifact/feature policy. | Test |
 
 ## Verification
 
