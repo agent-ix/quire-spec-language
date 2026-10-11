@@ -64,8 +64,9 @@ pub use clause::{
 };
 mod native_result;
 pub use native_result::{
-    read_native_run_result, write_clause_run_result, NativeRunReadError, NativeRunResult,
-    NativeRunResultError,
+    read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
+    CallOriginRead, ClauseRunRecord, CommandErrorRecord, NativeRunOutcome, NativeRunReadError,
+    NativeRunResult, NativeRunResultError, PositionRead, RefusalLocusRead, SourceRefRead, SpanRead,
 };
 mod request;
 pub use request::{

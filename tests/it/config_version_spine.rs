@@ -380,6 +380,59 @@ fn clause_run_reader_checks_observation_role_and_anchor() {
     assert_eq!(report["disposition"]["refusal"]["cause"], "wrong-anchor");
 }
 
+/// FR-261/FR-312: the command adapter reads the selected observation through
+/// the depth-independent document reader before admission inspects its body.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_accepts_observation_deeper_than_128() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("deep-observation");
+    build(&path, Case::Healthy);
+    let snapshot_path = path.join("spine-snapshot.json");
+    let mut document = std::fs::read_to_string(&snapshot_path).unwrap();
+    let close = document.rfind('}').unwrap();
+    document.insert_str(
+        close,
+        &format!(",\"padding\":{}0{}", "[".repeat(160), "]".repeat(160)),
+    );
+    std::fs::write(&snapshot_path, document).unwrap();
+    let request = current_clause_request(&path);
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"));
+    assert!(decoded.is_ok(), "{:?}", decoded.err());
+}
+
+/// FR-312: an explicit observation byte bound above the default is honored
+/// within the caller's aggregate dependent-byte ceiling.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_honors_raised_observation_byte_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("large-observation");
+    build(&path, Case::Healthy);
+    let snapshot_path = path.join("spine-snapshot.json");
+    let mut document = std::fs::read_to_string(&snapshot_path).unwrap();
+    let close = document.rfind('}').unwrap();
+    document.insert_str(
+        close,
+        &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
+    );
+    std::fs::write(&snapshot_path, document).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["observation_limits"] = json!({"document_bytes":2_000_000});
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"));
+    assert!(decoded.is_ok(), "{:?}", decoded.err());
+}
+
 /// FR-312-AC-4: function, frame and stale-package requests retain the
 /// in-process report's stage, category and truth through the CLI route.
 #[trace("TC-891", "FR-312-AC-4")]

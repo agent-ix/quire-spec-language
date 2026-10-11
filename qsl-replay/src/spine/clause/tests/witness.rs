@@ -283,6 +283,125 @@ fn native_result_two_writes_decisive_closed_and_unavailable_reports() {
     }
 }
 
+/// FR-109-AC-1: the Boolean completion must agree with both truth and its
+/// success or violation category.
+#[trace("TC-742", "FR-267-AC-9")]
+#[test]
+fn native_result_two_reader_rejects_category_verdict_mismatch() {
+    for (report, wrong_value) in [
+        (run("AllBelow", Snapshot::Low, "child"), false),
+        (run("AllBelow", Snapshot::High, "mid"), true),
+    ] {
+        let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        value["disposition"]["truth"] = json!(wrong_value);
+        value["disposition"]["outcome"]["value"]["value"] = json!(wrong_value);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&value).unwrap())
+            .err()
+            .expect("a mismatched category and completion must refuse");
+        assert!(error.to_string().contains("disposition.outcome"), "{error}");
+    }
+}
+
+/// FR-109/FR-352's shared member inventory: each assigned base, usage,
+/// Boolean outcome and separating-witness member survives a typed read;
+/// deletion, `null` and a wrong shape refuse at that member.
+#[trace("TC-742", "FR-267-AC-1", "FR-267-AC-2", "FR-267-AC-9")]
+#[test]
+fn native_result_two_member_inventory_refuses_independent_edits() {
+    let report = run("AllBelow", Snapshot::High, "mid");
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let valid: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let crate::spine::NativeRunResult::Clause(read) =
+        crate::spine::read_native_run_result(&bytes).unwrap()
+    else {
+        panic!("clause result")
+    };
+    let expected_id = report.package_id.as_ref().map(|id| id.hex());
+    assert_eq!(read.package_id(), expected_id.as_deref());
+    assert_eq!(read.stage(), "evaluate");
+    assert_eq!(read.category(), "violation");
+    assert_eq!(read.truth(), Some(false));
+    assert!(matches!(
+        read.outcome(),
+        Some(crate::spine::NativeRunOutcome::Boolean(false))
+    ));
+    assert_eq!(read.basis(), "decisive-counterexample");
+    assert!(read.has_witness());
+    assert_eq!(
+        read.admission_usage().0,
+        report.usage.admission_consumed.document_bytes
+    );
+    assert_eq!(
+        read.evaluation_admissions(),
+        report.usage.evaluation_admissions
+    );
+    assert_eq!(
+        read.evaluation_consumed().count(),
+        report.usage.evaluation_consumed.len()
+    );
+
+    let members = [
+        ("/format", "format"),
+        ("/package_id", "package_id"),
+        ("/disposition", "disposition"),
+        ("/usage", "usage"),
+        ("/basis", "basis"),
+        ("/witness", "witness"),
+        ("/disposition/stage", "stage"),
+        ("/disposition/category", "category"),
+        ("/disposition/truth", "truth"),
+        ("/disposition/outcome", "outcome"),
+        ("/disposition/outcome/kind", "kind"),
+        ("/disposition/outcome/value", "outcome"),
+        ("/disposition/outcome/value/kind", "outcome"),
+        ("/disposition/outcome/value/value", "outcome"),
+        ("/usage/admission", "admission"),
+        ("/usage/admission/document_bytes", "document_bytes"),
+        ("/usage/admission/objects", "objects"),
+        ("/usage/admission/values", "values"),
+        ("/usage/evaluation_admissions", "evaluation_admissions"),
+        ("/usage/evaluation_consumed", "evaluation_consumed"),
+        ("/usage/evaluation_consumed/0/kind", "kind"),
+        ("/usage/evaluation_consumed/0/consumed", "consumed"),
+        ("/witness/quantifier", "quantifier"),
+        ("/witness/deciding_element", "deciding_element"),
+        ("/witness/index", "index"),
+        ("/witness/value_path", "value_path"),
+    ];
+    for (pointer, member) in members {
+        assert!(
+            valid.pointer(pointer).is_some(),
+            "missing fixture {pointer}"
+        );
+        let (parent, key) = pointer.rsplit_once('/').unwrap();
+        let mut deleted = valid.clone();
+        deleted
+            .pointer_mut(parent)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        let mut null = valid.clone();
+        *null.pointer_mut(pointer).unwrap() = serde_json::Value::Null;
+        let mut wrong = valid.clone();
+        *wrong.pointer_mut(pointer).unwrap() = if pointer == "/usage/evaluation_consumed" {
+            json!({})
+        } else {
+            json!([])
+        };
+        for (edit, value) in [("deleted", deleted), ("null", null), ("wrong", wrong)] {
+            let error = crate::spine::read_native_run_result(&serde_json::to_vec(&value).unwrap())
+                .err()
+                .expect("assigned member mutation must refuse");
+            assert!(
+                error.to_string().contains(member),
+                "{pointer} {edit}: {error}"
+            );
+        }
+    }
+}
+
 /// FR-267-AC-1: a caller cannot serialize a decisive report after dropping
 /// its separating record, or attach a record to a closed-scope report.
 #[trace("TC-742", "FR-267-AC-1")]
@@ -316,6 +435,12 @@ fn native_result_two_reader_refuses_witness_basis_and_version_edits() {
         ("index", |v| {
             v["witness"].as_object_mut().unwrap().remove("index");
         }),
+        ("deciding_element", |v| {
+            v["witness"]["deciding_element"] = json!(null)
+        }),
+        ("deciding_element", |v| {
+            v["witness"]["deciding_element"] = json!({"kind":"future"})
+        }),
         ("extra", |v| v["witness"]["extra"] = json!(true)),
         ("trace_position", |v| {
             v["witness"]["trace_position"] = json!(0)
@@ -346,9 +471,65 @@ fn native_result_two_reader_refuses_witness_basis_and_version_edits() {
     }
 }
 
-/// FR-352-AC-8: the FR-100 refusal record stays inside `outcome`, including
+/// FR-261/FR-267: the strict reader retains a deeply nested typed deciding
+/// element through its canonical arena and resolves it with the package.
+#[trace("TC-742", "FR-267-AC-9")]
+#[test]
+fn native_result_two_reader_keeps_deciding_element_beyond_128_levels() {
+    let unit = witness_unit();
+    let report = run("AllBelow", Snapshot::High, "mid");
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let crate::spine::NativeRunResult::Clause(original) =
+        crate::spine::read_native_run_result(&bytes).unwrap()
+    else {
+        panic!("clause")
+    };
+    assert_eq!(
+        original.witness(&unit.compiled.package).unwrap(),
+        report.witness
+    );
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let mut element = json!({"kind":"boolean", "value":true});
+    let mut ty = json!({"kind":"boolean"});
+    for _ in 0..160 {
+        element = json!({"kind":"option", "payload_type":ty.clone(), "payload":element});
+        ty = json!({"kind":"option", "payload":ty});
+    }
+    value["witness"]["deciding_element"] = element;
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let crate::spine::NativeRunResult::Clause(read) =
+        crate::spine::read_native_run_result(&bytes).unwrap()
+    else {
+        panic!("clause")
+    };
+    let witness = read.witness(&unit.compiled.package).unwrap().unwrap();
+    assert_eq!(witness.index, Some(1));
+}
+
+/// FR-267: malformed command details deeper than serde_json's default
+/// recursion limit reach the code-specific diagnostic instead of failing at
+/// an unrelated parser depth ceiling.
+#[trace("TC-742", "FR-267-AC-10")]
+#[test]
+fn native_result_two_command_details_keep_deep_wire_diagnostic() {
+    let mut details = json!({"stage":"call", "invariant":"broken"});
+    for _ in 0..160 {
+        details = json!({"nested":details});
+    }
+    let envelope = json!({
+        "format":"native-run-result/2", "stage":"call",
+        "code":"runtime_invariant", "cause":"wrong-cause",
+        "message":"broken", "details":details, "basis":"unavailable"
+    });
+    let error = crate::spine::read_native_run_result(&serde_json::to_vec(&envelope).unwrap())
+        .err()
+        .expect("the wrong catalog cause must refuse");
+    assert!(error.to_string().contains("cause"), "{error}");
+}
+
+/// FR-267-AC-9: the FR-100 refusal record stays inside `outcome`, including
 /// its catalog fields and the typed location of the rejecting expression.
-#[trace("TC-742", "FR-352-AC-8")]
+#[trace("TC-742", "FR-267-AC-9")]
 #[test]
 fn native_result_two_retains_refused_outcome_members() {
     use crate::spine::{CallOutcome, CallRefusal};
@@ -357,9 +538,10 @@ fn native_result_two_retains_refused_outcome_members() {
 
     let mut report = run("AllBelow", Snapshot::Low, "child");
     report.disposition = ClauseDisposition::Evaluate(CallOutcome::Refused(CallRefusal::Record {
-        code: CatalogCode::new("resource_exhausted", "ancestor-steps"),
-        fields: BTreeMap::from([("limit", "5".to_owned())]),
+        code: CatalogCode::new("integer_out_of_domain", "outside-domain"),
+        fields: BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
         locus: Some(crate::spine::CallLocus {
+            file: "fixture.native".to_owned(),
             source_digest: format!("sha256:{}", "0".repeat(64)),
             span: qsl_foundation::LocatedSpan {
                 start: qsl_foundation::Position {
@@ -382,9 +564,9 @@ fn native_result_two_retains_refused_outcome_members() {
     assert_eq!(
         value["disposition"]["outcome"],
         json!({
-            "kind":"refused", "code":"resource_exhausted", "cause":"ancestor-steps",
-            "fields":{"limit":"5"},
-            "locus":{"source_digest":format!("sha256:{}", "0".repeat(64)),
+            "kind":"refused", "code":"integer_out_of_domain", "cause":"outside-domain",
+            "fields":{"expected":"Int[0, 9]"},
+            "locus":{"file":"fixture.native",
                 "span":{"start":{"byte":0,"line":1,"column":1},"end":{"byte":2,"line":1,"column":3}}},
             "location":{"origin":{"kind":"expression"},"path":[2,1]}
         })
@@ -396,6 +578,30 @@ fn native_result_two_retains_refused_outcome_members() {
     };
     assert!(read.has_outcome_location());
     assert!(read.has_outcome_locus());
+    let Some(crate::spine::NativeRunOutcome::Refused {
+        code,
+        cause,
+        fields,
+        locus,
+        location,
+    }) = read.outcome()
+    else {
+        panic!("expected typed refusal outcome")
+    };
+    assert_eq!((code, cause), ("integer_out_of_domain", "outside-domain"));
+    assert_eq!(
+        fields.unwrap().get("expected").map(String::as_str),
+        Some("Int[0, 9]")
+    );
+    assert_eq!(locus.unwrap().span.end.byte, 2);
+    assert_eq!(location.unwrap().path, [2, 1]);
+    assert_eq!(read.outcome_locus().unwrap().file, "fixture.native");
+    assert_eq!(read.outcome_locus().unwrap().span.end.byte, 2);
+    assert_eq!(read.outcome_location().unwrap().path, [2, 1]);
+    assert!(matches!(
+        &read.outcome_location().unwrap().origin,
+        crate::spine::CallOriginRead::Expression
+    ));
     for edit in ["fields", "locus", "location"] {
         let mut mutated = value.clone();
         mutated["disposition"]["outcome"]
@@ -410,11 +616,22 @@ fn native_result_two_retains_refused_outcome_members() {
             "{edit}: {error}"
         );
     }
+    for removed in ["code", "cause", "fields", "locus", "location"] {
+        let mut mutated = value.clone();
+        mutated["disposition"]["outcome"]
+            .as_object_mut()
+            .unwrap()
+            .remove(removed);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&mutated).unwrap())
+            .err()
+            .expect("an assigned outcome member cannot be deleted");
+        assert!(error.to_string().contains(removed), "{removed}: {error}");
+    }
 }
 
-/// FR-352-AC-8: an internal failure preserves its stable typed fault and
+/// FR-267-AC-9: an internal failure preserves its stable typed fault and
 /// cannot be read after an assigned fault member is removed.
-#[trace("TC-742", "FR-352-AC-8")]
+#[trace("TC-742", "FR-267-AC-9")]
 #[test]
 fn native_result_two_retains_internal_fault() {
     let mut report = run("AllBelow", Snapshot::Low, "child");
@@ -442,8 +659,8 @@ fn native_result_two_retains_internal_fault() {
     assert!(crate::spine::read_native_run_result(&serde_json::to_vec(&value).unwrap()).is_err());
 }
 
-/// FR-352-AC-8: selection failures retain the FR-109 refusal record.
-#[trace("TC-742", "FR-352-AC-8")]
+/// FR-267-AC-9: selection failures retain the FR-109 refusal record.
+#[trace("TC-742", "FR-267-AC-9")]
 #[test]
 fn native_result_two_retains_selection_refusal_record() {
     let report = run("Missing", Snapshot::Low, "child");
@@ -470,6 +687,76 @@ fn native_result_two_retains_selection_refusal_record() {
             .err()
             .unwrap();
         assert!(error.to_string().contains(member), "{member}: {error}");
+    }
+    let mut missing_name = value.clone();
+    missing_name["disposition"]["refusal"]["fields"]
+        .as_object_mut()
+        .unwrap()
+        .remove("name");
+    let error = crate::spine::read_native_run_result(&serde_json::to_vec(&missing_name).unwrap())
+        .err()
+        .expect("selection's assigned name must not disappear");
+    assert!(error.to_string().contains("fields"), "{error}");
+    let mut wrong_category = value.clone();
+    wrong_category["disposition"]["category"] = json!("unsupported");
+    let error = crate::spine::read_native_run_result(&serde_json::to_vec(&wrong_category).unwrap())
+        .err()
+        .expect("selection category must follow its catalog code");
+    assert!(error.to_string().contains("category"), "{error}");
+}
+
+/// FR-255/FR-352: a compile limit retains its exact bound, reached counter
+/// and setting, including a counter above u64::MAX.
+#[trace("TC-742", "FR-267-AC-9")]
+#[test]
+fn native_result_two_retains_compile_limit_fields() {
+    let mut report = run("AllBelow", Snapshot::Low, "child");
+    report.package_id = None;
+    report.disposition = ClauseDisposition::Compile(Box::new(crate::spine::CompileRefusal::Limit(
+        qsl_foundation::diagnostic::LimitExceeded::new(
+            qsl_foundation::Setting::S3Nodes,
+            5,
+            u128::from(u64::MAX) + 1,
+        ),
+    )));
+    report.basis = crate::proof_result::SettlementBasis::Unavailable;
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let fields = &value["disposition"]["refusal"]["fields"];
+    assert_eq!(
+        fields,
+        &json!({
+            "kind":"node-count-exceeded", "bound":"5",
+            "actual":"18446744073709551616", "setting":"s3.nodes"
+        })
+    );
+    let crate::spine::NativeRunResult::Clause(read) =
+        crate::spine::read_native_run_result(&bytes).unwrap()
+    else {
+        panic!("clause")
+    };
+    assert_eq!(
+        read.fields().unwrap().get("setting").map(String::as_str),
+        Some("s3.nodes")
+    );
+    for member in ["kind", "bound", "actual", "setting"] {
+        let mut edited = value.clone();
+        edited["disposition"]["refusal"]["fields"]
+            .as_object_mut()
+            .unwrap()
+            .remove(member);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&edited).unwrap())
+            .err()
+            .expect("missing compile limit field must refuse");
+        assert!(error.to_string().contains("fields"), "{member}: {error}");
+    }
+    for member in ["kind", "bound", "actual", "setting"] {
+        let mut edited = value.clone();
+        edited["disposition"]["refusal"]["fields"][member] = json!(7);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&edited).unwrap())
+            .err()
+            .expect("wrongly typed compile limit field must refuse");
+        assert!(error.to_string().contains("fields"), "{member}: {error}");
     }
 }
 

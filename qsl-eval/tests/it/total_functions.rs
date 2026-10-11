@@ -3,9 +3,9 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
-use qsl_foundation::selection::ProfileSelection;
 use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
+use qsl_foundation::selection::ProfileSelection;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingStage, MeasureObligation,

@@ -719,6 +719,7 @@ mod tests {
             },
         };
         let locus = CallLocus {
+            file: "fixture.native".to_owned(),
             source_digest:
                 "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26".to_owned(),
             span,

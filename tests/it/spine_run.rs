@@ -174,9 +174,14 @@ fn unknown_edition_uses_native_run_result_two_command_error() {
     };
     assert_eq!(read.stage(), "profile");
     assert_eq!(read.code(), "unknown_edition");
-    let details: Value = serde_json::from_str(read.details().get()).unwrap();
-    assert_eq!(details["phase"], "profile");
-    assert_eq!(details["path"], "program.native");
+    assert!(matches!(
+        read.details().get("phase").unwrap().node(),
+        quire_canonical::Node::String("profile")
+    ));
+    assert!(matches!(
+        read.details().get("path").unwrap().node(),
+        quire_canonical::Node::String("program.native")
+    ));
 }
 
 /// FR-267-AC-10: command errors have their own closed shape and cannot be

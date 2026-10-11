@@ -34,7 +34,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 
 mod value;
-use value::{decode_element, encode_element, reference_of, Keys};
+use value::{decode_element, encode_element, reference_of, validate_element_shape, Keys};
 
 /// Why a [`DisagreementCause`] did not encode or read.
 #[derive(Debug, thiserror::Error)]
@@ -412,8 +412,38 @@ impl RecordWire<Box<RawValue>> {
             return Err(CauseCodecError::Shape("trace_position"));
         }
         self.quantifier.clone().read()?;
+        let element = quire_canonical::read(self.deciding_element.get().as_bytes(), u64::MAX)
+            .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+        validate_element_shape(element.root())
+            .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
         Ok(())
     }
+
+    /// Decode a state-clause witness against the exact checked package that
+    /// owns its declaration keys. The wire reader can validate shape alone;
+    /// a consumer supplies the package for semantic identity resolution.
+    pub(crate) fn read_state(
+        &self,
+        package: &CheckedPackage,
+        element: NodeRef<'_>,
+    ) -> Result<SeparatingWitnessRecord, CauseCodecError> {
+        let keys = Keys::new(package);
+        Ok(SeparatingWitnessRecord {
+            quantifier: self.quantifier.clone().read()?,
+            deciding_element: decode_element(element, keys)?,
+            index: self.index,
+            value_path: self.value_path.clone().read(keys)?,
+            trace_position: self
+                .trace_position
+                .as_ref()
+                .map(|p| TracePosition::new(p.clone())),
+        })
+    }
+}
+
+/// Package-independent shape check for a `/2` deciding element.
+pub(crate) fn validate_state_element(node: NodeRef<'_>) -> Result<(), CauseCodecError> {
+    validate_element_shape(node).map_err(|_| CauseCodecError::Shape("deciding_element"))
 }
 
 impl RecordWire<ElementSlot> {
@@ -462,7 +492,7 @@ impl OccurrenceWire {
 }
 
 /// QSpec FR-207's `runtime_value` wire form.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PathWire {
     kind: PathKind,
@@ -470,20 +500,20 @@ struct PathWire {
     steps: Vec<StepWire>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum PathKind {
     RuntimeValue,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RootWire {
     observation: ObservationWire,
     subject: SubjectWire,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ObservationWire {
     authority: String,
@@ -492,7 +522,7 @@ struct ObservationWire {
     revision: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
 enum SubjectWire {
     Object {
@@ -506,7 +536,7 @@ enum SubjectWire {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
 enum StepWire {
     Field { name: String },

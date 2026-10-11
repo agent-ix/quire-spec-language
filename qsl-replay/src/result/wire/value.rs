@@ -938,6 +938,79 @@ fn fixed<T: serde::de::DeserializeOwned>(node: NodeRef<'_>) -> Result<T, CauseCo
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+/// Validate the package-independent typed shape of one deciding element.
+/// Declaration resolution remains a consumer's responsibility because a
+/// `/2` document does not carry the checked package.
+pub(super) fn validate_element_shape(node: NodeRef<'_>) -> Result<(), CauseCodecError> {
+    enum Check<'a> {
+        Value(NodeRef<'a>),
+        Type(NodeRef<'a>),
+        Collection(NodeRef<'a>),
+    }
+    let mut work = vec![Check::Value(node)];
+    while let Some(check) = work.pop() {
+        match check {
+            Check::Value(node) => match kind_of(node) {
+                Some("option") => {
+                    let fields = Fields::of(node, &["kind", "payload_type", "payload"])?;
+                    if let Some(payload) = fields.get("payload") {
+                        work.push(Check::Value(payload));
+                    }
+                    work.push(Check::Type(fields.require("payload_type")?));
+                }
+                Some("composite") => {
+                    let fields = Fields::of(node, &["kind", "declaration", "slots"])?;
+                    string_of(fields.require("declaration")?)?;
+                    let Node::Array(slots) = fields.require("slots")?.node() else {
+                        return Err(malformed("a composite's slots are not an array"));
+                    };
+                    for slot in slots {
+                        let slot = Fields::of(slot, &["slot", "value"])?;
+                        match (string_of(slot.require("slot")?)?, slot.get("value")) {
+                            ("present", Some(value)) => work.push(Check::Value(value)),
+                            ("absent" | "null", None) => {}
+                            _ => return Err(malformed("a composite slot has the wrong shape")),
+                        }
+                    }
+                }
+                Some("collection") => {
+                    let fields = Fields::of(node, &["kind", "type", "elements"])?;
+                    let Node::Array(elements) = fields.require("elements")?.node() else {
+                        return Err(malformed("a collection's elements are not an array"));
+                    };
+                    work.extend(elements.map(Check::Value));
+                    work.push(Check::Collection(fields.require("type")?));
+                }
+                _ => {
+                    let _: ScalarWire = fixed(node)?;
+                }
+            },
+            Check::Type(node) => match kind_of(node) {
+                Some("option") => {
+                    let fields = Fields::of(node, &["kind", "payload"])?;
+                    work.push(Check::Type(fields.require("payload")?));
+                }
+                Some("collection") => {
+                    let fields = Fields::of(node, &["kind", "type"])?;
+                    work.push(Check::Collection(fields.require("type")?));
+                }
+                _ => {
+                    let _: TypeLeafWire = fixed(node)?;
+                }
+            },
+            Check::Collection(node) => {
+                let fields = Fields::of(node, &["collection", "element", "bound"])?;
+                let _: KindWire = fixed(fields.require("collection")?)?;
+                if let Some(bound) = fields.get("bound") {
+                    let _: BoundWire = fixed(bound)?;
+                }
+                work.push(Check::Type(fields.require("element")?));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// One pending step of [`decode_element`].
 enum Decode<'d, 'k> {
     /// Decode a value.

@@ -114,62 +114,97 @@ fn named<'a>(
 }
 
 fn snapshot_value(value: &Value) -> Result<SnapshotValue, ClauseRequestReadError> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| invalid("parameters", "expected a value object"))?;
-    if object.len() != 1 {
-        return Err(invalid("parameters", "expected one value form"));
+    // SnapshotValue itself is arena-backed. Build it bottom-up on a heap
+    // worklist so a supplied present/sequence tree has no native stack cap.
+    enum Work<'a> {
+        Read(&'a Value),
+        Present,
+        Sequence(usize),
     }
-    let (kind, content) = object.iter().next().expect("one member");
-    match kind.as_str() {
-        "boolean" => content
-            .as_bool()
-            .map(SnapshotValue::boolean)
-            .ok_or_else(|| invalid("parameters.boolean", "expected Boolean")),
-        "integer" => content
-            .as_str()
-            .map(SnapshotValue::integer)
-            .ok_or_else(|| invalid("parameters.integer", "expected decimal string")),
-        "absent" if content.as_object().is_some_and(serde_json::Map::is_empty) => {
-            Ok(SnapshotValue::absent())
-        }
-        "present" => Ok(SnapshotValue::present(snapshot_value(content)?)),
-        "reference" => {
-            let reference = content
-                .as_object()
-                .ok_or_else(|| invalid("parameters.reference", "expected object"))?;
-            if reference.len() != 2 {
-                return Err(invalid(
-                    "parameters.reference",
-                    "expected population and key",
-                ));
+    let mut work = vec![Work::Read(value)];
+    let mut values = Vec::new();
+    while let Some(task) = work.pop() {
+        match task {
+            Work::Present => {
+                let inner = values
+                    .pop()
+                    .ok_or_else(|| invalid("parameters", "missing present value"))?;
+                values.push(SnapshotValue::present(inner));
             }
-            let population = reference
-                .get("population")
-                .and_then(Value::as_str)
-                .ok_or_else(|| invalid("parameters.reference.population", "expected string"))?;
-            let key = reference
-                .get("key")
-                .and_then(Value::as_str)
-                .ok_or_else(|| invalid("parameters.reference.key", "expected string"))?;
-            Ok(SnapshotValue::reference(SelectedObject {
-                population: population.to_owned(),
-                key: key.to_owned(),
-            }))
+            Work::Sequence(len) => {
+                if values.len() < len {
+                    return Err(invalid("parameters.sequence", "missing sequence value"));
+                }
+                let items = values.split_off(values.len() - len);
+                values.push(SnapshotValue::sequence(items));
+            }
+            Work::Read(value) => {
+                let object = value
+                    .as_object()
+                    .ok_or_else(|| invalid("parameters", "expected a value object"))?;
+                if object.len() != 1 {
+                    return Err(invalid("parameters", "expected one value form"));
+                }
+                let (kind, content) = object.iter().next().expect("one member");
+                match kind.as_str() {
+                    "boolean" => values.push(SnapshotValue::boolean(
+                        content
+                            .as_bool()
+                            .ok_or_else(|| invalid("parameters.boolean", "expected Boolean"))?,
+                    )),
+                    "integer" => values.push(SnapshotValue::integer(content.as_str().ok_or_else(
+                        || invalid("parameters.integer", "expected decimal string"),
+                    )?)),
+                    "absent" if content.as_object().is_some_and(serde_json::Map::is_empty) => {
+                        values.push(SnapshotValue::absent());
+                    }
+                    "present" => {
+                        work.push(Work::Present);
+                        work.push(Work::Read(content));
+                    }
+                    "reference" => {
+                        let reference = content
+                            .as_object()
+                            .ok_or_else(|| invalid("parameters.reference", "expected object"))?;
+                        if reference.len() != 2 {
+                            return Err(invalid(
+                                "parameters.reference",
+                                "expected population and key",
+                            ));
+                        }
+                        let population = reference
+                            .get("population")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                invalid("parameters.reference.population", "expected string")
+                            })?;
+                        let key =
+                            reference
+                                .get("key")
+                                .and_then(Value::as_str)
+                                .ok_or_else(|| {
+                                    invalid("parameters.reference.key", "expected string")
+                                })?;
+                        values.push(SnapshotValue::reference(SelectedObject {
+                            population: population.to_owned(),
+                            key: key.to_owned(),
+                        }));
+                    }
+                    "sequence" => {
+                        let items = content
+                            .as_array()
+                            .ok_or_else(|| invalid("parameters.sequence", "expected array"))?;
+                        work.push(Work::Sequence(items.len()));
+                        work.extend(items.iter().rev().map(Work::Read));
+                    }
+                    _ => return Err(invalid(format!("parameters.{kind}"), "unknown value form")),
+                }
+            }
         }
-        "sequence" => {
-            let items = content
-                .as_array()
-                .ok_or_else(|| invalid("parameters.sequence", "expected array"))?;
-            Ok(SnapshotValue::sequence(
-                items
-                    .iter()
-                    .map(snapshot_value)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ))
-        }
-        _ => Err(invalid(format!("parameters.{kind}"), "unknown value form")),
     }
+    values
+        .pop()
+        .ok_or_else(|| invalid("parameters", "missing value"))
 }
 
 #[qsl_attrs::string_edge]
@@ -363,4 +398,31 @@ pub fn read_clause_run_request(
         observation_limits: parts.observation_limits,
         accounting: parts.accounting,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snapshot_value;
+    use qsl_semantics::model::observation::RawForm;
+    use serde_json::{Map, Value};
+
+    #[test]
+    fn parameter_value_reader_uses_heap_stack_past_128_levels() {
+        let mut value = Value::Object(Map::from_iter([(
+            "integer".to_owned(),
+            Value::String("7".to_owned()),
+        )]));
+        for _ in 0..160 {
+            value = Value::Object(Map::from_iter([("present".to_owned(), value)]));
+        }
+        let decoded = snapshot_value(&value).unwrap();
+        let mut form = decoded.form();
+        for _ in 0..160 {
+            form = match form {
+                RawForm::Present(inner) => inner.form(),
+                other => panic!("expected present, got {other:?}"),
+            };
+        }
+        assert!(matches!(form, RawForm::Integer("7")));
+    }
 }

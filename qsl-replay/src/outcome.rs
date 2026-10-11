@@ -1786,6 +1786,7 @@ mod tests {
             code: CatalogCode::new("ill_typed", "type-mismatch"),
             fields: BTreeMap::new(),
             locus: Some(CallLocus {
+                file: "fixture.native".to_owned(),
                 source_digest: "sha256:ab".to_owned(),
                 span,
             }),

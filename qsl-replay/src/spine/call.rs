@@ -101,6 +101,8 @@ pub enum CallValue {
 /// (FR-096, FR-100).
 #[derive(Clone, Debug)]
 pub struct CallLocus {
+    /// Authored path of the source containing the region (FR-100's wire).
+    pub file: String,
     /// The `sha256:` digest of the source the region belongs to.
     pub source_digest: String,
     /// The region's span, rendered over that source.
@@ -607,6 +609,7 @@ pub(crate) fn resolve_locus(
         .ok_or_else(unresolved)?;
     let span = source.render(region).ok_or_else(unresolved)?;
     Ok(CallLocus {
+        file: source.path().to_owned(),
         source_digest: format!("sha256:{}", region.source().digest().hex()),
         span,
     })

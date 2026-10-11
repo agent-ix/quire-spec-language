@@ -233,6 +233,183 @@ fn a_change_outside_the_frame_is_a_violation_with_its_witness() {
     assert_eq!(report.disposition.category().exit_code(), 10);
 }
 
+/// FR-267-AC-11 and FR-115-AC-7: every frame change and its checked grant
+/// survive the `/2` wire, and each assigned closed member is enforced.
+#[trace("TC-514", "FR-267-AC-11", "FR-115-AC-7", "FR-109-AC-9")]
+#[test]
+fn native_result_two_round_trips_complete_frame_witness() {
+    use qsl_semantics::model::key::DeclarationKey;
+
+    let mut report = run(frame_input(
+        config_version_request,
+        "attemptUpdate",
+        &[object("root", 1, None), object("child", 2, Some("root"))],
+        &[object("root", 1, None), object("child", 2, None)],
+        |_| {},
+    ));
+    let ClauseDisposition::FrameViolation(base) = &report.disposition else {
+        panic!("expected frame violation")
+    };
+    let base = base.as_ref().clone();
+    let type_name = DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: config_version_type(),
+    };
+    let changes = [
+        base.change.clone(),
+        FrameChange::Created {
+            object: "new-child".to_owned(),
+            type_name: type_name.clone(),
+            creates: vec![type_name.clone()],
+        },
+        FrameChange::Deleted {
+            object: "child".to_owned(),
+            type_name: type_name.clone(),
+            deletes: vec![type_name.clone()],
+        },
+        FrameChange::Retyped {
+            object: "child".to_owned(),
+            pre_type: type_name.clone(),
+            post_type: type_name,
+        },
+    ];
+    for change in changes {
+        let mut expected = base.clone();
+        expected.change = change;
+        report.disposition = ClauseDisposition::FrameViolation(Box::new(expected.clone()));
+        let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["disposition"]["category"], "violation");
+        assert_eq!(value["disposition"]["truth"], false);
+        assert_eq!(value["basis"], "closed-scope");
+        assert!(value.get("witness").is_none());
+        assert!(value["disposition"].get("outcome").is_none());
+        let wire = &value["disposition"]["refusal"]["frame_witness"];
+        assert_eq!(wire["code"], "frame_violation");
+        assert_eq!(wire["cause"], "unauthorized-change");
+        assert_eq!(wire["population"], expected.population);
+        assert_eq!(wire["invocation"]["identity"], expected.invocation.identity);
+        assert_eq!(wire["pre"]["identity"], expected.pre.identity);
+        assert_eq!(wire["post"]["identity"], expected.post.identity);
+        let crate::spine::NativeRunResult::Clause(read) =
+            crate::spine::read_native_run_result(&bytes).unwrap()
+        else {
+            panic!("clause result")
+        };
+        assert_eq!(read.frame_witness(), Some(&expected));
+        assert!(!read.has_witness());
+    }
+}
+
+/// FR-267-AC-11: the reader refuses missing, malformed or misplaced frame
+/// members, and names the edited member in its diagnostic.
+#[trace("TC-514", "FR-267-AC-11")]
+#[test]
+fn native_result_two_refuses_broken_frame_witness_members() {
+    let report = run(frame_input(
+        config_version_request,
+        "attemptUpdate",
+        &[object("root", 1, None), object("child", 2, Some("root"))],
+        &[object("root", 1, None), object("child", 2, None)],
+        |_| {},
+    ));
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let valid: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let path = ["disposition", "refusal", "frame_witness"];
+    for member in [
+        "code",
+        "cause",
+        "invocation",
+        "pre",
+        "post",
+        "population",
+        "change",
+    ] {
+        let mut edited = valid.clone();
+        let witness = &mut edited[path[0]][path[1]][path[2]];
+        witness.as_object_mut().unwrap().remove(member);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&edited).unwrap())
+            .err()
+            .expect("missing frame member must refuse");
+        assert!(
+            error.to_string().contains("frame_witness"),
+            "{member}: {error}"
+        );
+    }
+    for member in ["object", "field", "modifies"] {
+        let mut edited = valid.clone();
+        edited["disposition"]["refusal"]["frame_witness"]["change"]
+            .as_object_mut()
+            .unwrap()
+            .remove(member);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&edited).unwrap())
+            .err()
+            .expect("missing change member must refuse");
+        assert!(error.to_string().contains("change"), "{member}: {error}");
+    }
+    let edits: &[(&str, fn(&mut serde_json::Value))] = &[
+        ("null", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["pre"] = serde_json::Value::Null;
+        }),
+        ("extra", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["extra"] = json!(true);
+        }),
+        ("wrong-code", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["code"] = json!("other");
+        }),
+        ("wrong-cause", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["cause"] = json!("other");
+        }),
+        ("bad-digest", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["pre"]["digest"] = json!("bad");
+        }),
+        ("missing-key-node", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["modifies"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("node");
+        }),
+        ("extra-key-member", |v: &mut serde_json::Value| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["modifies"][0]["extra"] =
+                json!(true);
+        }),
+    ];
+    for (name, edit) in edits {
+        let mut edited = valid.clone();
+        edit(&mut edited);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&edited).unwrap())
+            .err()
+            .expect("malformed frame witness must refuse");
+        assert!(
+            error.to_string().contains("frame_witness"),
+            "{name}: {error}"
+        );
+    }
+    let mut missing = valid.clone();
+    missing["disposition"]["refusal"]
+        .as_object_mut()
+        .unwrap()
+        .remove("frame_witness");
+    assert!(
+        crate::spine::read_native_run_result(&serde_json::to_vec(&missing).unwrap())
+            .err()
+            .expect("missing frame witness must refuse")
+            .to_string()
+            .contains("frame_witness")
+    );
+
+    let other_bytes = crate::spine::write_clause_run_result(&run(changed_version())).unwrap();
+    let mut other: serde_json::Value = serde_json::from_slice(&other_bytes).unwrap();
+    other["disposition"]["refusal"] = valid["disposition"]["refusal"].clone();
+    assert!(
+        crate::spine::read_native_run_result(&serde_json::to_vec(&other).unwrap())
+            .err()
+            .expect("frame witness on success must refuse")
+            .to_string()
+            .contains("disposition.outcome")
+    );
+}
+
 /// TC-514 step 2 (FR-115-AC-2): a post that adds `c2` to `config_history`
 /// is a violation whose witness names the creation of `c2` against the
 /// frame's empty `creates`.

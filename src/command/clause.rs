@@ -10,9 +10,9 @@ use qsl_replay::spine::{
 use qsl_semantics::model::observation::{
     AnchorKind, DocumentRef, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
 };
-use serde_json::Value;
+use quire_canonical::{Node, NodeRef};
 
-use super::{output, wire, FormalSource, Intake, Result, RunCause, RunResult, REQUEST_BYTES};
+use super::{output, wire, FormalSource, Intake, Result, RunCause, RunResult};
 
 fn invalid(member: impl Into<String>, reason: impl Into<String>) -> RunCause {
     RunCause::ClauseRequest {
@@ -22,40 +22,56 @@ fn invalid(member: impl Into<String>, reason: impl Into<String>) -> RunCause {
 }
 
 #[qsl_attrs::string_edge]
-fn observation(intake: &mut Intake<'_>, key: &str, file: &str) -> Result<SuppliedObservation> {
-    let bytes = intake.file(file, REQUEST_BYTES)?;
+fn observation(
+    intake: &mut Intake<'_>,
+    key: &str,
+    file: &str,
+    document_bytes: u64,
+) -> Result<SuppliedObservation> {
+    let bytes = intake.file(file, usize::try_from(document_bytes).unwrap_or(usize::MAX))?;
     let parsed =
         quire_canonical::read(&bytes, u64::MAX).map_err(|error| invalid(key, error.to_string()))?;
     let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
         .map_err(|error| invalid(key, error.to_string()))?
         .as_bytes();
-    let value: Value =
-        serde_json::from_slice(&bytes).map_err(|error| invalid(key, error.to_string()))?;
-    let text = |path: &str, value: &Value| {
-        value
-            .as_str()
-            .map(str::to_owned)
-            .ok_or_else(|| invalid(format!("observations.{key}.{path}"), "expected a string"))
+    // Reuse the canonical reader's stack-backed tree. Observation values may
+    // exceed serde_json's default 128-level recursion ceiling (FR-261).
+    let root = parsed.root();
+    let text = |path: &str, value: Option<NodeRef<'_>>| match value.map(|node| node.node()) {
+        Some(Node::String(value)) => Ok(value.to_owned()),
+        _ => Err(invalid(
+            format!("observations.{key}.{path}"),
+            "expected a string",
+        )),
     };
-    let format = text("format", &value["format"])?;
+    let format = text("format", root.get("format"))?;
     if format != "quire.state.snapshot/v1" && format != "quire.state.invocation/v1" {
         return Err(invalid(format!("observations.{key}.format"), format));
     }
-    let identity = &value["identity"];
+    let identity = root.get("identity");
     let reference = DocumentRef {
-        authority: text("identity.authority", &identity["authority"])?,
-        identity: text("identity.identity", &identity["identity"])?,
+        authority: text(
+            "identity.authority",
+            identity.and_then(|id| id.get("authority")),
+        )?,
+        identity: text(
+            "identity.identity",
+            identity.and_then(|id| id.get("identity")),
+        )?,
         revision_namespace: text(
             "identity.revision_namespace",
-            &identity["revision_namespace"],
+            identity.and_then(|id| id.get("revision_namespace")),
         )?,
-        revision: text("identity.revision", &identity["revision"])?,
+        revision: text(
+            "identity.revision",
+            identity.and_then(|id| id.get("revision")),
+        )?,
         digest,
     };
-    let role = value
-        .get("observation")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    let role = root.get("observation").and_then(|node| match node.node() {
+        Node::String(value) => Some(value.to_owned()),
+        _ => None,
+    });
     Ok(SuppliedObservation {
         reference,
         format,
@@ -188,13 +204,14 @@ pub(super) fn read(
             bytes: read.source().text().as_bytes().to_vec(),
         }))
         .map_err(|error| invalid("libraries", error.to_string()))?;
+    let observation_limits = limits(clause.observation_limits.as_ref())?;
     let mut by_file = BTreeMap::<String, SuppliedObservation>::new();
     let mut observations = BTreeMap::new();
     for (key, file) in &clause.observations {
         let observed = if let Some(existing) = by_file.get(file) {
             existing.clone()
         } else {
-            let observed = observation(intake, key, file)?;
+            let observed = observation(intake, key, file, observation_limits.document_bytes)?;
             by_file.insert(file.clone(), observed.clone());
             observed
         };
@@ -213,7 +230,7 @@ pub(super) fn read(
         selection: selection_parts(&clause.selection)?,
         expected_package_id_claim: clause.package_id.clone(),
         limits: SpineLimits::default(),
-        observation_limits: limits(clause.observation_limits.as_ref())?,
+        observation_limits,
         accounting: qsl_replay::spine::default_accounting(
             clause
                 .work_units
