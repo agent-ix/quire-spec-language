@@ -2077,17 +2077,17 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     assert_eq!(meter_four.consumed(LimitKind::WorkUnits), 4);
 
     let limits = ScalarLimits {
-        work_units: 1,
+        work_units: 0,
         ..SCALAR_UNLIMITED
     };
-    let (evaluation_one, meter_one) =
+    let (evaluation_zero, meter_zero) =
         evaluate_expression(&package_b, d_type, "d1", &invariant_d, limits);
     assert!(matches!(
-        evaluation_one.outcome,
+        evaluation_zero.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
             if record.charge_point == quire_exact::ChargePoint::DispatchSelect
     ));
-    assert_eq!(meter_one.consumed(LimitKind::WorkUnits), 0);
+    assert_eq!(meter_zero.consumed(LimitKind::WorkUnits), 0);
 }
 
 /// `model.A` (declares `size`), `model.C` (`<- model.A`, no operation record
