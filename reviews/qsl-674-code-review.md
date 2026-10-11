@@ -111,3 +111,52 @@ At the prior fix-round head `331d2ccab5e90586112c5af09ed3b5380536c186`, the shar
 Reviewed exact pushed head `8e7a6de3dd57812da067beab9e5f020a45ffe726` against fresh `origin/main` base `bdf259f008c6577f4235b06ab1d87c32db83099a`. FND-004 is fixed by adding `population_id_sort_work_bound`: it prices `member_count * ceil(log2(member_count)) * 4 * maximum_encoded_member_bytes` before the member encoder/sort runs. FND-005 is fixed by retagging the budget-only test and adding the helper test to `NFR-012`. The shared charge-count/work-total oracle discrepancy found on the prior head is FND-006 and is corrected in this fix round. FND-007 remains open: the test does not detect work being performed before a denied charge even though the current source ordering is correct.
 
 Oracle review: the independent literal identity vector and separate semantic preimage helper remain meaningful for the identity fields; exact charge totals now include the additional identity/sort charge, but those totals were not independently executed here. The NFR-012 rejection test's early-stop property remains weak as recorded in FND-007. No build or tests were run by the reviewer. The final gate remains pending; this review is not mergeable while FND-007 is open.
+
+
+## New findings (disposition pass 7)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | Canonical limit errors are misreported as allocation failures with a zero-byte request | qsl-semantics/src/model/population.rs:973-982 |
+
+### FND-008
+
+At head `0fe2da0c1c7bb045b9264befc5fdb49f90092b0f`, `population_identity_encoding_refusal` preserved `requested` only for `quire_canonical::Error::Allocation`; every other encoder error set it to zero and constructed `ModelRefusalCause::AllocationFailed`. `quire_canonical::Error` has a distinct `Limit(LimitExceeded)` variant. If bounded member encoding or digesting reached its configured byte limit, the resulting `ResourceExhausted` refusal falsely claimed allocation failed and lost the limit kind, bound, and required-byte details.
+
+## Disposition pass 8
+
+Reviewed exact pushed PR #721 head `a7619ac671e3bc2e54054a50b7e9d39124304642` against fresh `origin/main` `dd64d017bfc7635a67493736755a65c77488b4dd`, focusing on the delta from `0fe2da0c1c7bb045b9264befc5fdb49f90092b0f`. FND-008 is fixed at the reviewed head: `Error::Limit` maps to `PopulationIdentityLimitExceeded` with the upstream kind, bound, and required byte count; `Error::Allocation` retains its requested size; the wildcard maps other non-exhaustive upstream errors to `PopulationIdentityInternalFailure`. FND-001–FND-007 remain fixed. One new medium finding, FND-009, is that this internal-failure cause is still assigned the `ResourceExhausted` code, misclassifying an encoder invariant/serializer failure as an ordinary refusal.
+
+The upstream `quire_canonical::Error` is declared `#[non_exhaustive]`, so the wildcard is required. The three added focused tests independently exercise a real digest byte-limit refusal, allocation-size preservation, and an unexpected `Serialize` refusal through the fallback; each asserts the typed cause and stable top-level code. This was static review only: no builds or tests were run. `git diff --check` passed for the FND-008 delta.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | a7619ac671e3bc2e54054a50b7e9d39124304642 |
+
+
+## New findings (disposition pass 8)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | Non-limit encoder faults are returned as ordinary resource-exhaustion refusals | qsl-semantics/src/model/population.rs:986-990, qsl-semantics/src/model/refusal.rs:1086-1090 |
+
+### FND-009
+
+The wildcard labels every remaining `quire_canonical::Error` as `PopulationIdentityInternalFailure`, but `ModelRefusalCause::code()` maps that cause to `resource_exhausted`. The canonical API documents `Error::Internal` as an encoder bug, never an input property; `Error::Serialize` likewise represents serializer failure. Returning either as a normal resource-exhausted refusal misclassifies an internal failure and may invite callers to retry it as a resource condition. The added fallback test currently asserts this same `ResourceExhausted` classification. Route internal encoder faults through an internal-fault outcome, or otherwise ensure the surfaced category is internal failure rather than resource exhausted.
+
+Round-8 verdict: FND-008 fixed; FND-009 remains open. No build or tests were run.
+
+
+## Disposition pass 9
+
+Reviewed exact pushed PR #721 head `0509b6e98aab492d34a2530166b0a50631f365e7` against fresh `origin/main` `dd64d017bfc7635a67493736755a65c77488b4dd`, limited to the FND-009 fix delta from round-8 head `a7619ac671e3bc2e54054a50b7e9d39124304642`. The round-8 comment `4fcdc11d-37b4-4944-9d6f-fd79402b0962` is cross-checked against the recorded FND-009 classification.
+
+FND-009 is fixed by `b84b2beb6e1c1362ff334a035bb17cafcc76c3f8`: the mandatory wildcard for non-exhaustive `quire_canonical::Error` now returns `PopulationIdentityFailure::InternalFault`, with stable `InternalFault::new("population.identity", "canonical-encoding-failed")` and upstream diagnostic text. The conversion maps this directly to `AdmissionOutcome::InternalFault`, not `Refused(ResourceExhausted)`. `admit_invocation` returns any non-`Admitted` outcome unchanged. No production call site found in the searched Rust source swallows the new outcome; other direct consumers found were tests/bench fixtures that require successful admission.
+
+The focused `TC-434` / `NFR-012` fallback test feeds an unexpected serializer error through both conversion helpers and asserts the typed internal outcome, runtime-invariant catalog code/cause, internal-failure category, non-resource-exhausted classification, and preserved upstream error. Existing limit and allocation refusal mappings remain distinct. No builds or tests were run. Quoin matrix again emitted no output within a bounded 25-second invocation; gap evidence is limited to the requested delta and manual caller/test mapping. Static `git diff --check` was clean for this round’s delta.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed | b84b2beb6e1c1362ff334a035bb17cafcc76c3f8 |
+
+Round-9 verdict: PASS for the FND-009 fix delta; no new findings.

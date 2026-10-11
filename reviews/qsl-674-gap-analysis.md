@@ -67,3 +67,30 @@ Reviewed PR #721 head `8e7a6de3dd57812da067beab9e5f020a45ffe726` against fresh `
 - FR-084-AC-1/AC-4 mappings and coverage are unchanged; the historical FND-003 false tag remains fixed.
 
 No new uncovered acceptance behavior was identified in this manual subset mapping. The complete computed matrix and repository-wide reverse-gap/stub inventory remain unavailable due to the matrix timeout. SR-4963 still has only its clean placeholder; no gap-analysis disposition comment is needed.
+
+
+## Disposition pass 8 — FND-008 fix delta
+
+Reviewed exact PR #721 head `a7619ac671e3bc2e54054a50b7e9d39124304642` against `origin/main` `dd64d017bfc7635a67493736755a65c77488b4dd`, limited to the delta from `0fe2da0c1c7bb045b9264befc5fdb49f90092b0f`. The code review's FND-008 concerned preserving canonical encoder refusal details; no uncovered acceptance behavior was found in this delta.
+
+- `population_identity_digest_limit_preserves_encoder_limit_details` is trace-tagged `TC-434` / `NFR-012`; it forces a real canonical digest limit and checks `ResourceExhausted`, `CanonicalBytes`, bound zero, and a positive required-byte count.
+- `population_identity_allocation_refusal_preserves_requested_size` is trace-tagged `TC-434` / `NFR-012`; it verifies the allocation cause retains 4096 bytes.
+- `population_identity_unexpected_encoder_refusal_is_internal_failure` is trace-tagged `TC-434` / `NFR-012`; it exercises the non-exhaustive fallback with a serializer refusal and checks the internal-failure cause and resource-exhausted code.
+- These tests assert observed refusal fields, so removing or misrouting the corresponding mapping causes an assertion failure. No tests were executed by this reviewer.
+
+Quoin matrix was invoked on the repository root and interrupted after more than 30 seconds without output. This is a manual mapping of the requested fix delta only, not a repository-wide matrix, reverse-gap, or stub audit. Plan completion: not assessed.
+
+
+Oracle qualification: the fallback test does fail if the internal-failure cause is not produced, but its assertion that this cause reports `ResourceExhausted` is questioned by code-review FND-009 because encoder invariant failures are internal faults, not resource refusals.
+
+
+## Disposition pass 9 — FND-009 fix delta
+
+Reviewed exact pushed PR #721 head `0509b6e98aab492d34a2530166b0a50631f365e7` against `origin/main` `dd64d017bfc7635a67493736755a65c77488b4dd`, scoped to the delta from round-8 head `a7619ac671e3bc2e54054a50b7e9d39124304642). The prior round-8 finding/comment `4fcdc11d-37b4-4944-9d6f-fd79402b0962` is dispositioned fixed.
+
+- The non-exhaustive `quire_canonical::Error` match retains a wildcard. Its unexpected-error branch produces `PopulationIdentityFailure::InternalFault`, then `AdmissionOutcome::InternalFault`; it is no longer represented as a refusal or `ResourceExhausted`.
+- `population_identity_unexpected_encoder_refusal_is_internal_failure` remains trace-tagged `TC-434` / `NFR-012`. Its oracle checks typed outcome, runtime-invariant code/cause, internal-failure category, non-resource-exhausted classification, and original upstream diagnostic. The limit and allocation tests continue to assert their separate refusal outcomes/details.
+- `admit_invocation` propagates either pre/post non-admitted outcome unchanged. No new uncovered acceptance behavior or delta-specific test gap identified.
+- No tests/builds were run. `quoin matrix --repo . --json` emitted no output and timed out at 25 seconds; this is a focused manual test-oracle mapping, not a repository-wide computed matrix or reverse-gap audit. Plan completion: not assessed.
+
+Round-9 delta disposition: FND-009 fixed; no new findings.
