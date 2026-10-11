@@ -92,6 +92,20 @@ collapse those derived declarations by an identity-equivalence rule. An
 original whose kind has no selected derivation rule remains in the exact
 original inventory without acquiring an effective identity from this guarantee.
 
+The phase-3 type-inheritance ladder SHALL retain every logical derivation fact,
+input path and ordinal, while representing consecutive shared prefixes through
+the canonical prefix-run index selected by QSpec FR-150. Every declared input
+edge is cycle-checked and admitted to the path index once; a repeated path,
+block, range or binding lookup is charged as one reuse event independent of the
+represented path length. For a single-inheritance chain of E edges, phase-3
+fact-run, cycle-check, normal-form segment/link and range/binding-proof charges
+SHALL total no more than `12 × (E + 1)`. This changes accounting and internal
+sharing only: exact v2 identity preimage bytes, sole-writer JCS output, digest
+domains, eagerly computed identities and published vectors SHALL remain
+unchanged. The semantic `derivation_facts` counter SHALL still include every
+expanded logical fact; callers may explicitly select a sufficient limit, but
+the supported chain bound SHALL NOT be reduced.
+
 The binder SHALL use the selected definition's closed key/block/range,
 literal/prefix and declaration-sequence grammar and its unique normal form.
 Its compressed preimages SHALL expand to every exact semantic fact, input key,
@@ -244,6 +258,7 @@ qualify the replacement closure or the new adverse accounting cases.
 | FR-081-AC-10 | Every effective entry has its eager digest and retained preimage; complete view/universe computation includes them all. Missing provenance records or a root-only/requested-member proof transport cannot pass complete-view admission. | Test |
 | FR-081-AC-11 | Analytical closed-template prices agree with the sole writer for actual admitted strings; one-less or zero denial at preparation/hash charge points performs none of the denied work, including zero encoding/hashing of a denied node, while shared hits retain their prescribed lookup charges without rehashing. | Test |
 | FR-081-AC-12 | An old or mixed selection/schema/reader/accounting/domain cohort is not admitted as the replacement through digest relabelling, a compatibility reader or an API alias. | Inspection |
+| FR-081-AC-13 | For a 10,000-edge single-inheritance chain with 10,001 effective types and package input no larger than 512 KiB, normalization retains all 50,015,001 logical derivation facts, eagerly computes all type identities and the complete view, and completes when explicit limits admit those facts and the resulting records, bytes and total work. The phase-3 shared-prefix-specific work is at most `12 × 10,001`; exact v2 preimage/writer bytes and existing published identity vectors are unchanged. | Test |
 
 ## Dependencies
 
