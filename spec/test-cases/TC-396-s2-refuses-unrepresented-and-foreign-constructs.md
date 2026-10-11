@@ -42,7 +42,7 @@ alias is `v`.
    Run S2, then the assembler, then `PackageDeclarations::check` on
    whatever the assembler returns.
 
-Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "FR-091-AC-39", "TC-396")]`.
+Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "FR-091-AC-39")]`.
 
 ## Expected Results
 

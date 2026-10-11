@@ -43,7 +43,7 @@ alias is `v`.
    rational type and with expected `Rational[0,7;1,3]`, under both state-only
    and complete-value selections.
 
-Tag the test `#[trace("FR-091-AC-3", "FR-091-AC-39", "TC-394")]`.
+Tag the test `#[trace("FR-091-AC-3", "FR-091-AC-39")]`.
 
 ## Expected Results
 
