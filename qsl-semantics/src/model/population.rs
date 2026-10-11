@@ -144,8 +144,7 @@ use crate::model::domain_package::{
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::{
-    hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId,
-    SHA256_JCS_DIGEST_DOMAIN,
+    hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
 };
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
