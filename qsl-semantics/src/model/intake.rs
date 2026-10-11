@@ -4457,7 +4457,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4503,7 +4503,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "sideways",
