@@ -199,6 +199,7 @@ fn function_like(
         return Err(unexpected(node));
     };
     let mut parameters = Vec::new();
+    let mut parameter_spans = Vec::new();
     for parameter in nodes_of(&items, Production::Parameter) {
         let parameter_items = self::items(cst, parameter);
         let name = tokens_of(&parameter_items, TokenKind::Identifier)
@@ -209,6 +210,7 @@ fn function_like(
         let declared_items = self::items(cst, declared);
         let reference = only(&declared_items, Production::TypeReference, declared)?;
         parameters.push((text(name, parameter)?, type_form(cst, reference)?));
+        parameter_spans.push(parameter.span());
     }
     let result = match kind {
         DeclarationKind::Function => {
@@ -248,6 +250,8 @@ fn function_like(
                 body: body_spans,
                 measure: measure_spans,
             })
+            .map_err(|_| unexpected(node))?
+            .with_parameter_spans(parameter_spans)
             .map_err(|_| unexpected(node))?;
     Ok(DeclarationForm::Function(Box::new(declaration)))
 }

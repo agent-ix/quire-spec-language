@@ -271,6 +271,28 @@ impl PackageDeclarations {
 }
 
 impl CheckedGraph {
+    /// The own declaration span of a function parameter occurrence. Reads
+    /// of the same keyed parameter in a body have their expression locations.
+    pub fn parameter_span(
+        &self,
+        node: quire_exact::NodeKey,
+        origin: &quire_exact::Origin,
+    ) -> Option<Span> {
+        self.parameter_spans.get(&(node, origin.clone())).copied()
+    }
+
+    /// The original source region of one recorded occurrence, including a
+    /// function parameter's own declaration rather than its enclosing body.
+    pub fn occurrence_region(
+        &self,
+        node: quire_exact::NodeKey,
+        origin: &quire_exact::Origin,
+    ) -> Option<SourceRegion> {
+        if let Some(span) = self.parameter_span(node, origin) {
+            return region(&self.source, self.embedding.as_deref(), span);
+        }
+        self.region(self.occurrence(node, origin)?)
+    }
     /// FR-096: the region of the checked unit that `location` names, by the
     /// same rule as [`PackageDeclarations::region`], so a consumer holding
     /// only the checked package resolves an `Evaluation.location`.

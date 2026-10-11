@@ -35,11 +35,9 @@ use ix_trace_rs::trace;
 use qsl_foundation::{Source, SourceIdentity};
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
-use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, PortDirection,
-};
+use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, PortDirection};
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::intake::{admit, lift_document, read_records};
+use qsl_semantics::model::intake::{admit, lift_document, read_domain_package};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::systems::{
     check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome,
@@ -290,10 +288,10 @@ fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
         qsl_foundation::IntakeLimits::default(),
     )
     .expect("the selection matches the lifted package");
-    let records = read_records(&selection.identity, &document)
+    let package = read_domain_package(selection, &document)
         .expect("every IR node of the edited bundle reads with no refusal");
     let package = AdmittedPackage::admit(
-        DomainPackage::new(selection, records),
+        package,
         &mut Meter::new(ModelNormalizationLimits::default()),
     )
     .expect("every declaration classifies with no refusal");
@@ -929,13 +927,10 @@ pub(crate) fn record_value_type(root: &Path, name: &str, fields: &[(&str, &str, 
     .expect("write record value type");
 }
 
-/// The checker's field multiplicity rules over record value types written
-/// into the bundle: `0..1` types as an option and `0..3` as a sequence of at
-/// most 3, while `0..*` (unbounded) and `1..3` (a lower bound other than 0 or
-/// the single value) refuse as an unsupported domain representation. A read
-/// through a field typed by another record value type types its inner field
-/// (`o.inner.ok`).
-#[trace("TC-148", "FR-042-AC-11")]
+/// Presence wraps the multiplicity-derived type independently. Native
+/// sequences retain their declared order and duplicates; other collection
+/// representations remain an explicit unsupported prerequisite.
+#[trace("TC-148", "FR-042-AC-11", "FR-056-AC-10")]
 #[test]
 fn domain_field_multiplicities_and_nested_reads_type_check() {
     use quire_spec_language::checking::composed::{
@@ -953,12 +948,41 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
                 ("few", "Boolean", "0..3"),
                 ("many", "Boolean", "0..*"),
                 ("some", "Boolean", "1..3"),
+                ("single", "Boolean", "1"),
+                ("optionalone", "Boolean", "1"),
+                ("requiredzero", "Boolean", "0..1"),
+                ("unordered", "Boolean", "0..1"),
             ],
         );
         record_value_type(root, "Inner", &[("ok", "Boolean", "1")]);
         record_value_type(root, "Outer", &[("inner", "Inner", "1")]);
     });
-    let package = admitted(bundle.path());
+    let (_, bytes) = admitted_with_bytes(bundle.path());
+    let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let gauge = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["identity"] == key("Gauge").node)
+        .unwrap();
+    for field in gauge["fields"].as_array_mut().unwrap() {
+        let name = field["identity"]
+            .as_str()
+            .unwrap()
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .to_owned();
+        field["presence"] = if matches!(name.as_str(), "maybe" | "optionalone") {
+            "optional"
+        } else {
+            "required"
+        }
+        .into();
+        field["multiplicity"]["ordered"] = (name != "unordered").into();
+        field["multiplicity"]["unique"] = (name == "unordered").into();
+    }
+    let (package, _) = admit_bytes(canonical_bytes(&document));
     let selection = package.selection().clone();
     let profile = R::StateQueries.selection();
     let text = format!(
@@ -969,6 +993,10 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
          predicate Few using S (g: M::Gauge): Boolean {{ let few = g.few in true }}\n\
          predicate Many using S (g: M::Gauge): Boolean {{ let many = g.many in true }}\n\
          predicate Some using S (g: M::Gauge): Boolean {{ let some = g.some in true }}\n\
+         predicate Single using S (g: M::Gauge): Boolean {{ g.single }}\n\
+         predicate OptionalSingle using S (g: M::Gauge): Boolean {{ present(g.optionalone) }}\n\
+         predicate RequiredZero using S (g: M::Gauge): Boolean {{ let zero = g.requiredzero in true }}\n\
+         predicate Unordered using S (g: M::Gauge): Boolean {{ let zero = g.unordered in true }}\n\
          predicate Nested using S (o: M::Outer): Boolean {{ o.inner.ok }}\n",
         profile.identity,
         profile.revision,
@@ -1015,7 +1043,14 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
                     .iter()
                     .any(|node| node.ty.as_ref().is_some_and(expected))
             };
-            for name in ["Maybe", "Few", "Nested"] {
+            for name in [
+                "Maybe",
+                "Few",
+                "Nested",
+                "Single",
+                "OptionalSingle",
+                "RequiredZero",
+            ] {
                 assert_eq!(
                     report.disposition(id(name)),
                     Some(TypeDisposition::Typed),
@@ -1025,7 +1060,23 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
             }
             assert!(has_node("Maybe", &|ty| matches!(
                 ty,
-                NativeType::Option(inner) if **inner == NativeType::Boolean
+                NativeType::Option(inner) if matches!(inner.as_ref(), NativeType::Sequence { element, maximum: 1 } if **element == NativeType::Boolean)
+            )));
+            assert!(has_node(
+                "OptionalSingle",
+                &|ty| matches!(ty, NativeType::Option(inner) if **inner == NativeType::Boolean)
+            ));
+            assert!(has_node(
+                "RequiredZero",
+                &|ty| matches!(ty, NativeType::Sequence { element, maximum: 1 } if **element == NativeType::Boolean)
+            ));
+            assert!(!has_node("RequiredZero", &|ty| matches!(
+                ty,
+                NativeType::Option(_)
+            )));
+            assert!(!has_node("Single", &|ty| matches!(
+                ty,
+                NativeType::Option(_)
             )));
             assert!(has_node("Few", &|ty| matches!(
                 ty,
@@ -1037,7 +1088,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
                 ty,
                 NativeType::Domain(inner) if inner.declaration.key == &key("Inner")
             )));
-            for name in ["Many", "Some"] {
+            for name in ["Many", "Some", "Unordered"] {
                 assert_eq!(
                     report.disposition(id(name)),
                     Some(TypeDisposition::Refused),

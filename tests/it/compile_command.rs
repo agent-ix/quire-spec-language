@@ -851,9 +851,17 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
 /// the program's import. Stdout is exactly the bytes `qsl_replay::spine`'s
 /// operations emit over the same program and dependency input.
 #[test]
-#[trace("TC-446", "FR-027-AC-10")]
+#[trace("TC-446", "FR-027-AC-10", "TC-885", "FR-003-AC-9")]
 fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    crate::support::front_end::emitted(
+        geometry_identity(),
+        "geometry.native",
+        &library,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("the supplied library retains its formatted checked identity");
     let directory = tempfile::tempdir().unwrap();
     let program = spine_library_request(directory.path(), &library, "test/geometry");
     let output = compile(directory.path());
