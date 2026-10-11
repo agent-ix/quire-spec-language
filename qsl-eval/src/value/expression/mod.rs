@@ -215,7 +215,9 @@ fn validate(
                 | Value::Quantity(_)
                 | Value::Text(_)
                 | Value::Enum(_)
-                | Value::Population(_) => {}
+                | Value::Population(_)
+                | Value::Uuid(_)
+                | Value::Timestamp(_) => {}
             }
         }
     }
@@ -961,7 +963,12 @@ mod tests {
                 .expect_err("a checked-program invariant break is an internal fault");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
-        assert_eq!(fault.invariant(), "checked-program-invariant");
+        assert_eq!(fault.invariant(), "boolean-value-expected");
+        assert_eq!(fault.kernel_cause(), None);
+        assert_eq!(
+            meter.admitted_charges(),
+            [quire_exact::ChargePoint::FunctionCall]
+        );
         assert_eq!(
             fault.catalog_code(),
             qsl_foundation::diagnostic::CatalogCode::new(
@@ -970,6 +977,48 @@ mod tests {
             ),
             "FR-096-AC-15 names the code runtime_invariant"
         );
+        let expression = package
+            .graph()
+            .check_expression(
+                vec![("x".to_owned(), ValueType::Boolean)],
+                &Expression::logical_not(Expression::name("x".to_owned())),
+                None,
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        for call in [false, true] {
+            for argument in [Value::Integer(Integer::from(3_i64)), Value::Boolean(true)] {
+                let invalid = matches!(argument, Value::Integer(_));
+                let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+                let result = if call {
+                    package.call(
+                        &QualifiedName::unqualified("flip").unwrap(),
+                        vec![argument],
+                        &objects,
+                        &mut meter,
+                    )
+                } else {
+                    package.evaluate(&expression, vec![argument], &objects, &mut meter)
+                };
+                if invalid {
+                    assert!(matches!(
+                        result,
+                        Err(CallFailure::Input(InputRefusal::WrongValueKind {
+                            parameter: 0
+                        }))
+                    ));
+                    assert!(meter.admitted_charges().is_empty());
+                } else {
+                    assert!(matches!(
+                        result.unwrap().outcome,
+                        FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                            false
+                        )))
+                    ));
+                }
+            }
+        }
     }
 
     /// TC-385 step 2: an exhaustive `match` with no `_` arm over a

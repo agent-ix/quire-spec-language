@@ -1134,9 +1134,11 @@ fn witness_type(
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Reference(_) => Ok(WitnessValueType::Canonical),
-        ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-            parameter,
-        })),
+        ValueType::Population(_) | ValueType::Uuid | ValueType::Timestamp => {
+            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+                parameter,
+            }))
+        }
     }
 }
 

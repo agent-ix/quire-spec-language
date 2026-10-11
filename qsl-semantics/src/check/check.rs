@@ -1265,6 +1265,7 @@ impl<'a> Typer<'a> {
                 | ValueType::Composite(_)
                 | ValueType::Reference(_)
                 | ValueType::Population(_) => {}
+                ValueType::Uuid | ValueType::Timestamp => {}
             }
         }
         Ok(())
@@ -1628,7 +1629,9 @@ impl<'a> Typer<'a> {
             | ValueType::Composite(_)
             | ValueType::Collection(_)
             | ValueType::Reference(_)
-            | ValueType::Population(_) => return Err(mismatch(location)),
+            | ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }

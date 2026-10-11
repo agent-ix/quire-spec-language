@@ -710,7 +710,9 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
 
     // `CheckedInvariant`: an internal failure, not a `refused` outcome.
     let err = convert(FamilyOutcome::Evaluated(Outcome::Refused(
-        Refusal::CheckedInvariant,
+        Refusal::CheckedInvariant {
+            cause: quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted,
+        },
     )))
     .unwrap_err();
     assert!(matches!(
@@ -718,6 +720,17 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         RunRefusal::Fault(ref fault)
             if fault.stage() == "S6a" && fault.invariant() == "checked-program-invariant"
     ));
+
+    for cause in qsl_semantics::check::received_kernel_causes() {
+        let err = convert(FamilyOutcome::Evaluated(Outcome::Refused(
+            Refusal::CheckedInvariant { cause },
+        )))
+        .unwrap_err();
+        assert!(matches!(*err, RunRefusal::Fault(ref fault)
+            if fault.stage() == "S6a"
+                && fault.invariant() == "checked-program-invariant"
+                && fault.kernel_cause() == Some(cause)));
+    }
 
     // Kernel undefined: each of the five reasons.
     for (reason, spelling) in [

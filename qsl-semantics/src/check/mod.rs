@@ -159,8 +159,8 @@ pub use node_key::{
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
     admitted_source, check_context, declaration, declaration_signature, declarations_for,
-    empty_scope, fixture_source, json_depth, limits, measure_resolved, root_location, scope_with,
-    SCALAR_LIMITS_UNLIMITED,
+    empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
+    root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{
     Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, Node, NodeId, NodeKind,

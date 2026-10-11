@@ -119,6 +119,30 @@ pub struct CheckedBody {
 }
 
 impl CheckedBody {
+    /// A malformed checked-state fixture for producer tests, never shipped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(
+        operands: Vec<ValueType>,
+        kind: impl FnOnce(&[NodeId]) -> NodeKind,
+        result: ValueType,
+    ) -> Self {
+        let ids: Vec<_> = (0..operands.len()).map(NodeId).collect();
+        let mut nodes: Vec<_> = operands
+            .into_iter()
+            .map(|value_type| Node {
+                kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                value_type,
+                location: Location::root(quire_semantic_value::location::Origin::Expression),
+            })
+            .collect();
+        nodes.push(Node {
+            kind: kind(&ids),
+            value_type: result,
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+        });
+        Self { nodes }
+    }
+
     /// The root node.
     pub fn root(&self) -> CheckedNode<'_> {
         CheckedNode {

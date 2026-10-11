@@ -278,6 +278,8 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
         match current {
             ValueType::Boolean => out.write_str("boolean"),
             ValueType::Integer => out.write_str("integer"),
+            ValueType::Uuid => out.write_str("uuid"),
+            ValueType::Timestamp => out.write_str("timestamp"),
             ValueType::Int(interval) => {
                 out.write_str("int");
                 out.write_str(&interval.lower().to_string());
@@ -799,7 +801,9 @@ fn is_package_independent(value_type: &ValueType) -> bool {
             | ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Float(_)
-            | ValueType::Text(_) => return true,
+            | ValueType::Text(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => return true,
             ValueType::Option(payload) => current = payload,
             ValueType::Collection(collection) => current = collection.element(),
             ValueType::Quantity(_)
@@ -1737,6 +1741,87 @@ mod tests {
 /// production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
+    /// Every released kernel invariant cause, including distinct nested payloads.
+    pub fn received_kernel_causes() -> Vec<quire_exact::CheckedInvariantCause> {
+        use quire_exact::{CheckedInvariantCause as C, IllTypedCause};
+        let mut cases = vec![
+            C::CollectionElementNotAdmitted,
+            C::DeferredResultNotAdmitted,
+            C::CanonicalKeyUnavailable,
+            C::BoundedDivisionExpected,
+            C::CollectionKindMismatch,
+            C::PopulationPair,
+            C::ValueKindMismatch,
+            C::CallDepthExceeded,
+            C::UnknownCheckedFunction,
+            C::ForeignCheckedExpression,
+            C::MeterBorrowConflict,
+            C::EqualityScheduleMismatch,
+            C::EqualityOperandSourceNotAdmitted,
+            C::EqualityOperandNonIntegralDecimal,
+            C::EqualityQuantityNonExactPlacement,
+            C::EqualityConversionShapeMismatch,
+            C::EqualityOperandTargetNotAdmitted,
+            C::EqualityUnitUnresolved,
+            C::EqualityEnumVariantUnresolved,
+            C::ExpectedIntegerPlacement,
+            C::GeneratedBodyPlaceholderInvoked,
+            C::GeneratedArgumentShapeMismatch,
+            C::GeneratedOperandKindUnsupported,
+            C::GeneratedUnexpectedOutcome,
+            C::GeneratedIntervalInvalid,
+            C::GeneratedEnvironmentRejected,
+            C::GeneratedDescriptorReconstructionFailed,
+        ];
+        for cause in [
+            IllTypedCause::TypeMismatch,
+            IllTypedCause::OperatorIneligible,
+        ] {
+            cases.extend([
+                C::ScheduledComparisonRefused { cause },
+                C::EqualityQuantityConversionRejected { cause },
+                C::GeneratedTypeCheckRejected { cause },
+                C::GeneratedEqualityCheckRejected { cause },
+            ]);
+        }
+        // The actual dependency enum is closed: adding a cause requires a fixture.
+        for cause in &cases {
+            match cause {
+                C::CollectionElementNotAdmitted
+                | C::DeferredResultNotAdmitted
+                | C::CanonicalKeyUnavailable
+                | C::BoundedDivisionExpected
+                | C::CollectionKindMismatch
+                | C::PopulationPair
+                | C::ValueKindMismatch
+                | C::CallDepthExceeded
+                | C::UnknownCheckedFunction
+                | C::ForeignCheckedExpression
+                | C::MeterBorrowConflict
+                | C::EqualityScheduleMismatch
+                | C::EqualityOperandSourceNotAdmitted
+                | C::EqualityOperandNonIntegralDecimal
+                | C::EqualityQuantityNonExactPlacement
+                | C::EqualityConversionShapeMismatch
+                | C::EqualityOperandTargetNotAdmitted
+                | C::EqualityUnitUnresolved
+                | C::EqualityEnumVariantUnresolved
+                | C::ExpectedIntegerPlacement
+                | C::GeneratedBodyPlaceholderInvoked
+                | C::GeneratedArgumentShapeMismatch
+                | C::GeneratedOperandKindUnsupported
+                | C::GeneratedUnexpectedOutcome
+                | C::GeneratedIntervalInvalid
+                | C::GeneratedEnvironmentRejected
+                | C::GeneratedDescriptorReconstructionFailed
+                | C::ScheduledComparisonRefused { .. }
+                | C::EqualityQuantityConversionRejected { .. }
+                | C::GeneratedTypeCheckRejected { .. }
+                | C::GeneratedEqualityCheckRejected { .. } => {}
+            }
+        }
+        cases
+    }
     use super::*;
     use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits};
     use quire_exact::Meter;
