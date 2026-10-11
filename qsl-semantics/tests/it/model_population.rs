@@ -29,9 +29,10 @@ use qsl_semantics::model::normalize::{
 };
 use qsl_semantics::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AdmissionChargePoint,
-    AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
-    InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
-    PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
+    AdmissionIncomplete, AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome,
+    InvocationContext, InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues,
+    PopulationAdmissionLimits, PopulationBinding, PopulationDocument, PopulationMember,
+    ReferenceKey, TypedReference,
 };
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 
