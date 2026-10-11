@@ -452,9 +452,11 @@ pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -
         walk(term, &ordinal)
     };
     let body = in_group(&node["body"]);
-    let application = serde_json::to_string(&body)
-        .unwrap()
-        .contains("\"application\"");
+    let application = (node["node_tag"] == "value"
+        && node["semantic_form"] == "union_value")
+        || serde_json::to_string(&body)
+            .unwrap()
+            .contains("\"application\"");
     let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
     let recursion = node.get("recursion_group").map(|label| {
         let position = ordinal(&node["node_id"]).unwrap();
