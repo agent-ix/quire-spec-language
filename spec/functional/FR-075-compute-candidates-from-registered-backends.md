@@ -35,12 +35,14 @@ this requirement's work (#185). The catalog is deleted with
 The registry SHALL define no local capability-kind type. The registry SHALL
 consume the canonical `Capability` value type
 ([quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213)),
-whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
+whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
 
 ## Inputs
 
 - A `BackendDescriptor { id: BackendId, advertises: set of (Capability, mode) }`
-  per registration, where `mode` is `bounded` or `unbounded` (ADR-012 §7.1).
+  per registration, where `mode` is `bounded` or `unbounded` (ADR-012 §7.1),
+  and the evidence-kind labels supplied when it advertises
+  `probabilistic-satisfaction`.
   `BackendId` is the backend identity alone (ADR-013 O-19). The registry's
   uniqueness key is `BackendId` (FR-290 "Candidate set and negotiation": "a
   backend identity is unique within a registry"), so a second registration
@@ -163,6 +165,23 @@ and the capability kind a requested item carries, from the one canonical
 registry module or elsewhere in `#185`'s scope, whose variants name FR-290's
 capability-kind labels.
 
+### Probabilistic evidence kinds are checked at descriptor admission
+
+When a `BackendDescriptor` advertises `probabilistic-satisfaction`,
+`BackendDescriptor::admit` SHALL require a nonempty evidence-kind set whose
+members are each byte-equal to `statistical` or `exact` (FR-290, "Evidence
+kinds"). If the set is absent or empty, or any member is not one of those two
+labels, `BackendDescriptor::admit` SHALL refuse the registration with
+`invalid_capability`/`unknown-evidence-kind`, keyed by the descriptor's
+`BackendId`. This check SHALL finish before the descriptor is inserted into the
+registry or used for candidate computation. The refused descriptor contributes
+no registration, and any registration already held under that identity stands.
+
+A descriptor that advertises no `probabilistic-satisfaction` kind SHALL NOT
+require evidence-kind labels for admission. QSL SHALL preserve the accepted
+labels on the admitted descriptor for the registered backend contract; this
+requirement assigns no new evidence-kind vocabulary or alias.
+
 ### Reading a `backend` member
 
 A candidate's wire form is ADR-013 O-19's `backend` member, the backend
@@ -234,6 +253,9 @@ were added.
 | FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with an equal descriptor (same identity and advertised pairs), the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. | Test (TC-447, TC-448) |
 | FR-075-AC-8 | Given the checked package of FR-062's RR-5 (`function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }`) and a registry holding one backend advertising `value-validity` in `bounded` mode, and no named backend, the request builder returns exactly one `RequirementItem` per requirement record, in bytewise occurrence-key order with request indices 0, 1, 2: the two `+` records are two items with the same node and distinct occurrence keys, and every item is `value-validity`, classified `bounded`, with no unbounded domain, its record's result bound, and that one backend as its candidate set. With RR-6 (`n + 1` over `n: Integer`), the one item is classified `unbounded` with `finite_bound_available` true and carries one unbounded domain, `Integer` at `n`'s parameter node, and a bounded follow-up that supplies an `IntegerRange` for that key is a new request whose single item has request index 0, is classified `bounded` and carries the occurrence key passed to `bounded_item`, the original item's, and the follow-up request holds exactly one item for that occurrence key. With RR-16, the two `+` items carry result bounds `Int[0, 10]` and `Int[0, 20]`. With a registry advertising no `value-validity`, every item is still returned, each with an empty candidate set. With a named unregistered backend, every item carries the unknown-backend marker. A package with no records gives no items. | Test (TC-449) |
 | FR-075-AC-9 | For the checked function `function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }`, the two `x + 1` requirement records have the same application node and distinct occurrence keys, and the builder returns two items in occurrence-key order. Each item's `path_condition()` equals its own record's canonical path-condition sequence: both contain the `if p` guard occurrence, with `holds` true for the then occurrence and false for the else occurrence. Neither sequence is replaced by the other, flattened, or deduplicated. An unguarded record's item carries an empty path condition. | Test |
+| FR-075-AC-10 | A descriptor advertising `probabilistic-satisfaction` with evidence kinds `{statistical}`, `{exact}` or `{statistical, exact}` is admitted and retains exactly the supplied set on the descriptor. | Test |
+| FR-075-AC-11 | A descriptor advertising `probabilistic-satisfaction` with an absent evidence-kind set, an empty set, or any member other than the exact labels `statistical` and `exact` is refused by `BackendDescriptor::admit` with `invalid_capability`/`unknown-evidence-kind`, keyed by `BackendId`, before registry insertion; it contributes no candidate and leaves any earlier registration under that identity standing. | Test |
+| FR-075-AC-12 | A descriptor that advertises no `probabilistic-satisfaction` kind is admitted without evidence-kind labels, and its admission is unaffected by whether it advertises any of the other eleven kinds. | Test |
 
 ## Dependencies
 
@@ -242,12 +264,12 @@ were added.
   an argument) and the candidate-computation algorithm this requirement
   implements; §5.2 lists the explicit registry failure cases FR-075-AC-3 and
   FR-075-AC-4 verify.
-- [FR-057](FR-057-admit-shared-capability-kinds.md) admits the ten FR-290
+- [FR-057](FR-057-admit-shared-capability-kinds.md) admits the twelve FR-290
   capability-kind labels into QSL and states the same candidate-set rule from
   the composed-linker admission side; this requirement implements it at the
   registry.
 - [FR-290](ix://agent-ix/quire-specification/FR-290) (quire-specification)
-  is the normative source for the ten capability-kind labels, the
+  is the normative source for the twelve capability-kind labels, the
   `(kind, mode)` advertisement shape, and the candidate-set ordering rule
   this requirement's Outputs section restates. Its "Candidate set and
   negotiation" section (FR-290-AC-9, FR-290-AC-10) is also the normative
@@ -258,12 +280,12 @@ were added.
   taking the `protocol` family's six members (FR-290's `Families` table, the
   set FR-060 dispatches independently) as the whole vocabulary. That phrase
   is stale: FR-290's "Vocabulary authority" section states verbatim that its
-  ten labels, not six, "are the single capability-kind vocabulary of the
+  twelve labels, not six, "are the single capability-kind vocabulary of the
   Quire ecosystem," from which "`quire-spec-language`'s `Capability` type,
   the backend descriptors registered in its registry... take their
   members." FR-290 governs; this requirement and FR-057 specify against the
-  ten-label vocabulary throughout, and #213's `Capability` type is expected
-  to carry all ten.
+  twelve-label vocabulary throughout, and #213's `Capability` type is expected
+  to carry all twelve.
 - The canonical `Capability` value type and its outcome constructors are
   owned by [quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213);
   this requirement consumes that type and specifies no shape for it.
