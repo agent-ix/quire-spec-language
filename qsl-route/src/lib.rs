@@ -47,73 +47,12 @@
 pub mod request;
 pub mod routing;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fmt;
-
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
+pub use qsl_foundation::{BackendId, EmptyBackendIdentity};
 use qsl_foundation::{CatalogCode, Category, Code};
 use qsl_semantics::check::Capability;
-
-/// A backend's declared identity, unique within one [`Registry`] (FR-290
-/// "Candidate set and negotiation": "a backend identity is unique within a
-/// registry"). Opaque, typed data: on the wire it is the
-/// `backend` member, the identity string exactly as the FR-331 manifest
-/// states it (ADR-012 §7.1, ADR-013 O-19), which this module receives
-/// already formed and does not itself mint.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub struct BackendId(String);
-
-impl BackendId {
-    /// Build a `BackendId` from its wire identity string. This module
-    /// applies no normalization: the identity is opaque data, compared only
-    /// for exact equality.
-    pub fn new(identity: impl Into<String>) -> Self {
-        Self(identity.into())
-    }
-
-    /// Read a `BackendId` from the wire `backend` member (ADR-013 O-19,
-    /// FR-075-AC-6): the identity is kept verbatim, and an empty identity
-    /// refuses with [`EmptyBackendIdentity`].
-    pub fn from_wire(identity: &str) -> Result<Self, EmptyBackendIdentity> {
-        if identity.is_empty() {
-            Err(EmptyBackendIdentity)
-        } else {
-            Ok(Self::new(identity))
-        }
-    }
-
-    /// The identity's exact wire spelling.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// [`BackendId::from_wire`]'s refusal: the `backend` member is empty.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("invalid_identifier: the backend identity is empty")]
-pub struct EmptyBackendIdentity;
-
-impl EmptyBackendIdentity {
-    /// The catalog code of this refusal, the one
-    /// `qsl_replay::ReplayRequestRefusal::EmptyBackendIdentity` carries:
-    /// `invalid_identifier`.
-    pub const fn code(&self) -> Code {
-        Code::InvalidIdentifier
-    }
-
-    /// Always `Category::Refusal` (ADR-013 O-16): the input is refused, not
-    /// a fault.
-    pub const fn category(&self) -> Category {
-        Category::Refusal
-    }
-}
-
-impl fmt::Display for BackendId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Whether a backend advertises a capability kind over a bounded domain
 /// only, or over an unbounded domain too (ADR-012 §1.1).
@@ -216,6 +155,20 @@ pub struct BackendDescriptor {
     manifest_digest: ManifestDigest,
     advertises: HashSet<(Capability, Mode)>,
     domains: Option<BTreeSet<DomainKind>>,
+}
+
+/// Convert one already-read FR-331 provider manifest into its routed
+/// descriptor. The driver supplies the manifest fields as data; this is the
+/// sole manifest conversion entry point shared by linked and process
+/// providers (FR-288, C-28).
+pub fn descriptor_from_manifest<'a>(
+    backend: Candidate,
+    origin: ProviderOrigin,
+    manifest_digest: ManifestDigest,
+    advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+    domains: Option<&[&str]>,
+) -> Result<BackendDescriptor, RegistrationRefusal> {
+    BackendDescriptor::admit(backend, origin, manifest_digest, advertised, domains)
 }
 
 impl BackendDescriptor {

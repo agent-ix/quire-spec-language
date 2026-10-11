@@ -13,8 +13,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, DomainsDefect, ManifestDigest, Mode,
-    ProviderOrigin, RegistrationCause, Registry,
+    descriptor_from_manifest, BackendDescriptor, BackendId, Candidate, CandidateOutcome,
+    DomainsDefect, ManifestDigest, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -45,6 +45,37 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
         .iter()
         .map(|candidate| candidate.id().as_str().to_owned())
         .collect()
+}
+
+/// FR-288: linked and process providers use the same manifest conversion.
+#[test]
+#[trace("TC-772", "FR-288-AC-1", "FR-288-AC-5")]
+fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
+    let backend = candidate("shared");
+    let digest = ManifestDigest::from_digest([9; 32]);
+    let advertised = [(Some("value-validity"), Some("unbounded"))];
+    let linked = descriptor_from_manifest(
+        backend.clone(),
+        ProviderOrigin::Linked,
+        digest,
+        advertised,
+        None,
+    )
+    .expect("the manifest labels are valid");
+    let process =
+        descriptor_from_manifest(backend, ProviderOrigin::Process, digest, advertised, None)
+            .expect("the same manifest is valid for a process provider");
+
+    assert_eq!(linked.id(), process.id());
+    assert_eq!(linked.manifest_digest(), process.manifest_digest());
+    assert_eq!(
+        linked
+            .advertises()
+            .collect::<std::collections::HashSet<_>>(),
+        process.advertises().collect()
+    );
+    assert_eq!(linked.origin(), ProviderOrigin::Linked);
+    assert_eq!(process.origin(), ProviderOrigin::Process);
 }
 
 /// TC-155 step 3: an unknown kind, an absent kind and an unknown mode each
