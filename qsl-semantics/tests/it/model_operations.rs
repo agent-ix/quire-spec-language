@@ -313,7 +313,9 @@ pub(super) fn config_version_document(
 /// A `Supersedes` relationship from `ConfigVersion` to itself, wired for
 /// `ConfigVersion`'s own inline `relationships[]`.
 fn supersedes_relationship() -> Value {
-    let supersedes = config_version_identity("Supersedes");
+    let supersedes = format!(
+        "ix://{PACKAGE_IDENTITY}/relationship/ConfigVersion-supersedes-ConfigVersion"
+    );
     json!({
         "identity": supersedes,
         "sourceEnd": {

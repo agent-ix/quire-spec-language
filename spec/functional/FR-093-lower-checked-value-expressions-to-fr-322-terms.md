@@ -215,6 +215,14 @@ The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
 the model rows' vectors E4 to E9 are
 [FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)'s.
 
+A selected relationship declaration is an unconditional model-graph root,
+including when no checked value, function, frame or relationship-end names it.
+`check` records one `generated` occurrence for that relation node at the
+selected model alias's declaration-site/source span. This rule is independent
+of function presence and ordering. The fallback `generated_location` is never
+used for this root; a relation node never reaches emission as
+`UnlocatedOccurrence`.
+
 A `binding` names its binder with the source name, and the binder's parameter
 node (FR-092) has that name and the binder's level. For `fold` and `reduce`,
 the outer binding names the accumulator and the inner binding the element.
@@ -800,6 +808,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-24 | For each `K` of `Set`, `Bag` and `OrderedSet`, structural equality over `K<Choice>` (U2) carries U2's leaves with one leading `inner` on every path; `contains` over that collection carries U2's leaves without that prefix (`inner:0`). A catalogued `result_inner` operation yielding `K<Choice>` carries U2's leaves without that prefix, while one yielding `Sequence<Choice>` carries `[]`. Structural equality over `Sequence<Choice>` still carries U2's leaves with one leading `inner`. | Test |
 | FR-093-AC-25 | U2 and U4 with no selected text-profile definition refuse `missing_declaration`/`missing-selection` naming `text_profile` and yield no node; U2 still refuses when both compared values select `Empty`. When a selected node or work ceiling is exhausted by these walks, checking stops with `stage_limit_exceeded` and the corresponding `node-count-exceeded` or `work-budget-exceeded` cause before resolving leaf laws, yielding no node; every appended text or recursion leaf costs one node, every entered union costs composite work, and every leaf's full path bytes count toward work. | Test |
 | FR-093-AC-26 | Cancelling a lifecycle `check` during a Union text-leaf walk stops at the next charge with `StageFailure::Cancelled` retaining the requested cause and no output artifact (FR-276). Existing AC-10 and AC-11 Record/Tuple and optional-inner vectors remain byte-identical. | Test |
+| FR-093-AC-27 | For a selected model alias whose package declares an unreferenced relationship and has no function or frame naming it, `check` emits the `relation`/`relationship` node and records exactly one `generated` occurrence at that alias's declaration-site/source span. It never uses the fallback `generated_location` or emits an `UnlocatedOccurrence`. | Test (TC-417) |
 
 ## Dependencies
 

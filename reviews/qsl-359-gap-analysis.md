@@ -162,3 +162,15 @@ lowering records one generated occurrence at the selected model declaration
 span, independent of function presence or ordering. Focused lowering, canonical
 intake, owner/name refusal, the pinned FCD golden, and the admission corpus all
 pass on the follow-up working tree.
+
+## Disposition pass 3
+
+FR-093 and FR-094 now state the unconditional relationship-root rule: every
+selected relationship is emitted even when no checked value, function, frame,
+or relationship-end names it, with one generated occurrence at the selected
+model alias declaration-site span. The fallback generated location and
+`UnlocatedOccurrence` are forbidden for that root. The TC-417 regression uses
+the unreferenced `billedTo` fixture and asserts that its generated occurrence
+is exactly the `M` alias declaration location. The workspace sweep also
+converted the last stale integration fixture identity to the FR-154
+slot-rooted form.
