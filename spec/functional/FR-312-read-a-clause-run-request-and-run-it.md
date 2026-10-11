@@ -44,9 +44,13 @@ envelope, source selections and intake limits) that carries `clause` in
 place of `call`. `clause` is a closed object:
 
 - `selection`: exactly one of
-  - `{"clause": {"name": N, "observation": O}}`, FR-106's
+  - `{"clause": {"name": N, "observation": O, ...}}`, FR-106's
     `ClauseSelection`, where `O` names the snapshot or invocation the clause
-    reads by its key in `observations`;
+    reads by its key in `observations`. A current snapshot requires `self`
+    (an FR-106 `ObjectRef`) and `anchor` (FR-106's `{kind, name}`); a pre
+    snapshot requires `self` and `parameters` (FR-106's parameter map,
+    including `{}` when empty); an invocation permits neither because its
+    document carries `self` and the relevant call context;
   - `{"frame": {"operation": Op, "invocation": K}}`, FR-115's frame
     selection;
   - `{"function": {"name": N, "arguments": A, "snapshot": K}}`, FR-109's
@@ -82,6 +86,15 @@ package and dependency inputs.
 - If a selection names an observation key `observations` does not hold,
   then the reader SHALL refuse `invalid-request` at stage `request`, naming
   the key.
+- For a clause selection, the reader SHALL inspect the named document's
+  format and observation role. From a current snapshot it SHALL construct
+  FR-106 `Current` with the request's `self` and `anchor`; FR-106 checks the
+  anchor against the snapshot. From a pre snapshot it SHALL construct
+  `PreCall` with the request's `self` and `parameters`. From an invocation
+  it SHALL construct `Invocation` using the document reference; FR-106 reads
+  `self` and parameters from that invocation. A missing required member or
+  a member forbidden for that role SHALL refuse `invalid-request` at stage
+  `request`, naming the member, before `run_clause`.
 - The reader SHALL read each observation file once, under FR-100's
   `dependent_bytes` limit and relative to the request file's directory.
 - The reader SHALL pass every byte it read into the `ClauseRunRequest`;
@@ -99,10 +112,11 @@ package and dependency inputs.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-312-AC-1 | Through `run`, FR-108's healthy-parent case as a clause-run request (`ParentOrder` over its current snapshot) writes one `native-run-result/2` document with `success`, `truth: true` and `basis`, exit 0; violating-parent writes `violation`, exit 10. The same request file passed to the driver's run entry gives byte-identical stdout and the same exit. | Test (TC-891) |
-| FR-312-AC-2 | A request carrying both `call` and `clause`, one carrying neither, one whose `selection` holds both `clause` and `function`, one with an unknown member in `clause`, and one whose selection names an observation key `observations` lacks each refuse `invalid-request` at stage `request`, exit 20, empty stdout, naming the member or key. | Test (TC-891) |
-| FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test (TC-891) |
-| FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test (TC-891) |
+| FR-312-AC-1 | Through `run`, FR-108's healthy-parent case as a clause-run request (`ParentOrder` over its current snapshot) writes one `native-run-result/2` document with `success`, `truth: true` and `basis`, exit 0; violating-parent writes `violation`, exit 10. The same request file passed to the driver's run entry gives byte-identical stdout and the same exit. | Test |
+| FR-312-AC-2 | A request carrying both `call` and `clause`, one carrying neither, one whose `selection` holds both `clause` and `function`, one with an unknown member in `clause`, and one whose selection names an observation key `observations` lacks each refuse `invalid-request` at stage `request`, exit 20, empty stdout, naming the member or key. | Test |
+| FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test |
+| FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
+| FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `self` and `parameters` constructs `PreCall`; an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting a required member or adding a role-forbidden member refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. | Test |
 
 ## Dependencies
 
@@ -119,4 +133,5 @@ package and dependency inputs.
 
 ## References
 
-- Owning ticket: Linear QSL-389 (plan slice E19-CLI).
+- Owning ticket: Linear QSL-389 (plan slice E19-CLI). TC-891 traces the
+  clause-run request acceptance criteria.
