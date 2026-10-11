@@ -2,9 +2,7 @@
 //! FR-026–028, FR-031: closed records; existing constructors own identifier validity.
 
 use crate::checking::ClauseBinding;
-use crate::runtime::{
-    ExecutionSelection, InvocationRef, ObjectIdentity, ObservationSelection, SnapshotRef,
-};
+use crate::runtime::{InvocationRef, ObjectIdentity, SnapshotRef};
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use quire_contract_model as ir;
 use serde::{Deserialize, Serialize};
@@ -81,10 +79,101 @@ pub(super) struct Request {
     /// program.
     #[serde(default, deserialize_with = "from_object_opt")]
     pub call: Option<Call>,
+    /// FR-312: a clause run, mutually exclusive with `call` for 1-draft.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub clause: Option<ClauseRun>,
     /// FR-100/ADR-015 D-1: a `1-draft` program's supplied libraries; none
     /// when absent. A `0-draft` program admits none (FR-026).
     #[serde(default, deserialize_with = "deserialize_objects")]
     pub libraries: Vec<Library>,
+}
+
+/// FR-312's closed clause-run selection and observation file table.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseRun {
+    #[serde(deserialize_with = "from_object")]
+    pub selection: ClauseRunSelection,
+    #[serde(deserialize_with = "from_object")]
+    pub observations: std::collections::BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "work_units")]
+    pub work_units: Option<u64>,
+    #[serde(default)]
+    pub package_id: Option<String>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub observation_limits: Option<ObservationLimitOverrides>,
+}
+
+/// Exactly one of these members is selected by the reader.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseRunSelection {
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub clause: Option<ClauseSelection>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub frame: Option<FrameSelection>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub function: Option<FunctionSelection>,
+}
+
+/// Role-specific members are checked against the selected document.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseSelection {
+    pub name: String,
+    pub observation: String,
+    #[serde(default, rename = "self", deserialize_with = "from_object_opt")]
+    pub self_object: Option<ObjectReference>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub anchor: Option<Anchor>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub parameters: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ObjectReference {
+    pub population: String,
+    pub key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum Anchor {
+    Initialization { name: String },
+    Handler { name: String },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FrameSelection {
+    pub operation: String,
+    pub invocation: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FunctionSelection {
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_objects")]
+    pub arguments: Vec<ClauseArgument>,
+    pub snapshot: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseArgument {
+    pub parameter: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ObservationLimitOverrides {
+    pub document_bytes: Option<u64>,
+    pub objects_per_document: Option<u64>,
+    pub values_per_document: Option<u64>,
+    pub post_state: Option<String>,
 }
 
 // Present only when the field itself is present; `#[serde(default)]` alone
@@ -137,6 +226,10 @@ pub(super) struct Argument {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    dead_code,
+    reason = "decoded only to reject retired native run selection"
+)]
 pub(super) struct SelectedPackage {
     pub file: String,
     pub digest: String,
@@ -227,6 +320,10 @@ impl Identity {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "T: Deserialize<'de>"))]
+#[allow(
+    dead_code,
+    reason = "decoded only to reject retired native run artifacts"
+)]
 pub(super) struct FileSelection<T> {
     pub file: String,
     #[serde(deserialize_with = "from_object")]
@@ -320,27 +417,6 @@ pub(super) struct Selection {
     pub clause: String,
     #[serde(deserialize_with = "from_object")]
     pub observation: Observation,
-}
-
-impl Selection {
-    pub fn bind(&self) -> Result<ExecutionSelection, ir::Diagnostic> {
-        Ok(ExecutionSelection {
-            requirement: self.owner.bind()?,
-            clause: ir::ClauseId::new(&self.clause)?,
-            observation: match &self.observation {
-                Observation::Current {
-                    snapshot,
-                    self_object,
-                } => ObservationSelection::Current {
-                    snapshot: snapshot.clone(),
-                    self_object: self_object.clone(),
-                },
-                Observation::Invocation { invocation } => ObservationSelection::Invocation {
-                    invocation: invocation.clone(),
-                },
-            },
-        })
-    }
 }
 
 #[derive(Deserialize, Default)]

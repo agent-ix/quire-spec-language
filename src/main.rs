@@ -204,9 +204,11 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
             limits,
         } => syntax(kind, source, path, limits)
             .map(|text| (Category::Success.exit_code(), Output::Line(text))),
-        Command::Run { path } => quire_spec_language::command::run(path)
-            .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
-            .map_err(|error| command_error(&error)),
+        Command::Run { path, limits } => {
+            quire_spec_language::command::run_with_limits(path, limits)
+                .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
+                .map_err(|error| command_error(&error))
+        }
         Command::Compile { path } => quire_spec_language::command::compile(path)
             .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
             .map_err(|error| command_error(&error)),

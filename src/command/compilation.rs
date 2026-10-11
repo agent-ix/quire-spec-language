@@ -6,9 +6,7 @@ use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
 use crate::model_source::{self, ModelSourceLimits};
 use crate::native_model::{ModelLimits, NativeModel};
-use crate::package::{
-    NativePackage, NativePackageRef, PackageLimits, PackageReadLimits, PackageSupport,
-};
+use crate::package::{NativePackage, PackageLimits};
 use crate::Limits;
 
 pub(super) fn source_only(_program: &wire::Program) -> Result<()> {
@@ -19,70 +17,6 @@ pub(super) fn source_only(_program: &wire::Program) -> Result<()> {
     }
     Ok(())
 }
-
-pub(super) enum RunSelection<'a> {
-    Native(&'a wire::Request),
-    #[cfg(feature = "quire-extraction")]
-    Extracted(super::extraction::Selected<'a>),
-}
-
-impl<'a> RunSelection<'a> {
-    pub fn new(request: &'a wire::Request) -> Result<Self> {
-        #[cfg(feature = "quire-extraction")]
-        if let Some(descriptor) = &request.program.extraction {
-            if request.package.is_some() {
-                return Err(super::extraction::ExtractionMode::PackageSelected.into());
-            }
-            return Ok(Self::Extracted(super::extraction::select(
-                &request.program,
-                descriptor,
-            )?));
-        }
-        Ok(Self::Native(request))
-    }
-
-    /// `source` is the program source, already read by the caller (FND-011:
-    /// a selected package's own construction does not read `program.source`
-    /// a second time). The extraction arm threads it through the same way
-    /// (FND-014): `Selected::compile` no longer re-reads `program.source`
-    /// itself.
-    pub fn compile<'model>(
-        self,
-        intake: &mut Intake<'_>,
-        models: &'model [NativeModel],
-        source: FormalSource,
-    ) -> Result<RunPackage<'model>> {
-        match self {
-            Self::Native(request) => Ok(RunPackage::Native(Box::new(match &request.package {
-                Some(selected) => {
-                    selected_package(intake, selected, &request.program, models, source)?
-                }
-                None => package_of(source, &request.program, models)?,
-            }))),
-            #[cfg(feature = "quire-extraction")]
-            Self::Extracted(selected) => Ok(RunPackage::Extracted(Box::new(
-                selected.compile(models, source)?,
-            ))),
-        }
-    }
-}
-
-pub(super) enum RunPackage<'model> {
-    Native(Box<NativePackage<'model>>),
-    #[cfg(feature = "quire-extraction")]
-    Extracted(Box<super::extraction::ExtractedRun<'model>>),
-}
-
-impl<'model> RunPackage<'model> {
-    pub fn native(&self) -> &NativePackage<'model> {
-        match self {
-            Self::Native(package) => package,
-            #[cfg(feature = "quire-extraction")]
-            Self::Extracted(value) => value.package.mapped().native(),
-        }
-    }
-}
-
 pub(super) fn models(
     intake: &mut Intake<'_>,
     selected: &[wire::Model],
@@ -132,30 +66,4 @@ fn bindings(source: FormalSource, program: &wire::Program) -> Result<CheckBindin
         .map(wire::Binding::bind)
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(CheckBindings { source, clauses })
-}
-
-pub(super) fn selected_package<'model>(
-    intake: &mut Intake<'_>,
-    selected: &wire::SelectedPackage,
-    program: &wire::Program,
-    models: &'model [NativeModel],
-    source: FormalSource,
-) -> Result<NativePackage<'model>> {
-    let expected = NativePackageRef::new(selected.digest.parse()?);
-    let bindings = bindings(source, program)?;
-    let limits = PackageReadLimits::default();
-    let bytes = intake.file(&selected.file, limits.package.artifact_bytes)?;
-    NativePackage::read_verified(
-        &bytes,
-        expected,
-        bindings,
-        models,
-        &PackageSupport::default(),
-        limits,
-    )
-    .map_err(|error| RunCause::SelectedPackage {
-        file: selected.file.clone(),
-        expected,
-        error,
-    })
 }

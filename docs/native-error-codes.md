@@ -72,7 +72,7 @@ as typed sibling fields on the owning stage's own error type instead —
 each pair a `Box<Diagnostic>` with `related`/`upstream` as applicable.
 Runtime validation diagnostics pair a `Box<Diagnostic>` with `runtime` (the
 exact actual/expected artifact, authored clause, observation and typed value
-path) and `related` instead. The CLI's `native-run-result/1` output carries
+path) and `related` instead. The retired `native-run-result/1` output carried
 both `upstream` and `runtime` on every diagnostic view: a `link`- or
 `check`-stage diagnostic populates `upstream` from its `LinkingError`/
 `CheckingError` wrapper (null when there was no upstream refusal) and leaves

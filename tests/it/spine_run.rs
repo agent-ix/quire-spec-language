@@ -144,18 +144,11 @@ fn unknown_edition_uses_native_run_result_two_command_error() {
         .unwrap()
         .replacen("1-draft", "9-draft", 1);
     let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("program.native"), &program).unwrap();
-    let request = json!({"format":"native-run/1","request":{
-        "models":[],
-        "program":{"source":program_source(program.as_bytes())},
-        "clause":{"selection":{"clause":{"name":"Example","observation":"current"}},
-            "observations":{}},
-    }});
-    std::fs::write(
-        directory.path().join("request.json"),
-        serde_json::to_vec(&request).unwrap(),
-    )
-    .unwrap();
+    spine_run_request(
+        directory.path(),
+        program.as_bytes(),
+        call("seven", json!([])),
+    );
 
     let output = run(directory.path());
     assert_eq!(output.status.code(), Some(20), "{output:?}");
@@ -165,8 +158,79 @@ fn unknown_edition_uses_native_run_result_two_command_error() {
     assert_eq!(error["stage"], "profile");
     assert_eq!(error["code"], "unknown_edition");
     assert_eq!(error["basis"], "unavailable");
-    let members = error.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>();
-    assert_eq!(members, ["basis", "code", "details", "format", "message", "stage"]);
+    let members = error
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        members,
+        ["basis", "code", "details", "format", "message", "stage"]
+    );
+    let read = qsl_replay::spine::read_native_run_result(&output.stderr).unwrap();
+    let qsl_replay::spine::NativeRunResult::CommandError(read) = read else {
+        panic!("the command error must read as its own typed variant");
+    };
+    assert_eq!(read.stage(), "profile");
+    assert_eq!(read.code(), "unknown_edition");
+    let details: Value = serde_json::from_str(read.details().get()).unwrap();
+    assert_eq!(details["phase"], "profile");
+    assert_eq!(details["path"], "program.native");
+}
+
+/// FR-267-AC-10: command errors have their own closed shape and cannot be
+/// selected by changing any non-format member of a `/2` document.
+#[test]
+#[trace("TC-742", "FR-267-AC-10")]
+fn native_result_two_reader_refuses_invalid_command_error_members() {
+    let valid = json!({
+        "format": "native-run-result/2", "stage": "profile",
+        "code": "unknown_edition", "message": "unknown edition in program.native",
+        "details": {"phase": "profile", "code": "unknown_edition", "path": "program.native"},
+        "basis": "unavailable"
+    });
+    assert!(matches!(
+        qsl_replay::spine::read_native_run_result(&serde_json::to_vec(&valid).unwrap()).unwrap(),
+        qsl_replay::spine::NativeRunResult::CommandError(_)
+    ));
+    let edits: &[(&str, fn(&mut Value))] = &[
+        ("stage", |v: &mut Value| {
+            v.as_object_mut().unwrap().remove("stage");
+        }),
+        ("disposition", |v: &mut Value| {
+            v["disposition"] = json!({});
+        }),
+        ("basis", |v: &mut Value| {
+            v["basis"] = json!("decisive-witness");
+        }),
+        ("witness", |v: &mut Value| {
+            v["witness"] = json!({});
+        }),
+        ("cause", |v: &mut Value| {
+            v["cause"] = json!("unknown-edition");
+        }),
+        ("details", |v: &mut Value| {
+            v["details"] = json!({"phase":"profile"});
+        }),
+        ("format", |v: &mut Value| {
+            v["format"] = json!("native-run-result/1");
+        }),
+        ("format", |v: &mut Value| {
+            v["format"] = json!("native-run-result/3");
+        }),
+    ];
+    for &(member, edit) in edits {
+        let mut candidate = valid.clone();
+        edit(&mut candidate);
+        let error = match qsl_replay::spine::read_native_run_result(
+            &serde_json::to_vec(&candidate).unwrap(),
+        ) {
+            Ok(_) => panic!("accepted invalid {member}: {candidate}"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains(member), "{member}: {error}");
+    }
 }
 
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
@@ -788,30 +852,22 @@ fn tc_451_step_4_malformed_argument_value_refuses() {
     }
 }
 
-/// FR-100-AC-2 (TC-450 step 2): a `0-draft` standalone request's stdout and
-/// exit status are unaffected by the spine-run routing change.
+/// The atomic /2 transition refuses a retired native `run` request with a
+/// closed command-error envelope and no successful /1 result.
 #[test]
-#[trace("TC-450", "FR-100-AC-2")]
-fn tc_450_step_2_zero_draft_requests_are_unaffected() {
+#[trace("TC-742", "FR-267-AC-3")]
+fn native_zero_draft_run_is_retired_with_two_envelope() {
     use crate::support::standalone_setup as fixtures;
     let directory = tempfile::tempdir().unwrap();
     fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let output = run(directory.path());
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stderr.is_empty());
-    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["format"], "native-run-result/1");
-    // FND-008: a stronger oracle than the format alone -- the fixture's
-    // clause (`true implies flag`, `flag` bound `true`) actually evaluates
-    // and completes `true`, not merely reaching some other stage or a
-    // refusal that happens to still exit 0.
-    assert_eq!(document["stage"], "evaluate");
-    assert_eq!(document["truth"], true);
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let document: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(document["format"], "native-run-result/2");
+    assert_eq!(document["stage"], "request");
+    assert_eq!(document["code"], "invalid-request");
+    assert_eq!(document["basis"], "unavailable");
 }
 
 /// FR-100-AC-3 (TC-450 step 6): a `1-draft` request whose `libraries`

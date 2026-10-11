@@ -24,6 +24,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::provenance::SourceRegion;
 pub use wire::CauseCodecError;
+pub(crate) use wire::RecordWire;
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A

@@ -380,7 +380,7 @@ fn a_stale_package_refuses_before_evaluation() {
     let ClauseDisposition::StalePackage { expected, actual } = &report.disposition else {
         panic!("expected StalePackage, got {:?}", report.disposition);
     };
-    assert_eq!(*expected, other);
+    assert_eq!(expected, &other.hex());
     assert_ne!(*actual, other);
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
 }

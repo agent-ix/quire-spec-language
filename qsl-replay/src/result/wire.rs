@@ -367,7 +367,7 @@ mod verdict_tests {
     deny_unknown_fields,
     bound(serialize = "E: Serialize", deserialize = "E: Deserialize<'de>")
 )]
-struct RecordWire<E> {
+pub(crate) struct RecordWire<E> {
     quantifier: OccurrenceWire,
     deciding_element: E,
     #[serde(
@@ -386,7 +386,7 @@ struct RecordWire<E> {
 }
 
 impl RecordWire<Box<RawValue>> {
-    fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
+    pub(crate) fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
         if record.index.is_none() {
             return Err(CauseCodecError::MissingIndex);
         }
@@ -400,6 +400,19 @@ impl RecordWire<Box<RawValue>> {
                 .as_ref()
                 .map(|position| position.as_str().to_owned()),
         })
+    }
+
+    /// Validate the state-clause subset of the shared witness shape without
+    /// resolving its deciding value against an in-memory checked package.
+    pub(crate) fn validate_state(&self) -> Result<(), CauseCodecError> {
+        if self.index.is_none() {
+            return Err(CauseCodecError::MissingIndex);
+        }
+        if self.trace_position.is_some() {
+            return Err(CauseCodecError::Shape("trace_position"));
+        }
+        self.quantifier.clone().read()?;
+        Ok(())
     }
 }
 
@@ -423,7 +436,7 @@ impl RecordWire<ElementSlot> {
 }
 
 /// An occurrence key: `node_id`, `role`, `ordinal` (QSpec FR-322).
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OccurrenceWire {
     node_id: String,

@@ -5,14 +5,9 @@
 mod extraction;
 mod types;
 
-use super::{wire, LimitKind, RunCause, RunError, RunResult};
+use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
-use crate::native_model::NativeModel;
-use crate::runtime::{
-    EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
-    RuntimeReference, ValidationDiagnostic, ValidationStatus,
-};
-use qsl_foundation::diagnostic::Category;
+use crate::runtime::RuntimeReference;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{ByteDigest, Diagnostic};
 use quire_contract_model as ir;
@@ -53,21 +48,6 @@ fn reference(value: &RuntimeReference) -> types::Reference<'_> {
     }
 }
 
-fn runtime_path(value: &RuntimePathSegment) -> types::RuntimePath<'_> {
-    match value {
-        RuntimePathSegment::Model(value) => types::RuntimePath::Model(value),
-        RuntimePathSegment::Population { record, universe } => {
-            types::RuntimePath::Population { record, universe }
-        }
-        RuntimePathSegment::Object(value) => types::RuntimePath::Object(value),
-        RuntimePathSegment::State(value) => types::RuntimePath::State(value),
-        RuntimePathSegment::Parameter(value) => types::RuntimePath::Parameter(value),
-        RuntimePathSegment::Result => types::RuntimePath::Result(true),
-        RuntimePathSegment::Field(value) => types::RuntimePath::Field(value),
-        RuntimePathSegment::Index(value) => types::RuntimePath::Index(*value),
-    }
-}
-
 fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
     types::Diagnostic {
         phase: value.phase.as_str(),
@@ -77,7 +57,6 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         path: &value.path,
         span: value.span,
         upstream: None,
-        runtime: None,
         identity: value
             .identity_cause()
             .and_then(SourceReadCause::identity_fields),
@@ -94,19 +73,6 @@ fn diagnostic_with_upstream<'a>(
     types::Diagnostic {
         upstream,
         ..diagnostic(value)
-    }
-}
-
-fn validation_diagnostic(value: &ValidationDiagnostic) -> types::Diagnostic<'_> {
-    types::Diagnostic {
-        runtime: Some(types::RuntimeLocation {
-            artifact: reference(&value.runtime.artifact),
-            observation: value.runtime.observation,
-            requirement: &value.runtime.requirement,
-            clause: &value.runtime.clause,
-            path: value.runtime.path.iter().map(runtime_path).collect(),
-        }),
-        ..diagnostic(&value.diagnostic)
     }
 }
 
@@ -178,6 +144,16 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 LimitKind::FileBytes => types::Details::FileBytes {
                     limit: kind.as_str(),
                 },
+                LimitKind::RequestBytes { maximum } => types::Details::ConfiguredBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
+                    option: "--request-bytes",
+                },
+                LimitKind::DependentBytes { maximum } => types::Details::ConfiguredBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
+                    option: "--dependent-bytes",
+                },
                 LimitKind::SelectedFiles {
                     category,
                     requested,
@@ -192,7 +168,10 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 },
             },
         ),
-        RunCause::Digest(_) => (types::Stage::Request, types::Details::None),
+        RunCause::Digest(_) | RunCause::ClauseRequest { .. } => {
+            (types::Stage::Request, types::Details::None)
+        }
+        RunCause::ClauseOutput(_) => (types::Stage::Output, types::Details::None),
         RunCause::Identifier(error) => (types::Stage::Request, types::Details::Identifier(error)),
         RunCause::Native(error) => (
             types::Stage::Native(error.phase),
@@ -251,7 +230,6 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
         | RunCause::CompleteRunSelection(_)
-        | RunCause::NativeRunSelection(_)
         | RunCause::MissingClauses => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
@@ -318,16 +296,33 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
     };
     serde_json::to_value(types::Failure {
         format: types::Format::RunResult,
-        request_digest: error.request_digest.map(|value| value.to_string()),
-        status: if error.cause.is_incomplete() {
-            types::FailureStatus::Incomplete
-        } else {
-            types::FailureStatus::Refused
-        },
         stage,
         code: error.cause.code().as_str(),
+        cause: match &error.cause {
+            RunCause::Spine(failure) => failure.refusal.cause(),
+            RunCause::SpineRun(refusal) => match refusal.as_ref() {
+                qsl_replay::spine::RunRefusal::Compile(refusal) => refusal.cause(),
+                qsl_replay::spine::RunRefusal::Fault(_) => Some("established-invariant-broken"),
+                _ => None,
+            },
+            _ => None,
+        },
         message: error.to_string(),
         details,
+        basis: "unavailable",
+    })
+}
+
+/// FR-267: expose the library's canonical clause report to the CLI adapter.
+pub(super) fn clause_report(
+    report: &qsl_replay::spine::ClauseRunReport,
+) -> super::Result<RunResult> {
+    let bytes =
+        qsl_replay::spine::write_clause_run_result(report).map_err(RunCause::ClauseOutput)?;
+    let value = serde_json::from_slice(&bytes).map_err(RunCause::Output)?;
+    Ok(RunResult {
+        exit_code: report.disposition.category().exit_code(),
+        value: NativeResult(value),
     })
 }
 
@@ -446,154 +441,12 @@ pub(super) fn spine_run_result(
     })
 }
 
-pub(super) fn report(
-    digest: ByteDigest,
-    selection: &wire::Selection,
-    models: &[NativeModel],
-    _package: &super::compilation::RunPackage<'_>,
-    report: &ExecutionReport<'_, '_>,
-) -> super::Result<RunResult> {
-    let (exit_code, outcome) = match report.outcome() {
-        ExecutionOutcome::ValidationFailed(failure) => {
-            // FR-285: the most severe item code across every retained
-            // diagnostic (including the terminal one). ValidationStatus
-            // only carries the wire-schema's binary refused/incomplete
-            // distinction, and drives the code only when no diagnostic is
-            // retained.
-            let status = match failure.status {
-                ValidationStatus::Refused => types::FailureStatus::Refused,
-                ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
-            };
-            let code = Category::most_severe(
-                failure
-                    .diagnostics
-                    .iter()
-                    .chain(failure.terminal.as_deref())
-                    .map(|diagnostic| diagnostic.diagnostic.code.category().exit_code()),
-            )
-            .unwrap_or(match failure.status {
-                ValidationStatus::Incomplete => Category::Incomplete.exit_code(),
-                ValidationStatus::Refused => Category::Refusal.exit_code(),
-            });
-            (
-                code,
-                types::Outcome::Validate {
-                    status,
-                    diagnostics: failure
-                        .diagnostics
-                        .iter()
-                        .map(validation_diagnostic)
-                        .collect(),
-                    terminal: failure.terminal.as_deref().map(validation_diagnostic),
-                },
-            )
-        }
-        ExecutionOutcome::Evaluated {
-            result,
-            usage,
-            events,
-            cost_model,
-        } => {
-            let (code, result) = match result {
-                EvaluationOutcome::Completed(truth) => (
-                    if *truth {
-                        Category::Success
-                    } else {
-                        Category::Violation
-                    }
-                    .exit_code(),
-                    types::Evaluation::Completed { truth: *truth },
-                ),
-                EvaluationOutcome::Refused(error) => (
-                    error.code.category().exit_code(),
-                    types::Evaluation::Refused {
-                        diagnostic: diagnostic(error),
-                    },
-                ),
-                EvaluationOutcome::Incomplete(error) => (
-                    Category::Incomplete.exit_code(),
-                    types::Evaluation::Incomplete {
-                        diagnostic: diagnostic(error),
-                    },
-                ),
-            };
-            let events = events
-                .iter()
-                .map(|event| types::Event {
-                    implication: event.implication.0,
-                    operand: event.operand.0,
-                    span: event.span,
-                    kind: match event.kind {
-                        ImplicationEventKind::AntecedentEntered => {
-                            types::EventKind::AntecedentEntered
-                        }
-                        ImplicationEventKind::AntecedentCompleted(truth) => {
-                            types::EventKind::AntecedentCompleted { truth }
-                        }
-                        ImplicationEventKind::ConsequentEntered => {
-                            types::EventKind::ConsequentEntered
-                        }
-                    },
-                })
-                .collect();
-            (
-                code,
-                types::Outcome::Evaluate {
-                    result,
-                    evaluation_usage: usage,
-                    events,
-                    cost_model,
-                },
-            )
-        }
-    };
-    let document = types::Report {
-        #[cfg(feature = "quire-extraction")]
-        extraction: extraction::context(_package),
-        format: types::Format::RunResult,
-        request_digest: digest.to_string(),
-        package: types::Package {
-            digest: report.package().digest().to_string(),
-            canonical_identity: report.package().canonical_identity().to_string(),
-        },
-        source: source(&report.package().checked().bindings().source),
-        models: models
-            .iter()
-            .map(|model| types::Model {
-                owner: model.environment().owner(),
-                digest: model.digest().to_string(),
-                source: source(model.source()),
-            })
-            .collect(),
-        inputs: types::Inputs {
-            snapshots: report
-                .input()
-                .snapshots
-                .iter()
-                .map(|value| value.reference())
-                .collect(),
-            invocations: report
-                .input()
-                .invocations
-                .iter()
-                .map(|value| value.reference())
-                .collect(),
-        },
-        selection,
-        validation_usage: report.validation_usage(),
-        outcome,
-    };
-    Ok(RunResult {
-        exit_code,
-        value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::formal_source::FormalSource;
     use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::Category;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
     use qsl_semantics::library::PackageId;

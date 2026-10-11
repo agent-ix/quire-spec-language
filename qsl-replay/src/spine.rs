@@ -62,6 +62,16 @@ pub use clause::{
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
     OperationName,
 };
+mod native_result;
+pub use native_result::{
+    read_native_run_result, write_clause_run_result, NativeRunReadError, NativeRunResult,
+    NativeRunResultError,
+};
+mod request;
+pub use request::{
+    read_clause_run_request, ClauseRequestParts, ClauseRequestReadError, ClauseSelectionParts,
+    ClauseSelectionPartsKind, SuppliedObservation,
+};
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
 pub(crate) use clause::{
     check_clause_admitted, check_frame, resolve_frame, ClauseCheck, CompiledRun, FrameCheck,
