@@ -603,12 +603,6 @@ pub enum ModelRefusalCause {
         /// The required bytes recorded by the encoder.
         required: u64,
     },
-    /// A canonical population identity encoder failure other than allocation
-    /// or a configured limit. Carries upstream's diagnostic for investigation.
-    PopulationIdentityInternalFailure {
-        /// The upstream encoder's display text.
-        error: String,
-    },
     /// Canonical encoding or digesting could not reserve memory. Not a
     /// limit: it names no bound and no setting.
     AllocationFailed {
@@ -939,7 +933,6 @@ impl ModelRefusalCause {
             | Self::ByteDigestMismatch { .. }
             | Self::IntakeLimitExceeded { .. }
             | Self::PopulationIdentityLimitExceeded { .. }
-            | Self::PopulationIdentityInternalFailure { .. }
             | Self::AllocationFailed { .. }
             | Self::NoncanonicalNumber { .. }
             | Self::WrongModelSelection { .. }
@@ -1026,7 +1019,6 @@ impl ModelRefusalCause {
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             Self::PopulationIdentityLimitExceeded { .. } => "population-identity-limit-exceeded",
-            Self::PopulationIdentityInternalFailure { .. } => "population-identity-internal-failure",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.cause(),
             Self::NoncanonicalNumber { inexact, .. } => inexact.as_str(),
             Self::DuplicateMember { .. } => "duplicate-member",
@@ -1086,8 +1078,7 @@ impl ModelRefusalCause {
             Self::FamilySteps { .. }
             | Self::AncestorSteps { .. }
             | Self::IntakeLimitExceeded { .. }
-            | Self::PopulationIdentityLimitExceeded { .. }
-            | Self::PopulationIdentityInternalFailure { .. } => "resource_exhausted",
+            | Self::PopulationIdentityLimitExceeded { .. } => "resource_exhausted",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.code(),
             Self::NoncanonicalNumber { .. } => "noncanonical_wire",
             Self::UnclosedMethodSet
@@ -1447,9 +1438,6 @@ pub mod fixtures {
             bound: 1,
             required: 2,
         },
-        PopulationIdentityInternalFailure => ModelRefusalCause::PopulationIdentityInternalFailure {
-            error: "serializer invariant failed".to_owned(),
-        },
         AllocationFailed => ModelRefusalCause::AllocationFailed { requested: 0 },
         NoncanonicalNumber => ModelRefusalCause::NoncanonicalNumber {
             inexact: super::Inexact::Number,
@@ -1606,7 +1594,6 @@ pub(crate) mod tests {
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => "population-identity-limit-exceeded",
-            ModelRefusalCause::PopulationIdentityInternalFailure { .. } => "population-identity-internal-failure",
             ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
             ModelRefusalCause::NoncanonicalNumber {
                 inexact: super::Inexact::Integer,
@@ -1669,7 +1656,6 @@ pub(crate) mod tests {
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => "resource_exhausted",
-            ModelRefusalCause::PopulationIdentityInternalFailure { .. } => "resource_exhausted",
             ModelRefusalCause::AllocationFailed { .. } => "resource_exhausted",
             ModelRefusalCause::NoncanonicalNumber { .. } => "noncanonical_wire",
             ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",

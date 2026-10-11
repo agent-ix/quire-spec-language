@@ -150,7 +150,7 @@ use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, InternalFault};
 use serde::Serialize;
 
 use quire_exact::{
@@ -948,7 +948,7 @@ fn mint_population_id(
     declared_maximum: Option<u64>,
     members: &BTreeMap<ReferenceKey, DeclarationKey>,
     byte_bound: u64,
-) -> Result<PopulationId, ModelRefusal> {
+) -> Result<PopulationId, PopulationIdentityFailure> {
     let preimage = population_id_preimage(
         domain_package,
         population_key,
@@ -959,18 +959,29 @@ fn mint_population_id(
     );
     let preimage = match preimage {
         Ok(preimage) => preimage,
-        Err(error) => return Err(population_identity_encoding_refusal(error)),
+        Err(error) => return Err(population_identity_encoding_failure(error)),
     };
     #[cfg(test)]
     record_population_identity_digest();
     let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(byte_bound));
     match digest {
         Ok(digest) => Ok(PopulationId::from_digest(*digest.as_bytes())),
-        Err(error) => Err(population_identity_encoding_refusal(error)),
+        Err(error) => Err(population_identity_encoding_failure(error)),
     }
 }
 
-fn population_identity_encoding_refusal(error: quire_canonical::Error) -> ModelRefusal {
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PopulationIdentityFailure {
+    Refusal(ModelRefusal),
+    InternalFault {
+        fault: InternalFault,
+        upstream_error: String,
+    },
+}
+
+fn population_identity_encoding_failure(
+    error: quire_canonical::Error,
+) -> PopulationIdentityFailure {
     let detail = format!("bounded population identity encoding failed: {error}");
     let cause = match error {
         quire_canonical::Error::Limit(limit) => {
@@ -983,14 +994,30 @@ fn population_identity_encoding_refusal(error: quire_canonical::Error) -> ModelR
         quire_canonical::Error::Allocation { requested } => {
             ModelRefusalCause::AllocationFailed { requested }
         }
-        other => ModelRefusalCause::PopulationIdentityInternalFailure {
-            error: other.to_string(),
-        },
+        other => {
+            return PopulationIdentityFailure::InternalFault {
+                fault: InternalFault::new("population.identity", "canonical-encoding-failed"),
+                upstream_error: other.to_string(),
+            };
+        }
     };
-    ModelRefusal {
+    PopulationIdentityFailure::Refusal(ModelRefusal {
         code: Code::ResourceExhausted,
         cause,
         detail,
+    })
+}
+
+fn population_identity_admission_failure(failure: PopulationIdentityFailure) -> AdmissionOutcome {
+    match failure {
+        PopulationIdentityFailure::Refusal(refusal) => AdmissionOutcome::Refused(refusal),
+        PopulationIdentityFailure::InternalFault {
+            fault,
+            upstream_error,
+        } => AdmissionOutcome::InternalFault {
+            fault,
+            upstream_error,
+        },
     }
 }
 
@@ -1083,8 +1110,17 @@ fn population_id_byte_bound(
 pub enum AdmissionOutcome {
     /// Every member was charged and admitted.
     Admitted(PopulationBinding),
-    /// A real defect refused admission outright; no binding.
+    /// A real model defect or canonical identity-work bound refused
+    /// admission outright; no binding.
     Refused(ModelRefusal),
+    /// Canonical population identity work failed internally; this is a
+    /// typed fault, never a model refusal or resource-exhaustion result.
+    InternalFault {
+        /// The stable internal-fault classification.
+        fault: InternalFault,
+        /// The canonical encoder's diagnostic text for investigation.
+        upstream_error: String,
+    },
     /// Object or subtype closure is not established. Not a refusal
     /// (`Code::IncompletePopulation`); no charge and no binding.
     UnknownClosure(ModelRefusal),
@@ -1482,7 +1518,7 @@ fn admit_binding_as(
         identity_byte_bound,
     ) {
         Ok(id) => id,
-        Err(refusal) => return AdmissionOutcome::Refused(refusal),
+        Err(failure) => return population_identity_admission_failure(failure),
     };
     AdmissionOutcome::Admitted(PopulationBinding {
         universe,
@@ -1554,7 +1590,7 @@ pub struct InvocationDelta<'a> {
 /// against `declared.declared_created`/`declared_deleted` (FR-046's
 /// caller-supplied delta).
 ///
-/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`) is
+/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`/`InternalFault`) is
 /// returned as-is; a frame violation is `Refused` with
 /// `Code::FrameViolation`/cause `unauthorized-change`, and a delta
 /// disagreement (a duplicate or intersecting declared identity, or a
@@ -2473,6 +2509,11 @@ mod tests {
         )
         .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
 
+        let AdmissionOutcome::Refused(refusal) =
+            population_identity_admission_failure(refusal)
+        else {
+            panic!("canonical byte limit must remain a refusal");
+        };
         assert_eq!(refusal.code, Code::ResourceExhausted);
         assert!(matches!(
             refusal.cause,
@@ -2489,9 +2530,14 @@ mod tests {
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn population_identity_allocation_refusal_preserves_requested_size() {
-        let refusal = population_identity_encoding_refusal(
+        let failure = population_identity_encoding_failure(
             quire_canonical::Error::Allocation { requested: 4096 },
         );
+        let AdmissionOutcome::Refused(refusal) =
+            population_identity_admission_failure(failure)
+        else {
+            panic!("allocation failure must remain a refusal");
+        };
 
         assert_eq!(refusal.code, Code::ResourceExhausted);
         assert_eq!(
@@ -2501,23 +2547,41 @@ mod tests {
         assert!(refusal.detail.contains("allocation of 4096 bytes"));
     }
 
-    /// The mandatory non-exhaustive fallback identifies the upstream error
-    /// as an internal encoding failure rather than misreporting allocation.
+    /// The mandatory non-exhaustive fallback is a typed internal fault, not
+    /// a refusal or an exhausted-resource result.
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn population_identity_unexpected_encoder_refusal_is_internal_failure() {
-        let refusal = population_identity_encoding_refusal(quire_canonical::Error::Serialize(
-            "unexpected serializer error".to_owned(),
-        ));
-
-        assert_eq!(refusal.code, Code::ResourceExhausted);
-        assert_eq!(
-            refusal.cause,
-            ModelRefusalCause::PopulationIdentityInternalFailure {
-                error: "unexpected serializer error".to_owned(),
-            }
+        let outcome = population_identity_admission_failure(
+            population_identity_encoding_failure(quire_canonical::Error::Serialize(
+                "unexpected serializer error".to_owned(),
+            )),
         );
-        assert!(refusal.detail.contains("unexpected serializer error"));
+
+        let AdmissionOutcome::InternalFault {
+            fault,
+            upstream_error,
+        } = outcome
+        else {
+            panic!("unexpected canonical error must be an internal fault");
+        };
+        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+        assert_eq!(
+            fault.catalog_code().cause(),
+            "established-invariant-broken"
+        );
+        assert_eq!(
+            fault.category(),
+            qsl_foundation::diagnostic::Category::InternalFailure
+        );
+        assert_eq!(
+            qsl_foundation::diagnostic::catalog_category(fault.catalog_code().code()),
+            Some(qsl_foundation::diagnostic::Category::InternalFailure)
+        );
+        assert_ne!(fault.catalog_code().code(), "resource_exhausted");
+        assert_eq!(Code::RuntimeInvariant.category(), fault.category());
+        assert_ne!(Code::RuntimeInvariant, Code::ResourceExhausted);
+        assert_eq!(upstream_error, "unexpected serializer error");
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
