@@ -62,8 +62,3 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 - Step 5: each refuses `invalid-request` at stage `request`, exit 20, empty
   stdout.
 - Step 6: exit 0 and a `completed` outcome.
-
-## Status
-
-Passed locally with the four-label `source`; step 1's two-label `source`
-waits on FR-001's reader change.

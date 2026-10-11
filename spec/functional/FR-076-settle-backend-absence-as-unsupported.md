@@ -91,13 +91,3 @@ elsewhere.
   [quire-specification#116](https://github.com/agent-ix/quire-specification/issues/116):
   "a claim no registered backend can discharge settles `unsupported` with a
   warning, never a hold."
-
-## Status
-
-Specified under
-[quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Not yet implemented. The settled `unsupported` disposition itself is
-produced by `negotiate_*`, which
-[quire-contract-codegen#86](https://github.com/agent-ix/quire-contract-codegen/issues/86)
-implements; this requirement's exit also waits on that ticket because only
-`negotiate_*` settles the outcome.

@@ -48,24 +48,6 @@ relationships:
 ---
 # ADR-029: Lifecycle, CLI, provider, plugin, cache and code-generation boundaries (ARCH-50)
 
-## Status
-
-Proposed, 2026-10-01. FR-275 to FR-299, with use cases US-029 and US-030,
-specify this design, and FR-027 and FR-100 are amended in place (FR-027-AC-11,
-FR-100-AC-10, FR-100-AC-11). The owning tickets are listed under References.
-It decides the lifecycle and CLI orchestration
-design that ADR-011 §5 leaves open (the command outcome fields, the outcome
-kinds and their exit codes, and the shape of the orchestrating driver), and
-the plugin, cache, execution-backend, inspection and rendering boundaries.
-It also names the first bounded slice and the typed library operations
-(§10, §3). The owner's rulings on the
-draft's questions are in §11.
-
-Item ids `LC-`, `CB-`, `OP-`, `PV-`, `PL-`, `CA-`, `EB-`, `IN-` and `SL-` are
-local to this record. Other artifacts cite them as `ADR-029 PL-3`. "QSpec
-FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement.
-
 ## Context
 
 Measured on QSL `main` and quire-driver `main` on 2026-10-01.
@@ -120,6 +102,11 @@ here:
 4. First-party backends are compile-time Rust traits. Third-party providers
    use one out-of-process wire. A plugin's `proved` result cannot be
    replayed, so it is labelled trusted.
+
+Item ids `LC-`, `CB-`, `OP-`, `PV-`, `PL-`, `CA-`, `EB-`, `IN-` and `SL-` are
+local to this record. Other artifacts cite them as `ADR-029 PL-3`. "QSpec
+FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement.
 
 ## Decision
 

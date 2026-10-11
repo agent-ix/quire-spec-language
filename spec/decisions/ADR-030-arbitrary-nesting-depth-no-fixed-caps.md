@@ -36,16 +36,6 @@ relationships:
 ---
 # ADR-030: Arbitrary nesting depth: resource limits only, no fixed depth caps
 
-## Status
-
-Draft, 2026-10-01. Design only: this record makes the decisions. The QSL
-requirements that carry them are FR-255 to FR-264 and FR-356 (US-027, TC-720
-to TC-739 and TC-902; the walker toolkit's own TC-898 and TC-899 are in
-`agent-ix/quire-walk`), with the D-5 deletions applied in place. The QSpec requirements for
-D-1 and D-2 follow as separate work. No code changes
-with this record. The owner's rulings on the draft's questions are
-recorded in D-9.
-
 ## Context
 
 The owner ruled that deep nesting must be supported, and that a known depth

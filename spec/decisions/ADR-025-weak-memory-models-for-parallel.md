@@ -56,31 +56,6 @@ relationships:
 ---
 # ADR-025: Weak memory models for parallel
 
-## Status
-
-Proposed, 2026-10-01. §13 records the owner's rulings on the six questions
-this record first left open; §14 and §15 carry the two that add design. The
-QSL compiler requirements that implement it are FR-219 to FR-229, traced to
-US-025; QSpec's half is listed under References.
-
-It builds on ADR-018, itself a draft, and follows the owner's rulings recorded
-there (ADR-018 RU-1 to RU-4). It depends on ADR-027, the protocol
-transition system, for protocol steps: the states, steps and transition
-identities of a protocol run, with attempts applied through `ModelSystem`.
-This record adds the memory model to that system. It uses the static
-footprints and receiver-scoped frame entries of the state-space reduction
-record (ADR-021 POR-1, POR-3), a draft. It reads the strong-fairness
-(ADR-019), refinement (ADR-020), reduction (ADR-021), possible-property
-(ADR-022), hyperproperty (ADR-023) and statistical (ADR-024) records, all
-drafts, for their interactions (§11). The owning ticket and related work are
-listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `MM-`, `MA-`, `SC-`, `TSO-`,
-`RA-`, `MS-`, `MF-`, `MB-`, `MR-`, `MX-`, `MV-`, `MK-`, `DS-`, `RU-`, `DR-`
-and `PSC-` are local to this record. Other artifacts cite them as
-`ADR-025 TSO-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
-
 ## Context
 
 **What `parallel` means today.** QSpec FR-052 states that "Parallel branches
@@ -157,6 +132,12 @@ the V-1 to V-8 verdicts, and `ModelCheckLimits`, EN-1's limits and method
 bounds (IV-6). ADR-021 gives static read and write footprints per transition
 identity (POR-1), receiver-scoped frame entries (POR-3) and the preservation
 table PT-2. ADR-017 AR-2 gives the code binding.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `MM-`, `MA-`, `SC-`, `TSO-`,
+`RA-`, `MS-`, `MF-`, `MB-`, `MR-`, `MX-`, `MV-`, `MK-`, `DS-`, `RU-`, `DR-`
+and `PSC-` are local to this record. Other artifacts cite them as
+`ADR-025 TSO-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 
 ## Decision
 

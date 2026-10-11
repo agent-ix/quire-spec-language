@@ -10,12 +10,6 @@ relationships:
 ---
 # ADR-010: Observed QSL and backend architecture baseline (ARCH-00)
 
-## Status
-
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#206 (ARCH-00),
-epic #205, Layer 0. Acceptance is decided at the baseline authority gate #208.
-Supersedes nothing.
-
 ## Context
 
 Epic #205 requires an evidence-backed record of the architecture as implemented

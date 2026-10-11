@@ -52,21 +52,6 @@ relationships:
 ---
 # ADR-018: Temporal properties over every behaviour of a model
 
-## Status
-
-Proposed, 2026-10-01. §9 records the owner's rulings on the four questions
-this record first left open, on undefined evaluation (RU-5), on uncertified
-proofs (RU-6) and on undefined model-side expressions (RU-7); §10 and §11
-carry the two that add design. The
-QSL compiler requirements that implement it are FR-123 to FR-128, FR-337, FR-338, FR-339, FR-314 and FR-315 (use case
-US-015). The owning ticket and related work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. QSpec FR-360 is the infinite-trace result disposition
-vocabulary. Item ids `TP-`, `V-`, `SM-`, `EN-`, `FA-`, `CX-`, `DS-`,
-`QS-`, `RU-`, `DL-`, `IV-` and `UE-` are local to this record. Other artifacts cite
-them as `ADR-018 SM-2`.
-
 ## Context
 
 QSL has three ways to look at the behaviour of a model today, and none of
@@ -109,6 +94,12 @@ QSL's result vocabulary is ADR-013 O-16's eight categories and
 variant ADR-013 C-09 adds), with `InconclusiveCause`
 (`KaniVacuousProof`, `ReplayParity`, `ReplayRefused`) and `IncompleteCause`
 (`TimedOut`, `Cancelled`, `ResourceExhausted`).
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. QSpec FR-360 is the infinite-trace result disposition
+vocabulary. Item ids `TP-`, `V-`, `SM-`, `EN-`, `FA-`, `CX-`, `DS-`,
+`QS-`, `RU-`, `DL-`, `IV-` and `UE-` are local to this record. Other artifacts cite
+them as `ADR-018 SM-2`.
 
 ## Decision
 

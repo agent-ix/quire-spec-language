@@ -248,6 +248,17 @@ only a unit node key as a declared-arm `UnitId`.
 | FR-088-AC-11 | For an enum `E` declared with cases `b`, `a`, `c` in that order, each variant's `VariantId` equals the node key over `{version: quire.enum-member-node/v1, declaration_node_id: E's node key, case}`. When `E` is ordered, the variants' ranks are `b` 0, `a` 1, `c` 2, and a set of all three values visits `b`, `a`, `c`. When `E` is unordered, its canonical member list is `a`, `b`, `c`, the ranks are `a` 0, `b` 1, `c` 2, and the set visits `a`, `b`, `c`. A value that pairs `E::a`'s `VariantId` with rank 2 is refused at admission. Renaming the declaration `E` to `F` changes every `VariantId` and changes no rank and no visiting order. C-30 refuses `E`'s own declaration node key as a `VariantId`. | Test (TC-409) |
 | FR-088-AC-12 | For declared units `m` and `km` (a scaled unit of `m`) and the compound unit `m^1`, the three `UnitId`s are pairwise unequal. `m`'s `UnitId` carries `m`'s node key under the `quire.checked-semantic-node/v1` label. The compound `UnitId`s of every entry in QSpec's compound-unit vectors equal the vector digests under the `quire.value.compound-unit/v1` label. C-30 refuses a dimension node key as a declared-arm `UnitId`. | Test (TC-411) |
 
+For AC-6, a hand-written `PartialEq` or `Hash`, a name beside a filler field,
+a local map, and the root crate's lane-private `QualifiedName` types are
+not covered.
+
+For AC-8, a field type under another name
+is not covered, and TC-260 step 4 is not backed.
+
+AC-5 is enforced for its `QualifiedName` half only (TC-251); the
+"or a bare string" half is investigated and documented as a gap, not
+enforced (see `tests/it/name_resolution_confinement.rs`'s own module doc).
+
 ## Dependencies
 
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
@@ -265,29 +276,3 @@ only a unit node key as a declared-arm `UnitId`.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - ADR-013 §8 OQ-B, OQ-D and OQ-F; QSpec FR-141, FR-142 and FR-144
   (`ix://agent-ix/quire-specification/FR-141`, `FR-142`, `FR-144`).
-
-## Status
-
-Specified (ADR-013 §7 S-3, split into S-3a/S-3b by the
-2026-09-21 owner ruling on QSL-158). S-3b implemented by #300: AC-1, AC-2,
-AC-3, AC-4, AC-9 and AC-10 are backed by real `check()`-driven tests
-(TC-257, TC-248, TC-249, TC-250, TC-252). AC-7's within-package half
-is backed: a declared type's node id is the FR-092 key `check` mints
-(FR-092-AC-12, #384), not the caller-supplied `CompositeDeclaration` handle,
-and TC-259 step 4 asserts it. Its owner-scoped and builtin or anonymous
-cross-package cases (TC-259 steps 1 to 3) and recompilation (step 5) are
-not implemented. AC-5 is enforced for its
-`QualifiedName` half only (TC-251); the "or a bare string" half is
-investigated and documented as a gap, not enforced (see
-`tests/it/name_resolution_confinement.rs`'s own module doc). AC-6
-(TC-258) and AC-8 (TC-260) are backed in part, with `xtask::typestate_scan`. For AC-6:
-in the layer crates, no struct or variant has a `QualifiedName` as its only
-field, and no map field or map-returning function outside `check` is keyed
-by one. A hand-written `PartialEq` or `Hash`, a name beside a filler field,
-a local map, and the root crate's lane-private `QualifiedName` types are
-not covered. For AC-8: `ValueTypeRef` is defined once, as exactly
-`Native(NativeValueType)` and `Package(DeclarationKey)`. No `model` field
-whose name contains `type` is a `NodeKey` or a string, and the three
-value-type records carry a `ValueTypeRef`. A field type under another name
-is not covered, and TC-260 step 4 is not backed. AC-11 (TC-409) and AC-12 (TC-411)
-are implemented and pass locally.

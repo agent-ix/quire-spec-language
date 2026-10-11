@@ -34,6 +34,13 @@ reach the checked package through the same S4 v2 emitter. QSL SHALL
 implement one shared contract, with the parts below, that every family
 implements once and that no family bypasses.
 
+Declared names
+carried on checked nodes are checked input. Copying a declared name into
+`PreconditionFailure.selected`, and using field names as record keys, are
+allowed. A "display string" is rendered text (`Display` or `Debug`
+output, diagnostic text, source spelling); ADR-011 FB-01 forbids reading
+one "to recover semantics".
+
 The contract's six parts (ADR-012 §2):
 
 1. **Identity.** Every checked node the contract's `check` produces SHALL
@@ -332,6 +339,18 @@ condition.
 | FR-062-AC-12 | A family `check` that reaches one of its two stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. A family `check` compares no measured node count before typing: its node limit is `CheckingLimits::nodes`, charged at the node (FR-062-AC-7). With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 | FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound and guards are those of its own occurrence. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
+The state scan for FR-062-AC-3 covers the non-test items of every `.rs` file
+under `qsl-semantics/src/check` and `qsl-semantics/src/family`
+(files with `tests` in the name and `#[cfg(test)]` items are
+skipped). Callees outside them (`quire-exact`, `qsl-forms`,
+`qsl-foundation` and the rest of `qsl-semantics`) are not scanned.
+
+The evaluator display-string scan for FR-062-AC-6 reads
+`qsl-eval/src/value/expression/evaluate.rs` and the `evaluate` method in
+`qsl-eval/src/value/expression/family.rs`
+only; `causes.rs`, `mod.rs`, `s6a.rs` and callees in other crates are
+not scanned.
+
 ## Dependencies
 
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §2
@@ -359,208 +378,3 @@ condition.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md) is the
   first family slice to implement this contract, for function declaration
   and application.
-
-## Status
-
-Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). The
-design names `FamilyContract` and `ReferenceEvaluation` follow ADR-012;
-ADR-012 states these are design names and the implementing ticket chooses
-the final Rust spelling within this requirement's rules.
-
-**Scope of what #214 delivers (PR #262 review).** #214 implements the
-contract narrowed to what its one migrated family (`Value`'s
-function-declaration form) can back with a real, non-fabricated
-construction site: `check`, the checked-input parameter, and the
-stage-limit outcome shape. `requirements` was deferred and later added.
-`package` was deleted as a hook nothing consumed (PR #262 review,
-F1/F2).
-
-**Packaging decision.** `FamilyContract` has no `package` part;
-S4 has no family hook. ADR-012 §2 "Packaging" records the decision and its
-reasons: `check` lowers every family's checked nodes to the semantic graph
-at S3 (FR-093), the layer-4 emitter builds no term and mints no key
-(FR-093-CON-2), and the layer-3 trait cannot name the layer-4 wire types
-(ADR-011 §6.1). The all-or-nothing rule (AC-9) is the emitter's own
-omission closure. AC-1, AC-5 and AC-9 are amended to match; the decision
-leaves no production-code change, only the tests named in their rows
-below. The `Relation`
-non-native-evaluability case (AC-6's first sentence) is a real, permanent
-design fact rather than a deferral -- `Relation` never gets an evaluation
-hook -- and it was already backed, just untagged for this
-criterion (AC-6's own row below). By Acceptance Criterion, with real trace
-tags as they exist in the delivered code today:
-- FR-062-AC-1: backed (`TC-160` step 1). `FamilyContract`
-  (`qsl-semantics/src/family/contract.rs`) requires `check`, taking
-  `&mut CheckContext`, and `requirements`. Step 1's compile-fail
-  cases are `compile_fail` doctests on `FamilyContract`, beside a complete
-  implementation that compiles: omitting `requirements` (`E0046`) and
-  omitting the checked-input parameter of `check` (`E0050`). Omitting
-  `evaluate` is not a case: `evaluate` belongs to `ReferenceEvaluation`
-  (`qsl-eval/src/value/expression/s6a.rs`), which is `pub(crate)` in a
-  private module and re-exported nowhere, so an external implementor has no
-  way to name or supply it and its omission cannot occur outside
-  `qsl-eval`; the compiler requires it of the one in-workspace implementor.
-- FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
-- FR-062-AC-3: backed (`TC-160`) for the declarations in
-  `qsl-semantics/src/check` and `qsl-semantics/src/family`, all three
-  clauses, in `qsl-semantics/src/check/family.rs`, `checking_tests`:
-  - Clause 1 (no path to global or thread-local state):
-    `check_stage_sources_have_no_global_or_thread_local_state` parses the
-    non-test sources of `src/check` and `src/family` and fails on
-    `static mut`, `thread_local!`, `lazy_static!`, and any once-cell, lazy,
-    lock, atomic, `Once` or `UnsafeCell` type, in a path or in a `use`
-    name or rename (`use std::sync::Mutex as Guard;`). Immutable statics of
-    plain types (`BOOLEAN`, `NO_GROUP`) are constants and pass. Exactly
-    what is scanned: the non-test items of every `.rs` file under those two
-    directories (files with `tests` in the name and `#[cfg(test)]` items are
-    skipped). Callees outside them (`quire-exact`, `qsl-forms`,
-    `qsl-foundation` and the rest of `qsl-semantics`) are not scanned;
-    nothing is flagged there today, and the one `thread_local!` in the crate
-    is `#[cfg(test)]` (`model/normalize.rs`).
-  - Clause 2 (meter, sink, scope in the outcome):
-    `a_mutated_meter_is_reflected_in_the_check_outcome` (pre-admitted
-    charges show in the recorded admission count; a work bound one short
-    gives a `WorkBudget` `Limit`),
-    `a_mutated_diagnostic_sink_is_reflected_in_the_check_outcome` (seeded
-    entry kept, the check's own appended) and
-    `a_mutated_scope_stack_is_reflected_in_the_check_outcome` (the diagnostic
-    is `DiagnosticSink`'s full scope path, `caller-frame/value.function-declaration:f`
-    with a caller frame and `value.function-declaration:f` without one, and
-    the caller's frame is restored on success and refusal).
-  - Clause 3: `two_contexts_from_the_same_declarations_check_identically`
-    compares the two independently constructed contexts' `Debug`-formatted
-    checked output (`CheckedDeclaration` carries no `PartialEq`, so this
-    repo's established substitute applies), with context `b` seeded with an
-    extra signature ahead of the one the form calls and each context's own
-    positional `function`/`callee` index normalized, so an extra
-    declaration's position does not fail for a reason that is not a state
-    leak.
-- FR-062-AC-4: backed (`TC-160`).
-  `FamilyContract::requirements` returns one claim per claim site
-  (`Vec<Self::Claim>`; for `Value`, `check::ValueClaim`: the site and its
-  extent keyed by binder until S3 names each root's parameter node).
-  `tc_160_the_requirements_function_yields_one_claim_per_scalar_application`
-  (`qsl-semantics/src/check/claims/tests.rs`) and
-  `a_function_declaration_has_no_requirements`
-  (`qsl-eval/src/value/expression/family.rs`).
-- FR-062-AC-5: backed (`TC-160`; hook level: `qsl-eval/src/value/expression/
-  family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`,
-  which `qsl-eval` uses as `ValueFunctionFamily::check`'s and
-  `::evaluate`'s real call sites to tag the `Limit` half, implement the
-  `Incomplete` half, and restore `StageLimits`' `input_bytes`
-  field plus a denied `CheckContext::meter` charge for the work-budget
-  kind (`crate::family::contract::StageLimits`'s own doc names each
-  field's real producer and consumer). This backs the criterion's first
-  two clauses -- a `Limit` outcome naming the right kind, and `evaluate`
-  returning `Incomplete` on an exhausted meter -- for the one family
-  (`ValueFunctionFamily`) with a `check` hook in #214. The third
-  clause, as amended (the S4 v2 emitter in place of a `package`
-  hook), is backed by `check_never_returns_incomplete_across_the_fixture_set`
-  (`qsl-semantics/src/check/family.rs`, `checking_tests`; an admitted, a
-  refused and one limit-reaching declaration per stage-entry limit,
-  including the work-budget denial that makes `evaluate` return
-  `Incomplete`) and `emit_checked_never_returns_incomplete_across_the_fixture_set`
-  (`qsl-package/src/emit/tests.rs`). Each classifies the outcome with an
-  exhaustive `match` over `StageFailure` / `EmitRefusal` (no wildcard arm), so
-  a new `Incomplete` variant stops the test compiling, and asserts the exact
-  classification per fixture.
-- FR-062-AC-6: backed.
-  - First sentence (a `Relation` never reaches evaluation) is FR-090-AC-4
-    verbatim, so the tests that back FR-090-AC-4 back it:
-    `s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`
-    (`qsl-eval/src/value/expression/mod.rs`, tagged `FR-062-AC-6`),
-    `both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`
-    (`qsl-eval/tests/it/model_reference_queries.rs`), plus `s6a.rs`'s own
-    compile-time check that no `S6aFamilyKind` maps to `FamilyKind::Relation`.
-  - Second sentence. Ruling (QSL team lead): declared names
-    carried on checked nodes are checked input. Copying a declared name into
-    `PreconditionFailure.selected`, and using field names as record keys, are
-    allowed. A "display string" is rendered text (`Display` or `Debug`
-    output, diagnostic text, source spelling); ADR-011 FB-01 forbids reading
-    one "to recover semantics". `CheckedPackage` is a concrete type, so the
-    criterion's original panicking test double is not buildable; two tests
-    replace it, each tagged `TC-160`, `FR-062-AC-6`:
-    - API surface: `the_evaluator_has_no_path_to_source_text_or_rendering`
-      (`tests/it/evaluate_reads_no_display_strings.rs`). `qsl-eval`'s
-      shipped `[dependencies]` name neither `qsl-cst` nor `qsl-forms`, and a
-      syn scan of `evaluate.rs` and the `evaluate` hook in `family.rs`
-      finds no rendering macro (`format!`, `write!`, `dbg!` and the like) and
-      no call to `to_string` (except the one population-name copy),
-      `parse`, `function_identity`, `slot_names`, `measure_slot_names` or
-      `spans`. A synthetic violating source proves each form is flagged.
-    - Behaviour: `renaming_declared_names_leaves_evaluation_unchanged`
-      (`qsl-eval/tests/it/evaluation_ignores_display_strings.rs`). Renaming
-      every function, parameter and alias in a package leaves the outcome,
-      loss count and metered work unchanged, for a completed run and for a
-      run the meter stops. A mutant that branches on a function name fails it.
-    The scan reads `evaluate.rs` and the `evaluate` method in `family.rs`
-    only; `causes.rs`, `mod.rs`, `s6a.rs` and callees in other crates are
-    not scanned.
-- FR-062-AC-7: TC-378, over `not not not true` read through S1, S2 and
-  the assembler, varying the `CheckingLimits` node limit by one (FR-096-AC-11
-  gives its locus).
-- FR-062-AC-8: backed (`TC-161`). `check::refusal::CheckCause` has
-  a `#[cfg(seam_probe)] __SeamProbe` variant; `CheckCause::code` (the one
-  family `Cause` enum's `catalog_code()`-shaped mapping S4 names) has no
-  arm for it, so `--cfg seam_probe` alone fails that match with `E0004` at
-  the checked-in location `xtask::seam_probe::checked_in_locations` names
-  (`qsl-semantics/src/check/refusal.rs`, `CheckCause::code`), the same
-  shape `FamilyKind::catalog_code_prefix` already demonstrates for S1.
-  `CheckCause::cause` carries a `#[cfg(seam_probe)]`-gated arm instead, so
-  it keeps compiling under `--cfg seam_probe` alone. `code` also carries a
-  `#[cfg(seam_probe_downstream)]`-gated arm, so it (and every other match
-  over `CheckCause` outside this crate) keeps compiling when both cfgs are
-  set together and downstream crates' own seams stay reachable, plus
-  `#[deny(clippy::wildcard_enum_match_arm)]` and
-  `#[deny(clippy::match_wildcard_for_single_variants)]`, so a future
-  fallback arm is caught at normal compile time too, not only under the
-  probe. Backed by the `make seam-probe` gate (part of `make ci`).
-- FR-062-AC-9: backed (`TC-160` step 8; amended to the
-  emitter's omission closure). `omissions` (`qsl-package/src/emit.rs`) omits
-  every node that names an omitted node, with
-  `OmissionCause::NamesOmittedNode`, and `emit_package` returns an
-  `EmitRefusal` with no bytes when an occurrence cannot be placed.
-  `a_compound_unit_is_omitted_only_for_its_omitted_unit`
-  (`qsl-package/src/emit/tests.rs`) asserts the exact omitted set of the
-  `q`/`t` fixture (the definition-owned `metre` unit and `Length` dimension
-  nodes with `UnlockedOwner`; the compound unit, the parameter, `q`'s two
-  applications and `q` itself with `NamesOmittedNode`),
-  that none of `t`'s nodes is omitted, and that the I2 read is Verified and
-  exports `t` and not `q`;
-  `the_q_and_t_package_with_an_unplaced_occurrence_refuses` refuses the same
-  package with `EmitRefusal::UnlocatedOccurrence` when the conversion places
-  nothing; `an_unplaced_occurrence_refuses` covers the refusal half under
-  FR-093-AC-9.
-- FR-062-AC-10: backed (`TC-166`), implemented and tested. The `replay`
-  facade selects by a typed `QualifiedName` (`ReplayRequestWire::selected_function`):
-  a `compile_fail` doctest on `replay` shows a bare `&str` selection does not
-  compile, beside an otherwise identical request that compiles and replays.
-  In `qsl-replay/src/execute/tests.rs`,
-  `tc_166_case_variant_functions_each_replay_their_own_body` replays `small`
-  and `Small` each by its own body, and
-  `tc_444_a_selection_naming_no_function_refuses` refuses an undeclared, a
-  case-variant and a qualified name with `ReplayRefusal::UnknownFunction`,
-  naming the selection and the recompiled package.
-- FR-062-AC-12: backed (`TC-432`):
-  `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
-  `work_budget_kind_refuses_from_a_denied_meter_charge`
-  (`qsl-semantics/src/check/family.rs`, `checking_tests`). Package
-  checking reports the limit past `check` as `CheckCause::ResourceExhausted`
-  carrying the kind, bound and actual counter, code `stage_limit_exceeded`
-  (`check/mod.rs`, `limit_cause`; ADR-013 §7 slice S-5b, FR-096).
-- FR-062-AC-11: backed (`TC-381`):
-  `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
-  (`qsl-eval/tests/it/total_functions.rs`). Package checking reports the
-  `StageFailure::Limit` as `ResourceExhausted` with the node-count cause,
-  bound 4 and actual 5, whose code is `stage_limit_exceeded`/`node-count-exceeded`.
-- FR-062-AC-13: backed (`TC-160`):
-  `qsl-semantics/src/check/claims/tests.rs` checks RR-1 to RR-17 (RR-15
-  in both operand orders, RR-5 twice), guards, binder scope and `fold`,
-  `reduce` and `flatMap` roots, and the
-  keying faults over hand-built occurrence maps;
-  `tests/it/request_builder.rs` reads RR-5's records through
-  `CheckedPackage::graph()`.
-
-All thirteen of this requirement's Acceptance Criteria are backed (AC-1
-to AC-13).

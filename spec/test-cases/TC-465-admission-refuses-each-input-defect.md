@@ -120,7 +120,3 @@ both limits naming the parameter; the wrapping debit reports `child`,
 `versionNumber`, `[0, 1000]` and -1; the out-of-range pre snapshot refuses.
 FR-106-AC-13: each of the three refuses `invalid_runtime_input`/
 `invalid-value` naming `child` and `versionNumber`.
-
-## Status
-
-Planned.

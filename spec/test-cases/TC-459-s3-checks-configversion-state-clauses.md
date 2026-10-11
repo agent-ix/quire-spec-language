@@ -64,7 +64,3 @@ Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
   `pre`; (c) checks, its read `pre`; (d) `wrong_snapshot`/
   `forbidden-pre-read` at the `pre` (QSpec: "A pre selector cannot retag a
   post-qualified parameter reference").
-
-## Status
-
-Implemented.

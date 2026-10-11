@@ -16,17 +16,6 @@ relationships:
 ---
 # ADR-013: Canonical type, package and conversion ownership (ARCH-12)
 
-## Status
-
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#211
-(ARCH-12), epic #205, Layer 1. Acceptance is decided at the architecture
-change-scenario gate #212. Supersedes nothing. A #209, #210, #222 or #229
-decision that contradicts a §3 cell reopens that cell and no other. Owner
-rulings of 2026-09-19, made by the #205 coordinator under the owner's
-delegation, the QSL lead's kernel-convergence rulings of 2026-09-22, the
-replay-type consolidation ruling of 2026-09-28 (OQ-H) and the SC-Q1
-union-kernel-shape ruling of 2026-09-29 (OQ-I) are recorded in §8.
-
 ## Context
 
 [ADR-010](ADR-010-observed-architecture-baseline.md) records the architecture as
@@ -78,6 +67,9 @@ selection. #222 decides boundedness. agent-ix/quire-specification#134 decides
 the capability vocabulary and wire spelling, and #229 aligns QSL's specification
 to it. Where this record needs one of their decisions it writes "decided in
 #NNN" and lists the question in §8.
+
+A #209, #210, #222 or #229
+decision that contradicts a §3 cell reopens that cell and no other.
 
 ## Decision
 

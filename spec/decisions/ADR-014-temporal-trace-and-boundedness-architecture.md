@@ -42,19 +42,6 @@ relationships:
 ---
 # ADR-014: Temporal, trace and boundedness architecture (ARCH-42)
 
-## Status
-
-Accepted, 2026-09-24. Owning ticket: GitHub #222 (ARCH-42),
-epic QSL-34 (#205), Layer 2. It answers ADR-013 Q222-1, Q222-2 and Q222-3,
-the ADR-013 O-20 owner row, and the "available finite bound" predicate that
-ADR-012 §1.1 defers. It is the prerequisite of ADR-013 §7 S-6,
-QSL-42 (#189, V1-A12), QSL-43 (#188, V1-A11) and their gate. Supersedes
-nothing. Its `/spec-review all` is SR-624 to SR-630 in
-[`spec/reviews/boundedness/`](../reviews/boundedness/integrity.md).
-
-QSpec ids below are written "QSpec FR-nnn". A bare FR id is a QSL
-requirement.
-
 ## Context
 
 - **QSpec, unbounded declarations** (QSpec#113). QSpec
@@ -113,6 +100,9 @@ requirement.
   limit}, Cancelled}` and `SampleProvenance{seed, trace, sampler}` (TR-1).
   The bounded temporal evaluator (`src/temporal`) and the native-v1 ceilings
   are SEAM code that retires in ADR-011 M-6c. No infinite-trace code exists.
+
+QSpec ids below are written "QSpec FR-nnn". A bare FR id is a QSL
+requirement.
 
 ## Decision
 

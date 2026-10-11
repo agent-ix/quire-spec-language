@@ -41,9 +41,3 @@ Tag the tests `#[trace("TC-420", "FR-095-AC-n")]` with the AC each backs.
 - Step 3: the relabelled region is equal and orders equal; the other three
   are unequal.
 - Step 4: at least five nodes, each with an occurrence.
-
-## Status
-
-Passed locally. `qsl-foundation/src/source/provenance.rs` backs steps 1 to
-3 and `qsl-semantics/src/check/mod.rs`
-(`every_lowered_node_has_a_source_occurrence`) step 4.

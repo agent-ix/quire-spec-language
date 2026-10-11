@@ -94,8 +94,3 @@ the existing Rust cache, without timing sleeps or concurrency stress.
 - [FR-020](../functional/FR-020-read-and-rebind-native-packages.md).
 - [FR-021](../functional/FR-021-derive-native-package-identity.md).
 - [NFR-005](NFR-005-rust-verification-paths.md) retains Rust qualification.
-
-## Status
-
-Reviewed draft. Tests measure the derive, canonical and encode limits. All reader/reconstruction passes remain pending; no runtime or backend budget
-result is inferred from these package counters.

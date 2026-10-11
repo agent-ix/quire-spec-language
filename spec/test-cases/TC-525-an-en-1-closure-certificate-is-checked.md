@@ -92,7 +92,3 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   The typed Stopped result preserves the exact configured limit, charged
   value/setting or cancellation source; FR-127 settles Incomplete with
   those fields, never Accepted or CertificateRejected.
-
-## Status
-
-🚧 Planned.

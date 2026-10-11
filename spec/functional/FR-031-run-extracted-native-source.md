@@ -14,6 +14,10 @@ relationships:
 
 When a native-run/1 request selects program extraction in an enabled build, the command shall compile its selected Markdown clause through FR-030 and execute the existing runtime workflow.
 
+The native-run/1 code still reads and emits the body record's old
+`revision_namespace`, `revision` and `formal_revision` fields and no `digest`;
+it moves to the `{authority, identity, document, digest}` record in Inputs.
+
 ## Inputs
 
 With the quire-extraction feature, program accepts an optional closed extraction
@@ -78,11 +82,3 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 
 - [FR-026](FR-026-run-standalone-native-workflow.md): existing bounded command intake and runtime reports.
 - [FR-030](FR-030-consume-quire-extraction.md): actual optional Quire consumer.
-
-## Status
-
-FR-031-AC-5 is specified, not yet implemented. Remaining work (Linear
-QSL-381): the native-run/1 code still reads and emits the body record's old
-`revision_namespace`, `revision` and `formal_revision` fields and no `digest`;
-it moves to the `{authority, identity, document, digest}` record above, and
-TC-430 step 5 is planned again until it does.

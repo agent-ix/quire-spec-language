@@ -56,6 +56,10 @@ Extend `tests/it/config_version.rs`'s `expected()` with the four new cases
 incomplete: false }` twice). Tag the tests `#[trace("TC-469",
 "FR-108-AC-n")]`; the native parity test also carries `"FR-032-AC-1"`.
 
+Step 2 and the
+native test's four new cases run until M-6c retires the `0-draft` native
+path; that PR deletes step 2 with it (ADR-012 §15.8).
+
 ## Expected Results
 
 - Step 1: each report equals its row, including the exit code.
@@ -72,10 +76,3 @@ incomplete: false }` twice). Tag the tests `#[trace("TC-469",
   emits.
 - Step 6: every direct run's report carries that `package_id`, and the bytes admit
   through I04 `read`.
-
-## Status
-
-Implemented. All six steps pass, including step 6's I04 `read`
-half (FR-108-AC-6). Step 2 and the
-native test's four new cases run until M-6c retires the `0-draft` native
-path; that PR deletes step 2 with it (ADR-012 §15.8).
