@@ -9,14 +9,13 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
 use qsl_foundation::digest::{ByteDigest, WireNodeId};
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_route::request::{
     items_from_requirements, ExtentClassification, RequestWriter, RequirementItem,
 };
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
-    ProviderOrigin, Registry,
+    BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_exact::{Integer, IntegerInterval, ValueType};

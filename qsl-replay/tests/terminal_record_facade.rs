@@ -75,6 +75,31 @@ fn terminal_records_are_built_and_read_through_the_facade_alone() {
     );
 }
 
+/// FR-289-AC-3 / TC-773 step 3: a refuted terminal value survives the
+/// provider-envelope read/serialize/read path, including the canonical
+/// producing `BackendId` carried by the envelope.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn refuted_record_round_trip_preserves_replay_outcome_and_backend() {
+    let source = qsl_replay::BackendProviderSource {
+        backend_identity: "replay-backend".to_owned(),
+        items: vec![qsl_replay::TerminalRecord::new(
+            qsl_replay::RequestIndex::new(7),
+            qsl_replay::TerminalValue::Refuted,
+        )],
+    };
+    let first =
+        read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
+    assert_eq!(first[0].record().value(), &TerminalValue::Refuted);
+    assert_eq!(first[0].backend().as_str(), "replay-backend");
+
+    let serialized = qsl_replay::ProofResultEnvelope::to_source(&first).unwrap();
+    let second =
+        read_backend_provider_envelope(&serialized, qsl_replay::ReplayLimits::default()).unwrap();
+    assert_eq!(second[0].record().value(), &TerminalValue::Refuted);
+    assert_eq!(second[0].backend().as_str(), "replay-backend");
+}
+
 /// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
 /// is a `ReplayRefusal::Fault`, and `TerminalValue::from_replay_refusal`
 /// settles it `Failed` (an internal failure), never `Inconclusive`.

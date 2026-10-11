@@ -1234,48 +1234,91 @@ mod permutation_equality {
         assert_permutation_invariant(&orderings, &pool, &items, build, registry_candidate_ids);
     }
 
-    /// FR-289-AC-2: installing a provider that does not advertise an item's
-    /// kind leaves that item's candidate set unchanged, regardless of the
-    /// order in which the two manifests enter the registry.
+    /// FR-289-AC-2 / TC-773 step 2's generated locality cases.  Each case
+    /// starts with one provider for an item kind, adds a generated manifest
+    /// that advertises a different kind, then adds one that advertises the
+    /// item's kind.  The first addition is invisible to the item and the
+    /// second adds exactly its provider.
     #[test]
     #[trace("TC-773", "FR-289-AC-2")]
-    fn an_irrelevant_manifest_does_not_change_an_item_candidate_set() {
-        let value = descriptor_from_manifest(
-            Candidate::new(BackendId::new("value")),
-            ProviderOrigin::Linked,
-            digest(b"value-manifest"),
-            [(Some("value-validity"), Some("unbounded"))],
-            None,
-        )
-        .expect("the value manifest is valid");
-        let unrelated = descriptor_from_manifest(
-            Candidate::new(BackendId::new("unrelated")),
-            ProviderOrigin::Process,
-            digest(b"unrelated-manifest"),
-            [(Some("operation-contract"), Some("bounded"))],
-            Some(&["collection"]),
-        )
-        .expect("the unrelated manifest is valid");
+    fn generated_provider_additions_are_local_to_their_item_kind() {
+        let kinds = [
+            (Capability::ValueValidity, "value-validity"),
+            (Capability::OperationContract, "operation-contract"),
+            (Capability::FiniteReplay, "finite-replay"),
+            (Capability::Composition, "composition"),
+        ];
 
-        let mut baseline = Registry::new();
-        baseline.register(value.clone()).unwrap();
-        let baseline_candidates = baseline.candidates(Capability::ValueValidity, None);
+        // A fixed-seed generator is used here rather than a hand-picked
+        // provider pair: every case changes the identity, digest, origin and
+        // advertised mode while retaining the same locality oracle.
+        for seed in 0..8 {
+            let (item_kind, item_label) = kinds[seed % kinds.len()];
+            let (_, other_label) = kinds[(seed + 1) % kinds.len()];
+            let item_id = format!("item-{seed}");
+            let irrelevant_id = format!("irrelevant-{seed}");
+            let relevant_id = format!("relevant-{seed}");
 
-        let mut installed = Registry::new();
-        installed.register(value.clone()).unwrap();
-        installed.register(unrelated.clone()).unwrap();
-        assert_eq!(
-            installed.candidates(Capability::ValueValidity, None),
-            baseline_candidates
-        );
+            let item = descriptor_from_manifest(
+                Candidate::new(BackendId::new(item_id.clone())),
+                if seed % 2 == 0 {
+                    ProviderOrigin::Linked
+                } else {
+                    ProviderOrigin::Process
+                },
+                digest(format!("item-manifest-{seed}").as_bytes()),
+                [(
+                    Some(item_label),
+                    Some(if seed % 2 == 0 {
+                        "bounded"
+                    } else {
+                        "unbounded"
+                    }),
+                )],
+                Some(&["collection"]),
+            )
+            .expect("generated item manifest is valid");
+            let irrelevant = descriptor_from_manifest(
+                Candidate::new(BackendId::new(irrelevant_id)),
+                ProviderOrigin::Process,
+                digest(format!("irrelevant-manifest-{seed}").as_bytes()),
+                [(Some(other_label), Some("bounded"))],
+                Some(&["collection"]),
+            )
+            .expect("generated irrelevant manifest is valid");
+            let relevant = descriptor_from_manifest(
+                Candidate::new(BackendId::new(relevant_id.clone())),
+                ProviderOrigin::Linked,
+                digest(format!("relevant-manifest-{seed}").as_bytes()),
+                [(Some(item_label), Some("unbounded"))],
+                Some(&["collection"]),
+            )
+            .expect("generated relevant manifest is valid");
 
-        let mut reversed = Registry::new();
-        reversed.register(unrelated).unwrap();
-        reversed.register(value).unwrap();
-        assert_eq!(
-            reversed.candidates(Capability::ValueValidity, None),
-            baseline_candidates
-        );
+            let mut baseline = Registry::new();
+            baseline.register(item.clone()).unwrap();
+            let baseline_ids = set_ids(baseline.candidates(item_kind, None));
+
+            let mut with_irrelevant = Registry::new();
+            with_irrelevant.register(item.clone()).unwrap();
+            with_irrelevant.register(irrelevant).unwrap();
+            assert_eq!(
+                set_ids(with_irrelevant.candidates(item_kind, None)),
+                baseline_ids,
+                "seed {seed}: irrelevant provider changed the item candidate set"
+            );
+
+            let mut with_relevant = Registry::new();
+            with_relevant.register(item).unwrap();
+            with_relevant.register(relevant).unwrap();
+            let mut expected = vec![item_id, relevant_id];
+            expected.sort();
+            assert_eq!(
+                set_ids(with_relevant.candidates(item_kind, None)),
+                expected,
+                "seed {seed}: relevant provider did not add exactly its backend"
+            );
+        }
     }
 
     /// Five descriptors give 5! = 120 orderings; this test runs every one of

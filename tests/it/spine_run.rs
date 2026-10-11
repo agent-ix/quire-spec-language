@@ -31,6 +31,90 @@ fn program_source(program: &[u8]) -> Value {
         "digest":ByteDigest::of(program).to_string(),"document":"SpineRun","formal_revision":1})
 }
 
+/// FR-289-AC-1 / TC-773 step 1: the front end has no registry input, so
+/// compiling the same source alongside an empty registry and alongside a
+/// populated three-manifest registry produces the same package bytes and
+/// the same successful check outcome.
+#[test]
+#[trace("TC-773", "FR-289-AC-1")]
+fn front_end_package_is_independent_of_provider_registry() {
+    use qsl_foundation::digest::ByteDigest;
+    use qsl_foundation::BackendId;
+    use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin, Registry};
+
+    let program = std::fs::read(SEVEN_FIXTURE).unwrap();
+    let source = qsl_foundation::SourceIdentity::new(
+        "agent-ix",
+        "test:fr-289-front-end",
+        "fixture",
+        "fixture:1",
+    );
+    let empty = Registry::new();
+    let mut populated = Registry::new();
+    for (index, (identity, capability, mode, origin)) in [
+        (
+            "provider-a",
+            "value-validity",
+            "unbounded",
+            ProviderOrigin::Linked,
+        ),
+        (
+            "provider-b",
+            "operation-contract",
+            "bounded",
+            ProviderOrigin::Process,
+        ),
+        (
+            "provider-c",
+            "finite-replay",
+            "bounded",
+            ProviderOrigin::Linked,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        populated
+            .register(
+                descriptor_from_manifest(
+                    Candidate::new(BackendId::new(identity)),
+                    origin,
+                    qsl_route::ManifestDigest::from_digest(
+                        ByteDigest::of(format!("fr-289-manifest-{index}").as_bytes()).as_bytes(),
+                    ),
+                    [(Some(capability), Some(mode))],
+                    Some(&["collection"]),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    assert_eq!(empty.backends().count(), 0);
+    assert_eq!(populated.backends().count(), 3);
+
+    // The registry values are intentionally built but cannot be passed to
+    // any front-end operation: parse/select/check/package do not accept one.
+    let empty_result = crate::support::front_end::emitted(
+        source.clone(),
+        "spine-compile.native",
+        &program,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    );
+    let populated_result = crate::support::front_end::emitted(
+        source,
+        "spine-compile.native",
+        &program,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    );
+    assert_eq!(empty_result.is_ok(), populated_result.is_ok());
+    assert_eq!(
+        empty_result.unwrap().package().bytes(),
+        populated_result.unwrap().package().bytes()
+    );
+}
+
 /// Write `program` as `program.native` and a native-run/1 request selecting
 /// it with `call`, no models and no libraries.
 fn spine_run_request(directory: &Path, program: &[u8], call: Value) {
