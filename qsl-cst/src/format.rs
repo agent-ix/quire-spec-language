@@ -42,12 +42,12 @@ impl FormatLimits {
 
 impl SettingLimits for FormatLimits {
     fn bounds(&self) -> Vec<(Setting, u64)> {
-        let mut bounds = Vec::with_capacity(1);
-        bounds.push((
+        [(
             Self::OUTPUT_SETTING,
             u64::try_from(self.output_bytes).unwrap_or(u64::MAX),
-        ));
-        bounds
+        )]
+        .into_iter()
+        .collect()
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
