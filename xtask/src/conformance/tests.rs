@@ -344,7 +344,10 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
     );
     for line in calls.lines() {
         let (command, exported) = line.split_once('\t').unwrap();
-        assert!(["fmt", "clippy", "test"].contains(&command));
+        // The default-feature lane uses ordinary `cargo test` on its own;
+        // QSL-157 routes those same test invocations through the
+        // `test-suites` xtask guard, so Cargo sees `run` at this boundary.
+        assert!(["fmt", "clippy", "test", "run"].contains(&command));
         assert_eq!(exported, checkout_path.to_str().unwrap());
     }
 }
