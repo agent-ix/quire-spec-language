@@ -603,7 +603,7 @@ fn original_document() -> (Value, Value, Value) {
         "startLine": 30, "startColumn": 2, "endLine": 30, "endColumn": 57,
     }});
     let relationship = serde_json::json!({
-        "identity": "ix://test/origins/A/related", "category": "structural", "composite": false,
+        "identity": "ix://test/origins/relationship/A-related-B", "category": "structural", "composite": false,
         "direction": "source-to-target", "origin": relationship_origin,
         "sourceEnd": {"role": "related", "type": owner, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
         "targetEnd": {"type": target, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
