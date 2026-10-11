@@ -39,8 +39,9 @@ alias is `v`.
    integer-division definitions, and separately check `mod` without selecting
    a division law when no `div`/`rem` occurs. Use `(-7,3)` to distinguish
    the selected `div`/`rem` law and require `mod` to expose `2` under every
-   selection. Check `a / b` with integer operands both without an expected
-   rational type and with an expected `Rational[..]` type.
+   selection. Check `7 / 3` with integer operands both without an expected
+   rational type and with expected `Rational[0,7;1,3]`, under both state-only
+   and complete-value selections.
 
 Tag the test `#[trace("FR-091-AC-3", "FR-091-AC-39", "TC-394")]`.
 
@@ -59,4 +60,6 @@ Tag the test `#[trace("FR-091-AC-3", "FR-091-AC-39", "TC-394")]`.
   the dead branch. Check accepts them only under complete value; `div`/`rem`
   retain the selected law and `mod` remains Euclidean. `/` never denotes
   integer division; the expected rational type enables FR-149's exact
-  integer-operand promotion for rational division.
+  integer-operand promotion and result `7/3` for rational division only under
+  complete value.
+  State-only refuses integer operands even with that expectation.
