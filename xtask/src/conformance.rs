@@ -109,7 +109,7 @@ fn matches_summary(line: &str, pieces: &[&str], mode: SummaryMode) -> bool {
     }
     for (index, piece) in pieces.iter().enumerate().skip(1) {
         let digits = remainder.bytes().take_while(u8::is_ascii_digit).count();
-        if digits == 0 || remainder.chars().next() == Some('0') {
+        if digits == 0 || remainder.starts_with('0') {
             return false;
         }
         remainder = &remainder[digits..];
