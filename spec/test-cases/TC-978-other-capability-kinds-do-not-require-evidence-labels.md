@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify registrations that do not advertise `probabilistic-satisfaction` need
-no evidence-kind labels. Scope: FR-075-AC-11.
+no evidence-kind labels. Scope: FR-075-AC-12.
 
 ## Test Procedure
 

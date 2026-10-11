@@ -12,7 +12,7 @@ relationships:
 
 Verify a probabilistic backend may advertise `exact`, alone or together with
 `statistical`, and descriptor admission retains the exact set. Scope:
-FR-075-AC-9.
+FR-075-AC-10.
 
 ## Test Procedure
 

@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify candidate computation does not substitute one probabilistic evidence
-kind for another. Scope: FR-075-AC-1 and FR-075-AC-12.
+kind for another. Scope: FR-075-AC-1 and FR-075-AC-13.
 
 ## Test Procedure
 

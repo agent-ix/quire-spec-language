@@ -21,9 +21,10 @@ expected result regardless of order. Scope: FR-075-AC-4, FR-075-AC-7.
 ## Test Procedure
 
 Build complete `BackendDescriptor` fixtures for TC-282's roles. Descriptor
-equality covers identity, advertised (kind, mode) pairs and evidence-kind
-sets. For TC-282's non-probabilistic vectors, each descriptor has no evidence
-kinds. Where TC-282's `A2`
+equality covers identity, provider origin, manifest digest, advertised
+(kind, mode) pairs, retained `domains`, and evidence-kind sets. For TC-282's
+non-probabilistic vectors, each descriptor has no evidence kinds; keep the
+other members equal within each duplicate comparison. Where TC-282's `A2`
 differs from `A1` only in an option, this `A2` differs by one extra advertised
 pair: `A1` and `A2`
 for identity `a`, `A1` advertising (`value-validity`, `bounded`) and `A2`

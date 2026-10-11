@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify every evidence label outside the exact FR-290 set refuses at descriptor
-admission. Scope: FR-075-AC-10.
+admission. Scope: FR-075-AC-11.
 
 ## Test Procedure
 

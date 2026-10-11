@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify `BackendDescriptor::admit` rejects a probabilistic registration with no
-evidence-kind label before the registry can observe it. Scope: FR-075-AC-10.
+evidence-kind label before the registry can observe it. Scope: FR-075-AC-11.
 
 ## Test Procedure
 
