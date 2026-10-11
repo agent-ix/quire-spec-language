@@ -12,14 +12,19 @@ relationships:
 
 ## Description
 
-Verify FR-081-AC-13 and FR-081-AC-14 at the full supported size. Deterministic
-accounting and observed peak memory are separate pass conditions; neither
-claims an elapsed-time result by extrapolation.
+Verify FR-081-AC-13, FR-081-AC-14 and FR-081-AC-15 at the full supported size.
+Deterministic accounting, observed peak memory and measured elapsed time are
+separate pass conditions; none is inferred from extrapolation.
 
 ## Test Procedure
 
 Implement as the Rust integration test
 `tests/it/model_identity_full_size.rs::ten_thousand_edge_chain_cost_and_memory`.
+
+Run the test executable in the release profile on reference host Terra: Intel
+Core i9-10900K, 14 allocated threads, WSL2, 94 GiB. Record the actual
+`rustc --version` and `cargo --version` used for the run. These are run evidence,
+not version pins.
 
 1. Generate a deterministic single-inheritance chain of 10,001 object types
    named by ordinal `T0` through `T10000`; each type after `T0` declares only
@@ -34,9 +39,12 @@ Implement as the Rust integration test
    operation's work units. Separately sum the specified phase-3 shared-prefix
    event classes.
 4. Obtain peak resident-set bytes for the child process from the Rust test
-   harness's operating-system process accounting, including result retention.
-   Record elapsed time as diagnostic data only; do not infer a duration from a
-   smaller case or a throughput extrapolation.
+   harness's operating-system process accounting, including input admission,
+   normalization and result retention. Measure monotonic elapsed wall time in
+   the child from the start of package input admission through completion and
+   retention of the complete normalized result. Fixture generation, process
+   launch and compilation are outside the timed interval. Do not infer duration
+   from a smaller case or a throughput extrapolation.
 
 ## Expected Results
 
@@ -47,8 +55,8 @@ shared-prefix-specific work is at most 120,012. Peak resident set is at most
 21,474,836,480 bytes (20 GiB). The existing published identity-vector files
 are unchanged.
 
-QSL-670 provides a bounded debug-encoder rate and a 32-day extrapolation, but
-explicitly no full-size elapsed-time measurement and no accepted runtime
-threshold. Therefore elapsed time is reported without pass/fail judgment. The
-owner must decide the maximum acceptable wall-clock duration and the hardware
-profile on which that threshold applies before runtime qualification can pass.
+On the specified Terra reference host and release profile, the measured
+wall-clock interval is at most 300 seconds. Record the measured duration and
+the actual Rust and Cargo versions with the run evidence. These thresholds are
+acceptance requirements, not a claim that a qualifying run has occurred; no
+runtime qualification passes until the full-size measurement exists.
