@@ -28,7 +28,8 @@ fn observation(
     file: &str,
     document_bytes: u64,
 ) -> Result<SuppliedObservation> {
-    let bytes = intake.file(file, usize::try_from(document_bytes).unwrap_or(usize::MAX))?;
+    let bytes =
+        intake.observation_file(file, usize::try_from(document_bytes).unwrap_or(usize::MAX))?;
     let parsed =
         quire_canonical::read(&bytes, u64::MAX).map_err(|error| invalid(key, error.to_string()))?;
     let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))

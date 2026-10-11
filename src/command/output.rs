@@ -154,6 +154,13 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                     maximum: *maximum,
                     option: "--dependent-bytes",
                 },
+                LimitKind::ObservationDocumentBytes { maximum } => {
+                    types::Details::ConfiguredBytes {
+                        limit: kind.as_str(),
+                        maximum: *maximum,
+                        option: "observation_limits.document_bytes",
+                    }
+                }
                 LimitKind::SelectedFiles {
                     category,
                     requested,

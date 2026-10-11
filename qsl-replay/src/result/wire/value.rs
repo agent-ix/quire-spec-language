@@ -432,6 +432,70 @@ pub(super) enum TypeLeafWire {
 }
 
 impl TypeLeafWire {
+    /// Check all leaf payloads that do not need a checked package.
+    fn validate_shape(self) -> Result<(), CauseCodecError> {
+        match self {
+            Self::Boolean | Self::Integer => {}
+            Self::Int { interval } => {
+                interval.read()?;
+            }
+            Self::Rational {
+                numerator,
+                denominator,
+            } => {
+                RationalDomain::new(numerator.read()?, denominator.read()?)
+                    .map_err(|_| CauseCodecError::Value("rational domain"))?;
+            }
+            Self::Decimal {
+                lower,
+                upper,
+                min_scale,
+                max_scale,
+                rounding: mode,
+            } => {
+                DecimalType::new(
+                    integer(&lower, "lower")?,
+                    integer(&upper, "upper")?,
+                    unsigned(&min_scale, "min_scale")?,
+                    unsigned(&max_scale, "max_scale")?,
+                    rounding(&mode)?,
+                )
+                .map_err(|_| CauseCodecError::Value("decimal type"))?;
+            }
+            Self::Float { rounding: mode, .. } => {
+                rounding(&mode)?;
+            }
+            Self::Quantity { unit } => {
+                digest(&unit.digest, "unit")?;
+            }
+            Self::Text { text_type } => {
+                text_type.read()?;
+            }
+            Self::Enum { ordered, variants } => {
+                let variants = variants
+                    .iter()
+                    .map(|variant| digest(variant, "variant").map(VariantId::from_digest))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let shape = EnumShape::new(ordered, variants.iter().copied());
+                if shape.variants().count() != variants.len() {
+                    return Err(CauseCodecError::Value("variants"));
+                }
+            }
+            Self::Composite { declaration } => {
+                digest(&declaration, "declaration")?;
+            }
+            Self::Reference { object_type } => {
+                digest(&object_type, "type")?;
+            }
+            Self::Population { maximum } => {
+                if let Some(maximum) = maximum {
+                    unsigned(&maximum, "maximum")?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn of(value_type: &ValueType) -> Option<Self> {
         Some(match value_type {
             ValueType::Boolean => Self::Boolean,
@@ -590,6 +654,59 @@ pub(super) enum ScalarWire {
 }
 
 impl ScalarWire {
+    /// Check every package-independent payload invariant before a public
+    /// reader returns a witness whose package may never be supplied.
+    fn validate_shape(self) -> Result<(), CauseCodecError> {
+        match self {
+            Self::Boolean { .. } => {}
+            Self::Integer { decimal } => {
+                integer(&decimal, "decimal")?;
+            }
+            Self::Rational { value } => {
+                value.read()?;
+            }
+            Self::Decimal { coefficient, .. } => {
+                integer(&coefficient, "coefficient")?;
+            }
+            Self::Float { width, bits } => {
+                let bits = unsigned(&bits, "bits")?;
+                if matches!(width, WidthWire::Binary32) {
+                    u32::try_from(bits).map_err(|_| CauseCodecError::Value("bits"))?;
+                }
+            }
+            Self::Quantity { magnitude, unit } => {
+                magnitude.read()?;
+                digest(&unit.digest, "unit")?;
+            }
+            Self::Text { text_type, payload } => {
+                let text_type = text_type.read()?;
+                let payload = TextPayload::from_utf8(payload.as_bytes())
+                    .map_err(|_| CauseCodecError::Value("payload"))?;
+                let mut meter = Meter::new(READER_LIMITS);
+                if !matches!(
+                    admit_text(&payload, &text_type, &mut meter),
+                    Outcome::Completed(_)
+                ) {
+                    return Err(CauseCodecError::Value("payload"));
+                }
+            }
+            Self::Enum { variant, .. } => {
+                digest(&variant, "variant")?;
+            }
+            Self::Reference {
+                universe,
+                object_type,
+                object_identity,
+            } => {
+                digest(&universe, "universe")?;
+                digest(&object_type, "type")?;
+                ObjectId::new(object_identity)
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
+            }
+        }
+        Ok(())
+    }
+
     fn of(value: &Value) -> Option<Self> {
         Some(match value {
             Value::Boolean(value) => Self::Boolean { value: *value },
@@ -982,7 +1099,7 @@ pub(super) fn validate_element_shape(node: NodeRef<'_>) -> Result<(), CauseCodec
                     work.push(Check::Collection(fields.require("type")?));
                 }
                 _ => {
-                    let _: ScalarWire = fixed(node)?;
+                    fixed::<ScalarWire>(node)?.validate_shape()?;
                 }
             },
             Check::Type(node) => match kind_of(node) {
@@ -995,14 +1112,14 @@ pub(super) fn validate_element_shape(node: NodeRef<'_>) -> Result<(), CauseCodec
                     work.push(Check::Collection(fields.require("type")?));
                 }
                 _ => {
-                    let _: TypeLeafWire = fixed(node)?;
+                    fixed::<TypeLeafWire>(node)?.validate_shape()?;
                 }
             },
             Check::Collection(node) => {
                 let fields = Fields::of(node, &["collection", "element", "bound"])?;
                 let _: KindWire = fixed(fields.require("collection")?)?;
                 if let Some(bound) = fields.get("bound") {
-                    let _: BoundWire = fixed(bound)?;
+                    fixed::<BoundWire>(bound)?.read()?;
                 }
                 work.push(Check::Type(fields.require("element")?));
             }

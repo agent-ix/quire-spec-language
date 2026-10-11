@@ -416,6 +416,9 @@ impl RecordWire<Box<RawValue>> {
             .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
         validate_element_shape(element.root())
             .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+        self.value_path
+            .validate_shape()
+            .map_err(|_| CauseCodecError::Shape("value_path"))?;
         Ok(())
     }
 
@@ -546,6 +549,26 @@ enum StepWire {
 }
 
 impl PathWire {
+    /// Validate the path's package-independent identifiers at strict read.
+    fn validate_shape(&self) -> Result<(), CauseCodecError> {
+        match &self.root.subject {
+            SubjectWire::Object {
+                universe,
+                object_type,
+                object_identity,
+            } => {
+                digest(universe, "universe")?;
+                digest(object_type, "type")?;
+                quire_exact::ObjectId::new(object_identity.clone())
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
+            }
+            SubjectWire::Built { occurrence } => {
+                occurrence.clone().read()?;
+            }
+        }
+        Ok(())
+    }
+
     fn of(path: &RuntimeValuePath) -> Self {
         let observation = &path.observation;
         Self {

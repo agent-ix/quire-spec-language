@@ -895,9 +895,29 @@ fn kernel_fields(code: &str) -> Option<&'static [&'static str]> {
     }
 }
 
+#[qsl_attrs::string_edge]
+fn kernel_causes(code: &str) -> Option<&'static [&'static str]> {
+    match code {
+        "cardinality_out_of_bound" => Some(&["above-maximum", "below-minimum"]),
+        "foreign_reference" => Some(&["foreign-universe"]),
+        "inexact_decimal" => Some(&["nonzero-discarded-digit"]),
+        "division_out_of_domain" => Some(&["quotient-outside-domain", "remainder-outside-domain"]),
+        "ieee_not_exact" => Some(&["rounding-required"]),
+        "ieee_nan_payload_not_representable" => Some(&["payload-exceeds-target"]),
+        "decimal_out_of_domain"
+        | "modulo_out_of_domain"
+        | "text_length_out_of_domain"
+        | "integer_out_of_domain"
+        | "rational_out_of_domain"
+        | "ieee_rational_out_of_domain" => Some(&["outside-domain"]),
+        _ => None,
+    }
+}
+
 fn validate_refused_outcome(outcome: &OutcomeRead) -> Result<(), NativeRunReadError> {
     let OutcomeRead::Refused {
         code,
+        cause,
         fields,
         locus,
         location,
@@ -909,6 +929,12 @@ fn validate_refused_outcome(outcome: &OutcomeRead) -> Result<(), NativeRunReadEr
     let Some(required) = kernel_fields(code) else {
         return Ok(());
     };
+    if !kernel_causes(code).is_some_and(|causes| causes.contains(&cause.as_str())) {
+        return Err(NativeRunReadError::Invalid {
+            member: "disposition.outcome.cause",
+            reason: "kernel refusal cause disagrees with catalog code",
+        });
+    }
     let Some(fields) = fields else {
         return Err(NativeRunReadError::Invalid {
             member: "disposition.outcome.fields",
@@ -1446,6 +1472,14 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             .and_then(|refusal| refusal.frame_witness.as_ref())
             .map(FrameWitnessRead::typed)
             .transpose()?;
+        if frame_witness.is_some()
+            && (!matches!(document.basis, Basis::ClosedScope) || document.witness.is_some())
+        {
+            return Err(NativeRunReadError::Invalid {
+                member: "basis",
+                reason: "frame violation requires closed scope without a separating witness",
+            });
+        }
         if matches!(
             document.disposition.category,
             Category::Success | Category::Violation

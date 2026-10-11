@@ -301,6 +301,28 @@ fn native_result_two_round_trips_complete_frame_witness() {
     }
 }
 
+/// FR-267-AC-11: a frame violation has a closed-scope basis and its frame
+/// witness only inside the refusal; a separating witness cannot be grafted on.
+#[trace("TC-514", "FR-267-AC-11")]
+#[test]
+fn native_result_two_frame_refuses_top_level_separating_witness() {
+    let report = run(frame_input(
+        config_version_request,
+        "attemptUpdate",
+        &[object("root", 1, None), object("child", 2, Some("root"))],
+        &[object("root", 1, None), object("child", 2, None)],
+        |_| {},
+    ));
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    value["basis"] = json!("decisive-counterexample");
+    value["witness"] = super::witness::decisive_witness_wire();
+    let error = crate::spine::read_native_run_result(&serde_json::to_vec(&value).unwrap())
+        .err()
+        .expect("frame violation must refuse a top-level separating witness");
+    assert!(error.to_string().contains("basis"), "{error}");
+}
+
 /// FR-267-AC-11: the reader refuses missing, malformed or misplaced frame
 /// members, and names the edited member in its diagnostic.
 #[trace("TC-514", "FR-267-AC-11")]

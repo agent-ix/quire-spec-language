@@ -127,7 +127,7 @@ pub(super) struct ClauseSelection {
     #[serde(default, deserialize_with = "from_object_opt")]
     pub anchor: Option<Anchor>,
     #[serde(default, deserialize_with = "from_object_opt")]
-    pub parameters: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    pub parameters: Option<std::collections::BTreeMap<String, Box<RawValue>>>,
 }
 
 #[derive(Deserialize)]
@@ -164,7 +164,7 @@ pub(super) struct FunctionSelection {
 #[serde(deny_unknown_fields)]
 pub(super) struct ClauseArgument {
     pub parameter: String,
-    pub value: serde_json::Value,
+    pub value: Box<RawValue>,
 }
 
 #[derive(Deserialize)]

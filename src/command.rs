@@ -103,6 +103,11 @@ pub enum LimitKind {
         /// The caller's effective aggregate dependent byte ceiling.
         maximum: usize,
     },
+    /// One selected observation exceeded its document byte ceiling.
+    ObservationDocumentBytes {
+        /// Effective observation document byte ceiling.
+        maximum: usize,
+    },
     /// Total selected file count.
     SelectedFiles {
         /// Group that could not be charged.
@@ -123,6 +128,7 @@ impl LimitKind {
             Self::FileBytes => "file bytes",
             Self::RequestBytes { .. } => "request_bytes",
             Self::DependentBytes { .. } => "dependent_bytes",
+            Self::ObservationDocumentBytes { .. } => "observation.document_bytes",
             Self::SelectedFiles { .. } => "selected files",
         }
     }
@@ -428,8 +434,21 @@ struct Intake<'a> {
 
 impl Intake<'_> {
     fn file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
+        self.bounded_file(path, ceiling, false)
+    }
+
+    fn observation_file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
+        self.bounded_file(path, ceiling, true)
+    }
+
+    fn bounded_file(&mut self, path: &str, ceiling: usize, observation: bool) -> Result<Vec<u8>> {
         let bytes = read_file(&self.directory.join(path), ceiling.min(self.remaining)).map_err(
             |cause| match cause {
+                RunCause::Limit(LimitKind::FileBytes)
+                    if observation && ceiling <= self.remaining =>
+                {
+                    RunCause::Limit(LimitKind::ObservationDocumentBytes { maximum: ceiling })
+                }
                 RunCause::Limit(LimitKind::FileBytes) if self.configured => {
                     RunCause::Limit(LimitKind::DependentBytes {
                         maximum: self.maximum,

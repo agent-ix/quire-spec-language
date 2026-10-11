@@ -433,6 +433,113 @@ fn clause_run_reader_honors_raised_observation_byte_limit() {
     assert!(decoded.is_ok(), "{:?}", decoded.err());
 }
 
+/// FR-255: the smallest binding ceiling owns the refusal and its reported
+/// maximum when an observation exceeds its document budget.
+#[trace("TC-891", "FR-312-AC-3")]
+#[test]
+fn clause_run_observation_limit_reports_its_own_bound() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("observation-bound");
+    build(&path, Case::Healthy);
+    let snapshot_path = path.join("spine-snapshot.json");
+    let mut document = std::fs::read_to_string(&snapshot_path).unwrap();
+    let close = document.rfind('}').unwrap();
+    document.insert_str(
+        close,
+        &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
+    );
+    std::fs::write(&snapshot_path, document).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["observation_limits"] = json!({"document_bytes":1_000_000});
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("run")
+        .arg(path.join("request.json"))
+        .arg("--dependent-bytes")
+        .arg("8000000")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(22), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["details"]["limit"], "observation.document_bytes");
+    assert_eq!(error["details"]["maximum"], 1_000_000);
+}
+
+/// FR-312: a deep pre-call parameter reaches the typed reader without a
+/// serde recursion ceiling or recursive JSON-value drop.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_keeps_parameter_beyond_128_levels() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("deep-parameter");
+    build(&path, Case::Unchanged);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"clause": {
+        "name":"ParentPresent", "observation":"pre",
+        "self":{"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
+                "key":"child"},
+        "parameters":{"probe":"__DEEP_PARAMETER__"}
+    }});
+    request["request"]["clause"]["observations"] = json!({
+        "pre":"spine-pre-snapshot.json", "post":"spine-post-snapshot.json",
+        "invocation":"spine-invocation.json"
+    });
+    let mut nested = String::from("{\"integer\":\"1\"}");
+    for _ in 0..160 {
+        nested = format!("{{\"present\":{nested}}}");
+    }
+    let text = serde_json::to_string(&request)
+        .unwrap()
+        .replace("\"__DEEP_PARAMETER__\"", &nested);
+    std::fs::write(path.join("request.json"), text).unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        .expect("deep typed parameter must read without a parser depth cap");
+    let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
+        panic!("expected clause selection");
+    };
+    let qsl_semantics::model::observation::ClauseSelectionInput::PreCall { parameters, .. } =
+        clause.input
+    else {
+        panic!("expected pre-call selection")
+    };
+    assert_eq!(parameters.len(), 1);
+}
+
+/// FR-312: the function-argument adapter diagnoses an invalid deep form by
+/// member after parsing it, rather than refusing at a JSON stack limit.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_diagnoses_deep_function_argument() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("deep-function-argument");
+    build(&path, Case::Healthy);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"function": {
+        "name":"sameIdentity", "snapshot":"current", "arguments":[
+            {"parameter":"a", "value":"__DEEP_ARGUMENT__"}
+        ]
+    }});
+    let mut nested = String::from("{\"integer\":\"1\"}");
+    for _ in 0..160 {
+        nested = format!("{{\"present\":{nested}}}");
+    }
+    let text = serde_json::to_string(&request)
+        .unwrap()
+        .replace("\"__DEEP_ARGUMENT__\"", &nested);
+    std::fs::write(path.join("request.json"), text).unwrap();
+    let error = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        .err()
+        .expect("nested argument is outside the function argument forms");
+    assert!(
+        format!("{error:?}").contains("arguments.value"),
+        "{error:?}"
+    );
+}
+
 /// FR-312-AC-4: function, frame and stale-package requests retain the
 /// in-process report's stage, category and truth through the CLI route.
 #[trace("TC-891", "FR-312-AC-4")]

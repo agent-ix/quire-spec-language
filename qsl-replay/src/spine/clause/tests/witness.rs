@@ -226,6 +226,54 @@ fn run(clause: &str, snapshot: Snapshot, self_key: &str) -> crate::spine::Clause
         .expect("a well-formed request always reports")
 }
 
+pub(super) fn decisive_witness_wire() -> serde_json::Value {
+    let report = run("AllBelow", Snapshot::High, "mid");
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    value["witness"].clone()
+}
+
+/// FR-267-AC-2: a structurally valid deciding value still refuses when its
+/// scalar payload or path identity is outside the canonical domain.
+#[trace("TC-742", "FR-267-AC-2")]
+#[test]
+fn native_result_two_reader_rejects_invalid_witness_scalar_and_path() {
+    let report = run("AllBelow", Snapshot::High, "mid");
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let valid: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    for (member, edit) in [
+        ("deciding_element", 0),
+        ("deciding_element", 1),
+        ("deciding_element", 2),
+        ("value_path", 3),
+    ] {
+        let mut value = valid.clone();
+        if edit == 0 {
+            value["witness"]["deciding_element"] =
+                json!({"kind":"integer", "decimal":"not-an-integer"});
+        } else if edit == 1 {
+            value["witness"]["deciding_element"] =
+                json!({"kind":"decimal", "coefficient":"not-an-integer", "scale":0});
+        } else if edit == 2 {
+            value["witness"]["deciding_element"] = json!({
+                "kind":"reference", "universe":"bad-digest", "type":"bad-digest",
+                "object_identity":"child"
+            });
+        } else {
+            let subject = &mut value["witness"]["value_path"]["root"]["subject"];
+            if subject["tag"] == "built" {
+                subject["occurrence"]["node_id"] = json!("bad-digest");
+            } else {
+                subject["universe"] = json!("bad-digest");
+            }
+        }
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&value).unwrap())
+            .err()
+            .expect("malformed witness scalar or path must refuse");
+        assert!(error.to_string().contains(member), "{member}: {error}");
+    }
+}
+
 /// FR-267-AC-1: the clause-run producer carries the basis and the exact
 /// decisive record, while closed and exhausted runs omit the record.
 #[trace("TC-742", "FR-267-AC-1")]
@@ -627,6 +675,12 @@ fn native_result_two_retains_refused_outcome_members() {
             .expect("an assigned outcome member cannot be deleted");
         assert!(error.to_string().contains(removed), "{removed}: {error}");
     }
+    let mut fabricated = value.clone();
+    fabricated["disposition"]["outcome"]["cause"] = json!("fabricated-cause");
+    let error = crate::spine::read_native_run_result(&serde_json::to_vec(&fabricated).unwrap())
+        .err()
+        .expect("a kernel refusal must retain its catalog cause");
+    assert!(error.to_string().contains("cause"), "{error}");
 }
 
 /// FR-267-AC-9: an internal failure preserves its stable typed fault and
