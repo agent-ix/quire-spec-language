@@ -11,6 +11,20 @@ check-no-committed-binaries:
 check-index-completeness:
 	tools/check-index-completeness.sh
 
+# Structural validation uses all installed modules discovered at the caller's
+# repository root. Keep the glob quoted so Quire expands it, including nested
+# artifacts. A narrower document selection supports the native gate controls.
+SPEC_VALIDATION_DOCUMENTS ?= spec/**/*.md
+export SPEC_VALIDATION_DOCUMENTS
+.PHONY: check-spec-validation
+check-spec-validation:
+	@validator=$$(command -v quire) || { echo "check-spec-validation: native quire is required on PATH" >&2; exit 127; }; \
+	PATH= "$$validator" validate --scope . "$$SPEC_VALIDATION_DOCUMENTS"
+
+# The native CLI tries `quoin plugin ensure-defaults` when discovery is empty.
+# Its child PATH above is empty to prevent installation during a gate; missing
+# modules must fail with the CLI's configuration diagnostic instead.
+
 # QSL#214 (FR-063-AC-5): demonstrated on every full-gate run, not only when
 # run by hand. Runs three normal builds (the root crate, qsl-route and
 # qsl-eval) and five probe builds (qsl-semantics, the root crate, qsl-route,
@@ -213,7 +227,14 @@ fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
 	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
-ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+# Each aggregate prerequisite depends on validation, rather than racing it as
+# a sibling under -j (or continuing past it under -k). Standalone lane commands
+# retain their existing behavior; this ordering belongs to the aggregate gate.
+CI_CHECKS := check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+ci: check-spec-validation $(CI_CHECKS)
+ifneq ($(filter ci,$(MAKECMDGOALS)),)
+$(CI_CHECKS): | check-spec-validation
+endif
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
