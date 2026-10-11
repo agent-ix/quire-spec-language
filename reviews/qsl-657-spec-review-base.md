@@ -137,4 +137,3 @@ FND-007, ADR-013:
 FND-008, ADR-014:
 
 > QSL S3 records `Requirements{kind, evidence_kind, extent, bounds}` per item (§4); `evidence_kind` carries the item's unmodified label when present for `probabilistic-satisfaction` and remains absent when the item omits it, so negotiation can distinguish valid, absent and unknown evidence.
-

@@ -119,4 +119,3 @@ ten kinds.
 | FND-007 | fixed | fixed 4865d61bdbe85914e6d8342276152bcaef686a95 |
 | FND-008 | fixed | fixed 4865d61bdbe85914e6d8342276152bcaef686a95 |
 | FND-009 | still-open | ADR-014 §2 continues to state “QSpec FR-290 has ten kinds,” inconsistent with FR-057's twelve-label vocabulary. |
-
