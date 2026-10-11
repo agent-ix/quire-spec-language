@@ -229,7 +229,6 @@ pub fn check_field_refinement_obligation(
 
     let same_type = redefining.value_type == redefined.value_type;
     let raises_lower = redefining.multiplicity.lower > redefined.multiplicity.lower;
-    let single_valued = redefining.multiplicity.upper.is_some_and(|u| u <= 1);
     let narrows_presence =
         redefined.presence == Presence::Optional && redefining.presence == Presence::Required;
 
@@ -290,35 +289,32 @@ pub fn check_field_refinement_obligation(
         .collect();
     let established = established_facts(&field_clauses, domain)?;
 
-    if narrows_presence || (raises_lower && single_valued) {
-        if !established.presence {
-            return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
-                axis: "refinement",
-                code: Code::UndefinedExpression,
-                cause: ModelRefusalCause::UnprovedRefinement,
-                detail: format!(
-                    "{} narrows the {} of {} with no establishing presence fact (obligation field-presence)",
-                    redefining_key.node,
-                    if narrows_presence { "presence" } else { "multiplicity" },
-                    redefined_key.node
-                ),
-            }]));
-        }
-        if same_type && (!raises_lower || single_valued) {
-            return Ok(ConformanceOutcome::Compatible);
-        }
-    }
-
-    if raises_lower && !single_valued {
+    if narrows_presence && !established.presence {
         return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "refinement",
             code: Code::UndefinedExpression,
             cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
-                "{} narrows a collection upper bound, which no FR-146 fact form expresses (obligation no-proof-form)",
-                redefining_key.node
+                "{} narrows the presence of {} with no establishing presence fact (obligation field-presence)",
+                redefining_key.node, redefined_key.node
             ),
         }]));
+    }
+
+    if raises_lower {
+        return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "refinement",
+            code: Code::UndefinedExpression,
+            cause: ModelRefusalCause::UnprovedRefinement,
+            detail: format!(
+                "{} raises the lower multiplicity bound of {}, which no FR-146 fact form proves (obligation no-proof-form)",
+                redefining_key.node, redefined_key.node
+            ),
+        }]));
+    }
+
+    if narrows_presence && same_type {
+        return Ok(ConformanceOutcome::Compatible);
     }
 
     // Value type changed: field-domain via scalar interval containment, or

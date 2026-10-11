@@ -908,6 +908,20 @@ fn presence_narrowing_uses_declared_presence_independently_of_multiplicity() {
         check(optional, optional, singleton, singleton, false),
         Ok(ConformanceOutcome::Compatible)
     ));
+
+    let presence_does_not_prove_collection_nonempty =
+        match check(required, required, mult(0, Some(1)), singleton, true) {
+            Ok(ConformanceOutcome::Refused(failures)) => failures,
+            other => panic!("expected Refused(no-proof-form), got {other:?}"),
+        };
+    assert_eq!(presence_does_not_prove_collection_nonempty.len(), 1);
+    assert_eq!(
+        presence_does_not_prove_collection_nonempty[0].cause,
+        ModelRefusalCause::UnprovedRefinement
+    );
+    assert!(presence_does_not_prove_collection_nonempty[0]
+        .detail
+        .contains("no-proof-form"));
 }
 
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
@@ -1695,7 +1709,7 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
 /// `model.B.xb` verbatim (a full-key match, so `names_field` cannot be what
 /// excludes it -- only the writer search itself can). `test/orders`'s
 /// actual writer, `model.A.set`, states no postcondition at all, so the
-/// real answer stays `Refused(field-presence)`.
+/// real answer stays `Refused(no-proof-form)` for the multiplicity narrowing.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_redefined_field_node()
@@ -1767,13 +1781,13 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1782,7 +1796,7 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
 /// redefining field's own node, in a different package -- rather than the
 /// redefined field's node. The writer search must still exclude it by full
 /// key, and `test/orders`'s real writer, `model.A.set`, still states no
-/// postcondition, so the real answer stays `Refused(field-presence)`.
+/// postcondition, so the real answer stays `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_redefining_field_node()
@@ -1854,13 +1868,13 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1874,7 +1888,7 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
 /// postcondition clause names `test/orders`'s actual `model.B.xb` verbatim,
 /// so only the target comparison, not `names_field`, can exclude it.
 /// `test/orders`'s real writer, `model.A.set`, has no genuine redefiner in
-/// this fixture, so the obligation must stay `Refused(field-presence)`.
+/// this fixture, so the obligation must stay `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_writers_node() {
@@ -1938,13 +1952,13 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1953,7 +1967,7 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
 /// the real writer (`test/orders:model.A.set`), but its owner names
 /// `other/pkg`'s `model.B` -- the redefining field's owner's own node,
 /// wrong package. The owner comparison must still exclude it by full key,
-/// so the obligation stays `Refused(field-presence)`.
+/// so the obligation stays `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_owners_node() {
@@ -2017,13 +2031,13 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -2036,7 +2050,7 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
 /// different package's field that shares the redefining field's own node.
 /// That clause must not be read as establishing anything about
 /// `test/orders`'s `model.B.xb`, so the obligation stays undischarged and
-/// the real answer is `Refused(field-presence)`.
+/// the real answer is `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_the_redefining_field_node(
@@ -2095,13 +2109,13 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -2110,7 +2124,7 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
 /// -- a different package's field that shares the redefined field's own
 /// node, rather than the redefining field's. That clause must still be
 /// excluded by full key, so the obligation stays undischarged and the real
-/// answer is `Refused(field-presence)`.
+/// answer is `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_the_redefined_field_node(
@@ -2169,13 +2183,13 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
