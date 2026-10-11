@@ -116,7 +116,7 @@ a family that sits out the stage SHALL have an explicit arm that returns
 - The package's requirement records (`CheckedGraph::requirements`): one
   per claim site, keyed by the site's occurrence key (ADR-013 O-07), each
   holding the claim's `Requirements` and, for an operation application, its
-  result bound and path condition.
+  result bound, direct conversion context and path condition.
 - A structured outcome: the checked node, a typed refusal, a limit outcome
   naming the exhausted budget, or an internal fault distinct from both.
 - For evaluation, on every family except `Relation`: an evaluated result or
@@ -224,6 +224,12 @@ chooses the Rust spelling) holds:
 - the application's **result bound**: the target range of the
   `quire.op.numeric.narrow` that wraps it, when a narrow's operand is this
   application, and otherwise the application's own result type;
+- its **direct conversion context**: the canonical `OccurrenceKey` of the
+  `expression` occurrence for the narrow that directly wraps it (the
+  innermost narrow), when the result bound comes from that narrow; otherwise
+  no conversion context. The identity is retained separately from the
+  result-bound type node. A narrow
+  is never a claim of its own.
 - the application's **path condition**: the guards `check` walks the
   occurrence under, outermost first. A guard is an enclosing `if`'s
   condition, required true in the `then` branch and false in the
@@ -276,6 +282,17 @@ site:
 - **Result bound and path condition**, as the site holds them, the result
   bound as its checked `ValueType` and the `WireNodeId` of its FR-092 type
   node.
+- **Direct conversion context.** When a narrow directly wraps the scalar
+  application at this site, the record SHALL carry that direct (innermost)
+  narrow's canonical `OccurrenceKey` (its `expression` occurrence) as its
+  conversion context.
+  Otherwise it SHALL carry no conversion context. Only the narrow directly
+  wrapping the application supplies this context; an outer conversion is
+  not substituted. The context is a member of this occurrence's record, not
+  a value indexed only by the scalar application's `WireNodeId`. If keying
+  finds zero or multiple matching direct narrow occurrences for a site whose
+  bound is narrowed, `check` SHALL return
+  `KeyFault::UnkeyableRequirements` and produce no checked package.
 
 Each record is computed from the checked tree at its own site, so two
 occurrences of one node each carry their own extent, result bound and path
@@ -337,7 +354,7 @@ condition.
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget counts the nodes of every declaration together, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4)` admits a package holding `a` alone; with `CheckingLimits::new(100)` it admits a package holding both; with `CheckingLimits::new(4)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its two stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. A family `check` compares no measured node count before typing: its node limit is `CheckingLimits::nodes`, charged at the node (FR-062-AC-7). With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
-| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound and guards are those of its own occurrence. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
+| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound, direct conversion context and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound, direct conversion context and guards are those of its own occurrence. RR-16's two records retain their own narrow occurrence identities along with bounds `Int[0, 10]` and `Int[0, 20]`; no conversion identity is recovered by looking up the shared application node alone. A record whose result bound is the application's own result type has no conversion context. For a narrowed bound, zero or multiple matching direct narrow occurrences cause `KeyFault::UnkeyableRequirements` and no checked package. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160, TC-449) |
 
 The state scan for FR-062-AC-3 covers the non-test items of every `.rs` file
 under `qsl-semantics/src/check` and `qsl-semantics/src/family`

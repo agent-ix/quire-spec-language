@@ -59,7 +59,7 @@ names different artifacts in each.
 | TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | ✅ |
 | TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | 🚧 |
 | TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ |
-| TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ |
+| TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8, FR-075-AC-15 | ✅ |
 | TC-984 | Request items preserve each occurrence's path condition | Unit | P1 | FR-075-AC-9 | 🚧 |
 | TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ |
 | TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | ✅ |

@@ -13,8 +13,8 @@ relationships:
 Verify that `route`'s request builder turns a checked package's requirement
 records into requested items with no caller-supplied item list: one item per
 record, in record key order, each with its occurrence key, node, kind,
-extent classification, unbounded domains, result bound and candidate
-outcome. Scope: FR-075-AC-8.
+extent classification, unbounded domains, result bound, direct conversion
+context and candidate outcome. Scope: FR-075-AC-8 and FR-075-AC-15.
 
 Catches a builder that merges two records at one node into one item, drops
 an item whose candidate set is empty or whose extent is unbounded, orders
@@ -41,7 +41,8 @@ extent from anywhere but the record.
 5. Check a unit whose only function body is `b and c` over Boolean
    parameters and run the builder over its records.
 6. Check FR-062's RR-16 unit and run the builder over its records with the
-   step 1 registry.
+   step 1 registry. Inspect each source record and its corresponding item,
+   including `conversion_context()` and `result_bound()`.
 
 ## Expected Results
 
@@ -62,4 +63,9 @@ extent from anywhere but the record.
   `missing`.
 - Step 5: no items.
 - Step 6: two items at the one `+` node, with distinct occurrence keys,
-  carrying result bounds `Int[0, 10]` and `Int[0, 20]` in key order.
+  carrying result bounds `Int[0, 10]` and `Int[0, 20]` in key order. The
+  records and items each carry the narrow occurrence key directly wrapping
+  that site's `+` application; the two conversion contexts remain distinct
+  even though the application node key is shared. Neither narrow is a second
+  item. For the unbounded `n + 1` record from step 2, the builder exposes no
+  conversion context because its result bound is its own result type.
