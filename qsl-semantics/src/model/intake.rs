@@ -2527,20 +2527,21 @@ fn read_relationship(
 ) -> Result<RelationshipRecord, ModelRefusal> {
     let ctx = NodeCtx::new(relationship, at.to_owned());
     let node = ctx.str_field("identity")?;
-    // FR-056 Declarations: "a member's identity is its owner's identity,
-    // `/` and the member name" -- exactly [`member_identity_name`]'s rule,
-    // the same one [`read_field_member`]/[`read_operation_member`] apply to
-    // their own owned members. A relationship member is no exception: FCD's
-    // own `ix://<pkg>/relationship/<Owner>-<verb>-<Other>` identity form
-    // (FCD #199 gap 2's sibling for relationships) does not parse as
-    // `owner_identity/<name>`, so it refuses here rather than being taken
-    // verbatim as this record's key (FR-056-AC-5: "a relationship member
-    // with no declared name ... refuses `malformed-declaration`" -- this
-    // reader derives a member's declared name from its identity's own
-    // suffix, the same mechanism field/operation members use, so an
-    // identity with no such suffix IS "no declared name").
-    if member_identity_name(owner_identity, node).is_none() {
-        return Err(ctx.malformed(format!("identity: {node:?} is not {owner_identity}/<name>")));
+    // FR-154's relationship slot uses the published Semantic IR identity
+    // `ix://<package>/relationship/<Name>-<verb>-<TargetName>`. This member
+    // form is distinct from the owner/name identity used by fields and
+    // operations; accept only the package-owned relationship slot here.
+    let package_identity = owner_identity
+        .rsplit_once('/')
+        .map_or(owner_identity, |(package, _)| package);
+    let canonical_prefix = format!("{package_identity}/relationship/");
+    let valid_identity = node
+        .strip_prefix(&canonical_prefix)
+        .is_some_and(|name| !name.is_empty() && !name.contains('/'));
+    if !valid_identity {
+        return Err(ctx.malformed(format!(
+            "identity: {node:?} is not {package_identity}/relationship/<Name>-<verb>-<TargetName>"
+        )));
     }
     // FR-056-AC-5's other half: "a relationship member with no ... source
     // span refuses `malformed-declaration`".
@@ -3955,7 +3956,7 @@ mod tests {
     // and why it still does not widen what this reader accepts), and
     // end-to-end native-typeRef resolution is exercised via
     // `tests/model_intake.rs`'s
-    // `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`.
+    // `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`.
     // These tests instead drive [`read_value_type_ref`] directly, the same
     // resolver every field/parameter/`returns` typeRef site calls, so each
     // one's own refusal/success shape is pinned independently of any one
@@ -4207,7 +4208,7 @@ mod tests {
     /// [`read_records`]: at this crate's now-pinned `agent-ix-semantic-ir`
     /// rev the schema for this shape admits `sourceEnd`/`targetEnd`, so the
     /// full pipeline would work too (confirmed by
-    /// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`
+    /// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`
     /// in `tests/model_intake.rs`, whose `Flow2` type reads clean this same
     /// way); this unit test still drives `read_object_type` directly so its
     /// own hand-rolled `sourceEnd`/`targetEnd` shape is pinned independently
@@ -4224,7 +4225,7 @@ mod tests {
             "operations": [],
             "featureOrder": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4262,7 +4263,10 @@ mod tests {
 
         assert_eq!(
             relationship.key,
-            declaration_key("acme/orders", "ix://acme/orders/Flow2/specializes")
+            declaration_key(
+                "acme/orders",
+                "ix://acme/orders/relationship/Flow2-specializes-Flow",
+            )
         );
         assert_eq!(
             relationship.direction,
@@ -4300,7 +4304,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Widget/peer_link",
+                "identity": "ix://acme/orders/relationship/Widget-peer-Widget",
                 "category": "structural",
                 "composite": false,
                 "direction": "undirected",
@@ -4339,17 +4343,12 @@ mod tests {
         assert_eq!(relationship.direction, RelationshipDirection::Undirected);
     }
 
-    /// H1 (PR #200 review): FCD's own identity form for a relationship
-    /// member -- `ix://<pkg>/relationship/<Owner>-<verb>-<Other>`, an extra
-    /// `relationship` segment and `-` separators, never QSpec's
-    /// `<owner>/<name>` -- must refuse like any other member, exactly the
-    /// same rule [`read_field_member`]/[`read_operation_member`] apply
-    /// through [`member_identity_name`]. Before this test, `read_relationship`
-    /// applied no identity check at all and took this form verbatim as the
-    /// record's key; this is the regression test for that gap.
+    /// The published Semantic IR identity form for a relationship member is
+    /// `ix://<pkg>/relationship/<Owner>-<verb>-<Other>`, distinct from the
+    /// owner/name form used by fields and operations.
     #[trace("TC-145", "FR-056-AC-5")]
     #[test]
-    fn refuses_a_relationship_member_whose_identity_is_not_owner_slash_name() {
+    fn reads_a_relationship_member_with_the_canonical_identity_form() {
         let type_value = serde_json::json!({
             "identity": "ix://acme/orders/Flow2",
             "supertypes": [],
@@ -4357,6 +4356,61 @@ mod tests {
             "operations": [],
             "relationships": [{
                 "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
+                "category": "structural",
+                "composite": false,
+                "direction": "source-to-target",
+                "origin": {"source": {"sourceIdentity": "ix://acme/orders/spec", "startLine": 1, "startColumn": 1}},
+                "sourceEnd": {
+                    "role": "specializes",
+                    "type": "ix://acme/orders/Flow2",
+                    "multiplicity": {"lower": 0, "ordered": false, "unique": false},
+                },
+                "targetEnd": {
+                    "type": "ix://acme/orders/Flow",
+                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+                },
+            }],
+        });
+        let mut records = Vec::new();
+        read_object_type(
+            "acme/orders",
+            &type_value,
+            "ix://acme/orders/Flow2",
+            "$.types[0]",
+            false,
+            &mut records,
+            &mut Vec::new(),
+        )
+        .expect("the canonical relationship identity is admitted");
+        let relationship = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Relationship(relationship) => Some(relationship),
+                _ => None,
+            })
+            .expect("the relationship is appended to the record list");
+        assert_eq!(
+            relationship.key,
+            declaration_key(
+                "acme/orders",
+                "ix://acme/orders/relationship/Flow2-specializes-Flow"
+            )
+        );
+    }
+
+    /// FR-154's owner/name member identity remains valid for fields and
+    /// operations, but a relationship uses the package-rooted relationship
+    /// slot and refuses an owner/name identity.
+    #[trace("TC-145", "FR-056-AC-5")]
+    #[test]
+    fn refuses_a_relationship_member_with_an_owner_name_identity() {
+        let type_value = serde_json::json!({
+            "identity": "ix://acme/orders/Flow2",
+            "supertypes": [],
+            "fields": [],
+            "operations": [],
+            "relationships": [{
+                "identity": "ix://acme/orders/Flow2/specializes",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4382,19 +4436,11 @@ mod tests {
             &mut records,
             &mut Vec::new(),
         )
-        .expect_err(
-            "FCD's own relationship identity form does not parse as owner/<name> and refuses",
-        );
-        match &refusal.cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-                assert_eq!(node, "ix://acme/orders/relationship/Flow2-specializes-Flow");
-            }
-            other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
-        }
+        .expect_err("owner/name is not the relationship slot identity");
         assert!(
             refusal
                 .detail
-                .contains("is not ix://acme/orders/Flow2/<name>"),
+                .contains("is not ix://acme/orders/relationship/<Name>-<verb>-<TargetName>"),
             "{}",
             refusal.detail
         );
@@ -4411,7 +4457,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4457,7 +4503,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "sideways",
@@ -4666,7 +4712,7 @@ mod tests {
                 "$.types[0].supertypes[0]:",
             ),
             (
-                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/Money/owner"}]}),
+                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/relationship/Money-owner-Owner"}]}),
                 Code::InvalidModelBinding,
                 "ix://acme/orders/Money",
                 "$.types[0].relationships[0]:",
@@ -4990,7 +5036,7 @@ mod tests {
                  \"quire.meaning.model.value-type/v1:operations\" has no reader yet",
             ),
             (
-                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/VersionNumber/rel"}]}),
+                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/relationship/VersionNumber-rel-Other"}]}),
                 Code::InvalidModelBinding,
                 "$.types[0].relationships[0]: a value type owns no relationship",
             ),

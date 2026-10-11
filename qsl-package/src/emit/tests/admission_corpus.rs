@@ -54,6 +54,8 @@ enum Fixture {
     /// parameter, the form FR-093-AC-8 lowers (source text spells no
     /// `Population` type, so the function is built as a form).
     ModelPopulation,
+    /// A model selection whose domain package declares an inline relationship.
+    RelationshipModel,
     /// A `Reference` to the systems interface `S::Sensor` of
     /// `tests/fixtures/systems-interface.semantic-ir.json`.
     SystemsInterface,
@@ -81,7 +83,7 @@ enum Fixture {
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 17] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -89,6 +91,7 @@ impl Fixture {
         Self::SpineCompile,
         Self::SpineModel,
         Self::ModelPopulation,
+        Self::RelationshipModel,
         Self::SystemsInterface,
         Self::ConfigVersion,
         Self::ExtentRecords,
@@ -125,6 +128,11 @@ const CYCLIC_EQUALITY: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n\
 /// The domain package declaring the systems interface `Sensor`.
 const SYSTEMS_DOCUMENT: &[u8] =
     include_bytes!("../../../../tests/fixtures/systems-interface.semantic-ir.json");
+
+/// The domain package used to prove relationship model nodes are emitted and
+/// admitted through IR's checked-package/v2 reader.
+const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
+    include_bytes!("../../../../tests/fixtures/spine-model-relationship.semantic-ir.json");
 
 /// One package of a fixture, checked, linked and emitted, with the domain
 /// package documents its read needs as evidence.
@@ -191,6 +199,17 @@ impl Fixture {
                     modelled(&spine_model_without(&[]), SPINE_MODEL_DOCUMENT, vec![pop]),
                     vec![SPINE_MODEL_DOCUMENT],
                 )
+            }
+            Self::RelationshipModel => {
+                let document = RELATIONSHIP_MODEL_DOCUMENT;
+                let unit = format!(
+                    "language \"ix:native\" edition \"1-draft\";\n\
+                     profile v = \"quire.value.complete/v1\";\n\
+                     model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+                     function keep using v(g: M::Widget): M::Widget pure {{ g }}\n",
+                    document_digest(document)
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::SystemsInterface => {
                 let unit = format!(
@@ -334,6 +353,10 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
+        row(
+            K::Relation(RelationForm::Relationship),
+            F::RelationshipModel,
+        ),
         row(K::State(StateForm::StateClause), F::ConfigVersion),
         row(K::State(StateForm::Frame), F::ConfigVersion),
         row(K::State(StateForm::OperationAnchor), F::ConfigVersion),
@@ -389,12 +412,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Model(ModelForm::SystemsPort), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsConnection), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsAllocation), NO_RECORD_FORM),
-        (
-            K::Relation(RelationForm::Relationship),
-            "record_form maps a relationship, but no checked construct names one: model \
-             nodes are built for object types (references, frame owners, creates and \
-             deletes), and intake refuses a relationship in a frame",
-        ),
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),

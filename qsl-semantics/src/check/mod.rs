@@ -1234,6 +1234,20 @@ impl PackageDeclarations {
             self.identity,
         )
         .with_node_limit(limits.nodes(), nodes_used);
+        // Relationship declarations are model graph roots. No existing
+        // checked value type names one, so root them before lowering the
+        // unit's functions; otherwise the relation family disappears from
+        // the package even though the selected model declares it.
+        let relationship_locations: BTreeMap<String, Location> = models
+            .iter()
+            .filter_map(|model| {
+                let alias = model.alias()?.to_owned();
+                Some((alias.clone(), root(Origin::TypeDeclaration { name: alias })))
+            })
+            .collect();
+        if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
+            refusals.push(refusal);
+        }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members

@@ -243,24 +243,15 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// `sourceEnd`/`targetEnd`/`role`/`direction` shape, so `decide` reports no
 /// `Severity::Error` diagnostic and `read_records` reaches its own per-node
 /// reading over the golden for the first time. Of its 12 types (no
-/// `populations[]`, asserted below rather than assumed), **4 refuse and 8
+/// `populations[]`, asserted below rather than assumed), **3 refuse and 9
 /// read clean**. `Count`, a `quire.meaning.model.record-value-type/v1`
 /// type, reads as a record value type (it refused as an unsupported
 /// declaration form until its reader was added):
 ///
-/// - `Flow2`: `IntakeMalformedDeclaration` on its own inline
-///   relationship -- FCD's relationship identity form
-///   (`ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`, an
-///   extra `relationship` segment and `-` separators) does not parse as
-///   `<owner>/<name>` (FR-056 Declarations, FR-056-AC-5). PR #200 review
-///   finding H1: earlier in this same PR, this refusal did not fire at all
-///   -- `read_relationship` applied no identity check, so this exact golden
-///   entry was accepted verbatim as the record's key and `Flow2` read
-///   "clean" only because the check was missing, not because the shape
-///   conforms. Fixed in `read_relationship` (validates through the same
-///   `member_identity_name` rule `read_field_member`/`read_operation_member`
-///   already apply, and separately refuses a missing source span per
-///   FR-056-AC-5's other half); this is the corrected, honest count.
+/// - `Flow2`: its inline relationship uses FR-154's canonical relationship
+///   slot identity (`ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`)
+///   and reads clean. Fields and operations retain FR-154's owner/name form;
+///   relationship members use the distinct slot-rooted form.
 /// - `Pump.id`, `Sys.id`, `Tank.id`: `IntakeMalformedDeclaration` -- each
 ///   field's `typeRef` is `ix://quire/native/UUID`, R5's ruling that QSL's
 ///   native-value-type vocabulary is the conformant side and FCD's wider
@@ -270,18 +261,12 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 ///   PLAT-836 (a separate ticket) narrows what FCD *emits* for these
 ///   fields, not this reader; until it lands, this refusal is correct.
 ///
-/// A prior static reading of this reader predicted 5 of 12 refusing, naming
-/// `Flow2` alongside `Count`/`Pump`/`Sys`/`Tank` on the theory that its
-/// relationships would still miss a role/multiplicity this reader requires.
-/// That theory was wrong (the golden's `Flow2` relationship has both a role
-/// and a multiplicity on each end) and, before H1's fix, the measurement
-/// disagreed with it too (4 refusing, `Flow2` clean) -- the prediction and
-/// the first honest measurement landed on the same headline number (5) by
-/// two different, both-wrong routes. H1's fix is what makes 5-refusing
-/// correct now, for the real reason (a relationship member's identity form),
-/// not the predicted one (role/multiplicity).
+/// A prior static reading of this reader predicted a relationship refusal from
+/// the wrong owner/name rule. The pinned Semantic IR and FR-154 instead define
+/// the slot-rooted relationship identity, so the golden relationship now reads
+/// clean while the three UUID field refusals remain the measured failures.
 ///
-/// The remaining 8 -- `Count`, `Flow`, `pipe`, `pump_alloc`, `pump_out`,
+/// The remaining 9 -- `Count`, `Flow`, `pipe`, `pump_alloc`, `pump_out`,
 /// `sys_pump`, `sys_tank`, `tank_in` -- read clean, but `read_records` only proves that
 /// as "produced no refusal": it discards every already-read record when any
 /// node refuses, so no content assertion for these 7 is possible against
@@ -290,7 +275,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// single-type document.
 #[trace("TC-145", "TC-146", "FR-056-AC-3", "FR-056-AC-5")]
 #[test]
-fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types() {
+fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
     let document =
         std::fs::read_to_string(fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"))
@@ -305,7 +290,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types
             .expect("the golden's types is an array")
             .len(),
         12,
-        "the golden's own type count; if this drifts, the 4-of-12/8-clean split below is stale"
+        "the golden's own type count; if this drifts, the 3-of-12/9-clean split below is stale"
     );
     assert!(
         parsed.get("populations").is_none(),
@@ -313,39 +298,21 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types
     );
 
     let refusals = read_records(package_identity, &parse_document(document.as_bytes())).expect_err(
-        "measured: 4 of the golden's 12 types refuse at read_records even though the whole \
+        "measured: 3 of the golden's 12 types refuse at read_records even though the whole \
          document now clears validate_with_semantic_ir's schema check",
     );
 
     assert_eq!(
         refusals.len(),
-        4,
-        "measured refusal count over the post-#200 golden, post-H1 fix, with the \
-         record-value-type reader: {refusals:#?}"
+        3,
+        "measured refusal count over the post-#200 golden, canonical relationship identity, \
+         and the record-value-type reader: {refusals:#?}"
     );
 
     use qsl_foundation::diagnostic::Code;
     use qsl_semantics::model::normalize::ModelRefusalCause;
 
-    let (flow2, pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2], &refusals[3]);
-
-    assert_eq!(flow2.code, Code::InvalidModelBinding);
-    match &flow2.cause {
-        ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-            assert_eq!(
-                node,
-                "ix://agent-ix/architecture/relationship/Flow2-specializes-Flow"
-            );
-        }
-        other => panic!("Flow2: expected IntakeMalformedDeclaration, got {other:?}"),
-    }
-    assert!(
-        flow2
-            .detail
-            .contains("is not ix://agent-ix/architecture/Flow2/<name>"),
-        "Flow2 detail: {}",
-        flow2.detail
-    );
+    let (pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2]);
 
     for (refusal, expected_node) in [
         (pump, "ix://agent-ix/architecture/Pump/id"),
@@ -638,7 +605,7 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
 /// FCD's upstream fix), but this fixture simply was not authored to
 /// exercise that path -- native-typeRef resolution is covered separately by
 /// direct unit tests of `read_value_type_ref` and, end to end, by
-/// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`.
+/// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`.
 /// It admits through `agent-ix-semantic-ir`'s own validator (M5) --
 /// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
 /// member that validator's schema layer requires beyond the shape

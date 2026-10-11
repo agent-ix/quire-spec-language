@@ -131,6 +131,16 @@ subject. A field, operation or relationship-end member has no node of
 its own; an FR-322 member names it by its declaring node and its name
 (ADR-013 O-06):
 
+A selected `RelationshipRecord` is an unconditional exception to that
+reachability rule. `check` roots every selected relationship declaration even
+when no checked value, function, frame or relationship-end member names it,
+and records one `generated` occurrence at the selected model alias's own
+declaration-site/source span. The fallback `generated_location` is never used
+for this root, and no relationship root may reach emission as an
+`UnlocatedOccurrence`. For example, the `billedTo` relationship in the
+unreferenced model fixture is emitted from the `M` alias declaration site
+even when the fixture has no function that names it.
+
 - the `field` member of an `Attribute` (`deref(r).f`) names the model node of
   `r`'s static object type `T`, the target of `r`'s `Reference<T>` type, and
   the attribute name `f`;
@@ -669,6 +679,7 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-6 | With `a` a quantity of QSpec's declared unit `metre` and `t` one of `second`, `a`'s parameter has semantic type `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, QSpec's `unit-metre` key, and the graph holds no `compound_unit` node for it. In a function body, the result type of `a * a` keys to U1. The compound units that `value::quantity::result_unit` forms for `a / t`, `a / a` and `(a * a) / a`, held in the check stage's unit scope, key to U2, U3 and U4. U2's first term names metre, and U4 differs from the `metre` unit key. | Test (TC-419) |
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
+| FR-094-AC-9 | For the unreferenced `billedTo` relationship selected through model alias `M`, `check` emits its `relation`/`relationship` node and records one `generated` occurrence at `M`'s declaration-site/source span, regardless of function or frame reachability; fallback `generated_location` and `UnlocatedOccurrence` are forbidden. | Test (TC-417) |
 
 A check with two admitted versions of one domain package
 identity refuses as an internal fault.

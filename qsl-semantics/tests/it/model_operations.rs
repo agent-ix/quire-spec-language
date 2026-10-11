@@ -312,8 +312,12 @@ pub(super) fn config_version_document(
 
 /// A `Supersedes` relationship from `ConfigVersion` to itself, wired for
 /// `ConfigVersion`'s own inline `relationships[]`.
+fn supersedes_identity() -> String {
+    format!("ix://{PACKAGE_IDENTITY}/relationship/ConfigVersion-supersedes-ConfigVersion")
+}
+
 fn supersedes_relationship() -> Value {
-    let supersedes = config_version_identity("Supersedes");
+    let supersedes = supersedes_identity();
     json!({
         "identity": supersedes,
         "sourceEnd": {
@@ -1158,7 +1162,7 @@ fn a_creates_entry_naming_a_field_refuses_malformed_declaration() {
 #[trace("TC-458", "FR-103-AC-2")]
 #[test]
 fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
-    let supersedes = config_version_identity("Supersedes");
+    let supersedes = supersedes_identity();
     let document = config_version_document(
         attempt_update(
             json!([]),
