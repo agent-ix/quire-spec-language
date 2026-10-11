@@ -26,25 +26,31 @@ request named one, the named backend. This is the solver-absence policy
 NOT be produced as a refusal, an error, or a hold that waits for a future
 registration; the registry SHALL supply the empty candidate set as ordinary
 data and SHALL NOT itself raise a refusal-shaped or hold-shaped result for
-this case.
+this case. This unsupported rule applies only to a well-formed request. An
+absent or unknown probabilistic evidence kind is malformed evidence, not
+backend absence: FR-075 preserves that evidence for negotiation, which SHALL
+settle `invalid-request` with the corresponding cause under FR-290, not
+`unsupported`.
 
 ## Inputs
 
 - A requested item's capability kind, its evidence kind when it is
-  `probabilistic-satisfaction`, and any named `BackendId`.
+  `probabilistic-satisfaction` (which may be absent or unknown and is retained
+  for downstream validation), and any named `BackendId`.
 - The registry's candidate-set computation (FR-075) for that item.
 
 ## Outputs
 
 - An empty candidate set, passed on unchanged as the item's `candidates`
   value (quire-specification FR-331).
-- The eventual `unsupported` disposition and its warning are settled by
-  `quire-contract-codegen`'s `negotiate_*`
+- For a well-formed item, the eventual `unsupported` disposition and its
+  warning are settled by `quire-contract-codegen`'s `negotiate_*`
   ([quire-contract-codegen#86](https://github.com/agent-ix/quire-contract-codegen/issues/86)),
   which is the only negotiation point (ADR-012 §7.1, §7.2); this
   requirement's registry contributes the empty set that makes that
   disposition possible and asserts that the set is never converted to
-  anything else on its way there.
+  anything else on its way there. For absent or unknown evidence, negotiation
+  instead settles `invalid-request` as stated above.
 
 ## Behavior
 
@@ -76,9 +82,10 @@ them without re-deriving them from elsewhere.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-076-AC-1 | Given a registry with no registrant advertising an item's capability kind, or (for a probabilistic item) its exact evidence kind, the registry's candidate-set computation returns an empty set as an ordinary value; no error, panic or refusal-shaped result is observed at the registry boundary. | Test (TC-197) |
+| FR-076-AC-1 | Given a well-formed item and a registry with no registrant advertising its capability kind, or (for a probabilistic item) its exact evidence kind, the registry's candidate-set computation returns an empty set as an ordinary value; no error, panic or refusal-shaped result is observed at the registry boundary. Absent or unknown probabilistic evidence is excluded from this unsupported case and follows FR-076-AC-4. | Test (TC-197) |
 | FR-076-AC-2 | Given the same empty-candidate-set case, the registry's output retains the item's capability kind, its evidence kind when applicable, and, when the request named a backend, that backend's identity, so a caller can name them in a downstream warning without a separate lookup. | Test (TC-197) |
 | FR-076-AC-3 | A test harness that asserts on the registry's return type shows no variant, error kind or panic path corresponds to "hold" or "refused because no backend registered"; an empty candidate set and a registration-time refusal (FR-075-AC-4) are distinct, differently-shaped outputs. | Test (TC-198) |
+| FR-076-AC-4 | Given a probabilistic item with absent or unknown evidence and any registry contents, the candidate-stage output preserves the absent state or unknown label for negotiation, and the negotiation result is `invalid-request` with `absent-evidence-kind` or `unknown-evidence-kind`, respectively, never `unsupported`. | Test (TC-197) |
 
 ## Dependencies
 
