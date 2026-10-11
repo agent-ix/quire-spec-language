@@ -861,10 +861,10 @@ pub(crate) fn key_claims(
             };
             (
                 graph
-                    .node(**narrow)
+                    .node(*narrow)
                     .and_then(|node| node.semantic_type())
                     .ok_or_else(unkeyable)?,
-                Some(OccurrenceKey::new(wire(**narrow), (*origin).clone())),
+                Some(OccurrenceKey::new(wire(*narrow), (*origin).clone())),
             )
         } else {
             (
