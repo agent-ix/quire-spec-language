@@ -1152,7 +1152,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         "the exact duplicate collapses, not a fourth member"
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
+    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 1_150);
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
@@ -1864,7 +1864,8 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 
 /// R06's satisfying counterpart: `a1.some = [a2]`, and `a2` is among
 /// `a1.all`'s one value, so the same one `binding.subset-value` charge
-/// (`n = 1`) discharges instead of refusing, and admission completes.
+/// (`n = 1`) discharges instead of refusing. The work total also includes
+/// each member and the bounded identity preimage/member encoding passes.
 #[test]
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-10")]
 fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
@@ -1903,7 +1904,7 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
             .count(),
         1
     );
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 3);
+    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 907);
 }
 
 /// A member declaring the same field twice in its own `field_values` must
@@ -3333,7 +3334,7 @@ fn population_identity_encoding_is_charged_before_hashing() {
         AdmissionOutcome::Incomplete(AdmissionIncomplete {
             limit_kind: AdmissionLimitKind::WorkUnits,
             limit: 128,
-            consumed: 1,
+            consumed: 3,
             charge_point: AdmissionChargePoint::BindingMember,
             next_charge,
         }) if next_charge > 127
