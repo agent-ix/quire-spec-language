@@ -1159,7 +1159,8 @@ fn a_creates_entry_naming_a_field_refuses_malformed_declaration() {
 #[trace("TC-458", "FR-103-AC-2")]
 #[test]
 fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
-    let supersedes = config_version_identity("Supersedes");
+    let supersedes =
+        format!("ix://{PACKAGE_IDENTITY}/relationship/ConfigVersion-supersedes-ConfigVersion");
     let document = config_version_document(
         attempt_update(
             json!([]),
