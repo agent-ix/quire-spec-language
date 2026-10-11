@@ -138,13 +138,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::model::dispatch::GeneralizationClosure;
-use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::{hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId};
+use crate::model::key::{
+    hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId,
+    SHA256_JCS_DIGEST_DOMAIN,
+};
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
@@ -794,7 +796,12 @@ fn population_id_preimage<'a>(
         // compares the full header for exactly that reason), so "the domain
         // package identity" a binding was admitted against is this header,
         // not its `identity` field alone.
-        domain_package_selection: domain_package.model_selection.wire(),
+        domain_package_selection: PopulationDomainPackageRefWire {
+            identity: &domain_package.model_selection.identity,
+            version: &domain_package.model_selection.version,
+            digest_domain: SHA256_JCS_DIGEST_DOMAIN,
+            digest: hex(&domain_package.model_selection.digest),
+        },
         population_key: population_key.wire(),
         admission_role: role.as_str(),
     }
@@ -804,9 +811,20 @@ fn population_id_preimage<'a>(
 #[derive(Serialize, FixedShape)]
 struct PopulationIdWire<'a> {
     version: &'static str,
-    domain_package_selection: DomainPackageRefWire<'a>,
+    domain_package_selection: PopulationDomainPackageRefWire<'a>,
     population_key: DeclarationKeyWire<'a>,
     admission_role: &'static str,
+}
+
+/// FR-089's `PopulationId` selection is explicitly the full domain-package
+/// header, including its source version. Other `quire.model.*` identities use
+/// the closed `DomainPackageRefWire` shape without that non-identity field.
+#[derive(Serialize, FixedShape)]
+struct PopulationDomainPackageRefWire<'a> {
+    identity: &'a str,
+    version: &'a str,
+    digest_domain: &'static str,
+    digest: String,
 }
 
 /// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,

@@ -146,7 +146,7 @@ fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPrei
 /// `quire.model.effective-declaration/v1`, for an effective type (`null`
 /// owner) and an effective member (an `{domain, digest}` owner), with the
 /// encoder's byte count equal to the text's length.
-#[trace("QSpec-TC-195")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn effective_declaration_identities_match_their_golden_vectors() {
     let effective_type = qualified("ix://test/orders/A", None);

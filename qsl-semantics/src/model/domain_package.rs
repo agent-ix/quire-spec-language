@@ -552,8 +552,7 @@ impl std::fmt::Debug for DomainPackageRef {
     }
 }
 
-/// A [`DomainPackageRef`]'s preimage form inside the model identities
-/// (`quire.model.*`, `quire.population-id/v1`).
+/// A [`DomainPackageRef`]'s preimage form inside the `quire.model.*` identities.
 #[derive(serde::Serialize, FixedShape)]
 pub(super) struct DomainPackageRefWire<'a> {
     identity: &'a str,
