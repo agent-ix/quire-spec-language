@@ -423,9 +423,8 @@ impl Error {
             | Code::ImportGraph
             | Code::RouteLint
             | Code::CheckedInput
-            | Code::CanonicalTypes => 1,
-            Code::Conformance => 1,
             | Code::CanonicalTypes
+            | Code::Conformance
             | Code::TestSuites => 1,
             Code::Usage | Code::Io | Code::Metadata => 2,
         }
