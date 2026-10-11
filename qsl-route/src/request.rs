@@ -44,7 +44,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_foundation::{CatalogCode, CatalogCoded};
-use qsl_semantics::check::{Capability, RequirementRecord};
+use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements};
 
 use crate::{BackendId, CandidateOutcome, Registry};
@@ -312,7 +312,8 @@ impl RequestWriter {
 
 /// One requested item written from one requirement record (FR-075
 /// "Requested items from a package's requirement records"): everything the
-/// orchestrating driver reads about the item from QSL.
+/// orchestrating driver reads about the item from QSL, including the
+/// record's path condition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequirementItem {
     index: RequestIndex,
@@ -321,6 +322,7 @@ pub struct RequirementItem {
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
     result_bound: WireNodeId,
+    path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
 }
 
@@ -363,6 +365,11 @@ impl RequirementItem {
         self.result_bound
     }
 
+    /// The record's path condition, outermost guard first.
+    pub fn path_condition(&self) -> &[PathGuard] {
+        &self.path_condition
+    }
+
     /// The item's candidate outcome under the registry and the named
     /// backend it was built with.
     pub fn candidates(&self) -> &CandidateOutcome {
@@ -373,9 +380,10 @@ impl RequirementItem {
 /// The requested items of a checked package's requirement `records`
 /// (`CheckedPackage::graph().requirements()`), one per record in the
 /// records' occurrence-key order, each with its candidate outcome from
-/// `registry` for the backend `named`, when the request names one. An item
-/// whose candidate set is empty or whose extent is unbounded is written
-/// like any other; negotiation settles it.
+/// `registry` for the backend `named`, when the request names one, and the
+/// record's canonical path condition. An item whose candidate set is empty
+/// or whose extent is unbounded is written like any other; negotiation
+/// settles it.
 pub fn items_from_requirements(
     records: &BTreeMap<OccurrenceKey, RequirementRecord>,
     registry: &Registry,
@@ -402,6 +410,7 @@ pub fn items_from_requirements(
                 extent,
                 unbounded,
                 result_bound: record.result_bound().node(),
+                path_condition: record.path_condition().to_vec(),
                 candidates: registry.candidates(requirements.kind(), named),
             }
         })
