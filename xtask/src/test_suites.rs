@@ -246,6 +246,20 @@ pub enum Finding {
         /// The suite.
         suite: SuiteId,
     },
+    /// A line that looks like a terminal summary but is malformed.
+    #[error("{suite}: malformed `test result:` line: {line}")]
+    MalformedSummary {
+        /// The suite.
+        suite: SuiteId,
+        /// The malformed line.
+        line: String,
+    },
+    /// The summary counts cannot be added without overflowing `u64`.
+    #[error("{suite}: summary counts overflow while checking `running N tests`")]
+    CountOverflow {
+        /// The suite.
+        suite: SuiteId,
+    },
     /// A suite's `running N tests` and its summary disagree.
     #[error("{suite}: `running {running}` but the summary accounts for {summed} tests")]
     CountMismatch {
@@ -253,8 +267,7 @@ pub enum Finding {
         suite: SuiteId,
         /// The `running N tests` count.
         running: u64,
-        /// The summary's passed + failed + ignored + measured (`u64::MAX`
-        /// when that overflows).
+        /// The summary's passed + failed + ignored + measured.
         summed: u64,
     },
     /// The same suite ran twice in one invocation.
@@ -513,18 +526,21 @@ impl Workspace {
             let manifest = string_field(package, "manifest_path", "packages.manifest_path")?;
             packages.insert(id, (name, manifest));
         }
-        let named = |key: &'static str| -> std::result::Result<Vec<(String, PathBuf)>, ArtifactError> {
-            array_field(&metadata, key)?
-                .iter()
-                .map(|id| -> std::result::Result<(String, PathBuf), ArtifactError> {
-                    let (name, manifest) = id
-                        .as_str()
-                        .and_then(|id| packages.get(id))
-                        .ok_or(ArtifactError::MalformedField { field: key })?;
-                    Ok(((*name).to_owned(), PathBuf::from(*manifest)))
-                })
-                .collect()
-        };
+        let named =
+            |key: &'static str| -> std::result::Result<Vec<(String, PathBuf)>, ArtifactError> {
+                array_field(&metadata, key)?
+                    .iter()
+                    .map(
+                        |id| -> std::result::Result<(String, PathBuf), ArtifactError> {
+                            let (name, manifest) = id
+                                .as_str()
+                                .and_then(|id| packages.get(id))
+                                .ok_or(ArtifactError::MalformedField { field: key })?;
+                            Ok(((*name).to_owned(), PathBuf::from(*manifest)))
+                        },
+                    )
+                    .collect()
+            };
         Ok(Self {
             members: named("workspace_members")?.into_iter().collect(),
             defaults: named("workspace_default_members")?
@@ -606,21 +622,25 @@ impl Artifacts {
                 .ok_or(ArtifactError::MalformedField {
                     field: "target.src_path",
                 })?;
-            let name = field(target, "name", "target.name")?
-                .as_str()
-                .ok_or(ArtifactError::MalformedField {
+            let name = field(target, "name", "target.name")?.as_str().ok_or(
+                ArtifactError::MalformedField {
                     field: "target.name",
-                })?;
+                },
+            )?;
             let doctest = field(target, "doctest", "target.doctest")?
                 .as_bool()
                 .ok_or(ArtifactError::MalformedField {
                     field: "target.doctest",
                 })?;
-            let test_profile = field(field(&message, "profile", "profile")?, "test", "profile.test")?
-                .as_bool()
-                .ok_or(ArtifactError::MalformedField {
-                    field: "profile.test",
-                })?;
+            let test_profile = field(
+                field(&message, "profile", "profile")?,
+                "test",
+                "profile.test",
+            )?
+            .as_bool()
+            .ok_or(ArtifactError::MalformedField {
+                field: "profile.test",
+            })?;
             let manifest = field(&message, "manifest_path", "manifest_path")?
                 .as_str()
                 .ok_or(ArtifactError::MalformedField {
@@ -858,6 +878,11 @@ impl<'a> RunParser<'a> {
         }
         if let Some(summary) = parse_summary(line) {
             section.summary = Some(summary);
+        } else if line.starts_with("test result: ") {
+            self.findings.push(Finding::MalformedSummary {
+                suite: section.id.clone(),
+                line: line.to_owned(),
+            });
         }
     }
 
@@ -878,21 +903,23 @@ impl<'a> RunParser<'a> {
             self.findings.push(Finding::NoRunningLine { suite: id });
             return;
         };
-        let registered = summary.registered().unwrap_or(u64::MAX);
-        if registered != running {
-            self.findings.push(Finding::CountMismatch {
-                suite: id,
-                running,
-                summed: registered,
-            });
-        } else if self.suites.iter().any(|seen| seen.id == id) {
-            self.findings.push(Finding::Duplicate { suite: id });
-        } else {
-            self.suites.push(SuiteOutcome {
+        match summary.registered() {
+            None => self.findings.push(Finding::CountOverflow { suite: id }),
+            Some(registered) if registered != running => {
+                self.findings.push(Finding::CountMismatch {
+                    suite: id,
+                    running,
+                    summed: registered,
+                });
+            }
+            Some(_) if self.suites.iter().any(|seen| seen.id == id) => {
+                self.findings.push(Finding::Duplicate { suite: id });
+            }
+            Some(_) => self.suites.push(SuiteOutcome {
                 id,
                 running,
                 counts: summary,
-            });
+            }),
         }
     }
 
@@ -1132,17 +1159,12 @@ fn stream_output(
 /// stream failure is what is returned, even if the kill or the wait also
 /// fails. Only the cargo process is killed: test processes it started are not
 /// tracked here and end when they next write to the closed pipe.
-fn reap(
-    child: &mut std::process::Child,
-    streamed: Result<()>,
-) -> Result<std::process::ExitStatus> {
+fn reap(child: &mut std::process::Child, streamed: Result<()>) -> Result<std::process::ExitStatus> {
     if streamed.is_err() {
         // The child may already have exited; either way it is waited for below.
         let _ = child.kill();
     }
-    let waited = child
-        .wait()
-        .map_err(io_error("cannot wait for cargo test"));
+    let waited = child.wait().map_err(io_error("cannot wait for cargo test"));
     streamed.and(waited)
 }
 
@@ -1228,6 +1250,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     const ROOT: &str = "/ws";
 
@@ -1425,9 +1448,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             &suites,
             findings,
         )
-            .iter()
-            .map(ToString::to_string)
-            .collect()
+        .iter()
+        .map(ToString::to_string)
+        .collect()
     }
 
     fn check(lane: &Lane, log: &str) -> Vec<String> {
@@ -1448,10 +1471,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-6")]
     fn undeclared_zero_test_suites_fail() {
-        let undeclared = |suite: &str| {
-            format!("{suite}: 0 tests passed and the lane does not declare it empty")
-        };
+        let undeclared =
+            |suite: &str| format!("{suite}: 0 tests passed and the lane does not declare it empty");
         assert_eq!(
             check(&lane(&[]), PRODUCER_LOG),
             vec![
@@ -1464,6 +1487,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-6")]
     fn declared_zero_test_suites_pass_beside_a_nonzero_one() {
         assert_eq!(
             check(&lane(DECLARES_EMPTY), PRODUCER_LOG),
@@ -1472,6 +1496,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-8")]
     fn a_built_test_target_that_never_ran_fails() {
         let log = PRODUCER_LOG.replace(ATTRS_UNIT_SECTION, "");
         assert_eq!(
@@ -1484,6 +1509,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]
     fn a_declared_suite_that_gains_a_passing_test_fails() {
         let log = PRODUCER_LOG.replacen(
             "running 0 tests\n\ntest result: ok. 0 passed",
@@ -1499,6 +1525,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// The ignored-drift control: `libtest` prints `running 1 test` and
     /// `0 passed; 1 ignored` for a suite whose only test is `#[ignore]`.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]
     fn a_declared_suite_that_gains_an_ignored_test_fails() {
         let log = PRODUCER_LOG.replacen(
             "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored",
@@ -1512,6 +1539,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]
     fn a_declared_suite_that_gains_a_measured_test_fails() {
         let log = PRODUCER_LOG.replacen(
             "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured",
@@ -1525,6 +1553,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]
     fn a_declared_suite_whose_tests_are_all_filtered_out_is_not_empty() {
         let log = PRODUCER_LOG.replacen(
             "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
@@ -1538,6 +1567,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-6")]
     fn an_undeclared_suite_whose_tests_are_all_ignored_fails() {
         let log = PRODUCER_LOG.replace(
             "test result: ok. 5 passed; 0 failed; 0 ignored",
@@ -1554,6 +1584,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// A declared doctest suite that does not run is refused as declared and
     /// as selected.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-8", "NFR-014-AC-5")]
     fn a_missing_declared_doctest_suite_fails() {
         let log = PRODUCER_LOG.replace(ANALYZE_DOC_SECTION, "");
         assert_eq!(
@@ -1586,6 +1617,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// The doc-tests of a selected package's library are expected whether or
     /// not the lane declares them, so one cannot vanish unseen.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-8")]
     fn a_missing_nonallowlisted_doctest_suite_fails() {
         let log = PRODUCER_LOG.replace(ANALYZE_DOC_SECTION, "");
         assert_eq!(
@@ -1604,6 +1636,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// `--lib` (and the other target selections) run no doc-tests, so none
     /// is expected, while the unit suites still are.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn a_target_selection_expects_no_doctest_suite() {
         let (units, _) = PRODUCER_LOG
             .split_once("   Doc-tests")
@@ -1620,6 +1653,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn a_doctest_library_built_only_as_a_dependency_is_not_expected() {
         let artifacts = artifacts();
         let expected = artifacts.expected_suites(doc_packages().as_ref());
@@ -1632,8 +1666,12 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-3")]
     fn a_header_naming_no_target_of_the_build_fails() {
-        let log = PRODUCER_LOG.replace("qsl_analyze-ef5a3cd7850e747b", "qsl_analyze-ffffffffffffffff");
+        let log = PRODUCER_LOG.replace(
+            "qsl_analyze-ef5a3cd7850e747b",
+            "qsl_analyze-ffffffffffffffff",
+        );
         let findings = check(&lane(DECLARES_EMPTY), &log);
         assert!(
             findings
@@ -1645,6 +1683,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-3")]
     fn a_doc_test_header_naming_no_library_fails() {
         let log = PRODUCER_LOG.replace("Doc-tests qsl_attrs", "Doc-tests qsl_unknown");
         assert!(check(&lane(DECLARES_EMPTY), &log)
@@ -1653,6 +1692,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
     fn a_suite_without_a_summary_fails() {
         let log = PRODUCER_LOG.replace(
             "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s",
@@ -1663,6 +1703,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
     fn a_malformed_summary_fails() {
         for broken in [
             "test result: ok. five passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
@@ -1682,6 +1723,23 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
+    fn overflowing_summary_counts_fail_instead_of_becoming_a_sentinel() {
+        let log = PRODUCER_LOG.replace(
+            "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
+            "test result: ok. 18446744073709551615 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out",
+        );
+        let findings = check(&lane(&DECLARES_EMPTY), &log);
+        assert!(
+            findings.iter().any(|finding| {
+                finding.contains("summary counts overflow") && finding.starts_with(ANALYZE_UNIT)
+            }),
+            "{findings:?}"
+        );
+    }
+
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
     fn a_suite_without_a_running_line_fails() {
         let log = PRODUCER_LOG.replace("running 5 tests\n", "");
         assert!(check(&lane(DECLARES_EMPTY), &log)
@@ -1689,6 +1747,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
     fn a_summary_that_disagrees_with_the_running_line_fails() {
         let log = PRODUCER_LOG.replace("running 5 tests", "running 6 tests");
         assert!(check(&lane(DECLARES_EMPTY), &log).contains(&format!(
@@ -1697,18 +1756,17 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
     fn test_output_that_looks_like_a_zero_summary_does_not_mask_the_real_one() {
         let log = PRODUCER_LOG.replace(
             "test zone_check::scale::tests::tc_693_a_huge_constant_scales_and_computes_without_overflow ... ok\n",
             "test zone_check::scale::tests::tc_693_a_huge_constant_scales_and_computes_without_overflow ... ok\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n",
         );
-        assert_eq!(
-            check(&lane(DECLARES_EMPTY), &log),
-            Vec::<String>::new()
-        );
+        assert_eq!(check(&lane(DECLARES_EMPTY), &log), Vec::<String>::new());
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
     fn an_invocation_that_ran_no_suite_fails() {
         let artifacts = Artifacts::default();
         let parser = RunParser::new(&artifacts, Path::new(ROOT));
@@ -1725,6 +1783,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-3")]
     fn the_same_suite_twice_fails() {
         let twice = format!("{PRODUCER_LOG}{PRODUCER_LOG}");
         assert!(check(&lane(DECLARES_EMPTY), &twice)
@@ -1752,6 +1811,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// `Running`, three before `Doc-tests`, and the first line is not an
     /// exception.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-3")]
     fn log_fixtures_keep_the_exact_header_indentation() {
         for (name, log) in [("PRODUCER_LOG", PRODUCER_LOG), ("PATH_LOG", PATH_LOG)] {
             assert!(
@@ -1760,12 +1820,19 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             );
             let headers: Vec<&str> = log
                 .lines()
-                .filter(|line| line.trim_start().starts_with("Running ") || line.trim_start().starts_with("Doc-tests "))
+                .filter(|line| {
+                    line.trim_start().starts_with("Running ")
+                        || line.trim_start().starts_with("Doc-tests ")
+                })
                 .collect();
             assert!(!headers.is_empty(), "{name} has no header");
             for header in headers {
                 let indent = header.len() - header.trim_start().len();
-                let expected = if header.trim_start().starts_with("Running ") { 5 } else { 3 };
+                let expected = if header.trim_start().starts_with("Running ") {
+                    5
+                } else {
+                    3
+                };
                 assert_eq!(indent, expected, "{name}: {header:?}");
             }
         }
@@ -1783,6 +1850,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// The headers of both fixtures all resolve: the parser reads every
     /// section, so no expected suite is missing for want of a header.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-3")]
     fn every_header_of_the_producer_fixture_resolves_to_a_suite() {
         let artifacts = artifacts();
         let mut parser = RunParser::new(&artifacts, Path::new(ROOT));
@@ -1792,10 +1860,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         let (suites, findings) = parser.finish();
         assert_eq!(findings, Vec::new());
         let ran: Vec<String> = suites.iter().map(|suite| suite.id.to_string()).collect();
-        assert_eq!(ran, [ANALYZE_UNIT, EMPTY_UNIT, PROBE, ANALYZE_DOC, EMPTY_DOC]);
+        assert_eq!(
+            ran,
+            [ANALYZE_UNIT, EMPTY_UNIT, PROBE, ANALYZE_DOC, EMPTY_DOC]
+        );
     }
 
     #[test]
+    #[trace("TC-950")]
     fn a_relative_and_an_absolute_executable_path_both_resolve() {
         let lines = [
             workspace_artifact(
@@ -1849,13 +1921,15 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn a_line_that_starts_like_a_message_but_is_not_json_is_refused() {
-        let error = decode(&["{\"reason\": \"compiler-artifact\"".to_owned()])
-            .expect_err("invalid JSON");
+        let error =
+            decode(&["{\"reason\": \"compiler-artifact\"".to_owned()]).expect_err("invalid JSON");
         assert!(matches!(error, ArtifactError::Json(_)), "{error}");
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn a_compiler_artifact_with_a_missing_or_mistyped_field_is_refused() {
         let cases: [(&str, fn(&mut serde_json::Value)); 9] = [
             ("target", |m| {
@@ -1889,6 +1963,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn messages_that_are_not_compiler_artifacts_are_ignored_whatever_their_shape() {
         let artifacts = decode(&[
             r#"{"reason":"build-finished","success":true}"#.to_owned(),
@@ -1900,6 +1975,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn two_targets_sharing_an_executable_path_are_refused() {
         let mut other = valid_artifact();
         other["target"]["src_path"] = "/ws/pkg/tests/other.rs".into();
@@ -1913,6 +1989,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn the_same_artifact_reported_twice_is_one_suite() {
         let artifacts = decode(&[valid_artifact().to_string(), valid_artifact().to_string()])
             .expect("a repeated artifact decodes");
@@ -1921,6 +1998,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn two_libraries_sharing_a_crate_name_are_refused() {
         let mut hyphenated = valid_artifact();
         hyphenated["target"]["name"] = "my-lib".into();
@@ -1939,6 +2017,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn dependencies_outside_the_workspace_are_not_suites() {
         let mut outside_test = valid_artifact();
         outside_test["target"]["src_path"] = "/elsewhere/dep/src/lib.rs".into();
@@ -1956,6 +2035,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn the_lane_arguments_select_doctests_unless_they_name_a_target_kind() {
         for (arguments, doctests) in [
             (&[][..], true),
@@ -1980,6 +2060,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn a_doc_only_selection_is_refused_before_cargo_runs() {
         for arguments in [&["--doc"][..], &["-p", "a", "--doc"][..], &["--doc=1"][..]] {
             let error = Selection::from_cargo_args(&cargo_args(arguments)).expect_err("--doc");
@@ -2016,16 +2097,24 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn the_package_arguments_choose_default_workspace_or_named_packages() {
         assert_eq!(select(&[]).packages, Packages::Default);
-        assert_eq!(select(&["--locked", "--all-features"]).packages, Packages::Default);
+        assert_eq!(
+            select(&["--locked", "--all-features"]).packages,
+            Packages::Default
+        );
         assert_eq!(
             select(&["--locked", "--workspace"]).packages,
-            Packages::Workspace { excluded: Vec::new() }
+            Packages::Workspace {
+                excluded: Vec::new()
+            }
         );
         assert_eq!(
             select(&["--all", "--exclude", "b", "--exclude=c"]).packages,
-            Packages::Workspace { excluded: names(&["b", "c"]) }
+            Packages::Workspace {
+                excluded: names(&["b", "c"])
+            }
         );
         assert_eq!(
             select(&["-p", "a", "--package=c", "-pb", "-p", "d@1.2.3"]).packages,
@@ -2033,15 +2122,21 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         );
         assert_eq!(
             select(&["--workspace", "--", "-p", "ignored"]).packages,
-            Packages::Workspace { excluded: Vec::new() },
+            Packages::Workspace {
+                excluded: Vec::new()
+            },
             "arguments after -- belong to the test binaries"
         );
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn selections_the_guard_cannot_list_are_refused_with_the_argument_named() {
         for (arguments, refused) in [
-            (&["--manifest-path", "other/Cargo.toml"][..], "--manifest-path"),
+            (
+                &["--manifest-path", "other/Cargo.toml"][..],
+                "--manifest-path",
+            ),
             (&["--manifest-path=other/Cargo.toml"][..], "--manifest-path"),
             (&["--workspace", "-p", "a"][..], "--workspace"),
             (&["-p", "qsl-*"][..], "-p"),
@@ -2087,10 +2182,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     fn manifests(packages: &[&str]) -> BTreeSet<PathBuf> {
-        packages.iter().map(|package| manifest_of(package)).collect()
+        packages
+            .iter()
+            .map(|package| manifest_of(package))
+            .collect()
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn the_selected_packages_follow_the_arguments_and_the_workspace() {
         let workspace = workspace();
         let selected = |arguments: &[&str]| {
@@ -2116,6 +2215,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn malformed_cargo_metadata_is_refused() {
         let cases: [(&str, fn(&mut serde_json::Value)); 7] = [
             ("packages", |m| {
@@ -2124,13 +2224,22 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             ("packages.id", |m| m["packages"][0]["id"] = 7.into()),
             ("packages.name", |m| m["packages"][1]["name"] = 7.into()),
             ("packages.manifest_path", |m| {
-                m["packages"][2].as_object_mut().expect("object").remove("manifest_path");
+                m["packages"][2]
+                    .as_object_mut()
+                    .expect("object")
+                    .remove("manifest_path");
             }),
-            ("workspace_members", |m| m["workspace_members"][0] = "path+file:///ws/x#0".into()),
+            ("workspace_members", |m| {
+                m["workspace_members"][0] = "path+file:///ws/x#0".into()
+            }),
             ("workspace_default_members", |m| {
-                m.as_object_mut().expect("object").remove("workspace_default_members");
+                m.as_object_mut()
+                    .expect("object")
+                    .remove("workspace_default_members");
             }),
-            ("workspace_default_members", |m| m["workspace_default_members"] = "a".into()),
+            ("workspace_default_members", |m| {
+                m["workspace_default_members"] = "a".into()
+            }),
         ];
         for (field, break_it) in cases {
             let mut metadata = metadata_json();
@@ -2213,6 +2322,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// its doc-tests; a dependency-only workspace library is not; restoring
     /// the missing section restores the pass.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1", "NFR-014-AC-8")]
     fn a_selected_library_without_a_test_executable_is_expected_and_a_dependency_only_one_is_not() {
         let selected = ["-p", "a", "-p", "c"];
         let with_c = format!("{A_SECTIONS}{C_DOC_SECTION}");
@@ -2237,7 +2347,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         );
     }
     fn arguments_of(command: &Command) -> Vec<OsString> {
-        command.get_args().map(std::ffi::OsStr::to_os_string).collect()
+        command
+            .get_args()
+            .map(std::ffi::OsStr::to_os_string)
+            .collect()
     }
 
     fn environment_of(command: &Command, name: &str) -> Option<Option<OsString>> {
@@ -2248,6 +2361,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn enumeration_and_run_get_the_same_arguments_directory_and_build_dir() {
         use std::os::unix::ffi::OsStringExt;
         let mut arguments = cargo_args(&["--locked", "--workspace", "--all-features"]);
@@ -2289,6 +2403,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn without_a_build_dir_both_commands_inherit_the_callers() {
         let root = Path::new("/some/root");
         for command in [
@@ -2300,6 +2415,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn the_metadata_command_lists_the_workspace_and_passes_on_only_the_lock_and_network_flags() {
         let root = Path::new("/some/root");
         let command = metadata_command(
@@ -2419,34 +2535,47 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-10")]
     fn a_read_failure_terminates_and_reaps_a_live_child_and_keeps_its_cause() {
         assert_a_stream_failure_terminates_and_reaps("cannot read cargo test output", "pipe broke");
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-10")]
     fn an_echo_failure_terminates_and_reaps_a_live_child_and_keeps_its_cause() {
-        assert_a_stream_failure_terminates_and_reaps("cannot echo cargo test output", "sink closed");
+        assert_a_stream_failure_terminates_and_reaps(
+            "cannot echo cargo test output",
+            "sink closed",
+        );
     }
 
     /// A clean stream waits for the child's own exit and does not kill it:
     /// the child ends successfully only because its stdin was closed.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-10")]
     fn a_clean_stream_waits_for_the_child_without_killing_it() {
         let (result, pid) = reap_live_child(Ok(()), true);
         let status = result.expect("the child exits by itself");
-        assert!(status.success(), "{status:?}: it was killed instead of waited for");
+        assert!(
+            status.success(),
+            "{status:?}: it was killed instead of waited for"
+        );
         assert!(!is_unreaped(pid));
     }
 
     /// When there is nothing left to kill or wait for, the stream failure
     /// still comes back unchanged.
     #[test]
+    #[trace("TC-950", "NFR-014-AC-10")]
     fn a_cleanup_with_nothing_left_to_do_still_returns_the_stream_failure() {
         let (mut child, stdin) = live_child();
         drop(stdin);
         child.wait().expect("the child exits once its stdin closes");
-        let error = reap(&mut child, stream_failure("cannot read cargo test output", "pipe broke"))
-            .expect_err("the stream failure");
+        let error = reap(
+            &mut child,
+            stream_failure("cannot read cargo test output", "pipe broke"),
+        )
+        .expect_err("the stream failure");
         assert!(
             matches!(&error, Error::TestSuitesIo { source, .. } if source.to_string() == "pipe broke"),
             "{error}"
@@ -2454,6 +2583,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-5")]
     fn every_lane_names_each_empty_suite_once_with_a_reason() {
         for lane in LANES {
             let ids: BTreeSet<SuiteId> = lane.empty.iter().map(EmptySuite::id).collect();
@@ -2466,6 +2596,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn an_unknown_lane_is_a_usage_error() {
         let error = run(Path::new(ROOT), &[OsString::from("nonsense")]).expect_err("unknown lane");
         assert!(
@@ -2476,6 +2607,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
     fn make_ci_calls_the_guard_for_each_lane_with_its_original_cargo_arguments() {
         let makefile =
             std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../Makefile"))
@@ -2489,8 +2621,26 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 "--locked --workspace --all-features",
             ),
         ] {
+            let target_root = if lane == "all-features-workspace" {
+                "CI_ALL_TARGET_DIR"
+            } else {
+                "CI_DEFAULT_TARGET_DIR"
+            };
+            let target_suffix = if lane == "all-features-workspace" {
+                "ci-all-features"
+            } else {
+                "ci-default-features"
+            };
+            let target_env = [
+                "CARGO_TARGET_DIR=\"$${",
+                target_root,
+                ":-$${CARGO_TARGET_DIR:-target}/",
+                target_suffix,
+                "}\"",
+            ]
+            .concat();
             let recipe =
-                format!("\tcargo run --locked --package xtask -- test-suites {lane} {arguments}\n");
+                format!("\t{target_env} cargo run --locked --package xtask -- test-suites {lane} {arguments}\n");
             assert!(makefile.contains(&recipe), "missing recipe: {recipe}");
             assert!(
                 !makefile.contains(&format!("\tcargo test {arguments}\n")),
@@ -2550,6 +2700,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         }
 
         #[test]
+        #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-6")]
         fn undeclared_empty_suites_fail_a_real_cargo_run() {
             let dir = project("");
             let error = run_fixture(&dir, &[]).expect_err("undeclared empty suites");
@@ -2566,6 +2717,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         }
 
         #[test]
+        #[trace("TC-950", "NFR-014-AC-5")]
         fn declared_empty_suites_pass_a_real_cargo_run() {
             let dir = project("");
             let summary = run_fixture(&dir, LIB_EMPTY).expect("declared lane passes");
@@ -2576,11 +2728,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         }
 
         #[test]
+        #[trace("TC-950", "NFR-014-AC-9")]
         fn a_failing_test_returns_cargos_own_exit_code() {
             let dir = project("panic!(\"boom\")");
             let error = run_fixture(&dir, LIB_EMPTY).expect_err("failing test");
             assert!(
-                matches!(error, Error::TestSuitesCargoFailed { step: "cargo test", .. }),
+                matches!(
+                    error,
+                    Error::TestSuitesCargoFailed {
+                        step: "cargo test",
+                        ..
+                    }
+                ),
                 "{error}"
             );
             let direct = direct_cargo_code(&dir, &["test"]);
@@ -2589,11 +2748,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         }
 
         #[test]
+        #[trace("TC-950", "NFR-014-AC-9")]
         fn a_build_failure_returns_cargos_own_exit_code() {
             let dir = project("this does not compile");
             let error = run_fixture(&dir, LIB_EMPTY).expect_err("build failure");
             assert!(
-                matches!(error, Error::TestSuitesCargoFailed { step: "cargo test --no-run", .. }),
+                matches!(
+                    error,
+                    Error::TestSuitesCargoFailed {
+                        step: "cargo test --no-run",
+                        ..
+                    }
+                ),
                 "{error}"
             );
             let direct = direct_cargo_code(&dir, &["test", "--no-run"]);
@@ -2618,6 +2784,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// longer empty: genuine cargo prints `running 1 test` and `0 passed;
         /// 1 ignored`. Restoring the file restores the pass.
         #[test]
+        #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]
         fn a_declared_empty_library_gaining_an_ignored_test_fails_until_restored() {
             let dir = project("");
             run_fixture(&dir, LIB_EMPTY).expect("the baseline passes");
@@ -2644,6 +2811,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// passes: the nonempty one is refused as undeclared, the declared
         /// ones stay empty.
         #[test]
+        #[trace("TC-950", "NFR-014-AC-5")]
         fn a_filter_that_matches_nothing_fails_the_nonempty_suite() {
             let dir = project("");
             let target = dir.path().join("target");
@@ -2657,7 +2825,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             .expect_err("a filter that matches nothing");
             let findings = findings_of(&error);
             assert!(
-                findings.contains("tests/it.rs: 0 tests passed and the lane does not declare it empty"),
+                findings
+                    .contains("tests/it.rs: 0 tests passed and the lane does not declare it empty"),
                 "{findings}"
             );
             assert!(!findings.contains("declared empty"), "{findings}");
@@ -2733,16 +2902,23 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// `-p`, `--features`, `--workspace` and `--all-features` change the
         /// suites cargo runs; the guard enumerates and checks the same set.
         #[test]
+        #[trace("TC-950", "NFR-014-AC-1")]
         fn package_and_feature_flags_select_the_suites_the_guard_checks() {
             let dir = workspace();
 
             let only_a = run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..2], &["-p", "a"])
                 .expect("-p a runs only a's suites");
-            assert!(only_a.contains("1 suites ran tests, 2 declared empty"), "{only_a}");
+            assert!(
+                only_a.contains("1 suites ran tests, 2 declared empty"),
+                "{only_a}"
+            );
 
-            let with_feature =
-                run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..2], &["-p", "a", "--features", "extra"])
-                    .expect("the feature-gated test target runs");
+            let with_feature = run_workspace(
+                &dir,
+                &WORKSPACE_FIXTURE_EMPTY[..2],
+                &["-p", "a", "--features", "extra"],
+            )
+            .expect("the feature-gated test target runs");
             assert!(
                 with_feature.contains("2 suites ran tests, 2 declared empty"),
                 "{with_feature}"
@@ -2750,11 +2926,17 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
             let whole = run_workspace(&dir, WORKSPACE_FIXTURE_EMPTY, &["--workspace"])
                 .expect("--workspace runs both packages");
-            assert!(whole.contains("2 suites ran tests, 4 declared empty"), "{whole}");
+            assert!(
+                whole.contains("2 suites ran tests, 4 declared empty"),
+                "{whole}"
+            );
 
-            let all_features =
-                run_workspace(&dir, WORKSPACE_FIXTURE_EMPTY, &["--workspace", "--all-features"])
-                    .expect("--all-features enables a's extra test target");
+            let all_features = run_workspace(
+                &dir,
+                WORKSPACE_FIXTURE_EMPTY,
+                &["--workspace", "--all-features"],
+            )
+            .expect("--all-features enables a's extra test target");
             assert!(
                 all_features.contains("3 suites ran tests, 4 declared empty"),
                 "{all_features}"
@@ -2763,28 +2945,43 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             let error = run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..2], &["--workspace"])
                 .expect_err("b's empty suites are not declared");
             let findings = findings_of(&error);
-            assert!(findings.contains("b/src/lib.rs: 0 tests passed"), "{findings}");
-            assert!(findings.contains("b/src/lib.rs (doctests): 0 tests passed"), "{findings}");
+            assert!(
+                findings.contains("b/src/lib.rs: 0 tests passed"),
+                "{findings}"
+            );
+            assert!(
+                findings.contains("b/src/lib.rs (doctests): 0 tests passed"),
+                "{findings}"
+            );
         }
 
         /// `--lib` and `--tests` run no doc-tests, and the guard does not
         /// expect any; a lane that still declares the doc-tests is told they
         /// did not run.
         #[test]
+        #[trace("TC-950", "NFR-014-AC-1", "NFR-014-AC-8")]
         fn target_selection_flags_leave_out_the_doctest_suite() {
             let dir = workspace();
-            let lib_only = run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..1], &["-p", "a", "--lib"])
-                .expect("--lib runs a's unit suite only");
-            assert!(lib_only.contains("0 suites ran tests, 1 declared empty"), "{lib_only}");
+            let lib_only =
+                run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..1], &["-p", "a", "--lib"])
+                    .expect("--lib runs a's unit suite only");
+            assert!(
+                lib_only.contains("0 suites ran tests, 1 declared empty"),
+                "{lib_only}"
+            );
 
             let tests = run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..1], &["-p", "a", "--tests"])
                 .expect("--tests runs unit and integration suites, not doc-tests");
-            assert!(tests.contains("1 suites ran tests, 1 declared empty"), "{tests}");
+            assert!(
+                tests.contains("1 suites ran tests, 1 declared empty"),
+                "{tests}"
+            );
 
             let error = run_workspace(&dir, &WORKSPACE_FIXTURE_EMPTY[..2], &["-p", "a", "--lib"])
                 .expect_err("the declared doc-tests did not run");
             assert!(
-                findings_of(&error).contains("a/src/lib.rs (doctests): declared empty, but it did not run"),
+                findings_of(&error)
+                    .contains("a/src/lib.rs (doctests): declared empty, but it did not run"),
                 "{error}"
             );
         }
@@ -2793,6 +2990,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// executable paths in its `Running` headers, and the guard still
         /// resolves them; the environment variable reaches both cargo runs.
         #[test]
+        #[trace("TC-950", "NFR-014-AC-1")]
         fn a_build_dir_outside_the_project_is_used_and_its_absolute_headers_resolve() {
             let dir = project("");
             let elsewhere = tempfile::tempdir().expect("tempdir");
@@ -2826,11 +3024,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// and reaped is established on a live child by the `reap` tests, not
         /// here: this run cannot observe its own child.
         #[test]
+        #[trace("TC-950")]
         fn a_failing_echo_sink_fails_the_run_with_the_sinks_error() {
             let dir = project("");
             let target = dir.path().join("target");
-            let error = run_lane(dir.path(), &lane(LIB_EMPTY), &[], Some(&target), &mut FailingSink)
-                .expect_err("the sink fails");
+            let error = run_lane(
+                dir.path(),
+                &lane(LIB_EMPTY),
+                &[],
+                Some(&target),
+                &mut FailingSink,
+            )
+            .expect_err("the sink fails");
             assert!(
                 matches!(&error, Error::TestSuitesIo { what, source }
                     if what.contains("echo") && source.to_string() == "sink closed"),
@@ -2884,7 +3089,11 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 "[package]\nname = \"e\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[dependencies]\nd = { path = \"../d\" }\n",
             );
             write(root, "e/src/lib.rs", "pub fn e() -> u32 { d::one() }\n");
-            write(root, "e/tests/base.rs", "#[test]\nfn t() { assert_eq!(e::e(), 1); }\n");
+            write(
+                root,
+                "e/tests/base.rs",
+                "#[test]\nfn t() { assert_eq!(e::e(), 1); }\n",
+            );
             dir
         }
 
@@ -2927,20 +3136,30 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// decoder. Disabling c's doctests drops c's suite and the guard
         /// stops expecting it; restoring them restores both.
         #[test]
+        #[trace("TC-950", "NFR-014-AC-1", "NFR-014-AC-8")]
         fn a_selected_doc_only_library_is_checked_and_a_dependency_only_one_is_not() {
             let dir = doc_workspace("test = false\n");
 
             let both = run_doc_workspace(&dir, DOC_FIXTURE_E_EMPTY, &["-p", "e", "-p", "c"])
                 .expect("e's suites plus c's doc-tests");
-            assert!(both.contains("2 suites ran tests, 2 declared empty"), "{both}");
+            assert!(
+                both.contains("2 suites ran tests, 2 declared empty"),
+                "{both}"
+            );
 
             let only_e = run_doc_workspace(&dir, DOC_FIXTURE_E_EMPTY, &["-p", "e"])
                 .expect("d's doc-tests are not run for e and not expected");
-            assert!(only_e.contains("1 suites ran tests, 2 declared empty"), "{only_e}");
+            assert!(
+                only_e.contains("1 suites ran tests, 2 declared empty"),
+                "{only_e}"
+            );
 
             let workspace = run_doc_workspace(&dir, DOC_FIXTURE_E_EMPTY, &["--workspace"])
                 .expect("the whole workspace, d included");
-            assert!(workspace.contains("3 suites ran tests, 2 declared empty"), "{workspace}");
+            assert!(
+                workspace.contains("3 suites ran tests, 2 declared empty"),
+                "{workspace}"
+            );
 
             let wrongly_declared =
                 run_doc_workspace(&dir, DOC_FIXTURE_E_AND_C_EMPTY, &["-p", "e", "-p", "c"])
@@ -2973,20 +3192,31 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             );
             let restored = run_doc_workspace(&dir, DOC_FIXTURE_E_EMPTY, &["-p", "e", "-p", "c"])
                 .expect("c's doc-tests are back");
-            assert!(restored.contains("2 suites ran tests, 2 declared empty"), "{restored}");
+            assert!(
+                restored.contains("2 suites ran tests, 2 declared empty"),
+                "{restored}"
+            );
         }
 
         #[test]
+        #[trace("TC-950", "NFR-014-AC-1")]
         fn an_unknown_package_is_refused_by_cargo_before_the_guard_checks_anything() {
             let dir = doc_workspace("test = false\n");
             let error = run_doc_workspace(&dir, DOC_FIXTURE_E_EMPTY, &["-p", "no-such-package"])
                 .expect_err("cargo refuses an unknown package");
             assert!(
-                matches!(error, Error::TestSuitesCargoFailed { step: "cargo test --no-run", .. }),
+                matches!(
+                    error,
+                    Error::TestSuitesCargoFailed {
+                        step: "cargo test --no-run",
+                        ..
+                    }
+                ),
                 "{error}"
             );
             assert_eq!(i32::from(error.exit_code()), {
-                let direct = direct_cargo_code(&dir, &["test", "--no-run", "-p", "no-such-package"]);
+                let direct =
+                    direct_cargo_code(&dir, &["test", "--no-run", "-p", "no-such-package"]);
                 assert_ne!(direct, 0);
                 direct
             });
