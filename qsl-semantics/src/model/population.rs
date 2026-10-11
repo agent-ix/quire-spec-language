@@ -751,6 +751,65 @@ enum AdmissionRole {
     Post(PopulationId),
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PopulationIdentityWorkObservations {
+    member_encodings: usize,
+    member_sort_comparisons: usize,
+    digest_calls: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Counts real PopulationId encoding, sorting and digest operations so
+    /// tests can verify NFR-012 rejects before any priced identity work runs.
+    static POPULATION_IDENTITY_WORK: std::cell::Cell<PopulationIdentityWorkObservations> =
+        const { std::cell::Cell::new(PopulationIdentityWorkObservations {
+            member_encodings: 0,
+            member_sort_comparisons: 0,
+            digest_calls: 0,
+        }) };
+}
+
+#[cfg(test)]
+fn reset_population_identity_work_observations() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        counts.set(PopulationIdentityWorkObservations::default());
+    });
+}
+
+#[cfg(test)]
+fn population_identity_work_observations() -> PopulationIdentityWorkObservations {
+    POPULATION_IDENTITY_WORK.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+fn record_population_identity_member_encoding() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        let mut current = counts.get();
+        current.member_encodings = current.member_encodings.saturating_add(1);
+        counts.set(current);
+    });
+}
+
+#[cfg(test)]
+fn record_population_identity_sort_comparison() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        let mut current = counts.get();
+        current.member_sort_comparisons = current.member_sort_comparisons.saturating_add(1);
+        counts.set(current);
+    });
+}
+
+#[cfg(test)]
+fn record_population_identity_digest() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        let mut current = counts.get();
+        current.digest_calls = current.digest_calls.saturating_add(1);
+        counts.set(current);
+    });
+}
+
 impl AdmissionRole {
     fn as_str(self) -> &'static str {
         match self {
@@ -780,6 +839,8 @@ fn population_id_preimage<'a>(
             object: &key.object,
             declaration: declaration.wire(),
         };
+        #[cfg(test)]
+        record_population_identity_member_encoding();
         let bytes = quire_canonical::to_vec(
             &member,
             quire_canonical::Limits::new(
@@ -790,7 +851,11 @@ fn population_id_preimage<'a>(
         )?;
         encoded_members.push((bytes, member));
     }
-    encoded_members.sort_by(|left, right| left.0.cmp(&right.0));
+    encoded_members.sort_by(|left, right| {
+        #[cfg(test)]
+        record_population_identity_sort_comparison();
+        left.0.cmp(&right.0)
+    });
     Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
         // The full `DomainPackageRef` header (identity, version, digest), not
@@ -875,6 +940,8 @@ fn mint_population_id(
         Ok(preimage) => preimage,
         Err(error) => return Err(population_identity_encoding_refusal(error)),
     };
+    #[cfg(test)]
+    record_population_identity_digest();
     let digest = quire_canonical::sha256(
         &preimage,
         quire_canonical::Limits::new(byte_bound, quire_canonical::Limits::MAX_DEPTH)
@@ -2295,6 +2362,65 @@ mod tests {
         assert_eq!(short_keys, 32 * 5 * 4 * 512);
         assert!(long_repeated_prefix_keys > short_keys * 8);
         assert!(twice_as_many_keys > short_keys);
+    }
+
+    /// A denied identity-work charge leaves the actual canonical encoder,
+    /// member comparator and digest untouched; an admitted control proves
+    /// the observation points cover the real producer path.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_encoding_is_charged_before_hashing() {
+        let package = domain_package();
+        let view = match normalize(&package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed view, got {other:?}"),
+        };
+        let population_key = DeclarationKey::fixture("model.pop");
+        let mut population = document();
+        population.members[0].object = "x".repeat(4096);
+
+        reset_population_identity_work_observations();
+        let denied = admit_binding(
+            &view,
+            &population,
+            &population_key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits {
+                work_units: 128,
+                ..PopulationAdmissionLimits::UNLIMITED
+            }),
+        );
+        assert!(matches!(
+            denied,
+            AdmissionOutcome::Incomplete(AdmissionIncomplete {
+                limit_kind: AdmissionLimitKind::WorkUnits,
+                limit: 128,
+                consumed: 2,
+                charge_point: AdmissionChargePoint::BindingMember,
+                next_charge,
+            }) if next_charge > 126
+        ));
+        assert_eq!(
+            population_identity_work_observations(),
+            PopulationIdentityWorkObservations::default(),
+            "a denied charge must precede member encoding, sorting and hashing"
+        );
+
+        reset_population_identity_work_observations();
+        let admitted = admit_binding(
+            &view,
+            &population,
+            &population_key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        );
+        assert!(matches!(admitted, AdmissionOutcome::Admitted(_)));
+        let observations = population_identity_work_observations();
+        assert_eq!(observations.member_encodings, population.members.len());
+        assert!(observations.member_sort_comparisons > 0);
+        assert_eq!(observations.digest_calls, 1);
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {

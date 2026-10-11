@@ -3317,38 +3317,6 @@ fn invalid_population_member_is_refused_before_identity_is_minted() {
     ));
 }
 
-/// NFR-012 admission work prices identity serialization and worst-case
-/// repeated-prefix member sorting before those operations run; a large
-/// caller-supplied object identity cannot bypass the work ceiling.
-#[trace("TC-434", "NFR-012")]
-#[test]
-fn population_identity_encoding_is_charged_before_hashing() {
-    let view = view_of(&fixture_f1());
-    let mut document = p1("test/orders");
-    document.members[0].object = "x".repeat(4096);
-    let outcome = admit_binding(
-        &view,
-        &document,
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut AdmissionMeter::new(PopulationAdmissionLimits {
-            work_units: 128,
-            ..PopulationAdmissionLimits::UNLIMITED
-        }),
-    );
-    assert!(matches!(
-        outcome,
-        AdmissionOutcome::Incomplete(AdmissionIncomplete {
-            limit_kind: AdmissionLimitKind::WorkUnits,
-            limit: 128,
-            consumed: 3,
-            charge_point: AdmissionChargePoint::BindingMember,
-            next_charge,
-        }) if next_charge > 127
-    ));
-}
-
 /// Binding admission's member-type conformance walk uses the
 /// caller's own `PopulationAdmissionLimits::ancestor_steps`, not a fixed
 /// ceiling. A population declaring only `model.A` admits P1's `b1` (a
