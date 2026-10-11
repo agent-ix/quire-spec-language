@@ -702,7 +702,7 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
     assert_eq!(
         refusals[0].cause,
         qsl_semantics::model::normalize::ModelRefusalCause::IntakeMissingDeclaration {
-            node: "ix://test/origins/A/related".into(),
+            node: "ix://test/origins/relationship/A-related-B".into(),
             reference: "ix://test/origins/Missing".into(),
             origin: relationship_origin,
             path: "/types/0/relationships/0/targetEnd/type".parse().unwrap(),
