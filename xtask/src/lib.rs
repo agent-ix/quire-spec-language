@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Workspace `xtask`: `cargo xtask seam-probe`, `cargo xtask string-edge`,
-//! `cargo xtask route-lint` and `cargo xtask checked-input`, the gates
+//! `cargo xtask route-lint`, `cargo xtask checked-input` and `cargo xtask
+//! test-suites`, the gates
 //! `make ci` runs standalone (the `Makefile` targets of the same names), and
-//! `cargo xtask canonical-types`, run on demand.
+//! `cargo xtask canonical-types`, run on demand, and the local `conformance`
+//! vector gate.
 //! `import_graph`, `definition_scan` and `typestate_scan` are plain library
 //! modules backing their own `#[cfg(test)]` suites.
 #![forbid(unsafe_code)]
 
 pub mod canonical_types;
 pub mod checked_input;
+pub mod conformance;
 pub mod definition_scan;
 pub mod error;
 pub mod import_graph;
 pub mod route_lint;
 pub mod seam_probe;
 pub mod string_edge;
+pub mod test_suites;
 pub mod typestate_scan;
 
 #[cfg(test)]
@@ -25,7 +29,6 @@ mod ci_feature_lane_tests;
 
 #[cfg(test)]
 mod ci_spec_validation_tests;
-
 pub use error::{Error, Result};
 
 /// `Self`'s type name for an `impl` block, for the common case `seam_probe`

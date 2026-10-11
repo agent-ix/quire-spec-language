@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -38,6 +38,15 @@ seam-probe:
 # function. Part of `ci:` -- the lint gate FR-064 requires it to run in.
 string-edge:
 	cargo run --package xtask -- string-edge
+
+# The local push check keeps the fast source-shape checks at the front of the
+# developer loop. Keep string-edge after formatting and Clippy so a push cannot
+# bypass the dispatch-literal scan when those checks are run through this
+# wrapper.
+pre-push:
+	cargo fmt --all -- --check
+	cargo clippy --locked --workspace --all-targets -- -D warnings
+	cargo run --locked --package xtask -- string-edge
 
 # FR-080-AC-3: scans the #185 registry crate (every file under
 # qsl-route/src) for a static, OnceLock or thread_local! item -- ADR-012
@@ -107,7 +116,12 @@ cargo-deny-bans:
 # `cargo test` (no `--locked`) under `use-local`.
 # =============================================================================
 
-SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)
+SIBLINGS ?= $(shell cd "$$(git rev-parse --path-format=absolute --git-common-dir)/../.." && pwd -P)
+ifeq ($(origin QSPEC_DIR),undefined)
+QSPEC_DIR := $(SIBLINGS)/quire-specification
+endif
+# Freeze the raw caller value before Make can expand literal '$' path bytes.
+override export QSPEC_DIR := $(value QSPEC_DIR)
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
 	ix-trace-rs:ix-trace-rs:.
@@ -175,19 +189,25 @@ use-remote:
 # continues to use the caller's root and its own Cargo feature selection.
 # Resolve paths in the shell from environment data so quotes, backticks and
 # dollars remain literal path bytes instead of becoming Make expansions.
+ifneq ($(origin CI_DEFAULT_TARGET_DIR),undefined)
+override export CI_DEFAULT_TARGET_DIR := $(value CI_DEFAULT_TARGET_DIR)
+endif
+ifneq ($(origin CI_ALL_TARGET_DIR),undefined)
+override export CI_ALL_TARGET_DIR := $(value CI_ALL_TARGET_DIR)
+endif
 
 ci-default-features:
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo fmt --all -- --check
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked --workspace --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked -p qsl-semantics
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-qsl-semantics --locked -p qsl-semantics
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked -p qsl-cst
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-qsl-cst --locked -p qsl-cst
 
 ci-all-features:
 	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo test --locked --workspace --all-features
+	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
@@ -230,119 +250,31 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
-ci: check-spec-validation $(CI_CHECKS)
-ifneq ($(filter ci,$(MAKECMDGOALS)),)
-$(CI_CHECKS): | check-spec-validation
+CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_TARGETS := $(CI_CHECKS)
+# The public aggregate validates the native documents before the xtask wrapper
+# canonicalizes QSPEC_DIR for every child lane.
+ci: check-spec-validation
+	@$(CONFORMANCE_XTASK) ci
+
+# The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
+# Scope the input prerequisite to this graph, so standalone targets such as
+# ci-clean-build retain their own process oracle.
+.PHONY: ci-internal
+ci-internal: $(CI_TARGETS)
+ifneq ($(filter ci-internal,$(MAKECMDGOALS)),)
+$(CI_TARGETS): check-conformance-input
 endif
 
-# The FR-322 application-node key checked against QSpec's
-# published `operation_vectors`, read at run time from the
-# quire-specification checkout named by QSPEC_DIR. Opt-in while QSpec is not
-# public; nothing of QSpec is copied into this repository. Without QSPEC_DIR
-# the test itself skips, so this target refuses to run instead, and it fails
-# when the test did not actually check the vectors (a renamed test filters to
-# zero tests and would otherwise pass). Both tests are `qsl-semantics`'
-# (the key lives in `check::node_key`).
-CONFORMANCE_TEST := check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
-# FR-092-AC-8 (TC-413 step 6): the nominal enum declaration and member keys
-# against QSpec's `enum-status` and `enum-status-ready` vectors.
-CONFORMANCE_ENUM_TEST := check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors
-# TC-411 step 3 (FR-088-AC-12): the compound-unit `UnitId`s against QSpec's
-# `value-compound-unit-vectors.json`, guarded the same way.
-CONFORMANCE_UNIT_TEST := quantities::tc_411_compound_unit_ids_match_qspec_vectors
-# ADR-013 C-14 (TC-421): every source-map entry of QSpec's positive
-# v2 fixtures looks up to its wire regions, guarded the same way.
-CONFORMANCE_SOURCE_MAP_TEST := checked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures
-# QSL's full I2 read over QSpec's checked-package-v2 fixtures --
-# every positive fixture admitted, every adverse mutation refused by cause.
-CONFORMANCE_I2_TEST := checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
-# FR-340: QSL's full I2 read over QSpec's
-# `node-identity-vectors.json` `frame_mutations` -- the frame-body member
-# eligibility table and its missing_declaration/invalid_model_binding
-# refusal split and precedence.
-CONFORMANCE_FRAME_TEST := checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors
-# QSL's I2 read over QSpec's `dependency-selection-vectors.json`.
-CONFORMANCE_DEPENDENCY_TEST := checked_v2::tests::conformance_dependency_selection_vectors
-# FR-093-AC-13, TC-416 step 7: the emitted application nodes against
-# QSpec's `positive-operation-identities.json` and
-# `positive-control-operations.json`.
-CONFORMANCE_GOLDEN_TEST := emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures
-# FR-110 and FR-111-AC-7: every header-profile and bundle refusal's
-# (code, cause) pair against QSpec's `native-diagnostics.md`.
-CONFORMANCE_PROFILE_CAUSES_TEST := check::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics
-CONFORMANCE_BUNDLE_CAUSES_TEST := library::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics
-# The `Value` family's definition catalog and its package-selection
-# admission against QSpec's `complete-value-lock.json` and
-# `complete-value-selection-vectors.json`.
-CONFORMANCE_CATALOG_TEST := complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock
-CONFORMANCE_SELECTION_TEST := complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors
-conformance:
-	@if [ -z "$(QSPEC_DIR)" ]; then \
-		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
-		exit 1; \
-	fi
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: ' || { echo "conformance: the vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_ENUM_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: 2 nominal enum vectors' || { echo "conformance: the nominal enum vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_UNIT_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* compound-unit vectors$$' || { echo "conformance: the compound-unit vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_SOURCE_MAP_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* source-map entries over [1-9][0-9]* positive fixtures$$' || { echo "conformance: the source-map lookup check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_I2_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* positive fixtures through QSL.s full I2 read' || { echo "conformance: the I2 positive-fixture check did not run" >&2; exit 1; }; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* adverse mutations refused' || { echo "conformance: the I2 adverse-mutation check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_FRAME_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* frame-body mutation vectors matched$$' || { echo "conformance: the frame-body mutation check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_DEPENDENCY_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* dependency-selection entry mutations and [1-9][0-9]* order vectors$$' || { echo "conformance: the dependency-selection vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_GOLDEN_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* emitted application nodes match QSpec.s positive fixtures$$' || { echo "conformance: the emitter golden check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_PROFILE_CAUSES_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* profile (code, cause) pairs listed by QSpec$$' || { echo "conformance: the profile cause check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_BUNDLE_CAUSES_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* bundle (code, cause) pairs listed by QSpec$$' || { echo "conformance: the bundle cause check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_CATALOG_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* catalog rows match QSpec.s lock$$' || { echo "conformance: the definition catalog check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_SELECTION_TEST) --nocapture 2>&1); \
-	status=$$?; \
-	echo "$$out"; \
-	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	echo "$$out" | grep -q '^conformance: [1-9][0-9]* accepted and [1-9][0-9]* refused selection vectors$$' || { echo "conformance: the package-selection vector check did not run" >&2; exit 1; }
+# Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
+# reaches the recipe shell as data; Rust canonicalizes it before child Cargo runs.
+CONFORMANCE_XTASK = QSPEC_DIR="$$QSPEC_DIR" cargo run --locked --package xtask --
+.PHONY: check-conformance-input
+check-conformance-input:
+	@$(CONFORMANCE_XTASK) conformance-input
+
+conformance: check-conformance-input
+	@$(CONFORMANCE_XTASK) conformance
 
 # FR-059/FR-060 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem.

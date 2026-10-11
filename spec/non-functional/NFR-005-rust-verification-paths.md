@@ -16,10 +16,10 @@ The repository's fixture assertions and qualification checks. Their
 verification logic is the code that compares a fixture or vector with its
 expected result. Standard Cargo launch commands do not embed a second-language
 verifier. An implementation in another repository or a Rust wrapper is not an
-exemption. The `conformance` Makefile target's shell `grep` only checks that
-each Rust conformance test printed its summary line, so that a test filter
-matching nothing cannot pass. It compares no fixture or vector; the Rust tests
-do.
+exemption. The `conformance` Makefile target invokes the Rust `xtask`
+runner, which checks that each required Rust test executed and printed its
+summary line, so that a test filter matching nothing cannot pass. The runner
+compares no fixture or vector; the Rust tests do.
 
 ## Measurement and Evaluation
 

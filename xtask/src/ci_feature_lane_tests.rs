@@ -19,7 +19,17 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "--workspace"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "default-workspace",
+        "--locked",
+        "--workspace",
+    ],
     &[
         "clippy",
         "--locked",
@@ -30,7 +40,18 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "-p", "qsl-semantics"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "default-qsl-semantics",
+        "--locked",
+        "-p",
+        "qsl-semantics",
+    ],
     &[
         "clippy",
         "--locked",
@@ -41,7 +62,18 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "-p", "qsl-cst"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "default-qsl-cst",
+        "--locked",
+        "-p",
+        "qsl-cst",
+    ],
 ];
 const ALL_COMMANDS: &[&[&str]] = &[
     &[
@@ -54,7 +86,18 @@ const ALL_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "--workspace", "--all-features"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "all-features-workspace",
+        "--locked",
+        "--workspace",
+        "--all-features",
+    ],
 ];
 
 fn workspace() -> &'static Path {
@@ -240,9 +283,9 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         "caller $FEATURE_LANE_PATH_VALUE",
         "caller 'quote' \\ slash; * ? [x]",
     ] {
-        // Make's command-line assignment grammar requires doubled dollars.
-        // Command::args passes these bytes directly, without a shell launcher.
-        let root = format!("CARGO_TARGET_DIR={}", path.replace('$', "$$"));
+        // Command::args passes the literal path directly to Make. The recipe
+        // exports it as shell data, so neither Make nor the shell expands it.
+        let root = format!("CARGO_TARGET_DIR={path}");
         assert_eq!(
             recipe.run(
                 &["ci-default-features", "ci-all-features"],
@@ -252,9 +295,9 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
             expected(&format!("{path}/ci-default-features"), DEFAULT_COMMANDS)
                 + &expected(&format!("{path}/ci-all-features"), ALL_COMMANDS)
         );
-        let default = format!("CI_DEFAULT_TARGET_DIR={}", path.replace('$', "$$"));
+        let default = format!("CI_DEFAULT_TARGET_DIR={path}");
         let all_path = format!("/tmp/{path}");
-        let all = format!("CI_ALL_TARGET_DIR={}", all_path.replace('$', "$$"));
+        let all = format!("CI_ALL_TARGET_DIR={all_path}");
         assert_eq!(
             recipe.run(
                 &["ci-default-features", "ci-all-features"],
@@ -289,8 +332,8 @@ fn routing_oracle_rejects_safe_path_and_command_mutations() {
             "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features-mutant}\" cargo fmt --all -- --check",
         ),
         (
-            "cargo test --locked --workspace\n",
-            "cargo test --locked --workspace --all-features\n",
+            "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}\" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace\n",
+            "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}\" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features\n",
         ),
     ] {
         // Mutate only the fixture copy, retaining safe shell-variable expansion.
@@ -334,7 +377,8 @@ fn repeated_switches_in_both_directions_keep_each_lane_directory() {
 fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let recipe = Recipe::new();
     let other_checks = [
-        "check-spec-validation",
+        "check-conformance-input",
+        "conformance",
         "check-no-committed-binaries",
         "check-index-completeness",
         "ci-clean-build",
@@ -353,7 +397,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         .flat_map(|target| ["-o", *target])
         .collect();
     assert_eq!(
-        recipe.run(&["ci"], Some("caller target"), &overrides),
+        recipe.run(&["ci-internal"], Some("caller target"), &overrides),
         expected("caller target/ci-default-features", DEFAULT_COMMANDS)
             + &expected("caller target/ci-all-features", ALL_COMMANDS)
     );
