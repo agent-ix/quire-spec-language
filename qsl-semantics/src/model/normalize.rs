@@ -1565,27 +1565,28 @@ fn build(
             for member in
                 index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
             {
-                work_step();
                 // The fact shares the ancestor path rather than copying it,
                 // so memory grows with facts plus total path length, not
                 // facts times path length.
-                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.key.clone()]);
-                let entry = member_preimages
-                    .entry((type_key.clone(), member.key.clone()))
-                    .or_insert_with(|| EffectiveDeclarationPreimage {
-                        owner_effective_type: Some(owner_effective_id),
-                        original: member.key.clone(),
-                        derivation: Vec::new(),
-                    });
-                if entry.derivation.is_empty() {
-                    charges.fact()?;
-                    entry.derivation.push(Fact {
-                        ordinal: 0,
-                        rule: RULE_QUALIFY,
-                        inputs: vec![member.key.clone()].into(),
-                    });
-                }
+                let key = (type_key.clone(), member.key.clone());
+                let entry = match member_preimages.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        charges.fact()?;
+                        entry.insert(EffectiveDeclarationPreimage {
+                            owner_effective_type: Some(owner_effective_id),
+                            original: member.key.clone(),
+                            derivation: vec![Fact {
+                                ordinal: 0,
+                                rule: RULE_QUALIFY,
+                                inputs: vec![member.key.clone()].into(),
+                            }],
+                        })
+                    }
+                };
                 charges.fact()?;
+                work_step();
+                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.key.clone()]);
                 let ordinal = entry.derivation.len();
                 entry.derivation.push(Fact {
                     ordinal,
@@ -3077,7 +3078,11 @@ mod tests {
         let (large, large_steps) = incomplete_with_steps(&wide(1_000), facts(1_000));
         assert_eq!(small.limit_kind, LimitKind::DerivationFacts);
         assert_eq!(large.limit_kind, LimitKind::DerivationFacts);
-        assert_eq!((small_steps, large_steps), (4, 4));
+        // Three remaining fact charges admit B's type inheritance fact and
+        // the first inherited member's qualify+inherit pair. The next
+        // member's qualify charge is denied before its inheritance work, so
+        // only the ancestor walk and first member are counted at either size.
+        assert_eq!((small_steps, large_steps), (2, 2));
 
         let lattice = ModelNormalizationLimits {
             derivation_facts: 200,
