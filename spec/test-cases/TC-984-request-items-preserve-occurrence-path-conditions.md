@@ -17,25 +17,28 @@ FR-075-AC-9.
 
 ## Test Procedure
 
-Build a requirement-record map with these entries, in occurrence-key order:
+Check this source fixture and run `items_from_requirements` over its checked
+package's requirement records with a registry that supplies the same
+candidate outcome for both records:
 
-| Record | Application occurrence key | Canonical path condition |
-|--------|----------------------------|--------------------------|
-| 1 | `OccurrenceKey(appNode, Origin(expression, 0))` | `[PathGuard(OccurrenceKey(guardNodeA, Origin(expression, 0)), true)]` |
-| 2 | `OccurrenceKey(appNode, Origin(expression, 1))` | `[PathGuard(OccurrenceKey(guardNodeB, Origin(expression, 1)), false)]` |
+```text
+function f using v(x: Int[0, 9], p: Boolean): Integer pure {
+  if p then x + 1 else x + 1
+}
+```
 
-Use distinct guard nodes `guardNodeA` and `guardNodeB`; both records otherwise
-have valid requirement data. Run `items_from_requirements` with a registry
-that supplies the same candidate outcome for both records. Also run it with a
-single unguarded record.
+The two `x + 1` occurrences are the vector entries. Select their records by
+the common application node and verify that their occurrence keys differ.
+Also check an unguarded function `function g using v(x: Int[0, 9]): Integer
+pure { x + 1 }` and run the builder over its record.
 
 ## Expected Results
 
-The builder returns two items for the first vector, in occurrence-key order.
-Both items have `appNode` as their node and distinct occurrence keys. Each
+The builder returns two items for the first fixture, in occurrence-key order.
+Both items have the same application node and distinct occurrence keys. Each
 item's `path_condition()` equals the exact canonical sequence in its source
-record: item 1 has the `guardNodeA` guard with `holds == true`, and item 2 has
-the `guardNodeB` guard with `holds == false`. The sequence order and guard
-members are preserved; the builder does not flatten, deduplicate, or
-substitute one item's guards for the other's. The unguarded record produces
-an item whose path condition is empty.
+record: both contain the `if p` guard occurrence, with `holds == true` for
+the then occurrence and `holds == false` for the else occurrence. The sequence
+order and guard members are preserved; the builder does not flatten,
+deduplicate, or substitute one item's guards for the other's. The unguarded
+record produces an item whose path condition is empty.
