@@ -430,7 +430,9 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     let subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
     // Subtype order follows the view's own ascending effective-identity
     // order, i.e. each type's computed hash.
-    assert_eq!(subtypes, vec!["model.A", "model.D", "model.C", "model.B"]);
+    // The closed identity wire no longer hashes the removed revision field;
+    // this changes the effective-identity order while preserving the set.
+    assert_eq!(subtypes, vec!["model.A", "model.D", "model.B", "model.C"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals
         .iter()
