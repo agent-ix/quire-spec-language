@@ -26,7 +26,7 @@
 //! disposition of its own.
 //!
 //! A backend registers from the labels its FR-331 provider manifest states
-//! ([`BackendDescriptor::admit`], FR-057-AC-8): each advertised kind and
+//! ([`descriptor_from_manifest`], FR-057-AC-8): each advertised kind and
 //! mode is admitted under the same exact-label rules as a requested pair,
 //! and an absent or unknown kind or an unknown mode refuses the whole
 //! registration, keyed by backend identity. A candidate is the ADR-013
@@ -49,8 +49,9 @@ pub mod routing;
 
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
-pub use qsl_foundation::{BackendId, EmptyBackendIdentity};
-use qsl_foundation::{CatalogCode, Category, Code};
+use qsl_foundation::{BackendId, CatalogCode};
+#[cfg(test)]
+use qsl_foundation::{Category, Code, EmptyBackendIdentity};
 use qsl_semantics::check::Capability;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -86,7 +87,7 @@ impl Mode {
 
     /// Read a mode from its exact FR-290 wire spelling, with no
     /// normalization or default. Any other label (FR-290 "a mode outside
-    /// these two") is `None`; [`BackendDescriptor::admit`] turns that into
+    /// these two") is `None`; [`descriptor_from_manifest`] turns that into
     /// `invalid_capability`/`unknown-mode`.
     pub fn from_wire(label: &str) -> Option<Mode> {
         Mode::ALL
@@ -168,7 +169,36 @@ pub fn descriptor_from_manifest<'a>(
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     domains: Option<&[&str]>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
-    BackendDescriptor::admit(backend, origin, manifest_digest, advertised, domains)
+    let refuse = |cause| RegistrationRefusal {
+        backend: backend.clone(),
+        manifest_digest,
+        cause,
+    };
+    let mut advertises = HashSet::new();
+    for (kind, mode) in advertised {
+        let kind = kind.ok_or_else(|| refuse(RegistrationCause::AbsentKind))?;
+        let kind = Capability::from_wire(kind).map_err(|unknown| {
+            refuse(RegistrationCause::UnknownKind(
+                unknown.received().to_owned(),
+            ))
+        })?;
+        let mode = mode
+            .and_then(Mode::from_wire)
+            .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
+        advertises.insert((kind, mode));
+    }
+    let advertises_bounded = advertises
+        .iter()
+        .any(|&(_, mode)| matches!(mode, Mode::Bounded));
+    let domains = admit_domains(domains, advertises_bounded)
+        .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
+    Ok(BackendDescriptor {
+        backend,
+        origin,
+        manifest_digest,
+        advertises,
+        domains,
+    })
 }
 
 impl BackendDescriptor {
@@ -178,7 +208,7 @@ impl BackendDescriptor {
     /// Inputs). `domains` is the manifest's `domains`, `None` when it has
     /// none.
     ///
-    /// The same `domains` rules as [`BackendDescriptor::admit`] apply: an
+    /// The same `domains` rules as [`descriptor_from_manifest`] apply: an
     /// absent set while a `bounded` pair is advertised, an empty set, or a
     /// kind that is not boundable refuses `invalid_capability`/
     /// `invalid-domains`, keyed by `backend` and `manifest_digest`. (A set
@@ -201,83 +231,6 @@ impl BackendDescriptor {
                 cause: RegistrationCause::InvalidDomains(defect),
             }
         })?;
-        Ok(Self {
-            backend,
-            origin,
-            manifest_digest,
-            advertises,
-            domains,
-        })
-    }
-
-    /// Build a descriptor from the advertised `(kind, mode)` labels exactly
-    /// as the backend's provider manifest states them (FR-057 "Stage
-    /// ownership", FR-290 "Advertised mode", ADR-013 C-28).
-    ///
-    /// Each kind is admitted under the same rule as a requested pair: exact
-    /// byte equality with one FR-290 label, no normalization or default.
-    /// Any failing pair refuses the whole registration, keyed by
-    /// `backend` and `manifest_digest`:
-    ///
-    /// - kind `None` (absent or `null`): `invalid_capability`/`absent-kind`;
-    /// - kind not an FR-290 label: `invalid_capability`/`unknown-kind`,
-    ///   carrying the received bytes;
-    /// - mode `None`, or other than `bounded`/`unbounded`:
-    ///   `invalid_capability`/`unknown-mode`, carrying the received bytes
-    ///   when there are any.
-    ///
-    /// **First-failure rule.** A refusal names one cause (FR-290: "refuse
-    /// that registration with `invalid_capability` (`absent-kind`,
-    /// `unknown-kind` or `unknown-mode`)"). When more than one pair fails,
-    /// the cause reported is the first failure in the order the pairs are
-    /// given, and within one pair the kind is checked before the mode, so a
-    /// pair whose kind and mode are both bad reports its kind. FR-290 treats
-    /// the advertised pairs as a set and does not rank causes; this order
-    /// is this function's own, stated here so it is deterministic for one
-    /// manifest. Whether the refusal is reported at all never depends on
-    /// order.
-    ///
-    /// `domains` is the manifest's `domains` (`None` when absent), and is
-    /// checked after every pair. A defective one refuses
-    /// `invalid_capability`/`invalid-domains` (FR-290 "Advertised mode"),
-    /// with the defect in [`DomainsDefect`]: absent while a `bounded` pair is
-    /// advertised, empty, a kind that is not one of the four boundable ones
-    /// (an unknown label included), or a repeated kind. A registration that
-    /// advertises only `unbounded` modes may omit `domains`. The admitted
-    /// descriptor keeps them ([`BackendDescriptor::domains`]).
-    ///
-    /// A refused descriptor never exists, so it contributes nothing to any
-    /// registry.
-    pub fn admit<'a>(
-        backend: Candidate,
-        origin: ProviderOrigin,
-        manifest_digest: ManifestDigest,
-        advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
-        domains: Option<&[&str]>,
-    ) -> Result<Self, RegistrationRefusal> {
-        let refuse = |cause| RegistrationRefusal {
-            backend: backend.clone(),
-            manifest_digest,
-            cause,
-        };
-        let mut advertises = HashSet::new();
-        for (kind, mode) in advertised {
-            let kind = kind.ok_or_else(|| refuse(RegistrationCause::AbsentKind))?;
-            let kind = Capability::from_wire(kind).map_err(|unknown| {
-                refuse(RegistrationCause::UnknownKind(
-                    unknown.received().to_owned(),
-                ))
-            })?;
-            let mode = mode
-                .and_then(Mode::from_wire)
-                .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
-            advertises.insert((kind, mode));
-        }
-        let advertises_bounded = advertises
-            .iter()
-            .any(|&(_, mode)| matches!(mode, Mode::Bounded));
-        let domains = admit_domains(domains, advertises_bounded)
-            .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
         Ok(Self {
             backend,
             origin,
@@ -619,7 +572,7 @@ impl Registry {
     /// A capability kind outside the FR-290 vocabulary, or a mode other than
     /// `bounded`/`unbounded`, cannot reach this function at all: a
     /// [`BackendDescriptor`] holds only typed [`Capability`] and [`Mode`]
-    /// values, and [`BackendDescriptor::admit`] refuses such labels before a
+    /// values, and [`descriptor_from_manifest`] refuses such labels before a
     /// descriptor exists.
     pub fn register(
         &mut self,

@@ -10,10 +10,10 @@
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::execute::ReplayRefusal;
-use crate::identity::Backend;
 use crate::result::DisagreementCause;
 use crate::scalar::ScalarAgreement;
 use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
@@ -398,7 +398,7 @@ impl TerminalRecord {
 pub struct ProofResultEnvelope {
     category: Category,
     record: TerminalRecord,
-    backend: Backend,
+    backend: BackendId,
     inconclusive_cause: Option<ReportedInconclusiveCause>,
 }
 
@@ -414,7 +414,7 @@ impl ProofResultEnvelope {
     }
 
     /// The `backend` member (ADR-013 O-19).
-    pub fn backend(&self) -> &Backend {
+    pub fn backend(&self) -> &BackendId {
         &self.backend
     }
 
@@ -484,7 +484,7 @@ pub fn read_backend_provider_envelope(
     // touches `source.items` until it has passed.
     BoundExceeded::check(measured_encoded_bytes(source), limits)?;
 
-    let backend = Backend::new(source.backend_identity.clone());
+    let backend = BackendId::new(source.backend_identity.clone());
     Ok(source
         .items
         .iter()
@@ -509,7 +509,7 @@ impl ProofResultEnvelope {
     pub fn to_source(envelopes: &[Self]) -> Result<BackendProviderSource, EmptyEnvelopeSet> {
         let first = envelopes.first().ok_or(EmptyEnvelopeSet)?;
         Ok(BackendProviderSource {
-            backend_identity: first.backend.identity().to_owned(),
+            backend_identity: first.backend.as_str().to_owned(),
             items: envelopes.iter().map(|e| e.record.clone()).collect(),
         })
     }
@@ -942,7 +942,7 @@ mod tests {
             read_backend_provider_envelope(&serialized, crate::ReplayLimits::default()).unwrap();
         assert_eq!(first, second);
         for envelope in &first {
-            assert_eq!(envelope.backend().identity(), "kani-backend-1");
+            assert_eq!(envelope.backend().as_str(), "kani-backend-1");
         }
     }
 

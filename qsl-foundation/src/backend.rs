@@ -29,11 +29,6 @@ impl BackendId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    /// Alias used by replay's envelope vocabulary.
-    pub fn identity(&self) -> &str {
-        self.as_str()
-    }
 }
 
 /// [`BackendId::from_wire`]'s refusal: the `backend` member is empty.

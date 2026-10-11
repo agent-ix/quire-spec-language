@@ -47,7 +47,8 @@ use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements};
 
-use crate::{BackendId, CandidateOutcome, Registry};
+use crate::{CandidateOutcome, Registry};
+use qsl_foundation::BackendId;
 
 /// An item's QSpec FR-331 extent classification (QSpec FR-290 `bounded`/
 /// `unbounded`, plus ADR-014 §4's available finite bound).

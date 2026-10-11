@@ -17,8 +17,9 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::digest::ByteDigest;
+use qsl_foundation::BackendId;
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode,
     ProviderOrigin, RegistrationCause, RegistrationRefusal, Registry,
 };
 use qsl_semantics::check::Capability;
@@ -885,7 +886,7 @@ mod tc_282_duplicate_backend_identity {
     /// `unknown-mode` keyed (`a`, `d2`); it is not admitted, so `a` is held
     /// once with `d1` and no `duplicate-backend` is reported. `M` never
     /// becomes a [`BackendDescriptor`] (it fails
-    /// [`BackendDescriptor::admit`]), so it cannot appear in a `Registry`
+    /// [`descriptor_from_manifest`]), so it cannot appear in a `Registry`
     /// permutation pool at all; both relative arrival orders are exercised
     /// directly instead.
     #[test]
@@ -895,7 +896,7 @@ mod tc_282_duplicate_backend_identity {
         for m_first in [false, true] {
             let mut registry = Registry::new();
             let attempt_m = || {
-                BackendDescriptor::admit(
+                descriptor_from_manifest(
                     Candidate::new(BackendId::new("a")),
                     ProviderOrigin::Linked,
                     d2,
@@ -1231,6 +1232,50 @@ mod permutation_equality {
         }
 
         assert_permutation_invariant(&orderings, &pool, &items, build, registry_candidate_ids);
+    }
+
+    /// FR-289-AC-2: installing a provider that does not advertise an item's
+    /// kind leaves that item's candidate set unchanged, regardless of the
+    /// order in which the two manifests enter the registry.
+    #[test]
+    #[trace("TC-773", "FR-289-AC-2")]
+    fn an_irrelevant_manifest_does_not_change_an_item_candidate_set() {
+        let value = descriptor_from_manifest(
+            Candidate::new(BackendId::new("value")),
+            ProviderOrigin::Linked,
+            digest(b"value-manifest"),
+            [(Some("value-validity"), Some("unbounded"))],
+            None,
+        )
+        .expect("the value manifest is valid");
+        let unrelated = descriptor_from_manifest(
+            Candidate::new(BackendId::new("unrelated")),
+            ProviderOrigin::Process,
+            digest(b"unrelated-manifest"),
+            [(Some("operation-contract"), Some("bounded"))],
+            Some(&["collection"]),
+        )
+        .expect("the unrelated manifest is valid");
+
+        let mut baseline = Registry::new();
+        baseline.register(value.clone()).unwrap();
+        let baseline_candidates = baseline.candidates(Capability::ValueValidity, None);
+
+        let mut installed = Registry::new();
+        installed.register(value.clone()).unwrap();
+        installed.register(unrelated.clone()).unwrap();
+        assert_eq!(
+            installed.candidates(Capability::ValueValidity, None),
+            baseline_candidates
+        );
+
+        let mut reversed = Registry::new();
+        reversed.register(unrelated).unwrap();
+        reversed.register(value).unwrap();
+        assert_eq!(
+            reversed.candidates(Capability::ValueValidity, None),
+            baseline_candidates
+        );
     }
 
     /// Five descriptors give 5! = 120 orderings; this test runs every one of

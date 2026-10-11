@@ -11,10 +11,11 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
+use qsl_foundation::BackendId;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, BackendId, Candidate, CandidateOutcome,
-    DomainsDefect, ManifestDigest, Mode, ProviderOrigin, RegistrationCause, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, DomainsDefect,
+    ManifestDigest, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -28,7 +29,7 @@ fn admit(
     digest_byte: u8,
     advertised: &[(Option<&str>, &str)],
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
-    BackendDescriptor::admit(
+    descriptor_from_manifest(
         candidate(id),
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
@@ -49,7 +50,7 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
 
 /// FR-288: linked and process providers use the same manifest conversion.
 #[test]
-#[trace("TC-772", "FR-288-AC-1", "FR-288-AC-5")]
+#[trace("TC-772", "FR-288-AC-5")]
 fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
     let backend = candidate("shared");
     let digest = ManifestDigest::from_digest([9; 32]);
@@ -159,7 +160,7 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
 #[test]
 #[trace("TC-155", "FR-057-AC-8")]
 fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
-    let absent_mode = BackendDescriptor::admit(
+    let absent_mode = descriptor_from_manifest(
         candidate("absent-mode"),
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([1; 32]),
@@ -323,7 +324,7 @@ fn admit_domains(
     advertised: &[(Option<&str>, &str)],
     domains: Option<&[&str]>,
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
-    BackendDescriptor::admit(
+    descriptor_from_manifest(
         candidate("plug"),
         ProviderOrigin::Process,
         ManifestDigest::from_digest([4; 32]),

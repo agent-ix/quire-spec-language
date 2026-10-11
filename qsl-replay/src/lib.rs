@@ -70,8 +70,8 @@ pub use execute::{
     ValueParityReport, ValueParityResult,
 };
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
+    RawSourceRef, TracePosition,
 };
 pub use limits::CallerLimits;
 // The equality operator a composite parity claim names (FR-358).

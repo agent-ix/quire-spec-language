@@ -23,9 +23,6 @@
 //! typed (never string-keyed, never bare-`&str`) vocabulary to carry.
 use std::fmt;
 
-/// The one backend identity type shared by routing and replay envelopes.
-pub use qsl_foundation::BackendId as Backend;
-
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
 use quire_exact::Identifier;
