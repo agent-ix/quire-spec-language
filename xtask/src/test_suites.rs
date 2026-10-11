@@ -2242,14 +2242,19 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// `cargo metadata --no-deps` for an authored workspace: members `a`,
     /// `b`, `c` and `d`, of which only `a` is a default member.
     fn metadata_json() -> serde_json::Value {
+        let packages: Vec<serde_json::Value> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|name| package_json(name))
+            .collect();
         let ids: Vec<String> = ["a", "b", "c", "d"]
             .iter()
             .map(|name| format!("path+file:///ws/{name}#0.1.0"))
             .collect();
+        let default_member = ids[0].clone();
         serde_json::json!({
-            "packages": ["a", "b", "c", "d"].map(package_json),
+            "packages": packages,
             "workspace_members": ids,
-            "workspace_default_members": [ids[0]],
+            "workspace_default_members": [default_member],
         })
     }
 
