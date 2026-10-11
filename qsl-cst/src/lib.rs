@@ -7,7 +7,7 @@
 //! unit.
 //!
 //! Module order: [`token`] < [`lexer`] < [`diagnostic`] < [`grammar`] <
-//! [`cst`] < `parser` < [`format`] (`parser` is crate-private: [`parse`]/[`parse_source`] are its
+//! [`cst`] < `parser` < [`mod@format`] (`parser` is crate-private: [`parse`]/[`parse_source`] are its
 //! only outward surface). Every module here depends only on
 //! `qsl-foundation`
 //! (layer F) -- no module imports the QSL root crate or a SEAM module
