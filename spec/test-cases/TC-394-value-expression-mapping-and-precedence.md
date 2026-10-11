@@ -37,9 +37,10 @@ alias is `v`.
    Check each well-typed body under a resolved `quire.value.complete/v1`
    selection with exactly one of the truncating, floor or Euclidean
    integer-division definitions, and separately check `mod` without selecting
-   a division law when no `div`/`rem` occurs. Use `(-7,3)` to distinguish
-   the selected `div`/`rem` law and require `mod` to expose `2` under every
-   selection. Check `7 / 3` with integer operands both without an expected
+   a division law when no `div`/`rem` occurs. Use both `(-7,3)` and `(7,-3)`
+   to distinguish the selected `div`/`rem` laws. Require `mod(-7,3) = 2`
+   and `mod(7,-3) = 1` under every selection. Check `7 / 3` with integer
+   operands both without an expected
    rational type and with expected `Rational[0,7;1,3]`, under both state-only
    and complete-value selections.
 
@@ -58,7 +59,11 @@ Tag the test `#[trace("FR-091-AC-3", "FR-091-AC-39")]`.
 - Step 5 reads distinct `Binary{IntegerDiv, IntegerRem, IntegerMod}`
   forms with the CST's product precedence and original spans, including
   the dead branch. Check accepts them only under complete value; `div`/`rem`
-  retain the selected law and `mod` remains Euclidean. `/` never denotes
+  return `(q,r) = (-2,-1)` and `(-2,1)` under truncating for `(-7,3)` and
+  `(7,-3)` respectively, `(-3,2)` and `(-3,-2)` under floor, and
+  `(-3,2)` and `(-2,1)` under Euclidean. Each pair satisfies
+  `a = b*q + r`; `mod` remains Euclidean with results `2` and `1`.
+  `/` never denotes
   integer division; the expected rational type enables FR-149's exact
   integer-operand promotion and result `7/3` for rational division only under
   complete value.
