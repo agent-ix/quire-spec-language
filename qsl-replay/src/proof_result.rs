@@ -978,9 +978,9 @@ mod tests {
         assert!(matches!(result, Err(ProofResultRefusal::BoundExceeded(_))));
     }
 
-    fn refuted_source_with_region_identity(identity: String) -> BackendProviderSource {
+    fn refuted_source_with_region(authority: &str, identity: String) -> BackendProviderSource {
         let source_ref = RawSourceRef::new(
-            "registry",
+            authority,
             identity,
             DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
         )
@@ -1004,7 +1004,7 @@ mod tests {
     #[trace("TC-178", "FR-069-AC-4")]
     #[test]
     fn retained_replay_bytes_obey_exact_envelope_bound() {
-        let at_limit = refuted_source_with_region_identity("source".to_owned());
+        let at_limit = refuted_source_with_region("registry", "source".to_owned());
         let expected = at_limit.backend_identity.len()
             + std::mem::size_of::<RequestIndex>()
             + std::mem::size_of::<TerminalValue>()
@@ -1019,7 +1019,7 @@ mod tests {
             1
         );
 
-        let over_limit = refuted_source_with_region_identity("source!".to_owned());
+        let over_limit = refuted_source_with_region("registry", "source!".to_owned());
         assert_eq!(
             read_backend_provider_envelope(&over_limit, limits),
             Err(ProofResultRefusal::BoundExceeded(BoundExceeded {
@@ -1029,7 +1029,7 @@ mod tests {
         );
 
         let huge_identity =
-            refuted_source_with_region_identity("x".repeat(DEFAULT_INPUT_BYTES + 1));
+            refuted_source_with_region("registry", "x".repeat(DEFAULT_INPUT_BYTES + 1));
         assert!(matches!(
             read_backend_provider_envelope(&huge_identity, ReplayLimits::default()),
             Err(ProofResultRefusal::BoundExceeded(_))
@@ -1075,16 +1075,377 @@ mod tests {
             Vec::new(),
             crate::spine::default_accounting(0),
         ));
-        let source = source(vec![TerminalRecord::new(
+        let provider = source(vec![TerminalRecord::new(
             RequestIndex::new(0),
             BackendId::new("kani-backend-1"),
             &replay,
         )
         .unwrap()]);
         assert!(matches!(
-            read_backend_provider_envelope(&source, ReplayLimits::default()),
+            read_backend_provider_envelope(&provider, ReplayLimits::default()),
             Err(ProofResultRefusal::BoundExceeded(_))
         ));
+    }
+
+    /// A range-violation witness retains its optional incomplete record;
+    /// the mathematical integer charge remains bounded by the proof reader.
+    #[trace("TC-178", "FR-069-AC-4")]
+    #[test]
+    fn retained_replay_limit_charge_cannot_bypass_envelope_bound() {
+        let replay = ReplayResult::Witness(
+            crate::WitnessArmResult::settle_range_violation(
+                None,
+                Vec::new(),
+                crate::spine::default_accounting(0),
+            )
+            .with_limit(quire_exact::Incomplete {
+                limit_kind: quire_exact::LimitKind::WorkUnits,
+                limit: 1,
+                consumed: 1,
+                next_charge: "99".parse().unwrap(),
+                charge_point: quire_exact::ChargePoint::TextInputBytes,
+            }),
+        );
+        let provider = source(vec![TerminalRecord::new(
+            RequestIndex::new(0),
+            BackendId::new("kani-backend-1"),
+            &replay,
+        )
+        .unwrap()]);
+        let base = provider.backend_identity.len()
+            + std::mem::size_of::<RequestIndex>()
+            + std::mem::size_of::<TerminalValue>()
+            + "kani-backend-1".len();
+        let limits = ReplayLimits::default().with_input_bytes((base + 1) as u64);
+        assert_eq!(
+            read_backend_provider_envelope(&provider, limits),
+            Err(ProofResultRefusal::BoundExceeded(BoundExceeded {
+                bound: (base + 1) as u64,
+                actual: (base + 2) as u128,
+            }))
+        );
+
+        let mut huge_limit = replay.limit().unwrap().clone();
+        huge_limit.next_charge = quire_exact::Integer::power_of_ten(DEFAULT_INPUT_BYTES as u64);
+        let huge_replay = replay.with_limit(huge_limit);
+        let huge_source = source(vec![TerminalRecord::new(
+            RequestIndex::new(0),
+            BackendId::new("kani-backend-1"),
+            &huge_replay,
+        )
+        .unwrap()]);
+        assert!(matches!(
+            read_backend_provider_envelope(&huge_source, ReplayLimits::default()),
+            Err(ProofResultRefusal::BoundExceeded(_))
+        ));
+    }
+
+    /// Every variable-length member retained in a proof result increases
+    /// the structural byte count when its own encoded content grows.
+    #[trace("TC-178", "FR-069-AC-4")]
+    #[trace("TC-191", "FR-072-AC-5")]
+    #[test]
+    fn retained_field_growth_increases_measured_size() {
+        use qsl_foundation::source::provenance::OccurrenceKey;
+        use qsl_foundation::witness::{RuntimeValuePath, ValuePathStep, ValuePathSubject};
+        use quire_exact::{Integer, Origin, Role, Value};
+
+        fn replay_source(replay: ReplayResult) -> BackendProviderSource {
+            source(vec![TerminalRecord::new(
+                RequestIndex::new(0),
+                BackendId::new("kani-backend-1"),
+                &replay,
+            )
+            .unwrap()])
+        }
+
+        fn witness_source(record: crate::SeparatingWitnessRecord) -> BackendProviderSource {
+            let verdict = Verdict::from_category(Category::Violation);
+            replay_source(ReplayResult::Witness(crate::WitnessArmResult::settle(
+                verdict,
+                verdict,
+                Category::Violation,
+                Some(crate::EvaluatedValue::Boolean(false)),
+                crate::WitnessCheck::Agrees(Some(Box::new(record))),
+                Vec::new(),
+                crate::spine::default_accounting(0),
+            )))
+        }
+
+        fn base_witness() -> crate::SeparatingWitnessRecord {
+            let quantifier = OccurrenceKey::new(
+                WireNodeId::from_digest([7; 32]),
+                Origin::new(Role::new("q"), 0),
+            );
+            crate::SeparatingWitnessRecord {
+                quantifier: quantifier.clone(),
+                deciding_element: Value::Integer(Integer::from(1_u64)),
+                index: Some(0),
+                value_path: RuntimeValuePath {
+                    observation: qsl_foundation::witness::ObservationIdentity {
+                        authority: "a".to_owned(),
+                        identity: "i".to_owned(),
+                        revision_namespace: "n".to_owned(),
+                        revision: "r".to_owned(),
+                    },
+                    subject: ValuePathSubject::Built(quantifier),
+                    steps: vec![ValuePathStep::Member("m".to_owned())],
+                },
+                trace_position: Some(crate::TracePosition::new("t".to_owned())),
+            }
+        }
+
+        let base = replay_source(ReplayResult::Witness(
+            crate::WitnessArmResult::settle_range_violation(
+                None,
+                Vec::new(),
+                crate::spine::default_accounting(0),
+            ),
+        ));
+        let mut cases: Vec<(&str, usize, usize)> = Vec::new();
+        let mut check = |name, before: &BackendProviderSource, after: &BackendProviderSource| {
+            cases.push((
+                name,
+                measured_encoded_bytes(before),
+                measured_encoded_bytes(after),
+            ));
+        };
+
+        let mut grown = base.clone();
+        grown.backend_identity.push('x');
+        check("provider identity String", &base, &grown);
+        let mut grown = base.clone();
+        grown.items.push(TerminalRecord::tested(
+            RequestIndex::new(1),
+            BackendId::new("kani-backend-1"),
+        ));
+        check("terminal records Vec", &base, &grown);
+        let mut grown = base.clone();
+        grown.items[0].backend = Some(BackendId::new("kani-backend-1x"));
+        check("record backend String", &base, &grown);
+
+        let bare = source(vec![TerminalRecord::from_value(
+            RequestIndex::new(0),
+            TerminalValue::Refuted,
+        )]);
+        check("retained ReplayResult", &bare, &base);
+
+        let short_cause = DisagreementCause::Witness {
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Violation),
+            given: None,
+            derived: None,
+            failure: crate::WitnessFailure::Separation {
+                step: qsl_foundation::witness::SeparationStep::Body,
+                reason: crate::SeparationReason::Refused(crate::SeparationRefusal {
+                    code: "code".to_owned(),
+                    cause: "x".to_owned(),
+                    fields: std::collections::BTreeMap::new(),
+                }),
+            },
+        };
+        let mut longer_cause = short_cause.clone();
+        if let DisagreementCause::Witness {
+            failure:
+                crate::WitnessFailure::Separation {
+                    reason: crate::SeparationReason::Refused(crate::SeparationRefusal { cause, .. }),
+                    ..
+                },
+            ..
+        } = &mut longer_cause
+        {
+            cause.push('x');
+        }
+        let cause_source = |cause| {
+            source(vec![TerminalRecord::from_value(
+                RequestIndex::new(0),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(cause)),
+            )])
+        };
+        check(
+            "terminal cause String",
+            &cause_source(short_cause),
+            &cause_source(longer_cause),
+        );
+
+        let short_region = refuted_source_with_region("r", "i".to_owned());
+        let long_region = refuted_source_with_region("r", "ii".to_owned());
+        check("replay source identity String", &short_region, &long_region);
+        check(
+            "replay source authority String",
+            &short_region,
+            &refuted_source_with_region("rr", "i".to_owned()),
+        );
+        check("resolved regions Vec", &base, &short_region);
+
+        let witness = base_witness();
+        check(
+            "nested witness record",
+            &base,
+            &witness_source(witness.clone()),
+        );
+        type WitnessEdit = (&'static str, fn(&mut crate::SeparatingWitnessRecord));
+        let witness_edits: &[WitnessEdit] = &[
+            ("quantifier role String", |record| {
+                record.quantifier = OccurrenceKey::new(
+                    WireNodeId::from_digest([7; 32]),
+                    Origin::new(Role::new("qq"), 0),
+                );
+            }),
+            ("deciding Integer", |record| {
+                record.deciding_element = Value::Integer(Integer::from(10_u64));
+            }),
+            ("observation authority String", |record| {
+                record.value_path.observation.authority.push('x');
+            }),
+            ("observation identity String", |record| {
+                record.value_path.observation.identity.push('x');
+            }),
+            ("observation namespace String", |record| {
+                record.value_path.observation.revision_namespace.push('x');
+            }),
+            ("observation revision String", |record| {
+                record.value_path.observation.revision.push('x');
+            }),
+            ("subject role String", |record| {
+                record.value_path.subject = ValuePathSubject::Built(OccurrenceKey::new(
+                    WireNodeId::from_digest([7; 32]),
+                    Origin::new(Role::new("qq"), 0),
+                ));
+            }),
+            ("value path Vec", |record| {
+                record.value_path.steps.push(ValuePathStep::OptionValue);
+            }),
+            ("value path member String", |record| {
+                record.value_path.steps[0] = ValuePathStep::Member("mm".to_owned());
+            }),
+            ("trace position String", |record| {
+                record.trace_position = Some(crate::TracePosition::new("tt".to_owned()));
+            }),
+        ];
+        for (name, edit) in witness_edits {
+            let mut grown = witness.clone();
+            edit(&mut grown);
+            check(
+                name,
+                &witness_source(witness.clone()),
+                &witness_source(grown),
+            );
+        }
+
+        let region = SourceRegion::new(
+            RawSourceRef::new(
+                "a",
+                "i",
+                DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
+            )
+            .unwrap(),
+            0,
+            1,
+        )
+        .unwrap();
+        let input = |regions| {
+            ReplayResult::Input(crate::InputArmResult::settle_range_violation(
+                None,
+                regions,
+                crate::spine::default_accounting(0),
+            ))
+        };
+        cases.push((
+            "input resolved regions Vec",
+            crate::result::measured_encoded_bytes(&input(Vec::new())),
+            crate::result::measured_encoded_bytes(&input(vec![region])),
+        ));
+
+        let disagreeing = |cause: &str, is_witness: bool| {
+            let verdict = Verdict::from_category(Category::Violation);
+            let disagreement = crate::WitnessCheck::Disagrees {
+                given: None,
+                derived: None,
+                failure: crate::WitnessFailure::Separation {
+                    step: qsl_foundation::witness::SeparationStep::Body,
+                    reason: crate::SeparationReason::Refused(crate::SeparationRefusal {
+                        code: "code".to_owned(),
+                        cause: cause.to_owned(),
+                        fields: std::collections::BTreeMap::new(),
+                    }),
+                },
+            };
+            if is_witness {
+                ReplayResult::Witness(crate::WitnessArmResult::settle(
+                    verdict,
+                    verdict,
+                    Category::Violation,
+                    Some(crate::EvaluatedValue::Boolean(false)),
+                    disagreement,
+                    Vec::new(),
+                    crate::spine::default_accounting(0),
+                ))
+            } else {
+                ReplayResult::Input(crate::InputArmResult::settle(
+                    verdict,
+                    verdict,
+                    Category::Violation,
+                    Some(crate::EvaluatedValue::Boolean(false)),
+                    &disagreement,
+                    Vec::new(),
+                    crate::spine::default_accounting(0),
+                ))
+            }
+        };
+        for (name, is_witness) in [
+            ("witness disagreement String", true),
+            ("input disagreement String", false),
+        ] {
+            cases.push((
+                name,
+                crate::result::measured_encoded_bytes(&disagreeing("x", is_witness)),
+                crate::result::measured_encoded_bytes(&disagreeing("xx", is_witness)),
+            ));
+        }
+
+        for (name, is_witness) in [
+            ("witness limit Integer", true),
+            ("input limit Integer", false),
+        ] {
+            let replay = |digits: &str| {
+                let limit = quire_exact::Incomplete {
+                    limit_kind: quire_exact::LimitKind::WorkUnits,
+                    limit: 1,
+                    consumed: 1,
+                    next_charge: digits.parse().unwrap(),
+                    charge_point: quire_exact::ChargePoint::TextInputBytes,
+                };
+                if is_witness {
+                    ReplayResult::Witness(
+                        crate::WitnessArmResult::settle_range_violation(
+                            None,
+                            Vec::new(),
+                            crate::spine::default_accounting(0),
+                        )
+                        .with_limit(limit),
+                    )
+                } else {
+                    ReplayResult::Input(
+                        crate::InputArmResult::settle_range_violation(
+                            None,
+                            Vec::new(),
+                            crate::spine::default_accounting(0),
+                        )
+                        .with_limit(limit),
+                    )
+                }
+            };
+            cases.push((
+                name,
+                crate::result::measured_encoded_bytes(&replay("9")),
+                crate::result::measured_encoded_bytes(&replay("99")),
+            ));
+        }
+
+        for (name, before, after) in cases {
+            assert!(after > before, "{name}: {before} -> {after}");
+        }
     }
 
     /// FR-121-AC-17 (ADR-013 C-09): a call-site refusal before any backend
