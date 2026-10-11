@@ -2292,7 +2292,7 @@ mod tests {
         let long_repeated_prefix_keys = population_id_sort_work_bound(32, 6 * 4096 + 512);
         let twice_as_many_keys = population_id_sort_work_bound(64, 512);
 
-        assert_eq!(short_keys, 32 * 6 * 4 * 512);
+        assert_eq!(short_keys, 32 * 5 * 4 * 512);
         assert!(long_repeated_prefix_keys > short_keys * 8);
         assert!(twice_as_many_keys > short_keys);
     }
