@@ -2051,7 +2051,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         evaluated(evaluation_d),
         Outcome::Completed(Value::Boolean(true))
     ));
-    assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 6);
+    assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_d.consumed(LimitKind::ValueOccurrences), 2);
 
     let (evaluation_c, meter_c) =
@@ -2064,17 +2064,17 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     assert_eq!(meter_c.consumed(LimitKind::ValueOccurrences), 2);
 
     let limits = ScalarLimits {
-        work_units: 5,
+        work_units: 4,
         ..SCALAR_UNLIMITED
     };
-    let (evaluation_five, meter_five) =
+    let (evaluation_four, meter_four) =
         evaluate_expression(&package_b, d_type, "d1", &invariant_d, limits);
     assert!(matches!(
-        evaluation_five.outcome,
+        evaluation_four.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
             if record.charge_point == quire_exact::ChargePoint::OrderingResultRetain
     ));
-    assert_eq!(meter_five.consumed(LimitKind::WorkUnits), 5);
+    assert_eq!(meter_four.consumed(LimitKind::WorkUnits), 4);
 
     let limits = ScalarLimits {
         work_units: 1,
