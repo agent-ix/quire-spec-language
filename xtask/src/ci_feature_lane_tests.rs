@@ -165,7 +165,13 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
 }
 
 #[test]
-#[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-2", "NFR-013-AC-3")]
+#[trace(
+    "TC-915",
+    "NFR-013-AC-1",
+    "NFR-013-AC-2",
+    "NFR-013-AC-3",
+    "NFR-013-M-1"
+)]
 fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
     let recipe = Recipe::new();
     for root in [
