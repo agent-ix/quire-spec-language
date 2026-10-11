@@ -592,6 +592,10 @@ fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
     }
 }
 
+fn node_key(fill: u8) -> NodeKey {
+    NodeKey::from_digest([fill; 32])
+}
+
 /// TC-160 step 12: absence of a direct narrow occurrence refuses keying.
 #[trace("TC-160", "FR-062-AC-13")]
 #[test]
@@ -661,9 +665,9 @@ fn tc_160_narrowed_claim_with_two_direct_narrows_faults() {
 #[trace("TC-160", "FR-062-AC-13")]
 #[test]
 fn tc_160_direct_context_excludes_outer_narrow() {
-    let scalar = node(10);
-    let inner = node(11);
-    let outer = node(12);
+    let scalar = node_key(10);
+    let inner = node_key(11);
+    let outer = node_key(12);
     let outer_origin = Origin::new(Role::new("expression"), 0);
     let inner_origin = Origin::new(Role::new("expression"), 0);
     let candidates = [(outer, outer_origin), (inner, inner_origin.clone())];
