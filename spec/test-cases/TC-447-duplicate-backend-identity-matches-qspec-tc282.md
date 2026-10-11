@@ -20,8 +20,10 @@ expected result regardless of order. Scope: FR-075-AC-4, FR-075-AC-7.
 
 ## Test Procedure
 
-Build fixture `BackendDescriptor` values for TC-282's roles. A QSL descriptor
-is the identity and its advertised (kind, mode) pairs, so where TC-282's `A2`
+Build complete `BackendDescriptor` fixtures for TC-282's roles. Descriptor
+equality covers identity, advertised (kind, mode) pairs and evidence-kind
+sets. For TC-282's non-probabilistic vectors, each descriptor has no evidence
+kinds. Where TC-282's `A2`
 differs from `A1` only in an option, this `A2` differs by one extra advertised
 pair: `A1` and `A2`
 for identity `a`, `A1` advertising (`value-validity`, `bounded`) and `A2`
@@ -39,7 +41,11 @@ registrations, its registration refusals (via `Registry::refusals`) in
 reported order, and the candidate set of a `value-validity` item that names
 no backend, one that names `a`, and (where relevant) one that names `b`.
 Compare every ordering's record with the first ordering's record and with
-quire-specification TC-282's expected result. DB-07 is exercised with `M`
+quire-specification TC-282's expected result. Additionally, register two
+descriptors for identity `p`, both advertising `probabilistic-satisfaction`
+with the same mode, but with evidence-kind sets `{statistical}` and `{exact}`.
+Exercise both registration orders and confirm this evidence-only descriptor
+difference follows FR-075-AC-4/AC-13. DB-07 is exercised with `M`
 attempted before and after `A1`'s registration, since `M` cannot appear in a
 permuted pool.
 
@@ -63,7 +69,8 @@ above:
 
 Every ordering of a vector's registrations gives the same registry, the same
 refusals in the same reported order, and the same candidate set for every
-item. A repeat of an identical manifest is never refused (FR-075-AC-7). A
-conflicting identity is never held, contributes no candidate, and never
+item. A repeat of an identical complete manifest is never refused
+(FR-075-AC-7). A repeat differing only in evidence-kind set is conflicting,
+not identical. A conflicting identity is never held, contributes no candidate, and never
 refuses a registration of another identity (FR-075-AC-4). The
 `duplicate-backend` refusal retains the repeated backend identity.

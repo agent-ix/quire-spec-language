@@ -18,9 +18,11 @@ twelve kinds. Scope: FR-057-AC-14.
 For every kind in FR-057's table:
 
 1. Admit a requested pair through the composed linker while varying whether a
-   registry contains a matching backend.
-2. Admit a backend descriptor advertising the kind, then inspect the registry
-   and its candidate result.
+   registry contains a matching backend; for `probabilistic-satisfaction`,
+   give the item the evidence kind `statistical`.
+2. Admit a backend descriptor advertising the kind, supplying
+   `{statistical}` evidence kinds for `probabilistic-satisfaction`, then
+   inspect the registry and its candidate result for the matching item.
 3. Compare the reported stage projection with the stage owning each operation.
 
 ## Expected Results
@@ -29,5 +31,6 @@ For every kind in FR-057's table:
   or backend input.
 - Advertised-label validation is owned by `BackendDescriptor::admit`.
 - Candidate computation occurs in the registry only after descriptor
-  admission. The stage projection does not move or combine these decisions for
-  either new kind.
+  admission. The probabilistic fixture's matching `statistical` evidence kind
+  yields the backend as a candidate. The stage projection does not move or
+  combine these decisions for either new kind.
