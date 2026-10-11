@@ -12,19 +12,22 @@ relationships:
 
 ## Description
 
-Verify FR-081-AC-13, FR-081-AC-14 and FR-081-AC-15 at the full supported size.
-Deterministic accounting, observed peak memory and measured elapsed time are
-separate pass conditions; none is inferred from extrapolation.
+Verify FR-081-AC-13 and FR-081-AC-14 at the full supported size. Deterministic
+accounting and observed peak memory are separate acceptance conditions; neither
+is inferred from extrapolation. Elapsed-time qualification remains pending the
+owner decision recorded under e11 and is not a current pass/fail condition.
 
 ## Test Procedure
 
 Implement as the Rust integration test
 `tests/it/model_identity_full_size.rs::ten_thousand_edge_chain_cost_and_memory`.
 
-Run the test executable in the release profile on reference host Terra: Intel
-Core i9-10900K, 14 allocated threads, WSL2, 94 GiB. Record the actual
-`rustc --version` and `cargo --version` used for the run. These are run evidence,
-not version pins.
+The proposed elapsed-time environment is the release profile on reference host
+Terra: Intel Core i9-10900K, 14 allocated threads, WSL2, 94 GiB. This host and
+profile remain a proposal pending owner approval under e11, not an accepted
+runtime qualification requirement. If toolchain details are needed to debug an
+individual run, capture them only in that run's ephemeral test log; do not
+persist Rust or Cargo version tracking in the specification or result inventory.
 
 1. Generate a deterministic single-inheritance chain of 10,001 object types
    named by ordinal `T0` through `T10000`; each type after `T0` declares only
@@ -55,8 +58,9 @@ shared-prefix-specific work is at most 120,012. Peak resident set is at most
 21,474,836,480 bytes (20 GiB). The existing published identity-vector files
 are unchanged.
 
-On the specified Terra reference host and release profile, the measured
-wall-clock interval is at most 300 seconds. Record the measured duration and
-the actual Rust and Cargo versions with the run evidence. These thresholds are
-acceptance requirements, not a claim that a qualifying run has occurred; no
-runtime qualification passes until the full-size measurement exists.
+Elapsed time may be compared diagnostically with the proposed 300-second target
+on Terra/release. Until e11 is resolved by the owner, elapsed time is not a
+pass/fail condition, the proposed host/threshold does not close the owner
+decision, and no runtime qualification is claimed. Any toolchain-version
+details needed for diagnosis remain in an ephemeral run log and are not
+persistently tracked.
