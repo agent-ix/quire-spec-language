@@ -659,8 +659,8 @@ pub struct PopulationBinding {
     /// This binding's minted `PopulationId` (FR-089-AC-1, ADR-013 O-13
     /// Population row, QC-21): a digest over the domain package identity
     /// this binding was admitted against, the `population_key` declaring
-    /// it, and the closed three-state admission-role discriminator
-    /// (`Direct`/`Pre`/`Post`) -- see [`mint_population_id`]. The evaluator
+    /// it, its declared maximum, canonical member set, admission role and
+    /// (for `Post`) pre binding identity -- see [`mint_population_id`]. The evaluator
     /// carries this identity alone as `Value::Population`, resolving it
     /// back to this binding through the caller's own recorded
     /// correspondence (`crate::model::object_environment::ObjectEnvironment::resolve_population`).
@@ -747,7 +747,7 @@ enum AdmissionRole {
     /// [`admit_invocation`]'s pre-instant binding.
     Pre,
     /// [`admit_invocation`]'s post-instant binding.
-    Post,
+    Post(PopulationId),
 }
 
 impl AdmissionRole {
@@ -755,35 +755,36 @@ impl AdmissionRole {
         match self {
             Self::Direct => "direct",
             Self::Pre => "pre",
-            Self::Post => "post",
+            Self::Post(_) => "post",
         }
     }
 }
 
-/// [`PopulationId`]'s FR-089-AC-1 preimage: `{version,
-/// domain_package_selection, population_key, admission_role}`, where
-/// `domain_package_selection` is the full `DomainPackageRef` header
-/// (identity, version and digest -- see this function's own body comment)
-/// rather than bare identity. Deliberately excludes the admitted document's
-/// own content -- FR-089's Behavior section states the preimage as exactly
-/// these three facts, so two admissions of *different* documents against
-/// the same domain package, `population_key` and role mint the same
-/// identity, and re-admitting the *same* document against the same
-/// package/key/role is idempotent (TC-291).
-///
-/// FR-089's own preimage names no way to distinguish two bindings that
-/// differ only in document content or declared maximum, admitted under the
-/// same package/key/role within one evaluation -- an open spec question
-/// recorded, not resolved, here.
-/// [`ObjectEnvironment::with_population`](crate::model::object_environment::ObjectEnvironment::with_population)
-/// is the interim guard: it refuses a second, unequal binding recorded
-/// under an id already bound to a different one, rather than silently
-/// letting the later admission win.
+/// [`PopulationId`]'s FR-089 seven-field preimage. Members are ordered by
+/// each member object's own RFC 8785 bytes, independently of reference-key
+/// order; field values are not membership identity.
 fn population_id_preimage<'a>(
     domain_package: &'a DomainPackage,
     population_key: &'a DeclarationKey,
     role: AdmissionRole,
+    declared_maximum: Option<u64>,
+    members: &'a BTreeMap<ReferenceKey, DeclarationKey>,
 ) -> PopulationIdWire<'a> {
+    let mut members: Vec<_> = members
+        .iter()
+        .map(|(key, declaration)| {
+            let member = PopulationMemberWire {
+                universe: hex(key.universe.as_bytes()),
+                r#type: hex(key.type_identity.as_bytes()),
+                object: &key.object,
+                declaration: declaration.wire(),
+            };
+            let bytes = quire_canonical::to_vec(&member, quire_canonical::Limits::new(u64::MAX))
+                .expect("a typed population member fits the unbounded canonical encoder");
+            (bytes, member)
+        })
+        .collect();
+    members.sort_by(|left, right| left.0.cmp(&right.0));
     PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
         // The full `DomainPackageRef` header (identity, version, digest), not
@@ -797,6 +798,12 @@ fn population_id_preimage<'a>(
         domain_package_selection: domain_package.model_selection.wire(),
         population_key: population_key.wire(),
         admission_role: role.as_str(),
+        declared_maximum: declared_maximum.map(|maximum| maximum.to_string()),
+        members: members.into_iter().map(|(_, member)| member).collect(),
+        pre: match role {
+            AdmissionRole::Direct | AdmissionRole::Pre => None,
+            AdmissionRole::Post(id) => Some(hex(id.as_bytes())),
+        },
     }
 }
 
@@ -807,10 +814,22 @@ struct PopulationIdWire<'a> {
     domain_package_selection: DomainPackageRefWire<'a>,
     population_key: DeclarationKeyWire<'a>,
     admission_role: &'static str,
+    declared_maximum: Option<String>,
+    members: Vec<PopulationMemberWire<'a>>,
+    pre: Option<String>,
+}
+
+/// One member in FR-089's PopulationId preimage.
+#[derive(Serialize, FixedShape)]
+struct PopulationMemberWire<'a> {
+    universe: String,
+    r#type: String,
+    object: &'a str,
+    declaration: DeclarationKeyWire<'a>,
 }
 
 /// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,
-/// FR-089-AC-1) for a binding admitted against `domain_package`/
+/// FR-089-AC-1/AC-7) for a binding admitted against `domain_package`/
 /// `population_key` under `role`: this module's only call of the kernel's
 /// `PopulationId::from_digest` (T12-D). The preimage is RFC 8785-encoded by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785 implementation).
@@ -818,11 +837,15 @@ fn mint_population_id(
     domain_package: &DomainPackage,
     population_key: &DeclarationKey,
     role: AdmissionRole,
+    declared_maximum: Option<u64>,
+    members: &BTreeMap<ReferenceKey, DeclarationKey>,
 ) -> PopulationId {
     let (digest, _) = sha256_and_len(&population_id_preimage(
         domain_package,
         population_key,
         role,
+        declared_maximum,
+        members,
     ));
     PopulationId::from_digest(digest)
 }
@@ -1015,7 +1038,7 @@ fn admit_binding_as(
                     "member {} names type {}, absent from the effective view",
                     member.object, member.type_identity.node
                 ),
-            });
+            })
         };
 
         // FR-153:57/:72: a member type not covered by the population's own
@@ -1223,7 +1246,13 @@ fn admit_binding_as(
         ancestor_steps,
         type_catalog: Arc::clone(view.shared_type_catalog()),
         pre_anchor: None,
-        population_id: mint_population_id(domain_package, population_key, role),
+        population_id: mint_population_id(
+            domain_package,
+            population_key,
+            role,
+            declared_maximum,
+            &admitted,
+        ),
     })
 }
 
@@ -1346,7 +1375,12 @@ pub fn admit_invocation(
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    let post = match admit_binding_as(context, post_document, AdmissionRole::Post, post_meter) {
+    let post = match admit_binding_as(
+        context,
+        post_document,
+        AdmissionRole::Post(pre.population_id()),
+        post_meter,
+    ) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
@@ -1986,7 +2020,7 @@ pub fn lookup(
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::TypeMismatch,
                 detail: format!("{} does not conform to {}", r.static_type.node, t.node),
-            })
+            });
         }
         Err(refusal) => return LookupOutcome::Refused(refusal),
     }
@@ -2235,15 +2269,13 @@ mod tests {
         );
     }
 
-    /// Golden vector: the `quire.population/v1` preimage's RFC 8785
-    /// text, written out by hand, and its SHA-256. The `serde_json` encoder
-    /// this site used before `quire-canonical` emitted the same text, so the minted
-    /// `PopulationId` is unchanged.
-    #[trace("TC-291", "FR-089-AC-1")]
+    /// Golden vector: the seven-field `quire.population/v1` preimage's RFC
+    /// 8785 text, written out independently, and its SHA-256.
+    #[trace("TC-291", "FR-089-AC-1", "FR-089-AC-7")]
     #[test]
     fn population_id_matches_its_golden_vector() {
-        const TEXT: &str = r#"{"admission_role":"direct","domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"version":"quire.population/v1"}"#;
-        const DIGEST: &str = "092fac4438533d9185c17106da06667b4745a3e49b0aacd3fa51ada86e215298";
+        const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
+        const DIGEST: &str = "5724db729e0bc5d08cf4cc9d2955346daa313804c50ad49e570d29326b0a3c15";
         let package = DomainPackage::new(
             DomainPackageRef {
                 identity: "test/orders".to_owned(),
@@ -2257,7 +2289,13 @@ mod tests {
             node: "ix://test/orders/P1".to_owned(),
         };
         assert_eq!(hex(&Sha256::digest(TEXT.as_bytes())), DIGEST);
-        let id = mint_population_id(&package, &key, AdmissionRole::Direct);
+        let id = mint_population_id(
+            &package,
+            &key,
+            AdmissionRole::Direct,
+            None,
+            &BTreeMap::new(),
+        );
         assert_eq!(hex(id.as_bytes()), DIGEST);
         let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
