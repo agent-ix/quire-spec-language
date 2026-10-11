@@ -1432,8 +1432,7 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
         "nullary vector has an empty aggregate payload"
     );
     assert_eq!(
-        member_keys["Rect"]["body"]["members"][0]["value"]["term"],
-        "aggregate",
+        member_keys["Rect"]["body"]["members"][0]["value"]["term"], "aggregate",
         "reference-payload vector keeps its aggregate payload"
     );
 

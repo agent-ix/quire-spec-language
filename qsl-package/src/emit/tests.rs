@@ -452,8 +452,7 @@ pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -
         walk(term, &ordinal)
     };
     let body = in_group(&node["body"]);
-    let application = (node["node_tag"] == "value"
-        && node["semantic_form"] == "union_value")
+    let application = (node["node_tag"] == "value" && node["semantic_form"] == "union_value")
         || serde_json::to_string(&body)
             .unwrap()
             .contains("\"application\"");
