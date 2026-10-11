@@ -270,7 +270,6 @@ impl CompileRefusal {
                 | Setting::ObservationObjects
                 | Setting::ObservationValues
                 | Setting::ReplayInputBytes
-                | Setting::FormatOutputBytes
                 | Setting::ExploreStates
                 | Setting::ExploreTransitions => SpineStage::Emit,
             },
