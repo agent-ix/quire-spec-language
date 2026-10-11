@@ -15,8 +15,8 @@
 use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
-use crate::model::origin::JsonValue;
 use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::origin::JsonValue;
 use qsl_foundation::diagnostic::{CatalogCode, JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
