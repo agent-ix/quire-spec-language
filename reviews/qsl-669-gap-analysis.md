@@ -3,32 +3,36 @@ id: SR-4961
 title: "QSL-669 gap analysis and manual acceptance-to-test mapping for PR #720"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@8eb14aec90fabb189ccfdf485d87099db326e68a; changed model identity wire shapes and derivation provenance; QSpec FR-150-AC-1, FR-150-AC-4, FR-150-AC-6, FR-150-AC-7, FR-150-AC-8; QSpec model normalization derivation and published vectors"
+scope: "agent-ix/quire-spec-language@4e16d437ec13a70de86aee6e8f5ea21076a7e3a4; base bdf259f008c6577f4235b06ab1d87c32db83099a; changed model identity wire shapes, normalization provenance and charge-before-work behavior; QSpec FR-150-AC-1, FR-150-AC-4, FR-150-AC-6, FR-150-AC-7, FR-150-AC-8; NFR-012"
 review_set: subset
 ---
 ## Summary
 
-Ticket: QSL-669. PR: quire-spec-language#720 at `8eb14aec90fabb189ccfdf485d87099db326e68a`.
+Ticket: QSL-669. PR #720 at `4e16d437ec13a70de86aee6e8f5ea21076a7e3a4`. This is gap-analysis disposition round 2, against base `bdf259f008c6577f4235b06ab1d87c32db83099a`.
 
-This is disposition round 1 for SR-4961. The prior FND-001 was a medium test-to-criterion trace gap: the changed effective-declaration golden-vector test lacked the FR-150-AC-6 trace. The current test at `qsl-semantics/tests/it/identity_golden_vectors.rs:149-150` now has `#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]`, retaining the test-case trace and adding the missing acceptance-criterion trace. The finding is fixed by `8eb14aec90fabb189ccfdf485d87099db326e68a`.
+The prior FND-001 remains fixed by `8eb14aec90fabb189ccfdf485d87099db326e68a`: `effective_declaration_identities_match_their_golden_vectors` retains `QSpec-TC-195` and now includes `QSpec-FR-150-AC-6`. This round rechecked that binding and the subsequent change to charge inherited facts before work. No new scoped trace gap, unowned behavior, stub, coverage inflation, or test-oracle defect was identified.
 
-Manual acceptance-to-test mapping for changed behavior:
-
-| Acceptance unit | Relevant test | Mapping |
+| Acceptance unit | Relevant test | Round-2 mapping |
 | --- | --- | --- |
-| QSpec FR-150-AC-1: inherited/redefined member identity links to every contributing original declaration and rule | `n01_normalizes_f1_to_stable_deterministic_identities`, `n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities`, `effective_declaration_identities_match_their_golden_vectors` | Tests assert qualification plus inherited derivation facts and preserve each diamond path; exact effective-declaration vectors are now also tagged to AC-6. |
-| QSpec FR-150-AC-4: ordered derivation replay reproduces effective-view identity independent of IR node order | `n07_record_order_does_not_affect_identity_or_view`; `effective_view_identity_matches_its_golden_vector` | Record-order identity and exact effective-view vector are asserted. |
-| QSpec FR-150-AC-6: diamond paths collapse to one member retaining every path and each effective identity equals its published vector | `n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities`; `effective_declaration_identities_match_their_golden_vectors`; `object_universe_identity_matches_its_golden_vector` | The diamond test asserts one effective member and all derivation paths; the effective-declaration vector test now has both TC-195 and FR-150-AC-6 tags and checks exact published bytes/digests. FND-001 is fixed. |
-| QSpec FR-150-AC-7: equal nodes across package versions retain declaration identities while effective views differ | `n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe` | The test asserts equal declaration identities and distinct view/universe identities across package versions. |
-| QSpec FR-150-AC-8: exact normalization limits complete and one-less is incomplete at the named charge | `n01_exact_limits_complete_and_the_charge_totals_match_ground_truth`; `n01_one_less_work_unit_is_incomplete_at_the_view_hash`; `n01_charges_the_exact_ground_truth_sequence_in_order` | Exact counts/charge sequence and one-less refusal assertions were adjusted for the added qualification fact. |
+| QSpec FR-150-AC-1: inherited/redefined member identity links to every contributing original declaration and rule | `n01_normalizes_f1_to_stable_deterministic_identities`; `n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities` | Assertions retain qualification followed by each inheritance-path fact. |
+| QSpec FR-150-AC-4: ordered derivation replay reproduces effective-view identity independent of IR node order | `n07_record_order_does_not_affect_identity_or_view`; `effective_view_identity_matches_its_golden_vector` | Record-order behavior and exact effective-view vector remain asserted. |
+| QSpec FR-150-AC-6: diamond paths collapse to one member retaining every path and each effective identity equals its published vector | `n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities`; `effective_declaration_identities_match_their_golden_vectors`; `object_universe_identity_matches_its_golden_vector` | The test-to-AC trace added in 8eb remains present; prior FND-001 remains fixed. |
+| QSpec FR-150-AC-7: equal nodes across package versions retain declaration identities while effective views differ | `n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe` | Equal declaration and distinct view/universe identities remain asserted. |
+| QSpec FR-150-AC-8 and NFR-012: exact bounds complete; denied charges stop before priced work | `n01_exact_limits_complete_and_the_charge_totals_match_ground_truth`; `n01_one_less_work_unit_is_incomplete_at_the_view_hash`; `a_refused_normalization_does_work_bounded_by_the_limit_not_the_package` | Exact charge totals and the narrow/wide denied-fact regression check remain explicit; the new charge ordering places `work_step()` after successful fact charges. |
 
-The code now emits the qualification fact before inherited facts, with ordinals following vector order. The direct-member and inherited-member accounting tests were updated to include that fact. No new unowned behavior, stub, or trace gap was identified in this scoped manual review.
+The whole-repository matrix and reverse-gap audit remain unavailable. `quoin matrix --repo . --json` was attempted, but did not produce output during this review and was interrupted; no counts or repository-wide PASS are inferred. This round records the scoped manual mapping only. Optional intent↔test↔code semantic review was not requested and was skipped. Plan completion: not assessed.
 
-The required `quire matrix --scope . --format json` invocation emitted module warnings but did not complete or produce matrix output during this review; it was stopped. The repository-wide computed matrix and reverse-gap audit are unavailable. This artifact records only the scoped manual mapping above, not a repository-wide PASS. Optional intent↔test↔code semantic review was not requested and was skipped. Plan completion: not assessed.
+## Coverage
+
+- Reconciliation: quoin matrix (quoin 0.28.3, quire 0.36.2) attempted but incomplete; matrix counts unavailable.
+- Plan completion: not assessed
+- Criteria: tagged / untagged / ignored / method-without-symbol counts unavailable because matrix computation did not complete.
+- Untraced behaviors / stubs: whole-repository counts unavailable; none identified in the scoped changed behavior.
+- Semantic review: skipped
 
 ## Verdict
 
-CONDITIONAL. The prior FND-001 trace gap is fixed. Repository-wide matrix and reverse-gap results remain unavailable. No additional scoped gap was identified.
+CONDITIONAL for the scoped gap-analysis method because the whole-repository matrix/reverse-gap audit could not complete. The prior FND-001 remains fixed; no new scoped gap was found.
 
 ## Findings
 
