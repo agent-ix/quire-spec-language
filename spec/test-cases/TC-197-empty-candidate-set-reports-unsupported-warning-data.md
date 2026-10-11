@@ -35,8 +35,10 @@ was missing from elsewhere (or silently warn with the wrong name).
    `{statistical}` and compute candidates for an unnamed probabilistic item
    naming `exact`.
 5. Compute candidates for probabilistic items with absent evidence and with
-   an unknown evidence label, once with a compatible backend registered and
-   once with none; pass each preserved item to negotiation.
+   an unknown evidence label, once with a backend advertising `{statistical}`
+   and `{exact}` registered and once with no backend; pass each preserved item
+   to negotiation. Neither malformed item matches either valid advertised
+   evidence kind.
 6. Inspect all results' runtime type/variant and any data they carry.
 
 ## Expected Results
@@ -51,7 +53,8 @@ only. Step 4 returns an empty candidate set retaining both
 the caller passed in, rather than the value the registry returned, does not
 satisfy this check.
 
-Step 5 preserves absent evidence as absent and the unknown label verbatim in
-the candidate-stage output. Negotiation settles each as `invalid-request`
+Step 5 returns no candidates in all cases, preserves absent evidence as absent
+and the unknown label verbatim in the candidate-stage output. Negotiation
+settles each as `invalid-request`
 with `absent-evidence-kind` or `unknown-evidence-kind`, respectively, not
 `unsupported`, regardless of candidate availability.
