@@ -49,14 +49,16 @@ controls; neither exception grants unchecked public authority.
    classification. Do not replace producer logic or inject a preconstructed
    fault to simulate execution of that branch.
    For `ieee-conversion-rejected` only, inspect the real
-   `NodeKind::IeeeToRational` call in
-   `qsl-eval/src/value/expression/evaluate.rs` and the immutable kernel source
-   linked in FR-090. Establish that the call selects Rational unconditionally
-   and that the kernel's outer Err discriminant selects only Decimal, Integer
-   or BoundedInteger; all Rational results are wrapped in Ok. Record the
-   API/caller proof against FR-090-AC-19 and inspect the retained defensive
-   S6a fault mapping. Do not replace the target with a non-Rational target,
-   mock the kernel, inject a fault, throw or panic to claim producer execution.
+   `NodeKind::IeeeToRational` arm in `Machine::apply` in
+   `qsl-eval/src/value/expression/evaluate.rs`, together with the typed API
+   `quire_exact::ieee_to_exact` and `quire_exact::IeeeExactTarget` and their
+   implementation in `quire-exact/src/ieee.rs`. Establish that the call
+   selects Rational unconditionally and that the kernel's outer Err
+   discriminant selects only Decimal, Integer or BoundedInteger; all Rational
+   results are wrapped in Ok. Record the API/caller proof against FR-090-AC-19
+   and inspect the retained defensive S6a fault mapping. Do not replace the
+   target with a non-Rational target, mock the kernel, inject a fault, throw or
+   panic to claim producer execution.
 2. Include direct S6a `not x`, `x: Boolean`, with an Integer argument bypassing
    admission. Pair it with a valid Boolean argument and with the same Integer
    supplied through each public package API's normal admission.
