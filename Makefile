@@ -159,15 +159,15 @@ use-remote:
 ci-default-features:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo test --locked --workspace
+	cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace
 	cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
-	cargo test --locked -p qsl-semantics
+	cargo run --locked --package xtask -- test-suites default-qsl-semantics --locked -p qsl-semantics
 	cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
-	cargo test --locked -p qsl-cst
+	cargo run --locked --package xtask -- test-suites default-qsl-cst --locked -p qsl-cst
 
 ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	cargo test --locked --workspace --all-features
+	cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
