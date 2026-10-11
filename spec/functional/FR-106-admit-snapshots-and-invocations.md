@@ -23,6 +23,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-207
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-208
+    type: depends_on
 ---
 # FR-106: Read and admit state snapshots and invocations as the spine clause-execution input
 
@@ -115,9 +119,25 @@ Snapshot, format `quire.state.snapshot/v1`:
   package; `fields` is keyed by member name.
 - A value is exactly one of `{"boolean": true|false}`,
   `{"integer": "<decimal>"}`, `{"absent": {}}`, `{"present": <value>}`,
-  `{"reference": {"population": ..., "key": ...}}` and
-  `{"sequence": [<value>, ...]}`. There is no set, bag or ordered-set value:
+  `{"reference": {"population": ..., "key": ...}}`,
+  `{"sequence": [<value>, ...]}` and the record form below. There is no set, bag or ordered-set value:
   those collections are outside QSpec's selected state extension.
+
+A record value is `{"record": {"type": "<declaration identity>",
+"fields": {"<field name>": <value>, ...}}}`. The outer object has exactly
+the `record` tag; its payload has exactly `type` and `fields`. `type` is the
+IR node identity of the value's most-specific admitted record value type,
+not a display name or an object reference. `fields` has exactly one entry
+for every exposed effective field of that type, own and inherited, keyed by
+the exact field name; an optional field is present with `{"absent": {}}`
+or `{"present": <value>}`. Its field values use this same closed value
+grammar, so nested records, optionals and sequence elements may contain
+records. A record's actual type SHALL conform to the field, parameter or
+result's declared record type by QSpec FR-208's record specialization rule.
+The record carries no object key, population or identity, and an object
+`reference` tag cannot stand in for it. Two admitted records compare under
+FR-208 by most-specific type and every effective field; JSON member order
+does not affect the typed value or the `sha256-jcs` digest.
 
 Invocation, format `quire.state.invocation/v1`:
 
@@ -164,9 +184,9 @@ object and field.
 
 A precondition's input is the pre-call observation (QSpec FR-046-AC-7,
 FR-208-AC-13). For a precondition selected by `Invocation`, the selected
-documents are the invocation document and its `pre` snapshot only. Admission
-SHALL read the invocation's `self`, `parameters` and `pre` members and that
-snapshot, and SHALL neither require, read nor check the invocation's `post`,
+documents are the invocation document and its `pre` snapshot only. Admission SHALL
+read the invocation's `self`, `parameters` and `pre` members and that
+snapshot. Admission SHALL neither require, read nor check the invocation's `post`,
 `result`, `created` or `deleted` members or its `post` snapshot: checks 1,
 3, 4, 6 and 10 skip them, and check 11 does not run. A missing, malformed or
 out-of-frame post side therefore changes nothing. Its admitted observation
@@ -174,9 +194,10 @@ and verdict SHALL equal those of a `PreCall` selection over the same pre
 snapshot, `self` and parameters.
 
 A **required population** is the population holding `self`, every
-declared population of the package that a reference-valued parameter names
-(of an invocation or a `PreCall` selection, in the pre snapshot), and,
-repeatedly, every population named by a `reference` value in any field of
+declared population of the package that a reference in a parameter of an
+invocation or `PreCall` selection names in the pre snapshot, including one
+nested in a record, present optional or sequence, and,
+repeatedly, every population named by a `reference` value anywhere in a field of
 any object of a required population, in the observations the clause reads.
 A required population absent from its snapshot is not marked `complete`. A
 parameter reference naming no declared population makes no population
@@ -268,17 +289,28 @@ required; check 10 settles it.
       exactly when its target object's type conforms to `T` (QSpec FR-151:
       the same type, or a chain of declared supertypes leads from it to
       `T`).
+      For a record value, admission SHALL resolve its `type` to an admitted
+      record declaration, check conformance to the expected record type,
+      require exactly its effective fields, and validate each field value
+      under that field's declared type. A missing field refuses
+      `missing-member`, an extra field `unknown-member`, an incompatible
+      record type or value tag `wrong-value-kind`, and a malformed scalar
+      payload `invalid-value`, all under `invalid_runtime_input` at the
+      nested value path. The same rule applies to operation parameters and
+      results in check 10.
       Inputs are refused, outputs are evidence: this refusal applies to
       every current snapshot, every pre snapshot and every operation
       argument. A postcondition invocation's post snapshot is what the
       subject produced, so, when the caller selects post-state witnessing
       (`ObservationLimits::post_state` is `Witness`), an integer in it
-      outside its declared `Int[lower, upper]` is not refused. Admission
-      SHALL admit the exact integer, never coerced or clamped, and SHALL
-      report it as an out-of-range observation naming the object, the
+      outside its declared `Int[lower, upper]` is not refused. Admission SHALL
+      admit the exact integer, never coerced or clamped.
+      Admission SHALL report it as an out-of-range observation naming the object, the
       field (its declaring object type and name), the declared range and the
       observed value, in walk order, with the element's position when the
-      field is a sequence. An out-of-range element of a post-state sequence
+      field is a sequence. For a nested record field it SHALL also retain
+      the FR-207 field, option-value and index steps through the record to
+      the integer. An out-of-range element of a post-state sequence
       field is evidence in the same way. The field's declared range is part
       of the operation's contract, so the observation is the witness of a
       violation; the caller settles it. A post-state value of the wrong
@@ -310,7 +342,8 @@ required; check 10 settles it.
     operation that declares a result, or a value for one that declares none,
     then admission SHALL refuse `invalid_runtime_input`/`missing-member` or
     `unknown-member`. A `PreCall` selection carries no result. A reference
-    value resolves against the pre snapshot's objects for a parameter (the
+    value, including one nested in a record, optional or sequence, resolves
+    against the pre snapshot's objects for a parameter (the
     `PreCall` snapshot, or the invocation's `pre`) and against the post
     snapshot's for a result. If one names a key absent from its complete
     population, or names a population that snapshot does not list (a
@@ -328,8 +361,17 @@ required; check 10 settles it.
     the first population's first violation. For a population present in
     only one of the two snapshots, admission SHALL pass an empty document
     (no objects) for the missing side, so its objects are creations or
-    deletions. The check SHALL compare every
-    declared field of every surviving object, scalar and reference alike.
+    deletions. The check SHALL compare every declared field of every
+    surviving object, scalar, reference and record alike. The frame check SHALL
+    compare a changed record value by its most-specific type and the fields
+    exposed after QSpec FR-150 normalization, under QSpec FR-208. The frame
+    check SHALL report a changed nested field at its FR-207 path; the
+    containing object field and each changed record field
+    on that path are distinct writes, each requiring its own selected
+    `modifies` grant. The grant's `receiver` scope is evaluated against the
+    root object's identity, because a record value has none. A change of
+    the record's most-specific type is a write to its containing field and
+    is not decomposed into fields of the old and new types.
     Within one population it SHALL report the first violation in this
     order, which is `enforce_frame`'s:
     1. walking the post snapshot's objects in ascending key order: an object
@@ -355,24 +397,43 @@ required; check 10 settles it.
 - The document reader is a string edge (ADR-012 §9): `format`,
   `observation`, `anchor.kind`, member names and value tags are converted
   once, at read, to closed enums or typed identities.
+- Value validation SHALL use an explicit work stack, walking populations
+  and objects in document order, record fields in exposed effective field
+  order and sequence
+  elements by ascending index. It SHALL count the record, each option
+  wrapper, each sequence and each contained value against the
+  declared values-per-document setting, and stop at that limit before the next
+  value with `resource_exhausted`/`insufficient-next-charge`, naming the
+  bound, prior count and next value's path; finite recursive record
+  declarations therefore admit only finite
+  supplied values within the byte and value limits, with no call-stack or
+  schema-depth limit. A nested refusal SHALL carry its exact FR-207 `field`,
+  `option_value` and `index` steps from the root object or invocation binding.
+  Invariant evaluation follows QSpec FR-208-AC-10 after admission, once for
+  each reachable record value, with the same path; admission does not turn a
+  false invariant into an input refusal.
 - Every code and cause above is in QSpec `native-diagnostics.md`.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-106-AC-1 | The healthy-parent current snapshot above, selected with anchor `handler validate` and `self` = `child` for `ParentOrder`, admits: one observation with population `config_history` complete, objects `root` and `child` with `versionNumber` 1 and 2, `child.parent` present and naming `root`, and the snapshot's identity and digest retained. Re-serializing the document with other whitespace and member order gives the same digest and the same admitted value. Over a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub`, the same snapshot with `child.parent` naming `k`, a `Sub` object of a complete `archive`, admits with `child.parent` naming `k` typed `Sub`. | Test (TC-464) |
-| FR-106-AC-2 | The changed-version invocation (pre: `child` at 2; post: `child` at 3; result `true`; no parameters, created or deleted) selected for `VersionUnchanged` admits, with the pre and post observations distinct and `result` true. | Test (TC-464) |
-| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, `child.parent` naming an object of a type unrelated to `ConfigVersion` (`wrong-value-kind` at `child`, `parent`), and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter, and a result value on an invocation selected for a postcondition on `probe` (a precondition selected by `Invocation` reads no result, AC-9). | Test (TC-465) |
-| FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test (TC-465) |
-| FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test (TC-465) |
-| FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
-| FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `content-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `authority` and `identity` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `authority`. | Test (TC-465) |
-| FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; over the same unit in a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub` (so `config_history` stays the one population covering `ReachesTarget`), `target` naming `a1` in `archive`, which the snapshot lists with no objects and marks `complete: false`, and which no field of `a`, `b` or `c` reaches, returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `archive`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. In that variant, `target` naming a `Sub` object of a complete `archive` admits, typed `Sub`. Over the base `probe` unit plus an object type `Other` unrelated to `ConfigVersion` and a population `others` over it, `target` naming an `Other` object of a complete `others` refuses `invalid_runtime_input`/`wrong-value-kind`; over the variant plus an operation `probeSub(target: Sub)` on `ConfigVersion` and a precondition on it, `PreCall` with `target` naming `a` refuses `invalid_runtime_input`/`wrong-value-kind`. | Test (TC-464) |
-| FR-106-AC-9 | The forbidden-parent-change invocation (its post sets `child.parent` absent, outside `attemptUpdate`'s frame) selected for a precondition admits the pre observation, `self` and parameters with no post observation, result or delta and no frame check, and the precondition's verdict equals its verdict under `PreCall` over the same pre snapshot, `self` and parameters. The same invocation whose `post` snapshot is absent from the provision, and the same invocation whose `post` snapshot bytes are malformed (not JSON), each admit and give that same verdict, with no `unavailable_observation`, `byte-digest-mismatch` or other refusal. Beyond check 1.3's number rule (FR-106-AC-11), admission neither requires nor reads the invocation's `post`, `result`, `created` or `deleted` members: the same invocation with those four members removed, and with each of them ill-formed, admits and gives that same verdict, and a `probe` invocation whose `result` is `{"boolean": true}`, selected for `ReachesTarget`, admits and gives `ReachesTarget`'s verdict under `PreCall` over the same pre snapshot, `self` and parameters. | Test (TC-464) |
-| FR-106-AC-11 | The authorized-change invocation selected for the precondition `AttemptUpdatePre` refuses `noncanonical_wire` in check 1.3 when its `post` is `9007199254740993` (`inexact-integer`, `document_pointer` `/post`), its `result` is `0.1000000000000000000001` (`inexact-number`, `/result`), its `created` is `[0,1e-400]` (`inexact-number`, `/created/1`) or its `deleted` is `[{"a/b":18446744073709551616}]` (`inexact-integer`, `/deleted/0/a~1b`), although admission reads none of those members further; with those members `2`, `0.1`, `[0,1e-300]` and `[{"a/b":9007199254740992}]` it admits. | Test (TC-465) |
-| FR-106-AC-12 | Inputs are refused, outputs are evidence. Over a package whose operation declares a parameter `Int[0, 1000]`, an invocation or `PreCall` argument of `-1` refuses `invalid_runtime_input`/`invalid-value` naming the parameter, both under the default limits and under `PostStateRange::Witness`; `1000` admits. Over the ConfigVersion model's `versionNumber` (`Int[0, 1000]`), a postcondition invocation's post snapshot holding `-1` under `PostStateRange::Witness` admits, and the post observation reports one `OutOfRange` naming the object `child`, the field `versionNumber`, the range `[0, 1000]`, the exact observed -1 and no index; a pre snapshot holding `-1` or `1001` under `Witness` still refuses `invalid-value`. A sequence field of `Int[0, 1000]` elements holding `5`, `1001` in a post snapshot under `Witness` admits exactly and reports the element at index 1; under `Refuse` it refuses. An in-range value reports nothing. | Test (TC-465) |
-| FR-106-AC-13 | The default is `Refuse`. The wrapping debit (`child.versionNumber` 0 to -1) refuses `invalid_runtime_input`/`invalid-value` naming `child` and `versionNumber` under `admit_observations` with default limits, through `run_clause`'s `Clause` selection of `VersionUnchanged`, and through `run_clause`'s `Frame` selection of `attemptUpdate`. | Test (TC-465) |
+| FR-106-AC-1 | The healthy-parent current snapshot above, selected with anchor `handler validate` and `self` = `child` for `ParentOrder`, admits: one observation with population `config_history` complete, objects `root` and `child` with `versionNumber` 1 and 2, `child.parent` present and naming `root`, and the snapshot's identity and digest retained. Re-serializing the document with other whitespace and member order gives the same digest and the same admitted value. Over a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub`, the same snapshot with `child.parent` naming `k`, a `Sub` object of a complete `archive`, admits with `child.parent` naming `k` typed `Sub`. | Test |
+| FR-106-AC-2 | The changed-version invocation (pre: `child` at 2; post: `child` at 3; result `true`; no parameters, created or deleted) selected for `VersionUnchanged` admits, with the pre and post observations distinct and `result` true. | Test |
+| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, `child.parent` naming an object of a type unrelated to `ConfigVersion` (`wrong-value-kind` at `child`, `parent`), and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter, and a result value on an invocation selected for a postcondition on `probe` (a precondition selected by `Invocation` reads no result, AC-9). | Test |
+| FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test |
+| FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test |
+| FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test |
+| FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `content-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `authority` and `identity` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `authority`. | Test |
+| FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; over the same unit in a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub` (so `config_history` stays the one population covering `ReachesTarget`), `target` naming `a1` in `archive`, which the snapshot lists with no objects and marks `complete: false`, and which no field of `a`, `b` or `c` reaches, returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `archive`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. In that variant, `target` naming a `Sub` object of a complete `archive` admits, typed `Sub`. Over the base `probe` unit plus an object type `Other` unrelated to `ConfigVersion` and a population `others` over it, `target` naming an `Other` object of a complete `others` refuses `invalid_runtime_input`/`wrong-value-kind`; over the variant plus an operation `probeSub(target: Sub)` on `ConfigVersion` and a precondition on it, `PreCall` with `target` naming `a` refuses `invalid_runtime_input`/`wrong-value-kind`. | Test |
+| FR-106-AC-9 | The forbidden-parent-change invocation (its post sets `child.parent` absent, outside `attemptUpdate`'s frame) selected for a precondition admits the pre observation, `self` and parameters with no post observation, result or delta and no frame check, and the precondition's verdict equals its verdict under `PreCall` over the same pre snapshot, `self` and parameters. The same invocation whose `post` snapshot is absent from the provision, and the same invocation whose `post` snapshot bytes are malformed (not JSON), each admit and give that same verdict, with no `unavailable_observation`, `byte-digest-mismatch` or other refusal. Beyond check 1.3's number rule (FR-106-AC-11), admission neither requires nor reads the invocation's `post`, `result`, `created` or `deleted` members: the same invocation with those four members removed, and with each of them ill-formed, admits and gives that same verdict, and a `probe` invocation whose `result` is `{"boolean": true}`, selected for `ReachesTarget`, admits and gives `ReachesTarget`'s verdict under `PreCall` over the same pre snapshot, `self` and parameters. | Test |
+| FR-106-AC-11 | The authorized-change invocation selected for the precondition `AttemptUpdatePre` refuses `noncanonical_wire` in check 1.3 when its `post` is `9007199254740993` (`inexact-integer`, `document_pointer` `/post`), its `result` is `0.1000000000000000000001` (`inexact-number`, `/result`), its `created` is `[0,1e-400]` (`inexact-number`, `/created/1`) or its `deleted` is `[{"a/b":18446744073709551616}]` (`inexact-integer`, `/deleted/0/a~1b`), although admission reads none of those members further; with those members `2`, `0.1`, `[0,1e-300]` and `[{"a/b":9007199254740992}]` it admits. | Test |
+| FR-106-AC-12 | Inputs are refused, outputs are evidence. Over a package whose operation declares a parameter `Int[0, 1000]`, an invocation or `PreCall` argument of `-1` refuses `invalid_runtime_input`/`invalid-value` naming the parameter, both under the default limits and under `PostStateRange::Witness`; `1000` admits. Over the ConfigVersion model's `versionNumber` (`Int[0, 1000]`), a postcondition invocation's post snapshot holding `-1` under `PostStateRange::Witness` admits, and the post observation reports one `OutOfRange` naming the object `child`, the field `versionNumber`, the range `[0, 1000]`, the exact observed -1 and no index; a pre snapshot holding `-1` or `1001` under `Witness` still refuses `invalid-value`. A sequence field of `Int[0, 1000]` elements holding `5`, `1001` in a post snapshot under `Witness` admits exactly and reports the element at index 1; under `Refuse` it refuses. An in-range value reports nothing. | Test |
+| FR-106-AC-13 | The default is `Refuse`. The wrapping debit (`child.versionNumber` 0 to -1) refuses `invalid_runtime_input`/`invalid-value` naming `child` and `versionNumber` under `admit_observations` with default limits, through `run_clause`'s `Clause` selection of `VersionUnchanged`, and through `run_clause`'s `Frame` selection of `attemptUpdate`. | Test |
+| FR-106-AC-14 | A current snapshot of `Account` whose required `address: Address` field is `{"record":{"type":"ix://example/model/PostalAddress","fields":{"street":{"present":{"record":{"type":"ix://example/model/Street","fields":{"name":{"integer":"7"}}}}},"zip":{"integer":"42"}}}}` admits when `PostalAddress` specializes `Address`, its effective `street` field is optional `Street`, its `zip` field is `Integer`, and `Street.name` is `Integer`. Reordering JSON object members yields the same typed observation and selected digest. The two nested records retain their most-specific types and are reached by distinct FR-207 field and option-value paths. | Test |
+| FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
+| FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `resource_exhausted`/`insufficient-next-charge` with the bound, prior count and next value's path before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
+| FR-106-AC-17 | An invocation changing only `Account.address.street` admits its frame when `modifies` grants both `Account.address` and `Address.street`; with either grant absent it refuses `frame_violation`/`unauthorized-change` at the first ungranted field's FR-207 path. A receiver-scoped `Address.street` grant covers the nested write under the receiver `Account` and does not cover the same write under another account. Replacing `PostalAddress` with `Address` is a write to `Account.address` and does not fabricate writes to fields of either record type. | Test |
 
 ## Dependencies
 

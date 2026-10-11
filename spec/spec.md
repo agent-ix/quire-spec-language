@@ -962,7 +962,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR |
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR |
-| [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR |
+| [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Domain package intake, including record value type members |
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT |
 | [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR |
@@ -1008,10 +1008,10 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-100](functional/FR-100-run-a-named-function-through-the-spine.md) | FR |
 | [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md) | FR |
 | [FR-102](functional/FR-102-build-state-clause-forms.md) | FR |
-| [FR-103](functional/FR-103-admit-model-operations-and-frames-on-the-spine.md) | FR |
+| [FR-103](functional/FR-103-admit-model-operations-and-frames-on-the-spine.md) | FR | Model operations, frames and record-valued fields on the spine |
 | [FR-104](functional/FR-104-check-state-clauses.md) | FR |
 | [FR-105](functional/FR-105-emit-state-nodes.md) | FR |
-| [FR-106](functional/FR-106-admit-snapshots-and-invocations.md) | FR |
+| [FR-106](functional/FR-106-admit-snapshots-and-invocations.md) | FR | Typed snapshot and invocation admission, including nested record values |
 | [FR-107](functional/FR-107-evaluate-state-clauses-at-s6a.md) | FR |
 | [FR-108](functional/FR-108-run-the-configversion-spine-corpus.md) | FR |
 | [FR-109](functional/FR-109-run-a-state-clause-through-the-spine.md) | FR |
