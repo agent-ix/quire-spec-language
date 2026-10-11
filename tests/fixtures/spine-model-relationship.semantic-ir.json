@@ -82,7 +82,7 @@
       "operations": [],
       "relationships": [
         {
-          "identity": "ix://acme/orders/relationship/Widget-linkedGadget-Gadget",
+          "identity": "ix://acme/orders/Widget/linkedGadget",
           "category": "structural",
           "composite": false,
           "direction": "source-to-target",
