@@ -152,3 +152,13 @@ The focused lowering coverage exercises a selected relationship with a function,
 while the production location map is keyed by model alias and therefore does not
 depend on function presence or ordering. The corpus admission test asserts the
 emitted relationship family is admitted through the checked-package/v2 reader.
+
+## Disposition pass 2
+
+FND-001 is resolved at the follow-up head. The scoped rule is now explicit in
+FR-056: relationship declarations use FR-154's package-rooted relationship
+slot, while fields, operations and operation parameters use owner/name. The
+lowering records one generated occurrence at the selected model declaration
+span, independent of function presence or ordering. Focused lowering, canonical
+intake, owner/name refusal, the pinned FCD golden, and the admission corpus all
+pass on the follow-up working tree.
