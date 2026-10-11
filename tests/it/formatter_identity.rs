@@ -18,34 +18,57 @@ fn exact_format_output_bound_keeps_the_original_checked_identity() {
     );
     let source = SourceIdentity::new("test", "format-output-bound", "fixture", "original");
     let parsed = qsl_cst::parse(
-        source.clone(), "unit.native", text.as_bytes(), qsl_cst::Limits::default(),
+        source.clone(),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
     )
     .unwrap();
     assert!(parsed.is_admissible());
     let complete = qsl_cst::format::format_with_limits(
-        &parsed, qsl_cst::format::FormatLimits::default().with_output_bytes(usize::MAX),
+        &parsed,
+        qsl_cst::format::FormatLimits::default().with_output_bytes(usize::MAX),
     )
     .unwrap();
     let packages = BTreeMap::new();
     let dependencies = DependencyInput::default();
-    let original = emitted(source, "unit.native", text.as_bytes(), &packages, &dependencies)
-        .expect("the original fixture reaches public S4");
+    let original = emitted(
+        source,
+        "unit.native",
+        text.as_bytes(),
+        &packages,
+        &dependencies,
+    )
+    .expect("the original fixture reaches public S4");
     for bound in [complete.len(), complete.len() + 1] {
         let limits = qsl_cst::format::FormatLimits::default().with_output_bytes(bound);
         let formatted = qsl_cst::format::format_with_limits(&parsed, limits).unwrap();
         assert_eq!(formatted, complete);
         let identity = SourceIdentity::new("test", "format-output-bound", "fixture", "formatted");
         let reparsed = qsl_cst::parse(
-            identity.clone(), "unit.native", formatted.as_bytes(), qsl_cst::Limits::default(),
+            identity.clone(),
+            "unit.native",
+            formatted.as_bytes(),
+            qsl_cst::Limits::default(),
         )
         .unwrap();
         assert!(reparsed.is_admissible());
-        assert_eq!(qsl_cst::format::format_with_limits(&reparsed, limits).unwrap(), formatted);
+        assert_eq!(
+            qsl_cst::format::format_with_limits(&reparsed, limits).unwrap(),
+            formatted
+        );
         let checked = emitted(
-            identity, "unit.native", formatted.as_bytes(), &packages, &dependencies,
+            identity,
+            "unit.native",
+            formatted.as_bytes(),
+            &packages,
+            &dependencies,
         )
         .expect("the bounded formatted fixture reaches public S4");
-        assert_eq!(checked.package().package_id(), original.package().package_id());
+        assert_eq!(
+            checked.package().package_id(),
+            original.package().package_id()
+        );
     }
 }
 

@@ -190,8 +190,8 @@ fn a_driver_serializes_diagnosed_format_refusals_by_catalogue_category() {
 fn a_driver_serializes_format_output_limit_with_original_cause() {
     let source = parsed(FIXTURE);
     assert!(source.is_admissible());
-    let result = format_with_limits(&source, FormatLimits::default().with_output_bytes(0))
-        .map(Staged::new);
+    let result =
+        format_with_limits(&source, FormatLimits::default().with_output_bytes(0)).map(Staged::new);
     let FormatRefusal::OutputBudgetExhausted(diagnostic) = result.as_ref().unwrap_err() else {
         panic!("zero output bytes must exhaust the output budget");
     };

@@ -302,7 +302,8 @@ impl<'a> Output<'a> {
                 qsl_foundation::SyntaxLimit::SourceBytes { bound: self.limit },
             );
             diagnostic.code = CompleteCode::ResourceExhausted;
-            let actual = u128::try_from(self.text.len()).unwrap_or(u128::MAX)
+            let actual = u128::try_from(self.text.len())
+                .unwrap_or(u128::MAX)
                 .saturating_add(u128::try_from(value.len()).unwrap_or(u128::MAX));
             diagnostic.message = format!(
                 "format output-byte limit {} reached ({} emitted UTF-8 bytes); raise {} with FormatLimits.output_bytes or format_with_limit",

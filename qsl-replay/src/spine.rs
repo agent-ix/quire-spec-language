@@ -225,7 +225,9 @@ impl CompileRefusal {
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
                 // Formatting returns FormatRefusal and is never a compile stage.
-                Setting::FormatOutputBytes => unreachable!("format limits are not compile refusals"),
+                Setting::FormatOutputBytes => {
+                    unreachable!("format limits are not compile refusals")
+                }
                 Setting::S1InputBytes
                 | Setting::S1Tokens
                 | Setting::S1Nodes

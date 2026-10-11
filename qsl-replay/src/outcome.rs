@@ -716,19 +716,17 @@ impl OutcomeDocument {
                 } else {
                     Some(OutcomeStage::S2)
                 };
-                Self::new(
-                    Operation::Format,
-                    stage,
-                    category,
-                )
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    Some(diagnostic.cause.as_str()),
-                    diagnostic.code.as_str(),
-                    diagnostic.region.as_ref().map(|region| {
-                        OutcomeLocus::from(&Locus::Region(region.clone()))
-                    }),
-                    diagnostic.message.clone(),
-                )])
+                Self::new(Operation::Format, stage, category).with_diagnostics(vec![
+                    OutcomeDiagnostic::new(
+                        Some(diagnostic.cause.as_str()),
+                        diagnostic.code.as_str(),
+                        diagnostic
+                            .region
+                            .as_ref()
+                            .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
+                        diagnostic.message.clone(),
+                    ),
+                ])
             }
         }
     }
@@ -1330,12 +1328,16 @@ mod tests {
                         ),
                         record(
                             1,
-                            TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 9 }),
+                            TerminalValue::Inconclusive(InconclusiveCause::BoundReached {
+                                depth: 9,
+                            }),
                         ),
                         item,
                     ],
                 );
-                let bytes = document.to_bytes().expect("query rejection document encodes");
+                let bytes = document
+                    .to_bytes()
+                    .expect("query rejection document encodes");
                 assert_eq!(document.to_bytes().unwrap(), bytes);
                 let written: Value = serde_json::from_slice(&bytes).unwrap();
                 assert_eq!(

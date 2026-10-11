@@ -475,7 +475,10 @@ mod tests {
         let population_origin = package
             .original(&key("Pop"))
             .expect("the population's original declaration is retained");
-        assert_eq!(population_origin.meaning.as_deref(), Some(meaning::POPULATION));
+        assert_eq!(
+            population_origin.meaning.as_deref(),
+            Some(meaning::POPULATION)
+        );
         assert_eq!(
             population_origin.origin,
             json!({
@@ -496,8 +499,8 @@ mod tests {
         value["types"][0]["fields"][0]["presence"] = json!("sometimes");
         let offered = offer(serde_json::to_vec(&value).expect("the invalid fixture serializes"));
 
-        let IntakeFailure::Read(refusals) = intake(&offered)
-            .expect_err("the actual intake path retains reader refusal behavior")
+        let IntakeFailure::Read(refusals) =
+            intake(&offered).expect_err("the actual intake path retains reader refusal behavior")
         else {
             panic!("the fixture passes package selection and fails at node reading");
         };
