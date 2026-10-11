@@ -55,7 +55,8 @@ impl StateEnvironment {
 /// silently substitutes QSL's own compiled-in defaults for the proving run's
 /// actual limits (TC-185). A setting with no entry runs at its published
 /// default. Decode admits only settings of FR-255's table other than
-/// `replay.input_bytes`.
+/// `replay.input_bytes` and `format.output_bytes` (neither is a replay
+/// stage operation).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StageLimits(BTreeMap<Setting, u64>);
 
@@ -71,12 +72,17 @@ impl StageLimits {
     }
 
     /// Reads the wire entries, refusing the first whose name is no setting
-    /// of FR-255's table or is `replay.input_bytes`.
+    /// of FR-255's table or is `replay.input_bytes` or `format.output_bytes`.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
         let mut limits = BTreeMap::new();
         for (name, bound) in entries {
             match Setting::from_name(&name) {
-                Some(setting) if setting != Setting::ReplayInputBytes => {
+                Some(setting)
+                    if !matches!(
+                        setting,
+                        Setting::ReplayInputBytes | Setting::FormatOutputBytes
+                    ) =>
+                {
                     limits.insert(setting, bound);
                 }
                 _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
@@ -293,7 +299,7 @@ pub struct ReplayRequestWire {
     pub accounting_limits: ScalarLimits,
     /// The stage limits copied from the proving run: setting name (FR-255)
     /// to bound. Decode refuses a name that is no setting of the table, and
-    /// `replay.input_bytes`.
+    /// `replay.input_bytes` and `format.output_bytes`.
     pub stage_limits: BTreeMap<String, u64>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
@@ -430,7 +436,8 @@ pub enum ReplayRequestRefusal {
         index: usize,
     },
     /// A `stage_limits` entry names no setting of FR-255's table, or names
-    /// `replay.input_bytes`, which a request does not carry
+    /// `replay.input_bytes` or `format.output_bytes`, which a request does
+    /// not carry
     /// (`invalid_runtime_input`/`unknown-member`, FR-263 B2).
     #[error("invalid_runtime_input/unknown-member: stage_limits entry `{name}` is not a setting a request carries")]
     StageLimitEntry {
@@ -893,6 +900,25 @@ mod tests {
 
         let other = ReplayRequest::decode(wire(1000), crate::ReplayLimits::default()).unwrap();
         assert_ne!(request, other);
+    }
+
+    /// Trace: TC-721, FR-255-AC-4
+    #[trace("TC-721", "FR-255-AC-4")]
+    #[test]
+    fn replay_wire_refuses_limits_of_operations_it_does_not_run() {
+        for name in ["replay.input_bytes", "format.output_bytes"] {
+            let mut request = wire(999);
+            request.stage_limits.insert(name.to_owned(), 7);
+            let refusal = ReplayRequest::decode(request, ReplayLimits::default())
+                .expect_err("a replay request cannot carry a non-stage setting");
+            assert_eq!(
+                refusal,
+                ReplayRequestRefusal::StageLimitEntry {
+                    name: name.to_owned()
+                },
+                "{name}"
+            );
+        }
     }
 
     /// A `dependencies` entry over one `fill`-byte source under `identity`.

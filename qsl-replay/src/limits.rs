@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The caller limits and FR-255's settings operation.
 //!
-//! [`CallerLimits`] holds every limits type of the stages QSL runs, each at
+//! [`CallerLimits`] holds the stage and formatter limits QSL exposes, each at
 //! its published default. [`CallerLimits::from_operands`] is the settings
 //! operation the driver CLI calls with its `--limit <name>=<value>`
 //! operands, and a replay request's `stage_limits` entries are applied by the
-//! same [`SettingLimits::set_bound`], so one name raises one limit at every
-//! entry point.
+//! same [`SettingLimits::set_bound`]. Replay does not run formatting, so its
+//! request never carries `format.output_bytes`.
 
 use qsl_eval::simulation::Limits as ExploreLimits;
 use qsl_foundation::{Setting, SettingLimits, UsageRefusal};
@@ -57,9 +57,9 @@ impl CallerLimits {
     }
 
     /// The limits as the replay of a request with `stage_limits` runs them:
-    /// `replay.input_bytes` from the library entry's own limit (a
-    /// `stage_limits` entry for it is ignored, whichever way the map was
-    /// built), and every other setting at the request's entry or its
+    /// `replay.input_bytes` from the library entry's own limit and
+    /// `format.output_bytes` at its published default (replay does not run
+    /// formatting). Every stage setting uses the request's entry or its
     /// default.
     pub(crate) fn for_request(
         stage_limits: &crate::request::StageLimits,
@@ -70,8 +70,7 @@ impl CallerLimits {
             ..Self::default()
         };
         for (setting, bound) in stage_limits.iter() {
-            // A request does not carry `replay.input_bytes`: the library
-            // entry's own limit bounds the request itself.
+            // The replay entry bounds its own envelope; replay never formats.
             if !matches!(
                 setting,
                 Setting::ReplayInputBytes | Setting::FormatOutputBytes
