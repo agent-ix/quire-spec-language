@@ -24,6 +24,10 @@ refusal (`unsupported`), and one expecting success but exhausting its
 configured accounting budget (`incomplete`). Give the four non-passing
 vectors ids out of order and repeat both output modes.
 
+Finally, use the valid corpora with an empty default scope from TC-881
+step 7. Run each in JSON and text modes and inspect the outputs for a
+coverage report or percentage.
+
 Tag the tests `#[trace("TC-879", "FR-352-AC-n")]`.
 
 ## Expected Results
@@ -35,3 +39,6 @@ Tag the tests `#[trace("TC-879", "FR-352-AC-n")]`.
   same. The failed capability keeps the original failed vector as its only
   deciding id. Both output modes retain all four non-passing vectors in id
   order, each with its own outcome and expected and actual result.
+- Empty-scope runs emit the `empty-scope` refusal with no coverage report
+  or percentage. In particular they report neither 0% nor 100%, and no
+  division-by-zero result, NaN or infinity.

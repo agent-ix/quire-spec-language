@@ -66,6 +66,9 @@ when its capability is in the selected scope and its own applicability
 names a QSL consumer type, through that type's entry point. Vectors of an
 out-of-scope capability SHALL NOT execute. The runner calls no internal
 function a caller cannot reach.
+If applicability filtering leaves the scope empty, then the runner SHALL
+refuse before vector execution under
+[FR-353](FR-353-settle-the-complete-v1-qualification-verdict.md).
 
 ### Corpus and limits ownership
 

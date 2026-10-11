@@ -47,12 +47,17 @@ asks for text. It holds:
   same build, limits and scope.
 - An `uncovered` capability SHALL count in the in-scope total and not in
   the `passed` count.
+- If the resolved scope is empty, then the runner SHALL emit only the
+  [FR-353 preflight refusal](FR-353-settle-the-complete-v1-qualification-verdict.md)
+  without a coverage report or percentage, in either output mode. The
+  coverage division applies only to completed runs with a nonempty scope;
+  an empty scope has neither zero-percent nor hundred-percent coverage.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-352-AC-1 | Over a fixture corpus with four in-scope capabilities, two `passed`, one `failed` and one `uncovered`, the report gives counts 2, 1, 0, 0, 0, 1 for `passed`, `failed`, `tool-failure`, `unsupported`, `incomplete` and `uncovered`, and coverage 50 per cent. | Test |
+| FR-352-AC-1 | Over a fixture corpus with four in-scope capabilities, two `passed`, one `failed` and one `uncovered`, the report gives counts 2, 1, 0, 0, 0, 1 for `passed`, `failed`, `tool-failure`, `unsupported`, `incomplete` and `uncovered`, and coverage 50 per cent. When a valid corpus resolves to an empty default scope, both JSON and text modes emit the empty-scope refusal with no coverage report or percentage. | Test |
 | FR-352-AC-2 | The `failed` capability's entry holds its failing vector's id with the expected and the actual result; the `passed` capabilities' entries hold no vector detail. Adding a `tool-failure`, `unsupported` and `incomplete` vector to the failed capability leaves it `failed` with the same deciding vector id, while the report retains all four non-passing vectors with their own outcomes and expected and actual results. | Test |
 | FR-352-AC-3 | The JSON report of two runs over the fixture corpus is byte-equal, capabilities and vectors are in ascending id order, and the report names the QSL version that ran. The text report holds the same counts and coverage. | Test |
 

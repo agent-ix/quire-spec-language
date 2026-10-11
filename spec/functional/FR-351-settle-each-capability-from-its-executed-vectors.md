@@ -36,6 +36,11 @@ of the vectors that decided it.
 
 ## Behavior
 
+- If scope resolution selects no capabilities, then the runner SHALL
+  return the empty-scope preflight refusal of
+  [FR-353](FR-353-settle-the-complete-v1-qualification-verdict.md), without
+  settling a capability. A nonempty scope with no applicable vectors
+  still settles its selected capabilities as `uncovered`.
 - If a capability in scope has no vector whose applicability names a QSL
   consumer type,
   then its outcome SHALL be `uncovered`.

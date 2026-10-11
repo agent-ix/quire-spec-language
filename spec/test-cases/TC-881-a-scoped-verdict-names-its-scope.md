@@ -12,7 +12,7 @@ relationships:
 
 Verify that a verdict over a caller scope names that scope and is not a complete-V1 verdict, and that each run the `qualify` gate refuses before any vector exits 2 with no verdict.
 
-Scope: FR-353-AC-3, FR-353-AC-4.
+Scope: FR-353-AC-3, FR-353-AC-4, FR-353-AC-5.
 
 ## Test Procedure
 
@@ -29,6 +29,13 @@ Every step runs `cargo run --package xtask -- qualify --corpus <dir>`, adding th
    `--limit s3.nodes=ten`, `--limit s3.nodes=-1`, and two occurrences of
    `--limit s3.nodes=5`. Observe the subject invocation boundary in every
    refusal case, including a bad operand after a valid operand.
+7. Create three valid corpora using TC-877's outside-default-scope
+   capabilities: only monitor-only `CAP-F`, only `CAP-G` with its profile
+   absent from QSL's catalog, and both together. Run each with no
+   `--capability` operand in JSON and text modes, observing subject
+   invocation counts. Give their recorded results passes.
+8. Repeat step 7's mixed corpus with `--capability CAP-F` in both output
+   modes, so the selected scope is nonempty but has no applicable vectors.
 
 Tag the tests `#[trace("TC-881", "FR-353-AC-n")]`.
 
@@ -42,3 +49,8 @@ Tag the tests `#[trace("TC-881", "FR-353-AC-n")]`.
   verdict, no vector executed, exit 2.
 - Step 6: usage refusal naming the offending operand; no verdict, no
   vector executed, exit 2. A valid earlier operand starts no stage.
+- Step 7: cause `empty-scope`, locus the resolved qualification scope,
+  zero subject invocations, no verdict or coverage report, exit 2 for
+  every corpus and output mode. No complete-V1 qualification is claimed.
+- Step 8: the sole capability `CAP-F` is `uncovered`, coverage is zero,
+  verdict is `not-qualified`, and exit is 1, with no subject invocation.
