@@ -13,8 +13,8 @@ relationships:
 ## Description
 
 Verify that repeating a registration that is identical to one the registry
-already holds in every descriptor member -- identity, provider origin,
-manifest digest, advertised pairs, retained `domains`, and evidence-kind set --
+already holds in every equality-compared descriptor member -- identity,
+provider origin, advertised pairs, retained `domains`, and evidence-kind set --
 is one registration and is never refused. Scope: FR-075-AC-7.
 
 Mirrors quire-specification's TC-282 DB-01 and DB-02 vectors (FR-290-AC-9),
@@ -24,16 +24,16 @@ verifies it against `qsl-route`'s real `Registry`.
 ## Test Procedure
 
 1. Register backend `A` advertising `value-validity` and no evidence kinds.
-2. Register an identical complete descriptor for `A` again, unchanged in
-   identity, origin, manifest digest, advertised pairs, `domains`, and
-   evidence-kind set.
+2. Register `A` again with the same equality-compared fields: identity,
+   origin, advertised pairs, `domains`, and evidence-kind set.
 3. Register a third, unrelated backend `B`.
 4. Compute the candidate set for `value-validity` with no named backend.
 5. Read the registry's registration refusals.
 
 ## Expected Results
 
-Step 2 succeeds (`Ok`), not a refusal. Step 4's candidate set holds `A` once
+Step 2 succeeds (`Ok`), not a refusal; changing only manifest digest also
+does not change this idempotent outcome. Step 4's candidate set holds `A` once
 and, after step 3, `B` once, each exactly as registered. Step 5 reports no
 refusal for `A`. The result is identical however many times the identical
 descriptor is repeated, and independent of where in the sequence `B` is

@@ -772,8 +772,8 @@ The `backend` member is the identity string alone, in every proof-result envelop
 `BackendId` uniqueness within the `#185` registry is the identity alone (agent-ix/quire-specification#134,
 FR-290 "Candidate set and negotiation": "a backend identity is unique within
 a registry"). Two admitted registrations of one identity that carry an equal
-complete descriptor -- same identity, advertised pairs, and evidence-kind
-set -- are one
+complete descriptor -- same identity, provider origin, advertised pairs,
+retained `domains`, and evidence-kind set -- are one
 registration, and a repeat is not refused. Two admitted registrations of one
 identity that disagree in any member conflict: the identity is refused once
 `invalid_capability`/`duplicate-backend`, keyed by the identity; any
