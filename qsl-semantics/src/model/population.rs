@@ -2509,8 +2509,7 @@ mod tests {
         )
         .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
 
-        let AdmissionOutcome::Refused(refusal) =
-            population_identity_admission_failure(refusal)
+        let AdmissionOutcome::Refused(refusal) = population_identity_admission_failure(refusal)
         else {
             panic!("canonical byte limit must remain a refusal");
         };
@@ -2530,11 +2529,10 @@ mod tests {
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn population_identity_allocation_refusal_preserves_requested_size() {
-        let failure = population_identity_encoding_failure(
-            quire_canonical::Error::Allocation { requested: 4096 },
-        );
-        let AdmissionOutcome::Refused(refusal) =
-            population_identity_admission_failure(failure)
+        let failure = population_identity_encoding_failure(quire_canonical::Error::Allocation {
+            requested: 4096,
+        });
+        let AdmissionOutcome::Refused(refusal) = population_identity_admission_failure(failure)
         else {
             panic!("allocation failure must remain a refusal");
         };
@@ -2552,11 +2550,9 @@ mod tests {
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn population_identity_unexpected_encoder_refusal_is_internal_failure() {
-        let outcome = population_identity_admission_failure(
-            population_identity_encoding_failure(quire_canonical::Error::Serialize(
-                "unexpected serializer error".to_owned(),
-            )),
-        );
+        let outcome = population_identity_admission_failure(population_identity_encoding_failure(
+            quire_canonical::Error::Serialize("unexpected serializer error".to_owned()),
+        ));
 
         let AdmissionOutcome::InternalFault {
             fault,
@@ -2566,10 +2562,7 @@ mod tests {
             panic!("unexpected canonical error must be an internal fault");
         };
         assert_eq!(fault.catalog_code().code(), "runtime_invariant");
-        assert_eq!(
-            fault.catalog_code().cause(),
-            "established-invariant-broken"
-        );
+        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
         assert_eq!(
             fault.category(),
             qsl_foundation::diagnostic::Category::InternalFailure

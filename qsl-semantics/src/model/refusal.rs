@@ -1593,7 +1593,9 @@ pub(crate) mod tests {
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
-            ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => "population-identity-limit-exceeded",
+            ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => {
+                "population-identity-limit-exceeded"
+            }
             ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
             ModelRefusalCause::NoncanonicalNumber {
                 inexact: super::Inexact::Integer,
