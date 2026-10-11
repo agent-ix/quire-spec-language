@@ -60,19 +60,14 @@ fn format_output_refusal_names_emitted_bytes_at_zero_and_one_short() {
     assert!(complete.contains("\n  x + 1\n"));
     let bytes = complete.len();
     for (bound, denied_actual) in [(0, "language".len()), (bytes - 1, bytes)] {
-        let result = format_with_limits(
-            &parsed,
-            FormatLimits::default().with_output_bytes(bound),
-        );
+        let result = format_with_limits(&parsed, FormatLimits::default().with_output_bytes(bound));
         let FormatRefusal::OutputBudgetExhausted(diagnostic) = result.unwrap_err() else {
             panic!("the denied output append returns no partial string");
         };
         assert_eq!(diagnostic.code, Code::ResourceExhausted);
         assert_eq!(
             diagnostic.cause,
-            qsl_cst::CompleteCause::StageLimit(
-                qsl_foundation::diagnostic::LimitKind::InputBytes
-            )
+            qsl_cst::CompleteCause::StageLimit(qsl_foundation::diagnostic::LimitKind::InputBytes)
         );
         assert!(diagnostic.cause.is_cause_of(diagnostic.code));
         assert_eq!(diagnostic.phase, Phase::Format);
@@ -91,11 +86,8 @@ fn format_output_refusal_names_emitted_bytes_at_zero_and_one_short() {
         assert!(!diagnostic.message.contains("source bytes"));
     }
     for bound in [bytes, bytes + 1] {
-        let formatted = format_with_limits(
-            &parsed,
-            FormatLimits::default().with_output_bytes(bound),
-        )
-        .unwrap();
+        let formatted =
+            format_with_limits(&parsed, FormatLimits::default().with_output_bytes(bound)).unwrap();
         assert_eq!(formatted, complete);
         let reparsed = parse_complete(&formatted);
         assert!(reparsed.is_admissible());
@@ -118,21 +110,38 @@ fn caller_settings_report_the_requested_format_output_bound() {
     let setting = Setting::from_name("format.output_bytes")
         .expect("the published format setting has a shared row");
     assert_eq!(setting.stage(), "format");
-    assert_eq!(setting.kind(), qsl_foundation::diagnostic::LimitKind::InputBytes);
+    assert_eq!(
+        setting.kind(),
+        qsl_foundation::diagnostic::LimitKind::InputBytes
+    );
     let defaults = CallerLimits::from_operands(std::iter::empty::<&str>()).unwrap();
     assert_eq!(
-        defaults.bounds().into_iter().find(|(name, _)| *name == setting),
+        defaults
+            .bounds()
+            .into_iter()
+            .find(|(name, _)| *name == setting),
         Some((setting, 1_048_576))
     );
     for bound in [0, 1_048_576, 1_048_577] {
         let operand = format!("format.output_bytes={bound}");
         let limits = CallerLimits::from_operands([operand.as_str()]).unwrap();
-        let configured: Vec<_> = limits.bounds().into_iter()
-            .filter(|(name, _)| *name == setting).collect();
+        let configured: Vec<_> = limits
+            .bounds()
+            .into_iter()
+            .filter(|(name, _)| *name == setting)
+            .collect();
         assert_eq!(configured, vec![(setting, bound)]);
         assert_eq!(
-            limits.bounds().into_iter().filter(|(name, _)| *name != setting).collect::<Vec<_>>(),
-            defaults.bounds().into_iter().filter(|(name, _)| *name != setting).collect::<Vec<_>>()
+            limits
+                .bounds()
+                .into_iter()
+                .filter(|(name, _)| *name != setting)
+                .collect::<Vec<_>>(),
+            defaults
+                .bounds()
+                .into_iter()
+                .filter(|(name, _)| *name != setting)
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -149,16 +158,17 @@ fn malformed_format_setting_operands_refuse_before_any_stage() {
         ("format.output_bytes=-1", UsageCause::NotAnInteger),
         ("format.output_bytes=+1", UsageCause::NotAnInteger),
         ("format.output_bytes=", UsageCause::NotAnInteger),
-        ("format.output_bytes=18446744073709551616", UsageCause::NotAnInteger),
+        (
+            "format.output_bytes=18446744073709551616",
+            UsageCause::NotAnInteger,
+        ),
     ] {
         let refusal = CallerLimits::from_operands([operand]).unwrap_err();
         assert_eq!(refusal.operand, operand);
         assert_eq!(refusal.cause, cause);
     }
-    let refusal = CallerLimits::from_operands([
-        "format.output_bytes=0", "format.output_bytes=1",
-    ])
-    .unwrap_err();
+    let refusal = CallerLimits::from_operands(["format.output_bytes=0", "format.output_bytes=1"])
+        .unwrap_err();
     assert_eq!(refusal.operand, "format.output_bytes=1");
     assert_eq!(refusal.cause, UsageCause::Repeated);
 }
@@ -174,19 +184,28 @@ fn the_settings_operation_supplies_the_actual_formatter_limits() {
     let complete = format(&parsed).unwrap();
     let bytes = complete.len();
     let mut limits = FormatLimits::default();
-    assert_eq!(limits.bounds(), vec![(Setting::FormatOutputBytes, 1_048_576)]);
+    assert_eq!(
+        limits.bounds(),
+        vec![(Setting::FormatOutputBytes, 1_048_576)]
+    );
     assert!(!limits.set_bound(Setting::S1Tokens, 3));
     assert_eq!(limits, FormatLimits::default());
     assert!(limits.set_bound(Setting::FormatOutputBytes, u64::try_from(bytes).unwrap()));
     assert_eq!(limits.output_bytes, bytes);
-    assert_eq!(limits.with_output_bytes(0).bounds(), vec![(Setting::FormatOutputBytes, 0)]);
+    assert_eq!(
+        limits.with_output_bytes(0).bounds(),
+        vec![(Setting::FormatOutputBytes, 0)]
+    );
     for bound in [0, bytes - 1, bytes, bytes + 1, 1_048_577] {
         let operand = format!("format.output_bytes={bound}");
         let caller = CallerLimits::from_operands([operand.as_str()]).unwrap();
         assert_eq!(caller.format.output_bytes, bound);
         let result = format_with_limits(&parsed, caller.format);
         if bound < bytes {
-            assert!(matches!(result, Err(FormatRefusal::OutputBudgetExhausted(_))));
+            assert!(matches!(
+                result,
+                Err(FormatRefusal::OutputBudgetExhausted(_))
+            ));
         } else {
             assert_eq!(result.unwrap(), complete);
         }
@@ -264,10 +283,7 @@ fn formatter_uses_a_raised_content_ceiling_as_given() {
     let refusal = format_with_limit(&parsed, OUTPUT_BYTE_CEILING).unwrap_err();
     assert_eq!(refusal.code(), Code::ResourceExhausted);
     assert_eq!(refusal.diagnostic().phase, Phase::Format);
-    assert_eq!(
-        format(&parsed).unwrap_err().code(),
-        Code::ResourceExhausted
-    );
+    assert_eq!(format(&parsed).unwrap_err().code(), Code::ResourceExhausted);
     let expected_header = concat!(
         "language \"ix:native\" edition \"1-draft\";\n",
         "profile v = \"quire.value.complete/v1\";\n",
