@@ -1,22 +1,26 @@
 ---
 id: TC-405
-title: "The assembler admits floating types and refuses unresolved model references"
+title: "The assembler resolves floating types and refuses unsupported model fields and unresolved references"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: verifies
 ---
-# TC-405: The assembler admits floating types and refuses unresolved model references
+# TC-405: The assembler resolves floating types and refuses unsupported model fields and unresolved references
 
 ## Description
 
 Verify the explicit resolution arms for `Float32`/`Float64` and
-`Reference<Q>`. A floating type is admitted and carries its rounding mode
-(FR-091-OQ-4, ADR-013 R-07), and a floating type written without a mode is
-admitted by S1 and read as mode `exact` (QSpec FR-148). A model reference with no admitted domain package is
-an unresolved name.
+`Reference<Q>`. A floating type in a function signature is admitted and
+carries its rounding mode (FR-091-OQ-4, ADR-013 R-07), and a floating type
+written without a mode is admitted by S1 and read as mode `exact` (QSpec
+FR-148). A native floating model field has no QSpec FR-322 member type and
+remains an explicit unsupported-feature refusal (FR-056-AC-20). A model
+reference with no admitted domain package is an unresolved name.
 
-Scope: FR-091-AC-19, FR-091-AC-23.
+Scope: FR-091-AC-19, FR-091-AC-23, FR-056-AC-20.
 
 ## Test Procedure
 
@@ -33,8 +37,12 @@ alias is `v`.
 4. Spine-compile, with no library supplied, a unit that declares
    `import "test/units" as u;`
    (FR-091-AC-24).
+5. For each of `ix://quire/native/Float32` and
+   `ix://quire/native/Float64`, assemble a unit selecting an otherwise
+   admitted package whose `Gauge` object has a `[1, 1]` field `reading` of
+   that native type.
 
-Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's `#[trace("TC-405", "FR-091-AC-24")]`.
+Tag steps 1–3 with `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, step 4 with `#[trace("TC-405", "FR-091-AC-24")]`, and step 5 with `#[trace("FR-056-AC-20", "TC-405")]`.
 
 ## Expected Results
 
@@ -48,7 +56,17 @@ Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's
   `missing_import`/`missing-selection` naming `test/units`, located at the
   import's identity string.
 - Step 3 returns no `PackageDeclarations` value.
+- Step 5 refuses at the unit's `model` declaration with
+  `unknown_required_feature`/`unsupported-feature` and returns no
+  `PackageDeclarations`. Neither refusal names or infers a rounding mode.
 
 ## Status
 
 Step 4 is backed by `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses`. Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_types_are_admitted_and_reference_types_are_refused`; resolution of the mode is `check::type_form` `float_types_carry_their_rounding_mode`, and evaluation under each mode is `qsl-eval` `float_rounding::the_evaluator_applies_the_rounding_mode_the_float_type_carries`. Step 2 is backed by those and by `qsl-forms` `a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode` (bare `Float64` and `Float32`, no rounding mode on the type form).
+
+Step 5 records the missing QSL-285 refusal control; no backing test is claimed
+until the implementation adds it. QSpec FR-322's "Model-owned members" step 4
+does not assign a member type to `Float32` or `Float64`, and says a declared
+type outside its table gives the member no type. The QSL refusal remains the
+capability result already specified by FR-056; it does not choose an implicit
+`exact` mode.
