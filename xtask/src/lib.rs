@@ -17,6 +17,9 @@ pub mod seam_probe;
 pub mod string_edge;
 pub mod typestate_scan;
 
+#[cfg(test)]
+mod ci_clean_build_tests;
+
 pub use error::{Error, Result};
 
 /// `Self`'s type name for an `impl` block, for the common case `seam_probe`
