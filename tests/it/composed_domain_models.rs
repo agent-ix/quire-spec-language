@@ -930,7 +930,7 @@ pub(crate) fn record_value_type(root: &Path, name: &str, fields: &[(&str, &str, 
 /// Presence wraps the multiplicity-derived type independently. Native
 /// sequences retain their declared order and duplicates; other collection
 /// representations remain an explicit unsupported prerequisite.
-#[trace("TC-148", "FR-042-AC-11", "FR-056-AC-10")]
+#[trace("TC-148", "FR-042-AC-11", "TC-895", "FR-016-AC-10", "FR-056-AC-10")]
 #[test]
 fn domain_field_multiplicities_and_nested_reads_type_check() {
     use quire_spec_language::checking::composed::{

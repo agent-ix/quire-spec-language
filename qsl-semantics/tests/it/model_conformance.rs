@@ -66,12 +66,32 @@ fn field_member_redefining(
     redefines: Option<&str>,
     subsets: Vec<&str>,
 ) -> DomainPackageRecord {
+    field_member_with_presence(
+        identity,
+        owner,
+        value_type,
+        m,
+        quire_exact::Presence::Required,
+        redefines,
+        subsets,
+    )
+}
+
+fn field_member_with_presence(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    m: Multiplicity,
+    presence: quire_exact::Presence,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: m,
-        presence: quire_exact::Presence::Required,
+        presence,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -784,6 +804,110 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         Ok(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
+}
+
+#[trace("TC-896", "FR-082-AC-8")]
+#[test]
+fn presence_narrowing_uses_declared_presence_independently_of_multiplicity() {
+    let check = |base_presence,
+                 redefining_presence,
+                 base_multiplicity,
+                 redefining_multiplicity,
+                 establishes_presence| {
+        let mut records = vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            field_member_with_presence(
+                "model.A.x",
+                "model.A",
+                "model.A",
+                base_multiplicity,
+                base_presence,
+                None,
+                vec![],
+            ),
+            operation(
+                "model.A.set",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            field_member_with_presence(
+                "model.B.xb",
+                "model.B",
+                "model.A",
+                redefining_multiplicity,
+                redefining_presence,
+                Some("model.A.x"),
+                vec![],
+            ),
+        ];
+        if establishes_presence {
+            records.push(operation_redefining(
+                "model.B.set",
+                "model.B",
+                vec![],
+                None,
+                vec![],
+                vec![],
+                vec![],
+                vec![PostconditionClause::Presence {
+                    field: DeclarationKey::fixture("model.B.xb"),
+                }],
+                Some("model.A.set"),
+            ));
+        }
+        check_field_refinement_obligation(
+            &ModelIndex::build(DomainPackage::new(
+                DomainPackageRef::fixture("bundle.tc896"),
+                records,
+            )),
+            &DeclarationKey::fixture("model.B.xb"),
+            &DeclarationKey::fixture("model.A.x"),
+        )
+    };
+
+    let optional = quire_exact::Presence::Optional;
+    let required = quire_exact::Presence::Required;
+    let singleton = mult(1, Some(1));
+    let optional_singleton = match check(optional, required, singleton, singleton, false) {
+        Ok(ConformanceOutcome::Refused(failures)) => failures,
+        other => panic!("expected Refused(field-presence), got {other:?}"),
+    };
+    assert_eq!(optional_singleton.len(), 1);
+    assert_eq!(
+        optional_singleton[0].cause,
+        ModelRefusalCause::UnprovedRefinement
+    );
+    assert!(optional_singleton[0].detail.contains("field-presence"));
+
+    assert!(matches!(
+        check(optional, required, mult(0, Some(1)), mult(0, Some(1)), false),
+        Ok(ConformanceOutcome::Refused(failures))
+            if failures.len() == 1 && failures[0].detail.contains("field-presence")
+    ));
+    assert!(matches!(
+        check(optional, required, singleton, singleton, true),
+        Ok(ConformanceOutcome::Compatible)
+    ));
+    assert!(matches!(
+        check(
+            required,
+            required,
+            mult(0, Some(1)),
+            mult(0, Some(1)),
+            false
+        ),
+        Ok(ConformanceOutcome::Compatible)
+    ));
+    assert!(matches!(
+        check(optional, optional, singleton, singleton, false),
+        Ok(ConformanceOutcome::Compatible)
+    ));
 }
 
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
