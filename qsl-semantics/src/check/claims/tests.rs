@@ -566,6 +566,120 @@ fn tc_160_rr_16_keeps_conversion_context_per_occurrence() {
     assert_eq!(own_bound.record("x + 1", 0, ADD).conversion_context(), None);
 }
 
+fn expression_map(checked: &Checked, omit: Option<&OccurrenceKey>) -> OccurrenceMap<Location> {
+    let mut map = OccurrenceMap::default();
+    for (node, origin, location) in checked.graph.occurrences() {
+        if origin.role() != &Role::new("expression") {
+            continue;
+        }
+        let occurrence = OccurrenceKey::new(wire(node), origin);
+        if omit == Some(&occurrence) {
+            continue;
+        }
+        map.record(node, OccurrenceRole::Expression, location.clone());
+    }
+    map
+}
+
+fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
+    ValueClaim {
+        site: ClaimSite {
+            location,
+            bound: SiteBound::Narrowed(bound),
+            path_condition: Vec::new(),
+        },
+        domains: BTreeMap::new(),
+    }
+}
+
+/// TC-160 step 12: absence of a direct narrow occurrence refuses keying.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_narrowed_claim_with_zero_direct_narrows_faults() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) }",
+    );
+    let add = checked.occurrence("x + 1", 0, Some(ADD));
+    let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
+    let location = checked
+        .graph
+        .occurrence(
+            NodeKey::from_digest(*add.node().as_bytes()),
+            add.origin(),
+        )
+        .expect("the add occurrence has a location")
+        .clone();
+    let expressions = expression_map(&checked, Some(&narrow));
+    assert_eq!(
+        key_claims(
+            vec![narrowed_claim(location, interval(0, 10))],
+            &expressions,
+            checked.graph.semantic_graph(),
+            &BTreeMap::new(),
+        ),
+        Err(KeyFault::UnkeyableRequirements)
+    );
+}
+
+/// TC-160 step 12: two direct narrow occurrences are ambiguous and refuse.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_narrowed_claim_with_two_direct_narrows_faults() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) }",
+    );
+    let add = checked.occurrence("x + 1", 0, Some(ADD));
+    let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
+    let add_location = checked
+        .graph
+        .occurrence(NodeKey::from_digest(*add.node().as_bytes()), add.origin())
+        .expect("the add occurrence has a location")
+        .clone();
+    let narrow_node = NodeKey::from_digest(*narrow.node().as_bytes());
+    let narrow_location = checked
+        .graph
+        .occurrence(narrow_node, narrow.origin())
+        .expect("the narrow occurrence has a location")
+        .clone();
+    let mut expressions = expression_map(&checked, None);
+    expressions.record(narrow_node, OccurrenceRole::Expression, narrow_location);
+    assert_eq!(
+        key_claims(
+            vec![narrowed_claim(add_location, interval(0, 10))],
+            &expressions,
+            checked.graph.semantic_graph(),
+            &BTreeMap::new(),
+        ),
+        Err(KeyFault::UnkeyableRequirements)
+    );
+}
+
+/// TC-160 step 12: if candidate narrows are nested, only the inner one
+/// directly referencing the scalar application is its context.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_direct_context_excludes_outer_narrow() {
+    let scalar = node(10);
+    let inner = node(11);
+    let outer = node(12);
+    let outer_origin = Origin::new(Role::new("expression"), 0);
+    let inner_origin = Origin::new(Role::new("expression"), 0);
+    let candidates = [(outer, outer_origin), (inner, inner_origin.clone())];
+    let operand = |candidate| match candidate {
+        node if node == inner => Some(scalar),
+        node if node == outer => Some(inner),
+        _ => None,
+    };
+    assert_eq!(
+        unique_direct_narrow(&candidates, scalar, |candidate, target| {
+            operand(candidate) == Some(target)
+        }),
+        Ok((inner, inner_origin))
+    );
+}
+
 /// TC-160 step 10 (FR-062-AC-13): RR-15 with its two `let` operands
 /// swapped. Each `t * 2` still carries its own binding's extent, now at
 /// the other ordinal: the extent follows the site, not the order.

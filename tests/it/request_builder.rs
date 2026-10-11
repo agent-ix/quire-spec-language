@@ -258,7 +258,7 @@ fn tc_449_a_package_with_no_records_gives_no_items() {
 /// TC-449 step 6 (FR-075-AC-8): RR-16's two `+` items at one node carry
 /// distinct occurrence keys and their own records' result bounds,
 /// `Int[0, 10]` then `Int[0, 20]` in key order.
-#[trace("TC-449", "FR-075-AC-8")]
+#[trace("TC-449", "FR-075-AC-8", "FR-075-AC-15")]
 #[test]
 fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
     let package = package(TWO_CALLEES);
@@ -344,4 +344,5 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
         records[item.occurrence()].path_condition()
     );
     assert!(item.path_condition().is_empty());
+    assert_eq!(item.conversion_context(), None);
 }
