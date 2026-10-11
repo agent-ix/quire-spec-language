@@ -15,8 +15,8 @@ relationships:
 ## Description
 
 QSL SHALL provide the registry evidence ADR-012 §5.3 requires for the
-open seam S7 (the capability-kind enum, matched at the registry
-advertisement boundary): a property-based permutation-equality test, a
+open seam S7 (the canonical twelve-member capability-kind enum, matched at
+the registry advertisement boundary): a property-based permutation-equality test, a
 `cargo-deny` ban on `inventory`, `linkme` and `ctor`, a lint gate finding no
 `static`, `OnceLock` or `thread_local!` in the registry module, one unit
 test per ADR-012 §5.2 row, and the S7 seam probe covering the registry arm.
@@ -81,11 +81,17 @@ outcome, independent of the others.
 
 ### The S7 seam probe
 
-The registry's match over the capability-kind enum (advertisement
-validation and candidate matching) SHALL carry a probe variant behind the
-`seam-probe` cargo feature, consistent with FR-063's mechanism for S1-S4,
-and `xtask seam-probe` SHALL report the registry's match sites among the
-checked-in `E0004` locations when the probe feature is enabled.
+Every match over the canonical `Capability` enum SHALL remain exhaustive and
+carry a probe variant behind the `seam-probe` cargo feature, consistent with
+FR-063's mechanism for S1-S4. `xtask seam-probe` SHALL report every affected
+match site among the checked-in `E0004` locations when the probe feature is
+enabled.
+
+The exhaustive set includes capability equality (`same_kind`), the FR-290
+family projection (`families()`), the composed-admission stage projection
+(`composed_admission_stages`), descriptor advertisement validation, and
+candidate matching. No such match may use a wildcard arm that makes a new
+capability variant silently fall through.
 
 ## Acceptance Criteria
 
@@ -96,6 +102,7 @@ checked-in `E0004` locations when the probe feature is enabled.
 | FR-080-AC-3 | The lint gate fails when a `static`, `OnceLock` or `thread_local!` item is present in the registry module, and passes on the unmodified module. | Test (TC-206) |
 | FR-080-AC-4 | Each of ADR-012 §5.2's five rows has at least one unit test, and each such test fails if its row's documented outcome is not produced (for example, a test for the duplicate-`BackendId` row fails if the second registration is silently accepted instead of refused). | Test (TC-207) |
 | FR-080-AC-5 | Under the `seam-probe` feature, `xtask seam-probe` reports an `E0004` location at the registry's capability-kind match arm when a probe variant is added to the capability-kind enum, and this location is in the checked-in expected-location list. | Test (TC-208) |
+| FR-080-AC-6 | Adding a probe variant to the canonical `Capability` enum causes every exhaustive match listed in this requirement, including `same_kind`, `families()`, `composed_admission_stages`, descriptor validation and candidate matching, to fail with `E0004`; `xtask seam-probe` reports each location against the checked-in expected-location list. | Test |
 
 ## Dependencies
 
