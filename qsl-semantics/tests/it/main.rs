@@ -33,6 +33,8 @@ mod model_systems;
 mod quantities;
 mod state_clauses;
 #[cfg(feature = "test-support")]
+mod tc235_business_meanings;
+#[cfg(feature = "test-support")]
 mod type_environment_model;
 
 #[path = "../../../tests/support/admitted_charge.rs"]
