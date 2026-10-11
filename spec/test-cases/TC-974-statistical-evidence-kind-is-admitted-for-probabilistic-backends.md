@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify a probabilistic backend may advertise the exact `statistical` evidence
-kind and that descriptor admission retains it. Scope: FR-075-AC-9.
+kind and that descriptor admission retains it. Scope: FR-075-AC-10.
 
 ## Test Procedure
 

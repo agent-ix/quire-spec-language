@@ -13,8 +13,9 @@ relationships:
 ## Description
 
 Verify that repeating a registration that is identical to one the registry
-already holds -- same backend identity, advertised pairs and evidence-kind
-set -- is one registration and is never refused. Scope: FR-075-AC-7.
+already holds in every descriptor member -- identity, provider origin,
+manifest digest, advertised pairs, retained `domains`, and evidence-kind set --
+is one registration and is never refused. Scope: FR-075-AC-7.
 
 Mirrors quire-specification's TC-282 DB-01 and DB-02 vectors (FR-290-AC-9),
 which state the same rule for QSpec's own registry model; this test case
@@ -23,8 +24,9 @@ verifies it against `qsl-route`'s real `Registry`.
 ## Test Procedure
 
 1. Register backend `A` advertising `value-validity` and no evidence kinds.
-2. Register an identical complete descriptor for `A` again: same identity,
-   advertised pairs and evidence-kind set.
+2. Register an identical complete descriptor for `A` again, unchanged in
+   identity, origin, manifest digest, advertised pairs, `domains`, and
+   evidence-kind set.
 3. Register a third, unrelated backend `B`.
 4. Compute the candidate set for `value-validity` with no named backend.
 5. Read the registry's registration refusals.
