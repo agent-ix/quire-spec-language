@@ -399,6 +399,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         invocations: written.invocations,
         selection: written.selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         // `exhausted-work`'s own `work_units: 0` (FR-108's Corpus table);

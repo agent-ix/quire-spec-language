@@ -246,21 +246,13 @@ fn shared_format_catalog_preserves_existing_wire_spellings() {
         vec![
             json!("native-run/1"),
             json!("native-compile/1"),
-            json!("native-run-result/1"),
+            json!("native-run-result/2"),
             json!("native-rule-model/1"),
             json!("native-rule-model/2"),
             json!("native-state-input/1"),
             json!("native-linked-package/1"),
             json!("spine-run-result/1")
         ]
-    );
-    let result_schema: Value = serde_json::from_str(include_str!(
-        "../../schemas/native-run-result-1.schema.json"
-    ))
-    .unwrap();
-    assert_eq!(
-        result_schema["$defs"]["report"]["properties"]["format"]["const"],
-        WireFormat::RunResult.as_str()
     );
     assert_eq!(
         quire_spec_language::model_source::FORMAT,

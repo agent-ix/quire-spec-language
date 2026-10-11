@@ -774,6 +774,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         invocations: BTreeMap::new(),
         selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1749,6 +1750,7 @@ fn config_version_request_for(
         invocations: BTreeMap::new(),
         selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1974,7 +1976,7 @@ fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
         ClauseDisposition::StalePackage {
             expected, actual, ..
         } => {
-            assert_eq!(*expected, other_id);
+            assert_eq!(expected, &other_id.hex());
             assert_ne!(*actual, other_id, "the config-version package differs");
         }
         other => panic!("expected StalePackage {{ .. }}, got {other:?}"),

@@ -196,6 +196,9 @@ pub struct ClauseRunRequest {
     pub selection: ClauseRunSelection,
     /// An optional expected `package_id` (FR-098's stale package rule).
     pub expected_package_id: Option<PackageId>,
+    /// A wire caller's lowercase hex claim, kept separate from a minted
+    /// `PackageId` until it is compared with the compiled package.
+    pub expected_package_id_claim: Option<String>,
     /// The spine's stage limits.
     pub limits: SpineLimits,
     /// FR-106's observation limits.
@@ -246,7 +249,7 @@ pub enum ClauseDisposition {
     /// recompiled `package_id` differs from the request's expected one.
     StalePackage {
         /// The expected `package_id`.
-        expected: PackageId,
+        expected: String,
         /// The recompiled `package_id`.
         actual: PackageId,
     },
@@ -555,8 +558,12 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     };
     let package_id = emitted.package().package_id();
     let package = checked.package();
-    if let Some(expected) = request.expected_package_id {
-        if package_id != expected {
+    if let Some(expected) = request
+        .expected_package_id
+        .map(|id| id.hex())
+        .or_else(|| request.expected_package_id_claim.clone())
+    {
+        if package_id.hex() != expected {
             return Ok(report(
                 Some(package_id),
                 ClauseDisposition::StalePackage {

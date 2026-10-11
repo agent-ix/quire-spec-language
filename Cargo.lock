@@ -1493,6 +1493,7 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "thiserror",
 ]
 
