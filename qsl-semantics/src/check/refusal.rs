@@ -409,6 +409,7 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::IdentityInputBytes
             | Setting::IntakeInputBytes
             | Setting::ReplayInputBytes
+            | Setting::FormatOutputBytes
             | Setting::I2InputBytes
             | Setting::I2Nodes
             | Setting::I2Edges

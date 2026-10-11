@@ -257,8 +257,8 @@ impl CompileRefusal {
                 | Setting::I2Occurrences
                 | Setting::I2Diagnostics
                 | Setting::I2WorkUnits => SpineStage::Intake,
-                // Limits of operations after the compile: no front-end
-                // refusal carries one, so they name no stage of it.
+                // Limits of operations outside the front-end compile: no
+                // front-end refusal carries one, so they name no stage of it.
                 Setting::AdmissionPopulationMembers
                 | Setting::AdmissionWorkUnits
                 | Setting::AdmissionAncestorSteps
@@ -266,6 +266,7 @@ impl CompileRefusal {
                 | Setting::ObservationObjects
                 | Setting::ObservationValues
                 | Setting::ReplayInputBytes
+                | Setting::FormatOutputBytes
                 | Setting::ExploreStates
                 | Setting::ExploreTransitions => SpineStage::Emit,
             },
