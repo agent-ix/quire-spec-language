@@ -144,7 +144,7 @@ use crate::model::domain_package::{
     OperationEffect,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::{hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId};
+use crate::model::key::{hex, DeclarationKey, DeclarationKeyWire, EffectiveId};
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
@@ -769,23 +769,28 @@ fn population_id_preimage<'a>(
     role: AdmissionRole,
     declared_maximum: Option<u64>,
     members: &'a BTreeMap<ReferenceKey, DeclarationKey>,
-) -> PopulationIdWire<'a> {
-    let mut members: Vec<_> = members
-        .iter()
-        .map(|(key, declaration)| {
-            let member = PopulationMemberWire {
-                universe: hex(key.universe.as_bytes()),
-                r#type: hex(key.type_identity.as_bytes()),
-                object: &key.object,
-                declaration: declaration.wire(),
-            };
-            let bytes = quire_canonical::to_vec(&member, quire_canonical::Limits::new(u64::MAX))
-                .expect("a typed population member fits the unbounded canonical encoder");
-            (bytes, member)
-        })
-        .collect();
-    members.sort_by(|left, right| left.0.cmp(&right.0));
-    PopulationIdWire {
+    member_encoding_limit: u64,
+) -> Result<PopulationIdWire<'a>, quire_canonical::Error> {
+    let mut encoded_members = Vec::with_capacity(members.len());
+    for (key, declaration) in members {
+        let member = PopulationMemberWire {
+            universe: hex(key.universe.as_bytes()),
+            r#type: hex(key.type_identity.as_bytes()),
+            object: &key.object,
+            declaration: declaration.wire(),
+        };
+        let bytes = quire_canonical::to_vec(
+            &member,
+            quire_canonical::Limits::new(
+                member_encoding_limit,
+                quire_canonical::Limits::MAX_DEPTH,
+            )
+            .expect("MAX_DEPTH is a valid canonical limit"),
+        )?;
+        encoded_members.push((bytes, member));
+    }
+    encoded_members.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
         // The full `DomainPackageRef` header (identity, version, digest), not
         // only `identity`: this module's own `admit_binding` doc already
@@ -799,12 +804,12 @@ fn population_id_preimage<'a>(
         population_key: population_key.wire(),
         admission_role: role.as_str(),
         declared_maximum: declared_maximum.map(|maximum| maximum.to_string()),
-        members: members.into_iter().map(|(_, member)| member).collect(),
+        members: encoded_members.into_iter().map(|(_, member)| member).collect(),
         pre: match role {
             AdmissionRole::Direct | AdmissionRole::Pre => None,
             AdmissionRole::Post(id) => Some(hex(id.as_bytes())),
         },
-    }
+    })
 }
 
 /// [`population_id_preimage`]'s typed form.
@@ -839,15 +844,86 @@ fn mint_population_id(
     role: AdmissionRole,
     declared_maximum: Option<u64>,
     members: &BTreeMap<ReferenceKey, DeclarationKey>,
-) -> PopulationId {
-    let (digest, _) = sha256_and_len(&population_id_preimage(
+    byte_bound: u64,
+) -> Result<PopulationId, ModelRefusal> {
+    let preimage = population_id_preimage(
         domain_package,
         population_key,
         role,
         declared_maximum,
         members,
-    ));
-    PopulationId::from_digest(digest)
+        byte_bound,
+    );
+    let preimage = match preimage {
+        Ok(preimage) => preimage,
+        Err(error) => return Err(population_identity_encoding_refusal(error)),
+    };
+    let digest = quire_canonical::sha256(
+        &preimage,
+        quire_canonical::Limits::new(byte_bound, quire_canonical::Limits::MAX_DEPTH)
+            .expect("MAX_DEPTH is a valid canonical limit"),
+    );
+    match digest {
+        Ok(digest) => Ok(PopulationId::from_digest(*digest.as_bytes())),
+        Err(error) => Err(population_identity_encoding_refusal(error)),
+    }
+}
+
+fn population_identity_encoding_refusal(error: quire_canonical::Error) -> ModelRefusal {
+    let requested = match &error {
+        quire_canonical::Error::Allocation { requested } => *requested,
+        _ => 0,
+    };
+    ModelRefusal {
+        code: Code::AllocationFailed,
+        cause: ModelRefusalCause::AllocationFailed { requested },
+        detail: format!("bounded population identity encoding failed: {error}"),
+    }
+}
+
+fn population_id_work_bound(
+    domain_package: &DomainPackage,
+    population_key: &DeclarationKey,
+    members: &BTreeMap<ReferenceKey, DeclarationKey>,
+) -> u64 {
+    let variable = domain_package.model_selection.identity.len()
+        .saturating_add(domain_package.model_selection.version.len())
+        .saturating_add(population_key.package.len())
+        .saturating_add(population_key.node.len())
+        .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
+            sum.saturating_add(key.object.len())
+                .saturating_add(declaration.package.len())
+                .saturating_add(declaration.node.len())
+        }));
+    u64::try_from(variable)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(12)
+        .saturating_add(length_amount(members.len()).saturating_mul(2))
+}
+
+/// Conservative RFC 8785 byte ceiling for the preimage and each member
+/// sort-key encoding. Every input byte can expand to at most six escaped
+/// bytes; fixed JSON keys, separators, hex IDs and per-member punctuation fit
+/// the additional per-member allowance.
+fn population_id_byte_bound(
+    domain_package: &DomainPackage,
+    population_key: &DeclarationKey,
+    members: &BTreeMap<ReferenceKey, DeclarationKey>,
+) -> u64 {
+    let variable = domain_package.model_selection.identity.len()
+        .saturating_add(domain_package.model_selection.version.len())
+        .saturating_add(population_key.package.len())
+        .saturating_add(population_key.node.len())
+        .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
+            sum.saturating_add(key.object.len())
+                .saturating_add(declaration.package.len())
+                .saturating_add(declaration.node.len())
+        }));
+    u64::try_from(variable)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(6)
+        .saturating_add(length_amount(members.len()).saturating_mul(512))
+        .saturating_add(4096)
 }
 
 /// The outcome of one [`admit_binding`] attempt.
@@ -1238,6 +1314,25 @@ fn admit_binding_as(
         }
     }
 
+    let identity_byte_bound = population_id_byte_bound(domain_package, population_key, &admitted);
+    let identity_work_bound = population_id_work_bound(domain_package, population_key, &admitted);
+    if let Err(incomplete) = meter.charge(
+        AdmissionCharge::new(AdmissionChargePoint::BindingMember)
+            .work(identity_work_bound),
+    ) {
+        return AdmissionOutcome::Incomplete(incomplete);
+    }
+    let population_id = match mint_population_id(
+        domain_package,
+        population_key,
+        role,
+        declared_maximum,
+        &admitted,
+        identity_byte_bound,
+    ) {
+        Ok(id) => id,
+        Err(refusal) => return AdmissionOutcome::Refused(refusal),
+    };
     AdmissionOutcome::Admitted(PopulationBinding {
         universe,
         members: admitted,
@@ -1246,13 +1341,7 @@ fn admit_binding_as(
         ancestor_steps,
         type_catalog: Arc::clone(view.shared_type_catalog()),
         pre_anchor: None,
-        population_id: mint_population_id(
-            domain_package,
-            population_key,
-            role,
-            declared_maximum,
-            &admitted,
-        ),
+        population_id,
     })
 }
 
@@ -2295,7 +2384,9 @@ mod tests {
             AdmissionRole::Direct,
             None,
             &BTreeMap::new(),
-        );
+            population_id_byte_bound(&package, &key, &BTreeMap::new()),
+        )
+        .expect("golden population identity encodes");
         assert_eq!(hex(id.as_bytes()), DIGEST);
         let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
