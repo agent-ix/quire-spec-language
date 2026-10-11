@@ -1988,6 +1988,7 @@ pub mod fixtures {
             own_signature,
             dispatch_tables,
             checking_limits,
+            complete_value: false,
             location,
             measure_location: location,
             nodes_used: 0,

@@ -336,6 +336,7 @@ pub struct Scope {
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
+    pub(crate) complete_value: bool,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
@@ -465,6 +466,7 @@ impl Scope {
             operations,
             ieee_profile,
             integer_division: None,
+            complete_value: false,
             dispatch_operations,
             index,
             imports: BTreeMap::new(),
@@ -482,6 +484,11 @@ impl Scope {
         division: Option<AdmittedIntegerDivision>,
     ) -> Self {
         self.integer_division = division;
+        self
+    }
+
+    pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
+        self.complete_value = complete_value;
         self
     }
 
@@ -932,7 +939,7 @@ impl<'a> Typer<'a> {
     ) -> Self {
         Self {
             scope,
-            complete_value: false,
+            complete_value: scope.complete_value,
             signatures,
             limits,
             nodes,
@@ -1497,23 +1504,31 @@ impl<'a> Typer<'a> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
         let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
-            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => match hint {
-                Some(ValueType::Rational(domain)) => (
-                    NodeKind::Divide {
-                        left: left_box,
-                        right: right_box,
-                        domain: domain.clone(),
-                    },
-                    ValueType::Rational(domain.clone()),
-                ),
-                Some(_) => return Err(mismatch(location)),
-                None => {
-                    return Err(CheckRefusal::ill_typed(
+            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => {
+                if !self.complete_value {
+                    return Err(refuse(
                         location,
-                        IllTypedCause::AmbiguousLiteral,
-                    ))
+                        CheckCause::ProfileProhibitedOperator(BinaryOperator::Divide),
+                    ));
                 }
-            },
+                match hint {
+                    Some(ValueType::Rational(domain)) => (
+                        NodeKind::Divide {
+                            left: left_box,
+                            right: right_box,
+                            domain: domain.clone(),
+                        },
+                        ValueType::Rational(domain.clone()),
+                    ),
+                    Some(_) => return Err(mismatch(location)),
+                    None => {
+                        return Err(CheckRefusal::ill_typed(
+                            location,
+                            IllTypedCause::AmbiguousLiteral,
+                        ))
+                    }
+                }
+            }
             (l, r, _) if is_integer(l) && is_integer(r) => {
                 // `Divide` is taken by the preceding arm; naming it here keeps
                 // a later change from silently lowering `/` as `*`.
