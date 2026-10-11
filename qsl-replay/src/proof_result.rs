@@ -554,7 +554,10 @@ impl TerminalRecord {
         Self::with_backend(
             request_index,
             backend,
-            TerminalValue::Proved { success_checks },
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks },
+                certification: Certification::Certified,
+            },
         )
     }
 
@@ -907,7 +910,7 @@ mod tests {
                 };
                 let source = BackendProviderSource {
                     backend_identity: "proof-provider".to_owned(),
-                    items: vec![TerminalRecord::new(RequestIndex::new(0), value.clone())],
+                    items: vec![TerminalRecord::from_value(RequestIndex::new(0), value.clone())],
                 };
                 let envelopes = read_backend_provider_envelope(&source, ReplayLimits::default())
                     .expect("the complete proof record admits");
@@ -955,7 +958,7 @@ mod tests {
         ] {
             let source = BackendProviderSource {
                 backend_identity: "model-provider".to_owned(),
-                items: vec![TerminalRecord::new(
+                items: vec![TerminalRecord::from_value(
                     RequestIndex::new(7),
                     TerminalValue::Inconclusive(cause.clone()),
                 )],
@@ -1003,7 +1006,7 @@ mod tests {
                     },
                 ] {
                     let cause = InconclusiveCause::CertificateRejected { rule, at };
-                    let input = source(vec![TerminalRecord::new(
+                    let input = source(vec![TerminalRecord::from_value(
                         RequestIndex::new(4),
                         TerminalValue::Inconclusive(cause.clone()),
                     )]);
@@ -1059,7 +1062,7 @@ mod tests {
         // the replay's typed disagreement without reclassifying it.
         let source = BackendProviderSource {
             backend_identity: "model-provider".to_owned(),
-            items: vec![TerminalRecord::new(
+            items: vec![TerminalRecord::from_value(
                 RequestIndex::new(0),
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
                     replay.disagreement().unwrap().clone(),
@@ -1088,7 +1091,7 @@ mod tests {
             let value = TerminalValue::Incomplete(IncompleteCause::Cancelled { source });
             let input = BackendProviderSource {
                 backend_identity: "model-provider".to_owned(),
-                items: vec![TerminalRecord::new(RequestIndex::new(0), value.clone())],
+                items: vec![TerminalRecord::from_value(RequestIndex::new(0), value.clone())],
             };
             let envelopes =
                 read_backend_provider_envelope(&input, ReplayLimits::default()).unwrap();

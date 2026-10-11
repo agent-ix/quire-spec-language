@@ -188,7 +188,10 @@ fn non_refuted_records_are_constructible_through_the_facade() {
     assert_eq!(envelopes[1].record().value().category(), Category::Inconclusive);
     assert_eq!(
         envelopes[2].record().value(),
-        &TerminalValue::Proved { success_checks: 1 }
+        &TerminalValue::Proved {
+            basis: qsl_replay::ProofBasis::Checks { success_checks: 1 },
+            certification: qsl_replay::Certification::Certified,
+        }
     );
     assert_eq!(envelopes[3].record().value(), &TerminalValue::Failed);
 }
