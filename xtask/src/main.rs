@@ -11,14 +11,14 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use xtask::{
-    canonical_types, checked_input,
+    canonical_types, checked_input, conformance,
     error::{Error, Result},
     route_lint, seam_probe, string_edge,
 };
 
 const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       \
                      cargo xtask route-lint\n       cargo xtask checked-input\n       \
-                     cargo xtask canonical-types [<workspace>]";
+                     cargo xtask canonical-types [<workspace>]\n       cargo xtask conformance-input\n       cargo xtask conformance";
 
 #[qsl_attrs::string_edge]
 fn run(arguments: &[OsString]) -> Result<String> {
@@ -43,6 +43,8 @@ fn run(arguments: &[OsString]) -> Result<String> {
         "canonical-types" => {
             canonical_types::run(workspace_operand.as_deref().unwrap_or(&workspace_root))
         }
+        "conformance-input" => conformance::check_input(&workspace_root),
+        "conformance" => conformance::run(&workspace_root),
         _ => Err(Error::Usage(USAGE)),
     }
 }
