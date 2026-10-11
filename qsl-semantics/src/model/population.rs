@@ -779,14 +779,8 @@ fn population_id_preimage<'a>(
             object: &key.object,
             declaration: declaration.wire(),
         };
-        let bytes = quire_canonical::to_vec(
-            &member,
-            quire_canonical::Limits::new(
-                member_encoding_limit,
-                quire_canonical::Limits::MAX_DEPTH,
-            )
-            .expect("MAX_DEPTH is a valid canonical limit"),
-        )?;
+        let bytes =
+            quire_canonical::to_vec(&member, quire_canonical::Limits::new(member_encoding_limit))?;
         encoded_members.push((bytes, member));
     }
     encoded_members.sort_by(|left, right| left.0.cmp(&right.0));
@@ -804,7 +798,10 @@ fn population_id_preimage<'a>(
         population_key: population_key.wire(),
         admission_role: role.as_str(),
         declared_maximum: declared_maximum.map(|maximum| maximum.to_string()),
-        members: encoded_members.into_iter().map(|(_, member)| member).collect(),
+        members: encoded_members
+            .into_iter()
+            .map(|(_, member)| member)
+            .collect(),
         pre: match role {
             AdmissionRole::Direct | AdmissionRole::Pre => None,
             AdmissionRole::Post(id) => Some(hex(id.as_bytes())),
@@ -858,11 +855,7 @@ fn mint_population_id(
         Ok(preimage) => preimage,
         Err(error) => return Err(population_identity_encoding_refusal(error)),
     };
-    let digest = quire_canonical::sha256(
-        &preimage,
-        quire_canonical::Limits::new(byte_bound, quire_canonical::Limits::MAX_DEPTH)
-            .expect("MAX_DEPTH is a valid canonical limit"),
-    );
+    let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(byte_bound));
     match digest {
         Ok(digest) => Ok(PopulationId::from_digest(*digest.as_bytes())),
         Err(error) => Err(population_identity_encoding_refusal(error)),
@@ -875,7 +868,7 @@ fn population_identity_encoding_refusal(error: quire_canonical::Error) -> ModelR
         _ => 0,
     };
     ModelRefusal {
-        code: Code::AllocationFailed,
+        code: Code::ResourceExhausted,
         cause: ModelRefusalCause::AllocationFailed { requested },
         detail: format!("bounded population identity encoding failed: {error}"),
     }
@@ -886,7 +879,10 @@ fn population_id_work_bound(
     population_key: &DeclarationKey,
     members: &BTreeMap<ReferenceKey, DeclarationKey>,
 ) -> u64 {
-    let variable = domain_package.model_selection.identity.len()
+    let variable = domain_package
+        .model_selection
+        .identity
+        .len()
         .saturating_add(domain_package.model_selection.version.len())
         .saturating_add(population_key.package.len())
         .saturating_add(population_key.node.len())
@@ -910,7 +906,10 @@ fn population_id_byte_bound(
     population_key: &DeclarationKey,
     members: &BTreeMap<ReferenceKey, DeclarationKey>,
 ) -> u64 {
-    let variable = domain_package.model_selection.identity.len()
+    let variable = domain_package
+        .model_selection
+        .identity
+        .len()
         .saturating_add(domain_package.model_selection.version.len())
         .saturating_add(population_key.package.len())
         .saturating_add(population_key.node.len())
@@ -1114,7 +1113,7 @@ fn admit_binding_as(
                     "member {} names type {}, absent from the effective view",
                     member.object, member.type_identity.node
                 ),
-            })
+            });
         };
 
         // FR-153:57/:72: a member type not covered by the population's own
@@ -1316,10 +1315,9 @@ fn admit_binding_as(
 
     let identity_byte_bound = population_id_byte_bound(domain_package, population_key, &admitted);
     let identity_work_bound = population_id_work_bound(domain_package, population_key, &admitted);
-    if let Err(incomplete) = meter.charge(
-        AdmissionCharge::new(AdmissionChargePoint::BindingMember)
-            .work(identity_work_bound),
-    ) {
+    if let Err(incomplete) = meter
+        .charge(AdmissionCharge::new(AdmissionChargePoint::BindingMember).work(identity_work_bound))
+    {
         return AdmissionOutcome::Incomplete(incomplete);
     }
     let population_id = match mint_population_id(

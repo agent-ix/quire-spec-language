@@ -156,18 +156,24 @@ use-remote:
 # not gated on the feature compile and pass without it. These are the only
 # two workspace crates with a `test-support` feature; `quire-exact`'s own
 # default-feature gate runs in its repository.
+# Explicit children keep feature-lane executables separate even on warm runs.
+# Every command receives its lane's directory; tooling outside these lanes
+# continues to use the caller's root and its own Cargo feature selection.
+# Resolve paths in the shell from environment data so quotes, backticks and
+# dollars remain literal path bytes instead of becoming Make expansions.
+
 ci-default-features:
-	cargo fmt --all -- --check
-	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo test --locked --workspace
-	cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
-	cargo test --locked -p qsl-semantics
-	cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
-	cargo test --locked -p qsl-cst
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo fmt --all -- --check
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked --workspace --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked -p qsl-semantics
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked -p qsl-cst
 
 ci-all-features:
-	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	cargo test --locked --workspace --all-features
+	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo test --locked --workspace --all-features
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
@@ -178,9 +184,15 @@ ci-all-features:
 # rather than resting on a claim in prose. `cargo check` (not `build`) is
 # enough: the property under test is which dependencies the lib target
 # resolves, not that its object code is produced.
+# Preserve the caller's literal target root across the Make/shell boundary.
+# An empty value retains Cargo's default target root.
+ifneq ($(origin CARGO_TARGET_DIR),undefined)
+override export CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+endif
+
 ci-clean-build:
-	cargo build --locked --workspace --no-default-features --target-dir target/clean
-	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir target/clean
+	cargo build --locked --workspace --no-default-features --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
+	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 
 # PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only
