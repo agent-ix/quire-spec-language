@@ -1683,7 +1683,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     );
     // Raised, the same input admits.
     let raised = PopulationAdmissionLimits {
-        work_units: 1_000,
+        work_units: 10_000,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     assert!(matches!(
@@ -3284,7 +3284,7 @@ fn population_post_identity_binds_its_pre_population_id() {
 }
 
 #[test]
-#[trace("TC-291", "FR-084-AC-1", "FR-084-AC-4")]
+#[trace("TC-291", "FR-084-AC-1")]
 fn invalid_population_member_is_refused_before_identity_is_minted() {
     let view = view_of(&fixture_f1());
     let mut document = p1("test/orders");
@@ -3304,6 +3304,38 @@ fn invalid_population_member_is_refused_before_identity_is_minted() {
             cause: ModelRefusalCause::ForeignType { member, type_name },
             ..
         }) if member == "a1" && type_name == DeclarationKey::fixture("foreign.Type")
+    ));
+}
+
+/// FR-089 identity serialization is priced before its member sort-key and
+/// complete-preimage encoders run; a large caller-supplied object identity
+/// cannot bypass the admission work ceiling.
+#[trace("TC-291", "FR-089-AC-7")]
+#[test]
+fn population_identity_encoding_is_charged_before_hashing() {
+    let view = view_of(&fixture_f1());
+    let mut document = p1("test/orders");
+    document.members[0].object = "x".repeat(4096);
+    let outcome = admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits {
+            work_units: 128,
+            ..PopulationAdmissionLimits::UNLIMITED
+        }),
+    );
+    assert!(matches!(
+        outcome,
+        AdmissionOutcome::Incomplete(AdmissionIncomplete {
+            limit_kind: AdmissionLimitKind::WorkUnits,
+            limit: 128,
+            consumed: 1,
+            charge_point: AdmissionChargePoint::BindingMember,
+            next_charge,
+        }) if next_charge > 127
     ));
 }
 
