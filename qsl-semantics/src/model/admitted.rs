@@ -151,23 +151,33 @@ impl AdmittedPackage {
         for index in member_records {
             let record = &package.records[index];
             let key = record.key();
-            let owner = match record {
-                DomainPackageRecord::FieldMember(member) => Some(member.owner.node.as_str()),
-                DomainPackageRecord::OperationMember(member) => Some(member.owner.node.as_str()),
+            let owner_and_name = match record {
+                DomainPackageRecord::FieldMember(member) => {
+                    member_identity_name(&member.owner.node, &key.node)
+                        .map(|name| (member.owner.node.as_str(), name))
+                }
+                DomainPackageRecord::OperationMember(member) => {
+                    member_identity_name(&member.owner.node, &key.node)
+                        .map(|name| (member.owner.node.as_str(), name))
+                }
+                DomainPackageRecord::Relationship(relationship) => relationship
+                    .source
+                    .role
+                    .as_deref()
+                    .map(|name| (relationship.source.type_identity.node.as_str(), name)),
                 DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
                 | DomainPackageRecord::Allocation(_)
                 | DomainPackageRecord::Population(_) => {
-                    key.node.rsplit_once('/').map(|(owner, _)| owner)
+                    key.node.rsplit_once('/').and_then(|(owner, _)| {
+                        member_identity_name(owner, &key.node).map(|name| (owner, name))
+                    })
                 }
             };
-            let Some((owner, name)) = owner
-                .and_then(|owner| member_identity_name(owner, &key.node).map(|name| (owner, name)))
-            else {
+            let Some((owner, name)) = owner_and_name else {
                 refusals.push(identity_refusal(
                     key,
                     format!(
