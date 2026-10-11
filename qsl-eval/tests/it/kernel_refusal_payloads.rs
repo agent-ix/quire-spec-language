@@ -10,10 +10,10 @@ use qsl_foundation::diagnostic::kernel_refusal_record;
 use quire_exact::{
     admit_text, convert_ieee_width, divide, evaluate_decimal, evaluate_ieee,
     evaluate_integer_arithmetic, evaluate_rational_arithmetic, exact_to_ieee, ieee_to_exact,
-    modulo, Decimal, DecimalOperation, DecimalType, DivisionMember, DivisionProfile,
-    IeeeOperation, IeeeValue, IeeeWidth, Integer, IntegerArithmetic,
-    IntegerDomain, IntegerInterval, Meter, Outcome, Rational, RationalArithmetic, RationalDomain,
-    Refusal, RoundingMode, ScalarLimits, TextPayload, TextProfile, TextType,
+    modulo, Decimal, DecimalOperation, DecimalType, DivisionMember, DivisionProfile, IeeeOperation,
+    IeeeValue, IeeeWidth, Integer, IntegerArithmetic, IntegerDomain, IntegerInterval, Meter,
+    Outcome, Rational, RationalArithmetic, RationalDomain, Refusal, RoundingMode, ScalarLimits,
+    TextPayload, TextProfile, TextType,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -178,9 +178,11 @@ fn ieee_not_exact_names_the_result_width_and_flags() {
 #[test]
 fn ieee_rational_refusal_names_its_target_domain() {
     let domain = RationalDomain::new(interval(0, 1), interval(1, 1)).unwrap();
-    let refused = refusal(
-        ieee_to_exact(IeeeValue::binary32(0x3f00_0000), &domain, &mut meter()),
-    );
+    let refused = refusal(ieee_to_exact(
+        IeeeValue::binary32(0x3f00_0000),
+        &domain,
+        &mut meter(),
+    ));
     assert_record(
         &refused,
         "ieee_rational_out_of_domain",

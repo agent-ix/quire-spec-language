@@ -19,9 +19,9 @@ use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, Decimal, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
-    IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue,
-    IeeeWidth, IllTyped, IllTypedCause, Rational, RoundingMode, IEEE_DEFINITION,
+    ieee_to_exact, Decimal, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss, IeeeFlag,
+    IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue, IeeeWidth, IllTyped,
+    IllTypedCause, Rational, RoundingMode, IEEE_DEFINITION,
 };
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome,
