@@ -71,8 +71,8 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
 
 - From the request builder: one `RequirementItem` per requirement record,
   in record key order, each with its request index, occurrence key, node,
-  kind, extent classification, unbounded domains, result bound and
-  candidate outcome.
+  kind, extent classification, unbounded domains, result bound, direct
+  conversion context and candidate outcome.
 - A candidate set per item: zero, one or more `BackendId`s, ordered
   bytewise by identity (FR-290 "Candidate set and negotiation").
 - A distinct unknown-backend marker, carrying the named identity, when the
@@ -136,6 +136,10 @@ occurrence-key order. Each `RequirementItem` SHALL carry:
 - its unbounded domains: the `DomainKey` and kind of each domain of an
   `Unbounded` extent, in key order, and none for a `Bounded` one;
 - the record's result bound, as the `WireNodeId` of its FR-092 type node;
+- its direct conversion context, as `Option<OccurrenceKey>`: the canonical
+  `OccurrenceKey` of the `expression` occurrence for the narrow that
+  directly wraps this record's scalar application, or `None` when the
+  record's result bound is the application's own result type;
 - the record's path condition, as the same ordered sequence of canonical
   `PathGuard` values returned by `RequirementRecord::path_condition()`;
 - its candidate outcome, `Registry::candidates(kind, evidence kind when
@@ -154,6 +158,20 @@ guard is the canonical `PathGuard` value: the guard expression's
 `&[PathGuard]`, preserving its order and members without translating it,
 deduplicating it, or deriving a second guard representation. An unguarded
 requirement record yields an empty sequence.
+
+`RequirementItem::conversion_context()` SHALL expose the record's direct
+conversion context as `Option<&OccurrenceKey>`. This value is carried once
+per requirement occurrence, independently of the `WireNodeId` shared by the
+scalar application. For each item, the driver SHALL associate the context
+with the item by its occurrence key/request index; it SHALL NOT select a
+conversion by expression node alone. A record whose result bound comes from
+the application's own result type yields `None`. A record whose result bound
+comes from a narrow carries exactly the direct (innermost) narrow's
+occurrence key; no outer conversion replaces it. The narrow is context only
+and does not add a requested item, routed item or claim. The driver's mapping
+passes that occurrence's conversion context to IR together with the item's
+root. A bare `lower([add])` call remains governed by the Contract IR API and
+this requirement does not make QSL discover a reverse narrow for it.
 
 The orchestrating driver (T-13) reads nothing else about items from QSL. It
 writes each item's kind, extent classification, named backend and
@@ -282,6 +300,8 @@ were added.
 | FR-075-AC-12 | A descriptor that advertises no `probabilistic-satisfaction` kind is admitted without evidence-kind labels, and its admission is unaffected by whether it advertises any of the other eleven kinds. | Test |
 | FR-075-AC-13 | For a probabilistic item naming `statistical` or `exact`, the candidate set contains exactly registrations advertising that same evidence kind; a registration advertising only the other evidence kind is excluded, including when it is the only registration. Missing or unknown evidence remains available to downstream negotiation for the corresponding invalid-request refusal and is not substituted. | Test (TC-980, TC-983) |
 | FR-075-AC-14 | Two registrations identical in every descriptor member except that their evidence-kind sets differ are conflicting descriptors: the registry refuses the identity with `invalid_capability`/`duplicate-backend`, withdraws its registration, and reports no candidate for it; equal complete descriptors remain idempotent under FR-075-AC-7. A request naming a registered backend with the nonmatching evidence kind has an empty candidate set. | Test (TC-981, TC-983) |
+| FR-075-AC-15 | For every request item, `conversion_context()` returns the record's direct conversion context as `Option<&OccurrenceKey>`, separate from `result_bound()`. In FR-062 RR-16, the two requirement records share the `+` node but have distinct occurrence keys and directly wrapping narrow occurrence keys; the builder returns two items in occurrence-key order, and each item's `conversion_context()` equals its own record's narrow occurrence key while its `result_bound()` is respectively `Int[0, 10]` or `Int[0, 20]`. A record with no directly wrapping narrow returns `None`; when the same application node occurs multiple times, each item retains its own site's context and no context is selected by the shared expression node key. The two narrow contexts add no `RequirementItem`, routed item or claim. | Test (TC-449) |
+| FR-075-AC-16 | For `function f using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }`, the driver's IR call includes roots `[item.node(), conversion_context.node()]` (or the equivalent contextual entry point), with context paired to the item by request index and occurrence key. For RR-16, the driver makes this mapping independently for both items, which share the `+` node but have different request indices and conversion contexts: each item passes its own narrow context root, and neither context is swapped or selected by node key. In both vectors, the narrow is context only; it creates no additional requirement item, routed item or claim, and the routed claim remains the scalar application occurrence. A bare `lower([add])` call still returns the behavior specified by Contract IR and is not changed by this criterion. | Test (TC-449) |
 
 ## Dependencies
 
