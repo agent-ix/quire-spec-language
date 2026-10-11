@@ -1152,7 +1152,11 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         "the exact duplicate collapses, not a fourth member"
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 1_150);
+    assert_eq!(
+        admission.consumed(AdmissionLimitKind::WorkUnits),
+        16_318,
+        "duplicate input is member-priced once; identity work includes worst-case sort comparisons"
+    );
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
@@ -1684,7 +1688,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     );
     // Raised, the same input admits.
     let raised = PopulationAdmissionLimits {
-        work_units: 10_000,
+        work_units: 20_000,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     assert!(matches!(
