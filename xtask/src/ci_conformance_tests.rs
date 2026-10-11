@@ -222,9 +222,9 @@ fn default_checkout_under_a_main_clone_parent_with_spaces_runs_all_checks() {
 fn caller_checkout_override_is_used_and_exported() {
     let recipe = Recipe::new();
     fs::remove_dir_all(&recipe.checkout).unwrap();
-    let override_dir = recipe.root.path().join("caller checkout");
+    let override_dir = recipe.root.path().join("caller checkout $qspec");
     Recipe::checkout(&override_dir);
-    for path in [override_dir.as_path(), Path::new("caller checkout")] {
+    for path in [override_dir.as_path(), Path::new("caller checkout $qspec")] {
         let _ = fs::remove_file(&recipe.log);
         let output = recipe.run("ci", Some(path), "positive", 0);
         assert!(
@@ -244,7 +244,7 @@ fn caller_checkout_override_is_used_and_exported() {
             "-",
             "export-probe",
         ])
-        .arg("QSPEC_DIR=caller checkout")
+        .arg("QSPEC_DIR=caller checkout $qspec")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
