@@ -446,6 +446,16 @@ fn lower<T>(
     units: quire_semantic_value::quantity::UnitTable,
     build: impl FnOnce(&mut Lowering<'_>) -> T,
 ) -> (T, SemanticGraph) {
+    let (built, graph, _) = lower_with_occurrences(models, units, build);
+    (built, graph)
+}
+
+/// Shared lowering setup for tests that need to inspect occurrences.
+fn lower_with_occurrences<T>(
+    models: &[AdmittedModel],
+    units: quire_semantic_value::quantity::UnitTable,
+    build: impl FnOnce(&mut Lowering<'_>) -> T,
+) -> (T, SemanticGraph, OccurrenceMap<Location>) {
     let scope = empty_scope();
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
@@ -463,36 +473,8 @@ fn lower<T>(
         qsl_foundation::IdentityLimits::default(),
     );
     let built = build(&mut lowering);
-    (built, lowering.finish(&generated_location()).graph)
-}
-
-/// Lower selected relationships while retaining their occurrence map so the
-/// root provenance can be checked independently of the graph contents.
-fn lower_relationships_with_occurrences(
-    models: &[AdmittedModel],
-    locations: &BTreeMap<String, Location>,
-) -> (SemanticGraph, OccurrenceMap<Location>) {
-    let scope = empty_scope();
-    let lock = LockEvidence::default();
-    let mut occurrences = OccurrenceMap::default();
-    let owner = crate::check::SourceOwner::from(&fixture_source());
-    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
-    let mut lowering = Lowering::new(
-        &scope,
-        &owner,
-        models,
-        Default::default(),
-        &lock,
-        0,
-        &mut occurrences,
-        &mut meter,
-        qsl_foundation::IdentityLimits::default(),
-    );
-    lowering
-        .relationship_nodes(locations)
-        .expect("the selected relationship keys");
     let graph = lowering.finish(&generated_location()).graph;
-    (graph, occurrences)
+    (built, graph, occurrences)
 }
 
 // ---------------------------------------------------------------------
@@ -628,10 +610,14 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     let acme = admitted("1.0.0");
     let model = acme.model.clone().with_alias("M");
     let declaration = type_declaration("M");
-    let (graph, occurrences) = lower_relationships_with_occurrences(
+    let (result, graph, occurrences) = lower_with_occurrences(
         std::slice::from_ref(&model),
-        &BTreeMap::from([("M".to_owned(), declaration.clone())]),
+        Default::default(),
+        |lowering| {
+            lowering.relationship_nodes(&BTreeMap::from([("M".to_owned(), declaration.clone())]))
+        },
     );
+    result.expect("the selected relationship keys");
     let relations: Vec<_> = graph
         .nodes()
         .filter(|node| node.node_tag() == NodeTag::Relation)
