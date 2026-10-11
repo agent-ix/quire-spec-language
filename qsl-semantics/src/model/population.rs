@@ -144,7 +144,7 @@ use crate::model::domain_package::{
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::{
-    hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
+    hex, DeclarationKey, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
 };
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
@@ -841,11 +841,8 @@ fn population_id_preimage<'a>(
         };
         #[cfg(test)]
         record_population_identity_member_encoding();
-        let bytes = quire_canonical::to_vec(
-            &member,
-            quire_canonical::Limits::new(member_encoding_limit, quire_canonical::Limits::MAX_DEPTH)
-                .expect("MAX_DEPTH is a valid canonical limit"),
-        )?;
+        let bytes =
+            quire_canonical::to_vec(&member, quire_canonical::Limits::new(member_encoding_limit))?;
         encoded_members.push((bytes, member));
     }
     encoded_members.sort_by(|left, right| {
@@ -966,11 +963,7 @@ fn mint_population_id(
     };
     #[cfg(test)]
     record_population_identity_digest();
-    let digest = quire_canonical::sha256(
-        &preimage,
-        quire_canonical::Limits::new(byte_bound, quire_canonical::Limits::MAX_DEPTH)
-            .expect("MAX_DEPTH is a valid canonical limit"),
-    );
+    let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(byte_bound));
     match digest {
         Ok(digest) => Ok(PopulationId::from_digest(*digest.as_bytes())),
         Err(error) => Err(population_identity_encoding_refusal(error)),
@@ -983,7 +976,7 @@ fn population_identity_encoding_refusal(error: quire_canonical::Error) -> ModelR
         _ => 0,
     };
     ModelRefusal {
-        code: Code::AllocationFailed,
+        code: Code::ResourceExhausted,
         cause: ModelRefusalCause::AllocationFailed { requested },
         detail: format!("bounded population identity encoding failed: {error}"),
     }
