@@ -54,3 +54,16 @@ This pass reviewed PR #721 head `331d2ccab5e90586112c5af09ed3b5380536c186` again
 - The prior SR-4963 finding row is only the required clean placeholder, not a substantive finding. No acceptance-coverage finding is added in this pass. Oracle review of the current member/max/pre assertions and literal vector is recorded in SR-4962; tests were not run by the reviewer.
 
 The current source review identifies an NFR-012 accounting defect in worst-case member sorting (SR-4962 FND-004); this is a code/resource-bound finding rather than an uncovered acceptance-test behavior. The computed matrix and broad reverse-gap/stub inventory remain unavailable.
+
+
+## Disposition pass 4 — exact-head manual mapping
+
+Reviewed PR #721 head `8e7a6de3dd57812da067beab9e5f020a45ffe726` against fresh `origin/main` base `bdf259f008c6577f4235b06ab1d87c32db83099a`. `quoin matrix --repo /tmp/qsl721-review --json` again timed out after 30 seconds with no matrix output; therefore this remains a manual subset mapping, not a repository-wide matrix or reverse-gap/stub audit. The historical round-3 observations above are retained as history: on this head, identity work is charged before encoding, sorting work is priced, and the charge-bound test is now tagged `NFR-012` rather than `FR-089-AC-7`.
+
+- FR-089-AC-7 member/max distinctions remain checked by `population_identity_binds_maximum_and_canonical_members` and `population_bindings_with_different_maxima_have_distinct_ids`.
+- FR-089-AC-7 Post/Pre identity distinction remains checked by `population_post_identity_binds_its_pre_population_id`; `population_identity_golden_vector_contains_all_seven_fields` retains the literal independent vector.
+- NFR-012 has new trace-bound tests `population_identity_sort_work_bound_covers_repeated_prefixes` and `population_identity_encoding_is_charged_before_hashing`; source charges the derived work estimate before identity encoding/sorting. The second test does not detect a regression that moves the encoder before the denied charge (SR-4962 FND-007), so test-oracle strength remains an open code-review finding even though the current production ordering is correct.
+- The shared admission tests now expect four admitted charges (three member charges plus identity-work charge) and totals 16,318 and 5,963. These assertions address the stale oracle from the prior head; they were not run by this reviewer.
+- FR-084-AC-1/AC-4 mappings and coverage are unchanged; the historical FND-003 false tag remains fixed.
+
+No new uncovered acceptance behavior was identified in this manual subset mapping. The complete computed matrix and repository-wide reverse-gap/stub inventory remain unavailable due to the matrix timeout. SR-4963 still has only its clean placeholder; no gap-analysis disposition comment is needed.
