@@ -2,7 +2,7 @@
 //! `qsl-foundation`: the ADR-011 §6.1 layer **F** foundation crate
 //! (ADR-011 §7.3 X-2).
 //!
-//! Module order, per ADR-011 §6.1's F row: [`absence`] < [`json_number`] <
+//! Module order, per ADR-011 §6.1's F row: [`absence`] < [`backend`] < [`json_number`] <
 //! [`serde_object`] < [`setting`] < [`digest`] < [`wire_format`] < [`source`] (with
 //! [`source_map`]) < [`selection`] < [`bound`] < [`diagnostic`]. Every module here depends only on
 //! `quire-exact` (K) and external crates -- no module imports the QSL root
@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 pub mod absence;
+pub mod backend;
 pub mod bound;
 pub mod diagnostic;
 pub mod digest;
@@ -33,6 +34,7 @@ pub mod source_map;
 pub mod wire_format;
 pub mod witness;
 
+pub use backend::{BackendId, EmptyBackendIdentity};
 pub use diagnostic::{
     CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, SyntaxLimit,
     UndefinedCoded, UndefinedReason, UndefinedRecord,

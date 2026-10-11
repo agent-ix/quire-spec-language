@@ -70,8 +70,8 @@ pub use execute::{
     ValueParityReport, ValueParityResult,
 };
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
+    RawSourceRef, TracePosition,
 };
 pub use limits::CallerLimits;
 // The equality operator a composite parity claim names (FR-358).
@@ -87,7 +87,8 @@ pub use outcome::{
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
     IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
+    ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalRecordRefusal,
+    TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

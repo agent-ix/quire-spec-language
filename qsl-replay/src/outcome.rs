@@ -899,7 +899,7 @@ mod tests {
     }
 
     fn record(index: usize, value: TerminalValue) -> OutcomeItem {
-        OutcomeItem::from_terminal(&TerminalRecord::new(RequestIndex::new(index), value))
+        OutcomeItem::from_terminal(&TerminalRecord::from_value(RequestIndex::new(index), value))
     }
 
     /// FR-286-AC-1: `check` over the spine fixture is one whole document, at
