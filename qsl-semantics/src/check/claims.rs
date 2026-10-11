@@ -264,6 +264,7 @@ impl PathGuard {
 pub struct RequirementRecord {
     requirements: Requirements,
     result_bound: ResultBound,
+    conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
 }
 
@@ -279,6 +280,7 @@ impl RequirementRecord {
         Self {
             requirements,
             result_bound: ResultBound { value_type, node },
+            conversion_context: None,
             path_condition: Vec::new(),
         }
     }
@@ -292,6 +294,14 @@ impl RequirementRecord {
     /// The application's result bound.
     pub fn result_bound(&self) -> &ResultBound {
         &self.result_bound
+    }
+
+    /// The direct narrow occurrence that supplies this scalar application's
+    /// result bound, or `None` when the bound is the application's own type.
+    /// This context belongs to this requirement occurrence, not only to its
+    /// shared scalar node.
+    pub fn conversion_context(&self) -> Option<&OccurrenceKey> {
+        self.conversion_context.as_ref()
     }
 
     /// The path condition, outermost guard first.
@@ -823,9 +833,10 @@ pub(crate) fn key_claims(
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
             return Err(unkeyable());
         };
-        let bound_type = if matches!(site.bound, SiteBound::Narrowed(_)) {
-            here.iter()
-                .find(|(narrow, _)| {
+        let (bound_type, conversion_context) = if matches!(site.bound, SiteBound::Narrowed(_)) {
+            let narrows: Vec<_> = here
+                .iter()
+                .filter(|(narrow, _)| {
                     // The `operation_role(..) == Narrow` compare is not
                     // distinguished by any fixture today: every application
                     // at a shared location whose sole argument is a
@@ -844,11 +855,26 @@ pub(crate) fn key_claims(
                             && matches!(arguments, [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == *key)
                     })
                 })
-                .and_then(|(narrow, _)| graph.node(*narrow)?.semantic_type())
+                .collect();
+            let [(narrow, origin)] = narrows.as_slice() else {
+                return Err(unkeyable());
+            };
+            (
+                graph
+                    .node(**narrow)
+                    .and_then(|node| node.semantic_type())
+                    .ok_or_else(unkeyable)?,
+                Some(OccurrenceKey::new(wire(**narrow), (*origin).clone())),
+            )
         } else {
-            graph.node(*key).and_then(|node| node.semantic_type())
-        }
-        .ok_or_else(unkeyable)?;
+            (
+                graph
+                    .node(*key)
+                    .and_then(|node| node.semantic_type())
+                    .ok_or_else(unkeyable)?,
+                None,
+            )
+        };
         let mut path_condition = Vec::with_capacity(site.path_condition.len());
         for guard in &site.path_condition {
             let here = at.get(&guard.location).map_or(&[][..], Vec::as_slice);
@@ -878,6 +904,7 @@ pub(crate) fn key_claims(
                 value_type: site.result_bound(),
                 node: wire(bound_type),
             },
+            conversion_context,
             path_condition,
         };
         if records

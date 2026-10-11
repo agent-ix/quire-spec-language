@@ -323,6 +323,7 @@ pub struct RequirementItem {
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
     result_bound: WireNodeId,
+    conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
 }
@@ -364,6 +365,14 @@ impl RequirementItem {
     /// The record's result bound, as its type node.
     pub fn result_bound(&self) -> WireNodeId {
         self.result_bound
+    }
+
+    /// The occurrence of the direct narrow that supplies this item's result
+    /// bound, or `None` when the scalar application's own result type applies.
+    /// The context is carried per requirement occurrence even when multiple
+    /// items share one application node.
+    pub fn conversion_context(&self) -> Option<&OccurrenceKey> {
+        self.conversion_context.as_ref()
     }
 
     /// The record's path condition, outermost guard first.
@@ -411,6 +420,7 @@ pub fn items_from_requirements(
                 extent,
                 unbounded,
                 result_bound: record.result_bound().node(),
+                conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),
                 candidates: registry.candidates(requirements.kind(), named),
             }
