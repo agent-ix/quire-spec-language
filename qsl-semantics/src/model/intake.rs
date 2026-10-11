@@ -1433,6 +1433,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
 /// Translate only the reader's typed unresolved-reference codes, using its
 /// actual pointer and the selected document. Diagnostic prose never selects
 /// a cause or supplies a declaration identity.
+#[qsl_attrs::string_edge]
 fn missing_reader_reference(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,

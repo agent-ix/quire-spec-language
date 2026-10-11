@@ -15,6 +15,7 @@
 use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
+use crate::model::origin::JsonValue;
 use crate::model::key::{DeclarationKey, EffectiveId};
 use qsl_foundation::diagnostic::{CatalogCode, JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
@@ -485,7 +486,7 @@ pub enum ModelRefusalCause {
         /// The absent declaration's original identity.
         reference: String,
         /// The exact FCD origin, including generated provenance or all source coordinates.
-        origin: serde_json::Value,
+        origin: JsonValue,
         /// The reader's original document pointer to the reference.
         path: JsonPointer,
     },
@@ -1373,7 +1374,7 @@ pub mod fixtures {
             what: String::new(),
         },
         IntakeMissingDeclaration => ModelRefusalCause::IntakeMissingDeclaration {
-            node: String::new(), reference: String::new(), origin: serde_json::json!({}), path: qsl_foundation::diagnostic::JsonPointer::root(),
+            node: String::new(), reference: String::new(), origin: JsonValue::default(), path: qsl_foundation::diagnostic::JsonPointer::root(),
         },
         FrameEntryMissing => ModelRefusalCause::FrameEntryMissing {
             node: String::new(),

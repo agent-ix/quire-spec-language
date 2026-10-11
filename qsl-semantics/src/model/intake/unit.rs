@@ -101,7 +101,7 @@ pub fn package_input<'a>(
 
 /// Admit each of a unit's `model` declarations, in source order, against
 /// `packages` (see [`package_input`]): FR-154 admission (one version of
-/// each identity), [`read_records`], then normalization under `limits`. It
+/// each identity), [`crate::model::intake::read_records`], then normalization under `limits`. It
 /// stops at the first declaration that does not admit.
 pub fn admit_unit(
     selections: &[ModelSelection],
