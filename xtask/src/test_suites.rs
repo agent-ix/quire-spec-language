@@ -1779,7 +1779,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
             "test result: ok. 18446744073709551615 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out",
         );
-        let findings = check(&lane(&DECLARES_EMPTY), &log);
+        let findings = check(&lane(DECLARES_EMPTY), &log);
         assert!(
             findings.iter().any(|finding| {
                 finding.contains("summary counts overflow") && finding.starts_with(ANALYZE_UNIT)
