@@ -2838,18 +2838,12 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     }
 }
 
-/// PR #326 review finding F2: two admissions that collide on one
-/// `PopulationId` (same domain package, `population_key` and admission
-/// role -- FR-089's own preimage, with the open question over
-/// whether declared maximum and document content should also distinguish
-/// two bindings) but carry different declared maxima refuse loudly when
-/// the second is recorded under the first's id, rather than the first
-/// silently being overwritten. `ObjectEnvironment::with_population` is
-/// keyed by the binding's own id, so recording an *equal* binding under an
-/// id already bound is `Ok` (idempotent), but a *different* one is
-/// `Err(PopulationConflict)`.
+/// FR-089-AC-7: admissions that differ only in declared maximum mint
+/// different population identities, so both bindings can be recorded and
+/// resolved independently in one object environment.
 #[test]
-fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_bindings_with_different_maxima_have_distinct_ids() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
 
@@ -2877,33 +2871,30 @@ fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
         AdmissionOutcome::Admitted(binding) => binding,
         other => panic!("expected an admitted binding, got {other:?}"),
     };
-    assert_eq!(
+    assert_ne!(
         binding_3.population_id(),
         binding_7.population_id(),
-        "same domain package/population_key/role must mint the same id, \
-         even though the two bindings' declared maxima differ"
+        "declared maximum is part of the population identity"
     );
-    let id = binding_3.population_id();
+    let id_3 = binding_3.population_id();
+    let id_7 = binding_7.population_id();
 
     let environment = ObjectEnvironment::default()
         .with_population(binding_3.clone())
         .unwrap();
-
-    // Re-recording the identical binding under its own id is idempotent.
-    let environment = environment.with_population(binding_3).unwrap();
+    let environment = environment.with_population(binding_7).unwrap();
     assert_eq!(
         environment
-            .resolve_population(id)
+            .resolve_population(id_3)
             .and_then(PopulationBinding::declared_maximum),
         Some(3)
     );
-
-    // Recording a *different* binding (declared maximum 7) under the same
-    // id refuses, rather than silently overwriting binding_3's own entry.
-    match environment.with_population(binding_7) {
-        Err(conflict) => assert_eq!(conflict.population_id, id),
-        Ok(_) => panic!("expected Err(PopulationConflict), got Ok -- the conflicting binding overwrote the first silently"),
-    }
+    assert_eq!(
+        environment
+            .resolve_population(id_7)
+            .and_then(PopulationBinding::declared_maximum),
+        Some(7)
+    );
 }
 
 /// TC-294 (FR-089-AC-4): a `Value::Population(population_id)` whose

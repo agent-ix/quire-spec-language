@@ -1683,7 +1683,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     );
     // Raised, the same input admits.
     let raised = PopulationAdmissionLimits {
-        work_units: 1_000,
+        work_units: 10_000,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     assert!(matches!(
@@ -3120,6 +3120,223 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
     );
     assert_ne!(id_direct, id_pre);
     assert_ne!(id_pre, id_post);
+}
+
+fn identity_binding(
+    view: &EffectiveView,
+    document: &PopulationDocument,
+    maximum: Option<u64>,
+) -> PopulationBinding {
+    match admit_binding(
+        view,
+        document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        maximum,
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected admitted binding, got {other:?}"),
+    }
+}
+
+/// Independently constructs the FR-089 object from an admitted binding.
+fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    let mut members: Vec<_> = binding
+        .members()
+        .iter()
+        .map(|(key, declaration)| {
+            serde_json::json!({
+                "universe": hex(key.universe.as_bytes()),
+                "type": hex(key.type_identity.as_bytes()),
+                "object": key.object,
+                "declaration": {
+                    "package": declaration.package,
+                    "node": declaration.node,
+                    "digest_domain": "sha256-jcs"
+                }
+            })
+        })
+        .collect();
+    members.sort_by_cached_key(|member| serde_json::to_vec(member).unwrap());
+    let selection = binding.model_selection();
+    let preimage = serde_json::json!({
+        "version": "quire.population/v1",
+        "domain_package_selection": {
+            "identity": selection.identity,
+            "version": selection.version,
+            "digest_domain": "sha256-jcs",
+            "digest": hex(&selection.digest)
+        },
+        "population_key": {
+            "package": "test/orders",
+            "node": P1_POPULATION,
+            "digest_domain": "sha256-jcs"
+        },
+        "admission_role": role,
+        "declared_maximum": binding.declared_maximum().map(|n| n.to_string()),
+        "members": members,
+        "pre": binding.pre_anchor().map(|pre| pre.population_id().to_string())
+    });
+    hex(&Sha256::digest(serde_json::to_vec(&preimage).unwrap()))
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_identity_binds_maximum_and_canonical_members() {
+    let view = view_of(&fixture_f1());
+    let document = PopulationDocument {
+        model_identity: "test/orders".into(),
+        // Object-byte order differs from reference-key order.
+        members: vec![member("a", "model.B"), member("z", "model.A")],
+    };
+    let binding = identity_binding(&view, &document, Some(3));
+    assert_eq!(
+        binding.population_id().to_string(),
+        expected_population_id(&binding, "direct")
+    );
+
+    let mut reversed = document.clone();
+    reversed.members.reverse();
+    assert_eq!(
+        binding.population_id(),
+        identity_binding(&view, &reversed, Some(3)).population_id(),
+        "member order in the input document does not change identity"
+    );
+    assert_ne!(
+        binding.population_id(),
+        identity_binding(&view, &document, Some(7)).population_id(),
+        "declared maximum is part of identity"
+    );
+    let mut changed_member = document.clone();
+    changed_member.members[0].object = "another".into();
+    assert_ne!(
+        binding.population_id(),
+        identity_binding(&view, &changed_member, Some(3)).population_id(),
+        "changing one member changes identity"
+    );
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_identity_golden_vector_contains_all_seven_fields() {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"model.pop.p1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
+    let mut package = fixture_f1();
+    package.model_selection.digest = [0x11; 32];
+    let binding = identity_binding(
+        &view_of(&package),
+        &PopulationDocument {
+            model_identity: "test/orders".into(),
+            members: Vec::new(),
+        },
+        None,
+    );
+    assert_eq!(
+        binding.population_id().to_string(),
+        hex(&Sha256::digest(TEXT.as_bytes()))
+    );
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_post_identity_binds_its_pre_population_id() {
+    let view = view_of(&fixture_f1());
+    let post_document = p1_minus_a2("test/orders");
+    let admit = |pre_document: &PopulationDocument, deleted: &[String]| {
+        let effect = deletes_a_effect();
+        match admit_invocation(
+            invocation_context(&view, &p1_population_key()),
+            pre_document,
+            &post_document,
+            &InvocationDelta {
+                effect: &effect,
+                declared_created: &[],
+                declared_deleted: deleted,
+            },
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("expected admitted invocation, got {other:?}"),
+        }
+    };
+    let removed = admit(&p1("test/orders"), &["a2".into()]);
+    let unchanged = admit(&post_document, &[]);
+    assert_eq!(removed.members(), unchanged.members());
+    assert_ne!(removed.population_id(), unchanged.population_id());
+    for binding in [&removed, &unchanged] {
+        assert_eq!(
+            binding.population_id().to_string(),
+            expected_population_id(binding, "post")
+        );
+        let pre = binding.pre_anchor().expect("invocation has pre binding");
+        assert_eq!(
+            pre.population_id().to_string(),
+            expected_population_id(pre, "pre")
+        );
+    }
+}
+
+#[test]
+#[trace("TC-291", "FR-084-AC-1")]
+fn invalid_population_member_is_refused_before_identity_is_minted() {
+    let view = view_of(&fixture_f1());
+    let mut document = p1("test/orders");
+    document.members[0].type_identity = DeclarationKey::fixture("foreign.Type");
+    let outcome = admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    );
+    assert!(matches!(
+        outcome,
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignType { member, type_name },
+            ..
+        }) if member == "a1" && type_name == DeclarationKey::fixture("foreign.Type")
+    ));
+}
+
+/// FR-089 identity serialization is priced before its member sort-key and
+/// complete-preimage encoders run; a large caller-supplied object identity
+/// cannot bypass the admission work ceiling.
+#[trace("TC-291", "FR-089-AC-7")]
+#[test]
+fn population_identity_encoding_is_charged_before_hashing() {
+    let view = view_of(&fixture_f1());
+    let mut document = p1("test/orders");
+    document.members[0].object = "x".repeat(4096);
+    let outcome = admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits {
+            work_units: 128,
+            ..PopulationAdmissionLimits::UNLIMITED
+        }),
+    );
+    assert!(matches!(
+        outcome,
+        AdmissionOutcome::Incomplete(AdmissionIncomplete {
+            limit_kind: AdmissionLimitKind::WorkUnits,
+            limit: 128,
+            consumed: 1,
+            charge_point: AdmissionChargePoint::BindingMember,
+            next_charge,
+        }) if next_charge > 127
+    ));
 }
 
 /// Binding admission's member-type conformance walk uses the
