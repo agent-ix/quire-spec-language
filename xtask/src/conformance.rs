@@ -180,5 +180,36 @@ pub fn check_input(workspace: &Path) -> Result<String> {
     Ok(String::new())
 }
 
+fn run_ci_with(
+    make: &Path,
+    workspace: &Path,
+    input: Option<&OsStr>,
+    args: &[&str],
+    child_env: &[(&str, &OsStr)],
+) -> Result<String> {
+    let checkout = resolve(input, workspace)?;
+    let status = Command::new(make)
+        .current_dir(workspace)
+        .arg("--no-print-directory")
+        .arg("ci-internal")
+        .args(args)
+        .env("QSPEC_DIR", checkout)
+        .env_remove("MAKEFLAGS")
+        .env_remove("MFLAGS")
+        .envs(child_env.iter().copied())
+        .status()
+        .map_err(|source| Error::ConformanceCiSpawn { source })?;
+    if !status.success() {
+        return Err(Error::ConformanceCiFailed { status });
+    }
+    Ok(String::new())
+}
+
+/// Launch the entire local CI graph with one validated absolute QSpec checkout.
+pub fn run_ci(workspace: &Path) -> Result<String> {
+    let input = std::env::var_os("QSPEC_DIR");
+    run_ci_with(Path::new("make"), workspace, input.as_deref(), &[], &[])
+}
+
 #[cfg(test)]
 mod tests;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Process-boundary checks with synthetic Cargo output, not QSpec vector evidence.
 
-use super::{resolve, run_with, CHECKS, VECTOR};
+use super::{resolve, run_ci_with, run_with, CHECKS, VECTOR};
 use crate::error::Error;
 use std::ffi::OsStr;
 use std::fs;
@@ -254,4 +254,97 @@ fn make_exports_default_checkout_from_a_main_clone_parent_with_spaces() {
         String::from_utf8(output.stdout).unwrap().trim_end(),
         siblings.join("quire-specification").to_str().unwrap()
     );
+}
+
+#[test]
+fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    fs::copy(source.join("Makefile"), workspace.join("Makefile")).unwrap();
+    let checkout_path = workspace.join("real checkout $qspec");
+    checkout(&checkout_path);
+    let alias = workspace.join("linked checkout");
+    std::os::unix::fs::symlink(&checkout_path, &alias).unwrap();
+
+    let bin = workspace.join("bin");
+    fs::create_dir(&bin).unwrap();
+    let cargo = bin.join("cargo");
+    let output = Command::new("rustc")
+        .args([
+            "--edition=2021",
+            "--crate-name",
+            "ci_cargo_double",
+            "-D",
+            "warnings",
+        ])
+        .arg(source.join("xtask/src/conformance/ci_cargo_double.rs"))
+        .arg("-o")
+        .arg(&cargo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let log = workspace.join("ordinary-cargo-calls");
+    let skip = [
+        "-o",
+        "check-conformance-input",
+        "-o",
+        "conformance",
+        "-o",
+        "check-no-committed-binaries",
+        "-o",
+        "check-index-completeness",
+        "-o",
+        "ci-all-features",
+        "-o",
+        "ci-clean-build",
+        "-o",
+        "seam-probe",
+        "-o",
+        "string-edge",
+        "-o",
+        "route-lint",
+        "-o",
+        "checked-input",
+        "-o",
+        "cargo-deny-bans",
+        "-o",
+        "ci-docs",
+        "-o",
+        "arch-lint-canonical-encoder",
+        "-o",
+        "arch-lint-api-surface-qsl",
+        "-o",
+        "arch-lint-qualified-core",
+    ];
+    run_ci_with(
+        Path::new("make"),
+        workspace,
+        Some(Path::new("linked checkout").as_os_str()),
+        &skip,
+        &[
+            ("PATH", path.as_os_str()),
+            ("CI_CARGO_DOUBLE_LOG", log.as_os_str()),
+        ],
+    )
+    .unwrap();
+    let calls = fs::read_to_string(log).unwrap();
+    assert_eq!(
+        calls.lines().count(),
+        7,
+        "all ordinary default-feature Cargo commands must run"
+    );
+    for line in calls.lines() {
+        let (command, exported) = line.split_once('\t').unwrap();
+        assert!(["fmt", "clippy", "test"].contains(&command));
+        assert_eq!(exported, checkout_path.to_str().unwrap());
+    }
 }

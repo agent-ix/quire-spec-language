@@ -18,7 +18,7 @@ use xtask::{
 
 const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       \
                      cargo xtask route-lint\n       cargo xtask checked-input\n       \
-                     cargo xtask canonical-types [<workspace>]\n       cargo xtask conformance-input\n       cargo xtask conformance";
+                     cargo xtask canonical-types [<workspace>]\n       cargo xtask conformance-input\n       cargo xtask conformance\n       cargo xtask ci";
 
 #[qsl_attrs::string_edge]
 fn run(arguments: &[OsString]) -> Result<String> {
@@ -45,6 +45,7 @@ fn run(arguments: &[OsString]) -> Result<String> {
         }
         "conformance-input" => conformance::check_input(&workspace_root),
         "conformance" => conformance::run(&workspace_root),
+        "ci" => conformance::run_ci(&workspace_root),
         _ => Err(Error::Usage(USAGE)),
     }
 }

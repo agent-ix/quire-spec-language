@@ -236,12 +236,13 @@ fuzz-deep-input:
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
 CI_TARGETS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
-CI_CHECKS := check-conformance-input $(CI_TARGETS)
 $(CI_TARGETS): check-conformance-input
-ci: check-spec-validation $(CI_CHECKS)
-ifneq ($(filter ci,$(MAKECMDGOALS)),)
-$(CI_CHECKS): | check-spec-validation
-endif
+# The outer invocation obtains one canonical checkout before starting any lane.
+# Its child Make inherits that absolute value for ordinary Cargo commands too.
+ci: check-spec-validation
+	@$(CONFORMANCE_XTASK) ci
+.PHONY: ci-internal
+ci-internal: $(CI_TARGETS)
 
 # Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
 # reaches the recipe shell as data; Rust canonicalizes it before child Cargo runs.
