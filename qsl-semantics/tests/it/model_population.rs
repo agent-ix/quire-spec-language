@@ -487,7 +487,7 @@ fn l01_all_instances_selects_subtype_population_once() {
         meter_a
             .admitted_charges()
             .iter()
-            .filter(|point| **point == ChargePoint::PopulationVisit)
+            .filter(|charge| charge.point == ChargePoint::PopulationVisit)
             .count(),
         3
     );

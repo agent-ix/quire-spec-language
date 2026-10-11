@@ -50,6 +50,14 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
+fn admitted_points(meter: &Meter) -> Vec<ChargePoint> {
+    meter
+        .admitted_charges()
+        .iter()
+        .map(|charge| charge.point)
+        .collect()
+}
+
 /// Independent RFC 8785 JCS for the string-only preimages.
 fn jcs(value: &Value) -> String {
     match value {
@@ -875,7 +883,7 @@ fn u03_incompatible_dimensions_refuse_before_arithmetic() {
             evaluate_quantity(operation, &mut meter),
             typed(IllTypedCause::IncompatibleDimensions)
         );
-        assert!(meter.admitted_charges().is_empty());
+        assert!(admitted_points(&meter).as_slice().is_empty());
     }
     assert_eq!(
         convert_quantity(
@@ -941,7 +949,7 @@ fn u05_affine_arithmetic_refuses() {
                 typed(IllTypedCause::AffineUnitArithmetic),
                 "{operation:?}"
             );
-            assert!(meter.admitted_charges().is_empty());
+            assert!(admitted_points(&meter).as_slice().is_empty());
         }
     }
 }
@@ -1036,9 +1044,7 @@ fn u08_target_domain_endpoints_admit_and_one_over_refuses() {
             Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
         ));
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
-        assert!(!meter
-            .admitted_charges()
-            .contains(&ChargePoint::UnitResultRetain));
+        assert!(!admitted_points(&meter).contains(&ChargePoint::UnitResultRetain));
     }
 }
 
@@ -1154,7 +1160,7 @@ fn u10_exact_bound_accounting_and_named_denials() {
         ChargePoint::UnitTargetDomain,
         ChargePoint::UnitResultRetain,
     ];
-    assert_eq!(meter.admitted_charges(), charges);
+    assert_eq!(admitted_points(&meter).as_slice(), charges);
     let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
     // `max(bits(100) + bits(1), bits(1) + bits(100)) = 8` at the multiply event.
     assert_eq!(consumed, [8, 0, 0, 0, 0, 0, 1, 1, 6, 1]);
@@ -1475,9 +1481,7 @@ fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
         ),
         Outcome::Refused(Refusal::InexactDecimal { .. })
     ));
-    assert!(!meter
-        .admitted_charges()
-        .contains(&ChargePoint::UnitTargetDomain));
+    assert!(!admitted_points(&meter).contains(&ChargePoint::UnitTargetDomain));
 }
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
@@ -1743,7 +1747,7 @@ fn u14_static_refusals_precede_every_charge() {
             typed(cause),
             "{operation:?}"
         );
-        assert!(meter.admitted_charges().is_empty());
+        assert!(admitted_points(&meter).as_slice().is_empty());
     }
     let mut meter = limits(0, 0, 0, 0, 0, 0);
     assert_eq!(
@@ -1764,7 +1768,7 @@ fn u14_static_refusals_precede_every_charge() {
         ),
         typed(IllTypedCause::IncompatibleDimensions)
     );
-    assert!(meter.admitted_charges().is_empty());
+    assert!(admitted_points(&meter).as_slice().is_empty());
 }
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-5", "QSpec-FR-142-AC-7")]
@@ -1780,7 +1784,7 @@ fn u15_every_edge_is_charged_before_the_first_rational_event() {
         Outcome::Completed(ConvertedValue::Exact(ratio(127, 50)))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitEdge,
@@ -1834,9 +1838,7 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
         Outcome::Refused(Refusal::InexactDecimal { .. })
     ));
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 4);
-    assert!(!meter
-        .admitted_charges()
-        .contains(&ChargePoint::UnitTargetDomain));
+    assert!(!admitted_points(&meter).contains(&ChargePoint::UnitTargetDomain));
     assert!(matches!(
         converted(
             f.at(&inch),
@@ -1880,7 +1882,7 @@ fn u17_membership_refuses_after_the_target_domain() {
         Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
     ));
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain]
     );
     assert_eq!(
@@ -1930,7 +1932,7 @@ fn u19_rational_target_charges_one_work_unit_and_no_size() {
         Outcome::Completed(f.quantity(whole(5), f.m))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitIdentityRead,
@@ -1965,7 +1967,7 @@ fn u20_affinity_is_the_composed_offset() {
         ),
         typed(IllTypedCause::AffineUnitArithmetic)
     );
-    assert!(meter.admitted_charges().is_empty());
+    assert!(admitted_points(&meter).as_slice().is_empty());
     let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
         evaluated(
@@ -1974,7 +1976,9 @@ fn u20_affinity_is_the_composed_offset() {
         ),
         Outcome::Completed(q(3, x.u2))
     );
-    assert!(!meter.admitted_charges().contains(&ChargePoint::UnitEdge));
+    assert!(!admitted_points(&meter)
+        .as_slice()
+        .contains(&ChargePoint::UnitEdge));
 }
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-6", "QSpec-FR-142-AC-7")]
@@ -1990,7 +1994,7 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     assert_eq!(result.magnitude(), &whole(1));
     assert_eq!(result.unit(), compound_unit(&f, &[]).id().unwrap());
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitRationalArithmetic,
@@ -2004,7 +2008,10 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
         evaluated(QuantityOperation::Power(f.at(&zero), &negative), &mut meter),
         Outcome::Undefined(Undefined::DivisionByZero)
     );
-    assert_eq!(meter.admitted_charges(), [ChargePoint::UnitIdentityRead]);
+    assert_eq!(
+        admitted_points(&meter).as_slice(),
+        [ChargePoint::UnitIdentityRead]
+    );
     assert_eq!(
         evaluated(
             QuantityOperation::Power(f.at(&zero), &negative),
@@ -2034,7 +2041,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         ),
         typed(IllTypedCause::IncompatibleDimensions)
     );
-    assert!(meter.admitted_charges().is_empty());
+    assert!(admitted_points(&meter).as_slice().is_empty());
     assert_eq!(
         evaluate_quantity(
             QuantityOperation::Add(x.at(&one_n_m), x.at(&x.quantity(whole(1), x.joule))),
@@ -2068,7 +2075,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         Outcome::Completed(ConvertedValue::Exact(whole(4)))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitTargetDomain,
@@ -2089,7 +2096,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         Outcome::Completed(ConvertedValue::Exact(whole(40_000)))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitEdge,
@@ -2155,7 +2162,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
         Ok(Outcome::Completed(true))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitIdentityRead,
@@ -2217,7 +2224,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
             typed(IllTypedCause::DistinctUnits)
         );
     }
-    assert!(meter.admitted_charges().is_empty());
+    assert!(admitted_points(&meter).as_slice().is_empty());
 }
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-1", "QSpec-FR-142-AC-7")]
@@ -2236,7 +2243,7 @@ fn u24_identical_unit_addition_traverses_no_edge() {
         Outcome::Completed(f.quantity(whole(3), f.cm))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitIdentityRead,
@@ -2273,7 +2280,7 @@ fn u25_compound_pivot_between_nominal_dimensions() {
     ) else {
         panic!("N_m to the compound unit did not complete");
     };
-    assert_eq!(meter.admitted_charges(), no_edge);
+    assert_eq!(admitted_points(&meter).as_slice(), no_edge);
     let pivot = Quantity::new(pivot, compound.id().unwrap());
     let mut units = x.units.clone();
     units.insert(compound).unwrap();
@@ -2287,7 +2294,7 @@ fn u25_compound_pivot_between_nominal_dimensions() {
         ),
         Outcome::Completed(ConvertedValue::Exact(whole(1)))
     );
-    assert_eq!(meter.admitted_charges(), no_edge);
+    assert_eq!(admitted_points(&meter).as_slice(), no_edge);
 }
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-5", "QSpec-FR-142-AC-7")]
@@ -2306,7 +2313,7 @@ fn u26_conversion_has_no_common_ancestor_shortcut() {
     expected.extend([ChargePoint::UnitEdge; 3]);
     expected.extend([ChargePoint::UnitRationalArithmetic; 6]);
     expected.extend([ChargePoint::UnitTargetDomain, ChargePoint::UnitResultRetain]);
-    assert_eq!(meter.admitted_charges(), expected);
+    assert_eq!(admitted_points(&meter).as_slice(), expected);
     assert_eq!(
         run(&mut limits(6, 0, 2, 1, 12, 1)),
         Outcome::Incomplete(Incomplete {
@@ -2331,7 +2338,7 @@ fn u27_zero_divisor_is_undefined_after_the_reads() {
         Outcome::Undefined(Undefined::DivisionByZero)
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [ChargePoint::UnitIdentityRead, ChargePoint::UnitIdentityRead]
     );
     assert_eq!(
@@ -2357,7 +2364,7 @@ fn u28_multiplication_charges_left_then_right_then_the_product() {
     expected.extend([ChargePoint::UnitEdge; 2]);
     expected.extend([ChargePoint::UnitRationalArithmetic; 5]);
     expected.extend([ChargePoint::UnitTargetDomain, ChargePoint::UnitResultRetain]);
-    assert_eq!(meter.admitted_charges(), expected);
+    assert_eq!(admitted_points(&meter).as_slice(), expected);
     let bits_denied = |limit: u64, consumed: u64| {
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::IntegerBits,
@@ -2396,7 +2403,7 @@ fn u29_integer_target_charges_integer_bits_only() {
         Outcome::Refused(Refusal::InexactDecimal { .. })
     ));
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitEdge,
@@ -2428,7 +2435,7 @@ fn u29_integer_target_charges_integer_bits_only() {
             if *target == IntegerInterval::spanning(int(-2), int(2))
     ));
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain]
     );
     assert_eq!(
@@ -2465,9 +2472,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
         quire_exact::InexactTarget::Integer(interval)
             if *interval == IntegerInterval::spanning(Integer::from(-10_i64), Integer::from(10_i64))
     ));
-    assert!(!meter
-        .admitted_charges()
-        .contains(&ChargePoint::UnitTargetDomain));
+    assert!(!admitted_points(&meter).contains(&ChargePoint::UnitTargetDomain));
 
     let mut meter = unlimited();
     let Outcome::Completed(ConvertedValue::Integer { value, loss }) = run(
@@ -2487,7 +2492,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
         (&int(2), 0)
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::UnitIdentityRead,
             ChargePoint::UnitEdge,
@@ -2512,7 +2517,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
             if *target == IntegerInterval::spanning(int(-2), int(2))
     ));
     assert_eq!(
-        meter.admitted_charges().last(),
+        admitted_points(&meter).as_slice().last(),
         Some(&ChargePoint::UnitTargetDomain)
     );
     assert_eq!(
@@ -2681,7 +2686,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                 );
 
                 // Every admitted charge denies atomically with the exact record.
-                let admitted = meter.admitted_charges().to_vec();
+                let admitted = admitted_points(&meter).as_slice().to_vec();
                 let mut seen: Vec<ChargePoint> = Vec::new();
                 for (work, point) in (0_u64..).zip(&admitted) {
                     seen.push(*point);
