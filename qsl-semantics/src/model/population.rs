@@ -2622,7 +2622,7 @@ mod tests {
         let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
             .expect("member wire has a fixed canonical shape");
         let expected = format!(
-            "{{\"declaration\":{{\"digest_domain\":\"sha256-jcs\",\"node\":\"ix://test/orders/model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
+            "{{\"declaration\":{{\"digest_domain\":\"sha256-jcs\",\"node\":\"model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
             "ab".repeat(32),
             "cd".repeat(32)
         );
