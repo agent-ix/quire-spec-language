@@ -199,9 +199,13 @@ is invented for that criterion.
 | TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 |
 | TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 |
 | IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 |
-| TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 |
+| TC-153 | Admit exactly the twelve capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 |
 | TC-154 | Refuse a capability carrier with an unsupported vocabulary version | Unit | P0 | FR-057-AC-3 | 🚧 |
 | TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8, FR-057-AC-12 | 🚧 |
+| TC-970 | Capability admits exactly the twelve FR-290 labels | Unit | P0 | FR-057-AC-1 | 🚧 |
+| TC-971 | Capability family projection matches FR-290 | Unit | P0 | FR-057-AC-11, FR-057-AC-13 | 🚧 |
+| TC-972 | same_kind compares all capability labels exactly | Unit | P0 | FR-057-AC-4 | 🚧 |
+| TC-973 | Composed admission stage projection preserves stage ownership | Integration | P0 | FR-057-AC-14 | 🚧 |
 
 ## Domain-package model intake (L2)
 
@@ -253,16 +257,18 @@ unsupported prerequisite.
 | FR-036 | FR-036-AC-7 | TC-114 |  |
 | FR-036 | FR-036-AC-8 | TC-115 |  |
 | FR-036 | FR-036-AC-9 | TC-148 |  |
-| FR-057 | FR-057-AC-1 | TC-153 |  |
+| FR-057 | FR-057-AC-1 | TC-153, TC-970 |  |
 | FR-057 | FR-057-AC-2 | TC-153 |  |
 | FR-057 | FR-057-AC-3 | TC-154 |  |
-| FR-057 | FR-057-AC-4 | TC-153 |  |
+| FR-057 | FR-057-AC-4 | TC-153, TC-972 |  |
 | FR-057 | FR-057-AC-5 | TC-155 |  |
 | FR-057 | FR-057-AC-6 | TC-155 |  |
 | FR-057 | FR-057-AC-7 | TC-153 |  |
 | FR-057 | FR-057-AC-8 | TC-155 |  |
 | FR-057 | FR-057-AC-10 | TC-153 |  |
-| FR-057 | FR-057-AC-11 | TC-115 |  |
+| FR-057 | FR-057-AC-11 | TC-115, TC-971 |  |
+| FR-057 | FR-057-AC-13 | TC-971 |  |
+| FR-057 | FR-057-AC-14 | TC-973 |  |
 | FR-040 | FR-040-AC-1 | TC-119 |  |
 | FR-040 | FR-040-AC-2 | TC-119 |  |
 | FR-040 | FR-040-AC-3 | TC-119 |  |
