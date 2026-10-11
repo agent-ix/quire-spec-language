@@ -221,6 +221,7 @@ fn int(lower: i64, upper: i64) -> ValueType {
 }
 
 const ADD: &str = "quire.op.integer.add";
+const NARROW: &str = "quire.op.numeric.narrow";
 const MUL: &str = "quire.op.integer.mul";
 
 /// FR-062's fixtures RR-1 to RR-13 and RR-15 to RR-17, each with exactly
@@ -534,6 +535,35 @@ fn tc_160_each_fixture_unit_holds_exactly_its_requirement_records() {
     for (unit, expected) in fixtures() {
         check(unit).assert_records(unit, &expected);
     }
+}
+
+/// FR-062 RR-16: the two requirements share the canonical `+` node but each
+/// occurrence retains the directly enclosing narrow that supplies its own
+/// result bound. An application with its own result type has no such context.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_rr_16_keeps_conversion_context_per_occurrence() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function h using v(q: Int[0, 20]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }",
+    );
+    let first = checked.record("x + 1", 0, ADD);
+    let second = checked.record("x + 1", 1, ADD);
+    assert_eq!(first.result_bound().value_type(), &int(0, 10));
+    assert_eq!(second.result_bound().value_type(), &int(0, 20));
+    assert_eq!(
+        first.conversion_context(),
+        Some(&checked.occurrence("x + 1", 0, Some(NARROW)))
+    );
+    assert_eq!(
+        second.conversion_context(),
+        Some(&checked.occurrence("x + 1", 1, Some(NARROW)))
+    );
+    assert_ne!(first.conversion_context(), second.conversion_context());
+
+    let own_bound = check("function own using v(x: Int[0, 9]): Integer pure { x + 1 }");
+    assert_eq!(own_bound.record("x + 1", 0, ADD).conversion_context(), None);
 }
 
 /// TC-160 step 10 (FR-062-AC-13): RR-15 with its two `let` operands
