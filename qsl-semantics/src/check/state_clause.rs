@@ -413,7 +413,13 @@ fn check_clause(
         &mut nodes,
         form.clause_kind(),
     )
-    .with_cancel(input.cancel);
+    .with_cancel(input.cancel)
+    .with_complete_value(
+        form.selection.identity
+            == crate::value::DefinitionLock::pinned()
+                .entry(crate::value::CatalogRole::Root)
+                .identity,
+    );
     bind_parameters(&mut typer, &parameters, location)?;
     typer.enter_state_clause(StateContext {
         kind: form.kind,
