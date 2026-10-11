@@ -1879,6 +1879,175 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 2);
 }
 
+/// TC-196 D01's runtime half: the real linked diamond dispatches a `D`
+/// receiver through `B.size` and a `C` receiver through `A.size`. The
+/// evaluator charges the full family at selection, then runs the chosen body
+/// and the invariant comparison.
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
+#[test]
+fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.dispatch-calls-d01"),
+        vec![
+            object_type_record("model.A", vec![]),
+            object_type_record("model.B", vec!["model.A"]),
+            object_type_record("model.C", vec!["model.A"]),
+            object_type_record("model.D", vec!["model.B", "model.C"]),
+            operation_record("model.A.size", "model.A", true, None),
+            operation_record("model.B.size", "model.B", true, Some("model.A.size")),
+        ],
+    );
+    let view = bridge_view(&domain_package);
+    let (a_type, b_type, c_type, d_type) = (
+        view_type(&view, "model.A"),
+        view_type(&view, "model.B"),
+        view_type(&view, "model.C"),
+        view_type(&view, "model.D"),
+    );
+    let clauses = bridge_clauses(a_type);
+    let mut normalization_meter =
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let mut declarations = checked_dispatch_operation(
+        &view,
+        &DispatchRoot {
+            key: DeclarationKey::fixture("model.A.size"),
+            closure: GeneralizationClosure::Closed,
+        },
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        &mut normalization_meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("expected D01's linked dispatch family, got {refusal:?}"));
+
+    let supertypes = object_type_supertypes(&view).unwrap();
+    let types = TypeEnvironment::new(
+        [],
+        [
+            (a_type, "A"),
+            (b_type, "B"),
+            (c_type, "C"),
+            (d_type, "D"),
+        ]
+        .into_iter()
+        .map(|(key, name)| {
+            ObjectTypeDeclaration::new(key, name, vec![])
+                .with_supertypes(
+                    supertypes
+                        .get(&key)
+                        .expect("every D01 type has a supertype entry")
+                        .clone(),
+                )
+        }),
+    )
+    .unwrap();
+    declarations.types = types.clone();
+    let graph = declarations.check(CheckingLimits::default()).unwrap();
+    let package = CheckedPackage::link(graph);
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [
+                (receiver_reference(d_type, "d1"), vec![]),
+                (receiver_reference(c_type, "c1"), vec![]),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
+
+    let evaluate_expression = |receiver_type, identity: &str, expression: &Expression, limits| {
+        let checked = package
+            .check_clause_expression(
+                vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+                expression,
+                None,
+                ClauseKind::Invariant,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let mut meter = Meter::new(limits);
+        let evaluation = package
+            .evaluate(
+                &checked,
+                vec![Value::Reference(receiver_reference(receiver_type, identity))],
+                &objects,
+                &mut meter,
+            )
+            .unwrap();
+        (evaluation, meter)
+    };
+
+    let (selected_d, _) = evaluate_expression(
+        d_type,
+        "d1",
+        &dispatch_expression(),
+        SCALAR_UNLIMITED,
+    );
+    assert!(matches!(
+        evaluated(selected_d),
+        Outcome::Completed(Value::Integer(value)) if value == Integer::from(2_i64)
+    ));
+    let (selected_c, _) = evaluate_expression(
+        c_type,
+        "c1",
+        &dispatch_expression(),
+        SCALAR_UNLIMITED,
+    );
+    assert!(matches!(
+        evaluated(selected_c),
+        Outcome::Completed(Value::Integer(value)) if value == Integer::from(1_i64)
+    ));
+
+    let invariant = Expression::binary(
+        BinaryOperator::GreaterEqual,
+        dispatch_expression(),
+        Expression::integer(1_i64),
+    );
+    let (evaluation_d, meter_d) =
+        evaluate_expression(d_type, "d1", &invariant, SCALAR_UNLIMITED);
+    assert!(matches!(
+        evaluated(evaluation_d),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 6);
+    assert_eq!(meter_d.consumed(LimitKind::ValueOccurrences), 2);
+
+    let (evaluation_c, meter_c) =
+        evaluate_expression(c_type, "c1", &invariant, SCALAR_UNLIMITED);
+    assert!(matches!(
+        evaluated(evaluation_c),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert_eq!(meter_c.consumed(LimitKind::WorkUnits), 6);
+    assert_eq!(meter_c.consumed(LimitKind::ValueOccurrences), 2);
+
+    let limits = ScalarLimits {
+        work_units: 5,
+        ..SCALAR_UNLIMITED
+    };
+    let (evaluation_five, meter_five) = evaluate_expression(d_type, "d1", &invariant, limits);
+    assert!(matches!(
+        evaluation_five.outcome,
+        FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+            if record.charge_point == quire_exact::ChargePoint::OrderingResultRetain
+    ));
+    assert_eq!(meter_five.consumed(LimitKind::WorkUnits), 5);
+
+    let limits = ScalarLimits {
+        work_units: 1,
+        ..SCALAR_UNLIMITED
+    };
+    let (evaluation_one, meter_one) = evaluate_expression(d_type, "d1", &invariant, limits);
+    assert!(matches!(
+        evaluation_one.outcome,
+        FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+            if record.charge_point == quire_exact::ChargePoint::DispatchSelect
+    ));
+    assert_eq!(meter_one.consumed(LimitKind::WorkUnits), 0);
+}
+
 /// `model.A` (declares `size`), `model.C` (`<- model.A`, no operation record
 /// of its own at all -- inherits `size` unredefined).
 fn inherited_only_bridge_bundle() -> DomainPackage {
