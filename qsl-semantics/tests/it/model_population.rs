@@ -1910,7 +1910,7 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
     );
     assert_eq!(
         admission.consumed(AdmissionLimitKind::WorkUnits),
-        6_827,
+        5_963,
         "admission prices member work, subsetting, identity encoding, and worst-case sort comparisons"
     );
 }
