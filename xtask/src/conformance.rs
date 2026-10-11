@@ -6,6 +6,8 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use qsl_attrs::string_edge;
+
 use crate::error::{Error, Result};
 
 const VECTOR: &str = "proposals/checked-package-v2/node-identity-vectors.json";
@@ -37,11 +39,11 @@ enum OutputMarker {
     Other,
 }
 
+#[string_edge]
 fn output_marker(line: &str) -> OutputMarker {
-    let bytes = line.as_bytes();
-    if bytes.starts_with(b"test result: ok. 1 passed; 0 failed; 0 ignored;") {
+    if line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;") {
         OutputMarker::SuccessfulTest
-    } else if bytes.starts_with(b"skipped:") {
+    } else if line.starts_with("skipped:") {
         OutputMarker::Skipped
     } else {
         OutputMarker::Other
@@ -107,7 +109,7 @@ fn matches_summary(line: &str, pieces: &[&str], mode: SummaryMode) -> bool {
     }
     for (index, piece) in pieces.iter().enumerate().skip(1) {
         let digits = remainder.bytes().take_while(u8::is_ascii_digit).count();
-        if digits == 0 || remainder.as_bytes()[0] == b'0' {
+        if digits == 0 || remainder.chars().next() == Some('0') {
             return false;
         }
         remainder = &remainder[digits..];

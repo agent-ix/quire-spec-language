@@ -123,14 +123,54 @@ enum LaneKind {
 }
 
 impl LaneKind {
+    #[string_edge]
     fn from_name(name: &str) -> Self {
-        match name.as_bytes() {
-            b"default-workspace" => Self::DefaultWorkspace,
-            b"all-features-workspace" => Self::AllFeaturesWorkspace,
-            b"default-qsl-semantics" => Self::DefaultQslSemantics,
-            b"default-qsl-cst" => Self::DefaultQslCst,
+        match name {
+            "default-workspace" => Self::DefaultWorkspace,
+            "all-features-workspace" => Self::AllFeaturesWorkspace,
+            "default-qsl-semantics" => Self::DefaultQslSemantics,
+            "default-qsl-cst" => Self::DefaultQslCst,
             _ => unreachable!("only named make ci lanes reach this check"),
         }
+    }
+}
+
+enum RunLineKind {
+    Summary,
+    Other,
+}
+
+#[string_edge]
+fn run_line_kind(line: &str) -> RunLineKind {
+    if line.starts_with("test result:") {
+        RunLineKind::Summary
+    } else {
+        RunLineKind::Other
+    }
+}
+
+enum FeatureArgument {
+    End,
+    AllFeatures,
+    OtherFeatures,
+    Other,
+}
+
+#[string_edge]
+fn feature_argument(argument: &str) -> FeatureArgument {
+    if argument == "--" {
+        FeatureArgument::End
+    } else if argument == "--all-features" {
+        FeatureArgument::AllFeatures
+    } else if argument == "--no-default-features"
+        || argument == "--features"
+        || argument.starts_with("--features=")
+        || argument == "-F"
+        || argument.starts_with("-F")
+    {
+        FeatureArgument::OtherFeatures
+    } else {
+        FeatureArgument::Other
     }
 }
 
@@ -898,7 +938,7 @@ impl<'a> RunParser<'a> {
         if section.running.is_none() {
             section.running = parse_running(line);
         }
-        if line.as_bytes().starts_with(b"test result:") {
+        if matches!(run_line_kind(line), RunLineKind::Summary) {
             section.summary = Some(parse_summary(line).ok_or_else(|| line.to_owned()));
         }
     }
@@ -1018,18 +1058,11 @@ fn validate_lane_selection(lane: &Lane, cargo_args: &[OsString]) -> Result<()> {
         let Some(argument) = argument.to_str() else {
             continue;
         };
-        if argument.as_bytes() == b"--" {
-            break;
-        }
-        if argument.as_bytes() == b"--all-features" {
-            all_features = true;
-        } else if argument.as_bytes() == b"--no-default-features"
-            || argument.as_bytes() == b"--features"
-            || argument.as_bytes().starts_with(b"--features=")
-            || argument.as_bytes() == b"-F"
-            || argument.as_bytes().starts_with(b"-F")
-        {
-            other_features = true;
+        match feature_argument(argument) {
+            FeatureArgument::End => break,
+            FeatureArgument::AllFeatures => all_features = true,
+            FeatureArgument::OtherFeatures => other_features = true,
+            FeatureArgument::Other => {}
         }
     }
     let lane_kind = LaneKind::from_name(lane.name);
