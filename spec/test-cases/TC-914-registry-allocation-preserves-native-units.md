@@ -66,4 +66,3 @@ configured limits retain their bounds and counters. Denied admission exposes
 no partial result and starts no evaluation; a retry succeeds with the complete
 environment. Canonical allocation, malformed input, cancellation and invariant
 failures retain their established contracts.
-
