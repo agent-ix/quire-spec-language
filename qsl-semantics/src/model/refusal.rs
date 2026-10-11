@@ -593,8 +593,24 @@ pub enum ModelRefusalCause {
         /// limit.
         actual: u64,
     },
-    /// FR-259 B6: reading or digesting a domain package document could not
-    /// reserve memory. Not a limit: it names no bound and no setting.
+    /// Bounded canonical encoding or hashing of a population identity reached
+    /// quire-canonical's byte limit. Carries the exact encoder limit record.
+    PopulationIdentityLimitExceeded {
+        /// The encoder limit that was reached.
+        kind: quire_canonical::LimitKind,
+        /// The configured byte bound.
+        bound: u64,
+        /// The required bytes recorded by the encoder.
+        required: u64,
+    },
+    /// A canonical population identity encoder failure other than allocation
+    /// or a configured limit. Carries upstream's diagnostic for investigation.
+    PopulationIdentityInternalFailure {
+        /// The upstream encoder's display text.
+        error: String,
+    },
+    /// Canonical encoding or digesting could not reserve memory. Not a
+    /// limit: it names no bound and no setting.
     AllocationFailed {
         /// The size in bytes of the reservation that failed.
         requested: usize,
@@ -922,6 +938,8 @@ impl ModelRefusalCause {
             | Self::ContentMismatch { .. }
             | Self::ByteDigestMismatch { .. }
             | Self::IntakeLimitExceeded { .. }
+            | Self::PopulationIdentityLimitExceeded { .. }
+            | Self::PopulationIdentityInternalFailure { .. }
             | Self::AllocationFailed { .. }
             | Self::NoncanonicalNumber { .. }
             | Self::WrongModelSelection { .. }
@@ -1007,6 +1025,8 @@ impl ModelRefusalCause {
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
+            Self::PopulationIdentityLimitExceeded { .. } => "population-identity-limit-exceeded",
+            Self::PopulationIdentityInternalFailure { .. } => "population-identity-internal-failure",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.cause(),
             Self::NoncanonicalNumber { inexact, .. } => inexact.as_str(),
             Self::DuplicateMember { .. } => "duplicate-member",
@@ -1065,7 +1085,9 @@ impl ModelRefusalCause {
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
             Self::FamilySteps { .. }
             | Self::AncestorSteps { .. }
-            | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
+            | Self::IntakeLimitExceeded { .. }
+            | Self::PopulationIdentityLimitExceeded { .. }
+            | Self::PopulationIdentityInternalFailure { .. } => "resource_exhausted",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.code(),
             Self::NoncanonicalNumber { .. } => "noncanonical_wire",
             Self::UnclosedMethodSet
@@ -1420,6 +1442,14 @@ pub mod fixtures {
             bound: 0,
             actual: 1,
         },
+        PopulationIdentityLimitExceeded => ModelRefusalCause::PopulationIdentityLimitExceeded {
+            kind: quire_canonical::LimitKind::CanonicalBytes,
+            bound: 1,
+            required: 2,
+        },
+        PopulationIdentityInternalFailure => ModelRefusalCause::PopulationIdentityInternalFailure {
+            error: "serializer invariant failed".to_owned(),
+        },
         AllocationFailed => ModelRefusalCause::AllocationFailed { requested: 0 },
         NoncanonicalNumber => ModelRefusalCause::NoncanonicalNumber {
             inexact: super::Inexact::Number,
@@ -1575,6 +1605,8 @@ pub(crate) mod tests {
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
+            ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => "population-identity-limit-exceeded",
+            ModelRefusalCause::PopulationIdentityInternalFailure { .. } => "population-identity-internal-failure",
             ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
             ModelRefusalCause::NoncanonicalNumber {
                 inexact: super::Inexact::Integer,
@@ -1636,6 +1668,8 @@ pub(crate) mod tests {
             ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
+            ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => "resource_exhausted",
+            ModelRefusalCause::PopulationIdentityInternalFailure { .. } => "resource_exhausted",
             ModelRefusalCause::AllocationFailed { .. } => "resource_exhausted",
             ModelRefusalCause::NoncanonicalNumber { .. } => "noncanonical_wire",
             ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",

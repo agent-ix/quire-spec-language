@@ -971,14 +971,26 @@ fn mint_population_id(
 }
 
 fn population_identity_encoding_refusal(error: quire_canonical::Error) -> ModelRefusal {
-    let requested = match &error {
-        quire_canonical::Error::Allocation { requested } => *requested,
-        _ => 0,
+    let detail = format!("bounded population identity encoding failed: {error}");
+    let cause = match error {
+        quire_canonical::Error::Limit(limit) => {
+            ModelRefusalCause::PopulationIdentityLimitExceeded {
+                kind: limit.kind,
+                bound: limit.bound,
+                required: limit.required,
+            }
+        }
+        quire_canonical::Error::Allocation { requested } => {
+            ModelRefusalCause::AllocationFailed { requested }
+        }
+        other => ModelRefusalCause::PopulationIdentityInternalFailure {
+            error: other.to_string(),
+        },
     };
     ModelRefusal {
         code: Code::ResourceExhausted,
-        cause: ModelRefusalCause::AllocationFailed { requested },
-        detail: format!("bounded population identity encoding failed: {error}"),
+        cause,
+        detail,
     }
 }
 
@@ -2443,6 +2455,69 @@ mod tests {
         assert_eq!(observations.member_encodings, population.members.len());
         assert!(observations.member_sort_comparisons > 0);
         assert_eq!(observations.digest_calls, 1);
+    }
+
+    /// FND-008: a real digest byte-limit refusal retains the canonical
+    /// encoder's kind, bound and required-byte count.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_digest_limit_preserves_encoder_limit_details() {
+        let members = BTreeMap::new();
+        let refusal = mint_population_id(
+            &domain_package(),
+            &DeclarationKey::fixture("model.pop"),
+            AdmissionRole::Direct,
+            None,
+            &members,
+            0,
+        )
+        .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
+
+        assert_eq!(refusal.code, Code::ResourceExhausted);
+        assert!(matches!(
+            refusal.cause,
+            ModelRefusalCause::PopulationIdentityLimitExceeded {
+                kind: quire_canonical::LimitKind::CanonicalBytes,
+                bound: 0,
+                required,
+            } if required > 0
+        ));
+        assert!(refusal.detail.contains("canonical bytes limit exceeded"));
+    }
+
+    /// A reservation failure keeps its actual requested size.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_allocation_refusal_preserves_requested_size() {
+        let refusal = population_identity_encoding_refusal(
+            quire_canonical::Error::Allocation { requested: 4096 },
+        );
+
+        assert_eq!(refusal.code, Code::ResourceExhausted);
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::AllocationFailed { requested: 4096 }
+        );
+        assert!(refusal.detail.contains("allocation of 4096 bytes"));
+    }
+
+    /// The mandatory non-exhaustive fallback identifies the upstream error
+    /// as an internal encoding failure rather than misreporting allocation.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_unexpected_encoder_refusal_is_internal_failure() {
+        let refusal = population_identity_encoding_refusal(quire_canonical::Error::Serialize(
+            "unexpected serializer error".to_owned(),
+        ));
+
+        assert_eq!(refusal.code, Code::ResourceExhausted);
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::PopulationIdentityInternalFailure {
+                error: "unexpected serializer error".to_owned(),
+            }
+        );
+        assert!(refusal.detail.contains("unexpected serializer error"));
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
