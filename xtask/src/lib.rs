@@ -2,13 +2,15 @@
 //! Workspace `xtask`: `cargo xtask seam-probe`, `cargo xtask string-edge`,
 //! `cargo xtask route-lint` and `cargo xtask checked-input`, the gates
 //! `make ci` runs standalone (the `Makefile` targets of the same names), and
-//! `cargo xtask canonical-types`, run on demand.
+//! `cargo xtask canonical-types`, run on demand, and the local `conformance`
+//! vector gate.
 //! `import_graph`, `definition_scan` and `typestate_scan` are plain library
 //! modules backing their own `#[cfg(test)]` suites.
 #![forbid(unsafe_code)]
 
 pub mod canonical_types;
 pub mod checked_input;
+pub mod conformance;
 pub mod definition_scan;
 pub mod error;
 pub mod import_graph;
@@ -25,7 +27,6 @@ mod ci_conformance_tests;
 
 #[cfg(test)]
 mod ci_spec_validation_tests;
-
 pub use error::{Error, Result};
 
 /// `Self`'s type name for an `impl` block, for the common case `seam_probe`

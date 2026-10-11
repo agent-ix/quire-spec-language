@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! One error type for this crate's two gates: `cargo xtask seam-probe` and
-//! `cargo xtask string-edge`.
+//! Typed errors for the workspace xtask gates.
 use std::{fmt, io, path::PathBuf};
 
 /// Stable failure category, independent of message prose.
@@ -29,6 +28,8 @@ pub enum Code {
     CanonicalTypes,
     /// `cargo metadata` could not be run or read.
     Metadata,
+    /// The local QSpec conformance gate failed.
+    Conformance,
 }
 
 impl Code {
@@ -43,6 +44,7 @@ impl Code {
             Self::CheckedInput => "checked-input",
             Self::CanonicalTypes => "canonical-types",
             Self::Metadata => "metadata",
+            Self::Conformance => "conformance",
         }
     }
 }
@@ -59,6 +61,31 @@ pub enum Error {
     /// A command-line invocation was malformed.
     #[error("usage: {0}")]
     Usage(&'static str),
+    /// The QSpec checkout is absent, missing vectors, or cannot be resolved.
+    #[error("conformance: invalid QSPEC_DIR {path:?}: {reason}")]
+    ConformanceInput {
+        /// The caller's unmodified path.
+        path: PathBuf,
+        /// Why it cannot be used.
+        reason: String,
+    },
+    /// A required conformance cargo invocation could not be spawned.
+    #[error("conformance: cannot spawn cargo for {selection}: {source}")]
+    ConformanceSpawn {
+        /// The exact test selection.
+        selection: &'static str,
+        /// The spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A required conformance test failed or did not produce its evidence.
+    #[error("conformance: {selection}: {reason}")]
+    ConformanceCheck {
+        /// The exact test selection.
+        selection: &'static str,
+        /// The refusal cause.
+        reason: String,
+    },
     /// A filesystem read or write failed.
     #[error("{path}: {source}")]
     Io {
@@ -262,6 +289,8 @@ impl Error {
     pub fn code(&self) -> Code {
         match self {
             Self::Usage(_) => Code::Usage,
+            Self::ConformanceInput { .. } => Code::Usage,
+            Self::ConformanceSpawn { .. } | Self::ConformanceCheck { .. } => Code::Conformance,
             Self::Io { .. } => Code::Io,
             Self::SeamProbeSpawn { .. }
             | Self::SeamProbeReadSource { .. }
@@ -295,6 +324,7 @@ impl Error {
             | Code::RouteLint
             | Code::CheckedInput
             | Code::CanonicalTypes => 1,
+            Code::Conformance => 1,
             Code::Usage | Code::Io | Code::Metadata => 2,
         }
     }
