@@ -22,6 +22,7 @@
 
 pub mod cst;
 pub mod diagnostic;
+pub mod format;
 pub mod grammar;
 pub mod lexer;
 mod parser;
