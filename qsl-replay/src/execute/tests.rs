@@ -572,11 +572,11 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     assert_eq!(refusal.code(), Code::MissingImport);
 }
 
-/// Top-level reference replay uses the recompiled model's conformance and
-/// retains the actual reference identity. Nested references remain exact.
+/// Top-level reference replay requires the exact effective type; runtime
+/// dispatch can still admit a conforming subtype. Nested references remain exact.
 #[trace("TC-906", "QSpec-TC-196", "QSpec-FR-151")]
 #[test]
-fn replay_reference_admission_matches_runtime_and_preserves_actual_type() {
+fn replay_reference_admission_requires_exact_effective_type() {
     use qsl_eval::value::CheckedPackageEvaluation;
     use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId};
 
@@ -680,25 +680,18 @@ fn replay_reference_admission_matches_runtime_and_preserves_actual_type() {
         runtime.outcome,
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
-    let ReplayResult::Input(replayed) = replay(
+    let refusal = replay(
         wire(
             "same",
             vec![reference(gadget, "g1"), reference(gadget, "g1")],
         ),
         ReplayLimits::default(),
     )
-    .expect("a conforming actual reference must replay as admitted by runtime call") else {
-        panic!("the subtype input must settle on the input arm");
-    };
-    assert_eq!(replayed.value(), Some(EvaluatedValue::Boolean(false)));
-    assert_eq!(
-        replayed.charges().work_units,
-        runtime_meter.consumed(LimitKind::WorkUnits)
-    );
-    assert_eq!(
-        replayed.charges().result_units,
-        runtime_meter.consumed(LimitKind::ResultUnits)
-    );
+    .unwrap_err();
+    assert!(matches!(
+        refusal,
+        ReplayRefusal::Input(InputRefusal::WrongValueKind { parameter: 0 })
+    ));
 
     for (function, value) in [
         ("gadget", reference(widget, "w1")),
