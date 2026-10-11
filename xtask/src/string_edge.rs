@@ -1303,11 +1303,11 @@ mod tests {
             fs::read_to_string(workspace_root.join("Makefile")).expect("the Makefile reads");
         let ci = makefile
             .lines()
-            .find_map(|line| line.strip_prefix("ci:"))
-            .expect("the Makefile has a `ci:` target");
+            .find_map(|line| line.strip_prefix("CI_CHECKS :="))
+            .expect("the Makefile has the CI_CHECKS aggregate list");
         assert!(
             ci.split_whitespace().any(|target| target == "string-edge"),
-            "`ci:` must list string-edge as a prerequisite: {ci}"
+            "CI_CHECKS must list string-edge as an internal prerequisite: {ci}"
         );
         let mut lines = makefile.lines();
         assert!(

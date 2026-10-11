@@ -1315,13 +1315,13 @@ mod tests {
             .expect("read the workspace Makefile");
         let ci_line = makefile
             .lines()
-            .find(|line| line.starts_with("ci:"))
-            .expect("Makefile has a ci: target line");
+            .find(|line| line.starts_with("CI_CHECKS :="))
+            .expect("Makefile has the CI_CHECKS aggregate list");
         assert!(
             ci_line
                 .split_whitespace()
                 .any(|prereq| prereq == "seam-probe"),
-            "ci: does not name seam-probe as a prerequisite: {ci_line}"
+            "CI_CHECKS does not name seam-probe as an internal prerequisite: {ci_line}"
         );
         let recipe_runs_xtask = makefile
             .lines()
