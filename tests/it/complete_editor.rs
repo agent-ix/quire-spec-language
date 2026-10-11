@@ -348,12 +348,13 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
         },
     )
     .unwrap_err();
-    // The output byte ceiling is a `SyntaxLimit` kind the catalog
-    // admits, so it now reports `stage_limit_exceeded`.
+    // FR-277's format.output_bytes exception reports the typed
+    // resource-exhausted diagnostic while preserving the shared input-bytes
+    // limit cause.
     assert_eq!(
         (refusal.code, refusal.cause),
         (
-            CompleteCode::StageLimitExceeded,
+            CompleteCode::ResourceExhausted,
             CompleteCause::StageLimit(LimitKind::InputBytes)
         )
     );
@@ -496,7 +497,7 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
             },
         )
         .unwrap_err();
-        assert_eq!(one_short.code, CompleteCode::StageLimitExceeded);
+        assert_eq!(one_short.code, CompleteCode::ResourceExhausted);
         let expected = expected_failure_span.map_or(
             Span {
                 start: source.len(),

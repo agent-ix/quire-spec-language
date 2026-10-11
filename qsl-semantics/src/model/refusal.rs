@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::origin::JsonValue;
 use qsl_foundation::diagnostic::{CatalogCode, JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
@@ -477,6 +478,18 @@ pub enum ModelRefusalCause {
         /// as meaningful. `None` under the same conditions as `artifact`.
         span: Option<LocatedSpan>,
     },
+    /// An original model reference names no declaration in the selected
+    /// package. The path and FCD origin belong to the referring node.
+    IntakeMissingDeclaration {
+        /// The referring node's original identity.
+        node: String,
+        /// The absent declaration's original identity.
+        reference: String,
+        /// The exact FCD origin, including generated provenance or all source coordinates.
+        origin: JsonValue,
+        /// The reader's original document pointer to the reference.
+        path: JsonPointer,
+    },
     /// A type's resolved construct meaning, or a member capability, is real
     /// under FR-208 but [`crate::model::intake`] has no reader for it yet
     /// (model-complete.md's declaration-kinds table) -- distinct from
@@ -923,6 +936,7 @@ impl ModelRefusalCause {
             | Self::DuplicatePath { .. }
             | Self::MalformedDeclaration { .. }
             | Self::IntakeMalformedDeclaration { .. }
+            | Self::IntakeMissingDeclaration { .. }
             | Self::UnsupportedDeclarationForm { .. }
             | Self::FrameEntryMissing { .. }
             | Self::FrameEntryUnsupported { .. }
@@ -1010,7 +1024,9 @@ impl ModelRefusalCause {
             | Self::ReservedPackageIdentity { .. } => "malformed-declaration",
             Self::DuplicateSelection { .. } => "duplicate-identity",
             Self::UnsupportedDeclarationForm { .. } => "declaration-form",
-            Self::FrameEntryMissing { .. } => "missing-name",
+            Self::FrameEntryMissing { .. } | Self::IntakeMissingDeclaration { .. } => {
+                "missing-name"
+            }
             Self::FrameEntryUnsupported { .. } => "unsupported-feature",
             Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
@@ -1101,9 +1117,9 @@ impl ModelRefusalCause {
             | Self::AbsentKey { .. }
             | Self::DuplicateMember { .. }
             | Self::SubsettingViolation { .. } => "invalid_runtime_input",
-            Self::UnknownPopulationMemberType { .. } | Self::FrameEntryMissing { .. } => {
-                "missing_declaration"
-            }
+            Self::UnknownPopulationMemberType { .. }
+            | Self::FrameEntryMissing { .. }
+            | Self::IntakeMissingDeclaration { .. } => "missing_declaration",
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
             Self::UnsupportedDeclarationForm { .. } => "unsupported_construct",
             Self::FrameEntryUnsupported { .. } => "unknown_required_feature",
@@ -1357,6 +1373,9 @@ pub mod fixtures {
             node: String::new(),
             what: String::new(),
         },
+        IntakeMissingDeclaration => ModelRefusalCause::IntakeMissingDeclaration {
+            node: String::new(), reference: String::new(), origin: super::JsonValue::default(), path: qsl_foundation::diagnostic::JsonPointer::root(),
+        },
         FrameEntryMissing => ModelRefusalCause::FrameEntryMissing {
             node: String::new(),
             artifact: Some(String::new()),
@@ -1585,7 +1604,8 @@ pub(crate) mod tests {
             | ModelRefusalCause::ReservedPackageIdentity { .. } => "malformed-declaration",
             ModelRefusalCause::DuplicateSelection { .. } => "duplicate-identity",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
-            ModelRefusalCause::FrameEntryMissing { .. } => "missing-name",
+            ModelRefusalCause::FrameEntryMissing { .. }
+            | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing-name",
             ModelRefusalCause::FrameEntryUnsupported { .. } => "unsupported-feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
@@ -1684,7 +1704,8 @@ pub(crate) mod tests {
             ModelRefusalCause::DuplicateMember { .. } => "invalid_runtime_input",
             ModelRefusalCause::SubsettingViolation { .. } => "invalid_runtime_input",
             ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing_declaration",
-            ModelRefusalCause::FrameEntryMissing { .. } => "missing_declaration",
+            ModelRefusalCause::FrameEntryMissing { .. }
+            | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing_declaration",
             ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "unsupported_construct",
             ModelRefusalCause::FrameEntryUnsupported { .. } => "unknown_required_feature",

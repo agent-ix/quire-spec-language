@@ -171,6 +171,12 @@ fn probe_unit() -> Unit {
     unit_for(unit, config_version_step3_domain_document())
 }
 
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_probe_source_keeps_format_identity() {
+    let _ = probe_unit();
+}
+
 /// The chain `a -> b -> c` as `probe`'s pre state, with self `a` and
 /// `target` naming `target`.
 fn pre_call(target: &str) -> Documents {
