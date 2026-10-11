@@ -1389,6 +1389,61 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
     );
 }
 
+/// FR-320-AC-4: QSpec's independently keyed nullary and reference-payload
+/// union vectors use the application preimage even though both bodies are
+/// aggregate terms. Exercise QSL's producer-key derivation on those exact
+/// wire nodes, then admit the same fixture through the whole I2 reader.
+/// This covers the published vectors; it does not imply QSL source lowering
+/// currently constructs union values.
+#[trace("FR-320-AC-4")]
+#[test]
+fn qspec_union_value_application_keys_are_admitted_by_i2() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let envelope = read_fixture(&directory.join("positive-union-nodes.json"));
+    let nodes = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("positive union fixture has semantic graph nodes");
+    let union_values: Vec<_> = nodes
+        .iter()
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "union_value")
+        .collect();
+    let mut member_keys = BTreeMap::new();
+    for node in &union_values {
+        let member = node["body"]["members"][0]["name"]
+            .as_str()
+            .expect("union value has a named member");
+        let expected_key = node["node_id"]["digest"]
+            .as_str()
+            .expect("QSpec vector carries its fixed node key");
+        assert_eq!(
+            crate::emit::tests::rebuilt_key(node, &[]),
+            expected_key,
+            "{member}: aggregate-bodied union value uses its application key"
+        );
+        member_keys.insert(member, node);
+    }
+    assert_eq!(member_keys.len(), 2, "fixture has both fixed union vectors");
+    assert_eq!(
+        member_keys["Empty"]["body"]["members"][0]["value"],
+        json!({"term": "aggregate", "members": []}),
+        "nullary vector has an empty aggregate payload"
+    );
+    assert_eq!(
+        member_keys["Rect"]["body"]["members"][0]["value"]["term"],
+        "aggregate",
+        "reference-payload vector keeps its aggregate payload"
+    );
+
+    let (package_id, outcome) = read_fixture_wire(&envelope);
+    match outcome {
+        Read::Verified { package, .. } => assert_eq!(package.package_id(), package_id),
+        other => panic!("expected I2 to admit QSpec's union vectors, got {other:?}"),
+    }
+}
+
 /// QSL's whole I2 read (`read_checked_package_v2`) admits every
 /// published positive `quire.checked-package/v2` fixture under the
 /// `package_id` its own identity preimage recomputes to. Three of the five
@@ -2415,10 +2470,10 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
 fn frame_fixture(
     frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>),
 ) -> (Value, BTreeMap<String, String>) {
-    let type_ref = node_ref("pkg::T");
+    let type_node = keyable_type_node("pkg::T", "T");
+    let type_ref = type_node["node_id"].clone();
     let object_ref = node_ref("pkg::O");
     let (modifies, creates, deletes) = frame_body(&object_ref);
-    let type_node = keyable_type_node("pkg::T", "T");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     let frame = frame_node(
         "pkg::Frame",
@@ -2472,9 +2527,9 @@ fn frame_body_membership_against_dependencies_is_admitted() {
 #[test]
 fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
     let field_digest = hex("pkg::F");
-    let type_ref = node_ref("pkg::T");
-    let object_ref = node_ref("pkg::O");
     let type_node = keyable_type_node("pkg::T", "T");
+    let type_ref = type_node["node_id"].clone();
+    let object_ref = node_ref("pkg::O");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     // `F` is never declared as a dependency of this frame, only named in
     // `modifies`.
