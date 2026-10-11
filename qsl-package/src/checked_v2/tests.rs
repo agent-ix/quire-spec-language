@@ -1925,8 +1925,8 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             },
             Setting::I2Occurrences,
             0,
-            2,
-            "/source_map/0/regions/0",
+            1,
+            "/source_map/0",
         ),
         (
             &diagnosed,
