@@ -34,3 +34,21 @@ Manual PR-scope acceptance-criteria-to-test and reverse-gap review of QSL-707 PR
 - Manual binding check: TC-421 looks up each wire source-map occurrence and compares regions and provenance, then compares occurrence counts; TC-253 exercises whole I2 fixture reads; TC-254 verifies import-view export keys; TC-429/TC-720/TC-721/TC-739 assert limit outcomes, actual counts, loci, and raise-and-reread behavior. A repository-wide search finds no `FR-320-AC-4` trace tag and no test constructing a wire node with `node_tag: value` plus `semantic_form: union_value`; the new branch in `rebuilt_preimage` therefore has no exercising test.
 - Reverse-gap review of changed files: only test fixture helpers and one dependency lock entry changed; no new production behavior was introduced. The changed classifier is test logic whose union-specific path lacks evidence. Full source-tree inventory was unavailable with the stalled matrix run.
 - Semantic review: skipped; not requested.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e2341608b249e3bbdb138dedab9ce570219957dd |
+
+`after_excerpt` (new test evidence for FR-320-AC-4; verbatim):
+
+```rust
+        assert_eq!(
+            crate::emit::tests::rebuilt_key(node, &[]),
+            expected_key,
+            "{member}: aggregate-bodied union value uses its application key"
+        );
+```
+
+The same commit corrects inline frame fixtures to point `semantic_type` at the keyable type node's derived `node_id`; the negative frame case now uses that valid type identity too. Static review found the fixture correction consistent with the frame test intent. No builds or tests were run.
