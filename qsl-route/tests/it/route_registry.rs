@@ -306,12 +306,12 @@ fn conflicting_backend_identity_registration_refuses_both_under_either_order() {
     }
 }
 
-/// TC-197 (FR-076-AC-1, FR-076-AC-2, FR-076-AC-4): when no registrant advertises the
+/// TC-197 (FR-076-AC-1, FR-076-AC-2): when no registrant advertises the
 /// requested kind, the registry's own returned output -- not data the
 /// caller already held -- names the kind, and the named backend when the
 /// request named one, with no panic and no refusal-shaped result.
 #[test]
-#[trace("TC-197", "FR-076-AC-1", "FR-076-AC-2", "FR-076-AC-4")]
+#[trace("TC-197", "FR-076-AC-1", "FR-076-AC-2")]
 fn empty_candidate_set_carries_the_data_an_unsupported_warning_needs() {
     let mut registry = Registry::new();
     registry
