@@ -529,7 +529,7 @@ For the fixed Rational caller only, QSL SHALL verify
 fabricated execution fixture. The evaluator's `NodeKind::IeeeToRational`
 calls `ieee_to_exact` with `IeeeExactTarget::Rational(domain)`;
 in the `quire-exact` source selected by this repository's [Cargo.lock package
-entry](../Cargo.lock#L1617), `src/ieee.rs` lines 692–707 match the target:
+entry](../../Cargo.lock#L1617), `src/ieee.rs` lines 692–707 match the target:
 the Rational arm supplies the domain, while only Decimal, Integer and
 BoundedInteger return outer `Err(IllTyped)`. The Rational arm returns
 `Ok(Outcome::from_stop(to_exact(...)))`.
