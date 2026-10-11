@@ -1619,9 +1619,11 @@ name = "quire-exact"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-exact?branch=main#1d178c9cc6aa36b424913347d4541f80b16323f1"
 dependencies = [
+ "allocator-api2",
  "num-bigint",
  "num-integer",
  "num-traits",
+ "once_cell",
  "thiserror",
  "unicode-normalization",
 ]
