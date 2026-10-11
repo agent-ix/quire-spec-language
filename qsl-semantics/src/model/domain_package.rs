@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 
 use crate::model::key::DeclarationKey;
+use crate::model::origin::JsonValue;
 use quire_canonical::FixedShape;
 use quire_exact::{OrderingOperator, Presence};
 
@@ -624,7 +625,7 @@ pub struct OriginalDeclaration {
     /// no meaning id under QSpec FR-208.
     pub meaning: Option<String>,
     /// The original FCD origin object, without fabricated byte positions.
-    pub origin: serde_json::Value,
+    pub origin: JsonValue,
     /// A member's declared name. Type and population nodes have none.
     pub member_name: Option<String>,
 }

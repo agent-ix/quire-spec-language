@@ -20,6 +20,7 @@ pub mod index;
 pub mod intake;
 pub mod key;
 pub mod normalize;
+pub mod origin;
 pub mod object_environment;
 pub mod observation;
 pub mod operation;
