@@ -5,6 +5,12 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-115
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-109
+    type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-267
+    type: verifies
+  - target: ix://agent-ix/quire-specification/FR-352
+    type: verifies
 ---
 # TC-514: The spine run entry checks an invocation against its operation frame
 
@@ -15,7 +21,8 @@ succeeds, a change outside the frame is a violation with its frame witness,
 and stale or
 missing inputs refuse before evaluation.
 
-Scope: FR-115-AC-1 to FR-115-AC-6.
+Scope: FR-115-AC-1 to FR-115-AC-7, FR-109-AC-9, FR-267-AC-11 and
+QSpec FR-352-AC-9.
 
 ## Test Procedure
 
@@ -42,6 +49,12 @@ Config::ConfigVersion::attemptUpdate, invocation: ... }` unless stated.
    `Copy::ConfigVersion::attemptUpdate` in a unit selecting the
    ConfigVersion package as `Config` and a copy of it under another identity
    as `Copy`, each with a clause naming `attemptUpdate`.
+7. Serialize step 2's forbidden-parent-change report as
+   `native-run-result/2`, read it back, and repeat for created, deleted and
+   retyped frame findings. Independently remove each required
+   `frame_witness` or `change` member, add an unknown member, mismatch its
+   `code` or `cause` against the enclosing refusal, and attach it to a
+   non-Frame disposition.
 
 Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
 
@@ -65,3 +78,11 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
   and selects `ConfigVersion`'s frame with `Sub` as context; each of
   `Config` and `Copy` resolves `ConfigVersion` to its own package's
   `DeclarationKey` and selects that package's frame.
+- Step 7: the original document reads back to the complete FR-115
+  `FrameWitness`, including selected document references, population and
+  checked permission; it carries `violation`, `truth: false`,
+  `basis: closed-scope`, no outcome and no FR-351 witness. The other change
+  variants round-trip. Every malformed edit refuses with a located member.
+
+Step 7 verifies FR-115-AC-7, FR-109-AC-9, FR-267-AC-11 and QSpec
+FR-352-AC-9.
