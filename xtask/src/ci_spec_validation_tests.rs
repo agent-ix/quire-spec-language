@@ -239,6 +239,7 @@ fn main() {
 // deny, docs and three architecture checks. The twelve adopted conformance
 // calls are additional to this original 19+2 inventory, never replacements.
 const AGGREGATE_CARGO_CALLS: &[&str] = &[
+    "run\t--locked\t--package\txtask\t--\tconformance",
     "fmt\t--all\t--\t--check",
     "clippy\t--locked\t--workspace\t--all-targets\t--\t-D\twarnings",
     "run\t--locked\t--package\txtask\t--\ttest-suites\tdefault-workspace\t--locked\t--workspace",
@@ -378,7 +379,7 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     // owned copy. Native Quire still refuses, but deny alone now invokes Cargo;
     // the unchanged zero-call oracle above must reject this graph.
     let source = std::fs::read_to_string(&makefile).unwrap();
-    let edge = "$(CI_CHECKS): | check-spec-validation";
+    let edge = "$(CI_CHECKS): check-spec-validation";
     assert_eq!(
         source.matches(edge).count(),
         1,
@@ -389,7 +390,7 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
         &mutant,
         source.replace(
             edge,
-            "$(filter-out cargo-deny-bans,$(CI_CHECKS)): | check-spec-validation",
+            "$(filter-out cargo-deny-bans,$(CI_CHECKS)): check-spec-validation",
         ),
     )
     .unwrap();

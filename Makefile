@@ -241,13 +241,13 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
-CI_TARGETS := conformance $(CI_CHECKS)
+CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_TARGETS := $(CI_CHECKS)
 # Every aggregate prerequisite is ordered after native specification validation
 # when the public aggregate is invoked. Standalone lanes retain their behavior.
-ci: check-spec-validation check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+ci: check-spec-validation conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 ifneq ($(filter ci,$(MAKECMDGOALS)),)
-$(CI_CHECKS): | check-spec-validation
+$(CI_CHECKS): check-spec-validation
 endif
 
 # The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
@@ -256,7 +256,7 @@ endif
 .PHONY: ci-internal
 ci-internal: $(CI_TARGETS)
 ifneq ($(filter ci-internal,$(MAKECMDGOALS)),)
-$(CI_TARGETS): | check-conformance-input
+$(CI_TARGETS): check-conformance-input
 endif
 
 # Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
@@ -266,7 +266,7 @@ CONFORMANCE_XTASK = QSPEC_DIR="$$QSPEC_DIR" cargo run --locked --package xtask -
 check-conformance-input:
 	@$(CONFORMANCE_XTASK) conformance-input
 
-conformance: check-conformance-input
+conformance:
 	@$(CONFORMANCE_XTASK) conformance
 
 # FR-059/FR-060 (ADR-011 §7.1 T-12, #215): architecture-conformance
