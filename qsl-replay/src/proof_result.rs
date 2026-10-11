@@ -910,7 +910,10 @@ mod tests {
                 };
                 let source = BackendProviderSource {
                     backend_identity: "proof-provider".to_owned(),
-                    items: vec![TerminalRecord::from_value(RequestIndex::new(0), value.clone())],
+                    items: vec![TerminalRecord::from_value(
+                        RequestIndex::new(0),
+                        value.clone(),
+                    )],
                 };
                 let envelopes = read_backend_provider_envelope(&source, ReplayLimits::default())
                     .expect("the complete proof record admits");
@@ -1091,7 +1094,10 @@ mod tests {
             let value = TerminalValue::Incomplete(IncompleteCause::Cancelled { source });
             let input = BackendProviderSource {
                 backend_identity: "model-provider".to_owned(),
-                items: vec![TerminalRecord::from_value(RequestIndex::new(0), value.clone())],
+                items: vec![TerminalRecord::from_value(
+                    RequestIndex::new(0),
+                    value.clone(),
+                )],
             };
             let envelopes =
                 read_backend_provider_envelope(&input, ReplayLimits::default()).unwrap();

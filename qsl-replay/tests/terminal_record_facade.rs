@@ -8,8 +8,8 @@ use qsl_foundation::BackendId;
 use qsl_replay::{
     read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category, DeclineCode,
     EvaluatedValue, InconclusiveCause, InputArmResult, InternalFault, ProofRefusalCause,
-    ReplayRefusal, ReplayResult, ReportedInconclusiveCause, RequestIndex, TerminalRecord, TerminalValue, Verdict,
-    WitnessArmResult, WitnessCheck,
+    ReplayRefusal, ReplayResult, ReportedInconclusiveCause, RequestIndex, TerminalRecord,
+    TerminalValue, Verdict, WitnessArmResult, WitnessCheck,
 };
 
 fn violating_replay() -> ReplayResult {
@@ -185,7 +185,10 @@ fn non_refuted_records_are_constructible_through_the_facade() {
     )
     .unwrap();
     assert_eq!(envelopes[0].record().value().category(), Category::Refusal);
-    assert_eq!(envelopes[1].record().value().category(), Category::Inconclusive);
+    assert_eq!(
+        envelopes[1].record().value().category(),
+        Category::Inconclusive
+    );
     assert_eq!(
         envelopes[2].record().value(),
         &TerminalValue::Proved {
@@ -238,7 +241,10 @@ fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade()
     assert_eq!(read.len(), values.len());
     for (envelope, cause) in read.iter().zip(&values) {
         assert_eq!(envelope.category(), Category::Inconclusive);
-        assert_eq!(envelope.record().value(), &TerminalValue::Inconclusive(cause.clone()));
+        assert_eq!(
+            envelope.record().value(),
+            &TerminalValue::Inconclusive(cause.clone())
+        );
         assert_eq!(
             envelope.inconclusive_cause(),
             Some(&ReportedInconclusiveCause::Cause(cause.clone()))

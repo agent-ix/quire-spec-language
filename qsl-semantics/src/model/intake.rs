@@ -3101,21 +3101,14 @@ pub fn read_domain_package(
                         let member_at = format!("{at}.{members}[{member_position}]");
                         let member_ctx = NodeCtx::new(member, &member_at);
                         let member_identity = member_ctx.str_field("identity")?;
-                        let name = if members == "relationships" {
-                            member
-                                .get("sourceEnd")
-                                .and_then(|end| end.get("role"))
-                                .and_then(Value::as_str)
-                                .ok_or_else(|| {
-                                    member_ctx.malformed(
-                                        "sourceEnd.role: missing declared relationship member name",
-                                    )
-                                })?
-                        } else {
-                            member_identity_name(identity, member_identity).ok_or_else(|| {
+                        let name = member
+                            .get("sourceEnd")
+                            .and_then(|end| end.get("role"))
+                            .and_then(Value::as_str)
+                            .or_else(|| member_identity_name(identity, member_identity))
+                            .ok_or_else(|| {
                                 member_ctx.malformed("identity: has no declared member name")
-                            })?
-                        };
+                            })?;
                         let origin = member
                             .get("origin")
                             .ok_or_else(|| member_ctx.malformed("origin: missing"))?;
