@@ -1923,27 +1923,20 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let supertypes = object_type_supertypes(&view).unwrap();
     let types = TypeEnvironment::new(
         [],
-        [
-            (a_type, "A"),
-            (b_type, "B"),
-            (c_type, "C"),
-            (d_type, "D"),
-        ]
-        .into_iter()
-        .map(|(key, name)| {
-            ObjectTypeDeclaration::new(key, name, vec![])
-                .with_supertypes(
+        [(a_type, "A"), (b_type, "B"), (c_type, "C"), (d_type, "D")]
+            .into_iter()
+            .map(|(key, name)| {
+                ObjectTypeDeclaration::new(key, name, vec![]).with_supertypes(
                     supertypes
                         .get(&key)
                         .expect("every D01 type has a supertype entry")
                         .clone(),
                 )
-        }),
+            }),
     )
     .unwrap();
     declarations.types = types.clone();
     let graph = declarations.check(CheckingLimits::default()).unwrap();
-    let package = CheckedPackage::link(graph);
     let objects = ObjectEnvironment::new(
         ObjectClosure::new(
             &types,
@@ -1956,8 +1949,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         .unwrap(),
     );
 
-    let evaluate_expression = |receiver_type, identity: &str, expression: &Expression, limits| {
-        let checked = package
+    let check_expression = |receiver_type, expression: &Expression| {
+        graph
             .check_clause_expression(
                 vec![("self".to_owned(), ValueType::Reference(receiver_type))],
                 expression,
@@ -1966,12 +1959,29 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
                 CheckMode::Kernel,
                 CheckingLimits::default(),
             )
-            .unwrap();
+            .unwrap()
+    };
+    let dispatch = dispatch_expression();
+    let selected_d = check_expression(d_type, &dispatch);
+    let selected_c = check_expression(c_type, &dispatch);
+    let invariant = Expression::binary(
+        BinaryOperator::GreaterOrEqual,
+        dispatch_expression(),
+        Expression::integer(1_i64),
+    );
+    let invariant_d = check_expression(d_type, &invariant);
+    let invariant_c = check_expression(c_type, &invariant);
+    let package = CheckedPackage::link(graph);
+
+    let evaluate_expression = |receiver_type, identity: &str, checked, limits| {
         let mut meter = Meter::new(limits);
         let evaluation = package
             .evaluate(
                 &checked,
-                vec![Value::Reference(receiver_reference(receiver_type, identity))],
+                vec![Value::Reference(receiver_reference(
+                    receiver_type,
+                    identity,
+                ))],
                 &objects,
                 &mut meter,
             )
@@ -1979,34 +1989,18 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         (evaluation, meter)
     };
 
-    let (selected_d, _) = evaluate_expression(
-        d_type,
-        "d1",
-        &dispatch_expression(),
-        SCALAR_UNLIMITED,
-    );
+    let (selected_d, _) = evaluate_expression(d_type, "d1", &selected_d, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_d),
         Outcome::Completed(Value::Integer(value)) if value == Integer::from(2_i64)
     ));
-    let (selected_c, _) = evaluate_expression(
-        c_type,
-        "c1",
-        &dispatch_expression(),
-        SCALAR_UNLIMITED,
-    );
+    let (selected_c, _) = evaluate_expression(c_type, "c1", &selected_c, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_c),
         Outcome::Completed(Value::Integer(value)) if value == Integer::from(1_i64)
     ));
 
-    let invariant = Expression::binary(
-        BinaryOperator::GreaterEqual,
-        dispatch_expression(),
-        Expression::integer(1_i64),
-    );
-    let (evaluation_d, meter_d) =
-        evaluate_expression(d_type, "d1", &invariant, SCALAR_UNLIMITED);
+    let (evaluation_d, meter_d) = evaluate_expression(d_type, "d1", &invariant_d, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(evaluation_d),
         Outcome::Completed(Value::Boolean(true))
@@ -2014,8 +2008,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 6);
     assert_eq!(meter_d.consumed(LimitKind::ValueOccurrences), 2);
 
-    let (evaluation_c, meter_c) =
-        evaluate_expression(c_type, "c1", &invariant, SCALAR_UNLIMITED);
+    let (evaluation_c, meter_c) = evaluate_expression(c_type, "c1", &invariant_c, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(evaluation_c),
         Outcome::Completed(Value::Boolean(true))
@@ -2027,7 +2020,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         work_units: 5,
         ..SCALAR_UNLIMITED
     };
-    let (evaluation_five, meter_five) = evaluate_expression(d_type, "d1", &invariant, limits);
+    let (evaluation_five, meter_five) = evaluate_expression(d_type, "d1", &invariant_d, limits);
     assert!(matches!(
         evaluation_five.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
@@ -2039,7 +2032,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         work_units: 1,
         ..SCALAR_UNLIMITED
     };
-    let (evaluation_one, meter_one) = evaluate_expression(d_type, "d1", &invariant, limits);
+    let (evaluation_one, meter_one) = evaluate_expression(d_type, "d1", &invariant_d, limits);
     assert!(matches!(
         evaluation_one.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
