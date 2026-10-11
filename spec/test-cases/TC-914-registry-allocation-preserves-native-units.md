@@ -67,9 +67,3 @@ no partial result and starts no evaluation; a retry succeeds with the complete
 environment. Canonical allocation, malformed input, cancellation and invariant
 failures retain their established contracts.
 
-## Status
-
-Planned consumer verification after the reviewed QSL and QSV contracts are
-merged and IR-713 delivers its fallible production storage and carrier. This
-test case specifies the required evidence; it does not claim an allocator
-failure has already been executed or the QSL-500 allocation path delivered.
