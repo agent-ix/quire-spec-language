@@ -67,7 +67,7 @@ relationships:
   backend an unbounded formula settles `unsupported` with a warning. QSpec
   FR-360 maps `proved`, `refuted`, `inconclusive`, `unsupported` and `failed`
   onto the QSpec FR-241 to FR-243 axes.
-- **QSpec, capabilities.** QSpec FR-290 has ten kinds and two modes. It has no
+- **QSpec, capabilities.** QSpec FR-290 has twelve kinds and two modes. It has no
   liveness kind and no quantifier kind: a temporal claim under either profile
   is `temporal-satisfaction`, and quantification, induction and composition
   are obligation forms inside a claim that the selected backend's arm
@@ -302,8 +302,13 @@ driver uses the record's extent for it.
 
 No new capability kind, flag or mode is added. QSL records; CG settles.
 
-1. QSL S3 records `Requirements{kind, extent, bounds}` per item (§4).
-2. `qsl_route::Registry::candidates` matches on kind alone (FR-075).
+1. QSL S3 records `Requirements{kind, evidence_kind, extent, bounds}` per
+   item (§4); `evidence_kind` carries the item's unmodified label when present
+   for `probabilistic-satisfaction` and remains absent when the item omits it,
+   so negotiation can distinguish valid, absent and unknown evidence.
+2. `qsl_route::Registry::candidates` matches on capability kind and, for
+   `probabilistic-satisfaction`, the item's exact evidence kind (FR-075);
+   other capability kinds match on kind alone.
 3. The O-20 request writer writes the item's extent classification,
    including `finite_bound_available` (§4).
 4. CG `negotiate_*` applies the QSpec FR-290 advertised-mode table, then the

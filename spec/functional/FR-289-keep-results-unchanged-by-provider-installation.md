@@ -30,6 +30,7 @@ relationships:
 
 Installing, removing or reordering providers SHALL change results only
 through each item's candidate set, and only for items whose capability kind
+the change touches or, for `probabilistic-satisfaction`, whose evidence kind
 the change touches (ADR-029 PV-2):
 
 1. **Front end.** `parse`, `select`, `check` and `package` (FR-278) take no
@@ -41,7 +42,8 @@ the change touches (ADR-029 PV-2):
 3. **Locality.** An item's terminal record is a function of the item, its
    candidate set and the routed provider's run. Adding a provider that does
    not advertise an item's kind leaves that item's candidate set and record
-   unchanged.
+   unchanged. For a probabilistic item, adding or removing an evidence kind
+   changes candidacy only for items naming that exact evidence kind.
 4. **Meaning.** A `refuted` record always comes from a counterexample that
    S6a replay reproduced, whichever provider produced it. A `proved` record
    names the `BackendId` of the provider that produced it.
@@ -59,9 +61,10 @@ Candidate sets (FR-075) and FR-331 terminal records.
 - No front-end operation shall take a registry or read one.
 - Layer R shall give equal candidate sets for an item from registries built
   from the same manifests in any order.
-- When a provider that does not advertise an item's capability kind is added
-  to or removed from a registry, layer R shall give that item the same
-  candidate set.
+- When a provider that does not advertise an item's matching capability
+  requirement is added to or removed from a registry, layer R shall give that
+  item the same candidate set. For a probabilistic item, the matching
+  requirement includes its exact evidence kind.
 - QSL's terminal record shall hold the value `refuted` only together with the
   S6a replay result that reproduced its counterexample.
 - QSL's terminal record shall hold the value `proved` only together with the
@@ -72,7 +75,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-289-AC-1 | Compiling `tests/fixtures/spine-compile.native` in a test that also builds an empty registry, and in one that builds a registry from three manifests, gives byte-equal `package` output and equal `check` outcomes. | Test (TC-773) |
-| FR-289-AC-2 | For a property-generated set of manifests and items, adding a manifest that advertises none of an item's kinds leaves that item's candidate set equal, and adding one that advertises the item's kind adds exactly that backend to it. | Test (TC-773) |
+| FR-289-AC-2 | For a property-generated set of manifests and items, adding a manifest that advertises none of an item's matching requirements leaves that item's candidate set equal, and adding one that advertises the required capability adds exactly that backend to it; for a probabilistic item, the manifest must also advertise its exact evidence kind. | Test (TC-773) |
 | FR-289-AC-3 | A terminal record built with the value `refuted` and no reproducing replay result, or with the value `proved` and no `BackendId`, cannot be constructed through QSL's public API (`compile_fail` doctests with compiling controls); a record built from a reproducing replay result reads back `refuted` with that replay result. | Test (TC-773) |
 
 ## Dependencies
