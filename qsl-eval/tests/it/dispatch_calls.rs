@@ -1977,7 +1977,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         let mut meter = Meter::new(limits);
         let evaluation = package
             .evaluate(
-                &checked,
+                checked,
                 vec![Value::Reference(receiver_reference(
                     receiver_type,
                     identity,
