@@ -37,9 +37,11 @@ alias is `v`.
    Check each well-typed body under a resolved `quire.value.complete/v1`
    selection with exactly one of the truncating, floor or Euclidean
    integer-division definitions, and separately check `mod` without selecting
-   a division law when no `div`/`rem` occurs. Use both `(-7,3)` and `(7,-3)`
-   to distinguish the selected `div`/`rem` laws. Require `mod(-7,3) = 2`
-   and `mod(7,-3) = 1` under every selection. Check `7 / 3` with integer
+   a division law when no `div`/`rem` occurs. For each of `(7,3)`, `(-7,3)`,
+   `(7,-3)` and `(-7,-3)`, check separate `div`, `rem` and `mod` expressions
+   against the table below. The checked package's retained FR-147
+   `quire.value.integer-division.*` selection determines the `div`/`rem`
+   law; `mod` stays Euclidean under every selection. Check `7 / 3` with integer
    operands both without an expected
    rational type and with expected `Rational[0,7;1,3]`, under both state-only
    and complete-value selections.
@@ -58,13 +60,19 @@ Tag the test `#[trace("FR-091-AC-3", "FR-091-AC-39")]`.
   qualified-name head `M::T`.
 - Step 5 reads distinct `Binary{IntegerDiv, IntegerRem, IntegerMod}`
   forms with the CST's product precedence and original spans, including
-  the dead branch. Check accepts them only under complete value; `div`/`rem`
-  return `(q,r) = (-2,-1)` and `(-2,1)` under truncating for `(-7,3)` and
-  `(7,-3)` respectively, `(-3,2)` and `(-3,-2)` under floor, and
-  `(-3,2)` and `(-2,1)` under Euclidean. Each pair satisfies
-  `a = b*q + r`; `mod` remains Euclidean with results `2` and `1`.
-  `/` never denotes
-  integer division; the expected rational type enables FR-149's exact
-  integer-operand promotion and result `7/3` for rational division only under
-  complete value.
-  State-only refuses integer operands even with that expectation.
+  the dead branch. Check accepts them only under complete value. For each
+  operand pair, the separate `div` and `rem` results expose the selected
+  FR-147 law's `(q,r)` in the table; `mod` exposes the Euclidean remainder.
+
+| Selected FR-147 law | `(7,3)` `(q,r)` | `(-7,3)` `(q,r)` | `(7,-3)` `(q,r)` | `(-7,-3)` `(q,r)` |
+| --- | --- | --- | --- | --- |
+| truncating | `(2,1)` | `(-2,-1)` | `(-2,1)` | `(2,-1)` |
+| floor | `(2,1)` | `(-3,2)` | `(-3,-2)` | `(2,-1)` |
+| Euclidean | `(2,1)` | `(-3,2)` | `(-2,1)` | `(3,2)` |
+
+Every cell satisfies `a = b*q + r`. `mod` returns `1`, `2`, `1` and `2`
+respectively for the four columns under every selected `div`/`rem` law.
+`/` never denotes integer division; the expected rational type enables
+FR-149's exact integer-operand promotion and result `7/3` for rational
+division only under complete value. State-only refuses integer operands even
+with that expectation.
