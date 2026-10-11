@@ -371,6 +371,7 @@ pub struct TerminalRecord {
     /// and are completed with the envelope's manifest identity on read.
     backend: Option<BackendId>,
     value: TerminalValue,
+    replay: Option<ReplayResult>,
 }
 
 impl TerminalRecord {
@@ -385,6 +386,38 @@ impl TerminalRecord {
     /// // A terminal value alone is not enough evidence to construct a record.
     /// let _ = TerminalRecord::new(RequestIndex::new(0), TerminalValue::Refuted);
     /// ```
+    ///
+    /// The evidence-bearing constructor remains usable with a replay result:
+    ///
+    /// ```no_run
+    /// use qsl_foundation::BackendId;
+    /// use qsl_replay::{ReplayResult, RequestIndex, TerminalRecord};
+    ///
+    /// # let replay: &ReplayResult = unimplemented!();
+    /// let _ = TerminalRecord::new(
+    ///     RequestIndex::new(0),
+    ///     BackendId::new("backend"),
+    ///     replay,
+    /// );
+    /// ```
+    ///
+    /// A successful proof likewise requires a producing backend.  There is no
+    /// constructor that accepts a bare `Proved` value.
+    ///
+    /// ```compile_fail
+    /// use qsl_replay::{RequestIndex, TerminalRecord};
+    ///
+    /// let _ = TerminalRecord::proved(RequestIndex::new(0), 1);
+    /// ```
+    ///
+    /// A proved record with its required backend is a compiling control:
+    ///
+    /// ```
+    /// use qsl_foundation::BackendId;
+    /// use qsl_replay::{RequestIndex, TerminalRecord};
+    ///
+    /// let _ = TerminalRecord::proved(RequestIndex::new(0), BackendId::new("backend"), 1);
+    /// ```
     pub fn new(
         request_index: RequestIndex,
         backend: BackendId,
@@ -397,7 +430,80 @@ impl TerminalRecord {
             request_index,
             backend: Some(backend),
             value: TerminalValue::Refuted,
+            replay: Some(replay.clone()),
         })
+    }
+
+    /// Build a proved record with the producing backend identity and the
+    /// number of successful checks that established the proof.
+    pub fn proved(request_index: RequestIndex, backend: BackendId, success_checks: u32) -> Self {
+        Self::with_backend(
+            request_index,
+            backend,
+            TerminalValue::Proved { success_checks },
+        )
+    }
+
+    /// Build a tested record with the producing backend identity.
+    pub fn tested(request_index: RequestIndex, backend: BackendId) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Tested)
+    }
+
+    /// Build an inconclusive record with the producing backend identity and
+    /// its typed cause.
+    pub fn inconclusive(
+        request_index: RequestIndex,
+        backend: BackendId,
+        cause: InconclusiveCause,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Inconclusive(cause))
+    }
+
+    /// Build a declined record with the producing backend identity and its
+    /// typed refusal cause and code.
+    pub fn declined(
+        request_index: RequestIndex,
+        backend: BackendId,
+        cause: ProofRefusalCause,
+        code: DeclineCode,
+    ) -> Self {
+        Self::with_backend(
+            request_index,
+            backend,
+            TerminalValue::Declined { cause, code },
+        )
+    }
+
+    /// Build an unsupported record with the producing backend identity.
+    pub fn unsupported(
+        request_index: RequestIndex,
+        backend: BackendId,
+        cause: UnavailabilityCause,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Unsupported(cause))
+    }
+
+    /// Build an incomplete record with the producing backend identity.
+    pub fn incomplete(
+        request_index: RequestIndex,
+        backend: BackendId,
+        cause: IncompleteCause,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Incomplete(cause))
+    }
+
+    /// Build a failed record with the producing backend identity.
+    pub fn failed(request_index: RequestIndex, backend: BackendId) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Failed)
+    }
+
+    fn with_backend(request_index: RequestIndex, backend: BackendId, value: TerminalValue) -> Self {
+        Self {
+            request_index,
+            backend: Some(backend),
+            value,
+            replay: None,
+        }
     }
 
     /// Build an internally settled value.  Provider-facing callers must use
@@ -412,6 +518,7 @@ impl TerminalRecord {
             request_index,
             backend: None,
             value,
+            replay: None,
         }
     }
 
@@ -429,6 +536,12 @@ impl TerminalRecord {
     /// replay settlement.
     pub fn backend(&self) -> Option<&BackendId> {
         self.backend.as_ref()
+    }
+
+    /// The replay evidence retained by a refuted record, when it was built
+    /// through [`Self::new`].
+    pub fn replay_result(&self) -> Option<&ReplayResult> {
+        self.replay.as_ref()
     }
 }
 
@@ -486,6 +599,15 @@ pub enum ProofResultRefusal {
     /// The encoded envelope exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
+    /// A record's producing backend differs from the provider identity in
+    /// the source envelope.
+    #[error("record backend {record} differs from provider backend {provider}")]
+    BackendIdentityMismatch {
+        /// The identity embedded in the record.
+        record: BackendId,
+        /// The identity declared by the provider source.
+        provider: BackendId,
+    },
 }
 
 /// A minimal, already-parsed representation of one FR-331
@@ -536,6 +658,16 @@ pub fn read_backend_provider_envelope(
     BoundExceeded::check(measured_encoded_bytes(source), limits)?;
 
     let backend = BackendId::new(source.backend_identity.clone());
+    for record in &source.items {
+        if let Some(record_backend) = record.backend() {
+            if record_backend != &backend {
+                return Err(ProofResultRefusal::BackendIdentityMismatch {
+                    record: record_backend.clone(),
+                    provider: backend.clone(),
+                });
+            }
+        }
+    }
     Ok(source
         .items
         .iter()

@@ -6,21 +6,25 @@
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_replay::{
-    read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category,
-    InternalFault, ReplayRefusal, ReplayResult, RequestIndex, TerminalRecord, TerminalValue,
-    WitnessArmResult,
+    read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category, DeclineCode,
+    InconclusiveCause, InternalFault, ProofRefusalCause, ReplayRefusal, ReplayResult, RequestIndex,
+    TerminalRecord, TerminalValue, WitnessArmResult,
 };
+
+fn violating_replay() -> ReplayResult {
+    ReplayResult::Witness(WitnessArmResult::settle_range_violation(
+        None,
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ))
+}
 
 /// A violation replay is the only public source of a refuted terminal record;
 /// the backend identity is carried through the envelope and its round trip.
 #[trace("TC-773", "FR-289-AC-3")]
 #[test]
 fn refuted_record_requires_replay_and_backend_evidence() {
-    let replay = ReplayResult::Witness(WitnessArmResult::settle_range_violation(
-        None,
-        Vec::new(),
-        qsl_replay::spine::default_accounting(0),
-    ));
+    let replay = violating_replay();
     let record = TerminalRecord::new(
         RequestIndex::new(7),
         BackendId::new("replay-backend"),
@@ -39,12 +43,109 @@ fn refuted_record_requires_replay_and_backend_evidence() {
         first[0].record().backend().unwrap().as_str(),
         "replay-backend"
     );
+    assert_eq!(first[0].record().replay_result(), Some(&replay));
 
     let serialized = qsl_replay::ProofResultEnvelope::to_source(&first).unwrap();
     let second =
         read_backend_provider_envelope(&serialized, qsl_replay::ReplayLimits::default()).unwrap();
     assert_eq!(second[0].record().value(), &TerminalValue::Refuted);
     assert_eq!(second[0].backend().as_str(), "replay-backend");
+    assert_eq!(second[0].record().replay_result(), Some(&replay));
+}
+
+/// FR-289-AC-3 / TC-773 step 3: a replay that did not reproduce a violation
+/// cannot be relabelled as `refuted`.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn non_violating_replay_is_refused() {
+    let replay = ReplayResult::Witness(WitnessArmResult::settle(
+        qsl_replay::Verdict::from_category(Category::Success),
+        qsl_replay::Verdict::from_category(Category::Success),
+        Category::Success,
+        None,
+        qsl_replay::WitnessCheck::Agrees(None),
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ));
+
+    assert_eq!(
+        TerminalRecord::new(
+            RequestIndex::new(9),
+            BackendId::new("replay-backend"),
+            &replay,
+        ),
+        Err(qsl_replay::TerminalRecordRefusal::ReplayDidNotRefute(
+            Category::Success
+        ))
+    );
+}
+
+/// FR-289-AC-3 / TC-773 step 3: a provider envelope cannot claim a record
+/// produced by a different backend.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn record_backend_must_match_provider_identity() {
+    let record = TerminalRecord::new(
+        RequestIndex::new(4),
+        BackendId::new("record-backend"),
+        &violating_replay(),
+    )
+    .unwrap();
+    let result = read_backend_provider_envelope(
+        &BackendProviderSource {
+            backend_identity: "manifest-backend".to_owned(),
+            items: vec![record],
+        },
+        qsl_replay::ReplayLimits::default(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(qsl_replay::ProofResultRefusal::BackendIdentityMismatch { .. })
+    ));
+}
+
+/// TC-177 / FR-069-AC-1: public constructors for non-refuted values remain
+/// available to an external facade client.
+#[trace("TC-177", "FR-069-AC-1")]
+#[test]
+fn non_refuted_records_are_constructible_through_the_facade() {
+    let backend = BackendId::new("provider-backend");
+    let records = vec![
+        TerminalRecord::declined(
+            RequestIndex::new(0),
+            backend.clone(),
+            ProofRefusalCause::InvalidInput,
+            DeclineCode::Qsl(qsl_replay::Code::MissingDeclaration),
+        ),
+        TerminalRecord::inconclusive(
+            RequestIndex::new(1),
+            backend.clone(),
+            InconclusiveCause::ReplayRefused(qsl_replay::Code::StaleDependency),
+        ),
+        TerminalRecord::proved(RequestIndex::new(2), backend.clone(), 1),
+        TerminalRecord::failed(RequestIndex::new(3), backend.clone()),
+    ];
+
+    let envelopes = read_backend_provider_envelope(
+        &BackendProviderSource {
+            backend_identity: backend.as_str().to_owned(),
+            items: records,
+        },
+        qsl_replay::ReplayLimits::default(),
+    )
+    .unwrap();
+
+    assert_eq!(envelopes[0].record().value().category(), Category::Refusal);
+    assert_eq!(
+        envelopes[1].record().value().category(),
+        Category::Inconclusive
+    );
+    assert_eq!(
+        envelopes[2].record().value(),
+        &TerminalValue::Proved { success_checks: 1 }
+    );
+    assert_eq!(envelopes[3].record().value(), &TerminalValue::Failed);
 }
 
 /// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
