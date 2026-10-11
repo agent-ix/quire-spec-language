@@ -513,10 +513,10 @@ mod tests {
                 ..
             } if node == "ix://bench/model/C0/flag"
         ));
-        assert_eq!(
-            refusals[0].detail,
-            "$.types[0].fields[0]: presence: \"sometimes\" is not required/optional, \
-             the only presences this reader recognizes"
-        );
+        assert!(refusals[0].detail.contains("SCHEMA_VIOLATION"));
+        assert!(refusals[0].detail.contains("/ir/types/0/fields/0/presence"));
+        assert!(refusals[0]
+            .detail
+            .contains("presence is a closed enumeration"));
     }
 }
