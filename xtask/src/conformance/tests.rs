@@ -34,7 +34,7 @@ fn cargo_double() -> PathBuf {
                     "-D",
                     "warnings",
                 ])
-                .arg(workspace.join("xtask/src/ci_conformance_tests/cargo_double.rs"))
+                .arg(workspace.join("xtask/tests/fixtures/ci_conformance_cargo_double.rs"))
                 .arg("-o")
                 .arg(&executable)
                 .output()

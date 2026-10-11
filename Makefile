@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -38,6 +38,15 @@ seam-probe:
 # function. Part of `ci:` -- the lint gate FR-064 requires it to run in.
 string-edge:
 	cargo run --package xtask -- string-edge
+
+# The local push check keeps the fast source-shape checks at the front of the
+# developer loop. Keep string-edge after formatting and Clippy so a push cannot
+# bypass the dispatch-literal scan when those checks are run through this
+# wrapper.
+pre-push:
+	cargo fmt --all -- --check
+	cargo clippy --locked --workspace --all-targets -- -D warnings
+	cargo run --locked --package xtask -- string-edge
 
 # FR-080-AC-3: scans the #185 registry crate (every file under
 # qsl-route/src) for a static, OnceLock or thread_local! item -- ADR-012

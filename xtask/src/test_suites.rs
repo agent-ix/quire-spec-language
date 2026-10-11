@@ -114,6 +114,26 @@ pub struct Lane {
     pub empty: &'static [EmptySuite],
 }
 
+#[derive(Clone, Copy)]
+enum LaneKind {
+    DefaultWorkspace,
+    AllFeaturesWorkspace,
+    DefaultQslSemantics,
+    DefaultQslCst,
+}
+
+impl LaneKind {
+    fn from_name(name: &str) -> Self {
+        match name.as_bytes() {
+            b"default-workspace" => Self::DefaultWorkspace,
+            b"all-features-workspace" => Self::AllFeaturesWorkspace,
+            b"default-qsl-semantics" => Self::DefaultQslSemantics,
+            b"default-qsl-cst" => Self::DefaultQslCst,
+            _ => unreachable!("only named make ci lanes reach this check"),
+        }
+    }
+}
+
 const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 
 /// The zero-pass suites of the retained `make ci` log of the QSL#670 gate
@@ -878,7 +898,7 @@ impl<'a> RunParser<'a> {
         if section.running.is_none() {
             section.running = parse_running(line);
         }
-        if line.starts_with("test result:") {
+        if line.as_bytes().starts_with(b"test result:") {
             section.summary = Some(parse_summary(line).ok_or_else(|| line.to_owned()));
         }
     }
@@ -998,31 +1018,33 @@ fn validate_lane_selection(lane: &Lane, cargo_args: &[OsString]) -> Result<()> {
         let Some(argument) = argument.to_str() else {
             continue;
         };
-        if argument == "--" {
+        if argument.as_bytes() == b"--" {
             break;
         }
-        if argument == "--all-features" {
+        if argument.as_bytes() == b"--all-features" {
             all_features = true;
-        } else if argument == "--no-default-features"
-            || argument == "--features"
-            || argument.starts_with("--features=")
-            || argument == "-F"
-            || argument.starts_with("-F")
+        } else if argument.as_bytes() == b"--no-default-features"
+            || argument.as_bytes() == b"--features"
+            || argument.as_bytes().starts_with(b"--features=")
+            || argument.as_bytes() == b"-F"
+            || argument.as_bytes().starts_with(b"-F")
         {
             other_features = true;
         }
     }
-    let packages_match = match lane.name {
-        "default-workspace" | "all-features-workspace" => {
+    let lane_kind = LaneKind::from_name(lane.name);
+    let packages_match = match lane_kind {
+        LaneKind::DefaultWorkspace | LaneKind::AllFeaturesWorkspace => {
             matches!(selection.packages, Packages::Workspace { ref excluded } if excluded.is_empty())
         }
-        "default-qsl-semantics" => {
+        LaneKind::DefaultQslSemantics => {
             selection.packages == Packages::Named(vec!["qsl-semantics".to_owned()])
         }
-        "default-qsl-cst" => selection.packages == Packages::Named(vec!["qsl-cst".to_owned()]),
-        _ => unreachable!("only named make ci lanes reach this check"),
+        LaneKind::DefaultQslCst => {
+            selection.packages == Packages::Named(vec!["qsl-cst".to_owned()])
+        }
     };
-    let expects_all_features = lane.name == "all-features-workspace";
+    let expects_all_features = matches!(lane_kind, LaneKind::AllFeaturesWorkspace);
     if packages_match && all_features == expects_all_features && !other_features {
         Ok(())
     } else {

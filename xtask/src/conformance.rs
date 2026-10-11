@@ -12,24 +12,64 @@ const VECTOR: &str = "proposals/checked-package-v2/node-identity-vectors.json";
 
 struct Check {
     package: &'static str,
-    target: &'static str,
+    target: Target,
     selection: &'static str,
     summaries: &'static [&'static [&'static str]],
+    summary_mode: SummaryMode,
+}
+
+#[derive(Clone, Copy)]
+enum SummaryMode {
+    Exact,
+    Prefix,
+}
+
+#[derive(Clone, Copy)]
+enum Target {
+    Lib,
+    Test,
+}
+
+#[derive(Clone, Copy)]
+enum OutputMarker {
+    SuccessfulTest,
+    Skipped,
+    Other,
+}
+
+fn output_marker(line: &str) -> OutputMarker {
+    let bytes = line.as_bytes();
+    if bytes.starts_with(b"test result: ok. 1 passed; 0 failed; 0 ignored;") {
+        OutputMarker::SuccessfulTest
+    } else if bytes.starts_with(b"skipped:") {
+        OutputMarker::Skipped
+    } else {
+        OutputMarker::Other
+    }
+}
+
+impl Target {
+    fn argument(self) -> &'static str {
+        match self {
+            Self::Lib => "--lib",
+            Self::Test => "--test",
+        }
+    }
 }
 
 const CHECKS: &[Check] = &[
-    Check { package: "qsl-semantics", target: "--lib", selection: "check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors", summaries: &[&["conformance: ", " of ", " QSpec operation vectors match ("]] },
-    Check { package: "qsl-semantics", target: "--lib", selection: "check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors", summaries: &[&["conformance: 2 nominal enum vectors"]] },
-    Check { package: "qsl-semantics", target: "--test", selection: "quantities::tc_411_compound_unit_ids_match_qspec_vectors", summaries: &[&["conformance: ", " compound-unit vectors"]] },
-    Check { package: "qsl-package", target: "--lib", selection: "checked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures", summaries: &[&["conformance: ", " source-map entries over ", " positive fixtures"]] },
-    Check { package: "qsl-package", target: "--lib", selection: "checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures", summaries: &[&["conformance: ", " positive fixtures through QSL's full I2 read"], &["conformance: ", " adverse mutations refused"]] },
-    Check { package: "qsl-package", target: "--lib", selection: "checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors", summaries: &[&["conformance: ", " frame-body mutation vectors matched"]] },
-    Check { package: "qsl-package", target: "--lib", selection: "checked_v2::tests::conformance_dependency_selection_vectors", summaries: &[&["conformance: ", " dependency-selection entry mutations and ", " order vectors"]] },
-    Check { package: "qsl-package", target: "--lib", selection: "emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", summaries: &[&["conformance: ", " emitted application nodes match QSpec's positive fixtures"]] },
-    Check { package: "qsl-semantics", target: "--lib", selection: "check::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics", summaries: &[&["conformance: ", " profile (code, cause) pairs listed by QSpec"]] },
-    Check { package: "qsl-semantics", target: "--lib", selection: "library::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics", summaries: &[&["conformance: ", " bundle (code, cause) pairs listed by QSpec"]] },
-    Check { package: "qsl-semantics", target: "--test", selection: "complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock", summaries: &[&["conformance: ", " catalog rows match QSpec's lock"]] },
-    Check { package: "qsl-semantics", target: "--test", selection: "complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]] },
+    Check { package: "qsl-semantics", target: Target::Lib, selection: "check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors", summaries: &[&["conformance: ", " of ", " QSpec operation vectors match ("]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Lib, selection: "check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors", summaries: &[&["conformance: 2 nominal enum vectors"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Test, selection: "quantities::tc_411_compound_unit_ids_match_qspec_vectors", summaries: &[&["conformance: ", " compound-unit vectors"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures", summaries: &[&["conformance: ", " source-map entries over ", " positive fixtures"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures", summaries: &[&["conformance: ", " positive fixtures through QSL's full I2 read"], &["conformance: ", " adverse mutations refused"]], summary_mode: SummaryMode::Prefix },
+    Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors", summaries: &[&["conformance: ", " frame-body mutation vectors matched"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_dependency_selection_vectors", summaries: &[&["conformance: ", " dependency-selection entry mutations and ", " order vectors"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-package", target: Target::Lib, selection: "emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", summaries: &[&["conformance: ", " emitted application nodes match QSpec's positive fixtures"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Lib, selection: "check::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics", summaries: &[&["conformance: ", " profile (code, cause) pairs listed by QSpec"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Lib, selection: "library::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics", summaries: &[&["conformance: ", " bundle (code, cause) pairs listed by QSpec"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock", summaries: &[&["conformance: ", " catalog rows match QSpec's lock"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]], summary_mode: SummaryMode::Exact },
 ];
 
 fn resolve(input: Option<&OsStr>, workspace: &Path) -> Result<PathBuf> {
@@ -58,7 +98,7 @@ fn resolve(input: Option<&OsStr>, workspace: &Path) -> Result<PathBuf> {
     Ok(absolute)
 }
 
-fn matches_summary(line: &str, pieces: &[&str]) -> bool {
+fn matches_summary(line: &str, pieces: &[&str], mode: SummaryMode) -> bool {
     let Some(mut remainder) = line.strip_prefix(pieces[0]) else {
         return false;
     };
@@ -75,10 +115,7 @@ fn matches_summary(line: &str, pieces: &[&str]) -> bool {
             return false;
         };
         remainder = rest;
-        if index == pieces.len() - 1
-            && !piece.ends_with('(')
-            && !piece.contains("full I2 read")
-            && !piece.contains("adverse mutations refused")
+        if index == pieces.len() - 1 && !piece.ends_with('(') && matches!(mode, SummaryMode::Exact)
         {
             return remainder.is_empty();
         }
@@ -101,24 +138,27 @@ fn check_output(check: &Check, output: &std::process::Output) -> Result<()> {
     }
     if !combined
         .lines()
-        .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
+        .any(|line| matches!(output_marker(line), OutputMarker::SuccessfulTest))
     {
         return Err(Error::ConformanceCheck {
             selection: check.selection,
             reason: "required test did not execute successfully".to_owned(),
         });
     }
-    if combined.lines().any(|line| line.starts_with("skipped:")) {
+    if combined
+        .lines()
+        .any(|line| matches!(output_marker(line), OutputMarker::Skipped))
+    {
         return Err(Error::ConformanceCheck {
             selection: check.selection,
             reason: "required vector check skipped".to_owned(),
         });
     }
-    if !check
-        .summaries
-        .iter()
-        .all(|pattern| combined.lines().any(|line| matches_summary(line, pattern)))
-    {
+    if !check.summaries.iter().all(|pattern| {
+        combined
+            .lines()
+            .any(|line| matches_summary(line, pattern, check.summary_mode))
+    }) {
         return Err(Error::ConformanceCheck {
             selection: check.selection,
             reason: "required vector summary did not appear".to_owned(),
@@ -141,9 +181,9 @@ fn run_with(
             "--locked",
             "-p",
             check.package,
-            check.target,
+            check.target.argument(),
         ]);
-        if check.target == "--test" {
+        if matches!(check.target, Target::Test) {
             command.arg("it");
         }
         let output = command
