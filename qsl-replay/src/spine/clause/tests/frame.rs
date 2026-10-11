@@ -347,7 +347,8 @@ fn native_result_two_refuses_broken_frame_witness_members() {
             .expect("missing change member must refuse");
         assert!(error.to_string().contains("change"), "{member}: {error}");
     }
-    let edits: &[(&str, fn(&mut serde_json::Value))] = &[
+    type MemberEdit = (&'static str, fn(&mut serde_json::Value));
+    let edits: &[MemberEdit] = &[
         ("null", |v: &mut serde_json::Value| {
             v["disposition"]["refusal"]["frame_witness"]["pre"] = serde_json::Value::Null;
         }),

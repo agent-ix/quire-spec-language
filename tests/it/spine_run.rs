@@ -199,7 +199,8 @@ fn native_result_two_reader_refuses_invalid_command_error_members() {
         qsl_replay::spine::read_native_run_result(&serde_json::to_vec(&valid).unwrap()).unwrap(),
         qsl_replay::spine::NativeRunResult::CommandError(_)
     ));
-    let edits: &[(&str, fn(&mut Value))] = &[
+    type MemberEdit = (&'static str, fn(&mut Value));
+    let edits: &[MemberEdit] = &[
         ("stage", |v: &mut Value| {
             v.as_object_mut().unwrap().remove("stage");
         }),
