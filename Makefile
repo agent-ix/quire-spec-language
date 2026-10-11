@@ -245,17 +245,19 @@ CI_CHECKS := check-no-committed-binaries check-index-completeness ci-default-fea
 CI_TARGETS := conformance $(CI_CHECKS)
 # Every aggregate prerequisite is ordered after native specification validation
 # when the public aggregate is invoked. Standalone lanes retain their behavior.
-ci: check-spec-validation $(CI_CHECKS)
+ci: check-spec-validation check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 ifneq ($(filter ci,$(MAKECMDGOALS)),)
 $(CI_CHECKS): | check-spec-validation
 endif
 
 # The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
-# Keep the validation prerequisite ahead of all lanes without making it a
-# dependency of standalone targets such as ci-clean-build.
+# Add the validation barrier only when this graph is the requested goal, so
+# standalone targets such as ci-clean-build retain their own process oracle.
 .PHONY: ci-internal
-ci-internal: check-conformance-input
-	+$(MAKE) --no-print-directory $(CI_TARGETS)
+ci-internal: $(CI_TARGETS)
+ifneq ($(filter ci-internal,$(MAKECMDGOALS)),)
+$(CI_TARGETS): | check-conformance-input
+endif
 
 # Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
 # reaches the recipe shell as data; Rust canonicalizes it before child Cargo runs.
