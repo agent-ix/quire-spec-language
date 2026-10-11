@@ -815,7 +815,9 @@ fn parse_summary(line: &str) -> Option<Counts> {
 struct Section {
     id: SuiteId,
     running: Option<u64>,
-    summary: Option<Counts>,
+    // The final summary-shaped line is authoritative. Earlier output may
+    // contain either a valid or malformed imitation of a libtest summary.
+    summary: Option<std::result::Result<Counts, String>>,
 }
 
 /// The suites a `cargo test` run printed, read line by line.
@@ -876,13 +878,8 @@ impl<'a> RunParser<'a> {
         if section.running.is_none() {
             section.running = parse_running(line);
         }
-        if let Some(summary) = parse_summary(line) {
-            section.summary = Some(summary);
-        } else if line.starts_with("test result: ") {
-            self.findings.push(Finding::MalformedSummary {
-                suite: section.id.clone(),
-                line: line.to_owned(),
-            });
+        if line.starts_with("test result:") {
+            section.summary = Some(parse_summary(line).ok_or_else(|| line.to_owned()));
         }
     }
 
@@ -898,6 +895,14 @@ impl<'a> RunParser<'a> {
         let Some(summary) = summary else {
             self.findings.push(Finding::NoSummary { suite: id });
             return;
+        };
+        let summary = match summary {
+            Ok(summary) => summary,
+            Err(line) => {
+                self.findings
+                    .push(Finding::MalformedSummary { suite: id, line });
+                return;
+            }
         };
         let Some(running) = running else {
             self.findings.push(Finding::NoRunningLine { suite: id });
@@ -981,6 +986,48 @@ pub fn evaluate(
 #[string_edge]
 fn lane_named(name: &str) -> Option<&'static Lane> {
     LANES.iter().find(|lane| lane.name == name)
+}
+
+/// A lane's empty-suite declarations are valid only for the package and
+/// feature scope that `make ci` assigned to that lane.
+fn validate_lane_selection(lane: &Lane, cargo_args: &[OsString]) -> Result<()> {
+    let selection = Selection::from_cargo_args(cargo_args)?;
+    let mut all_features = false;
+    let mut other_features = false;
+    for argument in cargo_args {
+        let Some(argument) = argument.to_str() else {
+            continue;
+        };
+        if argument == "--" {
+            break;
+        }
+        if argument == "--all-features" {
+            all_features = true;
+        } else if argument == "--no-default-features"
+            || argument == "--features"
+            || argument.starts_with("--features=")
+            || argument == "-F"
+            || argument.starts_with("-F")
+        {
+            other_features = true;
+        }
+    }
+    let packages_match = match lane.name {
+        "default-workspace" | "all-features-workspace" => {
+            matches!(selection.packages, Packages::Workspace { ref excluded } if excluded.is_empty())
+        }
+        "default-qsl-semantics" => {
+            selection.packages == Packages::Named(vec!["qsl-semantics".to_owned()])
+        }
+        "default-qsl-cst" => selection.packages == Packages::Named(vec!["qsl-cst".to_owned()]),
+        _ => unreachable!("only named make ci lanes reach this check"),
+    };
+    let expects_all_features = lane.name == "all-features-workspace";
+    if packages_match && all_features == expects_all_features && !other_features {
+        Ok(())
+    } else {
+        Err(Error::TestSuitesLaneMismatch { lane: lane.name })
+    }
 }
 
 fn cargo() -> OsString {
@@ -1238,6 +1285,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<String> {
         lane: name.to_string(),
         known: known(),
     })?;
+    validate_lane_selection(lane, cargo_args)?;
     run_lane(
         workspace_root,
         lane,
@@ -1716,7 +1764,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             );
             assert!(
                 check(&lane(DECLARES_EMPTY), &log)
-                    .contains(&format!("{ANALYZE_UNIT}: no readable `test result:` line")),
+                    .iter()
+                    .any(|finding| finding
+                        .starts_with(&format!("{ANALYZE_UNIT}: malformed `test result:` line"))),
                 "{broken}"
             );
         }
@@ -1763,6 +1813,32 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             "test zone_check::scale::tests::tc_693_a_huge_constant_scales_and_computes_without_overflow ... ok\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n",
         );
         assert_eq!(check(&lane(DECLARES_EMPTY), &log), Vec::<String>::new());
+    }
+
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-4")]
+    fn malformed_earlier_summary_noise_does_not_mask_the_real_terminal_summary() {
+        let malformed =
+            "test result: ok. not-a-count passed; 0 failed; 0 ignored; 0 measured; 0 filtered out";
+        let log = PRODUCER_LOG.replace(
+            "test zone_check::scale::tests::tc_693_a_huge_constant_scales_and_computes_without_overflow ... ok\n",
+            &format!(
+                "test zone_check::scale::tests::tc_693_a_huge_constant_scales_and_computes_without_overflow ... ok\n{malformed}\n"
+            ),
+        );
+        assert_eq!(check(&lane(DECLARES_EMPTY), &log), Vec::<String>::new());
+
+        let terminal_is_malformed = log.replace(
+            "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
+            malformed,
+        );
+        let findings = check(&lane(DECLARES_EMPTY), &terminal_is_malformed);
+        assert!(
+            findings.contains(&format!(
+                "{ANALYZE_UNIT}: malformed `test result:` line: {malformed}"
+            )),
+            "{findings:?}"
+        );
     }
 
     #[test]
@@ -2604,6 +2680,55 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             "{error}"
         );
         assert_eq!(error.exit_code(), 2);
+    }
+
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-1")]
+    fn named_lanes_refuse_inconsistent_package_and_feature_selections_before_cargo() {
+        for (lane, arguments) in [
+            ("default-qsl-cst", &["-p", "qsl-semantics"][..]),
+            ("default-qsl-semantics", &["-p", "qsl-cst"][..]),
+            ("default-workspace", &["-p", "qsl-cst"][..]),
+            ("all-features-workspace", &["--workspace"][..]),
+            ("default-workspace", &["--workspace", "--all-features"][..]),
+            (
+                "default-workspace",
+                &["--workspace", "--features", "extra"][..],
+            ),
+            (
+                "default-qsl-cst",
+                &["-p", "qsl-cst", "--no-default-features"][..],
+            ),
+            (
+                "all-features-workspace",
+                &["--workspace", "--all-features", "--exclude", "qsl-cst"][..],
+            ),
+        ] {
+            let operands = std::iter::once(OsString::from(lane))
+                .chain(cargo_args(arguments))
+                .collect::<Vec<_>>();
+            let error = run(Path::new(ROOT), &operands).expect_err("lane mismatch");
+            assert!(
+                matches!(error, Error::TestSuitesLaneMismatch { .. }),
+                "{lane} {arguments:?}: {error}"
+            );
+            assert_eq!(error.exit_code(), 2);
+        }
+        for (lane, arguments) in [
+            ("default-workspace", &["--locked", "--workspace"][..]),
+            (
+                "default-qsl-semantics",
+                &["--locked", "-p", "qsl-semantics"][..],
+            ),
+            ("default-qsl-cst", &["--locked", "-p", "qsl-cst"][..]),
+            (
+                "all-features-workspace",
+                &["--locked", "--workspace", "--all-features"][..],
+            ),
+        ] {
+            validate_lane_selection(lane_named(lane).unwrap(), &cargo_args(arguments))
+                .expect("make ci selection");
+        }
     }
 
     #[test]

@@ -299,6 +299,13 @@ pub enum Error {
         /// The defined lanes, comma separated.
         known: String,
     },
+    /// A known lane was given a different package or feature selection from
+    /// the `make ci` invocation whose empty suites it declares.
+    #[error("test-suites: lane {lane:?} requires its declared package and feature selection")]
+    TestSuitesLaneMismatch {
+        /// The named lane.
+        lane: &'static str,
+    },
     /// `cargo xtask test-suites` could not run or read a `cargo` process.
     #[error("test-suites: {what}: {source}")]
     TestSuitesIo {
@@ -386,6 +393,7 @@ impl Error {
             | Self::CanonicalTypesMetadataJson { .. }
             | Self::CanonicalTypesMetadata { .. } => Code::Metadata,
             Self::TestSuitesUnknownLane { .. }
+            | Self::TestSuitesLaneMismatch { .. }
             | Self::TestSuitesUnsupportedSelection { .. }
             | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
