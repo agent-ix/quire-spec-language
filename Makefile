@@ -109,9 +109,11 @@ cargo-deny-bans:
 
 SIBLINGS ?= $(shell cd "$$(git rev-parse --path-format=absolute --git-common-dir)/../.." && pwd -P)
 QSPEC_DIR ?= $(SIBLINGS)/quire-specification
-# Keep this as a Make value so paths containing shell metacharacters remain
-# data. Conformance recipes resolve it with a quoted shell expansion below.
 export QSPEC_DIR
+# Resolve through the exported value rather than interpolating the path into
+# shell source. This keeps metacharacters such as '$' as path data while
+# giving every Cargo lane the same absolute checkout path.
+override QSPEC_DIR := $(shell if [ -d "$$QSPEC_DIR" ]; then cd -- "$$QSPEC_DIR" && pwd -P; else printf '%s' "$$QSPEC_DIR"; fi)
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
 	ix-trace-rs:ix-trace-rs:.
@@ -285,11 +287,11 @@ CONFORMANCE_CATALOG_TEST := complete_value_lock::conformance_catalog_matches_qsp
 CONFORMANCE_SELECTION_TEST := complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors
 .PHONY: check-conformance-input
 check-conformance-input:
-	@if [ -z "$(QSPEC_DIR)" ]; then \
+	@if [ -z "$$QSPEC_DIR" ]; then \
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
 		exit 1; \
 	fi
-	@if [ ! -f "$(QSPEC_DIR)/proposals/checked-package-v2/node-identity-vectors.json" ]; then \
+	@if [ ! -f "$$QSPEC_DIR/proposals/checked-package-v2/node-identity-vectors.json" ]; then \
 		echo "conformance: QSPEC_DIR must name a local quire-specification checkout with conformance vectors" >&2; \
 		exit 1; \
 	fi
