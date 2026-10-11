@@ -34,7 +34,10 @@ fn fixture_in(root: &Path, target: Option<&OsStr>) -> tempfile::TempDir {
 }
 
 fn owned_fixture() -> tempfile::TempDir {
-    fixture_in(&workspace(), std::env::var_os("CARGO_TARGET_DIR").as_deref())
+    fixture_in(
+        &workspace(),
+        std::env::var_os("CARGO_TARGET_DIR").as_deref(),
+    )
 }
 
 fn make(root: &Path) -> Command {
@@ -271,13 +274,11 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     std::fs::create_dir(&bin).unwrap();
     let source = root.join("cargo_recorder.rs");
     std::fs::write(&source, CARGO_RECORDER).unwrap();
-    let compiler = run(
-        Command::new("rustc")
-            .args(["--edition=2021", "-D", "warnings"])
-            .arg(&source)
-            .arg("-o")
-            .arg(bin.join("cargo")),
-    );
+    let compiler = run(Command::new("rustc")
+        .args(["--edition=2021", "-D", "warnings"])
+        .arg(&source)
+        .arg("-o")
+        .arg(bin.join("cargo")));
     assert!(compiler.status.success(), "compile native process recorder");
     // cargo-deny is probed for executable presence only; the real recipe's
     // `cargo deny` invocation goes through the Cargo recorder, with no install.
@@ -286,7 +287,10 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     // underlying binary/index audits are not qualified by this boundary test.
     let tools = root.join("tools");
     std::fs::create_dir(&tools).unwrap();
-    for name in ["check-no-committed-binaries.sh", "check-index-completeness.sh"] {
+    for name in [
+        "check-no-committed-binaries.sh",
+        "check-index-completeness.sh",
+    ] {
         std::os::unix::fs::symlink(bin.join("cargo"), tools.join(name)).unwrap();
     }
     let path = std::env::join_paths(
@@ -361,7 +365,10 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
         actual.sort();
         assert_eq!(
             actual,
-            ["check-index-completeness.sh", "check-no-committed-binaries.sh"]
+            [
+                "check-index-completeness.sh",
+                "check-no-committed-binaries.sh"
+            ]
         );
         std::fs::remove_file(&calls).unwrap();
         std::fs::remove_file(&prechecks).unwrap();
