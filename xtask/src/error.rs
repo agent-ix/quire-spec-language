@@ -86,6 +86,19 @@ pub enum Error {
         /// The refusal cause.
         reason: String,
     },
+    /// The canonicalized local CI graph could not be launched.
+    #[error("conformance: cannot launch the local CI graph: {source}")]
+    ConformanceCiSpawn {
+        /// The process spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A lane in the canonicalized local CI graph failed.
+    #[error("conformance: local CI graph exited with {status}")]
+    ConformanceCiFailed {
+        /// The child Make process status.
+        status: std::process::ExitStatus,
+    },
     /// A filesystem read or write failed.
     #[error("{path}: {source}")]
     Io {
@@ -290,7 +303,10 @@ impl Error {
         match self {
             Self::Usage(_) => Code::Usage,
             Self::ConformanceInput { .. } => Code::Usage,
-            Self::ConformanceSpawn { .. } | Self::ConformanceCheck { .. } => Code::Conformance,
+            Self::ConformanceSpawn { .. }
+            | Self::ConformanceCheck { .. }
+            | Self::ConformanceCiSpawn { .. }
+            | Self::ConformanceCiFailed { .. } => Code::Conformance,
             Self::Io { .. } => Code::Io,
             Self::SeamProbeSpawn { .. }
             | Self::SeamProbeReadSource { .. }
