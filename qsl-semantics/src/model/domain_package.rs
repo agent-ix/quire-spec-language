@@ -557,18 +557,16 @@ impl std::fmt::Debug for DomainPackageRef {
 #[derive(serde::Serialize, FixedShape)]
 pub(super) struct DomainPackageRefWire<'a> {
     identity: &'a str,
-    version: &'a str,
     digest_domain: &'static str,
     digest: String,
 }
 
 impl DomainPackageRef {
-    /// This selection's FR-321 preimage form: `{identity, version,
-    /// digest_domain, digest}`, the digest lowercase hex.
+    /// This selection's FR-321 preimage form: `{identity, digest_domain,
+    /// digest}`, the digest lowercase hex.
     pub(super) fn wire(&self) -> DomainPackageRefWire<'_> {
         DomainPackageRefWire {
             identity: &self.identity,
-            version: &self.version,
             digest_domain: super::key::SHA256_JCS_DIGEST_DOMAIN,
             digest: super::key::hex(&self.digest),
         }

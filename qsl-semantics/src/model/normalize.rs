@@ -538,7 +538,6 @@ impl ViewBody {
             model_selection: model_selection.wire(),
             rules: RuleRefWire {
                 identity: crate::model::key::RULES_IDENTITY,
-                revision: crate::model::key::RULES_REVISION,
             },
             declarations: Vec::new(),
         }

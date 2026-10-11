@@ -41,19 +41,19 @@ use qsl_semantics::value::{
 use quire_exact::NodeKey;
 use quire_semantic_value::quantity::{result_unit, QuantityUnit, UnitOperation};
 
-const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}"#;
+const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}"#;
 const EFFECTIVE_TYPE_DIGEST: &str =
-    "3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203";
+    "2366441716c06546607ceb91222ac1bac8ee519b15c5e52adbf83bad0488db2e";
 
-const EFFECTIVE_MEMBER: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203","domain":"quire.model.effective-declaration/v1"},"version":"quire.model.effective-declaration/v1"}"#;
+const EFFECTIVE_MEMBER: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"2366441716c06546607ceb91222ac1bac8ee519b15c5e52adbf83bad0488db2e","domain":"quire.model.effective-declaration/v1"},"version":"quire.model.effective-declaration/v1"}"#;
 const EFFECTIVE_MEMBER_DIGEST: &str =
-    "750ec6cfe7da00cb205a6fd47a10b7a06b71b746afa4b358e3828bc62b1e002f";
+    "3729a6faa3648428e288401fc3c031407dab728c8164d3a52e2cf55a1df5b808";
 
-const UNIVERSE: &str = r#"{"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"root_types":[{"digest":"3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203","domain":"quire.model.effective-declaration/v1"}],"version":"quire.model.object-universe/v1"}"#;
-const UNIVERSE_DIGEST: &str = "41ebe3815ccf4b9ccdad84c1efa3393c37cff35f3d81778b6e2655d3d48ae48d";
+const UNIVERSE: &str = r#"{"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders"},"root_types":[{"digest":"2366441716c06546607ceb91222ac1bac8ee519b15c5e52adbf83bad0488db2e","domain":"quire.model.effective-declaration/v1"}],"version":"quire.model.object-universe/v1"}"#;
+const UNIVERSE_DIGEST: &str = "261baf17865f2a97bc6fce64e061c761f03fe99cbd5b5e9919ead405786c39ca";
 
-const VIEW: &str = r#"{"declarations":[{"effective_id":{"digest":"3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203","domain":"quire.model.effective-declaration/v1"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}}],"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"rules":{"identity":"quire.model.complete.rules/v1","revision":"1-draft.1"},"version":"quire.model.effective-view/v1"}"#;
-const VIEW_DIGEST: &str = "6ec2e0e4656fe1d1c174d2598d2f447f8ef68b3447ed52c3b4ad059301ff66e8";
+const VIEW: &str = r#"{"declarations":[{"effective_id":{"digest":"2366441716c06546607ceb91222ac1bac8ee519b15c5e52adbf83bad0488db2e","domain":"quire.model.effective-declaration/v1"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}}],"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders"},"rules":{"identity":"quire.model.complete.rules/v1"},"version":"quire.model.effective-view/v1"}"#;
+const VIEW_DIGEST: &str = "523f32b977488486a5f0b72737ab1a9e1744535be5cb3b00d0ca0577fc23eaf0";
 
 const ENUM_DECLARATION: &str = r#"{"members":["Active","Closed"],"ordered":false,"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Status"],"version":"quire.enum-declaration-node/v1"}"#;
 const ENUM_DECLARATION_DIGEST: &str =
