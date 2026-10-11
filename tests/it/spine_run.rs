@@ -135,6 +135,40 @@ fn call(function: &str, arguments: Value) -> Value {
     json!({"function": function, "arguments": arguments})
 }
 
+/// FR-267-AC-3: the clause-run transition changes command failures to the
+/// closed /2 envelope, including failures before the source can compile.
+#[test]
+#[trace("TC-742", "FR-267-AC-3")]
+fn unknown_edition_uses_native_run_result_two_command_error() {
+    let program = std::fs::read_to_string(SEVEN_FIXTURE)
+        .unwrap()
+        .replacen("1-draft", "9-draft", 1);
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("program.native"), &program).unwrap();
+    let request = json!({"format":"native-run/1","request":{
+        "models":[],
+        "program":{"source":program_source(program.as_bytes())},
+        "clause":{"selection":{"clause":{"name":"Example","observation":"current"}},
+            "observations":{}},
+    }});
+    std::fs::write(
+        directory.path().join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+
+    let output = run(directory.path());
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["format"], "native-run-result/2");
+    assert_eq!(error["stage"], "profile");
+    assert_eq!(error["code"], "unknown_edition");
+    assert_eq!(error["basis"], "unavailable");
+    let members = error.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>();
+    assert_eq!(members, ["basis", "code", "details", "format", "message", "stage"]);
+}
+
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
 /// document's `package_id`, `source` and `request_digest` agree with a
 /// composition of the `qsl_replay::spine` operations.
