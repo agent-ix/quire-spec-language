@@ -1238,11 +1238,14 @@ impl PackageDeclarations {
         // checked value type names one, so root them before lowering the
         // unit's functions; otherwise the relation family disappears from
         // the package even though the selected model declares it.
-        let relationship_location = locations
-            .first()
-            .cloned()
-            .unwrap_or_else(lowering::generated_location);
-        if let Err(refusal) = lowering.relationship_nodes(&relationship_location) {
+        let relationship_locations: BTreeMap<String, Location> = models
+            .iter()
+            .filter_map(|model| {
+                let alias = model.alias()?.to_owned();
+                Some((alias.clone(), root(Origin::TypeDeclaration { name: alias })))
+            })
+            .collect();
+        if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
             refusals.push(refusal);
         }
         for group in &order {

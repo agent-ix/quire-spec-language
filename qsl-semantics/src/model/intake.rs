@@ -2527,19 +2527,20 @@ fn read_relationship(
 ) -> Result<RelationshipRecord, ModelRefusal> {
     let ctx = NodeCtx::new(relationship, at.to_owned());
     let node = ctx.str_field("identity")?;
-    // FR-056 Declarations: "a member's identity is its owner's identity,
-    // `/` and the member name" -- exactly [`member_identity_name`]'s rule,
-    // the same one [`read_field_member`]/[`read_operation_member`] apply to
-    // their own owned members. A relationship member is no exception: FCD's
-    // own `ix://<pkg>/relationship/<Owner>-<verb>-<Other>` identity form
-    // (FCD #199 gap 2's sibling for relationships) does not parse as
-    // `owner_identity/<name>`, so it refuses here rather than being taken
-    // verbatim as this record's key (FR-056-AC-5: "a relationship member
-    // with no declared name ... refuses `malformed-declaration`" -- this
-    // reader derives a member's declared name from its identity's own
-    // suffix, the same mechanism field/operation members use, so an
-    // identity with no such suffix IS "no declared name").
-    if member_identity_name(owner_identity, node).is_none() {
+    // A relationship's published Semantic IR identity uses the model
+    // vocabulary's canonical `ix://<package>/relationship/<name>` form. Keep
+    // accepting QSpec's older owner/name form for hand-authored inputs, but
+    // require either form to remain owned by this package and to carry a
+    // nonempty declaration name.
+    let package_identity = owner_identity
+        .rsplit_once('/')
+        .map_or(owner_identity, |(package, _)| package);
+    let canonical_prefix = format!("{package_identity}/relationship/");
+    let valid_identity = member_identity_name(owner_identity, node).is_some()
+        || node
+            .strip_prefix(&canonical_prefix)
+            .is_some_and(|name| !name.is_empty() && !name.contains('/'));
+    if !valid_identity {
         return Err(ctx.malformed(format!("identity: {node:?} is not {owner_identity}/<name>")));
     }
     // FR-056-AC-5's other half: "a relationship member with no ... source
@@ -4339,17 +4340,13 @@ mod tests {
         assert_eq!(relationship.direction, RelationshipDirection::Undirected);
     }
 
-    /// H1 (PR #200 review): FCD's own identity form for a relationship
-    /// member -- `ix://<pkg>/relationship/<Owner>-<verb>-<Other>`, an extra
-    /// `relationship` segment and `-` separators, never QSpec's
-    /// `<owner>/<name>` -- must refuse like any other member, exactly the
-    /// same rule [`read_field_member`]/[`read_operation_member`] apply
-    /// through [`member_identity_name`]. Before this test, `read_relationship`
-    /// applied no identity check at all and took this form verbatim as the
-    /// record's key; this is the regression test for that gap.
+    /// The published Semantic IR identity form for a relationship member is
+    /// `ix://<pkg>/relationship/<Owner>-<verb>-<Other>`. The intake keeps
+    /// that canonical form as the relationship record key, alongside the
+    /// older owner/name form accepted for hand-authored model inputs.
     #[trace("TC-145", "FR-056-AC-5")]
     #[test]
-    fn refuses_a_relationship_member_whose_identity_is_not_owner_slash_name() {
+    fn reads_a_relationship_member_with_the_canonical_identity_form() {
         let type_value = serde_json::json!({
             "identity": "ix://acme/orders/Flow2",
             "supertypes": [],
@@ -4373,7 +4370,7 @@ mod tests {
             }],
         });
         let mut records = Vec::new();
-        let refusal = read_object_type(
+        read_object_type(
             "acme/orders",
             &type_value,
             "ix://acme/orders/Flow2",
@@ -4382,21 +4379,20 @@ mod tests {
             &mut records,
             &mut Vec::new(),
         )
-        .expect_err(
-            "FCD's own relationship identity form does not parse as owner/<name> and refuses",
-        );
-        match &refusal.cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-                assert_eq!(node, "ix://acme/orders/relationship/Flow2-specializes-Flow");
-            }
-            other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
-        }
-        assert!(
-            refusal
-                .detail
-                .contains("is not ix://acme/orders/Flow2/<name>"),
-            "{}",
-            refusal.detail
+        .expect("the canonical relationship identity is admitted");
+        let relationship = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Relationship(relationship) => Some(relationship),
+                _ => None,
+            })
+            .expect("the relationship is appended to the record list");
+        assert_eq!(
+            relationship.key,
+            declaration_key(
+                "acme/orders",
+                "ix://acme/orders/relationship/Flow2-specializes-Flow"
+            )
         );
     }
 

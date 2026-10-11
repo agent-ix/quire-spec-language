@@ -82,24 +82,22 @@
       "operations": [],
       "relationships": [
         {
-          "identity": "ix://acme/orders/Widget/linkedGadget",
+          "identity": "ix://acme/orders/relationship/Widget-linkedGadget-Gadget",
           "category": "structural",
           "composite": false,
           "direction": "source-to-target",
           "sourceEnd": {
             "role": "widget",
             "multiplicity": {
-              "lower": 1,
-              "upper": 1,
+              "lower": 0,
               "ordered": false,
               "unique": false
             },
             "type": "ix://acme/orders/Widget"
           },
           "targetEnd": {
-            "role": "gadget",
             "multiplicity": {
-              "lower": 0,
+              "lower": 1,
               "upper": 1,
               "ordered": false,
               "unique": false
@@ -111,9 +109,7 @@
               "sourceIdentity": "ix://acme/orders/spec",
               "path": "model",
               "startLine": 1,
-              "startColumn": 1,
-              "endLine": 1,
-              "endColumn": 2
+              "startColumn": 1
             }
           }
         }

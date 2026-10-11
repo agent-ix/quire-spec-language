@@ -213,10 +213,10 @@ pub struct PackageDeclarations {
     /// Resolved signatures standing in for some `functions` entries' own
     /// type forms; see [`ResolvedSignatures`].
     pub resolved_signatures: ResolvedSignatures,
-    /// FR-096: the span of each declared record's and tuple's name, by its
-    /// declared name, for the types read from the unit (the FR-091
-    /// assembler fills it). A type declared by hand has none, and its
-    /// `declaration` occurrence then names no region.
+    /// FR-096: the span of each declared record, tuple, enum, or selected
+    /// model alias, by its declared name, for declarations read from the
+    /// unit (the FR-091 assembler fills it). A declaration built by hand has
+    /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
     /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
     /// The spans above are body offsets; with a map, each region resolves

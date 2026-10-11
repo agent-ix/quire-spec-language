@@ -361,19 +361,31 @@ impl<'a> Lowering<'a> {
     /// object type, a relationship is not named by a value type or operation
     /// frame yet, so it must be rooted explicitly for the checked package to
     /// carry the model graph's relation nodes into emission.
-    pub(crate) fn relationship_nodes(&mut self, location: &Location) -> Result<(), CheckRefusal> {
+    pub(crate) fn relationship_nodes(
+        &mut self,
+        locations: &BTreeMap<String, Location>,
+    ) -> Result<(), CheckRefusal> {
         let declarations: Vec<(DeclarationKey, Location)> = self
             .models
             .iter()
-            .flat_map(|model| {
-                model
-                    .relationship_declarations()
-                    .map(move |declaration| (declaration.clone(), location.clone()))
-                    .collect::<Vec<_>>()
+            .filter_map(|model| {
+                let alias = model.alias.as_ref()?;
+                let location = locations.get(alias)?.clone();
+                Some(
+                    model
+                        .relationship_declarations()
+                        .map(move |declaration| (declaration.clone(), location.clone()))
+                        .collect::<Vec<_>>(),
+                )
             })
+            .flatten()
             .collect();
         for (declaration, location) in declarations {
-            self.model_node(&declaration, &location)?;
+            let key = self.model_node(&declaration, &location)?;
+            // A relationship has no checked value or frame occurrence to
+            // anchor it. Record its generated model root at the selected
+            // model declaration span so emission can resolve provenance.
+            self.record(key, OccurrenceRole::Generated, location);
         }
         Ok(())
     }

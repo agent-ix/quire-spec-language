@@ -598,7 +598,9 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     let (result, graph) = lower(
         std::slice::from_ref(&model),
         Default::default(),
-        |lowering| lowering.relationship_nodes(),
+        |lowering| {
+            lowering.relationship_nodes(&BTreeMap::from([("M".to_owned(), generated_location())]))
+        },
     );
     result.expect("the selected relationship keys");
     let relations: Vec<_> = graph

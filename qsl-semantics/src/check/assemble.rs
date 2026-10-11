@@ -1588,6 +1588,17 @@ impl PackageDeclarations {
             .iter()
             .map(|enumeration| (enumeration.name.name.clone(), enumeration.name.span))
             .collect();
+        // A selected model's alias is the declaration-site locus for model
+        // graph roots that have no value or function occurrence of their own.
+        // `Origin::TypeDeclaration` resolves this same span table, so such a
+        // generated occurrence remains source-located rather than becoming an
+        // `UnlocatedOccurrence` at emission.
+        declared_type_spans.extend(
+            selections
+                .models
+                .iter()
+                .map(|selection| (selection.alias.clone(), selection.span)),
+        );
         for (composite, handle) in unit.composites.iter().zip(&handles) {
             let shape = match &composite.members {
                 Members::Record(fields) => {
