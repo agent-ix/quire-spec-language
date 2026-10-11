@@ -283,9 +283,9 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
         "caller $FEATURE_LANE_PATH_VALUE",
         "caller 'quote' \\ slash; * ? [x]",
     ] {
-        // Make's command-line assignment grammar requires doubled dollars.
-        // Command::args passes these bytes directly, without a shell launcher.
-        let root = format!("CARGO_TARGET_DIR={}", path.replace('$', "$$"));
+        // Command::args passes the literal path directly to Make. The recipe
+        // exports it as shell data, so neither Make nor the shell expands it.
+        let root = format!("CARGO_TARGET_DIR={path}");
         assert_eq!(
             recipe.run(
                 &["ci-default-features", "ci-all-features"],
@@ -295,9 +295,9 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
             expected(&format!("{path}/ci-default-features"), DEFAULT_COMMANDS)
                 + &expected(&format!("{path}/ci-all-features"), ALL_COMMANDS)
         );
-        let default = format!("CI_DEFAULT_TARGET_DIR={}", path.replace('$', "$$"));
+        let default = format!("CI_DEFAULT_TARGET_DIR={path}");
         let all_path = format!("/tmp/{path}");
-        let all = format!("CI_ALL_TARGET_DIR={}", all_path.replace('$', "$$"));
+        let all = format!("CI_ALL_TARGET_DIR={all_path}");
         assert_eq!(
             recipe.run(
                 &["ci-default-features", "ci-all-features"],

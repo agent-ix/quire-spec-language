@@ -180,6 +180,12 @@ use-remote:
 # continues to use the caller's root and its own Cargo feature selection.
 # Resolve paths in the shell from environment data so quotes, backticks and
 # dollars remain literal path bytes instead of becoming Make expansions.
+ifneq ($(origin CI_DEFAULT_TARGET_DIR),undefined)
+override export CI_DEFAULT_TARGET_DIR := $(value CI_DEFAULT_TARGET_DIR)
+endif
+ifneq ($(origin CI_ALL_TARGET_DIR),undefined)
+override export CI_ALL_TARGET_DIR := $(value CI_ALL_TARGET_DIR)
+endif
 
 ci-default-features:
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo fmt --all -- --check
