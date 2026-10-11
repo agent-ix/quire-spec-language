@@ -137,3 +137,17 @@ FND-007, ADR-013:
 FND-008, ADR-014:
 
 > QSL S3 records `Requirements{kind, evidence_kind, extent, bounds}` per item (§4); `evidence_kind` carries the item's unmodified label when present for `probabilistic-satisfaction` and remains absent when the item omits it, so negotiation can distinguish valid, absent and unknown evidence.
+
+## Dispositions — round 6
+
+Rechecked QSL PR #716 at exact head `82f2f5eb5b2344f4be06b729160b01d6aa8da0e5`. FND-009 is fixed on this branch by commit `103a77ba12fc824bde273f754222a8e2aeedaa46`; the prior round-5 tracker disposition named sibling commit `3601c146b86e813e4ad9f330262e6619ce28a6c0`, which is not an ancestor of this head. No new finding was identified in the later count correction or review-artifact whitespace normalization.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed | fixed 103a77ba12fc824bde273f754222a8e2aeedaa46 |
+
+### Fixed excerpt at 82f2f5eb5b2344f4be06b729160b01d6aa8da0e5
+
+FND-009, ADR-014:
+
+> **QSpec, capabilities.** QSpec FR-290 has twelve kinds and two modes. It has no liveness kind and no quantifier kind: a temporal claim under either profile is `temporal-satisfaction`, and quantification, induction and composition are obligation forms inside a claim that the selected backend's arm settles.

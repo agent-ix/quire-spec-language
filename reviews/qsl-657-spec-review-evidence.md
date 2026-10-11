@@ -81,3 +81,7 @@ FND-003, TC-983:
 > | Requested item evidence kind | Named backend's admitted evidence kind | Control | Expected named candidate outcome |
 > | `statistical` | `exact` | Evidence-kind mismatch | Empty candidate set; it is not an unknown-backend marker. |
 > | `exact` | `statistical` | Evidence-kind mismatch | Empty candidate set; it is not an unknown-backend marker. |
+
+## Dispositions — round 6
+
+Rechecked the existing evidence-review finding at exact head `82f2f5eb5b2344f4be06b729160b01d6aa8da0e5`. FND-003 remains fixed by commit `3789a2b6b21aee071b3687f143ecd48d5afc28ca`; TC-983 still covers both named-backend evidence-kind mismatch directions. No new evidence-review finding was identified. This round adds no disposition row because the finding's latest outcome is already fixed.

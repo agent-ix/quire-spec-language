@@ -119,3 +119,17 @@ ten kinds.
 | FND-007 | fixed | fixed 4865d61bdbe85914e6d8342276152bcaef686a95 |
 | FND-008 | fixed | fixed 4865d61bdbe85914e6d8342276152bcaef686a95 |
 | FND-009 | still-open | ADR-014 §2 continues to state “QSpec FR-290 has ten kinds,” inconsistent with FR-057's twelve-label vocabulary. |
+
+## Dispositions — round 6
+
+Rechecked QSL PR #716 at exact head `82f2f5eb5b2344f4be06b729160b01d6aa8da0e5`. FND-009 is fixed on this branch by commit `103a77ba12fc824bde273f754222a8e2aeedaa46`; the prior round-5 tracker disposition named sibling commit `3601c146b86e813e4ad9f330262e6619ce28a6c0`, which is not an ancestor of this head. No new finding was identified in the later count correction or review-artifact whitespace normalization.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed | fixed 103a77ba12fc824bde273f754222a8e2aeedaa46 |
+
+### Fixed excerpt at 82f2f5eb5b2344f4be06b729160b01d6aa8da0e5
+
+FND-009, ADR-014:
+
+> **QSpec, capabilities.** QSpec FR-290 has twelve kinds and two modes. It has no liveness kind and no quantifier kind: a temporal claim under either profile is `temporal-satisfaction`, and quantification, induction and composition are obligation forms inside a claim that the selected backend's arm settles.
