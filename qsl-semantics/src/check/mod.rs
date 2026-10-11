@@ -163,8 +163,8 @@ pub use family::fixtures::{
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{
-    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, Node, NodeId, NodeKind,
-    Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator,
+    Node, NodeId, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -718,7 +718,8 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
-        .with_imports(self.imports);
+        .with_imports(self.imports)
+        .with_integer_division(self.integer_division);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -986,6 +987,9 @@ impl PackageDeclarations {
         // bound (see `check::family::check_declaration_body`'s own doc for
         // why this, not a `Cell` or a second call, is the mechanism).
         let mut nodes_used = 0_u64;
+        let complete_identity = crate::value::DefinitionLock::pinned()
+            .entry(crate::value::CatalogRole::Root)
+            .identity;
         for (index, function) in self.functions.into_iter().enumerate() {
             // FR-092 "Function nodes": the kind travels with the draft to
             // lowering, which keys a predicate's node `predicate`.
@@ -1001,6 +1005,10 @@ impl PackageDeclarations {
                 own_signature: &signatures.as_slice()[index],
                 dispatch_tables: &dispatch_tables,
                 checking_limits: limits,
+                complete_value: self
+                    .function_selections
+                    .get(&index)
+                    .is_some_and(|selection| selection.identity == complete_identity),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,

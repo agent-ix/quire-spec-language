@@ -361,6 +361,18 @@ pub enum Arithmetic {
     Multiply,
 }
 
+/// Integer operations whose result uses the selected division law or the
+/// independent Euclidean modulus law.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntegerDivisionOperator {
+    /// Quotient under the selected law.
+    Div,
+    /// Remainder under the selected law.
+    Rem,
+    /// Euclidean remainder, independent of the selected law.
+    Mod,
+}
+
 /// Which values an ordering compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrderedKind {
@@ -666,6 +678,17 @@ pub enum NodeKind {
     },
     /// Integer arithmetic.
     Arithmetic(Arithmetic, NodeId, NodeId),
+    /// An integer division member, with its admitted law for `div`/`rem`.
+    IntegerDivision {
+        /// The source operator.
+        operator: IntegerDivisionOperator,
+        /// The package's admitted law, absent only for `mod`.
+        selection: Option<crate::value::AdmittedIntegerDivision>,
+        /// The dividend.
+        left: NodeId,
+        /// The divisor.
+        right: NodeId,
+    },
     /// Unary integer `-`.
     Negate(NodeId),
     /// Integer `/` producing `Rational[..]`.
@@ -942,6 +965,7 @@ impl NodeKind {
                 otherwise,
             } => vec![*condition, *then, *otherwise],
             NodeKind::Arithmetic(_, left, right)
+            | NodeKind::IntegerDivision { left, right, .. }
             | NodeKind::Divide { left, right, .. }
             | NodeKind::Rational { left, right, .. }
             | NodeKind::Decimal { left, right, .. }

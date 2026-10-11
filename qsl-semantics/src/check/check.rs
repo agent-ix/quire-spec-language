@@ -58,7 +58,7 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
 };
 use crate::model::operation::OperationTable;
-use crate::value::definition::AdmittedIeeeProfile;
+use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -190,6 +190,8 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The package's admitted `div`/`rem` law, when one was selected.
+    pub integer_division: Option<AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
     /// resolve to, keyed by the receiver's static type and the member name.
     /// Built by the caller (the `crate::model` bridge); the checker only
@@ -277,6 +279,7 @@ impl PackageDeclarations {
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,
+            integer_division: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
             models: Vec::new(),
@@ -332,6 +335,7 @@ pub struct Scope {
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
@@ -460,6 +464,7 @@ impl Scope {
             enums,
             operations,
             ieee_profile,
+            integer_division: None,
             dispatch_operations,
             index,
             imports: BTreeMap::new(),
@@ -469,6 +474,14 @@ impl Scope {
     /// This scope with `imports`, each admitted import by its qualifier.
     pub(crate) fn with_imports(mut self, imports: BTreeMap<String, super::AdmittedImport>) -> Self {
         self.imports = imports;
+        self
+    }
+
+    pub(crate) fn with_integer_division(
+        mut self,
+        division: Option<AdmittedIntegerDivision>,
+    ) -> Self {
+        self.integer_division = division;
         self
     }
 
@@ -678,6 +691,7 @@ struct Local {
 /// One typing pass over a function or standalone expression.
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
+    complete_value: bool,
     signatures: &'a Signatures,
     limits: CheckingLimits,
     nodes: &'a mut u64,
@@ -918,6 +932,7 @@ impl<'a> Typer<'a> {
     ) -> Self {
         Self {
             scope,
+            complete_value: false,
             signatures,
             limits,
             nodes,
@@ -939,6 +954,11 @@ impl<'a> Typer<'a> {
     #[must_use]
     pub(crate) fn with_cancel(mut self, cancel: Option<&'a Cancel>) -> Self {
         self.cancel = cancel;
+        self
+    }
+
+    pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
+        self.complete_value = complete_value;
         self
     }
 

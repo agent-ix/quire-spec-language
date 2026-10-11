@@ -21,14 +21,15 @@ use super::s6a::separation::{
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind,
-    Operator, OrderedKind, RecordSlot, Scope, Slot, Visit,
+    Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable,
+    IntegerDivisionOperator, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
@@ -46,6 +47,7 @@ use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
     PopulationId,
 };
+use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{
     operand_value, CompositeShape, EqualityOperator, FieldRef,
@@ -1174,6 +1176,40 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Value::Integer(outcome_into_stop(evaluate_integer_arithmetic(
                     operation, None, self.meter,
                 ))?)
+            }
+            NodeKind::IntegerDivision {
+                operator,
+                selection,
+                ..
+            } => {
+                let right = self.pop_integer()?;
+                let left = self.pop_integer()?;
+                let outcome = match operator {
+                    IntegerDivisionOperator::Div | IntegerDivisionOperator::Rem => {
+                        let selection = selection
+                            .as_ref()
+                            .ok_or_else(|| invariant("integer-division-selection-missing"))?;
+                        let member = match operator {
+                            IntegerDivisionOperator::Div => DivisionMember::Quotient,
+                            IntegerDivisionOperator::Rem => DivisionMember::Remainder,
+                            IntegerDivisionOperator::Mod => {
+                                return Err(invariant("integer-division-member-mismatch"))
+                            }
+                        };
+                        integer_divide(
+                            selection,
+                            member,
+                            &left,
+                            &right,
+                            &IntegerDomain::Mathematical,
+                            self.meter,
+                        )
+                    }
+                    IntegerDivisionOperator::Mod => {
+                        integer_modulo(&left, &right, &IntegerDomain::Mathematical, self.meter)
+                    }
+                };
+                Value::Integer(outcome_into_stop(outcome)?)
             }
             NodeKind::Negate(_) => {
                 let operand = self.pop_integer()?;

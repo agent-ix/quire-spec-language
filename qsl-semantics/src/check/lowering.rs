@@ -60,8 +60,8 @@ use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, NodeId, NodeKind, OrderedKind, RecordSlot,
-    Slot, Visit,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId, NodeKind,
+    OrderedKind, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
@@ -74,7 +74,7 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
-use crate::value::definition::DefinitionReference;
+use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference};
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
@@ -2143,19 +2143,28 @@ impl<'a> Lowering<'a> {
     /// The law of `role` the lock evidence selects, or the FR-093 refusal.
     fn law(&self, role: LawRole, location: &Location) -> Result<OperationLaw, CheckRefusal> {
         let definition = match role {
-            LawRole::TextProfile => self.lock.text_profile(),
+            LawRole::TextProfile => self.lock.text_profile().cloned(),
             LawRole::IeeeProfile => self
                 .scope
                 .ieee_profile
                 .as_ref()
-                .map(|profile| profile.definition()),
-            LawRole::IntegerDivision | LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
+                .map(|profile| profile.definition().clone()),
+            LawRole::IntegerDivision => self.scope.integer_division.map(|selection| {
+                let role = match selection.profile() {
+                    quire_exact::DivisionProfile::Euclidean => {
+                        CatalogRole::IntegerDivisionEuclidean
+                    }
+                    quire_exact::DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
+                    quire_exact::DivisionProfile::Truncating => {
+                        CatalogRole::IntegerDivisionTruncating
+                    }
+                };
+                DefinitionLock::pinned().entry(role).reference()
+            }),
+            LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
         };
         definition
-            .map(|definition| OperationLaw {
-                role,
-                definition: definition.clone(),
-            })
+            .map(|definition| OperationLaw { role, definition })
             .ok_or_else(|| refuse(location, CheckCause::MissingSelection { role }))
     }
 
@@ -2890,6 +2899,34 @@ impl<'a> Lowering<'a> {
                 };
                 (
                     Keyed::Application(Operator::Binary, plain(identity)),
+                    Operands::Two(left, right),
+                )
+            }
+            NodeKind::IntegerDivision {
+                operator,
+                left,
+                right,
+                ..
+            } => {
+                let (identity, laws) = match operator {
+                    IntegerDivisionOperator::Div => (
+                        "quire.op.integer.div",
+                        vec![self.law(LawRole::IntegerDivision, node.location())?],
+                    ),
+                    IntegerDivisionOperator::Rem => (
+                        "quire.op.integer.rem",
+                        vec![self.law(LawRole::IntegerDivision, node.location())?],
+                    ),
+                    IntegerDivisionOperator::Mod => ("quire.op.integer.mod", Vec::new()),
+                };
+                (
+                    Keyed::Application(
+                        Operator::Binary,
+                        Operation {
+                            laws,
+                            ..plain(identity)
+                        },
+                    ),
                     Operands::Two(left, right),
                 )
             }

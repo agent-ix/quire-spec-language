@@ -167,6 +167,9 @@ fn binary_operator_tag(operator: BinaryOperator) -> &'static str {
         BinaryOperator::Subtract => "subtract",
         BinaryOperator::Multiply => "multiply",
         BinaryOperator::Divide => "divide",
+        BinaryOperator::IntegerDiv => "integer-div",
+        BinaryOperator::IntegerRem => "integer-rem",
+        BinaryOperator::IntegerMod => "integer-mod",
         BinaryOperator::Equal => "equal",
         BinaryOperator::NotEqual => "not-equal",
         BinaryOperator::Less => "less",
@@ -1108,7 +1111,8 @@ pub(crate) fn check_declaration_body(
         &mut nodes,
         form.clause_kind(),
     )
-    .with_cancel(input.cancel);
+    .with_cancel(input.cancel)
+    .with_complete_value(input.complete_value);
     bind_parameters(&mut typer, parameters, input.location)?;
     typer.check_declared_type(result, input.location)?;
     let body = typer.check_as(&form.body, result, input.location)?;
@@ -1131,7 +1135,8 @@ pub(crate) fn check_declaration_body(
                 &mut nodes,
                 ClauseKind::Body,
             )
-            .with_cancel(input.cancel);
+            .with_cancel(input.cancel)
+            .with_complete_value(input.complete_value);
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             let measure = measure_typer.infer(measure, None, input.measure_location)?;
             measure_slot_names = measure_typer.slot_names().to_vec();
@@ -1355,6 +1360,7 @@ pub struct ValueDeclarations<'a> {
     pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
+    pub(crate) complete_value: bool,
     pub(crate) location: &'a CheckLocation,
     pub(crate) measure_location: &'a CheckLocation,
     /// See this struct's own doc.

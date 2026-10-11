@@ -8,7 +8,10 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value, ValueType};
+use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use quire_exact::{
+    DivisionProfile, Integer, Meter, Outcome, ScalarLimits, Undefined, Value, ValueType,
+};
 use quire_semantic_value::checking::CheckingLimits;
 
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -129,6 +132,139 @@ fn completes_true(package: &CheckedPackage, name: &str) -> bool {
         panic!("a kernel outcome, not {:?}", evaluation.outcome);
     };
     format!("{outcome:?}") == format!("{:?}", Outcome::Completed(Value::Boolean(true)))
+}
+
+fn integer_operator(operator: &str, profile: Option<DivisionProfile>) -> CheckedPackage {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function op using v(a: Integer, b: Integer): Integer pure {{ a {operator} b }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "division", "git", "1"),
+        "division.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the operator");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 maps the operator");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler retains the selection");
+    if let Some(profile) = profile {
+        let role = match profile {
+            DivisionProfile::Truncating => CatalogRole::IntegerDivisionTruncating,
+            DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
+            DivisionProfile::Euclidean => CatalogRole::IntegerDivisionEuclidean,
+        };
+        let lock = DefinitionLock::pinned();
+        declarations.integer_division = Some(
+            lock.admit_integer_division(&[lock.entry(role).reference()], None)
+                .unwrap(),
+        );
+    }
+    CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the operator checks"),
+    )
+}
+
+fn call_integer(package: &CheckedPackage, a: i128, b: i128) -> Outcome<Value> {
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("op").unwrap(),
+            vec![
+                Value::Integer(Integer::from(a)),
+                Value::Integer(Integer::from(b)),
+            ],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("the call runs");
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected a kernel outcome, got {other:?}"),
+    }
+}
+
+#[trace(
+    "FR-091-AC-39",
+    "QSpec-FR-147-AC-1",
+    "QSpec-FR-147-AC-4",
+    "QSpec-FR-147-AC-5",
+    "TC-394"
+)]
+#[test]
+fn integer_division_operators_follow_each_selected_signed_law() {
+    let vectors = [
+        (
+            DivisionProfile::Truncating,
+            [(2, 1), (-2, -1), (-2, 1), (2, -1)],
+        ),
+        (DivisionProfile::Floor, [(2, 1), (-3, 2), (-3, -2), (2, -1)]),
+        (
+            DivisionProfile::Euclidean,
+            [(2, 1), (-3, 2), (-2, 1), (3, 2)],
+        ),
+    ];
+    let pairs = [(7, 3), (-7, 3), (7, -3), (-7, -3)];
+    for (profile, expected) in vectors {
+        let div = integer_operator("div", Some(profile));
+        let rem = integer_operator("rem", Some(profile));
+        let modulo = integer_operator("mod", Some(profile));
+        for ((a, b), (q, r)) in pairs.into_iter().zip(expected) {
+            assert_eq!(
+                format!("{:?}", call_integer(&div, a, b)),
+                format!("{:?}", Outcome::Completed(Value::Integer(Integer::from(q))))
+            );
+            assert_eq!(
+                format!("{:?}", call_integer(&rem, a, b)),
+                format!("{:?}", Outcome::Completed(Value::Integer(Integer::from(r))))
+            );
+            let euclidean = a.rem_euclid(b.abs());
+            assert_eq!(
+                format!("{:?}", call_integer(&modulo, a, b)),
+                format!(
+                    "{:?}",
+                    Outcome::Completed(Value::Integer(Integer::from(euclidean)))
+                )
+            );
+        }
+    }
+    let modulo_without_division = integer_operator("mod", None);
+    assert_eq!(
+        format!("{:?}", call_integer(&modulo_without_division, -7, 3)),
+        format!("{:?}", Outcome::Completed(Value::Integer(Integer::from(2))))
+    );
+}
+
+#[trace("FR-091-AC-39", "QSpec-FR-147-AC-2", "QSpec-FR-147-AC-5", "TC-394")]
+#[test]
+fn integer_division_zero_and_signed_minimum_remain_exact() {
+    for profile in DivisionProfile::ALL {
+        for operator in ["div", "rem", "mod"] {
+            let package = integer_operator(operator, Some(profile));
+            assert_eq!(
+                format!("{:?}", call_integer(&package, 7, 0)),
+                format!(
+                    "{:?}",
+                    Outcome::<Value>::Undefined(Undefined::DivisionByZero)
+                )
+            );
+        }
+        let div = integer_operator("div", Some(profile));
+        let expected: Integer = "170141183460469231731687303715884105728".parse().unwrap();
+        assert_eq!(
+            format!("{:?}", call_integer(&div, i128::MIN, -1)),
+            format!("{:?}", Outcome::Completed(Value::Integer(expected)))
+        );
+    }
 }
 
 #[trace("FR-091-AC-28", "TC-481")]

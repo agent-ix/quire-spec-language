@@ -25,7 +25,8 @@ use super::{
 };
 use crate::check::family::Application;
 use crate::check::ir::{
-    CheckedBody, CheckedLiteral, Connective, Node, NodeId, NodeKind, RecordSlot, Slot, Visit,
+    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
+    RecordSlot, Slot, Visit,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
@@ -206,6 +207,7 @@ struct PeerFrame<'e, 'r> {
 /// A binary operator typed as an operand pair.
 enum PeerOperator {
     Arithmetic(ArithmeticOperator),
+    IntegerDivision(IntegerDivisionOperator),
     Ordering(OrderingOperator),
     Equality(EqualityOperator),
 }
@@ -218,6 +220,10 @@ enum PeerForm<'e, 'r> {
     Arithmetic {
         operator: ArithmeticOperator,
         hint: Option<Want<'r>>,
+        pair: Pair<'e, Node>,
+    },
+    IntegerDivision {
+        operator: IntegerDivisionOperator,
         pair: Pair<'e, Node>,
     },
     Ordering {
@@ -1053,6 +1059,22 @@ impl<'a> Typer<'a> {
     {
         let (left_location, right_location) = (location.child(0), location.child(1));
         let peer = match operator {
+            BinaryOperator::IntegerDiv
+            | BinaryOperator::IntegerRem
+            | BinaryOperator::IntegerMod => {
+                if !self.complete_value {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::ProfileProhibitedOperator(operator),
+                    ));
+                }
+                PeerOperator::IntegerDivision(match operator {
+                    BinaryOperator::IntegerDiv => IntegerDivisionOperator::Div,
+                    BinaryOperator::IntegerRem => IntegerDivisionOperator::Rem,
+                    BinaryOperator::IntegerMod => IntegerDivisionOperator::Mod,
+                    _ => return Err(ineligible(&location)),
+                })
+            }
             BinaryOperator::Add
             | BinaryOperator::Subtract
             | BinaryOperator::Multiply
@@ -1103,6 +1125,13 @@ impl<'a> Typer<'a> {
         let ((first, first_location), (second, second_location)) =
             ordered(right_first, (left, left_location), (right, right_location));
         let (form, goal) = match peer {
+            PeerOperator::IntegerDivision(operator) => (
+                PeerForm::IntegerDivision {
+                    operator,
+                    pair: Pair::First(second, second_location),
+                },
+                Goal::Infer(first, None, first_location),
+            ),
             PeerOperator::Arithmetic(operator) => (
                 PeerForm::Arithmetic {
                     operator,
@@ -1673,6 +1702,55 @@ impl<'a> Typer<'a> {
             location,
         } = *frame;
         match form {
+            PeerForm::IntegerDivision { operator, pair } => match pair {
+                Pair::First(second, second_location) => {
+                    let peer = typed.value_type.clone();
+                    frames.push(Frame::Peer(Box::new(PeerFrame {
+                        form: PeerForm::IntegerDivision {
+                            operator,
+                            pair: Pair::Second(typed),
+                        },
+                        right_first,
+                        location,
+                    })));
+                    Ok(Step::Descend(Goal::Infer(
+                        second,
+                        Some(Cow::Owned(peer)),
+                        second_location,
+                    )))
+                }
+                Pair::Second(first) => {
+                    let (left, right) = ordered(right_first, first, typed);
+                    if !is_integer(&left.value_type) || !is_integer(&right.value_type) {
+                        return Err(mismatch(&location));
+                    }
+                    let selection = match operator {
+                        IntegerDivisionOperator::Div | IntegerDivisionOperator::Rem => {
+                            Some(self.scope.integer_division.ok_or_else(|| {
+                                refuse(
+                                    &location,
+                                    CheckCause::MissingSelection {
+                                        role: crate::check::node_key::LawRole::IntegerDivision,
+                                    },
+                                )
+                            })?)
+                        }
+                        IntegerDivisionOperator::Mod => None,
+                    };
+                    let left = self.push(left);
+                    let right = self.push(right);
+                    Ok(Step::Typed(node(
+                        NodeKind::IntegerDivision {
+                            operator,
+                            selection,
+                            left,
+                            right,
+                        },
+                        ValueType::Integer,
+                        &location,
+                    )))
+                }
+            },
             PeerForm::Arithmetic {
                 operator,
                 hint,
