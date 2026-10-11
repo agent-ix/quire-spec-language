@@ -305,6 +305,7 @@ impl RequirementRecord {
 fn is_scalar_application(node: CheckedNode<'_>) -> bool {
     match node.kind() {
         NodeKind::Arithmetic(..)
+        | NodeKind::IntegerDivision { .. }
         | NodeKind::Negate(_)
         | NodeKind::Divide { .. }
         | NodeKind::Rational { .. }

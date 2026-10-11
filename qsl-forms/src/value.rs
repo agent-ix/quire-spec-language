@@ -1069,7 +1069,7 @@ impl<'c> Mapping<'c> {
             return Err(unexpected(node));
         }
         let mut chain = Vec::with_capacity(operators.len());
-        for (position, token) in operators.iter().enumerate() {
+        for token in &operators {
             let operator = match token.spelling() {
                 b"implies" => BinaryOperator::Implies,
                 b"or" => BinaryOperator::Or,
@@ -1084,18 +1084,9 @@ impl<'c> Mapping<'c> {
                 b"-" => BinaryOperator::Subtract,
                 b"*" => BinaryOperator::Multiply,
                 b"/" => BinaryOperator::Divide,
-                b"div" | b"rem" | b"mod" => {
-                    let end = operands
-                        .get(position + 1)
-                        .map_or(node.span().end, |right| right.span().end);
-                    return Err(unrepresented(
-                        node.production(),
-                        Span {
-                            start: node.span().start,
-                            end,
-                        },
-                    ));
-                }
+                b"div" => BinaryOperator::IntegerDiv,
+                b"rem" => BinaryOperator::IntegerRem,
+                b"mod" => BinaryOperator::IntegerMod,
                 _ => return Err(unexpected(node)),
             };
             chain.push(operator);

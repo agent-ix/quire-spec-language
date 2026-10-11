@@ -163,8 +163,8 @@ pub use family::fixtures::{
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{
-    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, Node, NodeId, NodeKind,
-    Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator,
+    Node, NodeId, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -709,6 +709,17 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
+        let complete_identity = crate::value::DefinitionLock::pinned()
+            .entry(crate::value::CatalogRole::Root)
+            .identity;
+        let complete_value = self
+            .function_selections
+            .values()
+            .any(|selection| selection.identity == complete_identity)
+            || self
+                .state_clauses
+                .iter()
+                .any(|clause| clause.selection.identity == complete_identity);
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -718,7 +729,9 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
-        .with_imports(self.imports);
+        .with_imports(self.imports)
+        .with_integer_division(self.integer_division)
+        .with_complete_value(complete_value);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -1001,6 +1014,10 @@ impl PackageDeclarations {
                 own_signature: &signatures.as_slice()[index],
                 dispatch_tables: &dispatch_tables,
                 checking_limits: limits,
+                complete_value: self
+                    .function_selections
+                    .get(&index)
+                    .is_some_and(|selection| selection.identity == complete_identity),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,

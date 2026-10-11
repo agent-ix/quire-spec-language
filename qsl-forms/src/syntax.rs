@@ -350,6 +350,12 @@ pub enum BinaryOperator {
     Multiply,
     /// `/`.
     Divide,
+    /// `div`.
+    IntegerDiv,
+    /// `rem`.
+    IntegerRem,
+    /// `mod`.
+    IntegerMod,
     /// `=`.
     Equal,
     /// `!=`.

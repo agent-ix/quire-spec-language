@@ -513,6 +513,8 @@ pub struct StageLimitCause {
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
+    /// A value operator prohibited by the declaration's selected profile.
+    ProfileProhibitedOperator(qsl_forms::BinaryOperator),
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
@@ -844,6 +846,7 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
+            Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
                 Code::IllTyped
             }
@@ -902,6 +905,7 @@ impl CheckCause {
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
             Self::UnsupportedFeature { .. } => Some("unsupported-feature"),
+            Self::ProfileProhibitedOperator(_) => Some("expression-form"),
             Self::InternalFault(_) | Self::Identity(IdentityRefusal::NonCanonical) => {
                 Some("established-invariant-broken")
             }

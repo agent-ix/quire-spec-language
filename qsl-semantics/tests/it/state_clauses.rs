@@ -253,6 +253,35 @@ fn the_configversion_state_clauses_check() {
     );
 }
 
+#[trace("FR-091-AC-39", "TC-394")]
+#[test]
+fn a_complete_function_does_not_enable_integer_operators_in_a_state_only_clause() {
+    let document = config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let body = "function seed using v(): Boolean pure { true }\n\
+        invariant StateOnly using v on Config::ConfigVersion at current { \
+        if true then true else 7 mod 3 = 1 }\n";
+    let mut declarations =
+        admit_and_assemble_with_body(&document, body).expect("assembly succeeds");
+    assert_eq!(declarations.functions.len(), 1);
+    assert_eq!(declarations.state_clauses.len(), 1);
+    declarations.state_clauses[0].selection.identity = "quire.state.finite/v1".to_owned();
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("the state-only clause refuses");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].cause.code(), Code::UnsupportedConstruct);
+    assert!(matches!(
+        refusals[0].cause,
+        CheckCause::ProfileProhibitedOperator(qsl_forms::BinaryOperator::IntegerMod)
+    ));
+    assert_eq!(refusals[0].location.path(), vec![2, 0]);
+}
+
 /// TC-459 step 2 / FR-104-AC-2: `post R using v on
 /// Config::ConfigVersion::attemptUpdate { result }` checks with
 /// `result: Boolean`.
