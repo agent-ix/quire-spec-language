@@ -82,7 +82,10 @@ selection, admission or evaluation result is a report.
   undefined `reason` spelling, and, for every other category, the one
   record: for `compile`, `select` and `admit` a `RefusalRecord` (code,
   cause, locus); for an `evaluate` refusal, unsupported or incomplete, FR-100's
-  `outcome` member for that S6a outcome; for `evaluate` `internal-failure`, the `InternalFault`'s stage
+  `outcome` member for that S6a outcome; for an evaluated `Frame` violation,
+  `truth: false` and a `refusal` record carrying
+  `frame_violation`/`unauthorized-change` and the complete FR-115
+  `FrameWitness` as `frame_witness`, with no `outcome` member; for `evaluate` `internal-failure`, the `InternalFault`'s stage
   and invariant, as FR-100's internal-failure section gives them;
 - `package_id`: the compiled package's identity, when compile completed;
 - usage: the admission work and the evaluation meter charges, separately.
@@ -181,6 +184,7 @@ binding receipt when CG consumes the serialized result.
 | FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; missing-model over the same source reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test |
 | FR-109-AC-7 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added, run over healthy-parent selecting `Ratio`, reports stage `evaluate`, category `undefined`, `UndefinedEvaluation{cause: division-by-zero}`, no `truth`, exit 10. | Test |
 | FR-109-AC-8 | Given a successful clause run with the expected compiled `package_id`, CG consumption of its serialized result still refuses campaign binding when its external receipt is missing or its generated-source or source-map association is mismatched, as FR-267-AC-4 and FR-267-AC-6 require; the QSL report retains its original success disposition and package identity. | Test |
+| FR-109-AC-9 | FR-115's forbidden-parent-change `Frame` run reports stage `evaluate`, category `violation`, `truth: false`, and a `refusal` record with `frame_violation`/`unauthorized-change` and its complete `FrameWitness` as `frame_witness`; it carries no `outcome` or FR-351 separating `witness`. The same frame's changed-version run reports `success` with no `refusal` or `frame_witness`. | Test |
 
 ## Dependencies
 
