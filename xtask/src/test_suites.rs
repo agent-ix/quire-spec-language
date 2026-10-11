@@ -1301,6 +1301,7 @@ mod tests {
     use ix_trace_rs::trace;
 
     const ROOT: &str = "/ws";
+    type MalformedFieldCase = (&'static str, fn(&mut serde_json::Value));
 
     /// Sections copied verbatim from the retained QSL#670 gate log (an older
     /// head than this one): a nonzero unit suite, a zero-test unit suite, a
@@ -2007,7 +2008,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[test]
     #[trace("TC-950", "NFR-014-AC-2")]
     fn a_compiler_artifact_with_a_missing_or_mistyped_field_is_refused() {
-        let cases: [(&str, fn(&mut serde_json::Value)); 9] = [
+        let cases: [MalformedFieldCase; 9] = [
             ("target", |m| {
                 m.as_object_mut().expect("object").remove("target");
             }),
@@ -2298,7 +2299,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[test]
     #[trace("TC-950", "NFR-014-AC-1")]
     fn malformed_cargo_metadata_is_refused() {
-        let cases: [(&str, fn(&mut serde_json::Value)); 7] = [
+        let cases: [MalformedFieldCase; 7] = [
             ("packages", |m| {
                 m.as_object_mut().expect("object").remove("packages");
             }),
