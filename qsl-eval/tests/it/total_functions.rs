@@ -3,6 +3,7 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
+use qsl_foundation::selection::ProfileSelection;
 use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_package::CheckedPackage;
@@ -198,6 +199,30 @@ fn declarations(
 
 fn check(functions: Vec<FunctionDeclaration>) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     declarations(TypeEnvironment::default(), functions).check(CheckingLimits::default())
+}
+
+/// The quotient fixture uses integer operands with a Rational result; `/`
+/// therefore needs the complete value profile on that function.
+fn check_quotient(functions: Vec<FunctionDeclaration>) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    let mut package = declarations(TypeEnvironment::default(), functions);
+    let index = package
+        .functions
+        .iter()
+        .position(|function| function.name == "q")
+        .expect("the quotient fixture declares q");
+    package.function_selections.insert(
+        index,
+        ProfileSelection {
+            alias: "v".to_owned(),
+            identity: DefinitionLock::pinned()
+                .entry(CatalogRole::Root)
+                .identity
+                .to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+            identity_span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+    );
+    package.check(CheckingLimits::default())
 }
 
 /// The single refusal of a package check.
@@ -428,10 +453,10 @@ fn reduce_total(source: &str) -> Expression {
 #[test]
 fn p04_division_presence_and_reduction_need_static_proofs() {
     assert_eq!(
-        unproved(check(vec![quotient(divide())])),
+        unproved(check_quotient(vec![quotient(divide())])),
         (Obligation::Nonzero, "unproved-nonzero")
     );
-    check(vec![quotient(if_then(
+    check_quotient(vec![quotient(if_then(
         binary(BinaryOperator::NotEqual, name("b"), literal(0)),
         divide(),
         zero_quotient(),
@@ -827,14 +852,14 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
     ))])
     .unwrap();
 
-    check(vec![quotient(if_then(
+    check_quotient(vec![quotient(if_then(
         binary(BinaryOperator::Greater, name("b"), literal(0)),
         divide(),
         zero_quotient(),
     ))])
     .unwrap();
     assert_eq!(
-        unproved(check(vec![quotient(if_then(
+        unproved(check_quotient(vec![quotient(if_then(
             binary(BinaryOperator::GreaterOrEqual, name("b"), name("a")),
             divide(),
             zero_quotient(),
@@ -1230,7 +1255,7 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
 #[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
 #[test]
 fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
-    let graph = check(vec![
+    let graph = check_quotient(vec![
         down(),
         quotient(if_then(
             binary(BinaryOperator::NotEqual, name("b"), literal(0)),
