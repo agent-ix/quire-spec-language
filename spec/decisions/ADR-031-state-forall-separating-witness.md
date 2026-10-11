@@ -45,9 +45,10 @@ evaluator in `qsl-eval` already stops there. It returns only the Boolean.
 
 QSpec FR-351 defines the separating witness record: deciding element, index,
 value path and trace position. One record shape serves every family, and a
-family adds no shape of its own (ADR-012 §13, Q210-4). QSpec FR-352 mints
-`native-run-result/2`: every `/1` member plus one closed member, the QSpec FR-351
-record, present exactly when the settlement basis is `decisive-witness` or
+family adds no shape of its own (ADR-012 §13, Q210-4). QSpec FR-352 defines
+the closed `native-run-result/2` clause-run document with `format`,
+`disposition`, `usage`, optional `package_id`, `basis`, and the QSpec FR-351
+record when the basis is `decisive-witness` or
 `decisive-counterexample`. ADR-013 O-25 and O-27 place the record on the
 replay result and on `native-run-result/2`. FR-070-AC-5 reserves a typed
 extension point on the counterexample envelope for the state `forall` payload.
@@ -98,8 +99,8 @@ forall(...)` true and `exists(...)` true settle `success` with basis
 
 | ID | Rule |
 | --- | --- |
-| SW-10 | **The member.** `native-run-result/2` is the library serialization, on the spine check route (`qsl_replay::spine::run_clause`), of an FR-109 clause run report, and the CLI `run` command-error envelope. It carries every `/1` member unchanged plus two members. `basis` is the QSpec FR-243 settlement basis label, carried on every clause-run result as every other verdict carries it (R-3): `decisive-counterexample`, `decisive-witness` or `closed-scope` by SW-3 for an `evaluate` `success` or `violation`, and `unavailable` for every other disposition. `witness` is the SW-5 record, present exactly when the basis is decisive. A refusal, an undefined result, an exhausted or cancelled run and an unsupported capability carry basis `unavailable`, no `witness` and no substitute (QSpec FR-351-AC-3, AC-4). The record encodes through ADR-013 §2's RFC 8785 encoder; the exact wire spelling of both members is QSpec's (R-2, R-3). |
-| SW-11 | **Version.** From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), which deletes native `run` (R-1), the `run` command produces `/2` only, and `WireFormat` names no `native-run-result/1` (ADR-013 OQ-1). A `/2` reader refuses a record missing a component, carrying a foreign shape, or defaulting an absent component (QSpec FR-351-AC-5), and refuses a `/1` document under FR-014's unsupported-version rule (QSpec FR-352-AC-2). |
+| SW-10 | **Clause-run document.** `native-run-result/2` is the library serialization, on the spine check route (`qsl_replay::spine::run_clause`), of an FR-109 clause run report. Its closed top-level member set is `format`, `disposition`, `usage`, `package_id` when compilation completed, `basis`, and `witness` when the basis is decisive (QSpec FR-352). `basis` is the QSpec FR-243 settlement basis label: `decisive-counterexample`, `decisive-witness` or `closed-scope` by SW-3 for an evaluated `success` or `violation`, and `unavailable` for every other disposition. `witness` is the SW-5 record, present exactly when the basis is decisive. A refusal, an undefined result, an exhausted or cancelled run and an unsupported capability carry basis `unavailable`, no `witness` and no substitute (QSpec FR-351-AC-3, AC-4). The document encodes through ADR-013 §2's RFC 8785 encoder; QSpec FR-352 owns its exact wire spelling. FR-267 owns the CLI `run` command-error envelope as the other closed `/2` variant. |
+| SW-11 | **Version.** The `run` command and `WireFormat` produce `native-run-result/2` only (ADR-013 OQ-1). Its reader refuses a record missing a required component, carrying a foreign shape, or defaulting an absent component (QSpec FR-351-AC-5), and refuses any other identifier under FR-014's unsupported-version rule (QSpec FR-352-AC-2). |
 
 ### 4. Replay and the separation check
 
@@ -127,9 +128,9 @@ Owner rulings, 2026-10-01, recorded on the owning ticket.
 
 | ID | Question | Ruling |
 | --- | --- | --- |
-| R-1 | ADR-013 OQ-1 removes `/1` where `/2` lands, while ADR-011 §7.3 M-6c and ADR-012 §15.8 keep the native `run` command, which emits `/1`, for `0-draft` sources until §15.8 step 2. | `/2` lands in the change that retires native `run`, as one change with no compatibility path. OQ-1 holds as written; no build produces both versions (SW-11). Native `run` is retired only by the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`) (ruling 2026-10-01), so that one change lands the clause runner, `/2` and the deletion of native `run` and `/1`. Until then FR-026 to FR-032 stand. |
+| R-1 | Which command produces the closed clause-run document? | FR-100's clause runner (FR-312's reader plus `run_clause`) produces `native-run-result/2` under SW-10 and SW-11. |
 | R-2 | QSpec FR-351 names the value path but not its segment vocabulary or wire spelling, nor a root for an element with no stored location. | QSpec gets a value-path segment vocabulary: SW-5's segment kinds, the filter and map source bindings of SW-6, and the building-expression root for an element built inside the claim. QSL cites it and restates none of it (SW-5, SW-6). |
-| R-3 | QSpec FR-352 adds one member, so `/2` would carry no settlement-basis label. | `/2` carries a basis label consistent with the other verdicts: the QSpec FR-243 label on every clause-run result (SW-10). |
+| R-3 | Which settlement-basis label does `/2` carry? | `/2` carries the QSpec FR-243 label on every clause-run result (SW-10). |
 | R-4 | `/2` would not say which quantifier decided the clause. | The record names the deciding quantifier by its node key: the quantifier's occurrence key, which holds its node identity (SW-5). |
 
 ## Consequences
@@ -168,7 +169,7 @@ Owner rulings, 2026-10-01, recorded on the owning ticket.
   value-path segment vocabulary (FR-207 AC-9 to AC-11), the `/2` basis label
   and witness members (QSpec FR-352 AC-6 and AC-7) and the deciding quantifier
   component (QSpec FR-351-AC-7), R-2 to R-4: Linear STD-144. QSpec FR-352-AC-2 refuses
-  `/1`.
+  unsupported identifiers.
 - Requirements: FR-265 (derivation), FR-266 (the clause run's witness and
   basis), FR-267 (`native-run-result/2`), FR-268 (replay and the separation
   check), FR-269 (`DisagreementCause::Witness`).
