@@ -1191,7 +1191,7 @@ mod tests {
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {
             backend_identity: "kani-backend-1".to_owned(),
-            items: vec![TerminalRecord::new(
+            items: vec![TerminalRecord::from_value(
                 qsl_foundation::RequestIndex::new(0),
                 TerminalValue::Refuted,
             )],

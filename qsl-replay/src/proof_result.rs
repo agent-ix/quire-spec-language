@@ -10,7 +10,7 @@
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::execute::ReplayRefusal;
-use crate::result::DisagreementCause;
+use crate::result::{DisagreementCause, ReplayResult};
 use crate::scalar::ScalarAgreement;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::BackendId;
@@ -365,15 +365,52 @@ impl TerminalValue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminalRecord {
     request_index: RequestIndex,
+    /// The producing backend, present when this record was settled from a
+    /// replay result through the public constructor.  Legacy provider-side
+    /// values assembled inside QSL use the crate-private `from_value` helper
+    /// and are completed with the envelope's manifest identity on read.
+    backend: Option<BackendId>,
     value: TerminalValue,
 }
 
 impl TerminalRecord {
-    /// Build the terminal record for the item at `request_index` carrying
-    /// `value`.
-    pub fn new(request_index: RequestIndex, value: TerminalValue) -> Self {
+    /// Build a refuted terminal record from a replay result that reproduced
+    /// a violation.  The backend identity is required evidence for the
+    /// producing provider; a replay that did not settle `violation` is
+    /// refused rather than being relabelled as `refuted`.
+    ///
+    /// ```compile_fail
+    /// use qsl_replay::{RequestIndex, TerminalRecord, TerminalValue};
+    ///
+    /// // A terminal value alone is not enough evidence to construct a record.
+    /// let _ = TerminalRecord::new(RequestIndex::new(0), TerminalValue::Refuted);
+    /// ```
+    pub fn new(
+        request_index: RequestIndex,
+        backend: BackendId,
+        replay: &ReplayResult,
+    ) -> Result<Self, TerminalRecordRefusal> {
+        if replay.category() != Category::Violation {
+            return Err(TerminalRecordRefusal::ReplayDidNotRefute(replay.category()));
+        }
+        Ok(Self {
+            request_index,
+            backend: Some(backend),
+            value: TerminalValue::Refuted,
+        })
+    }
+
+    /// Build an internally settled value.  Provider-facing callers must use
+    /// [`Self::new`] so a `refuted` value is tied to replay evidence and a
+    /// producing backend.
+    #[allow(
+        dead_code,
+        reason = "used by qsl-replay's crate-local outcome fixtures"
+    )]
+    pub(crate) fn from_value(request_index: RequestIndex, value: TerminalValue) -> Self {
         Self {
             request_index,
+            backend: None,
             value,
         }
     }
@@ -387,6 +424,20 @@ impl TerminalRecord {
     pub fn value(&self) -> &TerminalValue {
         &self.value
     }
+
+    /// The producing backend evidence, when this record came from a public
+    /// replay settlement.
+    pub fn backend(&self) -> Option<&BackendId> {
+        self.backend.as_ref()
+    }
+}
+
+/// Why a public terminal-record construction was refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TerminalRecordRefusal {
+    /// The replay result did not settle as a reproduced violation.
+    #[error("replay result settled as {0:?}, not violation")]
+    ReplayDidNotRefute(Category),
 }
 
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
@@ -655,7 +706,9 @@ mod tests {
         let items: Vec<TerminalRecord> = cases
             .iter()
             .enumerate()
-            .map(|(i, (value, _, _))| TerminalRecord::new(RequestIndex::new(i), value.clone()))
+            .map(|(i, (value, _, _))| {
+                TerminalRecord::from_value(RequestIndex::new(i), value.clone())
+            })
             .collect();
         let envelopes =
             read_backend_provider_envelope(&source(items), crate::ReplayLimits::default()).unwrap();
@@ -729,7 +782,7 @@ mod tests {
     #[test]
     fn tc_769_refuted_terminal_record_is_violation_exit_10() {
         let envelopes = read_backend_provider_envelope(
-            &source(vec![TerminalRecord::new(
+            &source(vec![TerminalRecord::from_value(
                 RequestIndex::new(0),
                 TerminalValue::Refuted,
             )]),
@@ -764,7 +817,7 @@ mod tests {
         // B3: the bound check measures the source's own content -- there is
         // no `encoded_bytes` field a caller could understate -- so an
         // oversized source has to actually carry oversized content.
-        let mut oversized = source(vec![TerminalRecord::new(
+        let mut oversized = source(vec![TerminalRecord::from_value(
             RequestIndex::new(0),
             TerminalValue::Tested,
         )]);
@@ -841,7 +894,7 @@ mod tests {
         assert_eq!(std001, same);
         assert_ne!(std001, qsl);
         assert_eq!(std001.category(), Category::Refusal);
-        let record = TerminalRecord::new(RequestIndex::new(3), std001.clone());
+        let record = TerminalRecord::from_value(RequestIndex::new(3), std001.clone());
         assert_eq!(record.value(), &std001);
     }
 
@@ -869,7 +922,7 @@ mod tests {
                 }),
             },
         };
-        let oversized = source(vec![TerminalRecord::new(
+        let oversized = source(vec![TerminalRecord::from_value(
             RequestIndex::new(0),
             TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(cause)),
         )]);
@@ -894,7 +947,7 @@ mod tests {
             ]),
             ScalarOutcome::OtherRefusal,
         );
-        let source = source(vec![TerminalRecord::new(
+        let source = source(vec![TerminalRecord::from_value(
             RequestIndex::new(0),
             TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(oversized)),
         )]);
@@ -918,18 +971,18 @@ mod tests {
     #[test]
     fn tc_179_round_trip_preserves_backend_and_dispositions() {
         let items = vec![
-            TerminalRecord::new(
+            TerminalRecord::from_value(
                 RequestIndex::new(0),
                 TerminalValue::Proved { success_checks: 3 },
             ),
-            TerminalRecord::new(RequestIndex::new(1), TerminalValue::Refuted),
-            TerminalRecord::new(
+            TerminalRecord::from_value(RequestIndex::new(1), TerminalValue::Refuted),
+            TerminalRecord::from_value(
                 RequestIndex::new(2),
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
                     Code::StaleDependency,
                 )),
             ),
-            TerminalRecord::new(
+            TerminalRecord::from_value(
                 RequestIndex::new(3),
                 TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(agreement())),
             ),

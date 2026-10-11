@@ -5,7 +5,6 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     Category, ItemLabel, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, RequestIndex,
-    TerminalRecord, TerminalValue,
 };
 
 /// FR-286-AC-3: a `prove` document built and written through the facade
@@ -13,26 +12,20 @@ use qsl_replay::{
 #[trace("TC-770", "FR-286-AC-3")]
 #[test]
 fn a_driver_writes_a_prove_document_through_the_facade() {
-    let items = [
-        TerminalRecord::new(
-            RequestIndex::new(0),
-            TerminalValue::Proved { success_checks: 2 },
-        ),
-        TerminalRecord::new(RequestIndex::new(1), TerminalValue::Failed),
-    ]
-    .iter()
-    .map(OutcomeItem::from_terminal)
-    .collect();
+    let items = vec![
+        OutcomeItem::undefined_evaluation(RequestIndex::new(0), "fixture", "counterexample"),
+        OutcomeItem::undefined_evaluation(RequestIndex::new(1), "fixture", "backend failure"),
+    ];
     let document = OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), items);
     let written: serde_json::Value =
         serde_json::from_slice(&document.to_bytes().expect("encodes")).expect("is JSON");
     assert_eq!(written["format"], "quire-outcome/1");
     assert_eq!(written["operation"], "prove");
     assert_eq!(written["last_stage"], "S8");
-    assert_eq!(written["category"], "internal-failure");
-    assert_eq!(written["items"][0]["result"], "proved");
-    assert_eq!(written["items"][1]["result"], "failed");
-    assert_eq!(document.category(), Category::InternalFailure);
-    assert_eq!(document.items()[1].category(), Category::InternalFailure);
+    assert_eq!(written["category"], "violation");
+    assert_eq!(written["items"][0]["result"], "refuted");
+    assert_eq!(written["items"][1]["result"], "refuted");
+    assert_eq!(document.category(), Category::Violation);
+    assert_eq!(document.items()[1].category(), Category::Violation);
     assert_ne!(ItemLabel::Proved, ItemLabel::Failed);
 }
