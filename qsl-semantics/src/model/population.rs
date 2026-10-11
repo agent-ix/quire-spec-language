@@ -835,7 +835,7 @@ fn population_id_preimage<'a>(
     for (key, declaration) in members {
         let member = PopulationMemberWire {
             universe: hex(key.universe.as_bytes()),
-            r#type: hex(key.type_identity.as_bytes()),
+            r#type: PopulationMemberTypeIdentityWire(&key.type_identity),
             object: &key.object,
             declaration: declaration.wire(),
         };
@@ -899,7 +899,7 @@ struct PopulationIdWire<'a> {
 #[derive(Serialize, FixedShape)]
 struct PopulationMemberWire<'a> {
     universe: String,
-    r#type: String,
+    r#type: PopulationMemberTypeIdentityWire<'a>,
     object: &'a str,
     declaration: DeclarationKeyWire<'a>,
 }
@@ -913,6 +913,30 @@ struct PopulationDomainPackageRefWire<'a> {
     version: &'a str,
     digest_domain: &'static str,
     digest: String,
+}
+
+/// A population member's effective type identity encoded as its wire hex
+/// string, keeping the semantic identity typed until serialization.
+struct PopulationMemberTypeIdentityWire<'a>(&'a EffectiveId);
+
+impl PopulationMemberTypeIdentityWire<'_> {
+    #[qsl_attrs::string_edge]
+    fn wire_value(&self) -> String {
+        hex(self.0.as_bytes())
+    }
+}
+
+impl Serialize for PopulationMemberTypeIdentityWire<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.wire_value())
+    }
+}
+
+impl FixedShape for PopulationMemberTypeIdentityWire<'_> {
+    const DEPTH: usize = 0;
 }
 
 /// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,
@@ -2580,5 +2604,28 @@ mod tests {
         assert_eq!(hex(id.as_bytes()), DIGEST);
         let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
+    }
+
+    /// The member wire's typed effective identity keeps the existing `type`
+    /// key and lowercase-hex string representation.
+    #[trace("TC-291", "FR-089-AC-7")]
+    #[test]
+    fn population_member_type_identity_wire_keeps_its_hex_string_shape() {
+        let type_identity = EffectiveId::from_digest([0xab; 32]);
+        let declaration = DeclarationKey::fixture("model.A");
+        let member = PopulationMemberWire {
+            universe: "cd".repeat(32),
+            r#type: PopulationMemberTypeIdentityWire(&type_identity),
+            object: "obj-1",
+            declaration: declaration.wire(),
+        };
+        let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
+            .expect("member wire has a fixed canonical shape");
+        let expected = format!(
+            "{{\"declaration\":{{\"digest_domain\":\"sha256-jcs\",\"node\":\"ix://test/orders/model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
+            "ab".repeat(32),
+            "cd".repeat(32)
+        );
+        assert_eq!(encoded, expected.as_bytes());
     }
 }
