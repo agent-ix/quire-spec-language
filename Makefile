@@ -109,9 +109,8 @@ cargo-deny-bans:
 
 SIBLINGS ?= $(shell cd "$$(git rev-parse --path-format=absolute --git-common-dir)/../.." && pwd -P)
 QSPEC_DIR ?= $(SIBLINGS)/quire-specification
-# Cargo runs tests from each package directory, so relative caller paths must
-# be resolved before exporting them. Keep invalid inputs for the refusal below.
-override QSPEC_DIR := $(shell if [ -d "$(QSPEC_DIR)" ]; then cd "$(QSPEC_DIR)" && pwd -P; else printf '%s' "$(QSPEC_DIR)"; fi)
+# Keep this as a Make value so paths containing shell metacharacters remain
+# data. Conformance recipes resolve it with a quoted shell expansion below.
 export QSPEC_DIR
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
@@ -235,7 +234,9 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := check-conformance-input conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_TARGETS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_CHECKS := check-conformance-input $(CI_TARGETS)
+$(CI_TARGETS): check-conformance-input
 ci: check-spec-validation $(CI_CHECKS)
 ifneq ($(filter ci,$(MAKECMDGOALS)),)
 $(CI_CHECKS): | check-spec-validation
@@ -302,74 +303,74 @@ if echo "$$out" | grep -q '^skipped:'; then echo "conformance: required vector c
 endef
 
 conformance: check-conformance-input
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* of [1-9][0-9]* QSpec operation vectors match (' || { echo "conformance: the vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_ENUM_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_ENUM_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: 2 nominal enum vectors' || { echo "conformance: the nominal enum vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_UNIT_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_UNIT_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* compound-unit vectors$$' || { echo "conformance: the compound-unit vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_SOURCE_MAP_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_SOURCE_MAP_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* source-map entries over [1-9][0-9]* positive fixtures$$' || { echo "conformance: the source-map lookup check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_I2_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_I2_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* positive fixtures through QSL.s full I2 read' || { echo "conformance: the I2 positive-fixture check did not run" >&2; exit 1; }; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* adverse mutations refused' || { echo "conformance: the I2 adverse-mutation check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_FRAME_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_FRAME_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* frame-body mutation vectors matched$$' || { echo "conformance: the frame-body mutation check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_DEPENDENCY_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_DEPENDENCY_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* dependency-selection entry mutations and [1-9][0-9]* order vectors$$' || { echo "conformance: the dependency-selection vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_GOLDEN_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_GOLDEN_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* emitted application nodes match QSpec.s positive fixtures$$' || { echo "conformance: the emitter golden check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_PROFILE_CAUSES_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_PROFILE_CAUSES_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* profile (code, cause) pairs listed by QSpec$$' || { echo "conformance: the profile cause check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_BUNDLE_CAUSES_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_BUNDLE_CAUSES_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* bundle (code, cause) pairs listed by QSpec$$' || { echo "conformance: the bundle cause check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_CATALOG_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_CATALOG_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	$(require-conformance-run); \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* catalog rows match QSpec.s lock$$' || { echo "conformance: the definition catalog check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_SELECTION_TEST) --format terse --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$$(cd -- "$$QSPEC_DIR" && pwd -P)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_SELECTION_TEST) --format terse --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
