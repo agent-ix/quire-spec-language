@@ -81,7 +81,7 @@ pub enum NativeRunResult {
     /// A clause run reached `run_clause` and returned its report.
     Clause(Box<ClauseRunRecord>),
     /// Request intake or command handling failed before a report existed.
-    CommandError(CommandErrorRecord),
+    CommandError(Box<CommandErrorRecord>),
 }
 
 /// The typed clause-run document returned by the strict reader.
@@ -1499,9 +1499,9 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             });
         };
         validate_command_details(&document, details, code)?;
-        Ok(NativeRunResult::CommandError(CommandErrorRecord(
+        Ok(NativeRunResult::CommandError(Box::new(CommandErrorRecord(
             document, tree,
-        )))
+        ))))
     }
 }
 
