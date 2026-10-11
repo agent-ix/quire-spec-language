@@ -23,6 +23,9 @@ mod ci_clean_build_tests;
 #[cfg(test)]
 mod ci_feature_lane_tests;
 
+#[cfg(test)]
+mod ci_spec_validation_tests;
+
 pub use error::{Error, Result};
 
 /// `Self`'s type name for an `impl` block, for the common case `seam_probe`
