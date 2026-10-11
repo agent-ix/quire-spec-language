@@ -740,7 +740,7 @@ impl OutcomeDocument {
         match result {
             Ok(_) => Self::new(Operation::Format, Some(OutcomeStage::S2), Category::Success),
             Err(refusal) => {
-                let refusal = FormatOutcomeRefusal::from(refusal);
+                let refusal: FormatOutcomeRefusal = refusal.into();
                 let stage = if refusal.category == Category::InternalFailure {
                     None
                 } else {
