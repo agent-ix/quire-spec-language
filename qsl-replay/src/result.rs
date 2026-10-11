@@ -767,15 +767,23 @@ fn common_measured_bytes(resolved_regions: &[SourceRegion]) -> usize {
 /// nested FR-351 record's value-path segments among them -- never a
 /// caller-declared number a result could understate to launder oversized
 /// content past the bound (B3).
-fn measured_encoded_bytes(result: &ReplayResult) -> usize {
+pub(crate) fn measured_encoded_bytes(result: &ReplayResult) -> usize {
     match result {
         ReplayResult::Witness(arm) => {
             common_measured_bytes(arm.resolved_regions())
                 + arm
                     .record()
                     .map_or(0, SeparatingWitnessRecord::measured_bytes)
+                + arm
+                    .disagreement()
+                    .map_or(0, DisagreementCause::measured_bytes)
         }
-        ReplayResult::Input(arm) => common_measured_bytes(arm.resolved_regions()),
+        ReplayResult::Input(arm) => {
+            common_measured_bytes(arm.resolved_regions())
+                + arm
+                    .disagreement()
+                    .map_or(0, DisagreementCause::measured_bytes)
+        }
     }
 }
 
@@ -951,6 +959,35 @@ mod tests {
     #[test]
     fn common_measured_bytes_counts_each_source_member() {
         assert_eq!(common_measured_bytes(&regions()), 13);
+    }
+
+    /// A disagreement's retained failure text is part of the replay result
+    /// whose reader limit is checked.
+    #[trace("TC-191", "FR-072-AC-5")]
+    #[test]
+    fn bounded_replay_counts_disagreement_evidence() {
+        let verdict = Verdict::from_category(Category::Violation);
+        let replay = ReplayResult::Witness(WitnessArmResult::settle(
+            verdict,
+            verdict,
+            Category::Violation,
+            Some(EvaluatedValue::Boolean(false)),
+            WitnessCheck::Disagrees {
+                given: None,
+                derived: None,
+                failure: WitnessFailure::Separation {
+                    step: SeparationStep::Body,
+                    reason: SeparationReason::Refused(SeparationRefusal {
+                        code: "invalid_runtime_input".to_owned(),
+                        cause: "x".repeat(DEFAULT_INPUT_BYTES + 1),
+                        fields: BTreeMap::new(),
+                    }),
+                },
+            },
+            Vec::new(),
+            charges(),
+        ));
+        assert!(read_bounded(replay, ReplayLimits::default()).is_err());
     }
 
     #[trace("TC-189", "FR-072-AC-1")]

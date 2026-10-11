@@ -10,7 +10,7 @@
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::execute::ReplayRefusal;
-use crate::result::{DisagreementCause, ReplayResult};
+use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::BackendId;
@@ -423,8 +423,20 @@ impl TerminalRecord {
         backend: BackendId,
         replay: &ReplayResult,
     ) -> Result<Self, TerminalRecordRefusal> {
-        if replay.category() != Category::Violation {
-            return Err(TerminalRecordRefusal::ReplayDidNotRefute(replay.category()));
+        match replay {
+            ReplayResult::Witness(arm) => match arm.settlement() {
+                WitnessSettlement::ReproducedWithEvaluatedWitness
+                    if arm.category() == Category::Violation => {}
+                WitnessSettlement::ReproducedWithEvaluatedWitness => {
+                    return Err(TerminalRecordRefusal::ReplayDidNotRefute(arm.category()));
+                }
+                WitnessSettlement::Inconclusive => {
+                    return Err(TerminalRecordRefusal::ReplayDidNotRefute(
+                        Category::Inconclusive,
+                    ));
+                }
+            },
+            ReplayResult::Input(_) => return Err(TerminalRecordRefusal::ReplayLacksWitness),
         }
         Ok(Self {
             request_index,
@@ -551,6 +563,9 @@ pub enum TerminalRecordRefusal {
     /// The replay result did not settle as a reproduced violation.
     #[error("replay result settled as {0:?}, not violation")]
     ReplayDidNotRefute(Category),
+    /// Only a reproduced witness arm can provide refutation evidence.
+    #[error("input-arm replay does not carry backend witness evidence")]
+    ReplayLacksWitness,
 }
 
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
@@ -627,10 +642,10 @@ pub struct BackendProviderSource {
 }
 
 /// The reader's own measurement of `source`'s encoded size (FR-069-AC-4):
-/// the backend identity's byte length, a fixed per-item allowance for the
-/// index and the terminal value, and the bytes of any nested witness record
-/// a replay-parity cause carries -- never a caller-declared number a source could
-/// understate to launder an oversized item list past the bound (B3).
+/// the provider and record backend identities' byte lengths, a fixed
+/// per-item allowance for the index and terminal value, and the retained
+/// replay and nested cause bytes. No caller-declared number can understate
+/// an oversized item list past the bound (B3).
 fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
     source.backend_identity.len()
         + source
@@ -640,6 +655,10 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
                 std::mem::size_of::<RequestIndex>()
                     + std::mem::size_of::<TerminalValue>()
                     + record.value().measured_bytes()
+                    + record.backend().map_or(0, |backend| backend.as_str().len())
+                    + record
+                        .replay_result()
+                        .map_or(0, crate::result::measured_encoded_bytes)
             })
             .sum::<usize>()
 }
@@ -712,7 +731,8 @@ mod tests {
     use crate::scalar::{ScalarClaim, ScalarOutcome};
     use crate::witness::{CanonicalAssignment, WitnessValue};
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::WireNodeId;
+    use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+    use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
     use quire_contract_model::std001_code;
 
     fn source(items: Vec<TerminalRecord>) -> BackendProviderSource {
@@ -956,6 +976,115 @@ mod tests {
         oversized.backend_identity = "x".repeat(DEFAULT_INPUT_BYTES + 1);
         let result = read_backend_provider_envelope(&oversized, crate::ReplayLimits::default());
         assert!(matches!(result, Err(ProofResultRefusal::BoundExceeded(_))));
+    }
+
+    fn refuted_source_with_region_identity(identity: String) -> BackendProviderSource {
+        let source_ref = RawSourceRef::new(
+            "registry",
+            identity,
+            DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
+        )
+        .unwrap();
+        let region = SourceRegion::new(source_ref, 0, 1).unwrap();
+        let replay = ReplayResult::Witness(crate::WitnessArmResult::settle_range_violation(
+            None,
+            vec![region],
+            crate::spine::default_accounting(0),
+        ));
+        source(vec![TerminalRecord::new(
+            RequestIndex::new(0),
+            BackendId::new("kani-backend-1"),
+            &replay,
+        )
+        .unwrap()])
+    }
+
+    /// FR-069-AC-4 (TC-178): retained replay source identity bytes count at
+    /// the exact bound, one byte beyond it, and beyond the default 1 MiB.
+    #[trace("TC-178", "FR-069-AC-4")]
+    #[test]
+    fn retained_replay_bytes_obey_exact_envelope_bound() {
+        let at_limit = refuted_source_with_region_identity("source".to_owned());
+        let expected = at_limit.backend_identity.len()
+            + std::mem::size_of::<RequestIndex>()
+            + std::mem::size_of::<TerminalValue>()
+            + "kani-backend-1".len()
+            + "registry".len()
+            + "source".len();
+        let limits = ReplayLimits::default().with_input_bytes(expected as u64);
+        assert_eq!(
+            read_backend_provider_envelope(&at_limit, limits)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let over_limit = refuted_source_with_region_identity("source!".to_owned());
+        assert_eq!(
+            read_backend_provider_envelope(&over_limit, limits),
+            Err(ProofResultRefusal::BoundExceeded(BoundExceeded {
+                bound: expected as u64,
+                actual: (expected + 1) as u128,
+            }))
+        );
+
+        let huge_identity =
+            refuted_source_with_region_identity("x".repeat(DEFAULT_INPUT_BYTES + 1));
+        assert!(matches!(
+            read_backend_provider_envelope(&huge_identity, ReplayLimits::default()),
+            Err(ProofResultRefusal::BoundExceeded(_))
+        ));
+    }
+
+    /// A reproduced witness's nested value path remains part of the proof
+    /// envelope after the replay result is retained in a refuted record.
+    #[trace("TC-178", "FR-069-AC-4")]
+    #[test]
+    fn retained_witness_path_cannot_bypass_envelope_bound() {
+        use qsl_foundation::source::provenance::OccurrenceKey;
+        use qsl_foundation::witness::{RuntimeValuePath, ValuePathStep, ValuePathSubject};
+        use quire_exact::{Origin, Role, Value};
+
+        let occurrence = OccurrenceKey::new(
+            WireNodeId::from_digest([7; 32]),
+            Origin::new(Role::new("expression"), 0),
+        );
+        let record = crate::SeparatingWitnessRecord {
+            quantifier: occurrence.clone(),
+            deciding_element: Value::Boolean(false),
+            index: Some(0),
+            value_path: RuntimeValuePath {
+                observation: qsl_foundation::witness::ObservationIdentity {
+                    authority: "source".to_owned(),
+                    identity: "item".to_owned(),
+                    revision_namespace: "revision".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                subject: ValuePathSubject::Built(occurrence),
+                steps: vec![ValuePathStep::Member("x".repeat(DEFAULT_INPUT_BYTES + 1))],
+            },
+            trace_position: None,
+        };
+        let violation = Verdict::from_category(Category::Violation);
+        let replay = ReplayResult::Witness(crate::WitnessArmResult::settle(
+            violation,
+            violation,
+            Category::Violation,
+            Some(crate::EvaluatedValue::Boolean(false)),
+            crate::WitnessCheck::Agrees(Some(Box::new(record))),
+            Vec::new(),
+            crate::spine::default_accounting(0),
+        ));
+        let source = source(vec![TerminalRecord::new(
+            RequestIndex::new(0),
+            BackendId::new("kani-backend-1"),
+            &replay,
+        )
+        .unwrap()]);
+        assert!(matches!(
+            read_backend_provider_envelope(&source, ReplayLimits::default()),
+            Err(ProofResultRefusal::BoundExceeded(_))
+        ));
     }
 
     /// FR-121-AC-17 (ADR-013 C-09): a call-site refusal before any backend

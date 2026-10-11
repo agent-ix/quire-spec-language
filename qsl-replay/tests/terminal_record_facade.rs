@@ -7,8 +7,9 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_replay::{
     read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category, DeclineCode,
-    InconclusiveCause, InternalFault, ProofRefusalCause, ReplayRefusal, ReplayResult, RequestIndex,
-    TerminalRecord, TerminalValue, WitnessArmResult,
+    EvaluatedValue, InconclusiveCause, InputArmResult, InternalFault, ProofRefusalCause,
+    ReplayRefusal, ReplayResult, RequestIndex, TerminalRecord, TerminalValue, Verdict,
+    WitnessArmResult, WitnessCheck,
 };
 
 fn violating_replay() -> ReplayResult {
@@ -62,7 +63,7 @@ fn non_violating_replay_is_refused() {
         qsl_replay::Verdict::from_category(Category::Success),
         qsl_replay::Verdict::from_category(Category::Success),
         Category::Success,
-        None,
+        Some(EvaluatedValue::Boolean(true)),
         qsl_replay::WitnessCheck::Agrees(None),
         Vec::new(),
         qsl_replay::spine::default_accounting(0),
@@ -77,6 +78,56 @@ fn non_violating_replay_is_refused() {
         Err(qsl_replay::TerminalRecordRefusal::ReplayDidNotRefute(
             Category::Success
         ))
+    );
+}
+
+/// A violation category alone cannot turn an unsettled witness replay into
+/// refutation, whether parity failed or the replay completed no value.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn inconclusive_witness_replay_cannot_refute() {
+    let violation = Verdict::from_category(Category::Violation);
+    let success = Verdict::from_category(Category::Success);
+    for (replayed, value) in [
+        (success, Some(EvaluatedValue::Boolean(false))),
+        (violation, None),
+    ] {
+        let replay = ReplayResult::Witness(WitnessArmResult::settle(
+            violation,
+            replayed,
+            Category::Violation,
+            value,
+            WitnessCheck::Agrees(None),
+            Vec::new(),
+            qsl_replay::spine::default_accounting(0),
+        ));
+        assert_eq!(
+            TerminalRecord::new(RequestIndex::new(0), BackendId::new("backend"), &replay),
+            Err(qsl_replay::TerminalRecordRefusal::ReplayDidNotRefute(
+                Category::Inconclusive
+            ))
+        );
+    }
+}
+
+/// An input arm can report a violation, but it cannot supply the witness
+/// settlement needed for a refuted backend record.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn violating_input_arm_cannot_refute() {
+    let violation = Verdict::from_category(Category::Violation);
+    let replay = ReplayResult::Input(InputArmResult::settle(
+        violation,
+        violation,
+        Category::Violation,
+        Some(EvaluatedValue::Boolean(false)),
+        &WitnessCheck::Agrees(None),
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ));
+    assert_eq!(
+        TerminalRecord::new(RequestIndex::new(0), BackendId::new("backend"), &replay),
+        Err(qsl_replay::TerminalRecordRefusal::ReplayLacksWitness)
     );
 }
 
