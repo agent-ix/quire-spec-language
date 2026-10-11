@@ -113,6 +113,7 @@ fn named<'a>(
         .ok_or_else(|| invalid(format!("observations.{key}"), "unbound observation key"))
 }
 
+#[qsl_attrs::string_edge]
 fn snapshot_value(value: &Value) -> Result<SnapshotValue, ClauseRequestReadError> {
     // SnapshotValue itself is arena-backed. Build it bottom-up on a heap
     // worklist so a supplied present/sequence tree has no native stack cap.

@@ -137,6 +137,7 @@ fn selection_parts(
     })
 }
 
+#[qsl_attrs::string_edge]
 fn limits(overrides: Option<&wire::ObservationLimitOverrides>) -> Result<ObservationLimits> {
     let mut limits = ObservationLimits::default();
     if let Some(overrides) = overrides {

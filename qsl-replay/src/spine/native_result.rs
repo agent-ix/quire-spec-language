@@ -624,6 +624,7 @@ struct DocumentRefRead {
 }
 
 impl DocumentRefRead {
+    #[qsl_attrs::string_edge]
     fn typed(&self, member: &'static str) -> Result<DocumentRef, NativeRunReadError> {
         let digest = self
             .digest
@@ -728,6 +729,7 @@ impl FrameChangeRead {
 }
 
 impl FrameWitnessRead {
+    #[qsl_attrs::string_edge]
     fn typed(&self) -> Result<FrameWitness, NativeRunReadError> {
         if self.code != "frame_violation" || self.cause != "unauthorized-change" {
             return Err(NativeRunReadError::Invalid {
@@ -874,6 +876,7 @@ fn read_typed<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, NativeR
 /// FR-096's kernel rows always carry a located record and these catalog
 /// fields. Family causes without a row have no fields; their optional
 /// location cannot be inferred from their code alone.
+#[qsl_attrs::string_edge]
 fn kernel_fields(code: &str) -> Option<&'static [&'static str]> {
     match code {
         "cardinality_out_of_bound" => Some(&["collection", "bound", "count"]),
@@ -933,6 +936,7 @@ fn validate_refused_outcome(outcome: &OutcomeRead) -> Result<(), NativeRunReadEr
     Ok(())
 }
 
+#[qsl_attrs::string_edge]
 fn validate_compile_limit(refusal: &RefusalRead) -> Result<(), NativeRunReadError> {
     if refusal.code != "stage_limit_exceeded" {
         return Ok(());
@@ -984,6 +988,7 @@ fn catalog_category(code: &str) -> Option<&'static str> {
     )
 }
 
+#[qsl_attrs::string_edge]
 fn validate_disposition(value: &DispositionRead) -> Result<(), NativeRunReadError> {
     let invalid = |member, reason| NativeRunReadError::Invalid { member, reason };
     match (&value.stage, &value.category) {
