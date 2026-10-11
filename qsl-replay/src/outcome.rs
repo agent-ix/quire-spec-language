@@ -45,6 +45,34 @@ use crate::spine::{
 };
 use crate::ReplayRefusal;
 
+/// The format refusal projection consumed by the replay outcome facade.
+///
+/// This keeps the public facade signature in the replay vocabulary while the
+/// conversion below preserves the formatter's typed diagnostic.
+#[doc(hidden)]
+pub struct FormatOutcomeRefusal {
+    category: Category,
+    diagnostic: OutcomeDiagnostic,
+}
+
+impl From<&FormatRefusal> for FormatOutcomeRefusal {
+    fn from(refusal: &FormatRefusal) -> Self {
+        let diagnostic = refusal.diagnostic();
+        Self {
+            category: diagnostic.code.category(),
+            diagnostic: OutcomeDiagnostic::new(
+                Some(diagnostic.cause.as_str()),
+                diagnostic.code.as_str(),
+                diagnostic
+                    .region
+                    .as_ref()
+                    .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
+                diagnostic.message.clone(),
+            ),
+        }
+    }
+}
+
 /// The document's `format` member.
 pub const OUTCOME_FORMAT: &str = "quire-outcome/1";
 
@@ -705,28 +733,21 @@ impl OutcomeDocument {
     /// artifacts. S2 is the reporting default, not a stage run by this adapter.
     /// Refusals retain their original typed diagnostic and catalog category;
     /// internal failures report no stage (FR-286).
-    pub fn from_format(result: &Result<Staged<String>, FormatRefusal>) -> Self {
+    pub fn from_format<E>(result: &Result<Staged<String>, E>) -> Self
+    where
+        for<'a> &'a E: Into<FormatOutcomeRefusal>,
+    {
         match result {
             Ok(_) => Self::new(Operation::Format, Some(OutcomeStage::S2), Category::Success),
             Err(refusal) => {
-                let diagnostic = refusal.diagnostic();
-                let category = diagnostic.code.category();
-                let stage = if category == Category::InternalFailure {
+                let refusal = FormatOutcomeRefusal::from(refusal);
+                let stage = if refusal.category == Category::InternalFailure {
                     None
                 } else {
                     Some(OutcomeStage::S2)
                 };
-                Self::new(Operation::Format, stage, category).with_diagnostics(vec![
-                    OutcomeDiagnostic::new(
-                        Some(diagnostic.cause.as_str()),
-                        diagnostic.code.as_str(),
-                        diagnostic
-                            .region
-                            .as_ref()
-                            .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
-                        diagnostic.message.clone(),
-                    ),
-                ])
+                Self::new(Operation::Format, stage, refusal.category)
+                    .with_diagnostics(vec![refusal.diagnostic])
             }
         }
     }
