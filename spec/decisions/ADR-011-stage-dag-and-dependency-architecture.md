@@ -1295,7 +1295,8 @@ Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
   stages, a family that sits out the stage has an explicit, hand-written arm
   that returns `unsupported` with a catalog code.
 - **Requirement records.** Exactly one record per checked item that has
-  `Requirements`: the item's one kind, extent and bound. No backend, candidate
+  `Requirements`: the item's one kind and, for `probabilistic-satisfaction`,
+  its exact evidence kind, plus extent and bound. No backend, candidate
   or disposition (§2.2 E3). The v2 `capability_report` member is FR-322's
   feature-level report (§2.2 E4), not these records.
 - **IR admission.** IR's predicate admission reads the v2 value and expression
