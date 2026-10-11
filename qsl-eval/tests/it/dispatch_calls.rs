@@ -1904,10 +1904,13 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         view_type(&view, "model.C"),
         view_type(&view, "model.D"),
     );
-    let clauses = bridge_clauses(a_type);
+    let mut clauses = bridge_clauses(a_type);
+    clauses
+        .member
+        .insert(DeclarationKey::fixture("model.B.size"), "size".to_owned());
     let mut normalization_meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
-    let mut declarations = checked_dispatch_operation(
+    let mut declarations_a = checked_dispatch_operation(
         &view,
         &DispatchRoot {
             key: DeclarationKey::fixture("model.A.size"),
@@ -1919,6 +1922,18 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("expected D01's linked dispatch family, got {refusal:?}"));
+    let mut declarations_b = checked_dispatch_operation(
+        &view,
+        &DispatchRoot {
+            key: DeclarationKey::fixture("model.B.size"),
+            closure: GeneralizationClosure::Closed,
+        },
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        &mut normalization_meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("expected D01's redefiner dispatch family, got {refusal:?}"));
 
     let supertypes = object_type_supertypes(&view).unwrap();
     let types = TypeEnvironment::new(
@@ -1935,8 +1950,10 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
             }),
     )
     .unwrap();
-    declarations.types = types.clone();
-    let graph = declarations.check(CheckingLimits::default()).unwrap();
+    declarations_a.types = types.clone();
+    declarations_b.types = types.clone();
+    let graph_a = declarations_a.check(CheckingLimits::default()).unwrap();
+    let graph_b = declarations_b.check(CheckingLimits::default()).unwrap();
     let objects = ObjectEnvironment::new(
         ObjectClosure::new(
             &types,
@@ -1949,58 +1966,87 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         .unwrap(),
     );
 
-    let check_expression = |receiver_type, expression: &Expression| {
-        graph
-            .check_clause_expression(
-                vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-                expression,
-                None,
-                ClauseKind::Invariant,
-                CheckMode::Kernel,
-                CheckingLimits::default(),
-            )
-            .unwrap()
-    };
     let dispatch = dispatch_expression();
-    let selected_d = check_expression(d_type, &dispatch);
-    let selected_c = check_expression(c_type, &dispatch);
+    let selected_d = graph_b
+        .check_clause_expression(
+            vec![("self".to_owned(), ValueType::Reference(d_type))],
+            &dispatch,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let selected_c = graph_a
+        .check_clause_expression(
+            vec![("self".to_owned(), ValueType::Reference(c_type))],
+            &dispatch,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
     let invariant = Expression::binary(
         BinaryOperator::GreaterOrEqual,
         dispatch_expression(),
         Expression::integer(1_i64),
     );
-    let invariant_d = check_expression(d_type, &invariant);
-    let invariant_c = check_expression(c_type, &invariant);
-    let package = CheckedPackage::link(graph);
+    let invariant_d = graph_b
+        .check_clause_expression(
+            vec![("self".to_owned(), ValueType::Reference(d_type))],
+            &invariant,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let invariant_c = graph_a
+        .check_clause_expression(
+            vec![("self".to_owned(), ValueType::Reference(c_type))],
+            &invariant,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let package_a = CheckedPackage::link(graph_a);
+    let package_b = CheckedPackage::link(graph_b);
 
-    let evaluate_expression = |receiver_type, identity: &str, checked, limits| {
-        let mut meter = Meter::new(limits);
-        let evaluation = package
-            .evaluate(
-                checked,
-                vec![Value::Reference(receiver_reference(
-                    receiver_type,
-                    identity,
-                ))],
-                &objects,
-                &mut meter,
-            )
-            .unwrap();
-        (evaluation, meter)
-    };
+    let evaluate_expression =
+        |package: &CheckedPackage, receiver_type, identity: &str, checked, limits| {
+            let mut meter = Meter::new(limits);
+            let evaluation = package
+                .evaluate(
+                    checked,
+                    vec![Value::Reference(receiver_reference(
+                        receiver_type,
+                        identity,
+                    ))],
+                    &objects,
+                    &mut meter,
+                )
+                .unwrap();
+            (evaluation, meter)
+        };
 
-    let (selected_d, _) = evaluate_expression(d_type, "d1", &selected_d, SCALAR_UNLIMITED);
+    let (selected_d, _) =
+        evaluate_expression(&package_b, d_type, "d1", &selected_d, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_d),
         Outcome::Completed(Value::Integer(value)) if value == Integer::from(2_i64)
     ));
-    let (selected_c, _) = evaluate_expression(c_type, "c1", &selected_c, SCALAR_UNLIMITED);
+    let (selected_c, _) =
+        evaluate_expression(&package_a, c_type, "c1", &selected_c, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_c),
         Outcome::Completed(Value::Integer(value)) if value == Integer::from(1_i64)
     ));
 
-    let (evaluation_d, meter_d) = evaluate_expression(d_type, "d1", &invariant_d, SCALAR_UNLIMITED);
+    let (evaluation_d, meter_d) =
+        evaluate_expression(&package_b, d_type, "d1", &invariant_d, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(evaluation_d),
         Outcome::Completed(Value::Boolean(true))
@@ -2008,7 +2054,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 6);
     assert_eq!(meter_d.consumed(LimitKind::ValueOccurrences), 2);
 
-    let (evaluation_c, meter_c) = evaluate_expression(c_type, "c1", &invariant_c, SCALAR_UNLIMITED);
+    let (evaluation_c, meter_c) =
+        evaluate_expression(&package_a, c_type, "c1", &invariant_c, SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(evaluation_c),
         Outcome::Completed(Value::Boolean(true))
@@ -2020,7 +2067,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         work_units: 5,
         ..SCALAR_UNLIMITED
     };
-    let (evaluation_five, meter_five) = evaluate_expression(d_type, "d1", &invariant_d, limits);
+    let (evaluation_five, meter_five) =
+        evaluate_expression(&package_b, d_type, "d1", &invariant_d, limits);
     assert!(matches!(
         evaluation_five.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
@@ -2032,7 +2080,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         work_units: 1,
         ..SCALAR_UNLIMITED
     };
-    let (evaluation_one, meter_one) = evaluate_expression(d_type, "d1", &invariant_d, limits);
+    let (evaluation_one, meter_one) =
+        evaluate_expression(&package_b, d_type, "d1", &invariant_d, limits);
     assert!(matches!(
         evaluation_one.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
