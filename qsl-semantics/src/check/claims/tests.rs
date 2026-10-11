@@ -608,10 +608,7 @@ fn tc_160_narrowed_claim_with_zero_direct_narrows_faults() {
     let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
     let location = checked
         .graph
-        .occurrence(
-            NodeKey::from_digest(*add.node().as_bytes()),
-            add.origin(),
-        )
+        .occurrence(NodeKey::from_digest(*add.node().as_bytes()), add.origin())
         .expect("the add occurrence has a location")
         .clone();
     let expressions = expression_map(&checked, Some(&narrow));
@@ -660,28 +657,47 @@ fn tc_160_narrowed_claim_with_two_direct_narrows_faults() {
     );
 }
 
-/// TC-160 step 12: if candidate narrows are nested, only the inner one
-/// directly referencing the scalar application is its context.
+/// TC-160 step 12: an enclosing narrow at the scalar site's location does
+/// not replace the direct narrow occurrence that supplies its context.
 #[trace("TC-160", "FR-062-AC-13")]
 #[test]
 fn tc_160_direct_context_excludes_outer_narrow() {
-    let scalar = node_key(10);
-    let inner = node_key(11);
-    let outer = node_key(12);
-    let outer_origin = Origin::new(Role::new("expression"), 0);
-    let inner_origin = Origin::new(Role::new("expression"), 0);
-    let candidates = [(outer, outer_origin), (inner, inner_origin.clone())];
-    let operand = |candidate| match candidate {
-        node if node == inner => Some(scalar),
-        node if node == outer => Some(inner),
-        _ => None,
-    };
-    assert_eq!(
-        unique_direct_narrow(&candidates, scalar, |candidate, target| {
-            operand(candidate) == Some(target)
-        }),
-        Ok((inner, inner_origin))
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) }",
     );
+    let add = checked.occurrence("x + 1", 0, Some(ADD));
+    let direct = checked.occurrence("x + 1", 0, Some(NARROW));
+    let direct_node = NodeKey::from_digest(*direct.node().as_bytes());
+    let outer_node = node_key(12);
+    let add_node = NodeKey::from_digest(*add.node().as_bytes());
+    let location = checked
+        .graph
+        .occurrence(add_node, add.origin())
+        .expect("the checked add occurrence has a location")
+        .clone();
+
+    // This is a real graph application cloned from the checked narrow, with
+    // its operand changed to the checked direct narrow. Its source occurrence
+    // is deliberately co-located with the scalar claim so the selector must
+    // inspect production operation identity and operand references.
+    let graph = checked
+        .graph
+        .semantic_graph()
+        .with_test_narrow_over(outer_node, direct_node);
+    let mut expressions = expression_map(&checked, None);
+    expressions.record(outer_node, OccurrenceRole::Expression, location.clone());
+    let records = key_claims(
+        vec![narrowed_claim(location, interval(0, 10))],
+        &expressions,
+        &graph,
+        &BTreeMap::new(),
+    )
+    .expect("the direct narrow supplies the claim context");
+    let record = records
+        .get(&add)
+        .expect("the scalar site's requirement record is keyed");
+    assert_eq!(record.conversion_context(), Some(&direct));
 }
 
 /// TC-160 step 10 (FR-062-AC-13): RR-15 with its two `let` operands

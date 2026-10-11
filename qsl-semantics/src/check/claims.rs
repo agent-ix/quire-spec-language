@@ -782,11 +782,16 @@ pub(crate) fn wire(key: NodeKey) -> WireNodeId {
 fn unique_direct_narrow(
     candidates: &[(NodeKey, Origin)],
     scalar: NodeKey,
-    mut directly_references: impl FnMut(NodeKey, NodeKey) -> bool,
+    graph: &SemanticGraph,
 ) -> Result<(NodeKey, Origin), KeyFault> {
-    let mut matches = candidates
-        .iter()
-        .filter(|(candidate, _)| directly_references(*candidate, scalar));
+    let mut matches = candidates.iter().filter(|(candidate, _)| {
+        matches!(
+            graph.node(*candidate).map(|node| node.body()),
+            Some(BodyTerm::Application(ApplicationTerm { operation, arguments, .. }))
+                if operation_role(operation.identity()) == OperationRole::Narrow
+                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
+        )
+    });
     let (node, origin) = matches.next().ok_or(KeyFault::UnkeyableRequirements)?;
     if matches.next().is_some() {
         return Err(KeyFault::UnkeyableRequirements);
@@ -852,25 +857,7 @@ pub(crate) fn key_claims(
             return Err(unkeyable());
         };
         let (bound_type, conversion_context) = if matches!(site.bound, SiteBound::Narrowed(_)) {
-            let (narrow, narrow_origin) = unique_direct_narrow(here, *key, |narrow, scalar| {
-                // The `operation_role(..) == Narrow` compare is not
-                // distinguished by any fixture today: every application
-                // at a shared location whose sole argument is a
-                // `Reference` to `key` is, in fact, the narrow lowering
-                // inserted over that key (SR-758 FND-006 mutation-tested
-                // this and found no fixture that depends on it). It is
-                // kept because the `Reference`-shape match alone is not
-                // selective — a future scalar-family member taking one
-                // `Reference` argument (for example a unary identity or
-                // cast op) would match that shape too, and without this
-                // compare `find` would take whichever one is ordered
-                // first in `here`, silently reporting the wrong result
-                // bound instead of failing closed.
-                application(narrow).is_some_and(|(identity, arguments)| {
-                        operation_role(identity) == OperationRole::Narrow
-                            && matches!(arguments, [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
-                    })
-            })?;
+            let (narrow, narrow_origin) = unique_direct_narrow(here, *key, graph)?;
             (
                 graph
                     .node(narrow)
