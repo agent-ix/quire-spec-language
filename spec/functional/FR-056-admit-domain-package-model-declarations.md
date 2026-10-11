@@ -383,9 +383,11 @@ environment. A field, operation parameter or result whose `typeRef` names a
 record value type SHALL use that record's value type directly, applying its
 declared presence and multiplicity in the same order as QSpec FR-322's
 "Model-owned members" step 4. The record keeps its most-specific type at
-runtime; a subtype conforms to its record ancestors under FR-208, but neither
-the record nor any of its fields acquires object identity or a `Reference<T>`
-wrapper. Intake SHALL reject a `typeRef` to another business-model meaning
+runtime; a subtype conforms to its record ancestors under FR-208. A record
+value, and any member whose `typeRef` names a record value type, carries that
+value directly without object identity or a `Reference<T>` wrapper. A record's
+field whose `typeRef` names an object type retains its object-reference type.
+Intake SHALL reject a `typeRef` to another business-model meaning
 under FR-154 before assembly, retaining that named refusal.
 
 If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`,

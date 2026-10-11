@@ -52,11 +52,10 @@ the same selected Semantic IR domain package and checked spine package.
    large enough for its bytes and values. Repeat at the exact value bound
    and with one further value. Evaluate an invariant false at one nested
    record value.
-6. Evaluate a postcondition invocation changing only
-   `Account.address.street` with both corresponding frame grants, then
-   remove each grant separately. Repeat under `receiver` scope on the self
-   account and another account. Replace `PostalAddress` by `Address` in one
-   post snapshot without changing any shared field.
+6. Evaluate a postcondition invocation changing `Account.address.street`
+   with a frame grant for the declared `Account.address` field, then remove
+   that grant. Replace `PostalAddress` by `Address` in one post snapshot
+   without changing any shared field, again with and without the grant.
 
 ## Expected Results
 
@@ -78,10 +77,9 @@ the same selected Semantic IR domain package and checked spine package.
   value-count bound admits; one further value returns `resource_exhausted`/
   `insufficient-next-charge` naming the bound, prior count and next path.
   The false invariant is a located logical violation after admission.
-- Step 6 admits with both grants, refuses `frame_violation`/
-  `unauthorized-change` at the first ungranted field when either is absent,
-  and applies `receiver` scope to the root account. The type replacement
-  writes `Account.address` only, without invented nested field writes.
+- Step 6 admits with the `Account.address` grant and refuses
+  `frame_violation`/`unauthorized-change` naming that declared object field
+  without it, for both the nested value change and the type replacement.
 
 ## Traceability
 

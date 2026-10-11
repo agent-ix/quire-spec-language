@@ -365,13 +365,9 @@ required; check 10 settles it.
     surviving object, scalar, reference and record alike. The frame check SHALL
     compare a changed record value by its most-specific type and the fields
     exposed after QSpec FR-150 normalization, under QSpec FR-208. The frame
-    check SHALL report a changed nested field at its FR-207 path; the
-    containing object field and each changed record field
-    on that path are distinct writes, each requiring its own selected
-    `modifies` grant. The grant's `receiver` scope is evaluated against the
-    root object's identity, because a record value has none. A change of
-    the record's most-specific type is a write to its containing field and
-    is not decomposed into fields of the old and new types.
+    check SHALL apply the selected QSpec FR-013 and FR-340 frame grant to
+    the changed declared object field. A record value's member comparison
+    detects changes to that field without introducing another frame grant.
     Within one population it SHALL report the first violation in this
     order, which is `enforce_frame`'s:
     1. walking the post snapshot's objects in ascending key order: an object
@@ -433,7 +429,7 @@ required; check 10 settles it.
 | FR-106-AC-14 | A current snapshot of `Account` whose required `address: Address` field is `{"record":{"type":"ix://example/model/PostalAddress","fields":{"street":{"present":{"record":{"type":"ix://example/model/Street","fields":{"name":{"integer":"7"}}}}},"zip":{"integer":"42"}}}}` admits when `PostalAddress` specializes `Address`, its effective `street` field is optional `Street`, its `zip` field is `Integer`, and `Street.name` is `Integer`. Reordering JSON object members yields the same typed observation and selected digest. The two nested records retain their most-specific types and are reached by distinct FR-207 field and option-value paths. | Test |
 | FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
 | FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `resource_exhausted`/`insufficient-next-charge` with the bound, prior count and next value's path before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
-| FR-106-AC-17 | An invocation changing only `Account.address.street` admits its frame when `modifies` grants both `Account.address` and `Address.street`; with either grant absent it refuses `frame_violation`/`unauthorized-change` at the first ungranted field's FR-207 path. A receiver-scoped `Address.street` grant covers the nested write under the receiver `Account` and does not cover the same write under another account. Replacing `PostalAddress` with `Address` is a write to `Account.address` and does not fabricate writes to fields of either record type. | Test |
+| FR-106-AC-17 | An invocation changing `Account.address` from one admitted record value to another admits its frame when the selected `modifies` grant covers that declared object field. Without that grant it refuses `frame_violation`/`unauthorized-change` naming `Account.address`, whether the change is to a record member or its most-specific type. The existing QSpec FR-013 and FR-340 receiver and grant semantics apply. | Test |
 
 ## Dependencies
 
