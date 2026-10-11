@@ -31,6 +31,13 @@ const SQ: &str = "function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x
 /// FR-062's RR-6.
 const BIG: &str = "function big using v(n: Integer): Integer pure { n + 1 }";
 
+/// TC-984's opposite-guard occurrences of one application node.
+const GUARDED: &str =
+    "function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }";
+
+/// TC-984's unguarded record.
+const UNGUARDED: &str = "function g using v(x: Int[0, 9]): Integer pure { x + 1 }";
+
 /// FR-062's RR-16.
 const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
     function h using v(q: Int[0, 20]): Boolean pure { true }\n\
@@ -266,4 +273,58 @@ fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
         .collect();
     assert_eq!([first.result_bound(), second.result_bound()], nodes[..]);
     assert_ne!(first.result_bound(), second.result_bound());
+}
+
+/// TC-984 / FR-075-AC-9: each request item preserves its record's canonical
+/// guard sequence, including opposite outcomes for the shared branch guard.
+#[trace("TC-984", "FR-075-AC-9")]
+#[test]
+fn tc_984_items_preserve_occurrence_path_conditions() {
+    let checked = package(GUARDED);
+    let records = checked.graph().requirements();
+    let (registry, _) = registry(Capability::ValueValidity);
+    let items = items_from_requirements(records, &registry, None);
+    let selected: Vec<_> = items
+        .iter()
+        .filter(|item| {
+            items
+                .iter()
+                .filter(|other| other.node() == item.node())
+                .count()
+                == 2
+        })
+        .collect();
+    let [first, second] = selected.as_slice() else {
+        panic!("two items at the shared `+` node: {items:#?}");
+    };
+    assert_eq!(first.node(), second.node());
+    assert_ne!(first.occurrence(), second.occurrence());
+    assert!(first.occurrence() < second.occurrence());
+
+    for item in [*first, *second] {
+        let record = &records[item.occurrence()];
+        assert_eq!(item.path_condition(), record.path_condition());
+        assert_eq!(item.path_condition().len(), 1);
+    }
+    let [then_guard] = first.path_condition() else {
+        panic!("then occurrence has one guard: {first:#?}");
+    };
+    let [else_guard] = second.path_condition() else {
+        panic!("else occurrence has one guard: {second:#?}");
+    };
+    assert_eq!(then_guard.occurrence(), else_guard.occurrence());
+    assert!(then_guard.holds());
+    assert!(!else_guard.holds());
+
+    let unguarded = package(UNGUARDED);
+    let records = unguarded.graph().requirements();
+    let items = items_from_requirements(records, &registry, None);
+    let [item] = items.as_slice() else {
+        panic!("one unguarded item: {items:#?}");
+    };
+    assert_eq!(
+        item.path_condition(),
+        records[item.occurrence()].path_condition()
+    );
+    assert!(item.path_condition().is_empty());
 }
