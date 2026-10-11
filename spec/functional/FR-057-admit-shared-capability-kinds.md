@@ -245,9 +245,9 @@ consumes this type and defines no second capability vocabulary.
 
 QSL reads no provider-manifest bytes. The driver reads a backend's FR-331
 provider manifest, writes the FR-331 `manifest`, and registers the backend
-with three values from it, each exactly as stated: the backend identity, the
-advertised (kind, mode) labels, and the manifest's `domains`, present or
-absent (ADR-013 C-28).
+with the backend identity, the advertised (kind, mode) labels, the manifest's
+`domains`, present or absent, and its evidence-kind labels when it advertises
+`probabilistic-satisfaction` (ADR-013 C-28).
 
 When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
@@ -281,7 +281,7 @@ QSL's.
 A second registration under an identity the registry already holds
 is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
 quire-specification FR-290 "Candidate set and negotiation"): an equal
-descriptor repeats harmlessly, and an unequal one conflicts, refusing the
+complete descriptor, including its evidence-kind set, repeats harmlessly, and an unequal one conflicts, refusing the
 identity once with `invalid_capability`/`duplicate-backend` and withdrawing
 the registration already held -- unlike the kind/mode and `domains` causes above,
 this refusal does not leave the earlier registration standing.
@@ -310,7 +310,7 @@ first:
 | Candidate set | Disposition |
 | --- | --- |
 | unknown-backend mark, or a registered backend with no negotiation arm | `invalid-request`, `invalid_capability`/`unknown-backend` |
-| inconsistent with the manifest or the named backend, or containing a candidate that does not advertise the kind | `invalid-request`, `invalid_capability`/`inconsistent-candidates` |
+| inconsistent with the manifest or the named backend, or containing a candidate that does not advertise the item's capability kind and, for a probabilistic item, its exact evidence kind | `invalid-request`, `invalid_capability`/`inconsistent-candidates` |
 | empty | `unsupported`, warned, naming the item's kind and any named backend; `unsupported_projection`/`unsupported-requested-capability` |
 | more than one, and the request names none | `invalid-request`, `invalid_capability`/`ambiguous-backend`, naming every candidate in candidate order |
 | exactly one | that candidate's arm: `supported`, `requires-bound`, `unsupported` (warned) or `invalid-request` |
@@ -387,7 +387,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-5 | The admission entry point takes no registry or backend parameter. Admitting the same requested pairs yields identical admitted pairs and static meaning whatever backends are registered. A declaration whose names resolved reaches its family checker without any capability request. | Test (TC-155) |
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
-| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
+| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal complete descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item, except the row for refinement between two operation contracts or state models, whose proof route no V1 ticket owns (ADR-017 RF-1); an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
 | FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it, or is inapplicable to all current QSL declaration families where the table says `none`. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration and a `probabilistic-satisfaction` or `schedulability` request on any current declaration are inapplicable, name the declaration family, and leave its body reaching its family checker. | Test |
 | FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |

@@ -206,6 +206,8 @@ is invented for that criterion.
 | TC-971 | Capability family projection matches FR-290 | Unit | P0 | FR-057-AC-11, FR-057-AC-13 | 🚧 |
 | TC-972 | same_kind compares all capability labels exactly | Unit | P0 | FR-057-AC-4 | 🚧 |
 | TC-973 | Composed admission stage projection preserves stage ownership | Integration | P0 | FR-057-AC-14 | 🚧 |
+| TC-980 | Probabilistic candidates require the exact requested evidence kind | Unit | P0 | FR-075-AC-1, FR-075-AC-12 | 🚧 |
+| TC-981 | An evidence-kind difference conflicts a repeated backend identity | Unit | P0 | FR-075-AC-7, FR-075-AC-13 | 🚧 |
 
 ## Domain-package model intake (L2)
 
@@ -269,6 +271,8 @@ unsupported prerequisite.
 | FR-057 | FR-057-AC-11 | TC-115, TC-971 |  |
 | FR-057 | FR-057-AC-13 | TC-971 |  |
 | FR-057 | FR-057-AC-14 | TC-973 |  |
+| FR-075 | FR-075-AC-12 | TC-980 |  |
+| FR-075 | FR-075-AC-13 | TC-981 |  |
 | FR-040 | FR-040-AC-1 | TC-119 |  |
 | FR-040 | FR-040-AC-2 | TC-119 |  |
 | FR-040 | FR-040-AC-3 | TC-119 |  |

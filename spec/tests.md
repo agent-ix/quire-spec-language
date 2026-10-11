@@ -600,3 +600,5 @@ names different artifacts in each.
 | TC-977 | Unknown probabilistic evidence labels refuse at admission | Unit | P1 | FR-075-AC-10 | 🚧 |
 | TC-978 | Other capability kinds do not require evidence labels | Unit | P1 | FR-075-AC-11 | 🚧 |
 | TC-979 | Every capability match is exhaustive under the seam probe | Integration | P1 | FR-080-AC-6 | 🚧 |
+| TC-980 | Probabilistic candidates require the exact requested evidence kind | Unit | P1 | FR-075-AC-1, FR-075-AC-12 | 🚧 |
+| TC-981 | An evidence-kind difference conflicts a repeated backend identity | Unit | P1 | FR-075-AC-7, FR-075-AC-13 | 🚧 |

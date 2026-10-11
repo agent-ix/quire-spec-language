@@ -303,7 +303,9 @@ driver uses the record's extent for it.
 No new capability kind, flag or mode is added. QSL records; CG settles.
 
 1. QSL S3 records `Requirements{kind, extent, bounds}` per item (§4).
-2. `qsl_route::Registry::candidates` matches on kind alone (FR-075).
+2. `qsl_route::Registry::candidates` matches on capability kind and, for
+   `probabilistic-satisfaction`, the item's exact evidence kind (FR-075);
+   other capability kinds match on kind alone.
 3. The O-20 request writer writes the item's extent classification,
    including `finite_bound_available` (§4).
 4. CG `negotiate_*` applies the QSpec FR-290 advertised-mode table, then the
