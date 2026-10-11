@@ -32,8 +32,7 @@ verifies it against `qsl-route`'s real `Registry`.
 
 ## Expected Results
 
-Step 2 succeeds (`Ok`), not a refusal; changing only manifest digest also
-does not change this idempotent outcome. Step 4's candidate set holds `A` once
+Step 2 succeeds (`Ok`), not a refusal. Step 4's candidate set holds `A` once
 and, after step 3, `B` once, each exactly as registered. Step 5 reports no
 refusal for `A`. The result is identical however many times the identical
 descriptor is repeated, and independent of where in the sequence `B` is
