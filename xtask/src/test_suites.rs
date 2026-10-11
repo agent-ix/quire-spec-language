@@ -1867,7 +1867,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
-    #[trace("TC-950")]
+    #[trace("TC-950", "NFR-014-AC-2")]
     fn a_relative_and_an_absolute_executable_path_both_resolve() {
         let lines = [
             workspace_artifact(
@@ -3024,7 +3024,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// and reaped is established on a live child by the `reap` tests, not
         /// here: this run cannot observe its own child.
         #[test]
-        #[trace("TC-950")]
+        #[trace("TC-950", "NFR-014-AC-10")]
         fn a_failing_echo_sink_fails_the_run_with_the_sinks_error() {
             let dir = project("");
             let target = dir.path().join("target");

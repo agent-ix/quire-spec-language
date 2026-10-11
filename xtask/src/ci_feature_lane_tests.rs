@@ -19,7 +19,17 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "--workspace"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "default-workspace",
+        "--locked",
+        "--workspace",
+    ],
     &[
         "clippy",
         "--locked",
@@ -30,7 +40,18 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "-p", "qsl-semantics"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "default-qsl-semantics",
+        "--locked",
+        "-p",
+        "qsl-semantics",
+    ],
     &[
         "clippy",
         "--locked",
@@ -41,7 +62,18 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "-p", "qsl-cst"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "default-qsl-cst",
+        "--locked",
+        "-p",
+        "qsl-cst",
+    ],
 ];
 const ALL_COMMANDS: &[&[&str]] = &[
     &[
@@ -54,7 +86,18 @@ const ALL_COMMANDS: &[&[&str]] = &[
         "-D",
         "warnings",
     ],
-    &["test", "--locked", "--workspace", "--all-features"],
+    &[
+        "run",
+        "--locked",
+        "--package",
+        "xtask",
+        "--",
+        "test-suites",
+        "all-features-workspace",
+        "--locked",
+        "--workspace",
+        "--all-features",
+    ],
 ];
 
 fn workspace() -> &'static Path {
@@ -289,8 +332,8 @@ fn routing_oracle_rejects_safe_path_and_command_mutations() {
             "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features-mutant}\" cargo fmt --all -- --check",
         ),
         (
-            "cargo test --locked --workspace\n",
-            "cargo test --locked --workspace --all-features\n",
+            "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}\" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace\n",
+            "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}\" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features\n",
         ),
     ] {
         // Mutate only the fixture copy, retaining safe shell-variable expansion.
