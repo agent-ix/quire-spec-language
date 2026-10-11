@@ -3,6 +3,8 @@ id: TC-449
 title: "The request builder writes one item per requirement record"
 type: TC
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-062
+    type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-075
     type: verifies
 ---
@@ -19,7 +21,9 @@ context and candidate outcome. Scope: FR-075-AC-8 and FR-075-AC-15.
 Catches a builder that merges two records at one node into one item, drops
 an item whose candidate set is empty or whose extent is unbounded, orders
 items by node or by check order instead of by occurrence key, or takes the
-extent from anywhere but the record.
+extent from anywhere but the record; it also catches a driver that reuses
+one node-keyed context for both RR-16 occurrences or routes a narrow as an
+additional item.
 
 ## Test Procedure
 
@@ -43,6 +47,11 @@ extent from anywhere but the record.
 6. Check FR-062's RR-16 unit and run the builder over its records with the
    step 1 registry. Inspect each source record and its corresponding item,
    including `conversion_context()` and `result_bound()`.
+7. On the driver's production path, check `function f using v(a: Int[0,
+   9]): Int[0, 10] pure { a + 1 }`. Record the builder item's request index,
+   occurrence key, application root and conversion context before the driver
+   calls IR. Repeat the measurement with RR-16, retaining both items' indices
+   and contexts before either driver call.
 
 ## Expected Results
 
@@ -69,3 +78,11 @@ extent from anywhere but the record.
   even though the application node key is shared. Neither narrow is a second
   item. For the unbounded `n + 1` record from step 2, the builder exposes no
   conversion context because its result bound is its own result type.
+- Step 7: for `a + 1`, the driver calls IR with the `+` root and the root
+  identified by that item's direct-narrow `conversion_context()`; the roots
+  are `[item.node(), item.conversion_context().node()]`, associated by its
+  request index and occurrence key. For RR-16, it does so for both
+  items, preserving the two distinct narrow occurrence keys and passing each
+  context with its matching item. The narrow is included as context only; no
+  second routed item or claim is created. A bare IR `lower([add])` call keeps
+  its existing behavior.
