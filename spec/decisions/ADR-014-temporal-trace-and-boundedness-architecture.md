@@ -67,7 +67,7 @@ relationships:
   backend an unbounded formula settles `unsupported` with a warning. QSpec
   FR-360 maps `proved`, `refuted`, `inconclusive`, `unsupported` and `failed`
   onto the QSpec FR-241 to FR-243 axes.
-- **QSpec, capabilities.** QSpec FR-290 has ten kinds and two modes. It has no
+- **QSpec, capabilities.** QSpec FR-290 has twelve kinds and two modes. It has no
   liveness kind and no quantifier kind: a temporal claim under either profile
   is `temporal-satisfaction`, and quantification, induction and composition
   are obligation forms inside a claim that the selected backend's arm
