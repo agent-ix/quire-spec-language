@@ -241,14 +241,21 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_TARGETS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
-$(CI_TARGETS): check-conformance-input
-# The outer invocation obtains one canonical checkout before starting any lane.
-# Its child Make inherits that absolute value for ordinary Cargo commands too.
-ci: check-spec-validation
-	@$(CONFORMANCE_XTASK) ci
+CI_CHECKS := check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_TARGETS := conformance $(CI_CHECKS)
+# Every aggregate prerequisite is ordered after native specification validation
+# when the public aggregate is invoked. Standalone lanes retain their behavior.
+ci: check-spec-validation $(CI_CHECKS)
+ifneq ($(filter ci,$(MAKECMDGOALS)),)
+$(CI_CHECKS): | check-spec-validation
+endif
+
+# The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
+# Keep the validation prerequisite ahead of all lanes without making it a
+# dependency of standalone targets such as ci-clean-build.
 .PHONY: ci-internal
-ci-internal: $(CI_TARGETS)
+ci-internal: check-conformance-input
+	+$(MAKE) --no-print-directory $(CI_TARGETS)
 
 # Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
 # reaches the recipe shell as data; Rust canonicalizes it before child Cargo runs.
