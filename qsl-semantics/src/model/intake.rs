@@ -4438,9 +4438,9 @@ mod tests {
         )
         .expect_err("owner/name is not the relationship slot identity");
         assert!(
-            refusal.detail.contains(
-                "is not ix://acme/orders/relationship/<Name>-<verb>-<TargetName>"
-            ),
+            refusal
+                .detail
+                .contains("is not ix://acme/orders/relationship/<Name>-<verb>-<TargetName>"),
             "{}",
             refusal.detail
         );
