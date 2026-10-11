@@ -36,11 +36,12 @@ limits and an uncancelled handle except in the explicit stopped cases.
    `tests/fixtures/spine-compile.native`; then select a node key the package
    lacks. Compare the returned region with the declaration's independently
    located source bytes.
-3. Build the counterexample views of
+3. Build the counterexample view of
    [FR-281](../functional/FR-281-analyze-claims-with-in-process-engines.md)
-   AC-2's record and
+   AC-2's record. Build the outcome view of
    [FR-290](../functional/FR-290-settle-plugin-results-as-typed-terminal-records.md)
-   AC-1's record.
+   AC-1's `proved`/`trusted` plugin record, which carries no counterexample
+   assignments.
 4. Build the trace view of
    [FR-283](../functional/FR-283-monitor-a-supplied-trace-offline.md)
    AC-2's lasso, the state-graph view of an
@@ -82,7 +83,10 @@ Tag the tests `#[trace("TC-782", "<AC id>")]`.
 
 - Step 1: it shows the `package_id`, the `test/geometry` dependency with its `package_id`, the exported declarations and the requirement records, each equal to the package's.
 - Step 2: kind function, the result type and a source region whose bytes equal the declaration's text; the unknown selector refuses naming the selector and the `package_id`.
-- Step 3: each assignment under its parameter name and the function's `QualifiedName`; the second shows the `trusted` label.
+- Step 3: the counterexample view shows each assignment under its parameter
+  name and the function's `QualifiedName`; the outcome view preserves the
+  plugin record's `proved` disposition and `trusted` label without deriving
+  counterexample assignments.
 - Step 4: four positions' states, loop start at position 2 and the deciding position; exactly the retained states and transitions; the cause, catalog code and `Locus`.
 - Step 1 also preserves model selections and the capability report exactly;
   empty collections remain empty.
