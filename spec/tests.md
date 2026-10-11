@@ -551,7 +551,7 @@ names different artifacts in each.
 | TC-920 | Native specification validation precedes aggregate Cargo execution | Integration | P1 | NFR-002-AC-1, NFR-002-AC-2, NFR-002-AC-3, NFR-002-AC-4 | 🚧 |
 | TC-919 | An empty model-query object identity is an internal fault | Unit | P1 | FR-090-AC-13, FR-090-AC-16, FR-090-AC-17 | 🚧 |
 | TC-916 | Model-query shape breaks have QSL-owned fault routes | Unit | P1 | FR-090-AC-14, FR-090-AC-16 | 🚧 |
-| TC-917 | Evaluator invariant producers have explicit QSL classifications | Unit | P1 | FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18, FR-096-AC-15 | 🚧 |
+| TC-917 | Evaluator invariant producers have explicit QSL classifications | Unit | P1 | FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18, FR-090-AC-19, FR-090-AC-20, FR-096-AC-15 | 🚧 |
 | TC-918 | Received typed kernel invariant provenance survives fault mapping | Unit | P1 | FR-096-AC-19, FR-090-AC-17 | 🚧 |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 |
