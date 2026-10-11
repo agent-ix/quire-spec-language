@@ -43,16 +43,19 @@ ceiling therefore bounds the work done, not only the result:
 
 - Phase 4 prices every redefinition group and charges every phase-4 fact
   and conflict check before it resolves any dominance contest.
-- Each effective member's `normalize.hash`, and the view's, is charged from
-  a length counted from the preimage's parts, before the preimage is
-  encoded or hashed.
-- An effective type's identity is hashed in phase 3, before its phase-5
-  `normalize.hash`, because phase 4's charge order uses it. Its encoding
-  holds only that type's ancestor paths, whose total length the type's
-  `normalize.cycle-check` charges have already admitted as work.
-- Every fact derived along one ancestor path shares that path, so memory
-  grows with the number of facts plus the total ancestor-path length, and
-  the total path length is bounded by the work the cycle checks admitted.
+- For `quire.model.complete/v2`, phase 3 admits a canonical shared-prefix
+  index: each declared inheritance edge and prefix link is admitted once,
+  while `derivation_facts` counts every logical fact and ordinal represented
+  by the run. The binder does not expand and re-encode every ancestor path
+  for every descendant identity.
+- Every required v2 identity, universe and complete-view hash is still
+  computed. Its exact sole-writer preimage length is charged before encoding
+  or hashing; shared commitments are referenced according to the selected
+  v2 grammar, and total `hashed_bytes` counts all bytes actually admitted to
+  those hash calls, including the complete view.
+- The shared-prefix index and retained model representation must satisfy
+  FR-081's full-size memory acceptance under the issue's 20 GiB cap; a linear
+  work-unit bound alone is not evidence of that memory result.
 - `ancestor_steps` and `family_steps` are charged like every other ceiling:
   each `supertypes` or `redefines` edge a walk follows is charged before it
   is followed (FR-082, FR-083), and the first denied charge stops the walk
@@ -97,10 +100,11 @@ per-charge record, so its memory does not grow with the work it bounds.
   ceiling. Each effective declaration's preimage is hashed once and again
   inside the view preimage, and the view holds those preimages, so this also
   bounds the view's retained size.
-- **Work, 16777216.** NFR-011's default work ceiling. Each record, fact,
-  declaration and hash charges one unit, and a cycle check charges its path
-  length. The work ceiling binds before the fact ceiling when ancestor paths
-  average more than about nine steps.
+- **Work, 16777216.** NFR-011's default work ceiling. Each intake record,
+  ordinary fact or canonical prefix-run event, declaration and hash is
+  charged with its defined indexed lookups, links and ordering events. A
+  v2 cycle check is charged once per declared input edge; it does not charge
+  the represented ancestor-path length again for each descendant fact.
 - **Ancestor and family steps, 16777216 edges.** The work default above,
   NFR-011's S3 work default. Both count edges followed, a unit of work: a
   walk follows each edge of a type's closure at most once, so the default

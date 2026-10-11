@@ -92,19 +92,24 @@ collapse those derived declarations by an identity-equivalence rule. An
 original whose kind has no selected derivation rule remains in the exact
 original inventory without acquiring an effective identity from this guarantee.
 
-The phase-3 type-inheritance ladder SHALL retain every logical derivation fact,
-input path and ordinal, while representing consecutive shared prefixes through
-the canonical prefix-run index selected by QSpec FR-150. Every declared input
-edge is cycle-checked and admitted to the path index once; a repeated path,
-block, range or binding lookup is charged as one reuse event independent of the
-represented path length. For a single-inheritance chain of E edges, phase-3
-fact-run, cycle-check, normal-form segment/link and range/binding-proof charges
-SHALL total no more than `12 × (E + 1)`. This changes accounting and internal
-sharing only: exact v2 identity preimage bytes, sole-writer JCS output, digest
-domains, eagerly computed identities and published vectors SHALL remain
-unchanged. The semantic `derivation_facts` counter SHALL still include every
-expanded logical fact; callers may explicitly select a sufficient limit, but
-the supported chain bound SHALL NOT be reduced.
+For a selected `quire.model.complete/v2` package, the binder SHALL retain every
+logical derivation fact, input path and ordinal while representing consecutive
+shared prefixes through QSpec FR-150's canonical prefix-run index. It SHALL
+admit each declared input edge and canonical prefix link once, and shall reuse
+the indexed commitments when preparing the exact v2 identity preimages; it
+SHALL NOT expand and re-encode every ancestor path for every descendant
+identity. The sole writer SHALL hash every required effective identity,
+universe and complete view using the selected v2 preimage bytes unchanged.
+For the 10,000-edge case in FR-081-AC-13, total bytes admitted to all
+normalization hash calls SHALL be at most 268,435,456 bytes and total
+`work_units` SHALL be at most 16,777,216; these totals include every eager
+identity and the complete view, not only phase-3 bookkeeping. The phase-3
+fact-run, cycle-check, normal-form segment/link, and range/binding-proof
+subtotal SHALL be at most `12 × (E + 1)`. The semantic `derivation_facts`
+counter SHALL still include every expanded logical fact and SHALL be admitted
+at 50,015,001 for this case; no identity, path, fact or supported-size bound is
+removed. Exact v2 identity preimage/writer bytes, digest domains and published
+identity vectors SHALL remain unchanged.
 
 The binder SHALL use the selected definition's closed key/block/range,
 literal/prefix and declaration-sequence grammar and its unique normal form.
@@ -257,8 +262,9 @@ qualify the replacement closure or the new adverse accounting cases.
 | FR-081-AC-9 | Expanding the canonical compressed provenance yields every ordered fact/input/rule/ordinal, including all hidden redefinitions and diamond paths; altered overlap, count, tail, ordinal meaning or alternative factoring cannot be admitted as the canonical correspondence. | Test |
 | FR-081-AC-10 | Every effective entry has its eager digest and retained preimage; complete view/universe computation includes them all. Missing provenance records or a root-only/requested-member proof transport cannot pass complete-view admission. | Test |
 | FR-081-AC-11 | Analytical closed-template prices agree with the sole writer for actual admitted strings; one-less or zero denial at preparation/hash charge points performs none of the denied work, including zero encoding/hashing of a denied node, while shared hits retain their prescribed lookup charges without rehashing. | Test |
-| FR-081-AC-12 | An old or mixed selection/schema/reader/accounting/domain cohort is not admitted as the replacement through digest relabelling, a compatibility reader or an API alias. | Inspection |
-| FR-081-AC-13 | For a 10,000-edge single-inheritance chain with 10,001 effective types and package input no larger than 512 KiB, normalization retains all 50,015,001 logical derivation facts, eagerly computes all type identities and the complete view, and completes when explicit limits admit those facts and the resulting records, bytes and total work. The phase-3 shared-prefix-specific work is at most `12 × 10,001`; exact v2 preimage/writer bytes and existing published identity vectors are unchanged. | Test |
+| FR-081-AC-12 | An old or mixed selection/schema/reader/accounting/domain cohort is not admitted as the replacement through identity relabelling, a compatibility reader or an API alias. | Test |
+| FR-081-AC-13 | For a deterministic 10,000-edge single-inheritance chain with 10,001 effective types and canonical package input no larger than 524,288 bytes, normalization retains all 50,015,001 logical derivation facts and eagerly computes every effective identity and the complete view. With `derivation_facts` set to 50,015,001 and all other limits at their NFR-012 defaults, total bytes admitted to every normalization hash call are at most 268,435,456, total `work_units` are at most 16,777,216, and phase-3 shared-prefix-specific work is at most 120,012. Exact v2 preimage/writer bytes and existing published identity vectors are unchanged. | Test |
+| FR-081-AC-14 | When the deterministic FR-081-AC-13 case is normalized in an isolated process, its observed peak resident set is no greater than 21,474,836,480 bytes (20 GiB); the measurement includes input admission, normalization, every eager identity, the complete view and result retention. | Test |
 
 ## Dependencies
 
@@ -273,6 +279,11 @@ qualify the replacement closure or the new adverse accounting cases.
   [FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md) resolve
   conformance, dispatch and population membership over the correspondence
   this requirement produces.
+- [TC-985](../test-cases/TC-985-model-prefix-expansion-preserves-provenance.md),
+  [TC-986](../test-cases/TC-986-model-identity-prices-and-denials.md),
+  [TC-987](../test-cases/TC-987-model-replacement-cohort-is-atomic.md) and
+  [TC-988](../test-cases/TC-988-full-size-model-identity-cost.md) specify the
+  new expansion, accounting, cohort and full-size evidence procedures.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-03 and O-05 record QSL's ownership of original declaration identity and
   effective declaration identity; this requirement states their behavioral
