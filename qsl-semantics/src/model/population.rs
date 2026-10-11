@@ -891,10 +891,43 @@ fn population_id_work_bound(
                 .saturating_add(declaration.package.len())
                 .saturating_add(declaration.node.len())
         }));
+    let encoded_member_bytes = members
+        .iter()
+        .map(|(key, declaration)| {
+            key.object
+                .len()
+                .saturating_add(declaration.package.len())
+                .saturating_add(declaration.node.len())
+        })
+        .max()
+        .unwrap_or(0);
+    let member_count = length_amount(members.len());
+    let maximum_encoded_member_bytes = u64::try_from(encoded_member_bytes)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(6)
+        .saturating_add(512);
+    let sorting_work = population_id_sort_work_bound(member_count, maximum_encoded_member_bytes);
     u64::try_from(variable)
         .unwrap_or(u64::MAX)
         .saturating_mul(12)
-        .saturating_add(length_amount(members.len()).saturating_mul(2))
+        .saturating_add(member_count.saturating_mul(2))
+        .saturating_add(sorting_work)
+}
+
+fn population_id_sort_work_bound(member_count: u64, maximum_encoded_member_bytes: u64) -> u64 {
+    let sort_levels = if member_count <= 1 {
+        0
+    } else {
+        u64::BITS - (member_count - 1).leading_zeros()
+    };
+    // Sorting performs O(n log n) bytewise comparisons. Each comparison may
+    // rescan a full common prefix, so price the worst encoded member length
+    // for every comparison, not merely the total input length. The factor of
+    // four conservatively covers the comparison bound of the slice sort.
+    member_count
+        .saturating_mul(u64::from(sort_levels))
+        .saturating_mul(4)
+        .saturating_mul(maximum_encoded_member_bytes)
 }
 
 /// Conservative RFC 8785 byte ceiling for the preimage and each member
@@ -2229,6 +2262,20 @@ mod tests {
                 ancestor_steps: 16_777_216,
             }
         );
+    }
+
+    /// Sorting canonical member encodings prices repeated-prefix comparisons,
+    /// not only the bytes emitted once by each member.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_sort_work_bound_covers_repeated_prefixes() {
+        let short_keys = population_id_sort_work_bound(32, 512);
+        let long_repeated_prefix_keys = population_id_sort_work_bound(32, 6 * 4096 + 512);
+        let twice_as_many_keys = population_id_sort_work_bound(64, 512);
+
+        assert_eq!(short_keys, 32 * 6 * 4 * 512);
+        assert!(long_repeated_prefix_keys > short_keys * 8);
+        assert!(twice_as_many_keys > short_keys);
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {

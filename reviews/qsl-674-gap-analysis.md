@@ -42,3 +42,15 @@ CONDITIONAL — no uncovered test behavior was identified in the manually traced
 - Reverse-gap and stub inventory: not assessed beyond the three changed code files.
 - Oracle review: included in companion code/Rust review SR-4962; tests were not run because queued gates are active.
 - No builds or tests were run by this reviewer.
+
+## Disposition pass 3 — exact-head manual mapping
+
+This pass reviewed PR #721 head `331d2ccab5e90586112c5af09ed3b5380536c186` against fresh `origin/main` base `bdf259f008c6577f4235b06ab1d87c32db83099a`. The changed source/test scope remains the three G3 files listed above. `quoin matrix --repo /tmp/qsl721-review --json` and `quire matrix --scope /tmp/qsl721-review --format json` both timed out at 30 seconds without matrix output; the latter emitted duplicate-archetype/inverse-edge and inline-schema warnings before timing out. The manual mapping below is therefore subset-only, not a computed matrix or repository-wide reverse-gap/stub audit.
+
+- FR-089-AC-7 member and maximum distinctions remain behaviorally checked by `population_identity_binds_maximum_and_canonical_members` and `population_bindings_with_different_maxima_have_distinct_ids`.
+- FR-089-AC-7 Post/Pre identity remains checked by `population_post_identity_binds_its_pre_population_id`; the literal seven-field vector is checked by `population_identity_golden_vector_contains_all_seven_fields`.
+- `population_identity_encoding_is_charged_before_hashing` checks an NFR-012 work-limit outcome, not FR-089-AC-7 identity behavior. Its trace binding is recorded as code-review FND-005 in SR-4962. This does not leave FR-089-AC-7 uncovered because the identity tests above remain tagged.
+- FR-084-AC-1 and FR-084-AC-4 coverage is unchanged; the old false AC-4 tag in FND-003 remains corrected.
+- The prior SR-4963 finding row is only the required clean placeholder, not a substantive finding. No acceptance-coverage finding is added in this pass. Oracle review of the current member/max/pre assertions and literal vector is recorded in SR-4962; tests were not run by the reviewer.
+
+The current source review identifies an NFR-012 accounting defect in worst-case member sorting (SR-4962 FND-004); this is a code/resource-bound finding rather than an uncovered acceptance-test behavior. The computed matrix and broad reverse-gap/stub inventory remain unavailable.
