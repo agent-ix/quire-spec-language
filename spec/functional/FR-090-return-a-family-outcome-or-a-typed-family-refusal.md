@@ -528,9 +528,11 @@ For the fixed Rational caller only, QSL SHALL verify
 `ieee-conversion-rejected` by temporary source Inspection rather than a
 fabricated execution fixture. The evaluator's `NodeKind::IeeeToRational`
 calls `ieee_to_exact` with `IeeeExactTarget::Rational(domain)`;
-the [released kernel discriminant](https://github.com/agent-ix/quire-exact/blob/main/src/ieee.rs#L692-L707)
-returns outer `Err(IllTyped)` only for Decimal, Integer or BoundedInteger
-targets. Its Rational arm returns `Ok(Outcome::from_stop(to_exact(...)))`.
+in the `quire-exact` source selected by this repository's [Cargo.lock package
+entry](../Cargo.lock#L1617), `src/ieee.rs` lines 692–707 match the target:
+the Rational arm supplies the domain, while only Decimal, Integer and
+BoundedInteger return outer `Err(IllTyped)`. The Rational arm returns
+`Ok(Outcome::from_stop(to_exact(...)))`.
 Thus no value, Rational domain or meter state at this caller can select
 the outer error arm. Inspection SHALL retain the defensive S6a
 `ieee-conversion-rejected` InternalFault mapping without a synthetic kernel
