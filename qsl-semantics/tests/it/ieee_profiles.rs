@@ -19,8 +19,8 @@ use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, Decimal, DecimalType, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
-    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue,
+    ieee_to_exact, Decimal, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
+    IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue,
     IeeeWidth, IllTyped, IllTypedCause, Rational, RoundingMode, IEEE_DEFINITION,
 };
 use quire_exact::{
@@ -121,8 +121,7 @@ fn every_finite_ieee() -> RationalDomain {
 }
 
 fn to_rational(value: IeeeValue, domain: &RationalDomain, meter: &mut Meter) -> Outcome<IeeeExact> {
-    ieee_to_exact(value, IeeeExactTarget::Rational(domain), meter)
-        .expect("a Rational[..] target is well-typed")
+    ieee_to_exact(value, domain, meter)
 }
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
@@ -1713,15 +1712,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
 
     let one = Integer::from(1_i64);
     let wide = f64v(0x3ff0_0000_0000_0000);
-    let decimal = DecimalType::new(
-        Integer::from(0_i64),
-        Integer::from(10_i64),
-        0,
-        0,
-        RoundingMode::NearestEven,
-    )
-    .unwrap();
-    let bit = IntegerInterval::new(Integer::from(0_i64), Integer::from(1_i64)).unwrap();
     for (attempt, cause) in [
         (
             evaluate_ieee(
@@ -1753,33 +1743,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
             )
             .map(|_| ()),
             IllTypedCause::IeeeWithExactOperand,
-        ),
-        (
-            ieee_to_exact(
-                f32v(0x3f80_0000),
-                IeeeExactTarget::Decimal(&decimal),
-                &mut Meter::new(limits(0, 0, 0, 0)),
-            )
-            .map(|_| ()),
-            IllTypedCause::IeeeToNonRationalExact,
-        ),
-        (
-            ieee_to_exact(
-                f32v(0x3f80_0000),
-                IeeeExactTarget::BoundedInteger(&bit),
-                &mut Meter::new(limits(0, 0, 0, 0)),
-            )
-            .map(|_| ()),
-            IllTypedCause::IeeeToNonRationalExact,
-        ),
-        (
-            ieee_to_exact(
-                f32v(0x3f80_0000),
-                IeeeExactTarget::Integer,
-                &mut Meter::new(limits(0, 0, 0, 0)),
-            )
-            .map(|_| ()),
-            IllTypedCause::IeeeToNonRationalExact,
         ),
     ] {
         assert_eq!(attempt, Err(IllTyped { cause }));
