@@ -1464,8 +1464,8 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     assert_eq!(binding.members().len(), 3);
     assert_eq!(
         admission.admitted_charges().len(),
-        3,
-        "one binding.member charge per P1 member"
+        4,
+        "three binding.member charges plus the pre-encoding identity-work charge"
     );
 }
 
@@ -1904,7 +1904,11 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
             .count(),
         1
     );
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 907);
+    assert_eq!(
+        admission.consumed(AdmissionLimitKind::WorkUnits),
+        6_827,
+        "admission prices member work, subsetting, identity encoding, and worst-case sort comparisons"
+    );
 }
 
 /// A member declaring the same field twice in its own `field_values` must
@@ -3309,10 +3313,10 @@ fn invalid_population_member_is_refused_before_identity_is_minted() {
     ));
 }
 
-/// FR-089 identity serialization is priced before its member sort-key and
-/// complete-preimage encoders run; a large caller-supplied object identity
-/// cannot bypass the admission work ceiling.
-#[trace("TC-291", "FR-089-AC-7")]
+/// NFR-012 admission work prices identity serialization and worst-case
+/// repeated-prefix member sorting before those operations run; a large
+/// caller-supplied object identity cannot bypass the work ceiling.
+#[trace("TC-434", "NFR-012")]
 #[test]
 fn population_identity_encoding_is_charged_before_hashing() {
     let view = view_of(&fixture_f1());
