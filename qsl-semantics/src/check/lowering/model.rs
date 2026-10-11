@@ -149,6 +149,15 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// Every relationship declaration in this model package. Relationship
+    /// nodes are model-owned graph roots even when no checked expression has
+    /// a relationship-typed operand to name them.
+    pub(crate) fn relationship_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.records.iter().filter_map(|(key, record)| {
+            matches!(record, DomainPackageRecord::Relationship(_)).then_some(key)
+        })
+    }
+
     /// The key of `declaration`'s model node, keyed from the same content
     /// [`Lowering::model_node`] keys, without adding a node to any graph:
     /// a model node's key depends on its declaration alone, so this names
@@ -346,6 +355,27 @@ impl<'a> Lowering<'a> {
             .record(key, declaration.clone())
             .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;
         Ok(key)
+    }
+
+    /// Key every relationship declaration selected by this unit. Unlike an
+    /// object type, a relationship is not named by a value type or operation
+    /// frame yet, so it must be rooted explicitly for the checked package to
+    /// carry the model graph's relation nodes into emission.
+    pub(crate) fn relationship_nodes(&mut self, location: &Location) -> Result<(), CheckRefusal> {
+        let declarations: Vec<(DeclarationKey, Location)> = self
+            .models
+            .iter()
+            .flat_map(|model| {
+                model
+                    .relationship_declarations()
+                    .map(move |declaration| (declaration.clone(), location.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for (declaration, location) in declarations {
+            self.model_node(&declaration, &location)?;
+        }
+        Ok(())
     }
 
     /// The model node of the object type `T` a `Reference<T>` names.

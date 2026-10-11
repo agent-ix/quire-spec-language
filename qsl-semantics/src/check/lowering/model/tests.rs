@@ -588,6 +588,27 @@ fn a_relationship_keys_to_its_relation_node() {
     assert_vector(&graph, billed_to.expect("billedTo keys"), "M4");
 }
 
+/// A selected relationship is a model graph root even when no checked value
+/// or frame names it yet.
+#[trace("FR-094-AC-1", "TC-417")]
+#[test]
+fn selected_relationships_are_rooted_in_the_checked_graph() {
+    let acme = admitted("1.0.0");
+    let model = acme.model.clone().with_alias("M");
+    let (result, graph) = lower(
+        std::slice::from_ref(&model),
+        Default::default(),
+        |lowering| lowering.relationship_nodes(),
+    );
+    result.expect("the selected relationship keys");
+    let relations: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.node_tag() == NodeTag::Relation)
+        .collect();
+    assert_eq!(relations.len(), 1, "billedTo is one relation node");
+    assert_eq!(relations[0].semantic_form(), "relationship");
+}
+
 /// TC-417 steps 4-5 (FR-094-AC-3, AC-4): the population and reference
 /// parameters, their type nodes and the model rows are P5, PO1 (over S1),
 /// P6, E4 (S2), E5 (R1), E6 (R3), E7, E8 and E9; `Population<Order>[5]` and
