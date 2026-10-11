@@ -1536,8 +1536,8 @@ fn build(
 
     // Phase 3, member level: each type's directly declared members (their
     // qualify facts were charged in phase 2) and the members it inherits
-    // along its ancestor paths, one `normalize.fact` each, charged before the
-    // fact is built.
+    // along its ancestor paths. An inherited effective member starts with
+    // its own qualify fact, then records one inherit fact per ancestor path.
     let mut member_preimages: HashMap<
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
@@ -1566,7 +1566,6 @@ fn build(
                 index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
             {
                 work_step();
-                charges.fact()?;
                 // The fact shares the ancestor path rather than copying it,
                 // so memory grows with facts plus total path length, not
                 // facts times path length.
@@ -1578,6 +1577,15 @@ fn build(
                         original: member.key.clone(),
                         derivation: Vec::new(),
                     });
+                if entry.derivation.is_empty() {
+                    charges.fact()?;
+                    entry.derivation.push(Fact {
+                        ordinal: 0,
+                        rule: RULE_QUALIFY,
+                        inputs: vec![member.key.clone()].into(),
+                    });
+                }
+                charges.fact()?;
                 let ordinal = entry.derivation.len();
                 entry.derivation.push(Fact {
                     ordinal,
