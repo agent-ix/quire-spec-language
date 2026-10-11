@@ -377,7 +377,7 @@ fn repeated_switches_in_both_directions_keep_each_lane_directory() {
 fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
     let recipe = Recipe::new();
     let other_checks = [
-        "check-spec-validation",
+        "check-conformance-input",
         "conformance",
         "check-no-committed-binaries",
         "check-index-completeness",
@@ -397,7 +397,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         .flat_map(|target| ["-o", *target])
         .collect();
     assert_eq!(
-        recipe.run(&["ci"], Some("caller target"), &overrides),
+        recipe.run(&["ci-internal"], Some("caller target"), &overrides),
         expected("caller target/ci-default-features", DEFAULT_COMMANDS)
             + &expected("caller target/ci-all-features", ALL_COMMANDS)
     );

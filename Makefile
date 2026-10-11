@@ -243,16 +243,14 @@ fuzz-deep-input:
 # retain their existing behavior; this ordering belongs to the aggregate gate.
 CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 CI_TARGETS := $(CI_CHECKS)
-# Every aggregate prerequisite is ordered after native specification validation
-# when the public aggregate is invoked. Standalone lanes retain their behavior.
-ci: check-spec-validation conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
-ifneq ($(filter ci,$(MAKECMDGOALS)),)
-$(CI_CHECKS): check-spec-validation
-endif
+# The public aggregate validates the native documents before the xtask wrapper
+# canonicalizes QSPEC_DIR for every child lane.
+ci: check-spec-validation
+	@$(CONFORMANCE_XTASK) ci
 
 # The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
-# Add the validation barrier only when this graph is the requested goal, so
-# standalone targets such as ci-clean-build retain their own process oracle.
+# Scope the input prerequisite to this graph, so standalone targets such as
+# ci-clean-build retain their own process oracle.
 .PHONY: ci-internal
 ci-internal: $(CI_TARGETS)
 ifneq ($(filter ci-internal,$(MAKECMDGOALS)),)
@@ -266,7 +264,7 @@ CONFORMANCE_XTASK = QSPEC_DIR="$$QSPEC_DIR" cargo run --locked --package xtask -
 check-conformance-input:
 	@$(CONFORMANCE_XTASK) conformance-input
 
-conformance:
+conformance: check-conformance-input
 	@$(CONFORMANCE_XTASK) conformance
 
 # FR-059/FR-060 (ADR-011 §7.1 T-12, #215): architecture-conformance
