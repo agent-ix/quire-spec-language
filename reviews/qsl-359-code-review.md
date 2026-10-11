@@ -192,3 +192,12 @@ Round 1, reviewed 29b81ae6d6bb07568e5fa250e3e27c4db5ac8a74. Current verdict: FAI
   "qualification": "Static delta review only. Four provided pre-push logs each report this exact head and exit=0 (fmt, clippy, string-edge, check-tests); these are compilation/style checks, not runtime corpus admission receipts. git diff --check passed. RelationshipModel remains wired through production emit_checked and real IR admission; no build or test was run by reviewer."
 }
 ```
+
+## Disposition pass 2
+
+FND-003 is fixed at the follow-up head. FR-056 now cites FR-154:117-126 and
+FR-154-AC-9 for the relationship-slot identity, with FR-322:665 recorded as
+the downstream canonical-key authority. `read_relationship` admits only the
+package-rooted `ix://<package>/relationship/<Name>-<verb>-<TargetName>` form;
+the owner/name form remains for fields and operations. The focused canonical
+positive test and owner/name refusal test both pass.
