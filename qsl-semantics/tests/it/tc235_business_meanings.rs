@@ -24,6 +24,13 @@ fn id(node: &str) -> String {
     format!("ix://{PACKAGE}/{node}")
 }
 
+fn package_key(node: &str) -> DeclarationKey {
+    DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(node),
+    }
+}
+
 fn origin(node: &str) -> Value {
     let identity = id(node);
     json!({"generated": {
@@ -487,6 +494,147 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let package = read_domain_package(selection, &admitted)
         .expect("TC-235 K2 must reach the semantic model reader");
     assert_eq!(package.records.len(), 21, "K2's declared source count");
+    let record = |node: &str| {
+        package
+            .records
+            .iter()
+            .find(|record| record.key() == &package_key(node))
+            .unwrap_or_else(|| panic!("M01 retains source record {node}"))
+    };
+
+    let DomainPackageRecord::RecordValueType(money) = record("Money") else {
+        panic!("M01 Money has record-value-type meaning");
+    };
+    assert!(money.identity_fields.is_empty());
+
+    let DomainPackageRecord::EventType(event) = record("OrderPlaced") else {
+        panic!("M01 OrderPlaced has event-type meaning");
+    };
+    assert_eq!(
+        event.occurrence_field,
+        Some(package_key("OrderPlaced/occurred_at"))
+    );
+    let DomainPackageRecord::FieldMember(occurrence) = record("OrderPlaced/occurred_at") else {
+        panic!("M01 event occurrence remains an authored field");
+    };
+    assert_eq!(occurrence.value_type.to_string(), id("Instant"));
+    let DomainPackageRecord::ScalarType(instant) = record("Instant") else {
+        panic!("M01 Instant remains a scalar alias");
+    };
+    assert_eq!(
+        instant.domain,
+        qsl_semantics::model::domain_package::ScalarValueDomain::Native(
+            qsl_semantics::model::domain_package::NativeValueType::Timestamp,
+        ),
+    );
+
+    let DomainPackageRecord::StateMachine(machine) = record("OrderLifecycle") else {
+        panic!("M01 OrderLifecycle has state-machine meaning");
+    };
+    assert_eq!(
+        machine
+            .states
+            .iter()
+            .map(|state| state.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Draft", "Placed", "Cancelled"],
+    );
+    assert_eq!(
+        machine
+            .transitions
+            .iter()
+            .map(|transition| transition.key.node.as_str())
+            .collect::<Vec<_>>(),
+        [
+            id("OrderLifecycle/transition0"),
+            id("OrderLifecycle/transition1"),
+            id("OrderLifecycle/transition2")
+        ],
+    );
+    assert_eq!(
+        machine.transitions[0].from,
+        package_key("OrderLifecycle/Draft")
+    );
+    assert_eq!(
+        machine.transitions[0].to,
+        package_key("OrderLifecycle/Placed")
+    );
+    assert_eq!(
+        machine.transitions[0].trigger,
+        package_key("OrderLifecycle/place")
+    );
+    assert_eq!(
+        machine.transitions[0].guard.as_deref(),
+        Some("NotYetPlaced")
+    );
+    assert_eq!(machine.transitions[0].emits, [package_key("OrderPlaced")]);
+    assert!(machine
+        .transitions
+        .iter()
+        .all(|transition| transition.path.starts_with("/types/")));
+
+    let DomainPackageRecord::Process(process) = record("Fulfilment") else {
+        panic!("M01 Fulfilment has process meaning");
+    };
+    assert_eq!(
+        process.identity_fields,
+        [package_key("Fulfilment/correlation_id")]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        ["receive_order", "reserve_stock", "await_shipment"],
+    );
+    assert_eq!(process.steps[0].consumes, [package_key("OrderPlaced")]);
+    assert!(process.steps.iter().all(|step| step.emits.is_empty()));
+
+    let DomainPackageRecord::PersistenceInterface(storage) = record("OrderStore") else {
+        panic!("M01 OrderStore has persistence-interface meaning");
+    };
+    assert_eq!(storage.persists, [package_key("Order")]);
+    let operations = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.owner == package_key("OrderStore") =>
+            {
+                Some(operation.key.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        operations,
+        [
+            package_key("OrderStore/get"),
+            package_key("OrderStore/save")
+        ]
+    );
+
+    let DomainPackageRecord::Namespace(namespace) = record("OrderManagement") else {
+        panic!("M01 OrderManagement has namespace meaning");
+    };
+    assert_eq!(
+        namespace.members,
+        [
+            package_key("Order"),
+            package_key("Money"),
+            package_key("OrderPlaced")
+        ],
+    );
+    assert_eq!(
+        namespace
+            .vocabulary
+            .iter()
+            .map(|term| term.term.as_str())
+            .collect::<Vec<_>>(),
+        ["Place"],
+    );
+
     let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("M01 K2 normalization must admit, got {outcome:?}");
@@ -500,16 +648,12 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         21,
         "M01 charges normalize.record once per original declaration",
     );
+    assert!(view.type_identities().contains_key(&package_key("Money")));
+    assert!(view.type_identities().contains_key(&package_key("OrderPlaced")));
     assert!(view
         .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
-            package: PACKAGE.to_owned(),
-            node: id("Money"),
-        }));
-    let process = qsl_semantics::model::key::DeclarationKey {
-        package: PACKAGE.to_owned(),
-        node: id("Fulfilment"),
-    };
+        .contains_key(&package_key("OrderLifecycle")));
+    let process = package_key("Fulfilment");
     assert!(
         view.type_identities().contains_key(&process),
         "a process has an effective receiver type identity"
@@ -518,10 +662,7 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         view.object_universe_of(&process).is_some(),
         "process runs retain their object universe"
     );
-    let persistence = qsl_semantics::model::key::DeclarationKey {
-        package: PACKAGE.to_owned(),
-        node: id("OrderStore"),
-    };
+    let persistence = package_key("OrderStore");
     assert!(
         view.type_identities().contains_key(&persistence),
         "a persistence interface has an effective operation-owner identity"
