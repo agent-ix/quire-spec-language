@@ -15,7 +15,8 @@ use quire_exact::{
 use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
+    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ScalarTypeRecord,
+    ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
@@ -984,10 +985,16 @@ fn one_one_required_gives_the_element_type() {
 
 #[trace("TC-897", "FR-056-AC-17")]
 #[test]
-fn native_timestamp_field_assembles_with_its_distinct_kernel_type() {
+fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
     let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
-    field.value_type = ValueTypeRef::Native(NativeValueType::Timestamp);
-    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let alias_key = DeclarationKey::fixture("ix://test/orders/Instant");
+    field.value_type = ValueTypeRef::Package(alias_key.clone());
+    let alias = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: alias_key.clone(),
+        domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+    });
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> =
+        BTreeMap::from([(&alias_key, &alias)]);
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
 
     let declaration = model_field(&field, &records, &identities)

@@ -216,19 +216,24 @@ pub struct FieldMemberRecord {
     pub redefines: Option<DeclarationKey>,
 }
 
-/// A scalar type export bound to a closed `Int[lower,upper]` domain
-/// (FR-151's `model.Count`/`model.Small` fixtures). QSL V1 does not carry the
-/// FR-149 equality-conversion table; this is the narrow slice this rung
-/// needs to decide value-type conformance and FR-146 interval containment
-/// for a scalar redefinition, not a general scalar type system.
+/// The value domain carried by a scalar type declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScalarValueDomain {
+    /// A closed integer interval (FR-151's `model.Count`/`model.Small`
+    /// fixtures).
+    Integer { lower: i128, upper: i128 },
+    /// An alias for a native value type.
+    Native(NativeValueType),
+}
+
+/// A scalar type export. Integer bounds support FR-146 interval containment;
+/// native aliases preserve the target's distinct value-type identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
-    /// Inclusive lower bound.
-    pub lower: i128,
-    /// Inclusive upper bound.
-    pub upper: i128,
+    /// This type's value domain.
+    pub domain: ScalarValueDomain,
 }
 
 /// One operation parameter: `{key, value_type, multiplicity}`.
