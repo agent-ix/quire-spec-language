@@ -496,11 +496,13 @@ const PLACEHOLDER_DIGEST: &str =
 
 /// The FR-154 intake document envelope `agent-ix-semantic-ir`'s own schema
 /// layer requires beyond `constructs[]`/`types[]` (M5, review of PR #200):
-/// `contractVersion`, `source`, `package`'s full required member set,
-/// `occurrences` and `extensions`, filled with schema-valid stand-ins.
+/// `contractVersion`, the canonicalization profile, `source`, `package`'s full
+/// required member set, `occurrences` and `extensions`, filled with
+/// schema-valid stand-ins.
 fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
     serde_json::json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{package_identity}/spec"),
             "version": "1.0.0",
