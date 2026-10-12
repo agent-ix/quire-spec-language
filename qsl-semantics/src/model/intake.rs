@@ -1421,11 +1421,17 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
             let node = if located.owner.is_empty() {
                 "$".to_owned()
             } else {
-                declared_node_for_pointer(document, &located.pointer)
-                    .and_then(|node| node.get("identity"))
-                    .and_then(Value::as_str)
-                    .unwrap_or(&located.owner)
-                    .to_owned()
+                declared_node_for_pointer(
+                    document,
+                    located
+                        .pointer
+                        .strip_prefix("/ir")
+                        .unwrap_or(&located.pointer),
+                )
+                .and_then(|node| node.get("identity"))
+                .and_then(Value::as_str)
+                .unwrap_or(&located.owner)
+                .to_owned()
             };
             let (artifact, span) = located_span(located);
             let detail = format!(
@@ -1747,11 +1753,12 @@ fn malformed_declaration(
 
 fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
     let (artifact, span) = node_span(value);
+    let node = node_identity_label(value, at);
     malformed_declaration(
-        node_identity_label(value, at),
+        node.clone(),
         artifact,
         span,
-        format!("{at}: {reason}"),
+        format!("{at} on {node}: {reason}"),
     )
 }
 
