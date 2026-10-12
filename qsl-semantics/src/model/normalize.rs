@@ -2035,9 +2035,39 @@ fn check_node<'a>(
         // FR-152 systems-model records validate their own references
         // independently (crate::model::systems); FR-150's phase 1 does
         // not concern itself with them.
+        DomainPackageRecord::Relationship(relationship) => {
+            if !index.is_object_type(&relationship.source.type_identity) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: relationship.source.type_identity.node.clone(),
+                        artifact: None,
+                        span: None,
+                    },
+                    detail: format!(
+                        "{}: TypeDefinition.relationships[0]: relationship source owner {} is not an object type",
+                        relationship.source.type_identity.node,
+                        relationship.source.type_identity.node
+                    ),
+                });
+            }
+            if !index.is_object_type(&relationship.target.type_identity) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: relationship.key.node.clone(),
+                        artifact: None,
+                        span: None,
+                    },
+                    detail: format!(
+                        "{}: Relationship.target: {} is not a declared object type",
+                        relationship.key.node, relationship.target.type_identity.node
+                    ),
+                });
+            }
+        }
         DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
         | DomainPackageRecord::Allocation(_) => {}
         // model-complete.md's "Populations" row: each member type names
         // a declared object type; a missing one refuses

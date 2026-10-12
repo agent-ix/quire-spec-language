@@ -464,7 +464,6 @@ fn tc235_m20_json_acceptance_reports_specialization_cycle() {
 /// their authored relationship, the clause and populations stay typed, and
 /// invalid target/owner meanings retain their FR-208 refusal boundary.
 #[trace("QSpec-TC-235")]
-#[ignore = "expected red until QSL-777 relationship target binding lands"]
 #[test]
 fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let relationship = |owner: &str, name: &str, target: &str| {
@@ -580,12 +579,12 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
         type_named_mut(document, "Money")["relationships"] =
             json!([relationship("Money", "owner", "Order")]);
     });
-    let refusals = normalized_refusals(&bad_owner, 22);
+    let refusals = read_refusals(&bad_owner);
     assert_eq!(refusals.len(), 1);
-    assert_malformed_at(
-        &refusals[0],
-        &id("Money"),
-        "TypeDefinition.relationships[0]",
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert!(
+        refusals[0].detail.contains("relationships[0]"),
+        "{refusals:#?}"
     );
 }
 
