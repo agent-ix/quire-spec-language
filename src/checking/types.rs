@@ -789,7 +789,7 @@ mod profile_tests {
                 ),
                 Vec::new(),
             ),
-            &mut quire_exact::Meter::new(
+            &mut qsl_semantics::model::accounting::Meter::new(
                 qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
             ),
         )
