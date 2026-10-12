@@ -791,11 +791,11 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     );
 }
 
-/// FR-100-AC-6 (TC-451 step 7): the `run_complete` handoff forwards a
-/// non-work counter so `seven`'s integer result exhausts `integer_bits`.
+/// FR-100-AC-13 (TC-921 step 5): `run_complete` forwards the supplied
+/// `integer_bits` limit through evaluation and reports the exhausted counter.
 #[test]
-#[trace("TC-451", "FR-100-AC-6")]
-fn tc_451_step_7_zero_integer_bits_is_incomplete() {
+#[trace("TC-921", "FR-100-AC-13")]
+fn native_run_integer_bits_limit_reaches_evaluation() {
     let program = std::fs::read(RUN_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let mut request = call("seven", json!([]));
