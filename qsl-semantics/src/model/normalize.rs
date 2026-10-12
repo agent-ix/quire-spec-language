@@ -1611,9 +1611,6 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
     refusals
 }
 
-/// Process subtype identity and ancestry checks are normalization decisions:
-/// an empty authored identity list inherits from a process supertype, while a
-/// missing list and a cross-meaning supertype retain their ordered loci.
 /// FR-208-AC-5: a state machine declares at least one operation, state and
 /// transition. Each missing member is `invalid_model_binding`/
 /// `malformed-declaration` naming the machine.
@@ -1677,6 +1674,9 @@ fn intake_state_machine_refusals(domain_package: &DomainPackage) -> Vec<ModelRef
         .collect()
 }
 
+/// Process subtype identity and ancestry checks are normalization decisions:
+/// an empty authored identity list inherits from a process supertype, while a
+/// missing list and a cross-meaning supertype retain their ordered loci.
 fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
     let mut processes: Vec<_> = domain_package
         .records

@@ -1734,7 +1734,7 @@ fn missing_reader_reference(
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     // A malformed native or foreign identity is not a missing declaration
     // of this selected package.
-    if !transition_reference && !occurrence_reference {
+    if !transition_reference && transition_member != "occurrenceField" {
         type_identity_segment(package, reference)?;
     }
     if process_step_reference {
@@ -1786,11 +1786,18 @@ fn missing_reader_reference(
         owner.get("identity")?.as_str()?
     };
     let source_member = semantic_member_path(&located.pointer)?;
+    // A guard names a clause by its authored id; the absent declaration is
+    // that clause of the machine (TC-235 M05: `OrderLifecycle/Unknown`).
+    let reference = if transition_reference && transition_member == "guard" {
+        format!("{node}/{reference}")
+    } else {
+        reference.to_owned()
+    };
     Some(ModelRefusal {
         code: Code::MissingDeclaration,
         cause: ModelRefusalCause::IntakeMissingDeclaration {
             node: node.to_owned(),
-            reference: reference.to_owned(),
+            reference: reference.clone(),
             origin,
             path: pointer.parse().ok()?,
         },
@@ -3848,7 +3855,13 @@ pub fn read_domain_package(
         intake_refusals.is_empty(),
     );
     for refusal in reader_refusals {
-        if refusal_node(&refusal).is_some_and(|node| semantic_refused_nodes.contains(node)) {
+        // The reader's own dangling `persists`/`members` entry repeats what the
+        // semantic-IR missing-name refusal already reports for that node.
+        let reader_node = match &refusal.cause {
+            ModelRefusalCause::UnknownMember { record, .. } => Some(record.node.as_str()),
+            _ => refusal_node(&refusal),
+        };
+        if reader_node.is_some_and(|node| semantic_refused_nodes.contains(node)) {
             continue;
         }
         intake_refusals.push(refusal);
