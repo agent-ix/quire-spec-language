@@ -2279,27 +2279,26 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
     let UnitIntakeCause::Refused(refusals) = missing_policy.cause else {
         panic!("{missing_policy:?}: expected a Refused cause");
     };
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(
-        refusals[0].code.as_str(),
-        "invalid_model_binding",
+    // Both layers refuse: the upstream validator's missing-policy
+    // diagnostic, on the declaring type, and this reader's own
+    // unsupported-declaration refusal at the parameter (FR-103-AC-3).
+    assert!(
+        refusals.iter().any(|refusal| refusal.code.as_str()
+            == "invalid_model_binding"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                    if *node == format!("ix://{PACKAGE_IDENTITY}/ConfigVersion")
+            )),
         "{refusals:?}"
     );
     assert!(
-        matches!(
-            &refusals[0].cause,
-            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-                if node == note["identity"].as_str().unwrap()
-        ),
-        "{refusals:?}"
-    );
-    // A missing Decimal policy is diagnosed at the parameter owning the walk,
-    // not at its typeRef member (FCD FR-144, Decimal policy).
-    assert_eq!(
-        refusals[0].detail,
-        "agent-ix-semantic-ir refused this document at \
-         /ir/types/1/operations/0/params/0 (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING): \
-         a decimal parameter carries a decimal policy",
+        refusals.iter().any(|refusal| refusal.code.as_str() == "unsupported_construct"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm { node, .. }
+                    if node == note["identity"].as_str().unwrap()
+            )),
         "{refusals:?}"
     );
     // The wire policy admits this Decimal parameter at FCD's boundary;
@@ -2368,13 +2367,12 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
     );
 }
 
-/// FR-103-AC-4 (TC-458 step 4): a package holding a record value type still
-/// refuses `UnsupportedModelMember` naming that node, with the operation
-/// admitted beside it not changing the refusal.
+/// FR-103-AC-4 (TC-458 step 4): a package holding a record value type
+/// assembles it beside an admitted operation; no `UnsupportedModelMember`
+/// names it.
 #[trace("TC-458", "FR-103-AC-4")]
 #[test]
-fn a_record_value_type_beside_an_admitted_operation_still_refuses() {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
+fn a_record_value_type_beside_an_admitted_operation_assembles() {
     let (construct, type_node) = note_record_value_type();
     let document = config_version_document(
         attempt_update(
@@ -2389,12 +2387,15 @@ fn a_record_value_type_beside_an_admitted_operation_still_refuses() {
         vec![type_node],
         json!([]),
     );
-    let error = admit_and_assemble(&document).expect_err("a record value type still refuses");
+    let declarations =
+        admit_and_assemble(&document).expect("a record value type assembles beside an operation");
     assert!(
-        error.contains("UnsupportedModelMember"),
-        "{error}: expected AssemblyCause::UnsupportedModelMember naming {note:?}"
+        declarations
+            .types
+            .composites()
+            .any(|composite| composite.name() == "Config::Note"),
+        "the record value type Note is declared"
     );
-    assert!(error.contains(&note), "{error}: expected the node named");
 }
 
 /// FR-103-AC-5 (TC-458 step 5): admission is deterministic. Admitting the
