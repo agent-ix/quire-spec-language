@@ -271,7 +271,51 @@ fn k2() -> Value {
 
 #[test]
 fn k2_record_and_event_meanings_assemble_as_composites() {
-    let bytes = serde_json::to_vec(&k2()).expect("K2 serializes");
+    let document = domain_document(
+        vec![
+            declaration(
+                "Order",
+                "thing",
+                json!({
+                    "identityFields": [id("Order/id")],
+                    "fields": [
+                        field("Order", "id", "ix://quire/native/Integer"),
+                        field("Order", "total", &id("Money")),
+                    ],
+                }),
+            ),
+            declaration(
+                "Instant",
+                "value",
+                json!({"target": "ix://quire/native/Timestamp"}),
+            ),
+            declaration(
+                "Money",
+                "money",
+                json!({
+                    "fields": [
+                        field("Money", "amount_minor", "ix://quire/native/Integer"),
+                        field("Money", "currency", "ix://quire/native/String"),
+                    ],
+                }),
+            ),
+            declaration(
+                "OrderPlaced",
+                "happened",
+                json!({
+                    "occurrenceField": id("OrderPlaced/occurred_at"),
+                    "fields": [field("OrderPlaced", "occurred_at", &id("Instant"))],
+                }),
+            ),
+        ],
+        vec![
+            construct("thing", meaning::OBJECT_TYPE),
+            construct("value", meaning::VALUE_TYPE),
+            construct("money", meaning::RECORD_VALUE_TYPE),
+            construct("happened", meaning::EVENT_TYPE),
+        ],
+    );
+    let bytes = serde_json::to_vec(&document).expect("assembly fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let digest = hex(packages.keys().next().expect("one K2 package"));
     let unit = format!(
@@ -330,9 +374,24 @@ fn k2_record_and_event_meanings_assemble_as_composites() {
             .iter()
             .map(|field| field.name())
             .collect::<Vec<_>>(),
-        ["occurred_at", "order_id"]
+        ["occurred_at"]
     );
     assert_eq!(event_fields[0].value_type(), &ValueType::Timestamp);
+
+    let order = declarations
+        .types
+        .object_types()
+        .find(|object_type| object_type.name() == "K2::Order")
+        .expect("Order remains an assembled object type");
+    let total = order
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "total")
+        .expect("Order.total keeps its record value type");
+    let ValueType::Composite(money_handle) = total.value_type() else {
+        panic!("Order.total resolves to Money's composite type");
+    };
+    assert_eq!(*money_handle, money.key());
 }
 
 fn mutate_k2(mutate: impl FnOnce(&mut Value)) -> Value {
