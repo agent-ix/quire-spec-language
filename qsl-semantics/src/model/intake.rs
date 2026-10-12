@@ -1513,8 +1513,8 @@ fn missing_reader_reference(
                 member: declaration_key(package, reference),
             },
             detail: format!(
-                "{} on {step_identity}: names no event type of this domain package",
-                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned())
+                "{} on {step_identity}: {reference:?} names no event type of this domain package",
+                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned()),
             ),
         });
     }
