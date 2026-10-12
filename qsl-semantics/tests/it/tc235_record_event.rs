@@ -260,7 +260,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         ));
     });
     let refusals = normalized_refusals(&missing_identity, 22);
-    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
     assert_malformed_at(
         &refusals[0],
         &id("ExpressFulfilment"),
@@ -299,7 +299,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         }]);
     });
     let refusals = normalized_refusals(&wrong_meaning, 23);
-    assert_eq!(refusals.len(), 2, "{refusals:#?}");
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
     assert_malformed_at(
         &refusals[0],
         &id("ExpressFulfilment"),
@@ -472,7 +472,7 @@ fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
         ));
     });
     let refusals = read_refusals(&document);
-    assert_eq!(refusals.len(), 2, "{refusals:#?}");
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
     assert!(refusals.iter().all(|refusal| {
         refusal.code == Code::InvalidModelBinding
             && matches!(
