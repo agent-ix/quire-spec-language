@@ -3482,6 +3482,61 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
             "{loser_key} retains its own redefine provenance"
         );
     }
+    assert_eq!(
+        find_member(&view, &owner_d, "model.A.op")
+            .preimage
+            .derivation
+            .iter()
+            .filter(|fact| fact.rule == RULE_REDEFINE)
+            .map(|fact| fact.inputs.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            vec![
+                DeclarationKey::fixture("model.B"),
+                DeclarationKey::fixture("model.B.op2"),
+                DeclarationKey::fixture("model.A.op"),
+            ],
+            vec![
+                DeclarationKey::fixture("model.C"),
+                DeclarationKey::fixture("model.C.op3"),
+                DeclarationKey::fixture("model.A.op"),
+            ],
+            vec![
+                DeclarationKey::fixture("model.D.op4"),
+                DeclarationKey::fixture("model.A.op"),
+            ],
+        ]
+    );
+    for (loser_key, expected) in [
+        (
+            "model.B.op2",
+            vec![vec![
+                DeclarationKey::fixture("model.B"),
+                DeclarationKey::fixture("model.B.op2"),
+                DeclarationKey::fixture("model.A.op"),
+            ]],
+        ),
+        (
+            "model.C.op3",
+            vec![vec![
+                DeclarationKey::fixture("model.C"),
+                DeclarationKey::fixture("model.C.op3"),
+                DeclarationKey::fixture("model.A.op"),
+            ]],
+        ),
+    ] {
+        assert_eq!(
+            find_member(&view, &owner_d, loser_key)
+                .preimage
+                .derivation
+                .iter()
+                .filter(|fact| fact.rule == RULE_REDEFINE)
+                .map(|fact| fact.inputs.clone())
+                .collect::<Vec<_>>(),
+            expected,
+            "{loser_key} keeps its exact edge input"
+        );
+    }
     // M3 (#204 round 1): a *resolved* contest still owes its
     // `normalize.conflict-check` charge (`value-accounting.md:456`'s own
     // `c >= 2` condition, independent of whether the contest resolves --
