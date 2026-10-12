@@ -797,6 +797,7 @@ fn model_value_type(
         ValueTypeRef::Native(native) => match native {
             NativeValueType::Boolean => ValueType::Boolean,
             NativeValueType::Integer => ValueType::Integer,
+            NativeValueType::Uuid => ValueType::Uuid,
             NativeValueType::Timestamp => ValueType::Timestamp,
             NativeValueType::Float32 => return Err(Unmapped::Float(IeeeWidth::Binary32)),
             NativeValueType::Float64 => return Err(Unmapped::Float(IeeeWidth::Binary64)),
@@ -820,6 +821,7 @@ fn model_value_type(
                     IntegerInterval::new(Integer::from(*lower), Integer::from(*upper))
                         .map_err(|_| Unmapped::Unsupported)?,
                 ),
+                ScalarValueDomain::Native(NativeValueType::Uuid) => ValueType::Uuid,
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
             },
