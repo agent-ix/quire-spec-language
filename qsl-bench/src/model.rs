@@ -500,23 +500,30 @@ mod tests {
         value["types"][0]["fields"][0]["presence"] = json!("sometimes");
         let offered = offer(serde_json::to_vec(&value).expect("the invalid fixture serializes"));
 
-        let IntakeFailure::Read(refusals) =
-            intake(&offered).expect_err("the actual intake path retains reader refusal behavior")
-        else {
-            panic!("the fixture passes package selection and fails at node reading");
+        let package = intake(&offered)
+            .expect("intake retains typed reader refusals until normalization charges records");
+        let NormalizeOutcome::Refused(refusals) = normalize_shared(
+            Arc::new(package),
+            ModelNormalizationLimits::default(),
+        ) else {
+            panic!("normalization reports the retained reader refusal");
         };
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code.as_str(), "invalid_model_binding");
-        assert!(matches!(
-            &refusals[0].cause,
-            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
-                node,
-                ..
-            } if node == "ix://bench/model/C0/flag"
-        ));
-        assert!(refusals[0].detail.contains("SCHEMA_VIOLATION"));
-        assert!(refusals[0].detail.contains("/ir/types/0/fields/0/presence"));
-        assert!(refusals[0]
+        let refusal = refusals
+            .iter()
+            .find(|refusal| {
+                matches!(
+                    &refusal.cause,
+                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                        node,
+                        ..
+                    } if node == "ix://bench/model/C0/flag"
+                )
+            })
+            .expect("the field's reader refusal is retained");
+        assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+        assert!(refusal.detail.contains("SCHEMA_VIOLATION"));
+        assert!(refusal.detail.contains("/ir/types/0/fields/0/presence"));
+        assert!(refusal
             .detail
             .contains("presence is a closed enumeration"));
     }
