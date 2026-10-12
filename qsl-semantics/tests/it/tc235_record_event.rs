@@ -24,6 +24,19 @@ fn key(node: &str) -> DeclarationKey {
     }
 }
 
+fn relationship_origin(node: &str) -> serde_json::Value {
+    json!({
+        "source": {
+            "sourceIdentity": id(node),
+            "path": "tc235_record_event.rs",
+            "startLine": 1,
+            "startColumn": 1,
+            "endLine": 1,
+            "endColumn": 1,
+        }
+    })
+}
+
 fn clause_for<'a>(package: &'a DomainPackage, node: &str) -> &'a ClauseRecord {
     package
         .records
@@ -233,7 +246,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [id("Fulfilment/correlation_id")],
+                "identityFields": [id("OrderLifecycle/placed")],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -276,11 +289,13 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         ));
     });
     let refusals = normalized_refusals(&cycle, 22);
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(refusals[0].detail.contains(&id("ExpressFulfilment")));
-    assert!(refusals[0].detail.contains(&id("Fulfilment")));
+    assert_eq!(refusals.len(), 2);
+    assert!(refusals.iter().all(|refusal| {
+        refusal.code == Code::InvalidModelBinding
+            && refusal.cause.as_str() == "specialization-cycle"
+            && refusal.detail.contains(&id("ExpressFulfilment"))
+            && refusal.detail.contains(&id("Fulfilment"))
+    }));
 }
 
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
@@ -298,7 +313,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
             "category": "structural",
             "composite": false,
             "direction": "source-to-target",
-            "origin": origin(&node),
+            "origin": relationship_origin(&node),
             "sourceEnd": {
                 "role": name,
                 "type": id(owner),
@@ -388,15 +403,14 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
 
     let bad_target = mutate_k2(|document| {
         type_named_mut(document, "Fulfilment")["relationships"] =
-            json!([relationship("Fulfilment", "store", "OrderStore")]);
+            json!([relationship("Fulfilment", "store", "MissingTarget")]);
     });
-    let refusals = normalized_refusals(&bad_target, 22);
+    let refusals = read_refusals(&bad_target);
     assert_eq!(refusals.len(), 1);
-    assert_malformed_at(
-        &refusals[0],
-        &id("relationship/Fulfilment-store-OrderStore"),
-        "Relationship.target",
-    );
+    assert_eq!(refusals[0].code, Code::MissingDeclaration);
+    assert!(refusals[0]
+        .detail
+        .contains(&id("relationship/Fulfilment-store-MissingTarget")));
 
     let bad_owner = mutate_k2(|document| {
         type_named_mut(document, "Money")["relationships"] =
