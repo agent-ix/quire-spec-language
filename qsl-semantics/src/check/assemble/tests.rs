@@ -14,13 +14,14 @@ use quire_exact::{
 
 use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
+use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     NativeValueType, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
-use crate::model::normalize::{normalize, ModelNormalizationLimits, NormalizeOutcome};
+use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldDeclaration;
 use quire_semantic_value::location::{Location, Origin};

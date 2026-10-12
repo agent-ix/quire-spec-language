@@ -1460,9 +1460,18 @@ fn missing_reader_reference(
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> Option<ModelRefusal> {
     let pointer = located.pointer.strip_prefix("/ir")?;
-    let member = pointer.rsplit('/').next()?;
+    let mut members = pointer.rsplit('/');
+    let member = members.next()?;
+    let transition_member = if member.bytes().all(|byte| byte.is_ascii_digit()) {
+        members.next()?
+    } else {
+        member
+    };
     let transition_reference = pointer.contains("/transitions/")
-        && matches!(member, "from" | "to" | "trigger" | "guard" | "emits")
+        && matches!(
+            transition_member,
+            "from" | "to" | "trigger" | "guard" | "emits"
+        )
         && (located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF
             || located.code == agent_ix_semantic_ir::rules::DANGLING_CLAUSE_REF);
     if !transition_reference
@@ -1620,11 +1629,12 @@ fn business_generalization_refusal(
         .contains(&located.code)
         && !ctx.array_field("supertypes").ok()?.is_empty()
     {
-        return Some(unsupported_at(
-            node,
-            &ctx.at,
-            format!("{resolved}:supertypes"),
-        ));
+        let mut refusal = unsupported_at(node, &ctx.at, format!("{resolved}:supertypes"));
+        refusal.detail = format!(
+            "{}: {owner}: supertypes are unsupported for {resolved}",
+            ctx.at
+        );
+        return Some(refusal);
     }
     if resolved != meaning::RECORD_VALUE_TYPE || located.code != SUPERTYPE_CYCLE {
         return None;
