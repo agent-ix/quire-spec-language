@@ -3950,7 +3950,7 @@ mod tests {
             "model.Number",
         ] {
             let clause_owner = DeclarationKey::fixture(owner_name);
-            let clause_key = DeclarationKey::fixture(&format!("{owner_name}/InvalidOwner"));
+            let clause_key = DeclarationKey::fixture(format!("{owner_name}/InvalidOwner"));
             let clause_package = package(vec![
                 object_type("model.Order", &[]),
                 DomainPackageRecord::ObjectType(crate::model::domain_package::ObjectTypeRecord {
@@ -4094,7 +4094,7 @@ mod tests {
             ),
         ] {
             let owner = DeclarationKey::fixture(owner_name);
-            let clause_key = DeclarationKey::fixture(&format!("{owner_name}/Forbidden"));
+            let clause_key = DeclarationKey::fixture(format!("{owner_name}/Forbidden"));
             let package = package(vec![
                 object_type("model.Order", &[]),
                 DomainPackageRecord::Namespace(NamespaceRecord {
@@ -4154,7 +4154,7 @@ mod tests {
             let end = RelationshipEnd {
                 type_identity: DeclarationKey::fixture("model.Order"),
                 role: None,
-                multiplicity: multiplicity.clone(),
+                multiplicity,
             };
             let package = package(vec![
                 object_type("model.Order", &[]),
@@ -4168,7 +4168,7 @@ mod tests {
                     key: DeclarationKey::fixture("model.Amount/value"),
                     owner: DeclarationKey::fixture("model.Amount"),
                     value_type: ValueTypeRef::Native(NativeValueType::Integer),
-                    multiplicity: multiplicity.clone(),
+                    multiplicity,
                     presence: quire_exact::Presence::Required,
                     subsets: Vec::new(),
                     redefines: None,
@@ -4185,11 +4185,11 @@ mod tests {
                     parameters: vec![OperationParameterRecord {
                         key: parameter_key.clone(),
                         value_type: value_type.clone(),
-                        multiplicity: multiplicity.clone(),
+                        multiplicity,
                     }],
                     result: Some(OperationResult {
                         value_type: value_type.clone(),
-                        multiplicity: multiplicity.clone(),
+                        multiplicity,
                     }),
                     effect: OperationEffect::default(),
                     own_postcondition_clauses: Vec::new(),
