@@ -23,11 +23,11 @@ relationships:
 ## Description
 
 When a `1-draft` unit's `model M` selects a domain package whose object types
-declare operations, spine intake (ADR-011 I1) SHALL read each operation's
-`frame` into the operation's `OperationEffect`, and the E3 assembler SHALL
-declare each operation on its object type, with its parameters, its result and
-its effect, so that a `pre` or `post` clause can name it as `M::T::op`
-(FR-104).
+or processes declare operations, spine intake (ADR-011 I1) SHALL read each
+operation's `frame` into the operation's `OperationEffect`, and the E3
+assembler SHALL declare each operation on its object type, with its
+parameters, its result and its effect, so that a `pre` or `post` clause can
+name it as `M::T::op` (FR-104).
 
 This amends FR-056's Complete-V1 paragraph, which this PR edits to match.
 Today intake refuses any operation whose frame declares an entry
@@ -50,9 +50,10 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
   `has_body` value true when a retained unit `OperationBodyForm` (FR-102)
   resolves to that operation's `DeclarationKey`, and false when no such
   declaration exists.
-- In the assembled `PackageDeclarations`: each object type `M::T` with its
-  operations, each operation with its name, its parameters (name and value
-  type, in declared order), its result value type or none, and its effect.
+- In the assembled `PackageDeclarations`: each object type or process `M::T`
+  with its operations, each operation with its name, its parameters (name and
+  value type, in declared order), its result value type or none, and its
+  effect.
 - Each population record of the package, with its member types and its
   declared extent, available to the checker and to observation admission
   (FR-106) by its declaration key.
@@ -60,18 +61,15 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
 ## Behavior
 
 - Intake SHALL resolve each `modifies` entry to a field declaration of the
-  package, and each `creates` and `deletes` entry to an object type
+  package, and each `creates` and `deletes` entry to an object type or process
   declaration, under QSpec `model-complete.md`'s Frames row, checking the
   entries of `modifies`, then `creates`, then `deletes`, each in document
   order, and reporting the first that fails.
 - If a frame entry names no declaration of the package, then intake SHALL
   refuse `missing_declaration`/`missing-name` at the entry, retaining the
   operation's IR node identity, the entry, the artifact id and the span.
-- If a frame entry names a relationship (`modifies`) or a process (`creates`,
-  `deletes`), then intake SHALL refuse `unknown_required_feature`/
-  `unsupported-feature` at the entry. The Frames row admits both, but no
-  FR-106 observation carries relationship links or process instances, so a
-  grant over them could never be enforced.
+- If a `modifies` frame entry names a relationship, then intake SHALL refuse
+  `unknown_required_feature`/`unsupported-feature` at the entry.
 - If a frame entry names a declaration of any other meaning, then intake SHALL
   refuse `invalid_model_binding`/`malformed-declaration` at the entry, with
   the same retained data.
@@ -84,10 +82,10 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
   environment cannot hold SHALL refuse
   `unknown_required_feature`/`unsupported-feature` at the `model`
   declaration, as a field of that type does.
-- The assembler SHALL declare an operation on the object type that owns it.
-  The operation is visible on a subtype through FR-081's effective view, as a
-  field is, and keeps its declaring type as its owner (FR-105 anchors it
-  there).
+- The assembler SHALL declare an operation on the object type or process that
+  owns it. The operation is visible on a subtype through FR-081's effective
+  view, as a field is, and keeps its declaring type as its owner (FR-105
+  anchors it there).
 - The S3 assembler SHALL preserve each resolved unit `operation-body`
   expression and its source provenance, and each unit `pre` and `post`
   `StateClauseForm` as a contract clause. It SHALL associate the body and
