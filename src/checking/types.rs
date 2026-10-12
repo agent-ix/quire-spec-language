@@ -306,7 +306,9 @@ fn owner_equal(left: &NativeModel, right: &NativeModel) -> bool {
 impl PartialEq for NativeType<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Boolean, Self::Boolean) => true,
+            (Self::Boolean, Self::Boolean)
+            | (Self::Uuid, Self::Uuid)
+            | (Self::String, Self::String) => true,
             (
                 Self::Scalar {
                     model: a, role: ar, ..
