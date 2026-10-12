@@ -237,6 +237,7 @@ fn tc235_m14_event_invariant_is_bound_without_an_event_value() {
 /// namespace meanings and the object references allowed by object fields.
 #[test]
 fn tc235_m10_business_meanings_are_not_object_reference_targets() {
+    let mut results = Vec::new();
     for target in [
         "OrderManagement",
         "OrderStore",
@@ -250,33 +251,163 @@ fn tc235_m10_business_meanings_are_not_object_reference_targets() {
                 .unwrap()
                 .push(field("Order", "ref", &id(target)));
         });
-        let refusals = normalized_refusals(&document, 22);
-        assert_eq!(
-            refusals.len(),
-            1,
-            "M10 field target {target} has one refusal: {refusals:?}"
+        results.extend(
+            m10_refusal_mismatches(&document, 22, &id("Order/ref"), "Field.typeRef")
+                .into_iter()
+                .map(|failure| format!("Field.typeRef -> {target}: {failure}")),
         );
-        assert_malformed_at(&refusals[0], &id("Order/ref"), "Field.typeRef");
+    }
+
+    let money_field = mutate_k2(|document| {
+        type_named_mut(document, "Order")["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(field("Order", "ref", &id("Money")));
+    });
+    match m10_completed_package(&money_field, 22) {
+        Ok(package) => assert_eq!(
+            field_for(&package, "Order/ref").value_type,
+            ValueTypeRef::Package(key("Money")),
+        ),
+        Err(error) => results.push(format!("record-value field target Money: {error}")),
     }
 
     let namespace_supertype = mutate_k2(|document| {
         type_named_mut(document, "Order")["supertypes"] = json!([id("OrderManagement")]);
     });
-    let refusals = normalized_refusals(&namespace_supertype, 21);
-    assert_eq!(refusals.len(), 1, "M10 namespace supertype: {refusals:?}");
-    assert_malformed_at(&refusals[0], &id("Order"), "TypeDefinition.supertypes[0]");
+    results.extend(
+        m10_refusal_mismatches(
+            &namespace_supertype,
+            21,
+            &id("Order"),
+            "TypeDefinition.supertypes[0]",
+        )
+        .into_iter()
+        .map(|failure| format!("namespace supertype: {failure}")),
+    );
+
+    let relationship = |owner: &str, name: &str, target: &str| {
+        let node = format!("{owner}/{name}");
+        json!({
+            "identity": id(&node),
+            "category": "structural",
+            "composite": false,
+            "direction": "source-to-target",
+            "origin": origin(&node),
+            "sourceEnd": {
+                "role": name,
+                "type": id(owner),
+                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+            },
+            "targetEnd": {
+                "type": id(target),
+                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+            },
+        })
+    };
+    let namespace_relationship = mutate_k2(|document| {
+        type_named_mut(document, "Order")["relationships"] =
+            json!([relationship("Order", "scope", "OrderManagement")]);
+    });
+    results.extend(
+        m10_refusal_mismatches(
+            &namespace_relationship,
+            22,
+            &id("Order/scope"),
+            "Relationship.target",
+        )
+        .into_iter()
+        .map(|failure| format!("relationship target namespace: {failure}")),
+    );
+
+    let state_machine_relationship = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["relationships"] =
+            json!([relationship("OrderLifecycle", "next", "Order")]);
+    });
+    results.extend(
+        m10_refusal_mismatches(
+            &state_machine_relationship,
+            22,
+            &id("OrderLifecycle/next"),
+            "TypeDefinition.relationships[0]",
+        )
+        .into_iter()
+        .map(|failure| format!("state-machine relationship: {failure}")),
+    );
+
+    let process_population = mutate_k2(|document| {
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
+    });
+    match m10_completed_package(&process_population, 22) {
+        Ok(package) => assert!(package.records.iter().any(|record| {
+            matches!(record, DomainPackageRecord::Population(population)
+                if population.key == key("PF") && population.member_types == [key("Fulfilment")])
+        })),
+        Err(error) => results.push(format!("population member process Fulfilment: {error}")),
+    }
+
+    let namespace_population = mutate_k2(|document| {
+        document["populations"] = json!([{
+            "identity": id("PA"),
+            "displayName": id("PA"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("OrderManagement")],
+            "extent": "closed",
+            "origin": origin("PA"),
+        }]);
+    });
+    results.extend(
+        m10_refusal_mismatches(
+            &namespace_population,
+            22,
+            &id("PA"),
+            "Population.members[0].type",
+        )
+        .into_iter()
+        .map(|failure| format!("population member namespace: {failure}")),
+    );
 
     let operation_frame = mutate_k2(|document| {
         let mut open = super::operation("Order", "open");
         open["frame"]["creates"] = json!([id("OrderStore")]);
         type_named_mut(document, "Order")["operations"] = json!([open]);
     });
-    let refusals = normalized_refusals(&operation_frame, 22);
-    assert_eq!(refusals.len(), 1, "M10 storage frame: {refusals:?}");
-    assert_malformed_at(
-        &refusals[0],
-        &id("Order/open"),
-        "Operation.frame.creates[0]",
+    results.extend(
+        m10_refusal_mismatches(
+            &operation_frame,
+            22,
+            &id("Order/open"),
+            "Operation.frame.creates[0]",
+        )
+        .into_iter()
+        .map(|failure| format!("operation creates persistence interface: {failure}")),
+    );
+
+    let process_frame = mutate_k2(|document| {
+        let mut open = super::operation("Order", "open");
+        open["frame"]["creates"] = json!([id("Fulfilment")]);
+        type_named_mut(document, "Order")["operations"] = json!([open]);
+    });
+    match m10_completed_package(&process_frame, 22) {
+        Ok(package) => assert!(package.records.iter().any(|record| {
+            matches!(record, DomainPackageRecord::OperationMember(operation)
+                if operation.key == key("Order/open")
+                    && operation.effect.creates == [key("Fulfilment")])
+        })),
+        Err(error) => results.push(format!("operation creates process Fulfilment: {error}")),
+    }
+
+    assert!(
+        results.is_empty(),
+        "M10 measured all rows; mismatches:\n{}",
+        results.join("\n")
     );
 }
 
