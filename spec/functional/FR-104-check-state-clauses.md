@@ -21,6 +21,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-043
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-010
+    type: references
 ---
 # FR-104: Check state clauses at S3 and record their requirements
 
@@ -144,13 +148,19 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 - If `reaches` appears outside a state clause, then the checker SHALL refuse
   `ill_typed`/`operator-ineligible` at the `reaches`: only a clause has an
   observation to traverse (ADR-012 §15.2).
-- The checker SHALL admit `reaches(a, b, edge)` only when `a` and `b` are
-  `Reference<M::T>` of one object type and `edge` names a field of `T` whose
-  type is `Reference<M::T>`, `Option<Reference<M::T>>` or a sequence of
-  `Reference<M::T>` (QSpec `state-contract.md`, "Finite graph extension").
-  If `edge` has any other type, a set, bag or ordered set of references
-  included, then the checker SHALL refuse `ill_typed`/`operator-ineligible`
-  at the `reaches`.
+- The checker SHALL admit `reaches(a, b, edge)` only when `edge` names a field
+  of an object type `M::T` whose type is `Reference<M::T>`,
+  `Option<Reference<M::T>>` or a sequence of `Reference<M::T>`. For a package
+  selecting `quire.model.complete/v1`, the checker SHALL apply QSpec
+  [FR-043](ix://agent-ix/quire-specification/FR-043)'s conformance to the
+  static edge owner `T` to each operand and retain the checked operand
+  references without erasing the type identity that FR-043 uses for each
+  object's most-specific identity at evaluation; QSpec
+  [FR-010](ix://agent-ix/quire-specification/FR-010) delegates this traversal
+  profile to FR-043. For any other selection, `a` and `b` SHALL both be
+  `Reference<M::T>` of that exact object type, as before. An ineligible
+  operand or edge shape, including a set, bag or ordered set of references,
+  SHALL refuse `ill_typed`/`operator-ineligible` at the `reaches`.
 
 ### Definedness facts
 
@@ -241,6 +251,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-6 | Checking the same unit twice, and checking it with its clauses in another order, gives each clause the same node identity and the same requirement record keys. Two clauses with equal kind, anchor and body and different names share a node identity and differ in their `claim` occurrence (ordinals in source order). | Test (TC-461) |
 | FR-104-AC-7 | In postconditions of `attemptUpdate` over a package whose frame modifies `parent`: `present(pre(self.parent)) implies deref(value(self.parent)).versionNumber > 0` refuses `undefined_expression`/`unproved-presence` at `value(self.parent)`; `pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0)` checks; `let v = self.versionNumber in pre(v) = 1` and `let s = self in pre(s.versionNumber) = 1` each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre`; `let s = pre(self) in s.versionNumber = 1` checks with its read `pre`. | Test (TC-459) |
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
+| FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
 
 ## Dependencies
 
@@ -248,4 +259,4 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   records and extent), FR-088 (clause identity), FR-057 (the
   `operation-contract` kind).
 - QSpec `state-contract.md` ("Operation anchors, aliases and captures",
-  "Finite graph extension") and FR-153.
+  "Finite graph extension"), FR-043, FR-010 and FR-153.
