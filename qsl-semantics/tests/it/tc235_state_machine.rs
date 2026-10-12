@@ -110,7 +110,6 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
         type_named_mut(document, "OrderLifecycle")["operations"] = json!([]);
     });
     let refusals = normalized_refusals(&empty_operations, 19);
-    for r in &refusals {}
     assert_eq!(refusals.len(), 4);
     assert_malformed_at(
         &refusals[0],
@@ -181,7 +180,6 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_state, 21);
     assert_eq!(refusals.len(), 1);
-    for r in &refusals {}
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "conflicting-binding");
     assert!(refusals[0].detail.contains("TypeDefinition.states[3]"));
