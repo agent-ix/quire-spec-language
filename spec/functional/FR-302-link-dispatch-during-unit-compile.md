@@ -61,8 +61,11 @@ operation identity, and SHALL key the body's expression and clauses by that
 same key. For each operation requested by a dispatched call, the checker
 SHALL supply `checked_dispatch_operation` the admitted operation and the
 body, signature and precondition data keyed by that `DeclarationKey`. It
-SHALL NOT join by the source-local body label, display spelling, declaration
-order or domain-package `pre`/`post` text. A body declaration with no
+SHALL NOT join by the source-local body label, display spelling or
+declaration order. The domain package's own `requires`/`ensures` clauses on
+the operation (FR-103) stay the operation's contract. They are not unit
+`pre`/`post` clauses and not a body, and the join SHALL NOT take a unit clause
+or body from them. A body declaration with no
 matching operation SHALL refuse under FR-104's missing-operation resolution
 rule at S3 without a checked package or partial dispatch table.
 

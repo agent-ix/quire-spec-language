@@ -83,7 +83,10 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 - An `operation-body` supplies an operation candidate's body under QSpec
   FR-151. It is distinct from `StateClauseForm`: it supplies one operation
   body, while a unit `pre` or `post` `StateClauseForm` supplies a contract
-  clause. An invariant is not associated with an operation body.
+  clause. An invariant is not associated with an operation body. Both are
+  distinct from the `requires` and `ensures` clauses a domain package
+  authors on its own operation: those are kept by intake and parsed at S3
+  (FR-103), are not built at S2 and are not `StateClauseForm`s.
 - The production SHALL read the kind from the leading token alone:
   `invariant` gives `Invariant`, `pre` gives `Precondition` and `post` gives
   `Postcondition`.
