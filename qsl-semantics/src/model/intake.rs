@@ -3088,17 +3088,39 @@ pub fn read_domain_package(
             let ctx = NodeCtx::new(node, &at);
             let result = (|| {
                 let identity = ctx.str_field("identity")?;
-                let kind = ctx.kind_key()?;
-                let meaning = meanings
-                    .get(&(kind.0.to_owned(), kind.1.to_owned()))
-                    .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?;
+                let meaning = match node.get("kind") {
+                    Some(kind) if kind.is_object() => {
+                        let kind = ctx.kind_key()?;
+                        Some(
+                            meanings
+                                .get(&(kind.0.to_owned(), kind.1.to_owned()))
+                                .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?
+                                .clone(),
+                        )
+                    }
+                    Some(kind)
+                        if kind.as_str() == Some("alias")
+                            && node.get("target").and_then(Value::as_str)
+                                == Some("ix://quire/native/Timestamp") =>
+                    {
+                        // This one FCD core alias has a reader admission but
+                        // no FR-208 construct meaning. `read_records` already
+                        // validates its exact native Timestamp shape.
+                        None
+                    }
+                    _ => {
+                        return Err(ctx.malformed(
+                            "kind: a bare-string core kind is not a declared FR-208 meaning",
+                        ));
+                    }
+                };
                 let origin = node
                     .get("origin")
                     .ok_or_else(|| ctx.malformed("origin: missing"))?;
                 originals.insert(
                     declaration_key(&selection.identity, identity),
                     OriginalDeclaration {
-                        meaning: Some(meaning.clone()),
+                        meaning,
                         origin: origin.clone(),
                         member_name: None,
                     },
@@ -3783,6 +3805,51 @@ mod tests {
             .expect_err("this reader admits only the native Timestamp alias");
         assert_eq!(refusals[0].code, Code::InvalidModelBinding);
         assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    }
+
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn reads_native_timestamp_alias_through_domain_package_intake() {
+        let alias = wire_type(
+            "ix://acme/orders/Instant",
+            serde_json::json!("alias"),
+            serde_json::json!({"target": "ix://quire/native/Timestamp"}),
+        );
+        let bytes = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([alias]),
+        )
+        .to_string()
+        .into_bytes();
+        let document = PackageDocument::parse(&bytes, IntakeLimits::default())
+            .expect("the current FCD reader admits the Timestamp alias");
+        let package = read_domain_package(
+            DomainPackageRef {
+                identity: "acme/orders".to_owned(),
+                version: "1.0.0".to_owned(),
+                digest: [0; 32],
+            },
+            &document,
+        )
+        .expect("the QSL domain-package reader admits the native Timestamp alias");
+        let instant = declaration_key("acme/orders", "ix://acme/orders/Instant");
+        assert_eq!(
+            package.records,
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: instant.clone(),
+                domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+            })]
+        );
+        let original = package
+            .original(&instant)
+            .expect("the alias origin is retained");
+        assert_eq!(original.meaning, None);
+        assert_eq!(original.member_name, None);
+        assert_eq!(
+            original.origin["generated"]["generatorIdentity"],
+            "ix://acme/orders/Instant"
+        );
     }
 
     /// FR-056-AC-4's second half (PR #200 review R2-3): "changing only
