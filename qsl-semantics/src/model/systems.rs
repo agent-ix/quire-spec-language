@@ -224,6 +224,7 @@ pub fn classify(
             DomainPackageRecord::FieldMember(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
+            | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Population(_) => {}

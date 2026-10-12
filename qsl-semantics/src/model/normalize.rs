@@ -1324,6 +1324,7 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::PersistenceInterface(_) => {}
         DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
             if !index.is_object_type(&op.owner) {

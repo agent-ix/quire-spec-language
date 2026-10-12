@@ -42,6 +42,8 @@ pub enum DeclarationKind {
     Clause,
     /// An original namespace.
     Namespace,
+    /// An original persistence interface.
+    PersistenceInterface,
     /// A field member of an object type.
     Field,
     /// An operation member of an object type.
@@ -176,6 +178,7 @@ impl AdmittedPackage {
                 DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::Namespace(_)
+                | DomainPackageRecord::PersistenceInterface(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
@@ -305,6 +308,7 @@ impl AdmittedPackage {
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
             DomainPackageRecord::Clause(_) => DeclarationKind::Clause,
             DomainPackageRecord::Namespace(_) => DeclarationKind::Namespace,
+            DomainPackageRecord::PersistenceInterface(_) => DeclarationKind::PersistenceInterface,
             DomainPackageRecord::ScalarType(_) => DeclarationKind::ValueType,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted

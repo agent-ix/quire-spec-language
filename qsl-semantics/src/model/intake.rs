@@ -51,8 +51,8 @@ use crate::model::domain_package::{
     AllocationRecord, ClauseRecord, ComponentRecord, DomainPackage, DomainPackageRecord,
     DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NamespaceRecord,
     NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, OriginalDeclaration, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+    OperationParameterRecord, OperationResult, OriginalDeclaration, PersistenceInterfaceRecord,
+    PopulationRecord, PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
     RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
@@ -1765,11 +1765,11 @@ impl<'a> NodeCtx<'a> {
         }
     }
 
-    fn malformed(&self, reason: impl std::fmt::Display) -> ModelRefusal {
+    pub(super) fn malformed(&self, reason: impl std::fmt::Display) -> ModelRefusal {
         malformed_at(self.value, &self.at, reason)
     }
 
-    fn str_field(&self, field: &'static str) -> Result<&'a str, ModelRefusal> {
+    pub(super) fn str_field(&self, field: &'static str) -> Result<&'a str, ModelRefusal> {
         self.value
             .get(field)
             .and_then(Value::as_str)
@@ -1800,7 +1800,7 @@ impl<'a> NodeCtx<'a> {
     /// lets a document reach this reader; a non-string item still refuses
     /// here, so a dependency pin that stops guaranteeing it degrades to a
     /// refusal, not a panic.
-    fn identity_keys(
+    pub(super) fn identity_keys(
         &self,
         package: &str,
         field: &'static str,
@@ -1965,7 +1965,7 @@ fn frame_entries(
         .collect()
 }
 
-fn read_operation_member(
+pub(super) fn read_operation_member(
     package: &str,
     owner_identity: &str,
     operation: &Value,
@@ -2043,6 +2043,102 @@ fn read_operation_member(
         has_body: false,
         redefines: None,
     })
+}
+
+/// Reads a persistence-interface declaration and its ordinary operation
+/// members. The interface itself is original-only; its operations retain the
+/// normal operation records for signature checking.
+pub(super) fn read_persistence_interface(
+    package: &str,
+    node: &str,
+    ctx: &NodeCtx<'_>,
+    type_meanings: &HashMap<&str, &str>,
+    records: &mut Vec<DomainPackageRecord>,
+    pending: &mut Vec<PendingFrame>,
+) -> Result<(), ModelRefusal> {
+    if !ctx.array_field("supertypes")?.is_empty() {
+        return Err(unsupported_at(
+            ctx.value,
+            &ctx.at,
+            format!("{}:supertypes", meaning::PERSISTENCE_INTERFACE),
+        ));
+    }
+    for forbidden in ["fields", "relationships", "identityFields"] {
+        if let Some(member) = ctx.array_field(forbidden)?.first() {
+            let at = format!("{}.{}[0]", ctx.at, forbidden);
+            return Err(NodeCtx::new(member, at).malformed(
+                "a persistence interface owns no fields, relationships or identity fields",
+            ));
+        }
+    }
+    let persists = ctx.identity_keys(package, "persists")?;
+    if persists.is_empty() {
+        return Err(
+            ctx.malformed("persists: a persistence interface names one or more object types")
+        );
+    }
+    for (position, target) in persists.iter().enumerate() {
+        let target_at = NodeCtx::new(ctx.value, format!("{}.persists[{position}]", ctx.at));
+        match type_meanings.get(target.node.as_str()) {
+            Some(&meaning::OBJECT_TYPE) => {}
+            Some(_) => return Err(target_at.malformed("persists: target is not an object type")),
+            None => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownMember {
+                        record: declaration_key(package, node),
+                        member: target.clone(),
+                    },
+                    detail: format!(
+                        "{}.persists[{position}]: names no type of this domain package: {}",
+                        ctx.at, target.node
+                    ),
+                })
+            }
+        }
+    }
+    let operations = ctx.array_field("operations")?;
+    if operations.is_empty() {
+        return Err(
+            ctx.malformed("operations: a persistence interface declares one or more operations")
+        );
+    }
+    for (position, operation) in operations.iter().enumerate() {
+        let operation_at = format!("{}.operations[{position}]", ctx.at);
+        if let Some(pre) = operation.get("pre").and_then(Value::as_array) {
+            if !pre.is_empty() {
+                return Err(unsupported_at(
+                    operation,
+                    &operation_at,
+                    format!("{}:operation-pre", meaning::PERSISTENCE_INTERFACE),
+                ));
+            }
+        }
+        records.push(DomainPackageRecord::OperationMember(read_operation_member(
+            package,
+            node,
+            operation,
+            &operation_at,
+            pending,
+        )?));
+    }
+    for (position, clause) in ctx.array_field("clauses")?.iter().enumerate() {
+        let clause_ctx = NodeCtx::new(clause, format!("{}.clauses[{position}]", ctx.at));
+        if clause_ctx.str_field("language")? == "quire" {
+            return Err(unsupported_at(
+                clause,
+                &clause_ctx.at,
+                format!("{}:clauses", meaning::PERSISTENCE_INTERFACE),
+            ));
+        }
+    }
+    records.push(DomainPackageRecord::PersistenceInterface(
+        PersistenceInterfaceRecord {
+            key: declaration_key(package, node),
+            persists,
+        },
+    ));
+    read_clauses(package, node, ctx, records)
 }
 
 impl<'a> NodeCtx<'a> {
@@ -3102,7 +3198,8 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
         | DomainPackageRecord::Allocation(_)
-        | DomainPackageRecord::Population(_) => FrameEntryKind::Other,
+        | DomainPackageRecord::Population(_)
+        | DomainPackageRecord::PersistenceInterface(_) => FrameEntryKind::Other,
     }
 }
 

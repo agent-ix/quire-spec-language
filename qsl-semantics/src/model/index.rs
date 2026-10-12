@@ -198,6 +198,9 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::Namespace(namespace) => std::iter::once(&namespace.key)
             .chain(&namespace.members)
             .collect(),
+        DomainPackageRecord::PersistenceInterface(interface) => std::iter::once(&interface.key)
+            .chain(&interface.persists)
+            .collect(),
         DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
@@ -407,6 +410,7 @@ impl RecordIndex {
                 DomainPackageRecord::Namespace(_) => {
                     index.flags[own.0].namespace = true;
                 }
+                DomainPackageRecord::PersistenceInterface(_) => {}
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
                     if let ScalarValueDomain::Integer { lower, upper } = &scalar.domain {
