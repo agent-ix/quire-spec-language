@@ -63,9 +63,8 @@ SHALL supply `checked_dispatch_operation` the admitted operation and the
 body, signature and precondition data keyed by that `DeclarationKey`. It
 SHALL NOT join by the source-local body label, display spelling, declaration
 order or domain-package `pre`/`post` text. A body declaration with no
-matching operation, or multiple body declarations resolving to the same
-operation identity, SHALL refuse at S3 without a checked package or partial
-dispatch table.
+matching operation SHALL refuse under FR-104's missing-operation resolution
+rule at S3 without a checked package or partial dispatch table.
 
 ### A failed link refuses the compile
 
@@ -96,7 +95,7 @@ caller's value, with the published default of
 | FR-302-AC-4 | A unit with dispatched calls on two operations, each with one failing subtype, refuses once and names both failures. | Test (TC-794) |
 | FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
 | FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
-| FR-302-AC-7 | Given `operation-body` declarations for `A.size` and `B.size`, retained expressions and unit pre/post clauses join to admitted operations by resolved `DeclarationKey` even when body labels and declaration order differ; `has_body` is true exactly for operations with a resolved body. A called operation with no body is not a candidate and its failed family refuses under FR-151 with no checked package or partial table. | Test |
+| FR-302-AC-7 | Given `operation-body` declarations for `A.size` and `B.size`, retained expressions and unit pre/post clauses join to admitted operations by resolved `DeclarationKey` even when body labels and declaration order differ; `has_body` is true when an operation has a resolved body and false when it has none. A called operation with no body is not a candidate and its failed family refuses under FR-151 with no checked package or partial table. | Test (TC-986) |
 
 ## Dependencies
 

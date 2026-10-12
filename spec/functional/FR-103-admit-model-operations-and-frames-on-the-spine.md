@@ -47,9 +47,9 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
 - For each operation member: an `OperationMemberRecord` whose `effect` holds
   the `DeclarationKey`s its frame names, in each member's declared order. In
   the compiled unit's selected model view, the assembler SHALL set its
-  `has_body` value true exactly when one retained unit `OperationBodyForm`
-  (FR-102) resolves to that operation's `DeclarationKey`, and false when no
-  such declaration exists.
+  `has_body` value true when a retained unit `OperationBodyForm` (FR-102)
+  resolves to that operation's `DeclarationKey`, and false when no such
+  declaration exists.
 - In the assembled `PackageDeclarations`: each object type `M::T` with its
   operations, each operation with its name, its parameters (name and value
   type, in declared order), its result value type or none, and its effect.
