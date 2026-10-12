@@ -484,7 +484,7 @@ fn d14_strict_exact_refuses_before_rounding() {
             &wide(2, RoundingMode::Exact),
             &mut meter,
         );
-        (outcome, meter.admitted_charges().to_vec())
+        (outcome, crate::support::admitted_charge_points(&meter))
     };
     let (outcome, charges) = run(3);
     assert!(matches!(
@@ -512,7 +512,7 @@ fn d15_zero_divisor_is_undefined_after_the_operands_charge() {
             &wide(2, RoundingMode::NearestEven),
             &mut meter,
         );
-        (outcome, meter.admitted_charges().to_vec())
+        (outcome, crate::support::admitted_charge_points(&meter))
     };
     assert_eq!(
         run(1),
@@ -546,7 +546,7 @@ fn d16_membership_refusal_follows_rounding_and_precedes_retention() {
             &target(-2, 2, 0, RoundingMode::NearestAway),
             &mut meter,
         );
-        (outcome, meter.admitted_charges().to_vec())
+        (outcome, crate::support::admitted_charge_points(&meter))
     };
     let (outcome, charges) = run(limits);
     assert!(matches!(
@@ -693,7 +693,11 @@ fn order_less(
         LimitKind::ResultUnits,
     ]
     .map(|kind| meter.consumed(kind));
-    (outcome, meter.admitted_charges().to_vec(), consumed)
+    (
+        outcome,
+        crate::support::admitted_charge_points(&meter),
+        consumed,
+    )
 }
 
 const ORDERING: [ChargePoint; 3] = [
@@ -888,7 +892,11 @@ fn unit_product(
         &mut meter,
     );
     let consumed = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
-    (outcome, meter.admitted_charges().to_vec(), consumed)
+    (
+        outcome,
+        crate::support::admitted_charge_points(&meter),
+        consumed,
+    )
 }
 
 #[trace("QSpec-TC-185", "QSpec-FR-140-AC-6")]
@@ -1201,7 +1209,7 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                                 });
                             assert_eq!(
                                 evaluate_decimal(operation, &decimal_type, &mut denied),
-                                work_denied(work, *point),
+                                work_denied(work, charge.point),
                                 "{case}"
                             );
                             assert_eq!(denied.consumed(LimitKind::ResultUnits), 0, "{case}");

@@ -1076,7 +1076,7 @@ fn generated_text_profiles_match_the_unicode_17_oracle() {
                 });
                 assert!(matches!(
                     compare_text(Equal, &left, &right, &mut denied).unwrap(),
-                    Outcome::Incomplete(Incomplete { charge_point, .. }) if charge_point == *point
+                    Outcome::Incomplete(Incomplete { charge_point, .. }) if charge_point == charge.point
                 ));
                 assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
             }
