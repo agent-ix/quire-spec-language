@@ -78,7 +78,8 @@ and the at-most-one declaration rule in
 QSpec FR-429-AC-6 is the corresponding QSpec diagnostic precedent. QSpec
 FR-151 specifies that an `operation-body` supplies a body but does not specify
 body multiplicity; this QSL rule settles the QSL compile outcome pending a
-QSpec follow-up.
+QSpec alignment follow-up tracked as QSL-727. This note points to that
+follow-up without restating its QSpec normative text.
 
 ### A failed link refuses the compile
 
