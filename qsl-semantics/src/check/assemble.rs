@@ -672,10 +672,13 @@ fn model_object_types(
                     }
                 }
             }
+            // State-machine clauses and context namespaces remain admitted
+            // model records. They do not contribute a kernel type-environment
+            // entry, but their owners/members are part of the source model
+            // that this assembly arm must accept.
+            DomainPackageRecord::Clause(_) | DomainPackageRecord::Namespace(_) => {}
             DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::EventType(_)
-            | DomainPackageRecord::Clause(_)
-            | DomainPackageRecord::Namespace(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
