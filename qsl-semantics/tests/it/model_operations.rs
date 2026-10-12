@@ -1909,11 +1909,11 @@ fn state_machine_fields_assemble_on_the_state_owner() {
     assert_eq!(placed.presence(), Presence::Required);
 }
 
-/// Owner-specific process/state handling must not silently broaden the field
-/// value types assembled for ordinary object owners.
+/// Native UUID identity fields project on ordinary object owners as well as
+/// process-owned run types.
 #[trace("FR-322-AC-31", "TC-235")]
 #[test]
-fn object_uuid_field_remains_an_unsupported_model_member() {
+fn object_uuid_field_projects_as_uuid() {
     let order = format!("ix://{PACKAGE_IDENTITY}/Order");
     let order_id = format!("{order}/order_id");
     let document = wire_envelope(
@@ -1944,10 +1944,32 @@ fn object_uuid_field_remains_an_unsupported_model_member() {
     .to_string()
     .into_bytes();
 
-    let refusal = admit_and_assemble(&document)
-        .expect_err("an object UUID field remains outside this owner-specific assembly change");
-    assert!(refusal.contains("UnsupportedModelMember"), "{refusal}");
-    assert!(refusal.contains(&format!("{order}/order_id")), "{refusal}");
+    let declarations = admit_and_assemble(&document)
+        .expect("an object UUID identity field is assembled as a native UUID");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the object package admits");
+    let order_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: order,
+    };
+    let order_effective = views[0].view.type_identities()[&order_key];
+    let declared = declarations
+        .types
+        .object_type(order_effective)
+        .expect("Order is projected on the checked object surface");
+    let order_id = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "order_id")
+        .expect("the object UUID identity field is projected");
+    assert_eq!(order_id.value_type(), &ValueType::Uuid);
+    assert_eq!(order_id.presence(), Presence::Required);
 }
 
 /// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by

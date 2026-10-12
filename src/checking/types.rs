@@ -778,4 +778,34 @@ mod profile_tests {
             assert!(!historical.equality(leaf));
         }
     }
+
+    #[test]
+    #[trace("QSL-729-TC-1", "QSL-729-FR-056-AC-1")]
+    fn native_uuid_and_string_domain_leaves_are_direct_checked_types() {
+        let package = qsl_semantics::model::admitted::AdmittedPackage::admit(
+            qsl_semantics::model::domain_package::DomainPackage::new(
+                qsl_semantics::model::domain_package::DomainPackageRef::fixture(
+                    "qsl-729-native-leaves",
+                ),
+                Vec::new(),
+            ),
+            &mut quire_exact::Meter::new(
+                qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            ),
+        )
+        .expect("an empty synthetic package supplies the native-leaf context");
+        let uuid = domain_leaf_type(&package, &ValueTypeRef::Native(NativeValueType::Uuid))
+            .expect("UUID maps to a checked native leaf");
+        let string = domain_leaf_type(&package, &ValueTypeRef::Native(NativeValueType::String))
+            .expect("String maps to a checked native leaf");
+        assert_eq!(uuid, NativeType::Uuid);
+        assert_eq!(string, NativeType::String);
+        assert_ne!(uuid, string);
+        assert_eq!(format!("{uuid:?}"), "Uuid");
+        assert_eq!(format!("{string:?}"), "String");
+        assert!(uuid.integer().is_none());
+        assert!(string.integer().is_none());
+        assert!(!uuid.dimensionless());
+        assert!(!string.dimensionless());
+    }
 }

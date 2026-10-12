@@ -1002,15 +1002,10 @@ mod tests {
         );
     }
 
-    /// [`RecordIndex::conforms`] answers from the ancestry exactly
-    /// as the per-call walk did, for every ordered pair of keys (declared,
-    /// referenced and unknown) and every `ancestor_steps` ceiling from 0 to
-    /// past each walk's length, over a chain, a diamond, a cycle, a
-    /// self-loop, a repeated supertype, a dangling supertype and a type
-    /// declared twice.
+    /// Native UUID and String leaves retain separate identity and conformance.
     ///
-    /// Mutation used: comparing the found ordinal with `<` instead of `<=`
-    /// fails the chain's exact-ceiling cases.
+    /// Mutation used: treating all native leaves as one identity makes the
+    /// mixed UUID/String conformance assertion fail.
     #[test]
     fn native_uuid_and_string_types_are_distinct_identity_leaves() {
         use super::super::domain_package::{NativeValueType, ValueTypeRef};
