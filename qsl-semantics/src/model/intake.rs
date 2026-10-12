@@ -1911,6 +1911,15 @@ fn declared_node_for_pointer<'a>(
             let step_index = segments.next()?.parse::<usize>().ok()?;
             declaration.get("steps")?.as_array()?.get(step_index)
         }
+        // FR-056-AC-5 / FR-260-AC-3: a relationship member is its own
+        // declaration, with its own identity and origin.
+        "relationships" => {
+            let relationship_index = segments.next()?.parse::<usize>().ok()?;
+            declaration
+                .get("relationships")?
+                .as_array()?
+                .get(relationship_index)
+        }
         _ => Some(declaration),
     }
 }
