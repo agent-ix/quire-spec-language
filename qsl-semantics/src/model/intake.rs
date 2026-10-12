@@ -1508,8 +1508,20 @@ fn semantic_member_path(pointer: &str) -> Option<String> {
             if member.is_empty() {
                 return Some("TypeDefinition".to_owned());
             }
-            let member = member.join(".");
-            let member = member.replace("identity_fields", "identityFields");
+            let mut formatted = String::new();
+            for part in member {
+                if part.bytes().all(|byte| byte.is_ascii_digit()) {
+                    formatted.push('[');
+                    formatted.push_str(part);
+                    formatted.push(']');
+                } else {
+                    if !formatted.is_empty() {
+                        formatted.push('.');
+                    }
+                    formatted.push_str(part);
+                }
+            }
+            let member = formatted.replace("identity_fields", "identityFields");
             Some(format!("TypeDefinition.{member}"))
         }
         "constructs" => Some("constructs[].meaning".to_owned()),
