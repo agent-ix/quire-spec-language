@@ -960,7 +960,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
             Value::Array(
                 arguments
                     .iter()
-                    .map(|argument| json!({"parameter": argument.parameter, "value": argument.value}))
+                    .map(|argument| json!({"parameter": argument.parameter, "value": value}))
                     .collect(),
             ),
         );

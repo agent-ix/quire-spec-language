@@ -678,7 +678,7 @@ fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners
     assert!(matches!(
         malformed,
         LookupOutcome::Refused(refusal)
-            if matches!(refusal.cause, ModelRefusalCause::AbsentKey { key, .. } if key == vec![0xff, 0xfe])
+            if matches!(refusal.cause, ModelRefusalCause::AbsentKey { ref key, .. } if key == &vec![0xff, 0xfe])
     ));
 
     let exhausted = lookup(
