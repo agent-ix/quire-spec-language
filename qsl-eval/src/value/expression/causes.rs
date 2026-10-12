@@ -325,6 +325,7 @@ impl UndefinedCoded for StateModelUndefined {
             } => UndefinedRecord {
                 reason: UndefinedReason::IncompleteClosure,
                 fields: BTreeMap::from([
+                    ("closure", "subtype".to_owned()),
                     ("queried_type", queried_type.clone()),
                     ("uncovered_subtypes", uncovered_subtypes.join(", ")),
                 ]),
