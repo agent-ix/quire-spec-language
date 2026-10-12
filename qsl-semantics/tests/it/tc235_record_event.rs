@@ -241,6 +241,29 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     assert_eq!(event_subtype.steps[1].step_kind, ProcessStepKind::Event);
     assert_eq!(event_subtype.steps[1].consumes, [key("OrderPlaced")]);
 
+    let missing_identity = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressFulfilment",
+            "saga",
+            json!({
+                "supertypes": [id("OrderLifecycle")],
+                "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/expedite"),
+                    "name": "expedite",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/expedite"),
+                }],
+            }),
+        ));
+    });
+    let refusals = read_refusals(&missing_identity);
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert!(refusals[0].detail.contains("requires identityFields"));
+
     let wrong_meaning = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(
             "ExpressFulfilment",
@@ -257,19 +280,19 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
                     "emits": [],
                     "origin": origin("ExpressFulfilment/expedite"),
                 }],
-                "populations": [{
-                    "identity": id("PF"),
-                    "displayName": id("PF"),
-                    "kind": {"module": BUSINESS, "name": "population"},
-                    "members": [id("Fulfilment")],
-                    "extent": "closed",
-                    "origin": origin("PF"),
-                }],
             }),
         ));
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
     });
     let refusals = normalized_refusals(&wrong_meaning, 23);
-    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
     assert_malformed_at(
         &refusals[0],
         &id("ExpressFulfilment"),
@@ -277,13 +300,12 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     );
 
     let cycle = mutate_k2(|document| {
-        type_named_mut(document, "Fulfilment")["supertypes"] = json!([id("ExpressFulfilment")]);
         document["types"].as_array_mut().unwrap().push(declaration(
             "ExpressFulfilment",
             "saga",
             json!({
                 "identityFields": [],
-                "supertypes": [id("Fulfilment")],
+                "supertypes": [],
                 "operations": [],
                 "steps": [{
                     "identity": id("ExpressFulfilment/expedite"),
@@ -293,27 +315,45 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
                     "emits": [],
                     "origin": origin("ExpressFulfilment/expedite"),
                 }],
-                "populations": [{
-                    "identity": id("PF"),
-                    "displayName": id("PF"),
-                    "kind": {"module": BUSINESS, "name": "population"},
-                    "members": [id("Fulfilment")],
-                    "extent": "closed",
-                    "origin": origin("PF"),
-                }],
             }),
         ));
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
     });
-    let refusals = normalized_refusals(&cycle, 23);
-    assert_eq!(refusals.len(), 2);
-    assert!(
-        refusals.iter().all(|refusal| {
-            refusal.code == Code::InvalidModelBinding
-                && refusal.cause.as_str() == "malformed-declaration"
-                && refusal.detail.contains("SUPERTYPE_CYCLE")
-        }),
-        "{refusals:#?}"
-    );
+    let package = read_k2(&cycle).expect("cycle base package reads before normalization mutation");
+    let mut records = package.records.clone();
+    for record in &mut records {
+        if let DomainPackageRecord::Process(process) = record {
+            match process.key.node.as_str() {
+                "ix://test/orders/Fulfilment" => {
+                    process.supertypes = vec![key("ExpressFulfilment")]
+                }
+                "ix://test/orders/ExpressFulfilment" => {
+                    process.supertypes = vec![key("Fulfilment")]
+                }
+                _ => {}
+            }
+        }
+    }
+    let cyclic_package = DomainPackage::new(package.model_selection.clone(), records);
+    let (outcome, meter) =
+        normalize_with_meter(&cyclic_package, ModelNormalizationLimits::default());
+    assert_record_charge_count(&meter, 23);
+    let NormalizeOutcome::Refused(refusals) = outcome else {
+        panic!("cycle must be refused, got {outcome:?}");
+    };
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
+    assert!(refusals[0]
+        .detail
+        .contains("[ix://test/orders/Fulfilment, ix://test/orders/ExpressFulfilment]"));
 }
 
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
