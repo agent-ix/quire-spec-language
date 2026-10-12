@@ -509,6 +509,8 @@ fn record_value_subtype_preserves_effective_fields_support() {
         .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(taxed_type))
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
+    // FR-150 sorts effective declarations by identity; these same-package
+    // node identities therefore use lexical order here.
     effective_fields.sort();
     assert_eq!(
         effective_fields,
