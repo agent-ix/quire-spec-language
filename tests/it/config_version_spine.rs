@@ -778,6 +778,7 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
         &'static str,
         Option<&'static str>,
         i32,
+        Option<&'static str>,
     );
     let cases: &[StageCase] = &[
         (
@@ -788,6 +789,7 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
             "select",
             Some("missing_declaration"),
             20,
+            None,
         ),
         (
             Case::Dangling,
@@ -795,6 +797,7 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
             "admit",
             Some("dangling_reference"),
             20,
+            None,
         ),
         (
             Case::Healthy,
@@ -802,9 +805,18 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
             "evaluate",
             None,
             22,
+            Some("work_units"),
+        ),
+        (
+            Case::Healthy,
+            |v: &mut Value| v["request"]["clause"]["accounting"]["integer_bits"] = json!(1),
+            "evaluate",
+            None,
+            22,
+            Some("integer_bits"),
         ),
     ];
-    for &(case, edit, stage, code, exit) in cases {
+    for &(case, edit, stage, code, exit, incomplete_limit) in cases {
         let path = directory.path().join(format!("{}-{stage}", case.id()));
         build(&path, case);
         let mut request = current_clause_request(&path);
@@ -821,6 +833,11 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
                 .and_then(Value::as_str),
             code
         );
+        if let Some(limit) = incomplete_limit {
+            assert_eq!(value["disposition"]["category"], "incomplete");
+            assert_eq!(value["disposition"]["outcome"]["kind"], "incomplete");
+            assert_eq!(value["disposition"]["outcome"]["limit"], limit);
+        }
         assert_eq!(value["basis"], "unavailable");
     }
 }
