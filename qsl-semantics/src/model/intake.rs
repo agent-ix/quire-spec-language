@@ -2544,9 +2544,10 @@ pub(super) fn read_namespace(
 /// known-but-unsupported bucket instead.
 ///
 /// The wire's own `scalar` member names the bound native scalar
-/// (`agent-ix-semantic-ir`'s closed `SCALARS` set); only `"integer"`
-/// resolves here, since [`ScalarTypeRecord`] bounds only an integer domain.
-/// Its `constraints[]` carry the domain as `min`/`max` entries
+/// (`agent-ix-semantic-ir`'s closed `SCALARS` set); `"integer"` resolves to
+/// QSL's bounded integer domain. An alias-shaped value construct instead
+/// carries a native `target` and is read as that distinct native domain. Its
+/// `constraints[]` carry the integer domain as `min`/`max` entries
 /// (`agent-ix-semantic-ir`'s own closed constraint-keyword vocabulary), each
 /// naming a numeric `operands.value` -- read structurally from those typed
 /// fields, never by parsing a rendered `Int[lo,hi]` string. Missing bounds use
@@ -2590,6 +2591,23 @@ fn read_value_type(
     if let Some(supertype) = ctx.array_field("supertypes")?.first() {
         return Err(NodeCtx::new(supertype, format!("{at}.supertypes[0]"))
             .malformed("a value type declares no supertype"));
+    }
+    if let Some(target) = type_value.get("target").and_then(Value::as_str) {
+        let value_type = read_value_type_ref(package, &ctx, target)?;
+        let ValueTypeRef::Native(native) = value_type else {
+            return Err(ctx.malformed("target: a QSL value alias names a native value type"));
+        };
+        if !ctx.array_field("constraints")?.is_empty() {
+            return Err(unsupported_at(
+                type_value,
+                at,
+                format!("{}:target constraints", meaning::VALUE_TYPE),
+            ));
+        }
+        return Ok(ScalarTypeRecord {
+            key: declaration_key(package, node),
+            domain: ScalarValueDomain::Native(native),
+        });
     }
     let scalar = ctx.str_field("scalar")?;
     if scalar != "integer" {
