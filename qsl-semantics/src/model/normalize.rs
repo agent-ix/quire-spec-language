@@ -209,8 +209,8 @@ use crate::model::accounting::{
 };
 use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
-    ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, NamespaceRecord,
-    NativeValueType, PopulationRecord, ScalarValueDomain, ValueTypeRef,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, NativeValueType, PopulationRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::index::{DeclIdx, ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
@@ -3567,6 +3567,8 @@ fn into_outcome(
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
+
+    use crate::model::domain_package::{ClauseRecord, NamespaceRecord};
 
     use super::*;
 
