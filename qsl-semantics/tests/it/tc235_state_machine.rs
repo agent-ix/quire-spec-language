@@ -16,8 +16,14 @@ fn lifecycle_transition(
     emits: Vec<String>,
 ) -> Value {
     let node = format!("{owner}/{name}");
+    // A `from` already qualified as `Owner/State` names an inherited state.
+    let from = if from.contains('/') {
+        from.to_owned()
+    } else {
+        format!("{owner}/{from}")
+    };
     json!({
-        "identity": id(&node), "from": id(&format!("{owner}/{from}")),
+        "identity": id(&node), "from": id(&from),
         "to": id(&format!("{owner}/{to}")),
         "trigger": id(&format!("{owner}/{trigger}")),
         "emits": emits, "origin": origin(&node),
@@ -351,7 +357,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "Placed", "Expedited", "expedite", vec![],
+                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
                 )],
             }),
         ));
@@ -369,7 +375,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "Placed", "Expedited", "expedite", vec![],
+                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
                 )],
             }),
         ));
@@ -395,7 +401,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "Placed", "Expedited", "expedite", vec![],
+                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
                 )],
             }),
         ));
@@ -451,7 +457,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "Placed", "Expedited", "expedite", vec![],
+                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
                 )],
             }),
         ));
@@ -474,7 +480,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "Placed", "Expedited", "expedite", vec![],
+                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
                 )],
             }),
         ));
