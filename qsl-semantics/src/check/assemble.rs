@@ -677,12 +677,12 @@ fn model_object_types(
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
-            | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
             DomainPackageRecord::ObjectType(_)
             | DomainPackageRecord::StateMachine(_)
+            | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
@@ -694,9 +694,10 @@ fn model_object_types(
         // type surface as ordinary object types. Their states and transitions
         // remain source records; only their declared type and owner-linked
         // fields/operations participate in this assembly seam.
-        let (key, supertypes) = match record {
-            DomainPackageRecord::ObjectType(object) => (&object.key, &object.supertypes),
-            DomainPackageRecord::StateMachine(machine) => (&machine.key, &machine.supertypes),
+        let (key, supertypes): (&DeclarationKey, &[DeclarationKey]) = match record {
+            DomainPackageRecord::ObjectType(object) => (&object.key, &object.supertypes[..]),
+            DomainPackageRecord::StateMachine(machine) => (&machine.key, &machine.supertypes[..]),
+            DomainPackageRecord::PersistenceInterface(interface) => (&interface.key, &[]),
             _ => continue,
         };
         let (Some(artifact), Some(identity)) = (
