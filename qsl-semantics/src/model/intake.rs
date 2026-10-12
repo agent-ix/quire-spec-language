@@ -1415,6 +1415,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // process cross-meaning edges and cycles. The process binder retains
         // those edges so normalization can report the ordered QSL loci.
         .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
+        // Record-value cycle diagnostics are emitted once per owner by the
+        // upstream validator; retain only the canonical owner below.
+        .filter(|located| !noncanonical_record_cycle_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_process_step_refusal(document, located) {
                 return Some(refusal);
@@ -1895,8 +1898,9 @@ fn business_generalization_refusal(
                         via: declaration_key(package, current),
                     },
                     detail: format!(
-                        "{}: record generalization returns to {owner} through {current}",
+                        "{}: record generalization returns to {owner} through {current}, through the cycle [{}]",
                         located.pointer,
+                        path.join(", "),
                     ),
                 });
             }
@@ -1908,14 +1912,52 @@ fn business_generalization_refusal(
     None
 }
 
-/// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
-/// `locus` carries. `Located::locus` is already the `origin.source` object
-/// itself (see `agent_ix_semantic_ir::diag::locus_for`), not wrapped in an
-/// `origin` member the way [`node_span`] must unwrap from a node of
-/// [`PackageDocument::tree`] -- the two functions read the same
-/// `sourceIdentity`/`startLine`/`startColumn` shape from the two views a
-/// [`PackageDocument`] keeps of its one parse, one FCD's own `Json`, one this
-/// crate's `serde_json::Value` derived from it.
+/// Record-value specialization cycles are normalized by QSL so their typed
+/// refusal can include the canonical directed cycle. The upstream schema
+/// diagnostic is therefore suppressed for record-value types; process-cycle
+/// diagnostics follow the process-specific path above.
+fn noncanonical_record_cycle_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    use agent_ix_semantic_ir::constructs::SUPERTYPE_CYCLE;
+    if located.code != SUPERTYPE_CYCLE {
+        return false;
+    }
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let Some((position, member)) = rest.split_once('/') else {
+        return false;
+    };
+    if member != "supertypes" && !member.starts_with("supertypes/") {
+        return false;
+    }
+    let Some(types) = document.tree.get("types").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(node) = position
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| types.get(index))
+    else {
+        return false;
+    };
+    let Ok(kind) = NodeCtx::new(node, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    let Some(resolved) = meanings.get(&(kind.0.to_owned(), kind.1.to_owned())) else {
+        return false;
+    };
+    if resolved != meaning::RECORD_VALUE_TYPE {
+        return false;
+    }
+    true
+}
+
 fn located_span(
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> (Option<String>, Option<LocatedSpan>) {

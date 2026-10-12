@@ -459,6 +459,15 @@ fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
             json!({
                 "supertypes": [id("Fulfilment")],
                 "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/record"),
+                    "name": "record",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/record"),
+                }],
+                "displayName": 0,
             }),
         ));
     });
@@ -467,7 +476,7 @@ fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
     assert_malformed_at(
         &refusals[0],
         &id("ExpressFulfilment"),
-        "TypeDefinition.steps",
+        "TypeDefinition.displayName",
     );
 }
 
@@ -1087,7 +1096,7 @@ fn tc235_m17_record_value_specialization_vectors() {
         ));
     });
     let cycle_refusals = normalized_refusals(&cycle, 24);
-    assert_eq!(cycle_refusals.len(), 1, "{cycle_refusals:#?}");
+    assert_eq!(cycle_refusals.len(), 1);
     assert_eq!(cycle_refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(cycle_refusals[0].cause.as_str(), "specialization-cycle");
     assert!(cycle_refusals[0]
