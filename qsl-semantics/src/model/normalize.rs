@@ -201,7 +201,7 @@
 )]
 
 use quire_canonical::FixedShape;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::model::accounting::{
@@ -492,10 +492,14 @@ struct ViewBody {
 pub(crate) struct TypeCatalog {
     by_key: BTreeMap<DeclarationKey, EffectiveId>,
     by_identity: BTreeMap<EffectiveId, DeclarationKey>,
+    descendants_by_ancestor: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>>,
 }
 
 impl TypeCatalog {
-    fn new(by_key: BTreeMap<DeclarationKey, EffectiveId>) -> Self {
+    fn new(
+        by_key: BTreeMap<DeclarationKey, EffectiveId>,
+        descendants_by_ancestor: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>>,
+    ) -> Self {
         let by_identity = by_key
             .iter()
             .map(|(key, identity)| (*identity, key.clone()))
@@ -503,6 +507,7 @@ impl TypeCatalog {
         Self {
             by_key,
             by_identity,
+            descendants_by_ancestor,
         }
     }
 
@@ -515,6 +520,15 @@ impl TypeCatalog {
     /// `identity`.
     pub(crate) fn key_of(&self, identity: &EffectiveId) -> Option<&DeclarationKey> {
         self.by_identity.get(identity)
+    }
+
+    /// Declared types equal to or descending from `ancestor`, retained from
+    /// normalization's already-computed phase-3 type paths.
+    pub(crate) fn descendants_of(
+        &self,
+        ancestor: &DeclarationKey,
+    ) -> Option<&BTreeSet<DeclarationKey>> {
+        self.descendants_by_ancestor.get(ancestor)
     }
 }
 
@@ -1534,6 +1548,20 @@ fn build(
         type_paths.insert(type_key.clone(), walk.paths);
     }
 
+    let mut descendants_by_ancestor: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>> =
+        type_keys
+            .iter()
+            .cloned()
+            .map(|key| (key.clone(), BTreeSet::from([key])))
+            .collect();
+    for (descendant, paths) in &type_paths {
+        for path in paths {
+            if let Some(descendants) = descendants_by_ancestor.get_mut(&path.ancestor_key) {
+                descendants.insert(descendant.clone());
+            }
+        }
+    }
+
     // Phase 3, member level: each type's directly declared members (their
     // qualify facts were charged in phase 2) and the members it inherits
     // along its ancestor paths. An inherited effective member starts with
@@ -1912,7 +1940,10 @@ fn build(
         .collect();
     let view = ViewBody {
         declarations: entries,
-        types: Arc::new(TypeCatalog::new(type_identities)),
+        types: Arc::new(TypeCatalog::new(
+            type_identities,
+            descendants_by_ancestor,
+        )),
         universes,
         universe_index_by_type,
         populations,
@@ -2974,6 +3005,35 @@ mod tests {
             abstract_type: false,
             supertypes: supertypes.iter().map(DeclarationKey::fixture).collect(),
         })
+    }
+
+    #[test]
+    fn normalized_type_catalog_retains_descendants_from_type_paths() {
+        let package = DomainPackage::new(
+            DomainPackageRef::fixture("test/descendants"),
+            vec![
+                object_type("model.A", &[]),
+                object_type("model.B", &["model.A".to_owned()]),
+                object_type("model.C", &["model.B".to_owned()]),
+                object_type("model.Z", &[]),
+            ],
+        );
+        let NormalizeOutcome::Completed(view) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the acyclic type graph normalizes");
+        };
+
+        assert_eq!(
+            view.shared_type_catalog()
+                .descendants_of(&DeclarationKey::fixture("model.A"))
+                .expect("declared ancestor has a retained descendant set"),
+            &BTreeSet::from([
+                DeclarationKey::fixture("model.A"),
+                DeclarationKey::fixture("model.B"),
+                DeclarationKey::fixture("model.C"),
+            ])
+        );
     }
 
     fn field(name: &str, owner: &str) -> DomainPackageRecord {

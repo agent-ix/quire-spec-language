@@ -548,7 +548,6 @@ fn all_instances_requires_declared_subtype_closure() {
     let document = PopulationDocument {
         model_identity: "test/orders".to_owned(),
         members: vec![
-            member("b1", "model.B"),
             member("a2", "model.A"),
             member("a1", "model.A"),
         ],
@@ -581,9 +580,17 @@ fn all_instances_requires_declared_subtype_closure() {
         }
     }
 
-    let reordered = PopulationDocument {
+    let complete_document = PopulationDocument {
         model_identity: document.model_identity.clone(),
-        members: document.members.iter().rev().cloned().collect(),
+        members: vec![
+            member("b1", "model.B"),
+            member("a2", "model.A"),
+            member("a1", "model.A"),
+        ],
+    };
+    let reordered = PopulationDocument {
+        model_identity: complete_document.model_identity.clone(),
+        members: complete_document.members.iter().rev().cloned().collect(),
     };
     let complete_binding = |document: &PopulationDocument| match admit_binding(
         &view,
@@ -596,7 +603,7 @@ fn all_instances_requires_declared_subtype_closure() {
         AdmissionOutcome::Admitted(binding) => binding,
         other => panic!("expected subtype-closed binding, got {other:?}"),
     };
-    let first = complete_binding(&document);
+    let first = complete_binding(&complete_document);
     let second = complete_binding(&reordered);
     let mut first_meter = Meter::new(SCALAR_UNLIMITED);
     let mut second_meter = Meter::new(SCALAR_UNLIMITED);
