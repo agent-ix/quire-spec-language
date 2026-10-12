@@ -144,8 +144,10 @@ fn domain_leaf_type<'a>(
 ) -> Option<NativeType<'a>> {
     Some(match value_type {
         ValueTypeRef::Native(NativeValueType::Boolean) => NativeType::Boolean,
-        // The domain checker maps only Boolean here; other native leaves follow
-        // the existing unsupported-native path below.
+        ValueTypeRef::Native(NativeValueType::Uuid) => NativeType::Uuid,
+        ValueTypeRef::Native(NativeValueType::String) => NativeType::String,
+        // The domain checker maps only the closed scalar leaves above; other
+        // native leaves follow the existing unsupported-native path below.
         ValueTypeRef::Native(
             NativeValueType::Integer
             | NativeValueType::Rational
@@ -243,6 +245,10 @@ mod tests {
 pub enum NativeType<'a> {
     /// The profile Boolean type.
     Boolean,
+    /// The opaque UUID native type from an admitted domain package.
+    Uuid,
+    /// The opaque String native type from an admitted domain package.
+    String,
     /// Explicit nominal primitive, retaining its original role and representation.
     Scalar {
         /// Exact admitted model owner.
@@ -400,6 +406,8 @@ impl<'a> NativeType<'a> {
                 ScalarKind::Rational { .. } | ScalarKind::Text { .. } => None,
             },
             Self::Boolean
+            | Self::Uuid
+            | Self::String
             | Self::Enumeration { .. }
             | Self::Record { .. }
             | Self::Object { .. }
@@ -420,6 +428,8 @@ impl<'a> NativeType<'a> {
                 ScalarKind::Rational { .. } | ScalarKind::Text { .. } => false,
             },
             Self::Boolean
+            | Self::Uuid
+            | Self::String
             | Self::Enumeration { .. }
             | Self::Record { .. }
             | Self::Object { .. }
