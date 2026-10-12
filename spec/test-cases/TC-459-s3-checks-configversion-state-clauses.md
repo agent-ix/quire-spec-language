@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-104
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-104-AC-9
+    type: verifies
 ---
 # TC-459: S3 checks the ConfigVersion state clauses and types self, result and pre
 
@@ -13,7 +15,8 @@ relationships:
 Verify that the `ProtocolClause` check admits the ConfigVersion clauses and
 types their context reads.
 
-Scope: FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8.
+Scope: FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8,
+FR-104-AC-9.
 
 ## Test Procedure
 
@@ -40,6 +43,13 @@ FR-108's unit.
    b. the precondition `deref(target).versionNumber = 1`;
    c. the postcondition `pre(deref(target).versionNumber) = 1`;
    d. the postcondition `pre(target) = target`.
+6. Under the selected `quire.model.complete/v1` definition, extend the
+   ConfigVersion fixture with `ArchivedConfigVersion` conforming to
+   `ConfigVersion`. Let it inherit `parent: Option<Reference<ConfigVersion>>`
+   and declare `probe(target: ConfigVersion)`. Check a precondition on
+   `ArchivedConfigVersion::probe` with body
+   `reaches(self, target, parent)`. Inspect the checked operand reference
+   identities and resolved edge owner.
 
 Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
 
@@ -64,3 +74,9 @@ Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
   `pre`; (c) checks, its read `pre`; (d) `wrong_snapshot`/
   `forbidden-pre-read` at the `pre` (QSpec: "A pre selector cannot retag a
   post-qualified parameter reference").
+- Step 6: the clause checks. `self` retains
+  `Reference<ArchivedConfigVersion>`, `target` is
+  `Reference<ConfigVersion>`, and `parent` resolves to
+  the inherited field owned by `ConfigVersion`; no implicit change to either
+  reference identity is recorded to make the edge type match. Evaluation
+  retains each object's most-specific identity under QSpec FR-043/FR-010.
