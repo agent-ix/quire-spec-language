@@ -42,6 +42,163 @@ fn field_for<'a>(package: &'a DomainPackage, node: &str) -> &'a FieldMemberRecor
         .unwrap_or_else(|| panic!("missing field {node}"))
 }
 
+fn m10_completed_package(
+    document: &serde_json::Value,
+    expected_charges: usize,
+) -> Result<DomainPackage, String> {
+    let package = read_k2(document).map_err(|refusals| format!("reader refusal: {refusals:?}"))?;
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    let actual_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+        .count();
+    if actual_charges != expected_charges {
+        return Err(format!(
+            "normalize.record charges {actual_charges}, expected {expected_charges}"
+        ));
+    }
+    match outcome {
+        NormalizeOutcome::Completed(_) => Ok(package),
+        other => Err(format!("expected completed normalization, got {other:?}")),
+    }
+}
+
+fn m10_refusal_mismatches(
+    document: &serde_json::Value,
+    expected_charges: usize,
+    expected_node: &str,
+    expected_path: &str,
+) -> Vec<String> {
+    let package = match read_k2(document) {
+        Ok(package) => package,
+        Err(refusals) => return vec![format!("reader refused before normalization: {refusals:?}")],
+    };
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    let actual_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+        .count();
+    let mut mismatches = Vec::new();
+    if actual_charges != expected_charges {
+        mismatches.push(format!(
+            "normalize.record charges {actual_charges}, expected {expected_charges}"
+        ));
+    }
+    let NormalizeOutcome::Refused(refusals) = outcome else {
+        mismatches.push(
+            "expected one malformed-declaration refusal, got completed normalization".to_owned(),
+        );
+        return mismatches;
+    };
+    if refusals.len() != 1 {
+        mismatches.push(format!("expected one refusal, got {refusals:?}"));
+        return mismatches;
+    }
+    let refusal = &refusals[0];
+    if refusal.code != Code::InvalidModelBinding
+        || refusal.cause.as_str() != "malformed-declaration"
+    {
+        mismatches.push(format!(
+            "expected invalid_model_binding/malformed-declaration, got {refusal:?}"
+        ));
+    }
+    // TC-235 specifies the public code/cause/locus. Different typed cause
+    // variants may carry that same malformed-declaration result; the
+    // detail path is the stable locus for causes without a node field.
+    let node_matches = match &refusal.cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+        | ModelRefusalCause::FrameEntryMalformed { node, .. } => node == expected_node,
+        ModelRefusalCause::MalformedDeclaration => refusal.detail.contains(expected_node),
+        _ => false,
+    };
+    if !node_matches || !refusal.detail.contains(expected_path) {
+        mismatches.push(format!(
+            "expected node {expected_node} at {expected_path}, got {refusal:?}"
+        ));
+    }
+    mismatches
+}
+
+/// TC-235 M16's semantic-model half: the process field, invariant, operation
+/// parameter/effect, and population membership survive real intake and
+/// normalization. Runtime truth for the two runs and operation outcomes are
+/// asserted by the evaluator/replay layer.
+#[test]
+fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
+    let document = mutate_k2(|document| {
+        let process = type_named_mut(document, "Fulfilment");
+        process["fields"].as_array_mut().unwrap().push(field(
+            "Fulfilment",
+            "attempts",
+            "ix://quire/native/Integer",
+        ));
+        process["clauses"] = json!([clause(
+            "Fulfilment",
+            "NonNegativeAttempts",
+            "self.attempts >= 0",
+        )]);
+        let mut restart = operation("Fulfilment", "restart");
+        restart["pre"] = json!([{
+            "language": "quire",
+            "text": "self.attempts < 3",
+            "origin": origin("Fulfilment/restart"),
+        }]);
+        restart["post"] = json!([{
+            "language": "quire",
+            "text": "self.attempts = pre(self.attempts) + 1",
+            "origin": origin("Fulfilment/restart"),
+        }]);
+        restart["frame"]["modifies"] = json!([id("Fulfilment/attempts")]);
+        process["operations"].as_array_mut().unwrap().push(restart);
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
+    });
+
+    let package = read_k2(&document).expect("M16 fixture passes the reader");
+    let view = record_charges(&package, 25);
+    assert_eq!(
+        field_for(&package, "Fulfilment/attempts").value_type,
+        ValueTypeRef::Native(qsl_semantics::model::domain_package::NativeValueType::Integer),
+    );
+    let invariant = clause_for(&package, "Fulfilment/NonNegativeAttempts");
+    assert_eq!(invariant.owner, key("Fulfilment"));
+    assert_eq!(invariant.text, "self.attempts >= 0");
+
+    let restart = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.key == key("Fulfilment/restart") =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .expect("restart is an admitted operation member");
+    assert_eq!(restart.owner, key("Fulfilment"));
+    assert_eq!(restart.effect.modifies, [key("Fulfilment/attempts")]);
+
+    let population = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Population(population) if population.key == key("PF") => {
+            Some(population)
+        }
+        _ => None,
+    });
+    assert_eq!(
+        population.expect("PF is retained").member_types,
+        [key("Fulfilment")]
+    );
+    assert!(view.type_identities().contains_key(&key("Fulfilment")));
+}
 /// TC-235 M02 adds a record-valued field and an object invariant that compares
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
