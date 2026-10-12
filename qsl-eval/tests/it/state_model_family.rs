@@ -25,8 +25,8 @@ use qsl_semantics::model::population::{
     PopulationMember,
 };
 use quire_exact::{
-    CollectionKind, EffectiveId, FieldValue, Meter, ObjectId, ObjectReference, Outcome, Value,
-    ValueType,
+    CollectionKind, EffectiveId, FieldValue, IllTypedCause, Meter, ObjectId, ObjectReference,
+    Outcome, Value, ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldRef;
@@ -367,14 +367,18 @@ fn available_source_attribute_and_reaches_have_declared_nodes_and_types() {
 /// Successful native source assembly followed by an owned S3 refusal.
 #[test]
 fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loci() {
-    for (body, authored) in [
+    for (body, authored, expected_cause, expected_code) in [
         (
             "function F using v(r: M::A): Boolean pure { deref(r).missing }",
             "missing",
+            CheckCause::MissingName("missing".to_owned()),
+            ("missing_declaration", "missing-name"),
         ),
         (
             "invariant F using v on M::A at current { reaches(self,self,missing) }",
             "reaches",
+            CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
+            ("ill_typed", "operator-ineligible"),
         ),
     ] {
         let (declarations, _, source) = declarations(body, true);
@@ -389,11 +393,9 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
             panic!("StateModel ownership: {refusal:?}");
         };
         assert_eq!(cause.family(), FamilyKind::StateModel);
+        assert_eq!(cause.cause, expected_cause);
         let code = cause.catalog_code().unwrap();
-        assert_eq!(
-            (code.code(), code.cause()),
-            ("missing_declaration", "missing-name")
-        );
+        assert_eq!((code.code(), code.cause()), expected_code);
         assert_eq!(code.prefix(), Some("state-model"));
         assert!(refusal.to_string().starts_with("state-model/"));
         let region = regions.refusal_region(refusal).expect("authored locus");
