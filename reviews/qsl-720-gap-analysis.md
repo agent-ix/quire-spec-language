@@ -36,3 +36,7 @@ CONDITIONAL — scoped review found the NFR-013-AC-3 mismatch below; the full re
 - Matrix: attempted but unavailable within the review window (no stdout after >2 minutes); no repo-wide matrix or reverse-gap claim is made.
 - Plan completion: not assessed.
 
+## Dispositions
+
+- FND-001 — fixed `44d0993591db98a64782e7029a8a49cb1fbf82fb`. `xtask/src/ci_feature_lane_tests.rs` restores the unchanged feature-lane argv expectations and drives the actual Make recipes through a Cargo double. Its deep-target assertion checks both the exact `--ignored --exact` listing/execution calls and that zero or multiple ignored matches fail. `test-deep-format` remains in `CI_CHECKS`. Independent disposition review at this exact head: PASS; no builds/tests were run in that review.
+
