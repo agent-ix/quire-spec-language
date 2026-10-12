@@ -903,15 +903,12 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   dependencies and to FR-151 dispatch cycles, and has no row for a type
   alias. The one-sentence catalog extension is proposed to
   `ix://agent-ix/quire-specification`.
-- QSpec's `quire.native.diagnostics/v1` catalog now defines
-  `resource_exhausted`/`reservation-size-overflow` and its `upstream` payload
-  (QSL-729, merged QSpec commit `9e5f6a2343e411e43aa9fc1d7e8257fd3b2804fe`).
-  QSL preserves the upstream `StorageRequest` amount and unit in the catalog's
-  single payload field: `requested` for `allocation-failed` and `upstream` for
-  `reservation-size-overflow`, each rendered as `<unit>:<amount>`. Allocation
-  denial remains the existing QSL `resource_exhausted`/`allocation-failed`
-  mapping required by FR-082-AC-10; the corresponding allocation cause is
-  specified by QSpec #236.
+- QSpec's `quire.native.diagnostics/v1` catalog defines both
+  `resource_exhausted` storage causes: `allocation-failed` with `requested`
+  and `reservation-size-overflow` with `upstream` (QSpec PR #236, merged main
+  `1498c1e95eb3e0bbc8cf8c6bd9df2704b691c083`; the capacity cause was added by
+  QSpec PR #234). QSL preserves the upstream `StorageRequest` amount and unit
+  in each single payload field, rendered as `<unit>:<amount>`.
 - **Downstream:** the ADR-011 §5 stage driver calls S1, S2, the assembler
   and `check` in that order.
 
