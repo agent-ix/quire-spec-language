@@ -886,7 +886,7 @@ fn model_value_type(
             // but the current checked-model value algebra has no corresponding
             // element types. Preserve them in intake; do not coerce either to
             // text or an integer during assembly.
-            NativeValueType::String => return Err(Unmapped::Unsupported),
+            NativeValueType::String => ValueType::String,
             // Intake refuses these: their domain parameters have no Semantic
             // IR spelling, so no unparameterized kernel type stands for them.
             NativeValueType::Rational | NativeValueType::Decimal | NativeValueType::Text => {
