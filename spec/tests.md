@@ -557,6 +557,7 @@ names different artifacts in each.
 | TC-916 | Model-query shape breaks have QSL-owned fault routes | Unit | P1 | FR-090-AC-14, FR-090-AC-16 | 🚧 |
 | TC-917 | Evaluator invariant producers have explicit QSL classifications | Unit | P1 | FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18, FR-090-AC-20, FR-096-AC-15 | 🚧 |
 | TC-918 | Received typed kernel invariant provenance survives fault mapping | Unit | P1 | FR-096-AC-19, FR-090-AC-17 | 🚧 |
+| TC-921 | Accounting budgets are settable by counter name and a reached budget names its setting | Integration | P1 | FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-13 | 🚧 |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 |
@@ -564,7 +565,7 @@ names different artifacts in each.
 | TC-742 | native-run-result/2 carries basis and witness, and its strict reader refuses malformed and /1 documents | Integration | P1 | FR-267-AC-1, FR-267-AC-2, FR-267-AC-3 | 🚧 |
 | TC-743 | Replay re-derives a state-clause witness and checks that the element separates the clause | Integration | P1 | FR-268-AC-1, FR-268-AC-2, FR-268-AC-3, FR-268-AC-4 | 🚧 |
 | TC-744 | A witness disagreement settles inconclusive with a typed Witness cause that round-trips | Unit | P1 | FR-269-AC-1, FR-269-AC-2, FR-269-AC-3 | 🚧 |
-| TC-891 | A clause-run request file runs through run_clause and writes a /2 document | Integration | P1 | FR-312-AC-1, FR-312-AC-2, FR-312-AC-3, FR-312-AC-4 | 🚧 |
+| TC-891 | A clause-run request file runs through run_clause and writes a /2 document | Integration | P1 | FR-312-AC-1, FR-312-AC-2, FR-312-AC-3, FR-312-AC-4, FR-312-AC-5, FR-312-AC-6 | 🚧 |
 | TC-779 | Each non-interpreter backend matches the interpreter over the conformance corpus and generated programs | Integration | P1 | FR-295-AC-1 | 🚧 |
 | TC-780 | Backends match the interpreter on budgets, limits and internal errors, and the outcome names no backend | Integration | P1 | FR-295-AC-2, FR-295-AC-3, FR-295-AC-4 | 🚧 |
 | TC-781 | The request selects the execution backend and no other backend runs in its place | Integration | P1 | FR-296-AC-1, FR-296-AC-2, FR-296-AC-3 | 🚧 |
@@ -596,7 +597,7 @@ names different artifacts in each.
 | TC-784 | One Value-family source runs through check, package and execute with documents and exit codes | Integration | P1 | FR-299-AC-1, FR-299-AC-2, FR-299-AC-3, FR-299-AC-4 | 🚧 |
 | TC-762 | analyze settles proved, refuted and unsupported items with one record each | Integration | P1 | FR-281-AC-1, FR-281-AC-2, FR-281-AC-3 | 🚧 |
 | TC-763 | analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict | Integration | P1 | FR-281-AC-4, FR-281-AC-5, FR-281-AC-6, FR-281-AC-7 | 🚧 |
-| TC-931 | The formatter output budget is a named caller setting | Integration | P1 | FR-003-AC-10, FR-255-AC-1, FR-255-AC-4, FR-255-AC-6, FR-277-AC-1 | 🚧 |
+| TC-931 | The formatter output budget is a named caller setting | Integration | P1 | FR-003-AC-10, FR-255-AC-1, FR-255-AC-3, FR-255-AC-4, FR-255-AC-6, FR-277-AC-1 | 🚧 |
 | TC-970 | Capability admits exactly the twelve FR-290 labels | Unit | P1 | FR-057-AC-1 | 🚧 |
 | TC-971 | Capability family projection matches FR-290 | Unit | P1 | FR-057-AC-11, FR-057-AC-13 | 🚧 |
 | TC-972 | same_kind compares all capability labels exactly | Unit | P1 | FR-057-AC-4 | 🚧 |

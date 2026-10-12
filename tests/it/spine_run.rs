@@ -767,7 +767,7 @@ fn tc_451_step_5_function_shape_and_lookup_refusals() {
     assert_eq!(failure["details"]["function"], "corner");
 }
 
-/// FR-100-AC-6 (TC-451 step 7): `seven` with `work_units` 0 writes outcome
+/// FR-100-AC-6 (TC-451 step 7): `seven` with `call.accounting` `{"work_units": 0}` writes outcome
 /// `{"kind": "incomplete", "limit": "work_units"}`, exit 22.
 #[test]
 #[trace("TC-451", "FR-100-AC-6")]
@@ -775,7 +775,7 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     let program = std::fs::read(RUN_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let mut request = call("seven", json!([]));
-    request["work_units"] = json!(0);
+    request["accounting"] = json!({"work_units": 0});
     spine_run_request(directory.path(), &program, request);
     let output = run(directory.path());
     assert_eq!(
@@ -791,10 +791,54 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     );
 }
 
-/// FR-100-AC-3 (TC-450 step 4): a `work_units` of `18446744073709551616`
-/// (above `u64::MAX`), `-1`, `1.5` or `null` refuses `invalid-request` at
-/// stage `request`, exit 20 (FND-009/FND-018: `null` is a present key, not
-/// an absent one, and admits no `u64`).
+/// FR-100-AC-13 (TC-921 step 5): `run_complete` forwards the supplied
+/// `integer_bits` limit through evaluation and reports the exhausted counter.
+#[test]
+#[trace("TC-921", "FR-100-AC-13")]
+fn native_run_integer_bits_limit_reaches_evaluation() {
+    let fixture = std::fs::read_to_string(RUN_FIXTURE).unwrap();
+    let literal_directory = tempfile::tempdir().unwrap();
+    let mut literal_call = call("seven", json!([]));
+    literal_call["accounting"] = json!({"integer_bits": 0});
+    spine_run_request(literal_directory.path(), fixture.as_bytes(), literal_call);
+    let literal_output = run(literal_directory.path());
+    assert_eq!(literal_output.status.code(), Some(0));
+    let literal_document: Value = serde_json::from_slice(&literal_output.stdout).unwrap();
+    assert_eq!(
+        literal_document["outcome"],
+        json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
+    );
+
+    let program = fixture.replace(
+        "function seven using v(): Digit pure { 7 }",
+        "function seven using v(): Digit pure { 7 + 1 }",
+    );
+    assert_ne!(program, fixture, "the fixture's seven body must be updated");
+    let directory = tempfile::tempdir().unwrap();
+    let mut request = call("seven", json!([]));
+    request["accounting"] = json!({"integer_bits": 0});
+    spine_run_request(directory.path(), program.as_bytes(), request);
+
+    let output = run(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(22),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document["outcome"],
+        json!({"kind": "incomplete", "limit": "integer_bits"})
+    );
+}
+
+/// FR-100-AC-3 (TC-450 step 4): an `accounting` member `work_units` of
+/// `18446744073709551616` (above `u64::MAX`), `-1`, `1.5` or `null`, an
+/// `accounting` member `depth`, a member named twice, an `accounting` of
+/// `5`, and the legacy `call.work_units` each refuse `invalid-request` at stage
+/// `request`, exit 20 (FND-009/FND-018: `null` is a present key, not an
+/// absent one, and admits no `u64`).
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
 fn tc_450_step_4_malformed_work_units_refuses() {
@@ -802,19 +846,29 @@ fn tc_450_step_4_malformed_work_units_refuses() {
     // `18446744073709551616` (2^64) does not fit `serde_json::Value`'s own
     // `u64`/`i64`/`f64` number representation, so it is spliced into the
     // request text directly rather than built through `json!`.
-    for work_units in ["18446744073709551616", "-1", "1.5", "null"] {
+    let accounting_spliced = [
+        r#""accounting":{"work_units":18446744073709551616}"#,
+        r#""accounting":{"work_units":-1}"#,
+        r#""accounting":{"work_units":1.5}"#,
+        r#""accounting":{"work_units":null}"#,
+        r#""accounting":{"depth":1}"#,
+        r#""accounting":{"work_units":1,"work_units":2}"#,
+        r#""accounting":5"#,
+        r#""work_units":0"#,
+    ];
+    for work_units in accounting_spliced {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("program.native"), &program).unwrap();
         let mut placeholder_call = call("seven", json!([]));
-        placeholder_call["work_units"] = json!(0);
+        placeholder_call["accounting"] = json!({"work_units": 0});
         let request = json!({"format":"native-run/1","request":{
             "models":[],
             "program":{"source":program_source(&program)},
             "call": placeholder_call,
         }});
         let text = serde_json::to_string(&request).unwrap().replacen(
-            "\"work_units\":0",
-            &format!("\"work_units\":{work_units}"),
+            "\"accounting\":{\"work_units\":0}",
+            work_units,
             1,
         );
         std::fs::write(directory.path().join("request.json"), text).unwrap();
@@ -964,7 +1018,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                     .collect(),
             ),
         );
-        request["work_units"] = json!(work_units);
+        request["accounting"] = json!({"work_units": work_units});
         let directory = tempfile::tempdir().unwrap();
         spine_run_request(directory.path(), &program, request);
         let output = run(directory.path());

@@ -1085,10 +1085,7 @@ fn run_complete(
     let spine_call = qsl_replay::spine::Call {
         function: call.function.clone(),
         arguments,
-        accounting: qsl_replay::spine::default_accounting(
-            call.work_units
-                .unwrap_or(qsl_replay::spine::DEFAULT_WORK_UNITS),
-        ),
+        accounting: call_accounting(&call.accounting),
     };
     let (package_id, outcome) = qsl_replay::spine::run(
         source.source().identity().clone(),
@@ -1108,6 +1105,16 @@ fn run_complete(
         other => RunCause::SpineRun(Box::new(other)),
     })?;
     output::spine_run_result(*digest, package_id, &source, &call.function, outcome)
+}
+
+/// The call's accounting limits (FR-100): each named counter uses the
+/// supplied bound and every omitted counter retains its accounting default.
+fn call_accounting(accounting: &wire::Accounting) -> quire_exact::ScalarLimits {
+    let mut limits = qsl_replay::AccountingLimits::default();
+    for (setting, bound) in accounting.entries() {
+        limits.set_bound(setting, bound);
+    }
+    limits.0
 }
 
 /// A spine compile refusal from a `1-draft` `run`, located over the source
@@ -1190,5 +1197,45 @@ mod tests {
                 "invariant": "spine-run-supplies-admitted-name-and-arity",
             })
         );
+    }
+
+    /// FR-100-AC-13: `call.accounting` reaches the call as its accounting
+    /// limits, with omitted counters retaining their defaults.
+    #[test]
+    #[trace("TC-921", "FR-100-AC-13")]
+    fn call_accounting_reaches_the_call_as_its_limits() {
+        let limits = |text: &str| {
+            let call: wire::Call = serde_json::from_str(text).expect("a call");
+            call_accounting(&call.accounting)
+        };
+        let all = limits(
+            r#"{"function":"f","arguments":[],"accounting":{"integer_bits":1,
+            "decimal_digits":2,"scale_expansion":3,"text_input_bytes":4,
+            "text_scalars":5,"normalized_scalars":6,"unit_edges":7,
+            "value_occurrences":8,"work_units":9,"result_units":10}}"#,
+        );
+        assert_eq!(
+            all,
+            quire_exact::ScalarLimits {
+                integer_bits: 1,
+                decimal_digits: 2,
+                scale_expansion: 3,
+                text_input_bytes: 4,
+                text_scalars: 5,
+                normalized_scalars: 6,
+                unit_edges: 7,
+                value_occurrences: 8,
+                work_units: 9,
+                result_units: 10,
+            }
+        );
+        let one = limits(r#"{"function":"f","arguments":[],"accounting":{"work_units":7}}"#);
+        assert_eq!(one, qsl_replay::spine::default_accounting(7));
+        let defaults = qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS);
+        assert_eq!(
+            limits(r#"{"function":"f","arguments":[],"accounting":{}}"#),
+            defaults
+        );
+        assert_eq!(limits(r#"{"function":"f","arguments":[]}"#), defaults);
     }
 }

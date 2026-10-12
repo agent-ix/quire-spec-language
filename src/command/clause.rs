@@ -233,11 +233,7 @@ pub(super) fn read(
         expected_package_id_claim: clause.package_id.clone(),
         limits: SpineLimits::default(),
         observation_limits,
-        accounting: qsl_replay::spine::default_accounting(
-            clause
-                .work_units
-                .unwrap_or(qsl_replay::spine::DEFAULT_WORK_UNITS),
-        ),
+        accounting: super::call_accounting(&clause.accounting),
     })
     .map_err(|error| invalid(error.member, error.reason))
 }
