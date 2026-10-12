@@ -5,7 +5,8 @@
 //! Each form holds the kind's own payload exactly: integers as canonical
 //! decimal strings, a rational in lowest terms, a decimal as coefficient and
 //! scale, a float as its bit pattern in decimal, text as its admitted
-//! payload. Every number that can exceed 2^53 is a decimal string, since the
+//! payload, and native String as its exact Unicode scalar sequence. Every
+//! number that can exceed 2^53 is a decimal string, since the
 //! one encoder, `quire-canonical`'s, refuses a larger JSON number. The reader
 //! mints no declaration identity (ADR-013 O-04, O-05): a record or tuple
 //! declaration, a declared unit and an object type each resolve by lookup
@@ -36,6 +37,90 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use super::{digest, hex, malformed, present, CauseCodecError};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn package() -> CheckedPackage {
+        let declarations = qsl_semantics::check::PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        CheckedPackage::link(
+            declarations
+                .check(quire_semantic_value::checking::CheckingLimits::default())
+                .expect("the empty fixture package checks"),
+        )
+    }
+
+    #[trace("TC-992", "FR-056-AC-23")]
+    #[test]
+    fn native_string_values_round_trip_in_the_closed_canonical_form() {
+        let package = package();
+        for text in ["ascii", "λ雪", "", "550e8400-e29b-41d4-a716-446655440000"] {
+            let encoded = encode_element(&Value::String(text.to_owned())).unwrap();
+            let expected = String::from_utf8(
+                quire_canonical::to_vec(
+                    &serde_json::json!({"kind": "string", "text": text}),
+                    Limits::new(u64::MAX),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(encoded.get(), expected);
+            let document =
+                quire_canonical::read(encoded.get().as_bytes(), Limits::new(u64::MAX)).unwrap();
+            validate_element_shape(document.root()).unwrap();
+            assert_eq!(
+                decode_element(document.root(), Keys::new(&package)).unwrap(),
+                Value::String(text.to_owned())
+            );
+        }
+    }
+
+    #[trace("TC-992", "FR-056-AC-23")]
+    #[test]
+    fn native_string_wire_refuses_extra_members_and_lone_surrogates() {
+        let extra = quire_canonical::read(
+            br#"{"kind":"string","text":"x","extra":true}"#,
+            Limits::new(u64::MAX),
+        )
+        .unwrap();
+        assert!(validate_element_shape(extra.root()).is_err());
+
+        assert!(quire_canonical::read(
+            br#"{"kind":"string","text":"\ud800"}"#,
+            Limits::new(u64::MAX),
+        )
+        .is_err());
+    }
+
+    #[trace("TC-992", "FR-056-AC-23")]
+    #[test]
+    fn native_string_type_uses_a_string_leaf_tag() {
+        let package = package();
+        let value = Value::Option(OptionValue::none(ValueType::String));
+        let encoded = encode_element(&value).unwrap();
+        assert!(encoded
+            .get()
+            .contains(r#""payload_type":{"kind":"string"}"#));
+        let document =
+            quire_canonical::read(encoded.get().as_bytes(), Limits::new(u64::MAX)).unwrap();
+        assert_eq!(
+            decode_element(document.root(), Keys::new(&package)).unwrap(),
+            value
+        );
+    }
+
+    #[trace("TC-992", "FR-056-AC-23")]
+    #[test]
+    fn existing_wire_kind_strings_remain_unchanged() {
+        let encoded = encode_element(&Value::Boolean(true)).unwrap();
+        assert_eq!(encoded.get(), r#"{"kind":"boolean","value":true}"#);
+    }
+}
 
 /// The limits a text payload is re-admitted and a collection re-formed
 /// under. Both are already bounded by the size of the document they were
@@ -411,6 +496,7 @@ pub(super) enum TypeLeafWire {
         #[serde(rename = "type")]
         text_type: TextTypeWire,
     },
+    String,
     Enum {
         ordered: bool,
         variants: Vec<String>,
@@ -471,6 +557,7 @@ impl TypeLeafWire {
             Self::Text { text_type } => {
                 text_type.read()?;
             }
+            Self::String => {}
             Self::Enum { ordered, variants } => {
                 let variants = variants
                     .iter()
@@ -524,6 +611,7 @@ impl TypeLeafWire {
             ValueType::Text(text_type) => Self::Text {
                 text_type: TextTypeWire::of(text_type),
             },
+            ValueType::String => Self::String,
             ValueType::Enum(shape) => Self::Enum {
                 ordered: shape.is_ordered(),
                 variants: shape
@@ -581,6 +669,7 @@ impl TypeLeafWire {
             } => ValueType::Float(FloatType::new(width.read(), rounding(&mode)?)),
             Self::Quantity { unit } => ValueType::Quantity(keys.unit(&unit)?),
             Self::Text { text_type } => ValueType::Text(text_type.read()?),
+            Self::String => ValueType::String,
             Self::Enum { ordered, variants } => {
                 let variants = variants
                     .iter()
@@ -641,6 +730,9 @@ pub(super) enum ScalarWire {
         text_type: TextTypeWire,
         payload: String,
     },
+    String {
+        text: String,
+    },
     Enum {
         variant: String,
         rank: u32,
@@ -690,6 +782,7 @@ impl ScalarWire {
                     return Err(CauseCodecError::Value("payload"));
                 }
             }
+            Self::String { .. } => {}
             Self::Enum { variant, .. } => {
                 digest(&variant, "variant")?;
             }
@@ -732,6 +825,7 @@ impl ScalarWire {
                 text_type: TextTypeWire::of(text.text_type()),
                 payload: text.payload().as_str().to_owned(),
             },
+            Value::String(text) => Self::String { text: text.clone() },
             Value::Enum(member) => Self::Enum {
                 variant: hex(member.variant().as_bytes()),
                 rank: member.rank(),
@@ -780,6 +874,7 @@ impl ScalarWire {
                     _ => return Err(CauseCodecError::Value("payload")),
                 }
             }
+            Self::String { text } => Value::String(text),
             Self::Enum { variant, rank } => Value::Enum(EnumMember::new(
                 VariantId::from_digest(digest(&variant, "variant")?),
                 rank,
