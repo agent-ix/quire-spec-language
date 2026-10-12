@@ -640,7 +640,7 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
   wrong tag and non-string payload, including the bare JSON number `0`,
   before payload admission. No rejected input produces a repaired value.
 - Same-kind equal payloads give true and equal canonical keys; changing one
-  UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Int
+  UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Integer
   pairs give a typed refusal, not false, under FR-149. These controls do not
   select an ordering or arithmetic operation.
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSpec FR-208 business meanings through the public Semantic IR intake and
-//! normalization boundary. K2 retains TC-235's natives and all declarations;
-//! the separately named fixtures isolate rules that need no native alignment.
+//! normalization boundary. The separately named fixtures isolate rules that
+//! need no native alignment; the full K2 lives in `tc235_business_meanings`.
 //! These authored wire inputs do not qualify artifact extraction or runtime.
 
 use ix_trace_rs::trace;
