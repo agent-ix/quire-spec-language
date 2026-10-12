@@ -3,18 +3,20 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::{ByteDigest, IntakeLimits};
+use qsl_foundation::{ByteDigest, IntakeLimits, SourceIdentity};
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ProcessStepKind,
 };
 use qsl_semantics::model::intake::{
-    admit, meaning, package_input, read_domain_package, read_records,
+    admit, admit_unit, meaning, package_input, read_domain_package, read_records,
 };
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
+use quire_exact::ValueType;
 use serde_json::{json, Value};
 
 const PACKAGE: &str = "test/orders";
@@ -265,6 +267,72 @@ fn k2() -> Value {
         construct("population", meaning::POPULATION),
     ];
     domain_document(types, constructs)
+}
+
+#[test]
+fn k2_record_and_event_meanings_assemble_as_composites() {
+    let bytes = serde_json::to_vec(&k2()).expect("K2 serializes");
+    let packages = package_input([bytes.as_slice()]);
+    let digest = hex(packages.keys().next().expect("one K2 package"));
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model K2 = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         function noop using v(): Boolean pure {{ true }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "tc-235", "fixture", "fixture:1"),
+        "unit.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the assembly unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the assembly unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("I1 admits the K2 source");
+    let source = parsed.source().reference().clone();
+    let declarations = PackageDeclarations::assemble(source, built, models, Vec::new())
+        .expect("S3 assembles record-value and event meanings");
+
+    let money = declarations
+        .types
+        .composites()
+        .find(|composite| composite.name() == "K2::Money")
+        .expect("Money is an assembled model composite");
+    let quire_semantic_value::declaration::CompositeShape::Record(money_fields) = money.shape()
+    else {
+        panic!("Money keeps its record shape");
+    };
+    assert_eq!(
+        money_fields
+            .iter()
+            .map(|field| field.name())
+            .collect::<Vec<_>>(),
+        ["amount_minor", "currency"]
+    );
+
+    let event = declarations
+        .types
+        .composites()
+        .find(|composite| composite.name() == "K2::OrderPlaced")
+        .expect("OrderPlaced is an assembled event composite");
+    let quire_semantic_value::declaration::CompositeShape::Record(event_fields) = event.shape()
+    else {
+        panic!("OrderPlaced keeps its record shape");
+    };
+    assert_eq!(
+        event_fields
+            .iter()
+            .map(|field| field.name())
+            .collect::<Vec<_>>(),
+        ["occurred_at", "order_id"]
+    );
+    assert_eq!(event_fields[0].value_type(), &ValueType::Timestamp);
 }
 
 fn mutate_k2(mutate: impl FnOnce(&mut Value)) -> Value {
