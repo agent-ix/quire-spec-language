@@ -319,6 +319,16 @@ fn node_named_mut<'a>(value: &'a mut Value, identity: &str) -> Option<&'a mut Va
     }
 }
 
+fn refresh_manifest_digest(document: &mut Value) {
+    let digest = jcs_digest(&document["types"]);
+    document["source"]["digest"] = json!(digest);
+    document["package"]["manifestDigest"] = json!(digest);
+    document["package"]["lockDigest"] = json!(digest);
+    for construct in document["constructs"].as_array_mut().unwrap() {
+        construct["manifestDigest"] = json!(digest);
+    }
+}
+
 fn tc213_fixture() -> Value {
     let mut count = declaration("Count", "value", json!({}));
     count["target"] = json!("ix://quire/native/Integer");
@@ -380,13 +390,16 @@ fn tc213_fixture() -> Value {
         node_named_mut(&mut document, &id(node))
             .unwrap_or_else(|| panic!("TC-213 fixture has {node}"))["origin"] = origin;
     }
+    refresh_manifest_digest(&mut document);
     document
 }
 
 fn tc213_retained_map(
     document: &Value,
 ) -> (BTreeSet<DeclarationKey>, BTreeMap<DeclarationKey, Value>) {
-    let package = read_k2(document).expect("TC-213 fixture admits");
+    let mut document = document.clone();
+    refresh_manifest_digest(&mut document);
+    let package = read_k2(&document).expect("TC-213 fixture admits");
     let admitted_keys = package
         .records
         .iter()
