@@ -476,8 +476,7 @@ impl AssemblyCause {
         CatalogCode::new(self.code().as_str(), cause)
     }
 
-    /// The exact native storage request, when this cause is a type-environment
-    /// allocator denial.
+    /// The exact native storage request for a type-environment storage cause.
     pub fn storage_request(&self) -> Option<(usize, StorageUnit)> {
         match self {
             Self::StorageAllocation { requested, unit }
@@ -486,21 +485,31 @@ impl AssemblyCause {
         }
     }
 
-    /// The typed catalog payload for a registry allocation refusal.
+    /// The typed catalog payload for a registry storage refusal. Capacity
+    /// overflow uses QSpec's `upstream` field with the exact request object.
     pub fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
-        let (requested, unit) = match self {
-            Self::StorageAllocation { requested, unit }
-            | Self::StorageCapacity { requested, unit } => (requested, unit),
-            _ => return None,
-        };
-        let unit = match unit {
-            StorageUnit::Bytes => "bytes",
-            StorageUnit::AdditionalElements => "additional-elements",
-        };
-        Some(BTreeMap::from([
-            ("requested", requested.to_string()),
-            ("unit", unit.to_owned()),
-        ]))
+        match self {
+            Self::StorageAllocation { requested, unit } => Some(BTreeMap::from([
+                ("requested", requested.to_string()),
+                ("unit", storage_unit_name(*unit).to_owned()),
+            ])),
+            Self::StorageCapacity { requested, unit } => Some(BTreeMap::from([(
+                "upstream",
+                format!(
+                    "{{\"amount\":{},\"unit\":\"{}\"}}",
+                    requested,
+                    storage_unit_name(*unit)
+                ),
+            )])),
+            _ => None,
+        }
+    }
+}
+
+fn storage_unit_name(unit: StorageUnit) -> &'static str {
+    match unit {
+        StorageUnit::Bytes => "bytes",
+        StorageUnit::AdditionalElements => "additional-elements",
     }
 }
 

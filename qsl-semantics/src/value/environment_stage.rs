@@ -28,9 +28,15 @@ pub enum EnvironmentStageCause {
     /// The kernel refused a declaration.
     Declaration(InvalidDeclaration),
     /// A real kernel allocation request was denied.
-    Allocation { request: StorageRequest },
+    Allocation {
+        /// The exact request submitted to the allocation boundary.
+        request: StorageRequest,
+    },
     /// The kernel could not compute or represent the reservation size.
-    Capacity { request: StorageRequest },
+    Capacity {
+        /// The exact request submitted to the capacity calculation.
+        request: StorageRequest,
+    },
 }
 
 impl EnvironmentStageCause {
@@ -47,18 +53,28 @@ impl EnvironmentStageCause {
     /// The structured storage payload, without converting element counts to
     /// byte counts.
     pub fn storage_catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
-        let request = match self {
-            Self::Allocation { request } | Self::Capacity { request } => request,
-            Self::Declaration(_) => return None,
-        };
-        let unit = match request.unit() {
-            StorageUnit::Bytes => "bytes",
-            StorageUnit::AdditionalElements => "additional-elements",
-        };
-        Some(BTreeMap::from([
-            ("requested", request.amount().to_string()),
-            ("unit", unit.to_owned()),
-        ]))
+        match self {
+            Self::Allocation { request } => Some(BTreeMap::from([
+                ("requested", request.amount().to_string()),
+                ("unit", storage_unit_name(request.unit()).to_owned()),
+            ])),
+            Self::Capacity { request } => Some(BTreeMap::from([(
+                "upstream",
+                format!(
+                    "{{\"amount\":{},\"unit\":\"{}\"}}",
+                    request.amount(),
+                    storage_unit_name(request.unit())
+                ),
+            )])),
+            Self::Declaration(_) => None,
+        }
+    }
+}
+
+fn storage_unit_name(unit: StorageUnit) -> &'static str {
+    match unit {
+        StorageUnit::Bytes => "bytes",
+        StorageUnit::AdditionalElements => "additional-elements",
     }
 }
 

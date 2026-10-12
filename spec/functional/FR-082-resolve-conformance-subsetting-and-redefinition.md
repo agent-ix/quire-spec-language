@@ -253,7 +253,7 @@ The registry's resource-failure causes and payloads are:
 | Code | Cause | Payload |
 | --- | --- | --- |
 | `resource_exhausted` | `allocation-failed` | `requested`: upstream amount; `unit`: native unit (`bytes` or `additional-elements`). |
-| `resource_exhausted` | `reservation-size-overflow` | `requested`: upstream amount; `unit`: native unit (`bytes` or `additional-elements`). |
+| `resource_exhausted` | `reservation-size-overflow` | `upstream`: exact upstream `StorageRequest` amount and native unit (`bytes` or `additional-elements`), preserving the capacity/size arithmetic or representation overflow reason. |
 
 When either storage failure stops admission, QSL SHALL expose no admitted
 descriptor prefix, registry index, member key join, type environment, or
