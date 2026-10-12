@@ -44,6 +44,14 @@ fn field_for<'a>(package: &'a DomainPackage, node: &str) -> &'a FieldMemberRecor
         .unwrap_or_else(|| panic!("missing field {node}"))
 }
 
+fn operation_clause(operation: &str, text: &str) -> serde_json::Value {
+    json!({
+        "language": "quire",
+        "text": text,
+        "origin": origin(operation),
+    })
+}
+
 fn m10_completed_package(
     document: &serde_json::Value,
     expected_charges: usize,
@@ -142,14 +150,9 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
             "self.attempts >= 0",
         )]);
         let mut restart = operation("Fulfilment", "restart");
-        restart["pre"] = json!([clause(
+        restart["pre"] = json!([operation_clause("Fulfilment/restart", "self.attempts < 3")]);
+        restart["post"] = json!([operation_clause(
             "Fulfilment/restart",
-            "BelowLimit",
-            "self.attempts < 3",
-        )]);
-        restart["post"] = json!([clause(
-            "Fulfilment/restart",
-            "Incremented",
             "self.attempts = pre(self.attempts) + 1",
         )]);
         restart["frame"]["modifies"] = json!([id("Fulfilment/attempts")]);
@@ -231,7 +234,6 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
                 "ExpressFulfilment",
                 "saga",
                 json!({
-                    "identityFields": [],
                     "supertypes": [id("Fulfilment")],
                     "operations": [],
                     "steps": steps,
@@ -274,10 +276,9 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         Vec::<DeclarationKey>::new(),
         "the inherited correlation key is not copied into own identity fields"
     );
-    assert!(
-        view.type_identities()
-            .contains_key(&key("ExpressFulfilment"))
-    );
+    assert!(view
+        .type_identities()
+        .contains_key(&key("ExpressFulfilment")));
     assert!(view.type_identities().contains_key(&key("Fulfilment")));
     let population = package.records.iter().find_map(|record| match record {
         DomainPackageRecord::Population(population) if population.key == key("PF") => {
@@ -365,7 +366,8 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
 #[test]
 fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let relationship = |owner: &str, name: &str, target: &str| {
-        let node = format!("{owner}/{name}");
+        let target_name = target.rsplit('/').next().expect("target has a node name");
+        let node = format!("relationship/{owner}-{name}-{target_name}");
         json!({
             "identity": id(&node),
             "category": "structural",
@@ -391,7 +393,9 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let package = read_k2(&order_link).expect("M21 object relationship reads");
     let view = record_charges(&package, 22);
     let link = package.records.iter().find_map(|record| match record {
-        DomainPackageRecord::Relationship(link) if link.key == key("Order/fulfilments") => {
+        DomainPackageRecord::Relationship(link)
+            if link.key == key("relationship/Order-fulfilments-Fulfilment") =>
+        {
             Some(link)
         }
         _ => None,
@@ -434,7 +438,9 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let package = read_k2(&fulfilment_link).expect("M21 reverse relationship reads");
     record_charges(&package, 25);
     let link = package.records.iter().find_map(|record| match record {
-        DomainPackageRecord::Relationship(link) if link.key == key("Fulfilment/order") => {
+        DomainPackageRecord::Relationship(link)
+            if link.key == key("relationship/Fulfilment-order-Order") =>
+        {
             Some(link)
         }
         _ => None,
@@ -461,7 +467,11 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     });
     let refusals = normalized_refusals(&bad_target, 22);
     assert_eq!(refusals.len(), 1);
-    assert_malformed_at(&refusals[0], &id("Fulfilment/store"), "Relationship.target");
+    assert_malformed_at(
+        &refusals[0],
+        &id("relationship/Fulfilment-store-OrderStore"),
+        "Relationship.target",
+    );
 
     let bad_owner = mutate_k2(|document| {
         type_named_mut(document, "Money")["relationships"] =
@@ -471,7 +481,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     assert_eq!(refusals.len(), 1);
     assert_malformed_at(
         &refusals[0],
-        &id("Money/owner"),
+        &id("relationship/Money-owner-Order"),
         "TypeDefinition.relationships[0]",
     );
 }
@@ -500,7 +510,6 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
             "Flags",
             "money",
             json!({
-                "identityFields": [],
                 "fields": [field("Flags", "placed", "ix://quire/native/Boolean")],
                 "operations": [],
             }),
@@ -517,14 +526,9 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
             "origin": origin("OrderLifecycle/place/flags"),
         }]);
-        place["pre"] = json!([clause(
+        place["pre"] = json!([operation_clause("OrderLifecycle/place", "not self.placed")]);
+        place["post"] = json!([operation_clause(
             "OrderLifecycle/place",
-            "RequiresNotPlaced",
-            "not self.placed",
-        )]);
-        place["post"] = json!([clause(
-            "OrderLifecycle/place",
-            "PlacedAndNotCancelled",
             "self.placed and not self.cancelled",
         )]);
         place["frame"]["modifies"] = json!([id("OrderLifecycle/placed")]);
@@ -1063,9 +1067,7 @@ fn tc235_m17_record_value_specialization_vectors() {
     assert_eq!(cycle_refusals.len(), 1);
     assert_eq!(cycle_refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(cycle_refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(
-        cycle_refusals[0]
-            .detail
-            .contains("[ix://test/orders/Money, ix://test/orders/TaxedMoney]")
-    );
+    assert!(cycle_refusals[0]
+        .detail
+        .contains("[ix://test/orders/Money, ix://test/orders/TaxedMoney]"));
 }
