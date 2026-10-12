@@ -356,6 +356,47 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         .contains("[ix://test/orders/Fulfilment, ix://test/orders/ExpressFulfilment]"));
 }
 
+/// The JSON acceptance vector records the two diagnostics that the producer
+/// must retain for one malformed process subtype: missing identity fields
+/// first, followed by the cross-meaning supertype.
+#[ignore = "expected red until QSL-777 exposes both ordered M20 diagnostics"]
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressFulfilment",
+            "saga",
+            json!({
+                "supertypes": [id("OrderLifecycle")],
+                "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/expedite"),
+                    "name": "expedite",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/expedite"),
+                }],
+            }),
+        ));
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
+    });
+    let refusals = read_refusals(&document);
+    assert_eq!(refusals.len(), 2);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert!(refusals[0].detail.contains("requires identityFields"));
+    assert_eq!(refusals[1].code, Code::InvalidModelBinding);
+    assert!(refusals[1].detail.contains("CONSTRUCT_TARGET_KIND"));
+}
+
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
 /// their authored relationship, the clause and populations stay typed, and
 /// invalid target/owner meanings retain their FR-208 refusal boundary.
