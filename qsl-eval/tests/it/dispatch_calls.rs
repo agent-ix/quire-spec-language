@@ -16,9 +16,12 @@ use sha2::{Digest, Sha256};
 
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{
-    BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
+    BinaryOperator, ClauseKind, DeclarationSpans, DeclaredClauseKind, Expression, ExpressionSpans,
+    FunctionDeclaration, StateClauseKind, TypeForm,
 };
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
+use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::Span;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
@@ -27,6 +30,7 @@ use qsl_semantics::check::{
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckRefusal, DispatchCandidate, DispatchFunctionRole,
     DispatchOperation, DispatchTable, InvalidDispatchDeclaration, ModelClause, PackageDeclarations,
+    StateClauseDeclaration,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -40,6 +44,9 @@ use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::{
+    AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
+};
 use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
@@ -1879,6 +1886,46 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 2);
 }
 
+fn expression_spans(expression: &Expression) -> DeclarationSpans {
+    fn node_count(expression: qsl_forms::ExprRef<'_>) -> usize {
+        1 + expression
+            .children()
+            .into_iter()
+            .map(node_count)
+            .sum::<usize>()
+    }
+
+    fn add_children(
+        expression: qsl_forms::ExprRef<'_>,
+        parent: qsl_forms::SpanId,
+        parent_span: Span,
+        spans: &mut ExpressionSpans,
+    ) {
+        let mut next = parent_span.start + 1;
+        for child in expression.children() {
+            let child_span = Span {
+                start: next,
+                end: next + 2 * node_count(child),
+            };
+            let child_id = spans.push_child(parent, child_span).unwrap();
+            add_children(child, child_id, child_span, spans);
+            next = child_span.end;
+        }
+    }
+
+    let body_span = Span {
+        start: 0,
+        end: 2 * node_count(expression.root()) + 1,
+    };
+    let mut body = ExpressionSpans::new(body_span).unwrap();
+    add_children(expression.root(), body.root(), body_span, &mut body);
+    DeclarationSpans {
+        declaration: body_span,
+        body,
+        measure: None,
+    }
+}
+
 /// TC-196 D01's runtime half: the real linked diamond dispatches a `D`
 /// receiver through `B.size` and a `C` receiver through `A.size`. The
 /// evaluator charges the full family at selection, then runs the chosen body
@@ -1922,19 +1969,6 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("expected D01's linked dispatch family, got {refusal:?}"));
-    let mut declarations_b = checked_dispatch_operation(
-        &view,
-        &DispatchRoot {
-            key: DeclarationKey::fixture("model.B.size"),
-            closure: GeneralizationClosure::Closed,
-        },
-        &clauses,
-        qsl_semantics::check::fixture_source(),
-        &mut normalization_meter,
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .unwrap_or_else(|refusal| panic!("expected D01's redefiner dispatch family, got {refusal:?}"));
-
     let supertypes = object_type_supertypes(&view).unwrap();
     let types = TypeEnvironment::new(
         [],
@@ -1950,14 +1984,56 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
             }),
     )
     .unwrap();
+    assert!(types.conforms(d_type, a_type));
+    assert!(types.conforms(c_type, a_type));
     declarations_a.types = types.clone();
-    declarations_b.types = types.clone();
+
+    let invariant = Expression::binary(
+        BinaryOperator::GreaterOrEqual,
+        dispatch_expression(),
+        Expression::integer(1_i64),
+    );
+    let selected_d = Expression::binary(
+        BinaryOperator::Equal,
+        dispatch_expression(),
+        Expression::integer(2_i64),
+    );
+    let selected_c = Expression::binary(
+        BinaryOperator::Equal,
+        dispatch_expression(),
+        Expression::integer(1_i64),
+    );
+    let profile_identity = qsl_semantics::value::DefinitionLock::pinned()
+        .entry(qsl_semantics::value::CatalogRole::Root)
+        .identity
+        .to_owned();
+    let add_invariant = |name: &str, body: Expression| StateClauseDeclaration {
+        kind: StateClauseKind::Invariant,
+        name: name.to_owned(),
+        selection: ProfileSelection {
+            alias: "v".to_owned(),
+            identity: profile_identity.clone(),
+            span: Span { start: 0, end: 0 },
+            identity_span: Span { start: 0, end: 0 },
+        },
+        context: a_type,
+        operation: None,
+        context_population: None,
+        frame_population: None,
+        spans: expression_spans(&body),
+        body,
+    };
+    declarations_a.state_clauses.extend([
+        add_invariant("D01Invariant", invariant),
+        add_invariant("D01SelectD", selected_d),
+        add_invariant("D01SelectA", selected_c),
+    ]);
     let graph_a = declarations_a.check(CheckingLimits::default()).unwrap();
-    let graph_b = declarations_b.check(CheckingLimits::default()).unwrap();
     let objects = ObjectEnvironment::new(
         ObjectClosure::new(
             &types,
             [
+                (receiver_reference(a_type, "a1"), vec![]),
                 (receiver_reference(d_type, "d1"), vec![]),
                 (receiver_reference(c_type, "c1"), vec![]),
             ],
@@ -1966,128 +2042,172 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         .unwrap(),
     );
 
-    let dispatch = dispatch_expression();
-    let selected_d = graph_b
-        .check_clause_expression(
-            vec![("self".to_owned(), ValueType::Reference(d_type))],
-            &dispatch,
-            None,
-            ClauseKind::Invariant,
-            CheckMode::Kernel,
-            CheckingLimits::default(),
-        )
-        .unwrap();
-    let selected_c = graph_a
-        .check_clause_expression(
-            vec![("self".to_owned(), ValueType::Reference(c_type))],
-            &dispatch,
-            None,
-            ClauseKind::Invariant,
-            CheckMode::Kernel,
-            CheckingLimits::default(),
-        )
-        .unwrap();
-    let invariant = Expression::binary(
-        BinaryOperator::GreaterOrEqual,
-        dispatch_expression(),
-        Expression::integer(1_i64),
-    );
-    let invariant_d = graph_b
-        .check_clause_expression(
-            vec![("self".to_owned(), ValueType::Reference(d_type))],
-            &invariant,
-            None,
-            ClauseKind::Invariant,
-            CheckMode::Kernel,
-            CheckingLimits::default(),
-        )
-        .unwrap();
-    let invariant_c = graph_a
-        .check_clause_expression(
-            vec![("self".to_owned(), ValueType::Reference(c_type))],
-            &invariant,
-            None,
-            ClauseKind::Invariant,
-            CheckMode::Kernel,
-            CheckingLimits::default(),
-        )
-        .unwrap();
-    let package_a = CheckedPackage::link(graph_a);
-    let package_b = CheckedPackage::link(graph_b);
+    let package = CheckedPackage::link(graph_a);
 
-    let evaluate_expression =
-        |package: &CheckedPackage, receiver_type, identity: &str, checked, limits| {
-            let mut meter = Meter::new(limits);
-            let evaluation = package
-                .evaluate(
-                    checked,
-                    vec![Value::Reference(receiver_reference(
-                        receiver_type,
-                        identity,
-                    ))],
-                    &objects,
-                    &mut meter,
-                )
-                .unwrap();
-            (evaluation, meter)
+    // These values are explicitly pre-admitted inputs to the state-clause
+    // evaluator. This test covers TC-196 D01's runtime dispatch half, not
+    // FR-106's document-admission path.
+    let current = Observation {
+        identity: DocumentRef {
+            authority: "test".to_owned(),
+            identity: "tc-196-d01-current".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+            digest: [0; 32],
+        },
+        environment: objects.clone(),
+        populations: BTreeMap::new(),
+        out_of_range: Vec::new(),
+    };
+    let admit_fixture_observation =
+        |clause_name: &str, receiver: ObjectReference| AdmittedObservations {
+            usage: AdmissionUsage::default(),
+            clause: package
+                .graph()
+                .state_clause(clause_name)
+                .expect("the invariant is checked")
+                .identity(),
+            current: Some(current.clone()),
+            pre: None,
+            post: None,
+            self_object: receiver,
+            parameters: Vec::new(),
+            result: None,
+            created: Vec::new(),
+            deleted: Vec::new(),
         };
+    let evaluate_clause = |clause_name: &str, receiver_type, identity: &str, limits| {
+        let observations =
+            admit_fixture_observation(clause_name, receiver_reference(receiver_type, identity));
+        let mut meter = Meter::new(limits);
+        let evaluation = package
+            .evaluate_clause(
+                &QualifiedName::unqualified(clause_name).unwrap(),
+                &observations,
+                &mut meter,
+            )
+            .unwrap();
+        (evaluation.evaluation, meter)
+    };
 
-    let (selected_d, _) =
-        evaluate_expression(&package_b, d_type, "d1", &selected_d, SCALAR_UNLIMITED);
+    let (selected_d, _) = evaluate_clause("D01SelectD", d_type, "d1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_d),
-        Outcome::Completed(Value::Integer(value)) if value == Integer::from(2_i64)
+        Outcome::Completed(Value::Boolean(true))
     ));
-    let (selected_c, _) =
-        evaluate_expression(&package_a, c_type, "c1", &selected_c, SCALAR_UNLIMITED);
+    let (d_candidate_on_c, _) = evaluate_clause("D01SelectD", c_type, "c1", SCALAR_UNLIMITED);
+    assert!(matches!(
+        evaluated(d_candidate_on_c),
+        Outcome::Completed(Value::Boolean(false))
+    ));
+    let (selected_c, _) = evaluate_clause("D01SelectA", c_type, "c1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_c),
-        Outcome::Completed(Value::Integer(value)) if value == Integer::from(1_i64)
-    ));
-
-    let (evaluation_d, meter_d) =
-        evaluate_expression(&package_b, d_type, "d1", &invariant_d, SCALAR_UNLIMITED);
-    assert!(matches!(
-        evaluated(evaluation_d),
         Outcome::Completed(Value::Boolean(true))
     ));
-    assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 5);
+    let (a_candidate_on_d, _) = evaluate_clause("D01SelectA", d_type, "d1", SCALAR_UNLIMITED);
+    assert!(matches!(
+        evaluated(a_candidate_on_d),
+        Outcome::Completed(Value::Boolean(false))
+    ));
+
+    let (evaluation_a, _) = evaluate_clause("D01Invariant", a_type, "a1", SCALAR_UNLIMITED);
+    assert!(matches!(
+        evaluated(evaluation_a),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+
+    let (evaluation_d, meter_d) = evaluate_clause(
+        "D01Invariant",
+        d_type,
+        "d1",
+        ScalarLimits {
+            work_units: 6,
+            ..SCALAR_UNLIMITED
+        },
+    );
+    assert!(matches!(
+        evaluation_d.outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
+    let charges = [
+        quire_exact::ChargePoint::DispatchSelect,
+        quire_exact::ChargePoint::FunctionCall,
+        quire_exact::ChargePoint::OrderingOperands,
+        quire_exact::ChargePoint::OrderingArithmetic,
+        quire_exact::ChargePoint::OrderingResultRetain,
+    ];
+    assert_eq!(meter_d.admitted_charges(), &charges);
+    assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 6);
+    assert_eq!(meter_d.consumed(LimitKind::ResultUnits), 1);
     assert_eq!(meter_d.consumed(LimitKind::ValueOccurrences), 2);
 
-    let (evaluation_c, meter_c) =
-        evaluate_expression(&package_a, c_type, "c1", &invariant_c, SCALAR_UNLIMITED);
+    let (evaluation_c, meter_c) = evaluate_clause(
+        "D01Invariant",
+        c_type,
+        "c1",
+        ScalarLimits {
+            work_units: 6,
+            ..SCALAR_UNLIMITED
+        },
+    );
     assert!(matches!(
-        evaluated(evaluation_c),
-        Outcome::Completed(Value::Boolean(true))
+        evaluation_c.outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert_eq!(meter_c.consumed(LimitKind::WorkUnits), 6);
+    assert_eq!(meter_c.consumed(LimitKind::ResultUnits), 1);
     assert_eq!(meter_c.consumed(LimitKind::ValueOccurrences), 2);
 
-    let limits = ScalarLimits {
-        work_units: 4,
-        ..SCALAR_UNLIMITED
-    };
-    let (evaluation_four, meter_four) =
-        evaluate_expression(&package_b, d_type, "d1", &invariant_d, limits);
+    let (evaluation_five, meter_five) = evaluate_clause(
+        "D01Invariant",
+        d_type,
+        "d1",
+        ScalarLimits {
+            work_units: 5,
+            ..SCALAR_UNLIMITED
+        },
+    );
     assert!(matches!(
-        evaluation_four.outcome,
+        evaluation_five.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
-            if record.charge_point == quire_exact::ChargePoint::OrderingResultRetain
+            if record == (quire_exact::Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: 5,
+                consumed: 5,
+                next_charge: 1_i64.into(),
+                charge_point: quire_exact::ChargePoint::OrderingResultRetain,
+            })
     ));
-    assert_eq!(meter_four.consumed(LimitKind::WorkUnits), 4);
+    assert_eq!(meter_five.admitted_charges(), &charges[..4]);
+    assert_eq!(meter_five.consumed(LimitKind::WorkUnits), 5);
+    assert_eq!(meter_five.consumed(LimitKind::ResultUnits), 0);
+    assert_eq!(meter_five.consumed(LimitKind::ValueOccurrences), 2);
 
-    let limits = ScalarLimits {
-        work_units: 0,
-        ..SCALAR_UNLIMITED
-    };
-    let (evaluation_zero, meter_zero) =
-        evaluate_expression(&package_b, d_type, "d1", &invariant_d, limits);
+    let (evaluation_one, meter_one) = evaluate_clause(
+        "D01Invariant",
+        d_type,
+        "d1",
+        ScalarLimits {
+            work_units: 1,
+            ..SCALAR_UNLIMITED
+        },
+    );
     assert!(matches!(
-        evaluation_zero.outcome,
+        evaluation_one.outcome,
         FamilyOutcome::Evaluated(Outcome::Incomplete(record))
-            if record.charge_point == quire_exact::ChargePoint::DispatchSelect
+            if record == (quire_exact::Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: 1,
+                consumed: 0,
+                next_charge: 2_i64.into(),
+                charge_point: quire_exact::ChargePoint::DispatchSelect,
+            })
     ));
-    assert_eq!(meter_zero.consumed(LimitKind::WorkUnits), 0);
+    assert!(meter_one.admitted_charges().is_empty());
+    assert_eq!(meter_one.consumed(LimitKind::WorkUnits), 0);
+    assert_eq!(meter_one.consumed(LimitKind::ResultUnits), 0);
+    assert_eq!(meter_one.consumed(LimitKind::ValueOccurrences), 0);
 }
 
 /// `model.A` (declares `size`), `model.C` (`<- model.A`, no operation record
