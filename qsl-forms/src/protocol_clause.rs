@@ -12,7 +12,7 @@
 //! builder are defined once, in the `forms` core (ADR-012 §4.3): only the
 //! declaration-level production is `ProtocolClause`'s own.
 
-use qsl_cst::{CstNode, CstToken, LosslessCst, Production, TokenKind};
+use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 
 use std::ops::ControlFlow;
 
