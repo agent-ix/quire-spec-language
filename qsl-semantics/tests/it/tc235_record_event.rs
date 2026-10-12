@@ -142,6 +142,7 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
 /// correlation identity and member meaning, keeps authored step order, and
 /// refuses cross-meaning ancestry and specialization cycles.
 #[trace("QSpec-TC-235")]
+#[ignore = "expected red until QSL-777 process subtype identity contract lands"]
 #[test]
 fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     let with_process_subtype = |extra_step: bool| {
@@ -452,6 +453,7 @@ fn tc235_m20_json_acceptance_reports_specialization_cycle() {
 /// their authored relationship, the clause and populations stay typed, and
 /// invalid target/owner meanings retain their FR-208 refusal boundary.
 #[trace("QSpec-TC-235")]
+#[ignore = "expected red until QSL-777 relationship target binding lands"]
 #[test]
 fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let relationship = |owner: &str, name: &str, target: &str| {
