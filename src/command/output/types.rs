@@ -160,6 +160,12 @@ pub(super) enum Details<'a> {
     Position {
         position: usize,
     },
+    /// FR-100 typed model admission's foreign-universe payload.
+    AdmissionForeignUniverse {
+        position: usize,
+        required: String,
+        supplied: String,
+    },
     /// FR-100 "Internal failure at S6a": the `InternalFault`'s own stable
     /// stage and invariant identifiers (`runtime_invariant`, exit 30).
     Invariant {
@@ -183,8 +189,18 @@ pub(super) struct RunSource<'a> {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum SpineValue {
-    Boolean { value: bool },
-    Integer { decimal: String },
+    Boolean {
+        value: bool,
+    },
+    Integer {
+        decimal: String,
+    },
+    Reference {
+        universe: String,
+        #[serde(rename = "type")]
+        object_type: String,
+        object_identity: String,
+    },
 }
 
 /// FR-096/FR-100: a `refused` record's or cause's resolved locus -- the

@@ -325,6 +325,9 @@ impl ClauseDisposition {
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
                 Category::Violation
             }
+            Self::Evaluate(CallOutcome::Completed(CallValue::Reference(_))) => {
+                Category::InternalFailure
+            }
             Self::Evaluate(outcome) => outcome.category(),
         }
     }

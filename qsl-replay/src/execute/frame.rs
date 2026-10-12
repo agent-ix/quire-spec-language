@@ -253,7 +253,7 @@ pub fn replay_frame(
         // FR-115: a false verdict always carries its witness, and a frame
         // check completes a Boolean.
         ClauseDisposition::Evaluate(CallOutcome::Completed(
-            CallValue::Boolean(false) | CallValue::Integer(_),
+            CallValue::Boolean(false) | CallValue::Integer(_) | CallValue::Reference(_),
         )) => {
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",

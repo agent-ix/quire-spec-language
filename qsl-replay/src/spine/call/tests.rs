@@ -6,7 +6,9 @@ use qsl_foundation::diagnostic::{CatalogCoded, UndefinedCoded, UndefinedReason, 
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::ModelRefusalCause;
-use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, UniverseId};
+use quire_exact::{
+    BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
+};
 use quire_semantic_value::location::Origin;
 use std::collections::BTreeMap;
 
@@ -43,6 +45,7 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &DependencyInput::default(),
         SpineLimits::default(),
         call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
@@ -51,8 +54,155 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
 fn arg(parameter: &str, value: i64) -> CallArgument {
     CallArgument {
         parameter: parameter.to_owned(),
-        value,
+        value: Value::Integer(Integer::from(value)),
     }
+}
+
+/// TC-792 / FR-100-AC-14..19 red contract: the reviewed spine boundary takes
+/// shared typed values and the admitted object context, then preserves the
+/// existing scalar/accounting/cancel inputs around that call.
+#[test]
+fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
+    let call = Call {
+        function: "held".to_owned(),
+        arguments: vec![CallArgument {
+            parameter: "w".to_owned(),
+            value: Value::Boolean(true),
+        }],
+        accounting: default_accounting(1_000_000),
+    };
+    let result = run(
+        source(),
+        "spine-model.native",
+        include_bytes!("../../../../tests/fixtures/spine-model.native"),
+        &qsl_semantics::model::intake::package_input([include_bytes!(
+            "../../../../tests/fixtures/spine-model.semantic-ir.json"
+        )
+        .as_slice()]),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
+        &Cancel::new(),
+    );
+    assert!(matches!(
+        result,
+        Err(ref refusal) if matches!(**refusal, RunRefusal::WrongValueKind { position: 0 })
+    ));
+}
+
+#[test]
+fn typed_model_values_bind_without_integer_coercion() {
+    let reference = quire_exact::ObjectReference::new(
+        UniverseId::from_digest([1; 32]),
+        quire_exact::EffectiveId::from_digest([2; 32]),
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    let population = quire_exact::PopulationId::from_digest([3; 32]);
+    let bound = bind_arguments(
+        &[
+            (
+                "reference".to_owned(),
+                ValueType::Reference(reference.object_type()),
+            ),
+            ("population".to_owned(), ValueType::Population(Some(1))),
+        ],
+        &[
+            CallArgument {
+                parameter: "population".to_owned(),
+                value: Value::Population(population),
+            },
+            CallArgument {
+                parameter: "reference".to_owned(),
+                value: Value::Reference(reference.clone()),
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        bound,
+        vec![Value::Reference(reference), Value::Population(population)]
+    );
+}
+
+#[test]
+fn tc_792_driver_returns_the_admitted_reference_identity() {
+    let bytes = include_bytes!("../../../../tests/fixtures/spine-model.native");
+    let document = include_bytes!("../../../../tests/fixtures/spine-model.semantic-ir.json");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let cancel = Cancel::new();
+    let identity = source();
+    let parsed = crate::spine::parse(
+        &crate::spine::ParseRequest {
+            source: &identity,
+            path: "spine-model.native",
+            bytes,
+        },
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let models = crate::spine::select(&parsed, &packages, SpineLimits::default().model, &cancel)
+        .unwrap()
+        .into_value();
+    let checked = crate::spine::check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &crate::spine::LockEvidence::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let model = &models.models()[0].view;
+    let (type_key, object_type) = model
+        .type_identities()
+        .iter()
+        .find_map(|(key, identity)| (key.node == "Gadget").then_some((key, *identity)))
+        .expect("Gadget is in the model fixture");
+    let reference = quire_exact::ObjectReference::new(
+        model.object_universe_of(type_key).unwrap().identity(),
+        object_type,
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    let world = qsl_semantic_value::object_closure::ObjectClosure::new(
+        checked.package().graph().scope().types(),
+        [(
+            reference.clone(),
+            vec![(
+                "code",
+                quire_exact::FieldValue::Present(Value::Integer(Integer::from(7))),
+            )],
+        )],
+        &[],
+    )
+    .unwrap();
+    let objects = qsl_semantics::model::object_environment::ObjectEnvironment::new(world);
+    let outcome = run(
+        source(),
+        "spine-model.native",
+        bytes,
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call(
+            "keep",
+            vec![CallArgument {
+                parameter: "g".to_owned(),
+                value: Value::Reference(reference.clone()),
+            }],
+        ),
+        &objects,
+        &Cancel::new(),
+    )
+    .unwrap()
+    .1;
+    assert!(matches!(
+        outcome,
+        CallOutcome::Completed(CallValue::Reference(value)) if value == reference
+    ));
 }
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
@@ -268,6 +418,7 @@ fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunR
         &DependencyInput::default(),
         limits,
         call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
@@ -465,6 +616,19 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         CallOutcome::Completed(CallValue::Integer(rendered)) => {
             assert_eq!(rendered.to_string(), "1180591620717411303424");
         }
+        other => panic!("{other:?}"),
+    }
+    let reference = quire_exact::ObjectReference::new(
+        UniverseId::from_digest([4; 32]),
+        quire_exact::EffectiveId::from_digest([5; 32]),
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    match convert(FamilyOutcome::Evaluated(Outcome::Completed(
+        Value::Reference(reference.clone()),
+    )))
+    .unwrap()
+    {
+        CallOutcome::Completed(CallValue::Reference(rendered)) => assert_eq!(rendered, reference),
         other => panic!("{other:?}"),
     }
 

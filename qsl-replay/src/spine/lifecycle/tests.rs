@@ -782,6 +782,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
                 arguments: Vec::new(),
                 accounting: default_accounting(DEFAULT_WORK_UNITS),
             },
+            &ObjectEnvironment::default(),
             cancel,
         )
     };

@@ -267,6 +267,26 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         position: *position,
                     }
                 }
+                qsl_replay::spine::RunRefusal::Admission { position, refusal } => {
+                    match &refusal.cause {
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignUniverse {
+                            actual,
+                            expected,
+                        } => types::Details::AdmissionForeignUniverse {
+                            position: *position,
+                            required: expected.to_string(),
+                            supplied: qsl_semantics::model::key::hex(actual),
+                        },
+                        _ => types::Details::Position {
+                            position: *position,
+                        },
+                    }
+                }
+                qsl_replay::spine::RunRefusal::DanglingReference { position } => {
+                    types::Details::Position {
+                        position: *position,
+                    }
+                }
                 qsl_replay::spine::RunRefusal::Compile(_)
                 | qsl_replay::spine::RunRefusal::Cancelled(_) => types::Details::None,
                 qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {
@@ -415,6 +435,13 @@ pub(super) fn spine_run_result(
         CallOutcome::Completed(CallValue::Integer(value)) => types::SpineOutcome::Completed {
             value: types::SpineValue::Integer {
                 decimal: value.to_string(),
+            },
+        },
+        CallOutcome::Completed(CallValue::Reference(reference)) => types::SpineOutcome::Completed {
+            value: types::SpineValue::Reference {
+                universe: qsl_semantics::model::key::hex(reference.universe().as_bytes()),
+                object_type: qsl_semantics::model::key::hex(reference.object_type().as_bytes()),
+                object_identity: reference.object().as_str().to_owned(),
             },
         },
         CallOutcome::Refused(CallRefusal::Record {

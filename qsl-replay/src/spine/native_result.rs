@@ -1929,6 +1929,8 @@ impl Disposition {
                     | super::RunRefusal::DuplicateArgument { .. }
                     | super::RunRefusal::UnboundParameter { .. }
                     | super::RunRefusal::WrongValueKind { .. }
+                    | super::RunRefusal::Admission { .. }
+                    | super::RunRefusal::DanglingReference { .. }
                     | super::RunRefusal::Cancelled(_) => None,
                 };
                 let mut record = RefusalWire::new(refusal.code().as_str(), cause);
@@ -1951,6 +1953,11 @@ impl Disposition {
                         record =
                             record.fields(BTreeMap::from([("position", position.to_string())]));
                     }
+                    super::RunRefusal::Admission { position, .. }
+                    | super::RunRefusal::DanglingReference { position } => {
+                        record =
+                            record.fields(BTreeMap::from([("position", position.to_string())]));
+                    }
                     super::RunRefusal::Fault(_) | super::RunRefusal::Cancelled(_) => {}
                 }
                 result.refusal = Some(record);
@@ -1967,6 +1974,12 @@ impl Disposition {
                             decimal: value.to_string(),
                         },
                     });
+                }
+                CallOutcome::Completed(CallValue::Reference(_)) => {
+                    return Err(InternalFault::new(
+                        "native-result",
+                        "clause-completes-reference",
+                    ));
                 }
                 CallOutcome::Refused(refusal) => {
                     result.outcome = Some(match refusal {

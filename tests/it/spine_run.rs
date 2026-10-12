@@ -951,7 +951,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
         let arguments: Vec<CallArgument> = parameter
             .map(|parameter| CallArgument {
                 parameter: parameter.to_owned(),
-                value,
+                value: quire_exact::Value::Integer(quire_exact::Integer::from(value)),
             })
             .into_iter()
             .collect();
@@ -987,6 +987,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 arguments,
                 accounting: default_accounting(work_units),
             },
+            &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
             &quire_exact::Cancel::new(),
         );
         let category = match direct {
