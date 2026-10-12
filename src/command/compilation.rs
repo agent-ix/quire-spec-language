@@ -12,7 +12,10 @@ use crate::Limits;
 pub(super) fn source_only(_program: &wire::Program) -> Result<()> {
     // A minimal build's closed Program decoder already rejects extraction fields.
     #[cfg(feature = "quire-extraction")]
-    if _program.extraction.is_some() {
+    if let Some(wire::Extraction { body }) = _program.extraction.as_ref() {
+        // The retired selection remains closed and fully decoded before the
+        // command refuses it; retain the body identity's wire validation.
+        let _ = body;
         return Err(super::extraction::ExtractionMode::CompileCommand.into());
     }
     Ok(())
