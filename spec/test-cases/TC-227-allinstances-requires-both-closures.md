@@ -33,17 +33,20 @@ did not silently return `false`/`None`," since a partial `Set` is neither.
 
 1. Declare object type `Item` with a subtype `SpecialItem` (`supertypes:
    [Item]`).
-2. Declare a population with extent `closed`, declared member types
-   `{Item}` only (not `SpecialItem`), and admit a binding whose members
-   include several plain `Item`s and at least one `SpecialItem`, where the
-   `SpecialItem` member itself is individually well-typed and admissible
-   (object closure holds).
+2. Declare an incomplete-subtype-closure population with extent `closed` and
+   declared member types `{Item}` only. Admit a binding containing several
+   plain `Item` members and no `SpecialItem` members. Every member's
+   most-specific effective type is covered by the declaration, so population
+   admission succeeds; the population declaration nevertheless does not
+   cover the effective subtype `SpecialItem` of the queried type `Item`.
 3. Query `allInstances<Item>` through `CheckedPackage::evaluate` against this
-   admitted binding.
-4. Declare a second population, extent `closed`, member types `{Item,
-   SpecialItem}`, covering every conforming subtype, with the same members,
-   and query `allInstances<Item>` against it, once with members supplied in
-   one order and again with members supplied in a different order.
+   admitted binding. This is the separate S6a incomplete-closure case, not an
+   object-closure admission failure.
+4. Declare a complete-subtype-closure population, extent `closed`, with
+   declared member types `{Item, SpecialItem}` and members including several
+   plain `Item`s and at least one `SpecialItem`. Admit its binding and query
+   `allInstances<Item>` against it, once with members supplied in one order
+   and again with members supplied in a different order.
 
 ## Expected Results
 
