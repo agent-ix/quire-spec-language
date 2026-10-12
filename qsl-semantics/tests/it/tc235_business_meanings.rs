@@ -2,14 +2,16 @@
 //! TC-235 business-meaning vectors at the real QSL intake/normalization boundary.
 
 use ix_trace_rs::trace;
+use qsl_forms::build_unit;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::{ByteDigest, IntakeLimits};
+use qsl_foundation::{ByteDigest, IntakeLimits, SourceIdentity};
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ProcessStepKind,
 };
 use qsl_semantics::model::intake::{
-    admit, meaning, package_input, read_domain_package, read_records,
+    admit, admit_unit, meaning, package_input, read_domain_package, read_records,
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
@@ -299,6 +301,46 @@ fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     )
     .expect("S1 admits the authored package bytes");
     read_domain_package(selection, &admitted)
+}
+
+/// Admit a K2-derived package as model `M` and assemble a source unit which
+/// uses its record and event value types. This deliberately runs the public
+/// intake -> normalization -> PackageDeclarations::assemble path.
+fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations {
+    let bytes = serde_json::to_vec(document).expect("K2-derived fixture serializes");
+    let packages = package_input([bytes.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one K2-derived model package");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         {declarations}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "tc235-assembly", "fixture", "fixture:1"),
+        "tc235-assembly.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the source unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = build_unit(&parsed).expect("S2 builds the source unit");
+    let selected = admit_unit(
+        &unit.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("I1 admits and normalizes the K2-derived model");
+    PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("model value assembly succeeds: {refusal:?}"))
 }
 
 fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
@@ -695,6 +737,171 @@ fn record_value_subtype_preserves_effective_fields_support() {
         ]
     );
     assert!(view.object_universe_of(&taxed_key).is_none());
+}
+
+fn k2_record_event_subtype_slice(strip_money_string: bool) -> Value {
+    mutate_k2(|document| {
+        if strip_money_string {
+            // QSL-781 owns native String admission. Keep this dependency out
+            // of the record/event assembly control while preserving the
+            // authored K2 subtype and inherited-field behavior.
+            type_named_mut(document, "Money")["fields"] =
+                json!([field("Money", "amount_minor", "ix://quire/native/Integer")]);
+        }
+        document["types"].as_array_mut().unwrap().retain(|ty| {
+            ty["identity"] != id("OrderManagement") && ty["identity"] != id("OrderLifecycle")
+        });
+        document["constructs"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|construct| {
+                construct["construct"]["meaning"] != meaning::NAMESPACE
+                    && construct["construct"]["meaning"] != meaning::STATE_MACHINE
+            });
+        document["types"].as_array_mut().unwrap().extend([
+            declaration(
+                "TaxedMoney",
+                "money",
+                json!({
+                    "supertypes": [id("Money")],
+                    "fields": [field("TaxedMoney", "tax_minor", "ix://quire/native/Integer")],
+                }),
+            ),
+            declaration(
+                "ExpressOrderPlaced",
+                "happened",
+                json!({
+                    "supertypes": [id("OrderPlaced")],
+                    "occurrenceField": id("OrderPlaced/occurred_at"),
+                    "fields": [field(
+                        "ExpressOrderPlaced",
+                        "promised_by",
+                        &id("Instant"),
+                    )],
+                }),
+            ),
+        ]);
+    })
+}
+
+#[trace("FR-056-AC-18", "FR-056-AC-21", "TC-235")]
+#[test]
+fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
+    let document = k2_record_event_subtype_slice(true);
+
+    let package = read_k2(&document).expect("K2 record/event subtype slice reads");
+    let view = record_charges(&package, package.records.len());
+    for (child, parent) in [
+        ("TaxedMoney", "Money"),
+        ("ExpressOrderPlaced", "OrderPlaced"),
+    ] {
+        let key = qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id(child),
+        };
+        let parent_key = qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id(parent),
+        };
+        let record = package
+            .records
+            .iter()
+            .find(|record| record.key() == &key)
+            .expect("the subtype is retained as an original declaration");
+        let supertypes = match record {
+            DomainPackageRecord::RecordValueType(record) => &record.supertypes,
+            DomainPackageRecord::EventType(record) => &record.supertypes,
+            other => panic!("expected a record/event subtype, got {other:?}"),
+        };
+        assert_eq!(supertypes, &[parent_key]);
+        let child_id = view.type_identities()[&key];
+        let effective_fields: Vec<_> = view
+            .declarations()
+            .iter()
+            .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(child_id))
+            .map(|entry| entry.preimage.original.node.as_str())
+            .collect();
+        assert!(
+            effective_fields
+                .iter()
+                .any(|field| field.starts_with(&id(parent))),
+            "{child} retains the parent's effective members: {effective_fields:?}"
+        );
+    }
+
+    let assembled = assemble_k2_unit(
+        &document,
+        "function taxedTotal using v(money: M::TaxedMoney): Integer pure { 0 }",
+    );
+    let composite_fields = |name: &str| {
+        let declaration = assembled
+            .types
+            .composites()
+            .find(|declaration| declaration.name() == name)
+            .unwrap_or_else(|| panic!("{name} is assembled"));
+        let quire_semantic_value::declaration::CompositeShape::Record(fields) = declaration.shape()
+        else {
+            panic!("{name} is a record composite");
+        };
+        let mut names = fields
+            .iter()
+            .map(|field| field.name().to_owned())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        composite_fields("M::TaxedMoney"),
+        ["amount_minor", "tax_minor"]
+    );
+    assert_eq!(
+        assembled
+            .functions
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect::<Vec<_>>(),
+        ["taxedTotal"]
+    );
+}
+
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+#[ignore = "requires PR #781 to map K2 Money.currency's native String field"]
+fn tc235_k2_money_and_order_placed_composites_require_qsl_781() {
+    let document = k2();
+    let assembled = assemble_k2_unit(
+        &document,
+        "function moneyValue using v(money: M::Money): Integer pure { 0 }\n\
+         function eventValue using v(placed: M::OrderPlaced): Boolean pure { true }",
+    );
+    let money = assembled
+        .types
+        .composites()
+        .find(|declaration| declaration.name() == "M::Money")
+        .expect("K2 Money is assembled with its source name");
+    let quire_semantic_value::declaration::CompositeShape::Record(fields) = money.shape() else {
+        panic!("K2 Money is a record composite");
+    };
+    assert!(fields.iter().any(|field| field.name() == "currency"));
+    assert!(assembled
+        .types
+        .composites()
+        .any(|declaration| declaration.name() == "M::OrderPlaced"));
+}
+
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+#[ignore = "requires QSL-732 composite ancestor conformance in the pinned kernel"]
+fn tc235_record_subtype_value_conforms_to_parent_typed_parameter_requires_qsl_732() {
+    let document = k2_record_event_subtype_slice(true);
+    let declarations = assemble_k2_unit(
+        &document,
+        "function acceptsMoney using v(money: M::Money): Integer pure { 0 }\n\
+         function taxedTotal using v(money: M::TaxedMoney): Integer pure { acceptsMoney(money) }",
+    );
+    assert!(declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .is_ok());
 }
 
 /// M07: processes retain their run identity and ordered event steps, while
