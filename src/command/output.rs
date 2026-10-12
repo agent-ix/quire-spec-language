@@ -674,6 +674,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn typed_admission_command_details_preserve_model_and_type_causes() {
+        use qsl_replay::spine::RunRefusal;
+        use qsl_semantics::model::key::DeclarationKey;
+        use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+        use qsl_semantics::model::refusal::OfferedSelection;
+
+        let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
+        let model = RunError {
+            request_digest: None,
+            cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
+                position: 2,
+                refusal: ModelRefusal {
+                    code: qsl_foundation::diagnostic::Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignModelSelection {
+                        actual: OfferedSelection::Document("foreign-model".to_owned()),
+                        expected: expected.clone(),
+                    },
+                    detail: "foreign model".to_owned(),
+                },
+            })),
+        };
+        let model_value = error(&model, false).unwrap();
+        assert_eq!(
+            model_value["details"],
+            serde_json::json!({
+                "position": 2,
+                "model_identity": "foreign-model",
+                "expected": {
+                    "identity": expected.identity,
+                    "version": expected.version,
+                    "digest_domain": "sha256-jcs",
+                    "digest": qsl_semantics::model::key::hex(&expected.digest),
+                },
+            })
+        );
+
+        let type_name = DeclarationKey::fixture("foreign/W");
+        let type_refusal = RunError {
+            request_digest: None,
+            cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
+                position: 3,
+                refusal: ModelRefusal {
+                    code: qsl_foundation::diagnostic::Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignType {
+                        member: "w".to_owned(),
+                        type_name: type_name.clone(),
+                    },
+                    detail: "foreign type".to_owned(),
+                },
+            })),
+        };
+        let type_value = error(&type_refusal, false).unwrap();
+        assert_eq!(
+            type_value["details"],
+            serde_json::json!({
+                "position": 3,
+                "member": "w",
+                "type": {"package": type_name.package, "node": type_name.node},
+            })
+        );
+    }
+
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a family refusal with no FR-096
     /// record carries its code and cause but no `fields`/`locus`.
     #[test]

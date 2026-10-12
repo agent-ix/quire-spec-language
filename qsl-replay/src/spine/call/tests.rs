@@ -204,6 +204,153 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     ));
 }
 
+fn synthetic_model(placeholder: &str) -> (
+    qsl_semantics::model::normalize::EffectiveView,
+    DeclarationKey,
+    DeclarationKey,
+) {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
+        PopulationRecord,
+    };
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+
+    let object = DeclarationKey::fixture(format!("{placeholder}/A"));
+    let population = DeclarationKey::fixture(format!("{placeholder}/P"));
+    let domain = DomainPackage::new(
+        DomainPackageRef::fixture(placeholder),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: object.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: population.clone(),
+                member_types: vec![object.clone()],
+                extent: Extent::Closed,
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) = normalize(&domain, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("synthetic model normalizes");
+    };
+    (view, object, population)
+}
+
+#[test]
+fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use qsl_semantics::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, GeneralizationClosure,
+        PopulationAdmissionLimits, PopulationDocument, PopulationMember,
+    };
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_semantic_value::declaration::TypeEnvironment;
+
+    let types = TypeEnvironment::new([], []).unwrap();
+    let unknown = Value::Population(quire_exact::PopulationId::from_digest([9; 32]));
+    let unregistered = admit_model_arguments(
+        &[],
+        &types,
+        &[("population".to_owned(), ValueType::Population(Some(1)))],
+        &[unknown],
+        &ObjectEnvironment::default(),
+    );
+    assert!(matches!(
+        unregistered,
+        Err(ref refusal) if matches!(**refusal, RunRefusal::WrongValueKind { position: 0 })
+    ));
+
+    let (selected_view, _, _) = synthetic_model("selected");
+    let (foreign_view, foreign_type, foreign_population) = synthetic_model("foreign");
+    let document = PopulationDocument {
+        model_identity: foreign_view.model_selection().identity.clone(),
+        members: vec![PopulationMember {
+            object: "a1".to_owned(),
+            type_identity: foreign_type,
+            field_values: Vec::new(),
+        }],
+    };
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let AdmissionOutcome::Admitted(binding) = admit_binding(
+        &foreign_view,
+        &document,
+        &foreign_population,
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut meter,
+    ) else {
+        panic!("foreign population admits");
+    };
+    let population = Value::Population(binding.population_id());
+    let objects = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view: selected_view,
+    };
+    let refusal = admit_model_arguments(
+        &[selected],
+        &types,
+        &[("population".to_owned(), ValueType::Population(Some(1)))],
+        &[population],
+        &objects,
+    )
+    .expect_err("a population from another selected model refuses");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })
+    ));
+}
+
+#[test]
+fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use qsl_semantic_value::declaration::TypeEnvironment;
+
+    let (selected_view, selected_type, _) = synthetic_model("selected-reference");
+    let (foreign_view, foreign_type, _) = synthetic_model("foreign-reference");
+    let selected_model = SelectedModel {
+        alias: "M".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view: selected_view.clone(),
+    };
+    let foreign_model = SelectedModel {
+        alias: "M2".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view: foreign_view.clone(),
+    };
+    let declared = selected_view.type_identities()[&selected_type];
+    let supplied = foreign_view.type_identities()[&foreign_type];
+    let reference = Value::Reference(quire_exact::ObjectReference::new(
+        foreign_view.object_universe_of(&foreign_type).unwrap().identity(),
+        supplied,
+        quire_exact::ObjectId::new("f1").unwrap(),
+    ));
+    let types = TypeEnvironment::new([], []).unwrap();
+    let refusal = admit_model_arguments(
+        &[selected_model, foreign_model],
+        &types,
+        &[("reference".to_owned(), ValueType::Reference(declared))],
+        &[reference],
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
+    )
+    .expect_err("a reference from another selected model refuses");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })
+    ));
+}
+
+
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
 /// integer `7`, and the returned `package_id` equals the composed operations'.
 #[trace("TC-452", "FR-100-AC-7")]

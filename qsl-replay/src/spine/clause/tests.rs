@@ -850,6 +850,35 @@ fn run_clause_evaluates_a_clause_selection() {
     );
 }
 
+#[test]
+fn tc_792_native_argument_refusal_preserves_typed_fields() {
+    let (request, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let mut report = run_clause(request).expect("the fixture compiles");
+    report.disposition = ClauseDisposition::ArgumentRefusal(Box::new(
+        crate::spine::RunRefusal::Admission {
+            position: 2,
+            refusal: qsl_semantics::model::normalize::ModelRefusal {
+                code: qsl_foundation::diagnostic::Code::ForeignReference,
+                cause: qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                    member: "w".to_owned(),
+                    type_name: qsl_semantics::model::key::DeclarationKey::fixture("foreign/W"),
+                },
+                detail: "foreign type".to_owned(),
+            },
+        },
+    ));
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["disposition"]["refusal"]["fields"],
+        serde_json::json!({
+            "position": "2",
+            "member": "w",
+            "type": {"package": "test/orders", "node": "foreign/W"}
+        })
+    );
+}
+
 /// TC-468 (FR-109-AC-1): the violating-parent case (a cycle) reports
 /// `violation`, `truth: false`, exit 10.
 #[trace("TC-468", "FR-109-AC-1")]
