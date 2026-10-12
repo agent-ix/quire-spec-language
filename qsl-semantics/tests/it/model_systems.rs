@@ -20,6 +20,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::key::RULE_QUALIFY;
 use qsl_semantics::model::normalize::{
     normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -382,6 +383,49 @@ fn y01_roleless_systems_connection_survives_model_normalization() {
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(_) => {}
         other => panic!("the role-less systems connection must survive normalization: {other:?}"),
+    }
+}
+
+/// Phase 2 retains each systems member at its resolved end-owner type.
+#[trace("TC-213", "FR-081-AC-1")]
+#[trace("QSpec-TC-197", "QSpec-FR-150-AC-1")]
+#[test]
+fn systems_members_have_effective_owner_entries() {
+    let view = match normalize(&fixture_y(|_| {}), ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("systems fixture must normalize: {other:?}"),
+    };
+    let cases = [
+        ("model.Sys", "model.Sys.pump", 1),
+        ("model.Sys", "model.Sys.pump.out", 1),
+        ("model.Sys", "model.Sys.pipe", 2),
+        ("model.Pump", "model.Pump.alloc", 1),
+        ("model.Sys", "model.Pump.alloc", 1),
+        ("model.Sys", "model.rel.parts", 1),
+        ("model.Pump", "model.rel.home", 1),
+    ];
+    for (owner, member, qualify_facts) in cases {
+        let owner = view.type_identities()[&DeclarationKey::fixture(owner)];
+        let entries: Vec<_> = view
+            .declarations()
+            .iter()
+            .filter(|entry| {
+                entry.preimage.owner_effective_type == Some(owner)
+                    && entry.preimage.original == DeclarationKey::fixture(member)
+            })
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "{member} must have one effective entry at its owner"
+        );
+        let facts = &entries[0].preimage.derivation;
+        assert_eq!(
+            facts.len(),
+            qualify_facts,
+            "{member} must retain every end fact"
+        );
+        assert!(facts.iter().all(|fact| fact.rule == RULE_QUALIFY));
     }
 }
 

@@ -18,6 +18,7 @@ use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 
 const PACKAGE: &str = "test/orders";
 const BUSINESS: &str = "test/business";
@@ -341,6 +342,183 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("model value assembly succeeds: {refusal:?}"))
+}
+
+/// Intake's own admitted record keys remain the exact original inventory of
+/// the completed view, including declarations without effective entries.
+#[trace("TC-213", "FR-081-AC-1")]
+#[test]
+fn admitted_original_keys_survive_normalization() {
+    let document = k2();
+    let bytes = serde_json::to_vec(&document).expect("K2 serializes");
+    let offered = package_input([bytes.as_slice()]);
+    let digest = *offered.keys().next().expect("one offered package");
+    let selection = DomainPackageRef {
+        identity: PACKAGE.to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let (_, admitted) = admit(
+        &selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &offered,
+        IntakeLimits::default(),
+    )
+    .expect("S1 admits K2");
+    let admitted_records = read_records(PACKAGE, &admitted).expect("reader admits K2 records");
+    let admitted_keys: BTreeSet<_> = admitted_records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    let package = read_domain_package(selection, &admitted).expect("reader retains K2 origins");
+    let view = match normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED).0 {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("K2 normalization must complete: {other:?}"),
+    };
+    let retained_keys: BTreeSet<_> = view
+        .domain_package()
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    assert_eq!(retained_keys, admitted_keys);
+    for key in &admitted_keys {
+        assert!(
+            view.domain_package().original(key).is_some(),
+            "missing origin for {key:?}"
+        );
+    }
+    let effective_origins: BTreeSet<_> = view
+        .declarations()
+        .iter()
+        .map(|entry| entry.preimage.original.clone())
+        .collect();
+    assert!(effective_origins.is_subset(&admitted_keys));
+    assert!(effective_origins.contains(&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderLifecycle/place")
+    }));
+    assert!(!effective_origins.contains(&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderManagement")
+    }));
+    assert!(!effective_origins.contains(&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("Instant")
+    }));
+}
+
+/// The original inventory includes a scalar even though phase 2 gives it no
+/// effective entry or derivation charge.
+#[trace("FR-081-AC-8")]
+#[test]
+fn scalar_original_has_no_effective_entry_or_extra_charge() {
+    let mut scalar = declaration("Instant", "value", json!({}));
+    scalar["target"] = json!("ix://quire/native/Timestamp");
+    let document = domain_document(
+        vec![
+            declaration(
+                "Order",
+                "thing",
+                json!({
+                    "identityFields": [id("Order/order_id")],
+                    "fields": [field("Order", "order_id", "ix://quire/native/UUID")],
+                    "operations": [operation("Order", "submit")],
+                }),
+            ),
+            declaration(
+                "Draft",
+                "thing",
+                json!({
+                    "identityFields": [id("Order/order_id")],
+                    "supertypes": [id("Order")],
+                }),
+            ),
+            scalar,
+        ],
+        vec![
+            construct("thing", meaning::OBJECT_TYPE),
+            construct("value", meaning::VALUE_TYPE),
+        ],
+    );
+    let package = read_k2(&document).expect("two objects, a field, operation, and scalar admit");
+    let admitted_keys: BTreeSet<_> = package
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    let expected: BTreeSet<_> = [
+        "Order",
+        "Draft",
+        "Order/order_id",
+        "Order/submit",
+        "Instant",
+    ]
+    .into_iter()
+    .map(|node| DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(node),
+    })
+    .collect();
+    assert_eq!(admitted_keys, expected);
+    for key in &expected {
+        assert_eq!(
+            package.original(key).map(|original| &original.origin),
+            Some(&origin(
+                key.node
+                    .strip_prefix(&format!("ix://{PACKAGE}/"))
+                    .expect("fixture key prefix")
+            ))
+        );
+    }
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("phase-2 fixture must normalize: {outcome:?}");
+    };
+    let effective: BTreeSet<_> = view
+        .declarations()
+        .iter()
+        .map(|entry| entry.preimage.original.clone())
+        .collect();
+    assert_eq!(
+        effective,
+        expected
+            .into_iter()
+            .filter(|key| key.node != id("Instant"))
+            .collect()
+    );
+    let without_scalar = domain_document(
+        document["types"]
+            .as_array()
+            .expect("types array")
+            .iter()
+            .filter(|value| value["identity"] != id("Instant"))
+            .cloned()
+            .collect(),
+        vec![construct("thing", meaning::OBJECT_TYPE)],
+    );
+    let control = read_k2(&without_scalar).expect("control admits");
+    let (control_outcome, control_meter) =
+        normalize_with_meter(&control, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(control_outcome, NormalizeOutcome::Completed(_)));
+    for charge in [
+        ChargePoint::NormalizeFact,
+        ChargePoint::NormalizeDeclaration,
+        ChargePoint::NormalizeHash,
+    ] {
+        let count = |meter: &qsl_semantics::model::accounting::Meter| {
+            meter
+                .admitted_charges()
+                .iter()
+                .filter(|point| **point == charge)
+                .count()
+        };
+        assert_eq!(
+            count(&meter),
+            count(&control_meter),
+            "scalar must not add {charge:?}"
+        );
+    }
 }
 
 fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
