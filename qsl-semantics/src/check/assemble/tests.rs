@@ -1136,6 +1136,28 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
     assert_eq!(*declaration.value_type(), ValueType::Timestamp);
 }
 
+/// Native `String` is a distinct checked leaf, not profile-bounded `Text`.
+#[trace("TC-992", "FR-056-AC-23")]
+#[test]
+fn native_string_field_assembles_as_a_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    field.value_type = ValueTypeRef::Native(NativeValueType::String);
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+
+    let declaration = model_field(&field, &records, &identities)
+        .expect("native String is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::String);
+    assert_ne!(
+        *declaration.value_type(),
+        ValueType::Text(
+            quire_exact::TextType::new(0, 1, quire_exact::TextProfile::UnicodeScalars,)
+                .expect("valid Text bounds")
+        )
+    );
+}
+
 /// A lower bound of `0` makes an empty collection legal; it never makes a
 /// field optional (QSpec's Presence row). `[0, 1]` required is the bounded
 /// collection `K<E>[0, 1]`, never `Option<E>`.
