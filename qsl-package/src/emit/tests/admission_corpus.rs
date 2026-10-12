@@ -135,8 +135,7 @@ const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
     include_bytes!("../../../../tests/fixtures/spine-model-relationship.semantic-ir.json");
 
 /// The complete-V1 header shared by every model source unit below.
-const COMPLETE_V1_HEADER: &str =
-    "language \"ix:native\" edition \"1-draft\";\n\
+const COMPLETE_V1_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n";
 
 /// The relationship model source after [`COMPLETE_V1_HEADER`].
