@@ -1407,6 +1407,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
         .filter_map(|located| {
+            if let Some(refusal) = duplicate_process_step_refusal(document, located) {
+                return Some(refusal);
+            }
             if let Some(refusal) = business_generalization_refusal(document, located) {
                 if let ModelRefusalCause::UnsupportedDeclarationForm { node, .. } = &refusal.cause {
                     if !namespace_forms.insert(node.clone()) {
@@ -1451,6 +1454,58 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// FR-208 process binding owns duplicate step identities. The semantic-IR
+/// reader reports this as its package-wide `DUPLICATE_IDENTITY` schema
+/// diagnostic before QSL's process binder runs; retain the source pointer but
+/// classify the selected process member using QSL's typed refusal cause.
+fn duplicate_process_step_refusal(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    if located.code != agent_ix_semantic_ir::rules::DUPLICATE_IDENTITY {
+        return None;
+    }
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let mut segments = pointer.strip_prefix('/')?.split('/');
+    if segments.next()? != "types" {
+        return None;
+    }
+    let type_position = segments.next()?.parse::<usize>().ok()?;
+    if segments.next()? != "steps" {
+        return None;
+    }
+    let step_position = segments.next()?.parse::<usize>().ok()?;
+    if segments.next()? != "identity" || segments.next().is_some() {
+        return None;
+    }
+
+    let types = document.tree.get("types")?.as_array()?;
+    let process = types.get(type_position)?;
+    let process_identity = process.get("identity")?.as_str()?;
+    let kind = process.get("kind")?;
+    let kind_key = (
+        kind.get("module")?.as_str()?.to_owned(),
+        kind.get("name")?.as_str()?.to_owned(),
+    );
+    if meaning_index(&document.tree).ok()?.get(&kind_key)? != meaning::PROCESS {
+        return None;
+    }
+    let step = process.get("steps")?.as_array()?.get(step_position)?;
+    let step_identity = step.get("identity")?.as_str()?;
+    let package = document.tree.get("package")?.get("identity")?.as_str()?;
+    let source_member = semantic_member_path(&located.pointer)?;
+    Some(ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: ModelRefusalCause::ConflictingBinding {
+            key: declaration_key(package, step_identity),
+        },
+        detail: format!(
+            "{source_member} ({}) on {process_identity}: duplicate process step identity {step_identity:?}",
+            located.pointer
+        ),
+    })
 }
 
 /// Translate only the reader's typed unresolved-reference codes, using its
@@ -1508,13 +1563,15 @@ fn missing_reader_reference(
             .unwrap_or(process_identity);
         return Some(ModelRefusal {
             code: Code::MissingDeclaration,
-            cause: ModelRefusalCause::UnknownMember {
-                record: declaration_key(package, process_identity),
-                member: declaration_key(package, reference),
+            cause: ModelRefusalCause::IntakeMissingDeclaration {
+                node: process_identity.to_owned(),
+                reference: reference.to_owned(),
+                origin: step.get("origin").cloned().unwrap_or(Value::Null),
+                path: pointer.parse().ok()?,
             },
             detail: format!(
-                "{} on {step_identity}: {reference:?} names no event type of this domain package",
-                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned()),
+                "{} ({pointer}) on {step_identity}: {reference:?} names no event type of this domain package",
+                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned())
             ),
         });
     }
@@ -3723,6 +3780,7 @@ fn refusal_node(refusal: &ModelRefusal) -> Option<&str> {
         ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
         | ModelRefusalCause::IntakeMissingDeclaration { node, .. }
         | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => Some(node),
+        ModelRefusalCause::ConflictingBinding { key } => Some(&key.node),
         _ => None,
     }
 }

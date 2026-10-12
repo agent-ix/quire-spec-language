@@ -13,7 +13,7 @@ use crate::model::intake::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, JsonPointer};
 
 use super::meaning_dispatch::MeaningBindingContext;
 
@@ -71,8 +71,16 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
             return Err(step_ctx
                 .malformed("identity/name: step identity is not the declared process member"));
         }
+        let step_key = DeclarationKey {
+            package: context.package.to_owned(),
+            node: identity.to_owned(),
+        };
         if !names.insert(name.to_owned()) {
-            return Err(step_ctx.malformed("name: duplicate process step"));
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding { key: step_key },
+                detail: format!("{step_at}: duplicate process step"),
+            });
         }
         let step_kind = match step_ctx.str_field("stepKind")? {
             "command" => ProcessStepKind::Command,
@@ -99,10 +107,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
             "emits",
         )?;
         step_records.push(ProcessStepRecord {
-            key: DeclarationKey {
-                package: context.package.to_owned(),
-                node: identity.to_owned(),
-            },
+            key: step_key,
             name: name.to_owned(),
             step_kind,
             consumes,
@@ -175,21 +180,47 @@ fn read_step_events(
                 )))
             }
             None => {
+                let path = reader_pointer(step_at, field, position);
                 return Err(ModelRefusal {
                     code: Code::MissingDeclaration,
-                    cause: ModelRefusalCause::UnknownMember {
-                        record: DeclarationKey {
-                            package: package.to_owned(),
-                            node: process.to_owned(),
-                        },
-                        member: key,
+                    cause: ModelRefusalCause::IntakeMissingDeclaration {
+                        node: process.to_owned(),
+                        reference: key.node.clone(),
+                        origin: step.get("origin").cloned().unwrap_or(Value::Null),
+                        path,
                     },
                     detail: format!(
                         "{at} on {step_identity}: names no event type of this domain package"
                     ),
-                })
+                });
             }
         }
     }
     Ok(result)
+}
+
+fn reader_pointer(step_at: &str, field: &str, position: usize) -> JsonPointer {
+    let mut pointer = JsonPointer::root();
+    let path = step_at.strip_prefix("$.").unwrap_or(step_at);
+    for segment in path.split('.') {
+        let mut rest = segment;
+        loop {
+            let Some(open) = rest.find('[') else {
+                if !rest.is_empty() {
+                    pointer = pointer.key(rest);
+                }
+                break;
+            };
+            if open > 0 {
+                pointer = pointer.key(&rest[..open]);
+            }
+            let Some(close) = rest[open + 1..].find(']') else {
+                break;
+            };
+            let index = &rest[open + 1..open + 1 + close];
+            pointer = pointer.key(index);
+            rest = &rest[open + 2 + close..];
+        }
+    }
+    pointer.key(field).key(&position.to_string())
 }

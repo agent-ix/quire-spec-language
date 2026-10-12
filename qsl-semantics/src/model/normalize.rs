@@ -1800,6 +1800,12 @@ fn check_node<'a>(
                 && !index.is_event_type(&clause.owner)
                 && !index.is_state_machine(&clause.owner)
                 && !index.is_namespace(&clause.owner)
+                && !domain_package.records.iter().any(|record| {
+                    matches!(
+                        record,
+                        DomainPackageRecord::Process(process) if process.key == clause.owner
+                    )
+                })
             {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,

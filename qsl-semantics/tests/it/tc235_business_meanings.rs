@@ -332,6 +332,22 @@ fn assert_malformed_refusal(document: &Value, detail: &str) {
     assert!(refusals[0].detail.contains(detail), "{refusals:?}");
 }
 
+fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
+    let refusals = normalized_refusals(document, 21);
+    assert_eq!(
+        refusals.len(),
+        1,
+        "one normalized M07 refusal: {refusals:?}"
+    );
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert!(matches!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            | ModelRefusalCause::MalformedDeclaration
+    ));
+    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+}
+
 fn assert_unsupported_refusal(document: &Value, detail: &str) {
     let refusals = read_refusals(document);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
@@ -352,6 +368,74 @@ fn assert_missing_refusal(document: &Value, detail: &str) {
         ModelRefusalCause::UnknownMember { .. }
     ));
     assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+}
+
+fn assert_process_duplicate_step_refusal(document: &Value) {
+    let refusals = normalized_refusals(document, 21);
+    assert_eq!(
+        refusals.len(),
+        1,
+        "one process duplicate refusal: {refusals:?}"
+    );
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    let ModelRefusalCause::ConflictingBinding { key } = &refusals[0].cause else {
+        panic!(
+            "expected conflicting process step, got {:?}",
+            refusals[0].cause
+        );
+    };
+    assert_eq!(key.node, id("Fulfilment/reserve_stock"));
+    assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
+    assert!(
+        refusals[0].detail.contains("/types/5/steps/3/identity"),
+        "duplicate step pointer missing: {refusals:?}"
+    );
+}
+
+fn assert_process_non_event_refusal(document: &Value) {
+    let refusals = normalized_refusals(document, 21);
+    assert_eq!(
+        refusals.len(),
+        1,
+        "one process non-event refusal: {refusals:?}"
+    );
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
+        panic!(
+            "expected malformed process event binding, got {:?}",
+            refusals[0].cause
+        );
+    };
+    assert_eq!(node, &id("Fulfilment/reserve_stock"));
+    assert!(
+        refusals[0].detail.contains("steps[1].emits[0]"),
+        "reader locus missing from refusal: {refusals:?}"
+    );
+}
+
+fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
+    let refusals = normalized_refusals(document, 21);
+    assert_eq!(refusals.len(), 1, "one process event refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::MissingDeclaration);
+    let ModelRefusalCause::IntakeMissingDeclaration {
+        node,
+        reference: actual,
+        path,
+        ..
+    } = &refusals[0].cause
+    else {
+        panic!(
+            "expected intake missing declaration, got {:?}",
+            refusals[0].cause
+        );
+    };
+    assert_eq!(node, &id("Fulfilment"));
+    assert_eq!(actual, &id(reference));
+    assert_eq!(path.as_str(), "/types/5/steps/1/emits/0");
+    assert!(
+        refusals[0].detail.contains("steps[1].emits[0]"),
+        "{refusals:?}"
+    );
 }
 
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
@@ -619,6 +703,7 @@ fn record_value_subtype_preserves_effective_fields_support() {
 #[test]
 fn tc235_m07_process_binder() {
     let package = read_k2(&k2()).expect("process admission");
+    let _view = record_charges(&package, 21);
     let process = package
         .records
         .iter()
@@ -671,11 +756,11 @@ fn tc235_m07_process_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["identityFields"] = json!([]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_normalized_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"] = json!([]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_normalized_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"]
@@ -689,19 +774,19 @@ fn tc235_m07_process_binder() {
             "emits": [],
             "origin": origin("Fulfilment/reserve_stock"),
         }));
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_process_duplicate_step_refusal(&document);
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][0]["consumes"] = json!([id("Money")]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_normalized_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_process_non_event_refusal(&document);
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("StockReserved")]);
-    assert_missing_refusal(&document, "StockReserved");
+    assert_process_missing_event_refusal(&document, "StockReserved");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["operations"]
@@ -709,6 +794,7 @@ fn tc235_m07_process_binder() {
         .unwrap()
         .push(operation("Fulfilment", "restart"));
     let package = read_k2(&document).expect("process operation admission");
+    let _view = record_charges(&package, 22);
     assert!(package.records.iter().any(|record| {
         matches!(record, DomainPackageRecord::OperationMember(operation)
             if operation.key.node == id("Fulfilment/restart"))
@@ -721,6 +807,7 @@ fn tc235_m07_process_binder() {
         "self.correlation_id = self.correlation_id"
     )]);
     let package = read_k2(&document).expect("process invariant admission");
+    let _view = record_charges(&package, 22);
     assert!(package.records.iter().any(|record| {
         matches!(record, DomainPackageRecord::Clause(clause)
             if clause.key.node == id("Fulfilment/Bounded"))
