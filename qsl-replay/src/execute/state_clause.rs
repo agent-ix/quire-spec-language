@@ -266,6 +266,9 @@ pub fn replay_state_clause(
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Integer(_))) => {
             return fault("state-clause-completes-a-boolean")
         }
+        ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Reference(_))) => {
+            return fault("state-clause-completes-a-boolean")
+        }
         ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None),
         ClauseDisposition::Evaluate(CallOutcome::Incomplete(_)) => (Category::Incomplete, None),
         // O-16's `undefined` row is not a proof category (as in FR-098).

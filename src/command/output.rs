@@ -267,6 +267,67 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         position: *position,
                     }
                 }
+                qsl_replay::spine::RunRefusal::Admission { position, refusal } => {
+                    match &refusal.cause {
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignUniverse {
+                            actual,
+                            expected,
+                        } => types::Details::AdmissionForeignUniverse {
+                            position: *position,
+                            required: qsl_semantics::model::key::hex(expected.as_bytes()),
+                            supplied: qsl_semantics::model::key::hex(actual),
+                        },
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignModelSelection {
+                            actual,
+                            expected,
+                        } => {
+                            let expected = types::AdmissionModelSelection {
+                                identity: expected.identity.clone(),
+                                version: expected.version.clone(),
+                                digest_domain: "sha256-jcs",
+                                digest: qsl_semantics::model::key::hex(&expected.digest),
+                            };
+                            match actual {
+                                qsl_semantics::model::refusal::OfferedSelection::Document(
+                                    model_identity,
+                                ) => types::Details::AdmissionForeignModelDocument {
+                                    position: *position,
+                                    model_identity: model_identity.clone(),
+                                    expected,
+                                },
+                                qsl_semantics::model::refusal::OfferedSelection::Population(
+                                    population,
+                                ) => types::Details::AdmissionForeignModelPopulation {
+                                    position: *position,
+                                    population: types::AdmissionDeclarationKey {
+                                        package: population.package.clone(),
+                                        node: population.node.clone(),
+                                    },
+                                    expected,
+                                },
+                            }
+                        }
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                            member,
+                            type_name,
+                        } => types::Details::AdmissionForeignType {
+                            position: *position,
+                            member: member.clone(),
+                            type_name: types::AdmissionDeclarationKey {
+                                package: type_name.package.clone(),
+                                node: type_name.node.clone(),
+                            },
+                        },
+                        _ => types::Details::Position {
+                            position: *position,
+                        },
+                    }
+                }
+                qsl_replay::spine::RunRefusal::DanglingReference { position } => {
+                    types::Details::Position {
+                        position: *position,
+                    }
+                }
                 qsl_replay::spine::RunRefusal::Compile(_)
                 | qsl_replay::spine::RunRefusal::Cancelled(_) => types::Details::None,
                 qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {
@@ -415,6 +476,13 @@ pub(super) fn spine_run_result(
         CallOutcome::Completed(CallValue::Integer(value)) => types::SpineOutcome::Completed {
             value: types::SpineValue::Integer {
                 decimal: value.to_string(),
+            },
+        },
+        CallOutcome::Completed(CallValue::Reference(reference)) => types::SpineOutcome::Completed {
+            value: types::SpineValue::Reference {
+                universe: qsl_semantics::model::key::hex(reference.universe().as_bytes()),
+                object_type: qsl_semantics::model::key::hex(reference.object_type().as_bytes()),
+                object_identity: reference.object().as_str().to_owned(),
             },
         },
         CallOutcome::Refused(CallRefusal::Record {
@@ -643,6 +711,69 @@ mod tests {
                     "required": "01".repeat(32),
                     "supplied": "02".repeat(32),
                 },
+            })
+        );
+    }
+
+    #[test]
+    fn typed_admission_command_details_preserve_model_and_type_causes() {
+        use qsl_replay::spine::RunRefusal;
+        use qsl_semantics::model::key::DeclarationKey;
+        use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+        use qsl_semantics::model::refusal::OfferedSelection;
+
+        let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
+        let model = RunError {
+            request_digest: None,
+            cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
+                position: 2,
+                refusal: ModelRefusal {
+                    code: qsl_foundation::diagnostic::Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignModelSelection {
+                        actual: OfferedSelection::Document("foreign-model".to_owned()),
+                        expected: expected.clone(),
+                    },
+                    detail: "foreign model".to_owned(),
+                },
+            })),
+        };
+        let model_value = error(&model, false).unwrap();
+        assert_eq!(
+            model_value["details"],
+            serde_json::json!({
+                "position": 2,
+                "model_identity": "foreign-model",
+                "expected": {
+                    "identity": expected.identity,
+                    "version": expected.version,
+                    "digest_domain": "sha256-jcs",
+                    "digest": qsl_semantics::model::key::hex(&expected.digest),
+                },
+            })
+        );
+
+        let type_name = DeclarationKey::fixture("foreign/W");
+        let type_refusal = RunError {
+            request_digest: None,
+            cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
+                position: 3,
+                refusal: ModelRefusal {
+                    code: qsl_foundation::diagnostic::Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignType {
+                        member: "w".to_owned(),
+                        type_name: type_name.clone(),
+                    },
+                    detail: "foreign type".to_owned(),
+                },
+            })),
+        };
+        let type_value = error(&type_refusal, false).unwrap();
+        assert_eq!(
+            type_value["details"],
+            serde_json::json!({
+                "position": 3,
+                "member": "w",
+                "type": {"package": type_name.package, "node": type_name.node},
             })
         );
     }

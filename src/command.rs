@@ -1079,7 +1079,7 @@ fn run_complete(
         .iter()
         .map(|argument| qsl_replay::spine::CallArgument {
             parameter: argument.parameter.clone(),
-            value: argument.value,
+            value: quire_exact::Value::Integer(quire_exact::Integer::from(argument.value)),
         })
         .collect();
     let spine_call = qsl_replay::spine::Call {
@@ -1098,6 +1098,7 @@ fn run_complete(
         &dependencies,
         qsl_replay::spine::SpineLimits::default(),
         &spine_call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &quire_exact::Cancel::new(),
     )
     .map_err(|refusal| match *refusal {

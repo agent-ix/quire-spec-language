@@ -577,6 +577,16 @@ pub enum ResultValue {
         /// The decimal digits.
         decimal: String,
     },
+    /// An exact model reference identity triple.
+    Reference {
+        /// The object universe identity.
+        universe: String,
+        /// The most-specific object type identity.
+        #[serde(rename = "type")]
+        object_type: String,
+        /// The authored object identity.
+        object_identity: String,
+    },
 }
 
 /// The evaluation result of an `execute` outcome (FR-286's `result`).
@@ -877,6 +887,15 @@ impl OutcomeDocument {
                         CallValue::Integer(value) => ResultValue::Integer {
                             decimal: value.to_string(),
                         },
+                        CallValue::Reference(reference) => ResultValue::Reference {
+                            universe: qsl_semantics::model::key::hex(
+                                reference.universe().as_bytes(),
+                            ),
+                            object_type: qsl_semantics::model::key::hex(
+                                reference.object_type().as_bytes(),
+                            ),
+                            object_identity: reference.object().as_str().to_owned(),
+                        },
                     },
                 });
             }
@@ -915,7 +934,9 @@ impl OutcomeDocument {
                 | RunRefusal::UnknownParameter { .. }
                 | RunRefusal::DuplicateArgument { .. }
                 | RunRefusal::UnboundParameter { .. }
-                | RunRefusal::WrongValueKind { .. } => Self::new(
+                | RunRefusal::WrongValueKind { .. }
+                | RunRefusal::Admission { .. }
+                | RunRefusal::DanglingReference { .. } => Self::new(
                     Operation::Execute,
                     Some(OutcomeStage::S6a),
                     refusal.category(),
@@ -983,6 +1004,7 @@ mod tests {
     use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
     use qsl_semantics::library::LibraryName;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
     use serde_json::{json, Value};
 
@@ -1692,6 +1714,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &call,
+            &ObjectEnvironment::default(),
             &Cancel::new(),
         )
         .expect("seven runs");
@@ -1721,6 +1744,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &starved,
+            &ObjectEnvironment::default(),
             &Cancel::new(),
         )
         .expect("seven runs");
@@ -1956,6 +1980,7 @@ mod tests {
                 arguments: Vec::new(),
                 accounting: default_accounting(1_000_000),
             },
+            &ObjectEnvironment::default(),
             cancel,
         )
     }

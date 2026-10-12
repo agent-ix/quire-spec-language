@@ -943,15 +943,15 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
     use qsl_replay::spine::{default_accounting, Call, CallArgument, DEFAULT_WORK_UNITS};
     let program = std::fs::read(RUN_FIXTURE).unwrap();
     for (function, parameter, value, work_units, expected) in [
-        ("flag", Some("b"), 2, DEFAULT_WORK_UNITS, 20),
-        ("id", Some("x"), 12, DEFAULT_WORK_UNITS, 20),
-        ("corner", Some("p"), 0, DEFAULT_WORK_UNITS, 21),
-        ("seven", None, 0, 0, 22),
+        ("flag", Some("b"), 2_i64, DEFAULT_WORK_UNITS, 20),
+        ("id", Some("x"), 12_i64, DEFAULT_WORK_UNITS, 20),
+        ("corner", Some("p"), 0_i64, DEFAULT_WORK_UNITS, 21),
+        ("seven", None, 0_i64, 0, 22),
     ] {
         let arguments: Vec<CallArgument> = parameter
             .map(|parameter| CallArgument {
                 parameter: parameter.to_owned(),
-                value,
+                value: quire_exact::Value::Integer(quire_exact::Integer::from(value)),
             })
             .into_iter()
             .collect();
@@ -960,7 +960,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
             Value::Array(
                 arguments
                     .iter()
-                    .map(|argument| json!({"parameter": argument.parameter, "value": argument.value}))
+                    .map(|argument| json!({"parameter": argument.parameter, "value": value}))
                     .collect(),
             ),
         );
@@ -987,6 +987,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 arguments,
                 accounting: default_accounting(work_units),
             },
+            &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
             &quire_exact::Cancel::new(),
         );
         let category = match direct {

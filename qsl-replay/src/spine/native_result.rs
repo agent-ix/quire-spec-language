@@ -1282,6 +1282,90 @@ fn validate_command_details(
                 ));
             }
         }
+        Code::ForeignReference if document.stage == "call" => {
+            let Some(cause) = document.cause.as_deref() else {
+                return Err(invalid("cause", "foreign_reference needs its cause"));
+            };
+            let position = unsigned("position");
+            let valid_string = |name| string(name).is_some();
+            let valid_key = |name| {
+                let Some(node) = details.get(name) else {
+                    return false;
+                };
+                let Node::Object(members) = node.node() else {
+                    return false;
+                };
+                members.len() == 2
+                    && matches!(
+                        node.get("package").map(|value| value.node()),
+                        Some(Node::String(_))
+                    )
+                    && matches!(
+                        node.get("node").map(|value| value.node()),
+                        Some(Node::String(_))
+                    )
+            };
+            let valid_selection = || {
+                let Some(node) = details.get("expected") else {
+                    return false;
+                };
+                let Node::Object(members) = node.node() else {
+                    return false;
+                };
+                members.len() == 4
+                    && matches!(node.get("identity").map(|value| value.node()), Some(Node::String(_)))
+                    && matches!(node.get("version").map(|value| value.node()), Some(Node::String(_)))
+                    && node.get("digest_domain").is_some_and(|value| {
+                        matches!(value.node(), Node::String(domain) if domain == "sha256-jcs")
+                    })
+                    && node
+                        .get("digest")
+                        .is_some_and(|value| {
+                            matches!(value.node(), Node::String(digest) if digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
+                        })
+            };
+            match cause {
+                "foreign-model-selection" => {
+                    let document_offer = valid_string("model_identity");
+                    let population_offer = valid_key("population");
+                    if len != 3
+                        || position.is_none()
+                        || document_offer == population_offer
+                        || !valid_selection()
+                    {
+                        return Err(invalid(
+                            "details",
+                            "foreign-model-selection needs one offered selection and expected model",
+                        ));
+                    }
+                }
+                "foreign-type" => {
+                    if len != 4
+                        || position.is_none()
+                        || !valid_string("member")
+                        || !valid_key("type")
+                    {
+                        return Err(invalid(
+                            "details",
+                            "foreign-type needs position, member and type",
+                        ));
+                    }
+                }
+                "foreign-universe" => {
+                    if len != 3
+                        || position.is_none()
+                        || !valid_string("required")
+                        || !valid_string("supplied")
+                    {
+                        return Err(invalid(
+                            "details",
+                            "foreign-universe needs position, required and supplied",
+                        ));
+                    }
+                }
+                _ => return Err(invalid("cause", "unknown foreign_reference cause")),
+            }
+        }
         Code::RuntimeInvariant if document.stage == "call" => {
             if document.cause.as_deref() != Some("established-invariant-broken") {
                 return Err(invalid(
@@ -1929,6 +2013,8 @@ impl Disposition {
                     | super::RunRefusal::DuplicateArgument { .. }
                     | super::RunRefusal::UnboundParameter { .. }
                     | super::RunRefusal::WrongValueKind { .. }
+                    | super::RunRefusal::Admission { .. }
+                    | super::RunRefusal::DanglingReference { .. }
                     | super::RunRefusal::Cancelled(_) => None,
                 };
                 let mut record = RefusalWire::new(refusal.code().as_str(), cause);
@@ -1951,6 +2037,51 @@ impl Disposition {
                         record =
                             record.fields(BTreeMap::from([("position", position.to_string())]));
                     }
+                    super::RunRefusal::Admission { position, refusal } => {
+                        let mut fields = BTreeMap::from([("position", position.to_string())]);
+                        match &refusal.cause {
+                            qsl_semantics::model::normalize::ModelRefusalCause::ForeignModelSelection {
+                                actual,
+                                expected,
+                            } => match actual {
+                                qsl_semantics::model::refusal::OfferedSelection::Document(
+                                    model_identity,
+                                ) => {
+                                    fields.insert("model_identity", model_identity.clone());
+                                    fields.insert("expected", format_model_selection(expected));
+                                }
+                                qsl_semantics::model::refusal::OfferedSelection::Population(
+                                    population,
+                                ) => {
+                                    fields.insert("population", format_declaration_key(population));
+                                    fields.insert("expected", format_model_selection(expected));
+                                }
+                            },
+                            qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                                member,
+                                type_name,
+                            } => {
+                                fields.insert("member", member.clone());
+                                fields.insert("type", format_declaration_key(type_name));
+                            }
+                            qsl_semantics::model::normalize::ModelRefusalCause::ForeignUniverse {
+                                actual,
+                                expected,
+                            } => {
+                                fields.insert(
+                                    "required",
+                                    qsl_semantics::model::key::hex(expected.as_bytes()),
+                                );
+                                fields.insert("supplied", qsl_semantics::model::key::hex(actual));
+                            }
+                            _ => {}
+                        }
+                        record = record.fields(fields);
+                    }
+                    super::RunRefusal::DanglingReference { position } => {
+                        record =
+                            record.fields(BTreeMap::from([("position", position.to_string())]));
+                    }
                     super::RunRefusal::Fault(_) | super::RunRefusal::Cancelled(_) => {}
                 }
                 result.refusal = Some(record);
@@ -1966,6 +2097,13 @@ impl Disposition {
                         value: ValueWire::Integer {
                             decimal: value.to_string(),
                         },
+                    });
+                }
+                CallOutcome::Completed(CallValue::Reference(_)) => {
+                    result.category = Category::InternalFailure.as_str();
+                    result.internal_fault = Some(InternalFaultWire {
+                        stage: "native-result",
+                        invariant: "clause-completes-reference",
                     });
                 }
                 CallOutcome::Refused(refusal) => {
@@ -2017,6 +2155,21 @@ impl Disposition {
         }
         result
     }
+}
+
+fn format_declaration_key(key: &qsl_semantics::model::key::DeclarationKey) -> String {
+    format!("{}/{}", key.package, key.node)
+}
+
+fn format_model_selection(
+    selection: &qsl_semantics::model::domain_package::DomainPackageRef,
+) -> String {
+    format!(
+        "{}@{}#{}",
+        selection.identity,
+        selection.version,
+        qsl_semantics::model::key::hex(&selection.digest)
+    )
 }
 
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.
