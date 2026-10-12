@@ -3444,12 +3444,44 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(
-        matches!(outcome, NormalizeOutcome::Completed(_)),
-        "D.op4 dominates every other redefiner of A.op (B and C are both \
-         proper ancestors of D), so the contest resolves without a \
-         refusal: {outcome:?}"
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!(
+            "D.op4 dominates every other redefiner of A.op (B and C are both \
+             proper ancestors of D), so the contest resolves without a \
+             refusal: {outcome:?}"
+        );
+    };
+    let owner_d = view.type_identities()[&DeclarationKey::fixture("model.D")];
+    let winner = find_member(&view, &owner_d, "model.D.op4");
+    assert!(winner.visible, "the most-specific D.op4 operation wins");
+    assert_eq!(
+        winner
+            .preimage
+            .derivation
+            .iter()
+            .filter(|fact| fact.rule == RULE_REDEFINE)
+            .map(|fact| fact.inputs.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![
+            DeclarationKey::fixture("model.D.op4"),
+            DeclarationKey::fixture("model.A.op"),
+        ]]
     );
+    for loser_key in ["model.A.op", "model.B.op2", "model.C.op3"] {
+        let loser = find_member(&view, &owner_d, loser_key);
+        assert!(
+            !loser.visible,
+            "{loser_key} is retained but hidden after the contest"
+        );
+        assert!(
+            loser
+                .preimage
+                .derivation
+                .iter()
+                .any(|fact| fact.rule == RULE_REDEFINE),
+            "{loser_key} retains its own redefine provenance"
+        );
+    }
     // M3 (#204 round 1): a *resolved* contest still owes its
     // `normalize.conflict-check` charge (`value-accounting.md:456`'s own
     // `c >= 2` condition, independent of whether the contest resolves --
