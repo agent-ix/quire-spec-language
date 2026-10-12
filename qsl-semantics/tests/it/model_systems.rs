@@ -514,11 +514,15 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
     }
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.derivation_facts = 9;
+    // Six type facts and twelve direct member facts precede one inherited
+    // type fact for Flow2 and one for SysSub. The next charge is the first
+    // inherited systems member fact, so this boundary cannot pass if the
+    // ancestor members are dropped before phase 3.
+    limits.derivation_facts = 20;
     match normalize(&fixture_y(|_| {}), limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
-            assert_eq!(incomplete.consumed, 9);
+            assert_eq!(incomplete.consumed, 20);
         }
         other => panic!("the inherited systems facts must hit the fact boundary: {other:?}"),
     }
