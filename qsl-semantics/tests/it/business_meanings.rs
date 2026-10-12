@@ -1103,10 +1103,13 @@ fn record_specialization_cycle_refuses_before_effective_view() {
     ));
     assert_eq!(
         refusals.len(),
-        1,
-        "the one specialization cycle refuses once: {refusals:?}"
+        2,
+        "each declaration on the specialization cycle refuses: {refusals:?}"
     );
-    for (refusal, (ancestor, via)) in refusals.iter().zip([("Amount", "TaxedAmount")]) {
+    for (refusal, (ancestor, via)) in refusals
+        .iter()
+        .zip([("Amount", "TaxedAmount"), ("TaxedAmount", "Amount")])
+    {
         assert_eq!(
             refusal.code,
             qsl_foundation::diagnostic::Code::InvalidModelBinding

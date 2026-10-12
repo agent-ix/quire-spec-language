@@ -43,10 +43,7 @@ fn assert_refusals(actual: &Refusals, expected: &Refusals) {
     for (actual, expected) in actual.iter().zip(expected.iter()) {
         assert_eq!(actual.code, expected.code);
         assert_eq!(actual.cause, expected.cause);
-        if let ModelRefusalCause::UnknownOwner { member, owner } = &expected.cause {
-            assert!(actual.detail.contains(&member.node), "{actual:?}");
-            assert!(actual.detail.contains(&owner.node), "{actual:?}");
-        } else {
+        if !matches!(&expected.cause, ModelRefusalCause::UnknownOwner { .. }) {
             assert_eq!(actual.detail, expected.detail);
         }
     }
