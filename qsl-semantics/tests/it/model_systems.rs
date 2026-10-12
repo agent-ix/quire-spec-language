@@ -168,7 +168,8 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
     let mut records = vec![
         scalar_type("model.Count", 0, 9),
         object_type("model.Sys", None, vec![]),
-        object_type("model.SysSub", None, vec!["model.Sys"]),
+        object_type("model.SysBridge", None, vec!["model.Sys"]),
+        object_type("model.SysSub", None, vec!["model.Sys", "model.SysBridge"]),
         object_type("model.Pump", None, vec![]),
         object_type("model.Tank", None, vec![]),
         object_type("model.Flow", Some(vec!["model.Flow.rate"]), vec![]),
@@ -446,10 +447,19 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
     for (member, expected_rules, expected_inputs) in [
         (
             "model.Sys.pump",
-            vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
             vec![
                 vec![DeclarationKey::fixture("model.Sys.pump")],
                 vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump"),
                 ],
@@ -461,6 +471,7 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                 RULE_QUALIFY.identity,
                 RULE_QUALIFY.identity,
                 RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
             ],
             vec![
                 vec![DeclarationKey::fixture("model.Sys.pipe")],
@@ -469,14 +480,28 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pipe"),
                 ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pipe"),
+                ],
             ],
         ),
         (
             "model.Sys.pump.out",
-            vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
             vec![
                 vec![DeclarationKey::fixture("model.Sys.pump.out")],
                 vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump.out"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump.out"),
                 ],
@@ -484,10 +509,19 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.rel.parts",
-            vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
             vec![
                 vec![DeclarationKey::fixture("model.rel.parts")],
                 vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.rel.parts"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.rel.parts"),
                 ],
@@ -495,10 +529,19 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Pump.alloc",
-            vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
             vec![
                 vec![DeclarationKey::fixture("model.Pump.alloc")],
                 vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Pump.alloc"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Pump.alloc"),
                 ],
@@ -536,18 +579,45 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
     }
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    // Six type facts and twelve direct member facts precede one inherited
-    // type fact for Flow2 and one for SysSub. The next charge is the first
-    // inherited systems member fact, so this boundary cannot pass if the
-    // ancestor members are dropped before phase 3.
-    limits.derivation_facts = 20;
-    match normalize(&fixture_y(|_| {}), limits) {
+    // The reduced fixture below has six type facts and eleven direct member
+    // facts, followed by four repeated-path type facts. The next charge is
+    // the first inherited systems member fact, so this boundary cannot pass
+    // if the ancestor members are dropped before phase 3.
+    limits.derivation_facts = 21;
+    match normalize(&systems_only_repeated_fixture(), limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
-            assert_eq!(incomplete.consumed, 20);
+            assert_eq!(incomplete.consumed, 21);
         }
         other => panic!("the inherited systems facts must hit the fact boundary: {other:?}"),
     }
+}
+
+fn systems_only_repeated_fixture() -> DomainPackage {
+    let keep = [
+        "model.Flow",
+        "model.Pump",
+        "model.Sys",
+        "model.SysBridge",
+        "model.SysSub",
+        "model.Tank",
+        "model.Sys.pump",
+        "model.Sys.tank",
+        "model.Sys.pump.out",
+        "model.Sys.tank.in",
+        "model.Sys.pipe",
+        "model.Pump.run",
+        "model.Pump.alloc",
+        "model.rel.parts",
+        "model.rel.home",
+    ];
+    let mut package = fixture_y(|records| {
+        records.retain(|record| keep.contains(&record.key().node.as_str()));
+    });
+    package
+        .records
+        .retain(|record| keep.contains(&record.key().node.as_str()));
+    package
 }
 
 #[trace("TC-235", "FR-086-AC-3")]

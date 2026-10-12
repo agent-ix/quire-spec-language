@@ -555,6 +555,28 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
                     ["inputIdentities"] = json!([id("B"), id("A")]);
             }),
         ),
+        (
+            "remove optional source endLine",
+            Box::new(|document: &mut Value| {
+                node_named_mut(document, &id("A")).unwrap()["origin"]["source"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("endLine");
+            }),
+        ),
+        (
+            "replace generated origin with source origin",
+            Box::new(|document: &mut Value| {
+                node_named_mut(document, &id("Count")).unwrap()["origin"] = json!({
+                    "source": {
+                        "sourceIdentity": "ix://test/origin/spec",
+                        "path": "spec/Count.md",
+                        "startLine": 9,
+                        "startColumn": 1,
+                    }
+                });
+            }),
+        ),
     ] {
         let mut mutant = tc213_fixture();
         mutate(&mut mutant);
