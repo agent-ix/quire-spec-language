@@ -119,12 +119,12 @@ fn lookup_driver_context(
     quire_exact::ObjectReference,
     quire_exact::ObjectReference,
 ) {
-    use qsl_semantic_value::object_closure::ObjectClosure;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::population::{
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_semantic_value::object_closure::ObjectClosure;
 
     let cancel = Cancel::new();
     let source_identity = source();
