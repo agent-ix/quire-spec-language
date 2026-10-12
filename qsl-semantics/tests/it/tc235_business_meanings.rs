@@ -394,6 +394,41 @@ fn k2_record_and_event_meanings_assemble_as_composites() {
     assert_eq!(*money_handle, money.key());
 }
 
+#[test]
+fn tc235_shared_k2_assembles_all_business_meanings() {
+    let bytes = serde_json::to_vec(&k2()).expect("shared TC-235 K2 serializes");
+    let packages = package_input([bytes.as_slice()]);
+    let digest = hex(packages.keys().next().expect("one K2 package"));
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model K2 = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         function noop using v(): Boolean pure {{ true }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "tc-235", "shared-k2", "fixture:1"),
+        "unit.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the assembly unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the assembly unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("I1 admits the shared K2 source");
+    PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("S3 assembles every meaning from the shared TC-235 K2");
+}
+
 fn mutate_k2(mutate: impl FnOnce(&mut Value)) -> Value {
     let mut document = k2();
     mutate(&mut document);
