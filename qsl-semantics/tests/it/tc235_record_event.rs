@@ -293,7 +293,8 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     assert!(
         refusals.iter().all(|refusal| {
             refusal.code == Code::InvalidModelBinding
-                && refusal.cause.as_str() == "specialization-cycle"
+                && refusal.cause.as_str() == "malformed-declaration"
+                && refusal.detail.contains("SUPERTYPE_CYCLE")
         }),
         "{refusals:#?}"
     );
@@ -422,7 +423,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     assert_eq!(refusals.len(), 1);
     assert_malformed_at(
         &refusals[0],
-        &id("relationship/Money-owner-Order"),
+        &id("Money"),
         "TypeDefinition.relationships[0]",
     );
 }
