@@ -691,4 +691,225 @@ fn tc235_m09_namespace_binder() {
     type_named_mut(&mut document, "OrderManagement")["clauses"] =
         json!([clause("OrderManagement", "Scoped", "true")]);
     assert_unsupported_refusal(&document, "OrderManagement/Scoped");
+
+fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRefusal> {
+    let package = read_k2(document).expect("the mutated K2 document is reader-valid");
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    assert_record_charge_count(&meter, expected_charges);
+    let NormalizeOutcome::Refused(refusals) = outcome else {
+        panic!("the TC-235 mutation must be refused, got {outcome:?}");
+    };
+    refusals.iter().cloned().collect()
+}
+
+fn assert_malformed_at(refusal: &ModelRefusal, node: &str, path: &str) {
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    assert_eq!(refusal.cause.as_str(), "malformed-declaration");
+    let ModelRefusalCause::IntakeMalformedDeclaration { node: actual, .. } = &refusal.cause else {
+        panic!(
+            "expected the typed intake malformed-declaration, got {:?}",
+            refusal.cause
+        );
+    };
+    assert_eq!(actual, node);
+    assert!(
+        refusal.detail.contains(path),
+        "{}: {}",
+        refusal.detail,
+        path
+    );
+}
+
+/// M04: event-type identity, occurrence field, operation, and Timestamp rules.
+#[test]
+fn tc235_m04_event_type_refusal_vectors() {
+    let identity_document = mutate_k2(|document| {
+        type_named_mut(document, "OrderPlaced")["identityFields"] =
+            json!([id("OrderPlaced/order_id")]);
+    });
+    let refusals = normalized_refusals(&identity_document, 21);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(
+        &refusals[0],
+        &id("OrderPlaced"),
+        "TypeDefinition.identityFields",
+    );
+
+    let wrong_timestamp_document = mutate_k2(|document| {
+        type_named_mut(document, "OrderPlaced")["occurrenceField"] =
+            json!(id("OrderPlaced/order_id"));
+    });
+    let refusals = normalized_refusals(&wrong_timestamp_document, 21);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(
+        &refusals[0],
+        &id("OrderPlaced"),
+        "TypeDefinition.occurrenceField",
+    );
+
+    let absent_occurrence_document = mutate_k2(|document| {
+        type_named_mut(document, "OrderPlaced")["occurrenceField"] = json!(id("OrderPlaced/at"));
+    });
+    let refusals = read_k2(&absent_occurrence_document)
+        .expect_err("an occurrence field naming no field is a reader missing-name refusal");
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMissingDeclaration {
+            node: id("OrderPlaced"),
+            reference: id("OrderPlaced/at"),
+            origin: origin("OrderPlaced"),
+            path: "/types/3/occurrenceField".parse().unwrap(),
+        }
+    );
+
+    let operation_document = mutate_k2(|document| {
+        type_named_mut(document, "OrderPlaced")["operations"] =
+            json!([operation("OrderPlaced", "replay")]);
+    });
+    let refusals = normalized_refusals(&operation_document, 22);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(
+        &refusals[0],
+        &id("OrderPlaced/replay"),
+        "TypeDefinition.operations[0]",
+    );
+
+    // The exact negative native binding follows K2's observed FCD alias form;
+    // QSL-725/#280 owns any change to that wire representation.
+    let non_timestamp_document = mutate_k2(|document| {
+        type_named_mut(document, "Instant")["target"] = json!("ix://quire/native/Integer");
+    });
+    let refusals = normalized_refusals(&non_timestamp_document, 21);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(
+        &refusals[0],
+        &id("OrderPlaced"),
+        "TypeDefinition.occurrenceField",
+    );
+}
+
+/// M18: event subtypes preserve the inherited occurrence field and reject a
+/// conflicting occurrence field or an ancestor of another business meaning.
+#[test]
+fn tc235_m18_event_type_specialization_vectors() {
+    let positive_document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressOrderPlaced",
+            "happened",
+            json!({
+                "supertypes": [id("OrderPlaced")],
+                "occurrenceField": id("OrderPlaced/occurred_at"),
+                "fields": [field(
+                    "ExpressOrderPlaced",
+                    "promised_by",
+                    &id("Instant"),
+                )],
+            }),
+        ));
+    });
+    let package = read_k2(&positive_document).expect("M18 event subtype reads through K2");
+    let event_key = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("ExpressOrderPlaced"),
+    };
+    let DomainPackageRecord::EventType(event) = package
+        .records
+        .iter()
+        .find(|record| record.key() == &event_key)
+        .expect("the event subtype has a typed source record")
+    else {
+        panic!("ExpressOrderPlaced must retain its event-type meaning");
+    };
+    assert_eq!(
+        event.occurrence_field,
+        Some(qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderPlaced/occurred_at"),
+        })
+    );
+    assert_eq!(
+        event.supertypes,
+        [qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderPlaced"),
+        }]
+    );
+    let view = record_charges(&package, 23);
+    let parent_key = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderPlaced"),
+    };
+    let event_type = view.type_identities()[&event_key];
+    let mut effective_members: Vec<_> = view
+        .declarations()
+        .iter()
+        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(event_type))
+        .map(|entry| entry.preimage.original.node.clone())
+        .collect();
+    effective_members.sort();
+    assert_eq!(
+        effective_members,
+        [
+            id("ExpressOrderPlaced/promised_by"),
+            id("OrderPlaced/occurred_at"),
+            id("OrderPlaced/order_id"),
+        ]
+    );
+    assert!(view.type_identities().contains_key(&parent_key));
+    assert!(view.object_universe_of(&event_key).is_none());
+
+    let conflict_document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressOrderPlaced",
+            "happened",
+            json!({
+                "supertypes": [id("OrderPlaced")],
+                "occurrenceField": id("ExpressOrderPlaced/promised_by"),
+                "fields": [field(
+                    "ExpressOrderPlaced",
+                    "promised_by",
+                    &id("Instant"),
+                )],
+            }),
+        ));
+    });
+    let refusals = normalized_refusals(&conflict_document, 23);
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
+    assert!(refusals[0]
+        .detail
+        .contains("ExpressOrderPlaced.occurrenceField"));
+    assert!(refusals[0].detail.contains("OrderPlaced.occurrenceField"));
+
+    let wrong_general_document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressOrderPlaced",
+            "happened",
+            json!({
+                "supertypes": [id("Money")],
+                "occurrenceField": id("OrderPlaced/occurred_at"),
+                "fields": [field(
+                    "ExpressOrderPlaced",
+                    "promised_by",
+                    &id("Instant"),
+                )],
+            }),
+        ));
+    });
+    let refusals = normalized_refusals(&wrong_general_document, 23);
+    assert_eq!(refusals.len(), 2);
+    assert_malformed_at(
+        &refusals[0],
+        &id("ExpressOrderPlaced"),
+        "TypeDefinition.occurrenceField",
+    );
+    assert_malformed_at(
+        &refusals[1],
+        &id("ExpressOrderPlaced"),
+        "TypeDefinition.supertypes[0]",
+    );
 }
