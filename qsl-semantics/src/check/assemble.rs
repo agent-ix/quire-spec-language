@@ -784,6 +784,7 @@ fn model_value_type(
         ValueTypeRef::Native(native) => match native {
             NativeValueType::Boolean => ValueType::Boolean,
             NativeValueType::Integer => ValueType::Integer,
+            NativeValueType::Timestamp => ValueType::Timestamp,
             NativeValueType::Float32 => return Err(Unmapped::Float(IeeeWidth::Binary32)),
             NativeValueType::Float64 => return Err(Unmapped::Float(IeeeWidth::Binary64)),
             // Intake refuses these: their domain parameters have no Semantic

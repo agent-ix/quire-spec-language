@@ -1368,7 +1368,7 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// just its first defect -- rather than being read as a default or having
 /// every diagnostic but the first silently dropped (PR #200 review R2-2).
 ///
-/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`, FCD PR #200)
+/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`)
 /// resolves `ix://quire/native/<Name>` at the validator layer
 /// (`crates/semantic-ir/src/rules.rs`), against FCD's own closed
 /// native-scalar set (`UUID`, `Boolean`, `Integer`, `Decimal`, `String`,
@@ -4116,6 +4116,17 @@ mod tests {
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn resolves_timestamp_as_a_distinct_native_type_ref() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/instant"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Timestamp")
+            .expect("Timestamp is a native value type");
+        assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Timestamp));
+        assert_eq!(value_type.to_string(), "ix://quire/native/Timestamp");
+    }
+
     /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
     /// `resolves_a_known_native_type_ref`'s own doc comment (no local
     /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
@@ -4144,20 +4155,14 @@ mod tests {
         );
     }
 
-    /// R5 (the PR owner's ruling, authorized by the repo owner): QSpec's
-    /// `type-ref` production (`shared-grammar.md:285-296`) is
-    /// `{Boolean, Integer, Rational, Decimal, Float32, Float64, Text}`, and
-    /// that is the closed set [`NativeValueType`] declares -- FCD's own
-    /// native-scalar set is wider (adds `UUID`, `String`, `Timestamp`,
-    /// `Duration`, `Bytes`, `JsonObject`), and QSL does not widen its own
-    /// vocabulary, add a mapping, or otherwise translate a name outside its
-    /// grammar. `ix://quire/native/UUID` -- the exact typeRef FCD #199's new
-    /// golden gives `Pump.id`/`Sys.id`/`Tank.id` -- is this ruling's
-    /// concrete case: it refuses today, and it keeps refusing after the FCD
-    /// pin bumps (FCD's own validator resolving the prefix, F7's fix to
-    /// `validate_with_semantic_ir`'s doc comment, does not change what this
-    /// reader itself accepts). PLAT-836 (filed separately, lands after FCD
-    /// #200) narrows FCD's own emission so `UUID` stops being a native
+    /// The native vocabulary includes the types selected by QSL's grammar and
+    /// the `Timestamp` required by FR-056-AC-17/19. FCD also emits `UUID`,
+    /// `String`, `Duration`, `Bytes` and `JsonObject`; QSL does not infer
+    /// additional native types from FCD's wider reader contract.
+    /// `ix://quire/native/UUID` -- the typeRef FCD emits for fields such as
+    /// `Pump.id`, `Sys.id` and `Tank.id` -- remains outside this vocabulary
+    /// and refuses here, even though FCD's validator recognizes it. PLAT-836
+    /// narrows FCD's own emission so `UUID` stops being a native
     /// reference there at all -- a field like `Pump.id` becomes a reference
     /// to a model-declared type instead, at which point this exact refusal
     /// stops occurring, but as a consequence of what the *document* emits,
@@ -4170,14 +4175,11 @@ mod tests {
     /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
     /// subject.
     #[test]
-    fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
+    fn refuses_uuid_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
         let refusal = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
-            .expect_err(
-                "R5: FCD's native-scalar set is wider than QSpec's type-ref; QSL does not widen \
-                 to match it, so ix://quire/native/UUID refuses",
-            );
+            .expect_err("QSL's native value-type vocabulary does not include UUID");
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -4730,6 +4732,7 @@ mod tests {
             "fields": [
                 money_field("amount_minor", "ix://quire/native/Integer"),
                 money_field("paid", "ix://quire/native/Boolean"),
+                money_field("created_at", "ix://quire/native/Timestamp"),
             ],
         });
         if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
@@ -4766,7 +4769,7 @@ mod tests {
     fn reads_a_record_value_type_and_its_fields() {
         let key = |node: &str| declaration_key("acme/orders", node);
         let records = read_money(serde_json::json!({})).expect("Money reads");
-        assert_eq!(records.len(), 3);
+        assert_eq!(records.len(), 4);
         assert_eq!(
             records[0],
             DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
@@ -4776,6 +4779,7 @@ mod tests {
         for (record, (name, native)) in records[1..].iter().zip([
             ("amount_minor", NativeValueType::Integer),
             ("paid", NativeValueType::Boolean),
+            ("created_at", NativeValueType::Timestamp),
         ]) {
             let DomainPackageRecord::FieldMember(field) = record else {
                 panic!("a field member follows its record value type")

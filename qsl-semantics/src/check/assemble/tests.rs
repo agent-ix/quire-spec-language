@@ -982,6 +982,20 @@ fn one_one_required_gives_the_element_type() {
     assert_eq!(declaration.presence(), Presence::Required);
 }
 
+#[trace("TC-897", "FR-056-AC-17")]
+#[test]
+fn native_timestamp_field_assembles_with_its_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    field.value_type = ValueTypeRef::Native(NativeValueType::Timestamp);
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+
+    let declaration = model_field(&field, &records, &identities)
+        .expect("native Timestamp is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::Timestamp);
+}
+
 /// A lower bound of `0` makes an empty collection legal; it never makes a
 /// field optional (QSpec's Presence row). `[0, 1]` required is the bounded
 /// collection `K<E>[0, 1]`, never `Option<E>`.
