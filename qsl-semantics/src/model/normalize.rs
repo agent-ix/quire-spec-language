@@ -1548,12 +1548,11 @@ fn build(
         type_paths.insert(type_key.clone(), walk.paths);
     }
 
-    let mut descendants_by_ancestor: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>> =
-        type_keys
-            .iter()
-            .cloned()
-            .map(|key| (key.clone(), BTreeSet::from([key])))
-            .collect();
+    let mut descendants_by_ancestor: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>> = type_keys
+        .iter()
+        .cloned()
+        .map(|key| (key.clone(), BTreeSet::from([key])))
+        .collect();
     for (descendant, paths) in &type_paths {
         for path in paths {
             if let Some(descendants) = descendants_by_ancestor.get_mut(&path.ancestor_key) {
@@ -1940,10 +1939,7 @@ fn build(
         .collect();
     let view = ViewBody {
         declarations: entries,
-        types: Arc::new(TypeCatalog::new(
-            type_identities,
-            descendants_by_ancestor,
-        )),
+        types: Arc::new(TypeCatalog::new(type_identities, descendants_by_ancestor)),
         universes,
         universe_index_by_type,
         populations,

@@ -547,10 +547,7 @@ fn all_instances_requires_declared_subtype_closure() {
     let view = view_of(&domain_package);
     let document = PopulationDocument {
         model_identity: "test/orders".to_owned(),
-        members: vec![
-            member("a2", "model.A"),
-            member("a1", "model.A"),
-        ],
+        members: vec![member("a2", "model.A"), member("a1", "model.A")],
     };
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
