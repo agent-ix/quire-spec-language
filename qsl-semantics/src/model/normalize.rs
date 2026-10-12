@@ -201,7 +201,7 @@
 )]
 
 use quire_canonical::FixedShape;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::model::accounting::{
