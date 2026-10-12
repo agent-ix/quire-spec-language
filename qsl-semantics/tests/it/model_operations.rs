@@ -1687,7 +1687,11 @@ fn process_model_members_assemble_as_an_identified_run_type() {
                     },
                     "pre": [],
                     "post": [],
-                    "frame": {"modifies": [], "creates": [], "deletes": []},
+                    "frame": {
+                        "modifies": [],
+                        "creates": [process],
+                        "deletes": [process],
+                    },
                     "origin": {
                         "generated": {
                             "generatorIdentity": restart,
@@ -1717,8 +1721,9 @@ fn process_model_members_assemble_as_an_identified_run_type() {
     .to_string()
     .into_bytes();
 
-    admit_and_assemble(&document)
-        .expect("a process's identified-run members must assemble through the model surface");
+    admit_and_assemble(&document).expect(
+        "a process's identified-run members and process-valued create/delete frame entries must assemble",
+    );
 }
 
 /// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by
