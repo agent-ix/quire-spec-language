@@ -410,8 +410,14 @@ fn tc235_m10_business_meanings_are_not_object_reference_targets() {
     );
 
     let state_machine_relationship = mutate_k2(|document| {
-        type_named_mut(document, "OrderLifecycle")["relationships"] =
-            json!([relationship("OrderLifecycle", "next", "Order")]);
+        let mut relationship = relationship("OrderLifecycle", "next", "Order");
+        relationship["origin"] = json!({"source": {
+            "sourceIdentity": id("spec"),
+            "path": "TC-235/M10/relationship-next",
+            "startLine": 1,
+            "startColumn": 1,
+        }});
+        type_named_mut(document, "OrderLifecycle")["relationships"] = json!([relationship]);
     });
     results.extend(
         m10_refusal_mismatches(
