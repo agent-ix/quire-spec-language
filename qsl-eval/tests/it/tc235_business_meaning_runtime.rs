@@ -5,13 +5,25 @@
 //! exercise the evaluator boundary with the same record, event and lifecycle
 //! meanings, keeping the runtime oracle independent of the binder's JSON walk.
 
+use std::collections::BTreeMap;
+
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::IntakeLimits;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations, WrongSnapshotCause};
+use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
+use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
+use qsl_semantics::model::intake::{admit_unit, package_input, read_domain_package};
+use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::{
+    admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
+    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
+};
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
@@ -58,6 +70,310 @@ fn k2_order_with(fields: serde_json::Value, clauses: serde_json::Value) -> serde
     order["fields"] = fields;
     order["clauses"] = clauses;
     document
+}
+
+fn lifecycle_document(requires: &str) -> serde_json::Value {
+    let mut document = crate::tc235_k2::k2();
+    let lifecycle = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|ty| ty["identity"] == crate::tc235_k2::id("OrderLifecycle"))
+        .expect("K2 OrderLifecycle declaration");
+    lifecycle["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(crate::tc235_k2::field(
+            "OrderLifecycle",
+            "cancelled",
+            "ix://quire/native/Boolean",
+        ));
+    lifecycle["clauses"] = serde_json::json!([crate::tc235_k2::clause(
+        "OrderLifecycle",
+        "Consistent",
+        "not (self.placed and self.cancelled)",
+    )]);
+    let place = lifecycle["operations"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|operation| operation["identity"] == crate::tc235_k2::id("OrderLifecycle/place"))
+        .expect("K2 OrderLifecycle/place operation");
+    place["pre"] = serde_json::json!([crate::tc235_k2::clause(
+        "OrderLifecycle/place",
+        "PlaceRequires",
+        requires,
+    )]);
+    place["post"] = serde_json::json!([crate::tc235_k2::clause(
+        "OrderLifecycle/place",
+        "PlaceEnsures",
+        "self.placed and not self.cancelled",
+    )]);
+    place["frame"]["modifies"] = serde_json::json!([crate::tc235_k2::id("OrderLifecycle/placed")]);
+    let digest = crate::tc235_k2::jcs_digest(&document["types"]);
+    document["source"]["digest"] = serde_json::json!(digest);
+    document["package"]["manifestDigest"] = serde_json::json!(digest);
+    document["package"]["lockDigest"] = serde_json::json!(digest);
+    for construct in document["constructs"].as_array_mut().unwrap() {
+        construct["manifestDigest"] = serde_json::json!(digest);
+    }
+    document
+}
+
+fn read_k2(document: &serde_json::Value) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+    let bytes = serde_json::to_vec(document).expect("lifecycle fixture serializes");
+    let offered = package_input([bytes.as_slice()]);
+    let digest = *offered.keys().next().expect("one lifecycle package");
+    let selection = DomainPackageRef {
+        identity: crate::tc235_k2::PACKAGE.to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let (selection, admitted) = qsl_semantics::model::intake::admit(
+        &selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &offered,
+        IntakeLimits::default(),
+    )
+    .expect("S1 admits lifecycle fixture");
+    (
+        read_domain_package(selection, &admitted).expect("lifecycle fixture reads"),
+        offered,
+    )
+}
+
+fn lifecycle_package(
+    document: &serde_json::Value,
+    body: &str,
+) -> Result<
+    (CheckedPackage, EffectiveView, BTreeMap<[u8; 32], Vec<u8>>),
+    Vec<qsl_semantics::check::CheckRefusal>,
+> {
+    let (domain, packages) = read_k2(document);
+    let (outcome, meter) = normalize_with_meter(&domain, ModelNormalizationLimits::default());
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("M15 K2 normalization must admit: {outcome:?}");
+    };
+    assert_eq!(
+        meter
+            .admitted_charges()
+            .iter()
+            .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+            .count(),
+        23,
+        "TC-235 M15 normalize.record charge count"
+    );
+    let digest = packages.keys().next().expect("lifecycle package digest");
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{}\n",
+        qsl_semantics::model::key::hex(digest),
+        body,
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "tc235-m15", "fixture", "1"),
+        "tc235-m15.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("M15 source parses");
+    assert!(
+        parsed.is_admissible(),
+        "M15 source diagnostics: {:?}",
+        parsed.diagnostics()
+    );
+    let built = qsl_forms::build_unit(&parsed).expect("M15 source builds");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("M15 model selection admits");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("M15 source assembles");
+    let graph = declarations.check(CheckingLimits::default())?;
+    Ok((CheckedPackage::link(graph), view, packages))
+}
+
+fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
+    let document = quire_canonical::read(bytes, u64::MAX).expect("lifecycle document reads");
+    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+        .expect("lifecycle document hashes")
+        .as_bytes();
+    DocumentRef {
+        authority: "test".to_owned(),
+        identity: label.to_owned(),
+        revision_namespace: "tc235".to_owned(),
+        revision: "1".to_owned(),
+        digest,
+    }
+}
+
+fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
+    serde_json::json!({
+        "authority": reference.authority,
+        "identity": reference.identity,
+        "revision_namespace": reference.revision_namespace,
+        "revision": reference.revision,
+    })
+}
+
+fn lifecycle_observation(
+    model_digest: &[u8; 32],
+    label: &str,
+    observation: &str,
+    contexts: &[(bool, bool)],
+) -> (DocumentRef, Vec<u8>) {
+    let lifecycle = crate::tc235_k2::id("OrderLifecycle");
+    let objects: Vec<_> = contexts
+        .iter()
+        .enumerate()
+        .map(|(index, (placed, cancelled))| {
+            serde_json::json!({
+                "key": if index == 0 { "i1".to_owned() } else { format!("i1-{index}") },
+                "type": lifecycle,
+                "fields": {
+                    "placed": {"boolean": placed},
+                    "cancelled": {"boolean": cancelled},
+                },
+            })
+        })
+        .collect();
+    let identity = DocumentRef {
+        authority: "test".to_owned(),
+        identity: label.to_owned(),
+        revision_namespace: "tc235".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": lifecycle_identity(&identity),
+        "observation": observation,
+        "model": {
+            "identity": crate::tc235_k2::PACKAGE,
+            "version": "1",
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(model_digest)),
+        },
+        "populations": [{
+            "population": lifecycle,
+            "complete": true,
+            "objects": objects,
+        }],
+    }))
+    .expect("lifecycle snapshot serializes");
+    (lifecycle_document_ref(label, &bytes), bytes)
+}
+
+fn lifecycle_invocation(
+    model_digest: &[u8; 32],
+    pre: &DocumentRef,
+    post: &DocumentRef,
+) -> (DocumentRef, Vec<u8>) {
+    let identity = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "i1".to_owned(),
+        revision_namespace: "tc235".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let document_ref = |reference: &DocumentRef| {
+        serde_json::json!({
+            "identity": lifecycle_identity(reference),
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&reference.digest)),
+        })
+    };
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "format": "quire.state.invocation/v1",
+        "identity": lifecycle_identity(&identity),
+        "model": {
+            "identity": crate::tc235_k2::PACKAGE,
+            "version": "1",
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(model_digest)),
+        },
+        "context": crate::tc235_k2::id("OrderLifecycle"),
+        "operation": "place",
+        "self": {"population": crate::tc235_k2::id("OrderLifecycle"), "key": "i1"},
+        "pre": document_ref(pre),
+        "post": document_ref(post),
+        "parameters": {},
+        "result": null,
+        "created": [],
+        "deleted": [],
+    }))
+    .expect("lifecycle invocation serializes");
+    (lifecycle_document_ref("i1", &bytes), bytes)
+}
+
+fn lifecycle_observations(
+    package: &CheckedPackage,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    clause: &str,
+    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    invocation: DocumentRef,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    let checked = package.graph().state_clause(clause).expect("M15 clause");
+    let facts = ClauseFacts {
+        identity: checked.identity(),
+        kind: checked.kind(),
+        context: checked.context(),
+        operation: checked.operation().map(|operation| OperationFacts {
+            declaring: operation.declaring,
+            declaration: operation.declaration.clone(),
+        }),
+    };
+    admit_observations(
+        package.graph().model_selections(),
+        package.graph().scope().types(),
+        &facts,
+        packages,
+        ModelNormalizationLimits::default(),
+        &Provisions {
+            snapshots,
+            invocations,
+        },
+        &ClauseSelection {
+            name: clause.to_owned(),
+            input: ClauseSelectionInput::Invocation { invocation },
+        },
+        ObservationLimits::default(),
+    )
+}
+
+fn lifecycle_invariant_observations(
+    package: &CheckedPackage,
+    admitted: &AdmittedObservations,
+    post: bool,
+) -> AdmittedObservations {
+    AdmittedObservations {
+        usage: admitted.usage,
+        clause: package
+            .graph()
+            .state_clause("Consistent")
+            .expect("M15 Consistent clause")
+            .identity(),
+        current: Some(
+            (if post {
+                admitted.post.as_ref()
+            } else {
+                admitted.pre.as_ref()
+            })
+            .expect("M15 invocation stage")
+            .clone(),
+        ),
+        pre: None,
+        post: None,
+        self_object: admitted.self_object.clone(),
+        parameters: Vec::new(),
+        result: None,
+        created: Vec::new(),
+        deleted: Vec::new(),
+    }
 }
 
 fn field(name: &str, value_type: ValueType) -> FieldDeclaration {
@@ -505,116 +821,196 @@ fn tc235_m14_event_invariant_does_not_invent_an_event_value() {
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-10", "QSpec-FR-208-AC-11")]
 #[test]
 fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
-    let lifecycle = object_type("OrderLifecycle");
-    let types = TypeEnvironment::new(
-        [],
-        [ObjectTypeDeclaration::new(
-            lifecycle,
-            "OrderLifecycle",
-            vec![
-                field("placed", ValueType::Boolean),
-                field("cancelled", ValueType::Boolean),
-            ],
-        )],
+    let document = lifecycle_document("not self.placed");
+    let (package, _, packages) = lifecycle_package(
+        &document,
+        "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }\n\
+         pre PlaceRequires using v on M::OrderLifecycle::place { not self.placed }\n\
+         post PlaceEnsures using v on M::OrderLifecycle::place { self.placed and not self.cancelled }",
     )
-    .unwrap();
-    let package = CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            functions: Vec::new(),
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                qsl_foundation::IdentityLimits::default(),
-            )
-        }
-        .check(CheckingLimits::default())
-        .unwrap(),
-    );
-    let reference = ObjectReference::new(
-        UniverseId::from_digest([1; 32]),
-        lifecycle,
-        ObjectId::new("i1").unwrap(),
-    );
-    let checked = package
-        .graph()
-        .check_clause_expression(
-            vec![("self".to_owned(), ValueType::Reference(lifecycle))],
-            &Expression::logical_not(Expression::binary(
-                BinaryOperator::And,
-                Expression::field(Expression::deref(name("self")), "placed".to_owned()),
-                Expression::field(Expression::deref(name("self")), "cancelled".to_owned()),
-            )),
-            None,
-            ClauseKind::Invariant,
-            quire_semantic_value::checking::CheckMode::Kernel,
-            CheckingLimits::default(),
-        )
-        .unwrap();
-    let evaluate = |placed: bool, cancelled: bool, reference: ObjectReference| {
-        let objects = ObjectEnvironment::new(
-            ObjectClosure::new(
-                package.graph().scope().types(),
-                [(
-                    reference.clone(),
-                    vec![
-                        ("placed", FieldValue::Present(Value::Boolean(placed))),
-                        ("cancelled", FieldValue::Present(Value::Boolean(cancelled))),
-                    ],
-                )],
-                &[],
-            )
-            .unwrap(),
-        );
-        let evaluation = package
-            .evaluate(
-                &checked,
-                vec![Value::Reference(reference)],
-                &objects,
+    .expect("M15 runs 1-5 check");
+    let evaluate = |clause: &str, observations: &AdmittedObservations| {
+        package
+            .evaluate_clause(
+                &QualifiedName::unqualified(clause).unwrap(),
+                observations,
                 &mut Meter::new(UNLIMITED),
             )
-            .unwrap();
-        evaluation
+            .expect("admitted lifecycle observations evaluate")
     };
+
+    let run = |pre: &[(bool, bool)], post: &[(bool, bool)]| {
+        let model_digest = packages.keys().next().expect("M15 K2 package");
+        let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", pre);
+        let (post_ref, post_bytes) = lifecycle_observation(model_digest, "q1", "post", post);
+        let (invocation_ref, invocation_bytes) =
+            lifecycle_invocation(model_digest, &pre_ref, &post_ref);
+        (
+            BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
+            BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+            invocation_ref,
+        )
+    };
+
+    let (snapshots, invocations, invocation) = run(&[(false, false)], &[(true, false)]);
+    let pre_one = lifecycle_observations(
+        &package,
+        &packages,
+        "PlaceRequires",
+        &snapshots,
+        &invocations,
+        invocation.clone(),
+    )
+    .expect("run 1 precondition admits");
+    let post_one = lifecycle_observations(
+        &package,
+        &packages,
+        "PlaceEnsures",
+        &snapshots,
+        &invocations,
+        invocation,
+    )
+    .expect("run 1 postcondition admits");
     assert!(matches!(
-        evaluate(false, false, reference.clone()).outcome,
+        evaluate("PlaceRequires", &pre_one).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(matches!(
-        evaluate(true, false, reference.clone()).outcome,
+        evaluate("PlaceEnsures", &post_one).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(matches!(
-        evaluate(true, true, reference.clone()).outcome,
+        evaluate(
+            "Consistent",
+            &lifecycle_invariant_observations(&package, &pre_one, false),
+        )
+        .evaluation
+        .outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
+    assert!(matches!(
+        evaluate(
+            "Consistent",
+            &lifecycle_invariant_observations(&package, &post_one, true),
+        )
+        .evaluation
+        .outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
+
+    let (snapshots, invocations, invocation) = run(&[(true, false)], &[(true, false)]);
+    let pre_two = lifecycle_observations(
+        &package,
+        &packages,
+        "PlaceRequires",
+        &snapshots,
+        &invocations,
+        invocation,
+    )
+    .expect("run 2 precondition admits");
+    assert!(matches!(
+        evaluate("PlaceRequires", &pre_two).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
-    assert!(package
-        .evaluate(
-            &checked,
-            vec![Value::Reference(ObjectReference::new(
-                UniverseId::from_digest([4; 32]),
-                lifecycle,
-                ObjectId::new("wrong-context").unwrap(),
-            ))],
-            &ObjectEnvironment::default(),
-            &mut Meter::new(UNLIMITED),
+
+    let (snapshots, invocations, invocation) = run(&[(false, false)], &[(true, true)]);
+    let post_three = lifecycle_observations(
+        &package,
+        &packages,
+        "PlaceEnsures",
+        &snapshots,
+        &invocations,
+        invocation,
+    )
+    .expect("run 3 postcondition admits");
+    assert!(matches!(
+        evaluate("PlaceEnsures", &post_three).evaluation.outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+    ));
+    assert!(matches!(
+        evaluate(
+            "Consistent",
+            &lifecycle_invariant_observations(&package, &post_three, false),
         )
-        .is_err());
-    let pre_read = package.graph().check_clause_expression(
-        vec![("self".to_owned(), ValueType::Reference(lifecycle))],
-        &Expression::pre(Expression::field(Expression::deref(name("self")), "placed")),
-        None,
-        ClauseKind::Precondition,
-        quire_semantic_value::checking::CheckMode::Kernel,
-        CheckingLimits::default(),
+        .evaluation
+        .outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
+    let inconsistent = evaluate(
+        "Consistent",
+        &lifecycle_invariant_observations(&package, &post_three, true),
     );
     assert!(matches!(
-        pre_read,
-        Err(refusal)
-            if matches!(
-                refusal.cause,
-                CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
-            )
+        inconsistent.evaluation.outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
+
+    let (snapshots, invocations, invocation) = run(&[], &[(true, false)]);
+    let wrong_context = lifecycle_observations(
+        &package,
+        &packages,
+        "PlaceEnsures",
+        &snapshots,
+        &invocations,
+        invocation,
+    )
+    .expect_err("run 4 has no pre context");
+    let AdmissionFailure::Refused(record) = wrong_context else {
+        panic!("run 4 refusal: {wrong_context:?}");
+    };
+    assert_eq!(
+        record.code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    assert_eq!(record.cause, "wrong-context");
+    assert_eq!(record.fields["document"], "p1");
+    assert_eq!(
+        record.fields["required"],
+        format!("({}, i1)", crate::tc235_k2::id("OrderLifecycle"))
+    );
+    assert_eq!(record.fields["actual"], "none");
+
+    let (snapshots, invocations, invocation) =
+        run(&[(false, false)], &[(true, false), (true, false)]);
+    let duplicate = lifecycle_observations(
+        &package,
+        &packages,
+        "PlaceEnsures",
+        &snapshots,
+        &invocations,
+        invocation,
+    )
+    .expect_err("run 5 has two post contexts");
+    let AdmissionFailure::Refused(record) = duplicate else {
+        panic!("run 5 refusal: {duplicate:?}");
+    };
+    assert_eq!(
+        record.code,
+        qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+    );
+    assert_eq!(record.cause, "duplicate-member");
+    assert_eq!(record.fields["document"], "q1");
+    assert_eq!(record.fields["path"], "/populations/0/objects/1");
+
+    let pre_read = lifecycle_document("pre(self.placed) = false");
+    let refusals = lifecycle_package(
+        &pre_read,
+        "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }\n\
+         pre PlaceRequires using v on M::OrderLifecycle::place { not self.placed }\n\
+         post PlaceEnsures using v on M::OrderLifecycle::place { self.placed and not self.cancelled }",
+    )
+    .expect_err("run 6 refuses the model operation pre-read");
+    assert_eq!(refusals.len(), 1, "run 6 has one refusal: {refusals:?}");
+    assert_eq!(
+        refusals[0].cause.code(),
+        qsl_foundation::diagnostic::Code::WrongSnapshot
+    );
+    assert!(matches!(
+        refusals[0].cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    ));
+    assert!(format!("{:?}", refusals[0]).contains(&crate::tc235_k2::id("OrderLifecycle/place")));
+    assert!(format!("{:?}", refusals[0]).contains("Operation.pre"));
 }
 
 #[trace("QSpec-TC-235", "QSpec-FR-207-AC-8", "QSpec-FR-047-AC-9")]
