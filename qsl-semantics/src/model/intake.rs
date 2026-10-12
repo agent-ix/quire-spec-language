@@ -2605,12 +2605,14 @@ pub(super) fn read_record_value_type(
             }
         }
     }
-    if !ctx.array_field("relationships")?.is_empty() {
-        return Err(
-            NodeCtx::new(type_value, format!("{at}.relationships[0]")).malformed(
-                "a record value type owns no relationship; a relationship end names an object type",
-            ),
-        );
+    let relationships_at = format!("{at}.relationships");
+    for (position, relationship) in ctx.array_field("relationships")?.iter().enumerate() {
+        records.push(DomainPackageRecord::Relationship(read_relationship(
+            package,
+            node,
+            relationship,
+            &format!("{relationships_at}[{position}]"),
+        )?));
     }
     let fields = ctx.array_field("fields")?;
     records.push(DomainPackageRecord::RecordValueType(
