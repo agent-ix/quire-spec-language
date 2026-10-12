@@ -2036,7 +2036,12 @@ fn check_node<'a>(
         // independently (crate::model::systems); FR-150's phase 1 does
         // not concern itself with them.
         DomainPackageRecord::Relationship(relationship) => {
-            if !index.is_object_type(&relationship.source.type_identity) {
+            // Systems-model connections have no source role; their endpoints
+            // are resolved by the systems boundary rather than this inline
+            // business-relationship rule.
+            if relationship.source.role.is_some()
+                && !index.is_object_type(&relationship.source.type_identity)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::IntakeMalformedDeclaration {
@@ -2051,7 +2056,9 @@ fn check_node<'a>(
                     ),
                 });
             }
-            if !index.is_object_type(&relationship.target.type_identity) {
+            if relationship.source.role.is_some()
+                && !index.is_object_type(&relationship.target.type_identity)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::IntakeMalformedDeclaration {
@@ -2298,11 +2305,13 @@ fn build(
             });
         }
         for closing in walk.closing_cycles {
+            let mut edge_set = closing.edge_set;
+            edge_set.sort();
             cycle_candidates.push(CycleCandidate {
                 type_key: type_key.clone(),
                 path: closing.path,
                 refusal: closing.refusal,
-                edge_set: closing.edge_set,
+                edge_set,
             });
         }
         let preimage = EffectiveDeclarationPreimage {
@@ -2407,11 +2416,13 @@ fn build(
             .cmp(&b.type_key)
             .then_with(|| a.path.keys().cmp(b.path.keys()))
     });
-    let mut seen_edge_sets: HashSet<Vec<DeclarationKey>> = HashSet::new();
+    let mut seen_edge_sets: HashSet<std::collections::BTreeSet<DeclarationKey>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
     for candidate in cycle_candidates {
-        if seen_edge_sets.insert(candidate.edge_set) {
-            phase3_refusals.push(candidate.refusal);
+        let edge_set = candidate.edge_set.iter().cloned().collect();
+        if seen_edge_sets.insert(edge_set) {
+            let refusal = candidate.refusal;
+            phase3_refusals.push(refusal);
         }
     }
     if let Ok(refusals) = Refusals::try_from(phase3_refusals) {

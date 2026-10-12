@@ -1469,6 +1469,9 @@ fn process_subtype_identity_schema_diagnostic(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> bool {
+    if located.code != agent_ix_semantic_ir::schema::SCHEMA_VIOLATION {
+        return false;
+    }
     let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
         return false;
     };
@@ -1511,9 +1514,7 @@ fn process_subtype_identity_schema_diagnostic(
             .get("identityFields")
             .and_then(Value::as_array)
             .is_some_and(Vec::is_empty);
-    let missing_identity = member.is_empty()
-        && !type_value.get("identityFields").is_some()
-        && located.message.contains("requires identityFields");
+    let missing_identity = member.is_empty() && !type_value.get("identityFields").is_some();
     empty_identity || missing_identity
 }
 
@@ -2672,8 +2673,9 @@ pub(super) fn read_object_type(
 /// one naming no type of the document `dangling_reference`/`unknown-general`,
 /// and one naming a record value type preserves declared ancestry for
 /// normalization.
-/// An inline relationship refuses `malformed-declaration`,
-/// since a relationship end must name an object type.
+/// A well-formed inline relationship is retained for normalization to bind
+/// its owner and target meanings; malformed relationship shapes still refuse
+/// at their authored member path.
 ///
 /// `type_meanings` maps each type identity of the document to the meaning
 /// its `kind` resolves to.
@@ -2714,13 +2716,6 @@ pub(super) fn read_record_value_type(
             }
         }
     }
-    if !ctx.array_field("relationships")?.is_empty() {
-        return Err(
-            NodeCtx::new(type_value, format!("{at}.relationships[0]")).malformed(
-                "a record value type owns no relationship; a relationship end names an object type",
-            ),
-        );
-    }
     let fields = ctx.array_field("fields")?;
     records.push(DomainPackageRecord::RecordValueType(
         RecordValueTypeRecord {
@@ -2746,6 +2741,15 @@ pub(super) fn read_record_value_type(
             operation,
             &format!("{operations_at}[{position}]"),
             pending,
+        )?));
+    }
+    let relationships_at = format!("{at}.relationships");
+    for (position, relationship) in ctx.array_field("relationships")?.iter().enumerate() {
+        records.push(DomainPackageRecord::Relationship(read_relationship(
+            package,
+            node,
+            relationship,
+            &format!("{relationships_at}[{position}]"),
         )?));
     }
     read_clauses(package, node, &ctx, records)?;
@@ -4057,31 +4061,47 @@ fn read_nodes_partial(
 /// process ancestry after every type has been read. Keeping this at the
 /// package boundary makes the result independent of declaration order.
 fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
-    loop {
-        let mut changed = false;
-        let snapshot = records.to_vec();
-        for record in records.iter_mut() {
-            let DomainPackageRecord::Process(process) = record else {
-                continue;
-            };
-            if !process.identity_fields_declared || !process.identity_fields.is_empty() {
-                continue;
-            }
-            let Some(identity_fields) = process.supertypes.iter().find_map(|supertype| {
-                snapshot.iter().find_map(|record| match record {
-                    DomainPackageRecord::Process(parent) if parent.key == *supertype => {
-                        (!parent.identity_fields.is_empty()).then(|| parent.identity_fields.clone())
+    let process_map: HashMap<DeclarationKey, (Vec<DeclarationKey>, Vec<DeclarationKey>)> = records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Process(process) => Some((
+                process.key.clone(),
+                (process.supertypes.clone(), process.identity_fields.clone()),
+            )),
+            _ => None,
+        })
+        .collect();
+    let resolved: HashMap<DeclarationKey, Vec<DeclarationKey>> = process_map
+        .iter()
+        .map(|(key, (_, own_fields))| {
+            let mut fields = own_fields.clone();
+            let mut visited = std::collections::HashSet::new();
+            let mut pending: Vec<DeclarationKey> = process_map
+                .get(key)
+                .map(|(supertypes, _)| supertypes.iter().rev().cloned().collect())
+                .unwrap_or_default();
+            while let Some(supertype) = pending.pop() {
+                if !visited.insert(supertype.clone()) {
+                    continue;
+                }
+                let Some((parents, parent_fields)) = process_map.get(&supertype) else {
+                    continue;
+                };
+                for field in parent_fields {
+                    if !fields.contains(field) {
+                        fields.push(field.clone());
                     }
-                    _ => None,
-                })
-            }) else {
-                continue;
-            };
-            process.identity_fields = identity_fields;
-            changed = true;
-        }
-        if !changed {
-            break;
+                }
+                pending.extend(parents.iter().rev().cloned());
+            }
+            (key.clone(), fields)
+        })
+        .collect();
+    for record in records {
+        if let DomainPackageRecord::Process(process) = record {
+            if let Some(fields) = resolved.get(&process.key) {
+                process.identity_fields = fields.clone();
+            }
         }
     }
 }

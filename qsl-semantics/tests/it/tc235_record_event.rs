@@ -371,6 +371,82 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     );
 }
 
+/// A subtype's effective identity is the stable union of every process
+/// ancestor, including a deep second parent, rather than the first parent
+/// encountered during intake.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m20_process_subtype_unions_deep_multi_parent_identities() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().extend([
+            declaration(
+                "AuditRoot",
+                "saga",
+                json!({
+                    "identityFields": [id("AuditRoot/id")],
+                    "fields": [field("AuditRoot", "id", "ix://quire/native/UUID")],
+                    "operations": [],
+                    "steps": [{
+                        "identity": id("AuditRoot/record"),
+                        "name": "record",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": origin("AuditRoot/record"),
+                    }],
+                }),
+            ),
+            declaration(
+                "AuditMid",
+                "saga",
+                json!({
+                    "identityFields": [],
+                    "supertypes": [id("AuditRoot")],
+                    "operations": [],
+                    "steps": [{
+                        "identity": id("AuditMid/record"),
+                        "name": "record",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": origin("AuditMid/record"),
+                    }],
+                }),
+            ),
+            declaration(
+                "ExpressFulfilment",
+                "saga",
+                json!({
+                    "identityFields": [],
+                    "supertypes": [id("Fulfilment"), id("AuditMid")],
+                    "operations": [],
+                    "steps": [{
+                        "identity": id("ExpressFulfilment/record"),
+                        "name": "record",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": origin("ExpressFulfilment/record"),
+                    }],
+                }),
+            ),
+        ]);
+    });
+    let package = read_k2(&document).expect("deep multi-parent process reads");
+    let process = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Process(process) if process.key == key("ExpressFulfilment") => {
+            Some(process)
+        }
+        _ => None,
+    });
+    assert_eq!(
+        process
+            .expect("ExpressFulfilment remains a process")
+            .identity_fields,
+        [key("Fulfilment/correlation_id"), key("AuditRoot/id")]
+    );
+}
+
 /// The JSON acceptance vector records the two diagnostics that the producer
 /// must retain for one malformed process subtype: missing identity fields
 /// first, followed by the cross-meaning supertype.
@@ -579,12 +655,12 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
         type_named_mut(document, "Money")["relationships"] =
             json!([relationship("Money", "owner", "Order")]);
     });
-    let refusals = read_refusals(&bad_owner);
+    let refusals = normalized_refusals(&bad_owner, 22);
     assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(
-        refusals[0].detail.contains("relationships[0]"),
-        "{refusals:#?}"
+    assert_malformed_at(
+        &refusals[0],
+        &id("Money"),
+        "TypeDefinition.relationships[0]",
     );
 }
 

@@ -373,6 +373,18 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
     }
 }
 
+/// FR-152 systems connections have role-less ends and are validated by the
+/// systems boundary; model normalization must retain them for that pass.
+#[trace("QSpec-TC-197")]
+#[test]
+fn y01_roleless_systems_connection_survives_model_normalization() {
+    let domain_package = fixture_y(|_| {});
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(_) => {}
+        other => panic!("the role-less systems connection must survive normalization: {other:?}"),
+    }
+}
+
 #[trace("TC-235", "FR-086-AC-3")]
 #[trace("QSpec-TC-197", "QSpec-FR-152-AC-2")]
 #[test]
