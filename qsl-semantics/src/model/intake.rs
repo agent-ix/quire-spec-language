@@ -1476,7 +1476,11 @@ fn missing_reader_reference(
         )
         && (located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF
             || located.code == agent_ix_semantic_ir::rules::DANGLING_CLAUSE_REF);
+    let process_step_reference = pointer.contains("/steps/")
+        && matches!(transition_member, "consumes" | "emits")
+        && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
     if !transition_reference
+        && !process_step_reference
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
     {
@@ -1488,6 +1492,31 @@ fn missing_reader_reference(
     // of this selected package.
     if !transition_reference {
         type_identity_segment(package, reference)?;
+    }
+    if process_step_reference {
+        let mut segments = pointer.strip_prefix('/')?.split('/');
+        if segments.next()? != "types" {
+            return None;
+        }
+        let position = segments.next()?.parse::<usize>().ok()?;
+        let process = document.tree.get("types")?.as_array()?.get(position)?;
+        let process_identity = process.get("identity")?.as_str()?;
+        let step = declared_node_for_pointer(document, pointer)?;
+        let step_identity = step
+            .get("identity")
+            .and_then(Value::as_str)
+            .unwrap_or(process_identity);
+        return Some(ModelRefusal {
+            code: Code::MissingDeclaration,
+            cause: ModelRefusalCause::UnknownMember {
+                record: declaration_key(package, process_identity),
+                member: declaration_key(package, reference),
+            },
+            detail: format!(
+                "{} on {step_identity}: names no event type of this domain package",
+                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned())
+            ),
+        });
     }
     let owner = declared_node_for_pointer(document, pointer)?;
     let node = owner.get("identity")?.as_str()?;
@@ -1587,14 +1616,20 @@ fn declared_node_for_pointer<'a>(
         .get(collection)?
         .as_array()?
         .get(position.parse::<usize>().ok()?)?;
-    if segments.next()? == "transitions" {
-        let transition_index = segments.next()?.parse::<usize>().ok()?;
-        return declaration
-            .get("transitions")?
-            .as_array()?
-            .get(transition_index);
+    match segments.next()? {
+        "transitions" => {
+            let transition_index = segments.next()?.parse::<usize>().ok()?;
+            declaration
+                .get("transitions")?
+                .as_array()?
+                .get(transition_index)
+        }
+        "steps" => {
+            let step_index = segments.next()?.parse::<usize>().ok()?;
+            declaration.get("steps")?.as_array()?.get(step_index)
+        }
+        _ => Some(declaration),
     }
-    Some(declaration)
 }
 
 /// FR-208 Generalization / AC-12: the schema gate still refuses the document,
