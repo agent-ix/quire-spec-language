@@ -396,7 +396,7 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
         (
             // FR-153-AC-4: a declared target with a non-population operand
             // reaches S3 and is refused as an ineligible operator use.
-            "function F using v(r: M::A): Set<M::A> pure { allInstances<M::A>(r) }",
+            "function F using v(r: M::A): Set<M::A>[0,3] pure { allInstances<M::A>(r) }",
             "r",
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
             ("ill_typed", "operator-ineligible"),
