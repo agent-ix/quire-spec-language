@@ -524,10 +524,9 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         serde_json::to_vec(&defaults).unwrap(),
     )
     .unwrap();
-    let decoded_defaults = quire_spec_language::command::read_clause_run_request(
-        &path.join("request.json"),
-    )
-    .expect("omitted accounting uses the published defaults");
+    let decoded_defaults =
+        quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+            .expect("omitted accounting uses the published defaults");
     assert_eq!(
         decoded_defaults.accounting,
         qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS)
@@ -551,10 +550,8 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
-    let decoded = quire_spec_language::command::read_clause_run_request(
-        &path.join("request.json"),
-    )
-    .expect("the closed accounting counter object is accepted");
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        .expect("the closed accounting counter object is accepted");
     assert_eq!(
         decoded.accounting,
         quire_exact::ScalarLimits {
@@ -801,7 +798,7 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
         ),
         (
             Case::Healthy,
-            |v: &mut Value| v["request"]["clause"]["work_units"] = json!(0),
+            |v: &mut Value| v["request"]["clause"]["accounting"]["work_units"] = json!(0),
             "evaluate",
             None,
             22,
