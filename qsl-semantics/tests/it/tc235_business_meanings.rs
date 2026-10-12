@@ -422,6 +422,30 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
             package: PACKAGE.to_owned(),
             node: id("Money"),
         }));
+    let process = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("Fulfilment"),
+    };
+    assert!(
+        view.type_identities().contains_key(&process),
+        "a process has an effective receiver type identity"
+    );
+    assert!(
+        view.object_universe_of(&process).is_some(),
+        "process runs retain their object universe"
+    );
+    let persistence = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderStore"),
+    };
+    assert!(
+        view.type_identities().contains_key(&persistence),
+        "a persistence interface has an effective operation-owner identity"
+    );
+    assert!(
+        view.object_universe_of(&persistence).is_none(),
+        "a persistence interface does not gain an object universe"
+    );
     assert!(!view
         .type_identities()
         .contains_key(&qsl_semantics::model::key::DeclarationKey {
