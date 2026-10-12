@@ -662,6 +662,7 @@ pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
 /// Inspect the S2 dispatch table itself. An S3 typing arm cannot establish
 /// that a family has an S2 producer. Keep a known Value entry as a control so
 /// a missing or renamed production table cannot silently report absence.
+#[string_edge]
 fn forms_s2_report(workspace_root: &Path) -> Result<String> {
     const FILE: &str = "qsl-forms/src/dispatch.rs";
     let path = workspace_root.join(FILE);
