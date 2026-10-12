@@ -258,7 +258,7 @@ fn tc_449_a_package_with_no_records_gives_no_items() {
 /// TC-449 step 6 (FR-075-AC-8): RR-16's two `+` items at one node carry
 /// distinct occurrence keys and their own records' result bounds,
 /// `Int[0, 10]` then `Int[0, 20]` in key order.
-#[trace("TC-449", "FR-075-AC-8")]
+#[trace("TC-449", "FR-075-AC-8", "FR-075-AC-15")]
 #[test]
 fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
     let package = package(TWO_CALLEES);
@@ -281,6 +281,15 @@ fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
         .collect();
     assert_eq!([first.result_bound(), second.result_bound()], nodes[..]);
     assert_ne!(first.result_bound(), second.result_bound());
+    let contexts: Vec<_> = records
+        .values()
+        .map(|record| record.conversion_context().cloned())
+        .collect();
+    assert_eq!(contexts.len(), 2);
+    assert!(contexts.iter().all(Option::is_some));
+    assert_eq!(first.conversion_context(), contexts[0].as_ref());
+    assert_eq!(second.conversion_context(), contexts[1].as_ref());
+    assert_ne!(contexts[0], contexts[1]);
 }
 
 /// TC-984 / FR-075-AC-9: each request item preserves its record's canonical
@@ -335,4 +344,5 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
         records[item.occurrence()].path_condition()
     );
     assert!(item.path_condition().is_empty());
+    assert_eq!(item.conversion_context(), None);
 }

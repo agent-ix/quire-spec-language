@@ -311,6 +311,39 @@ impl SemanticGraph {
             .copied()
             .find(|key| key.as_bytes() == id.as_bytes())
     }
+
+    /// Add an enclosing narrow node for a claims-keying fixture. The cloned
+    /// checked narrow is changed to reference `operand`, so the fixture can
+    /// distinguish it from the direct conversion without supplying a
+    /// test-authored operation predicate.
+    #[cfg(test)]
+    pub(crate) fn with_test_narrow_over(&self, key: NodeKey, operand: NodeKey) -> Self {
+        let mut graph = self.clone();
+        let mut enclosing = self
+            .nodes
+            .values()
+            .find(|node| {
+                matches!(
+                    &node.content.body,
+                    super::node_key::BodyTerm::Application(application)
+                        if application.operation.identity() == "quire.op.numeric.narrow"
+                )
+            })
+            .expect("the checked fixture contains a narrow node")
+            .clone();
+        enclosing.key = key;
+        let super::node_key::BodyTerm::Application(application) = &mut enclosing.content.body
+        else {
+            unreachable!("the selected template is a narrow application")
+        };
+        application.arguments = vec![super::node_key::MemberTerm::Leaf(
+            super::node_key::LeafTerm::Reference {
+                target: super::node_key::NodeRef(operand),
+            },
+        )];
+        graph.nodes.insert(key, enclosing);
+        graph
+    }
 }
 
 /// One checked function, as the lowering reads it.
