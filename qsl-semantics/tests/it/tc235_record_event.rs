@@ -104,13 +104,16 @@ fn m10_refusal_mismatches(
             "expected invalid_model_binding/malformed-declaration, got {refusal:?}"
         ));
     }
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusal.cause else {
-        mismatches.push(format!(
-            "expected typed IntakeMalformedDeclaration, got {refusal:?}"
-        ));
-        return mismatches;
+    // TC-235 specifies the public code/cause/locus. Different typed cause
+    // variants may carry that same malformed-declaration result; the
+    // detail path is the stable locus for causes without a node field.
+    let node_matches = match &refusal.cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+        | ModelRefusalCause::FrameEntryMalformed { node, .. } => node == expected_node,
+        ModelRefusalCause::MalformedDeclaration => refusal.detail.contains(expected_node),
+        _ => false,
     };
-    if node != expected_node || !refusal.detail.contains(expected_path) {
+    if !node_matches || !refusal.detail.contains(expected_path) {
         mismatches.push(format!(
             "expected node {expected_node} at {expected_path}, got {refusal:?}"
         ));
@@ -386,8 +389,14 @@ fn tc235_m10_business_meanings_are_not_object_reference_targets() {
         })
     };
     let namespace_relationship = mutate_k2(|document| {
-        type_named_mut(document, "Order")["relationships"] =
-            json!([relationship("Order", "scope", "OrderManagement")]);
+        let mut relationship = relationship("Order", "scope", "OrderManagement");
+        relationship["origin"] = json!({"source": {
+            "sourceIdentity": id("spec"),
+            "path": "TC-235/M10/relationship-scope",
+            "startLine": 1,
+            "startColumn": 1,
+        }});
+        type_named_mut(document, "Order")["relationships"] = json!([relationship]);
     });
     results.extend(
         m10_refusal_mismatches(
