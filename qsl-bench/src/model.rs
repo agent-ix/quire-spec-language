@@ -417,6 +417,8 @@ pub fn resolve_root_field_redefinition(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use qsl_semantics::model::accounting::LimitKind;
+    use qsl_semantics::model::normalize::normalize_with_meter;
 
     #[test]
     fn smallest_shape_admits_and_queries() {
@@ -500,24 +502,44 @@ mod tests {
         value["types"][0]["fields"][0]["presence"] = json!("sometimes");
         let offered = offer(serde_json::to_vec(&value).expect("the invalid fixture serializes"));
 
-        let IntakeFailure::Read(refusals) =
-            intake(&offered).expect_err("the actual intake path retains reader refusal behavior")
-        else {
-            panic!("the fixture passes package selection and fails at node reading");
+        let package = intake(&offered)
+            .expect("intake retains typed reader refusals until normalization charges records");
+        let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+        assert_eq!(
+            meter.admission_count(),
+            3,
+            "only the type, field, and population charges precede refusal",
+        );
+        assert_eq!(
+            meter.consumed(LimitKind::DeclarationRecords),
+            3,
+            "all three source records are charged before refusal",
+        );
+        let NormalizeOutcome::Refused(refusals) = outcome else {
+            panic!("normalization reports the retained reader refusal");
         };
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code.as_str(), "invalid_model_binding");
-        assert!(matches!(
-            &refusals[0].cause,
-            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
-                node,
-                ..
-            } if node == "ix://bench/model/C0/flag"
-        ));
+        assert_eq!(refusals.len(), 2, "both reader diagnostics are retained");
+        for (refusal, node) in [
+            (&refusals[0], "ix://bench/model/C0"),
+            (&refusals[1], "ix://bench/model/C0/flag"),
+        ] {
+            assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+            assert!(matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: actual,
+                    ..
+                } if actual == node
+            ));
+        }
         assert!(refusals[0].detail.contains("SCHEMA_VIOLATION"));
         assert!(refusals[0].detail.contains("/ir/types/0/fields/0/presence"));
         assert!(refusals[0]
             .detail
             .contains("presence is a closed enumeration"));
+        assert!(refusals[1].detail.contains("$.types[0].fields[0]"));
+        assert!(refusals[1]
+            .detail
+            .contains("presence: \"sometimes\" is not required/optional"));
     }
 }
