@@ -372,6 +372,24 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
     assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
 }
 
+fn assert_process_non_event_refusal(document: &Value) {
+    let refusals = read_refusals(document);
+    assert_eq!(refusals.len(), 1, "one process non-event refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause
+    else {
+        panic!(
+            "expected malformed process event binding, got {:?}",
+            refusals[0].cause
+        );
+    };
+    assert_eq!(node, &id("Fulfilment"));
+    assert!(
+        refusals[0].detail.contains("steps[1].emits[0]"),
+        "reader locus missing from refusal: {refusals:?}"
+    );
+}
+
 fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
     let refusals = read_refusals(document);
     assert_eq!(refusals.len(), 1, "one process event refusal: {refusals:?}");
@@ -717,7 +735,7 @@ fn tc235_m07_process_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_process_non_event_refusal(&document);
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("StockReserved")]);
