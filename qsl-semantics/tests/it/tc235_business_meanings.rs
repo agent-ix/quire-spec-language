@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-235 business-meaning vectors at the real QSL intake/normalization boundary.
 
+use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{ByteDigest, IntakeLimits};
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
-use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ProcessStepKind,
+};
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
+use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -579,8 +582,60 @@ fn record_value_subtype_preserves_effective_fields_support() {
 
 /// M07: processes retain their run identity and ordered event steps, while
 /// ordinary operations and invariants use the object-type member readers.
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m07_process_binder() {
+    let package = read_k2(&k2()).expect("process admission");
+    let process = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Process(process) if process.key.node == id("Fulfilment") => {
+                Some(process)
+            }
+            _ => None,
+        })
+        .expect("Fulfilment process record");
+    assert_eq!(
+        process.identity_fields,
+        vec![DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("Fulfilment/correlation_id"),
+        }]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["receive_order", "reserve_stock", "await_shipment"]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.step_kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ProcessStepKind::Event,
+            ProcessStepKind::Command,
+            ProcessStepKind::Wait
+        ]
+    );
+    assert_eq!(
+        process.steps[0].consumes,
+        vec![DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderPlaced"),
+        }]
+    );
+    assert!(process.steps[0].emits.is_empty());
+    assert!(process.steps[1].consumes.is_empty());
+    assert!(process.steps[1].emits.is_empty());
+    assert!(process.steps[2].consumes.is_empty());
+    assert!(process.steps[2].emits.is_empty());
+
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["identityFields"] = json!([]);
     assert_malformed_refusal(&document, "Fulfilment");
