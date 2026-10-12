@@ -39,7 +39,7 @@ use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
     Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
-    IntegerInterval, Presence, RoundingMode, ValueType,
+    IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
 
 use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
@@ -615,7 +615,9 @@ fn model_object_types(
     model: &SelectedModel,
     span: Span,
     table: &mut OperationTable,
-) -> Result<Vec<ObjectTypeDeclaration>, Vec<AssemblyError>> {
+    owner: &SourceOwner,
+    identity_limits: IdentityLimits,
+) -> Result<(Vec<ObjectTypeDeclaration>, Vec<CompositeDeclaration>), Vec<AssemblyError>> {
     let package = model.view.domain_package();
     let identities = model.view.type_identities();
     let error = |cause| AssemblyError { cause, span };
@@ -639,10 +641,37 @@ fn model_object_types(
     let mut errors = Vec::new();
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
     let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
+    let mut meaning_handles = BTreeMap::<DeclarationKey, NodeKey>::new();
+    for record in &package.records {
+        if matches!(
+            record,
+            DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+        ) {
+            let key = record.key();
+            let Some(artifact) = type_identity_segment(&key.package, &key.node) else {
+                errors.push(broken(&key.node));
+                continue;
+            };
+            match declared_type_handle(owner, &format!("{alias}::{artifact}"), identity_limits) {
+                Ok(handle) => {
+                    meaning_handles.insert(key.clone(), handle);
+                }
+                Err(refusal) => errors.push(error(AssemblyCause::handle(refusal))),
+            }
+        }
+    }
     for record in &package.records {
         match record {
             DomainPackageRecord::FieldMember(field) => {
-                match model_field(field, &records, identities) {
+                if matches!(
+                    records.get(&field.owner),
+                    Some(
+                        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                    )
+                ) {
+                    continue;
+                }
+                match model_field(field, &records, identities, &meaning_handles) {
                     Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
                     Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                     Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
@@ -656,7 +685,7 @@ fn model_object_types(
                 }
             }
             DomainPackageRecord::OperationMember(operation) => {
-                match model_operation(operation, &records, identities) {
+                match model_operation(operation, &records, identities, &meaning_handles) {
                     Ok(declaration) => operations
                         .entry(&operation.owner)
                         .or_default()
@@ -672,13 +701,13 @@ fn model_object_types(
                     }
                 }
             }
-            // State-machine clauses and context namespaces remain admitted
-            // model records. They do not contribute a kernel type-environment
-            // entry, but their owners/members are part of the source model
-            // that this assembly arm must accept.
-            DomainPackageRecord::Clause(_) | DomainPackageRecord::Namespace(_) => {}
+            // Model records that remain original-only do not contribute a
+            // kernel type-environment entry, but their owners/members are
+            // part of the admitted source model this assembly arm accepts.
             DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::EventType(_)
+            | DomainPackageRecord::Clause(_)
+            | DomainPackageRecord::Namespace(_) => {}
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
@@ -742,13 +771,44 @@ fn model_object_types(
     for (owner, _) in fields {
         if !matches!(
             records.get(owner),
-            Some(DomainPackageRecord::RecordValueType(_))
+            Some(DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_))
         ) {
             errors.push(broken(&owner.node));
         }
     }
+    let mut composites = Vec::new();
+    for record in &package.records {
+        let key = record.key();
+        let Some(handle) = meaning_handles.get(key) else {
+            continue;
+        };
+        let Some(artifact) = type_identity_segment(&key.package, &key.node) else {
+            continue;
+        };
+        let mut declared_fields = Vec::new();
+        for field in package.records.iter().filter_map(|record| match record {
+            DomainPackageRecord::FieldMember(field) if &field.owner == key => Some(field),
+            _ => None,
+        }) {
+            match model_field(field, &records, identities, &meaning_handles) {
+                Ok(field) => declared_fields.push(field),
+                Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
+                Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
+                Err(Unmapped::Float(width)) => errors.push(error(AssemblyCause::FloatingType {
+                    width,
+                    rounding: RoundingMode::Exact,
+                    profile: None,
+                })),
+            }
+        }
+        composites.push(CompositeDeclaration::new(
+            *handle,
+            format!("{alias}::{artifact}"),
+            CompositeShape::Record(declared_fields),
+        ));
+    }
     if errors.is_empty() {
-        Ok(declarations)
+        Ok((declarations, composites))
     } else {
         Err(errors)
     }
@@ -795,6 +855,7 @@ fn model_value_type(
     multiplicity: Multiplicity,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
+    meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
 ) -> Result<ValueType, Unmapped> {
     let element = match value_type {
         ValueTypeRef::Native(native) => match native {
@@ -818,6 +879,9 @@ fn model_value_type(
         ValueTypeRef::Package(key) => match records.get(key) {
             Some(DomainPackageRecord::ObjectType(_)) => {
                 ValueType::Reference(*identities.get(key).ok_or(Unmapped::Broken)?)
+            }
+            Some(DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)) => {
+                ValueType::Composite(*meaning_handles.get(key).ok_or(Unmapped::Broken)?)
             }
             Some(DomainPackageRecord::ScalarType(scalar)) => match &scalar.domain {
                 ScalarValueDomain::Integer { lower, upper } => ValueType::Int(
@@ -866,9 +930,16 @@ fn model_field(
     field: &FieldMemberRecord,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
+    meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
 ) -> Result<FieldDeclaration, Unmapped> {
     let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
-    let value_type = model_value_type(&field.value_type, field.multiplicity, records, identities)?;
+    let value_type = model_value_type(
+        &field.value_type,
+        field.multiplicity,
+        records,
+        identities,
+        meaning_handles,
+    )?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
         return Ok(declaration);
@@ -891,6 +962,7 @@ fn model_operation(
     operation: &OperationMemberRecord,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
+    meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
 ) -> Result<OperationDeclaration, Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
@@ -903,6 +975,7 @@ fn model_operation(
             parameter.multiplicity,
             records,
             identities,
+            meaning_handles,
         )?;
         parameters.push((parameter_name.to_owned(), value_type));
     }
@@ -910,7 +983,13 @@ fn model_operation(
         .result
         .as_ref()
         .map(|result| {
-            model_value_type(&result.value_type, result.multiplicity, records, identities)
+            model_value_type(
+                &result.value_type,
+                result.multiplicity,
+                records,
+                identities,
+                meaning_handles,
+            )
         })
         .transpose()?;
     Ok(OperationDeclaration::new(
@@ -1294,11 +1373,13 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+        let owner = SourceOwner::from(&source);
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
+        let mut model_composites = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         for selection in &selections.models {
@@ -1311,12 +1392,20 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            match model_object_types(&selection.alias, model, selection.span, &mut operations) {
-                Ok(declarations) => {
+            match model_object_types(
+                &selection.alias,
+                model,
+                selection.span,
+                &mut operations,
+                &owner,
+                limits.identity,
+            ) {
+                Ok((declarations, composites)) => {
                     for declaration in &declarations {
                         object_spans.insert(declaration.name().to_owned(), selection.span);
                     }
                     object_types.extend(declarations);
+                    model_composites.extend(composites);
                 }
                 Err(refused) => errors.extend(refused),
             }
@@ -1442,7 +1531,6 @@ impl PackageDeclarations {
         }
 
         // The unit's dimensions and units, admitted under its owner.
-        let owner = SourceOwner::from(&source);
         let owners = OwnerSelection::new([owner.node_owner()]);
         let quantities =
             match units::assemble(&unit.dimensions, &unit.units, &owner, &owners, limits) {
@@ -1610,7 +1698,8 @@ impl PackageDeclarations {
         }
 
         // Records and tuples.
-        let mut declarations = Vec::with_capacity(unit.composites.len());
+        let mut declarations = Vec::with_capacity(unit.composites.len() + model_composites.len());
+        declarations.extend(model_composites);
         let mut declared_type_spans: BTreeMap<String, Span> = unit
             .enums
             .iter()

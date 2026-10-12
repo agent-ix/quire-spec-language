@@ -293,9 +293,10 @@ fn k2_record_and_event_meanings_assemble_as_composites() {
                 "Money",
                 "money",
                 json!({
+                    // Native String remains a separate QSL-729 gap (FR-056-AC-11
+                    // forbids substituting profile-bounded Text here).
                     "fields": [
                         field("Money", "amount_minor", "ix://quire/native/Integer"),
-                        field("Money", "currency", "ix://quire/native/String"),
                     ],
                 }),
             ),
@@ -357,7 +358,7 @@ fn k2_record_and_event_meanings_assemble_as_composites() {
             .iter()
             .map(|field| field.name())
             .collect::<Vec<_>>(),
-        ["amount_minor", "currency"]
+        ["amount_minor"]
     );
 
     let event = declarations
