@@ -199,6 +199,162 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
     );
     assert!(view.type_identities().contains_key(&key("Fulfilment")));
 }
+/// TC-235 M20's model-semantics half: a process subtype inherits its
+/// correlation identity and member meaning, keeps authored step order, and
+/// refuses cross-meaning ancestry and specialization cycles.
+#[test]
+fn tc235_m20_process_subtype_inherits_identity_and_steps() {
+    let with_process_subtype = |extra_step: bool| {
+        mutate_k2(|document| {
+            let mut steps = vec![json!({
+                "identity": id("ExpressFulfilment/expedite"),
+                "name": "expedite",
+                "stepKind": "command",
+                "consumes": [],
+                "emits": [],
+                "origin": origin("ExpressFulfilment/expedite"),
+            })];
+            if extra_step {
+                steps.push(json!({
+                    "identity": id("ExpressFulfilment/receive_order"),
+                    "name": "receive_order",
+                    "stepKind": "event",
+                    "consumes": [id("OrderPlaced")],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/receive_order"),
+                }));
+            }
+            document["types"].as_array_mut().unwrap().push(declaration(
+                "ExpressFulfilment",
+                "saga",
+                json!({
+                    "identityFields": [],
+                    "supertypes": [id("Fulfilment")],
+                    "operations": [],
+                    "steps": steps,
+                }),
+            ));
+            document["populations"] = json!([{
+                "identity": id("PF"),
+                "displayName": id("PF"),
+                "kind": {"module": BUSINESS, "name": "population"},
+                "members": [id("Fulfilment")],
+                "extent": "closed",
+                "origin": origin("PF"),
+            }]);
+        })
+    };
+
+    let positive = with_process_subtype(false);
+    let package = read_k2(&positive).expect("M20 subtype package reads");
+    let view = record_charges(&package, 23);
+    let subtype = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Process(process) if process.key == key("ExpressFulfilment") => {
+            Some(process)
+        }
+        _ => None,
+    });
+    let subtype = subtype.expect("ExpressFulfilment remains a process meaning");
+    assert!(subtype.identity_fields.is_empty());
+    assert_eq!(subtype.supertypes, [key("Fulfilment")]);
+    assert_eq!(
+        subtype
+            .steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        ["expedite"]
+    );
+    assert_eq!(subtype.steps[0].step_kind, ProcessStepKind::Command);
+    assert_eq!(
+        subtype.identity_fields,
+        Vec::<DeclarationKey>::new(),
+        "the inherited correlation key is not copied into own identity fields"
+    );
+    assert!(view
+        .type_identities()
+        .contains_key(&key("ExpressFulfilment")));
+    assert!(view.type_identities().contains_key(&key("Fulfilment")));
+    let population = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Population(population) if population.key == key("PF") => {
+            Some(population)
+        }
+        _ => None,
+    });
+    assert_eq!(
+        population.expect("PF is retained").member_types,
+        [key("Fulfilment")]
+    );
+
+    let with_event_step = with_process_subtype(true);
+    let package = read_k2(&with_event_step).expect("M20 event step package reads");
+    record_charges(&package, 23);
+    let event_subtype = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Process(process) if process.key == key("ExpressFulfilment") => {
+            Some(process)
+        }
+        _ => None,
+    });
+    let event_subtype = event_subtype.expect("subtype process remains");
+    assert_eq!(event_subtype.steps.len(), 2);
+    assert_eq!(event_subtype.steps[1].step_kind, ProcessStepKind::Event);
+    assert_eq!(event_subtype.steps[1].consumes, [key("OrderPlaced")]);
+
+    let wrong_meaning = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressFulfilment",
+            "saga",
+            json!({
+                "identityFields": [],
+                "supertypes": [id("OrderLifecycle")],
+                "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/expedite"),
+                    "name": "expedite",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/expedite"),
+                }],
+            }),
+        ));
+    });
+    let refusals = normalized_refusals(&wrong_meaning, 23);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(
+        &refusals[0],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.supertypes[0]",
+    );
+
+    let cycle = mutate_k2(|document| {
+        type_named_mut(document, "Fulfilment")["supertypes"] = json!([id("ExpressFulfilment")]);
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressFulfilment",
+            "saga",
+            json!({
+                "identityFields": [],
+                "supertypes": [id("Fulfilment")],
+                "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/expedite"),
+                    "name": "expedite",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/expedite"),
+                }],
+            }),
+        ));
+    });
+    let refusals = normalized_refusals(&cycle, 23);
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
+    assert!(refusals[0].detail.contains(&id("ExpressFulfilment")));
+    assert!(refusals[0].detail.contains(&id("Fulfilment")));
+ }
+
 /// TC-235 M02 adds a record-valued field and an object invariant that compares
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
