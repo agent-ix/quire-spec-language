@@ -123,6 +123,8 @@ pub struct CallerLimits {
     pub explore: ExploreLimits,
     /// The replay request and envelope readers.
     pub replay: ReplayLimits,
+    /// Formatter output bytes, configured independently of replay stages.
+    pub format: qsl_cst::format::FormatLimits,
     /// The call's accounting budgets (`quire.value.accounting/v1`).
     pub accounting: AccountingLimits,
 }
@@ -173,16 +175,19 @@ impl CallerLimits {
             ..Self::default()
         };
         for (setting, bound) in stage_limits.iter() {
-            // A request does not carry `replay.input_bytes`: the library
-            // entry's own limit bounds the request itself.
-            if setting != Setting::ReplayInputBytes {
+            // Requests carry neither their own envelope limit nor the
+            // formatter's limit: replay performs neither operation.
+            if !matches!(
+                setting,
+                Setting::ReplayInputBytes | Setting::FormatOutputBytes
+            ) {
                 limits.set_bound(setting, bound);
             }
         }
         limits
     }
 
-    fn parts(&self) -> [&dyn SettingLimits; 6] {
+    fn parts(&self) -> [&dyn SettingLimits; 7] {
         [
             &self.spine,
             &self.library,
@@ -190,6 +195,7 @@ impl CallerLimits {
             &self.observation,
             &self.explore,
             &self.replay,
+            &self.format,
         ]
     }
 }
@@ -200,13 +206,14 @@ impl SettingLimits for CallerLimits {
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
-        let parts: [&mut dyn SettingLimits; 6] = [
+        let parts: [&mut dyn SettingLimits; 7] = [
             &mut self.spine,
             &mut self.library,
             &mut self.admission,
             &mut self.observation,
             &mut self.explore,
             &mut self.replay,
+            &mut self.format,
         ];
         parts.into_iter().any(|part| part.set_bound(setting, bound))
     }
@@ -399,6 +406,7 @@ mod tests {
         mapped.set_bound(Setting::S3InputBytes, 33);
         mapped.set_bound(Setting::S3WorkUnits, 34);
         mapped.set_bound(Setting::IntakeInputBytes, 35);
+        mapped.set_bound(Setting::FormatOutputBytes, 36);
         let built = CallerLimits {
             spine: SpineLimits {
                 source: qsl_cst::Limits::default()
@@ -440,6 +448,7 @@ mod tests {
                 .with_max_states(25)
                 .with_max_transitions(26),
             replay: ReplayLimits::default().with_input_bytes(18),
+            format: qsl_cst::format::FormatLimits::default().with_output_bytes(36),
             ..CallerLimits::default()
         };
         assert_eq!(by_builder(built), mapped.bounds());
@@ -447,9 +456,9 @@ mod tests {
 
     /// FR-255-AC-4's entry points: the settings operation takes every
     /// setting of the table, and a replay request's `stage_limits` entry
-    /// takes each setting but `replay.input_bytes`, which a request does not
-    /// carry and which `for_request` leaves at the library's value however
-    /// the entries were built. The stage-driven half, an input that reached
+    /// takes each setting but `replay.input_bytes` and `format.output_bytes`,
+    /// which a request does not carry and which `for_request` leaves at their
+    /// defaults however the entries were built. The stage-driven half, an input that reached
     /// a limit and passes once it is raised, is
     /// `a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request`.
     #[trace("TC-721", "FR-255-AC-4")]
@@ -463,7 +472,10 @@ mod tests {
             let replay = ReplayLimits::default();
             let requested =
                 CallerLimits::for_request(&entries, AccountingLimits::default().0, replay);
-            let expected = if *setting == Setting::ReplayInputBytes {
+            let expected = if matches!(
+                setting,
+                Setting::ReplayInputBytes | Setting::FormatOutputBytes
+            ) {
                 bound_of(&CallerLimits::default(), *setting)
             } else {
                 987_654_321
