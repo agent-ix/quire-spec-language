@@ -440,7 +440,7 @@ fn tc213_retained_map(
         .collect::<BTreeMap<_, _>>();
     assert_eq!(retained_origins, admitted_origins);
     assert_eq!(
-        retained_origins.keys().collect::<BTreeSet<_>>(),
+        retained_origins.keys().cloned().collect::<BTreeSet<_>>(),
         admitted_keys
     );
     for entry in view.declarations() {
