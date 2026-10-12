@@ -29,7 +29,8 @@ use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, RelationshipDirection,
-    RelationshipEnd, RelationshipRecord, ValueTypeRef,
+    RelationshipEnd, RelationshipRecord, StateMachineRecord, StateMachineStateRecord,
+    StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
@@ -1350,4 +1351,57 @@ mod quantities {
         ));
         assert_eq!(graph.nodes().count(), 0);
     }
+}
+
+/// FR-322-AC-25 / FR-208: a state machine is a declaring `model` node of
+/// semantic form `state_machine`, so lowering keys it like an object type
+/// (a state clause or operation anchor on it needs its node) instead of
+/// refusing the declaration as an unnamed record kind.
+#[trace("FR-322-AC-25", "FR-094-AC-1")]
+#[test]
+fn state_machine_declaration_keys_as_a_state_machine_model_node() {
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: Sha256::digest(b"acme/orders@machine").into(),
+        },
+        vec![
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: key("Lifecycle"),
+                supertypes: Vec::new(),
+                states: ["Draft", "Placed"]
+                    .map(|name| StateMachineStateRecord {
+                        key: key(&format!("Lifecycle/{name}")),
+                        name: name.to_owned(),
+                    })
+                    .to_vec(),
+                transitions: vec![StateMachineTransitionRecord {
+                    key: key("Lifecycle/transition0"),
+                    from: key("Lifecycle/Draft"),
+                    to: key("Lifecycle/Placed"),
+                    trigger: key("Lifecycle/place"),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: json!({}),
+                }],
+            }),
+            query("Lifecycle/place", "Lifecycle", None),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) = normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the state machine normalizes");
+    };
+    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let models = std::slice::from_ref(&model);
+    let location = generated_location();
+    let (node, graph) = lower(models, Default::default(), |lowering| {
+        lowering.model_node(&key("Lifecycle"), &location)
+    });
+    let node = node.expect("a state machine has a model node");
+    let node = graph.node(node).expect("the node is in the graph");
+    assert_eq!(node.node_tag(), NodeTag::Model);
+    assert_eq!(node.semantic_form(), "state_machine");
 }

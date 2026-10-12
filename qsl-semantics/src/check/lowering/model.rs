@@ -306,6 +306,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
             None => (NodeTag::Model, "object_type"),
             Some(_) => (NodeTag::Model, "systems_interface"),
         }),
+        DomainPackageRecord::StateMachine(_) => Some((NodeTag::Model, "state_machine")),
         DomainPackageRecord::Relationship(_) => Some((NodeTag::Relation, "relationship")),
         DomainPackageRecord::FieldMember(_)
         | DomainPackageRecord::Clause(_)
@@ -313,7 +314,6 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::PersistenceInterface(_)
         | DomainPackageRecord::RecordValueType(_)
         | DomainPackageRecord::EventType(_)
-        | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Process(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::OperationMember(_)
