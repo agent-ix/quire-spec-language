@@ -472,12 +472,21 @@ fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
         ));
     });
     let refusals = read_refusals(&document);
-    assert_eq!(refusals.len(), 1, "{refusals:#?}");
-    assert_malformed_at(
-        &refusals[0],
-        &id("ExpressFulfilment"),
-        "TypeDefinition",
-    );
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
+    assert!(refusals.iter().all(|refusal| {
+        refusal.code == Code::InvalidModelBinding
+            && matches!(
+                refusal.cause,
+                ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            )
+            && refusal.detail.contains("TypeDefinition")
+    }));
+    assert!(refusals
+        .iter()
+        .any(|refusal| refusal.detail.contains("identityFields")));
+    assert!(refusals
+        .iter()
+        .any(|refusal| refusal.detail.contains("unexpected")));
 }
 
 /// The JSON acceptance vector records the two diagnostics that the producer
