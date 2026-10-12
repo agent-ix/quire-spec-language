@@ -502,6 +502,77 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         recipe.run(&["ci-internal"], Some("caller target"), &overrides),
         expected("caller target/ci-default-features", DEFAULT_COMMANDS)
             + &expected("caller target/ci-all-features", ALL_COMMANDS)
+            + &expected(
+                "caller target/test-deep-format",
+                &[
+                    &[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--list",
+                    ],
+                    &[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--test-threads=1",
+                    ],
+                    &[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        "formatter_identity::replay_large_source_generator_keeps_format_identity",
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--list",
+                    ],
+                    &[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        "formatter_identity::replay_large_source_generator_keeps_format_identity",
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--test-threads=1",
+                    ],
+                    &[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--list",
+                    ],
+                    &[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--test-threads=1",
+                    ],
+                ],
+            )
     );
 }
 
