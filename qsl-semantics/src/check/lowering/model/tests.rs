@@ -1405,3 +1405,37 @@ fn state_machine_declaration_keys_as_a_state_machine_model_node() {
     assert_eq!(node.node_tag(), NodeTag::Model);
     assert_eq!(node.semantic_form(), "state_machine");
 }
+
+/// FR-056 "K2 canonical native String, UUID and Timestamp payloads": the
+/// three natives a record or event field may carry are distinct scalar type
+/// nodes, so a composite holding one keys instead of refusing the whole
+/// check as `ill_typed`/`type-mismatch`.
+#[trace("FR-056", "FR-092-AC-12")]
+#[test]
+fn native_string_uuid_and_timestamp_key_as_distinct_scalar_nodes() {
+    let location = generated_location();
+    let ((string, uuid, timestamp), graph) = lower(&[], Default::default(), |lowering| {
+        (
+            lowering.type_node(&ValueType::String, &location),
+            lowering.type_node(&ValueType::Uuid, &location),
+            lowering.type_node(&ValueType::Timestamp, &location),
+        )
+    });
+    let forms: Vec<_> = [string, uuid, timestamp]
+        .into_iter()
+        .map(|result| {
+            let node = graph
+                .node(result.expect("a native scalar keys"))
+                .expect("the node is in the graph");
+            (node.node_tag(), node.semantic_form())
+        })
+        .collect();
+    assert_eq!(
+        forms,
+        [
+            (NodeTag::ScalarType, "string"),
+            (NodeTag::ScalarType, "uuid"),
+            (NodeTag::ScalarType, "timestamp"),
+        ]
+    );
+}
