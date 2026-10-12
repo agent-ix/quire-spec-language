@@ -289,6 +289,59 @@ fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     read_domain_package(selection, &admitted)
 }
 
+fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
+    let bytes = serde_json::to_vec(document).expect("fixture serializes");
+    let offered = package_input([bytes.as_slice()]);
+    let digest = *offered.keys().next().expect("one offered package");
+    let selection = DomainPackageRef {
+        identity: PACKAGE.to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let (selection, admitted) = admit(
+        &selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &offered,
+        IntakeLimits::default(),
+    )
+    .expect("S1 admits the authored package bytes");
+    read_domain_package(selection, &admitted).expect_err("mutation must refuse")
+}
+
+fn assert_malformed_refusal(document: &Value, detail: &str) {
+    let refusals = read_refusals(document);
+    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert!(matches!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            | ModelRefusalCause::MalformedDeclaration
+    ));
+    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+}
+
+fn assert_unsupported_refusal(document: &Value, detail: &str) {
+    let refusals = read_refusals(document);
+    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
+    assert!(matches!(
+        refusals[0].cause,
+        ModelRefusalCause::UnsupportedDeclarationForm { .. }
+    ));
+    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+}
+
+fn assert_missing_refusal(document: &Value, detail: &str) {
+    let refusals = read_refusals(document);
+    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::MissingDeclaration);
+    assert!(matches!(
+        refusals[0].cause,
+        ModelRefusalCause::UnknownMember { .. }
+    ));
+    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+}
+
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
     assert_eq!(
         meter
@@ -525,4 +578,120 @@ fn record_value_subtype_preserves_effective_fields_support() {
         ]
     );
     assert!(view.object_universe_of(&taxed_key).is_none());
+}
+
+/// M08: persistence interfaces bind their object targets and operation
+/// signatures, while storage contracts and clauses remain outside this
+/// structural binder.
+#[test]
+fn tc235_m08_persistence_interface_binder() {
+    let package = read_k2(&k2()).expect("M08 positive K2 admission");
+    let view = record_charges(&package, 21);
+    assert!(view
+        .type_identities()
+        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("Order")
+        }));
+    assert!(!view
+        .type_identities()
+        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderStore")
+        }));
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["fields"] =
+        json!([field("OrderStore", "cache", &id("Order"))]);
+    assert_malformed_refusal(&document, "OrderStore/cache");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["operations"] = json!([]);
+    assert_malformed_refusal(&document, "OrderStore");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["persists"] = json!([]);
+    assert_malformed_refusal(&document, "persists");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Money")]);
+    assert_malformed_refusal(&document, "persists[0]");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Invoice")]);
+    assert_missing_refusal(&document, "Invoice");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["operations"][1]["pre"] =
+        json!([{"language": "ix:native", "clauseId": "Requires"}]);
+    assert_unsupported_refusal(&document, "OrderStore/save");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderStore")["clauses"] =
+        json!([clause("OrderStore", "Healthy", "true")]);
+    assert_unsupported_refusal(&document, "OrderStore/Healthy");
+}
+
+/// M09: namespaces preserve their ordered payload, never become effective
+/// types, and reject field/operation members, namespace members, duplicate
+/// membership and Quire clauses with the typed intake result.
+#[test]
+fn tc235_m09_namespace_binder() {
+    let mut document = k2();
+    let package = read_k2(&document).expect("M09 K2 baseline admission");
+    let namespace = package
+        .original(&qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderManagement"),
+        })
+        .expect("OrderManagement original");
+    assert_eq!(namespace.meaning.as_deref(), Some(meaning::NAMESPACE));
+    let view = record_charges(&package, 21);
+    assert!(!view
+        .type_identities()
+        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderManagement")
+        }));
+
+    type_named_mut(&mut document, "OrderManagement")["fields"] =
+        json!([field("OrderManagement", "name", "ix://quire/native/String")]);
+    assert_malformed_refusal(&document, "OrderManagement/name");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderManagement")["operations"] =
+        json!([operation("OrderManagement", "close")]);
+    assert_malformed_refusal(&document, "OrderManagement/close");
+
+    let mut document = k2();
+    document["types"].as_array_mut().unwrap().push(declaration(
+        "Billing",
+        "context",
+        json!({
+            "members": [id("Order")],
+            "vocabulary": [{"term": "Bill", "doc": "Bill an order", "origin": origin("Billing")}],
+        }),
+    ));
+    assert_malformed_refusal(&document, "Billing");
+
+    let mut document = k2();
+    document["types"].as_array_mut().unwrap().push(declaration(
+        "Outer",
+        "context",
+        json!({
+            "members": [id("OrderManagement")],
+            "vocabulary": [{"term": "Scope", "doc": "An outer scope", "origin": origin("Outer")}],
+        }),
+    ));
+    assert_malformed_refusal(&document, "Outer");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderManagement")["members"] =
+        json!([id("Order"), id("Money"), id("OrderPlaced"), id("Ghost")]);
+    assert_missing_refusal(&document, "Ghost");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "OrderManagement")["clauses"] =
+        json!([clause("OrderManagement", "Scoped", "true")]);
+    assert_unsupported_refusal(&document, "OrderManagement/Scoped");
 }
