@@ -576,7 +576,7 @@ fn assert_malformed_refusal(document: &Value, detail: &str) {
     assert!(refusals[0].detail.contains(detail), "{refusals:?}");
 }
 
-fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
+fn assert_normalized_malformed_refusal(document: &Value, declaration: &str) {
     let refusals = normalized_refusals(document, 21);
     assert_eq!(
         refusals.len(),
@@ -584,12 +584,15 @@ fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
         "one normalized M07 refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::IntakeMalformedDeclaration { .. }
-            | ModelRefusalCause::MalformedDeclaration
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+    match &refusals[0].cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
+            assert!(node.contains(declaration), "{refusals:?}");
+        }
+        ModelRefusalCause::MalformedDeclaration => {
+            assert!(refusals[0].detail.contains(declaration), "{refusals:?}");
+        }
+        other => panic!("expected a malformed declaration, got {other:?}"),
+    }
 }
 
 fn assert_unsupported_refusal(document: &Value, detail: &str) {

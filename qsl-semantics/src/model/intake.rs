@@ -2019,12 +2019,7 @@ fn malformed_declaration(
 fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
     let (artifact, span) = node_span(value);
     let node = node_identity_label(value, at);
-    malformed_declaration(
-        node.clone(),
-        artifact,
-        span,
-        format!("{at} on {node}: {reason}"),
-    )
+    malformed_declaration(node.clone(), artifact, span, format!("{at}: {reason}"))
 }
 
 pub(super) fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefusal {
@@ -3567,7 +3562,7 @@ fn read_type_node(
             )?));
         }
         other if meaning::ALL.contains(&other) => {
-            // A real FR-208 meaning (e.g. EVENT_TYPE, STATE_MACHINE) with no
+            // A real FR-208 meaning (e.g. VARIANT_TYPE) with no
             // QSL record shape yet, or a real meaning whose shape this
             // reader claims only part of (VALUE_TYPE's record-shaped form,
             // caught above before this match) -- refused as a
@@ -4885,28 +4880,28 @@ mod tests {
         .to_string();
         let refusals =
             read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
+        // `Located::owner` (PR #200 review R2-2): the cause names the nearest
+        // declaration owning `/ir/types/0/abstract`, not the raw pointer
+        // (FR-056-AC-2: every reader diagnostic keeps its IR node). The
+        // validator's code and input path (FR-056, "Every diagnostic retains
+        // the actual input path") have no typed field, so they are checked in
+        // the detail.
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
         assert_eq!(
-            refusals,
-            vec![ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    // `Located::owner` (PR #200 review R2-2): the nearest
-                    // declaration that owns `/ir/types/0/abstract`, not the
-                    // raw pointer itself -- FR-056-AC-2 retains "every
-                    // reader diagnostic" with "its IR node", and an actual
-                    // declaration identity is a real IR node in a way a JSON
-                    // pointer into the wrapped bundle is not.
-                    node: "ix://acme/orders/Order".to_owned(),
-                    artifact: None,
-                    span: None,
-                },
-                detail: "agent-ix-semantic-ir refused this document at \
-                          /ir/types/0/abstract (agent-ix.semantic-ir.SCHEMA_VIOLATION): \
-                          abstract is a boolean"
-                    .to_owned(),
-            }],
-            "the refusal names the validator's own diagnostic (owning declaration, code, \
-             message), not this reader's own hand-rolled check"
+            refusals[0].cause,
+            ModelRefusalCause::IntakeMalformedDeclaration {
+                node: "ix://acme/orders/Order".to_owned(),
+                artifact: None,
+                span: None,
+            }
+        );
+        assert!(
+            refusals[0].detail.contains("/ir/types/0/abstract")
+                && refusals[0]
+                    .detail
+                    .contains("agent-ix.semantic-ir.SCHEMA_VIOLATION"),
+            "{refusals:?}"
         );
     }
 
@@ -5171,18 +5166,8 @@ mod tests {
         );
     }
 
-    /// The native vocabulary includes the types selected by QSL's grammar and
-    /// the `Timestamp` required by FR-056-AC-17/19. FCD also emits `UUID`,
-    /// `String`, `Duration`, `Bytes` and `JsonObject`; QSL does not infer
-    /// additional native types from FCD's wider reader contract.
-    /// `ix://quire/native/UUID` -- the typeRef FCD emits for fields such as
-    /// `Pump.id`, `Sys.id` and `Tank.id` -- remains outside this vocabulary
-    /// and refuses here, even though FCD's validator recognizes it. PLAT-836
-    /// narrows FCD's own emission so `UUID` stops being a native
-    /// reference there at all -- a field like `Pump.id` becomes a reference
-    /// to a model-declared type instead, at which point this exact refusal
-    /// stops occurring, but as a consequence of what the *document* emits,
-    /// not because this test or this reader changed.
+    /// `ix://quire/native/UUID`, the typeRef FCD emits for fields such as
+    /// `Pump.id`, resolves to QSL's native `Uuid` value type.
     ///
     /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
     /// `resolves_a_known_native_type_ref`'s own doc comment (no local
@@ -5191,25 +5176,12 @@ mod tests {
     /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
     /// subject.
     #[test]
-    fn refuses_uuid_as_malformed_declaration() {
+    fn resolves_uuid_as_a_native_value_type() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let refusal = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
-            .expect_err("QSL's native value-type vocabulary does not include UUID");
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: "ix://agent-ix/architecture/Pump/id".to_owned(),
-                    artifact: None,
-                    span: None,
-                },
-                detail: "$.types[0].fields[0]: typeRef: \"ix://quire/native/UUID\" \
-                          names no native value type QSL declares"
-                    .to_owned(),
-            }
-        );
+        let resolved = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
+            .expect("UUID is a native value type");
+        assert_eq!(resolved, ValueTypeRef::Native(NativeValueType::Uuid));
     }
 
     /// H3: `Rational`/`Decimal`/`Text` are parameterized in shared-grammar.md,
@@ -5688,7 +5660,7 @@ mod tests {
         );
     }
 
-    /// A real FR-208 meaning (`EVENT_TYPE`) FCD's own schema accepts
+    /// A real FR-208 meaning (`VARIANT_TYPE`) FCD's own schema accepts
     /// generically -- any string in `kind`'s resolved `meaning` is
     /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
     /// yet, refuses as a known-but-unsupported declaration form rather than
@@ -5701,7 +5673,7 @@ mod tests {
             serde_json::json!([wire_construct(
                 "acme/orders",
                 "happened",
-                meaning::EVENT_TYPE,
+                meaning::VARIANT_TYPE,
                 serde_json::json!({}),
             )]),
             serde_json::json!([wire_type(
@@ -5722,11 +5694,11 @@ mod tests {
                 code: Code::UnsupportedConstruct,
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
                     node: "ix://acme/orders/OrderPlaced".to_owned(),
-                    what: meaning::EVENT_TYPE.to_owned(),
+                    what: meaning::VARIANT_TYPE.to_owned(),
                 },
                 detail: format!(
                     "$.types[0]: construct meaning/capability {:?} has no reader yet",
-                    meaning::EVENT_TYPE
+                    meaning::VARIANT_TYPE
                 ),
             }]
         );
@@ -5770,7 +5742,7 @@ mod tests {
                 ("ix://acme/orders/Money", meaning::RECORD_VALUE_TYPE),
                 ("ix://acme/orders/Base", meaning::RECORD_VALUE_TYPE),
                 ("ix://acme/orders/Order", meaning::OBJECT_TYPE),
-                ("ix://acme/orders/Placed", meaning::EVENT_TYPE),
+                ("ix://acme/orders/Placed", meaning::PERSISTENCE_INTERFACE),
             ]),
             &mut records,
             &mut Vec::new(),
@@ -5846,7 +5818,7 @@ mod tests {
             (
                 serde_json::json!({"relationships": [{"identity": "ix://acme/orders/relationship/Money-owner-Owner"}]}),
                 Code::InvalidModelBinding,
-                "ix://acme/orders/Money",
+                "ix://acme/orders/relationship/Money-owner-Owner",
                 "$.types[0].relationships[0]:",
             ),
         ] {
@@ -6464,10 +6436,21 @@ mod tests {
             .expect_err("integer operands require exact strings");
             assert_eq!(refusals.len(), 1);
             assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusals[0].cause,
+                ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Wide".to_owned(),
+                    artifact: None,
+                    span: None,
+                }
+            );
+            // The validator's code and input path have no typed field.
             assert!(refusals[0].detail.contains(&format!(
-                "/ir/types/0/constraints/{position}/operands/value \
-                 (agent-ix.semantic-ir.INVALID_OPERAND)"
+                "/ir/types/0/constraints/{position}/operands/value"
             )));
+            assert!(refusals[0]
+                .detail
+                .contains("agent-ix.semantic-ir.INVALID_OPERAND"));
         }
     }
 
@@ -6510,7 +6493,7 @@ mod tests {
                     span: None,
                 },
                 detail: "$.types[0]: kind: resolves to \"acme.custom.meaning/v1\", outside \
-                          FR-208"
+                          FR-208 at constructs[].meaning"
                     .to_owned(),
             }]
         );
