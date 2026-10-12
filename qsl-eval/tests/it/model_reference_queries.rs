@@ -904,6 +904,7 @@ fn tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate() {
     };
     let record = cause.undefined_record();
     assert_eq!(record.reason, UndefinedReason::IncompleteClosure);
+    assert_eq!(record.fields.get("closure"), Some(&"subtype".to_owned()));
     assert_eq!(
         record.fields.get("queried_type"),
         Some(&"model.A".to_owned())
