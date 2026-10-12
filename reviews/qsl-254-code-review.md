@@ -1,44 +1,65 @@
 ---
-id: SR-7522
-title: "QSL-254 code and Rust review of PR #676"
+id: SR-7812
+title: "Code review of quire-spec-language PR #736 (QSL-254)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@e5045663914af15985f19a51ab6a859f90606431; PR #676 diff from f6adf1fbccca4b2a8db00ba142300537228bebd7: all 58 changed files"
+scope: "agent-ix/quire-spec-language@155a187ab05b78fa1aab9475443453a203ffd92b; PR #736 diff origin/main...HEAD; src/checking/types.rs, qsl-semantics/src/check/field_refinement.rs, qsl-semantics/tests/it/model_conformance.rs, tests/it/composed_domain_models.rs; FR-016-AC-10, FR-082-AC-8"
 review_set: subset
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-056
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-082
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-093
-    type: reviews
+  - { target: "ix://agent-ix/quire-spec-language/FR-016", type: reviews }
+  - { target: "ix://agent-ix/quire-spec-language/FR-082", type: reviews }
 ---
-# QSL-254 code and Rust review of PR #676
 
 ## Summary
 
-Ticket: QSL-254. I reviewed the exact frozen head `e5045663914af15985f19a51ab6a859f90606431` against base `f6adf1fbccca4b2a8db00ba142300537228bebd7`, reading the complete 58-file diff, with the Rust and test changes included. `git diff --check` is clean. The presence/refinement edits use the declared presence bit independently of multiplicity; the intake changes preserve original source meanings and member origins on the compiler intake path; the parameter occurrence implementation records and emits each declaration span separately from its body. I found no code or Rust correctness defect in the reviewed diff. I did not run a build or test.
+Reviewed the exact Rust diff for PR #736, including the `rust-review` lane, test bindings, and the two acceptance criteria changed by the work. The native type mapping and the new direct assertions are sound, but field-refinement still accepts a presence fact as evidence for a required collection's non-empty multiplicity narrowing.
 
 ## Verdict
 
-PASS for the code and Rust review method. Ticket completion is assessed separately in the four-ticket matrix: QSL-59 remains incomplete, and the change-scoped gap analysis records a provenance path outside the primary compiler intake seam.
-
-## Findings
-
-| ID | Severity | Summary | Refs |
-| --- | --- | --- | --- |
-| FND-001 | low | No findings (placeholder) | - |
+**FAIL** — a presence postcondition can discharge a different obligation: non-empty collection multiplicity.
 
 ## Scope
 
-- `FR-056-AC-1` (examined): one original declaration per IR node retains bound meaning, export records, artifact id and span; primary intake and tests inspected.
-- `FR-056-AC-5` (examined): relationship name/span and missing-target refusal; intake and tests inspected.
-- `FR-056-AC-10` (examined): declared presence, not multiplicity lower bound, determines optionality; assembly and tests inspected.
-- `FR-082-AC-8` (examined): optional-to-required refinement requires a presence fact; unchanged-presence controls do not.
-- `FR-093-AC-9` (examined): parameter expression occurrence covers the declaration span, with separate occurrences for reads and generated scalar nodes.
-- Rust review: ownership, error paths, public API surface, panic/unsafe use, fixture construction and test-oracle strength across the complete Rust diff.
+- FR-016-AC-10 (examined): A domain-package field declared `required` with multiplicity `[0, 1]` types as a sequence of at most one element, and `present(x.f)` refuses `ill_typed`; the field declared `optional` with multiplicity `[1, 1]` types as an option of its leaf, and `x.f` unwrapped under a `present` guard checks; the field declared `optional` with multiplicity `[0, 1]` types as an option of a sequence of at most one element.
+- FR-082-AC-8 (examined): Given a field `f` declared `optional` with multiplicity `[1, 1]`, redefined by a field declared `required` with multiplicity `[1, 1]` and written by an exposed operation whose postcondition establishes no presence fact, the checker refuses `unproved-refinement` with obligation `field-presence`; with `present(self.f)` established it admits the redefinition.
 
-## Review methods
+## Findings
 
-- Static code review and Rust review on the exact SHA; no source changes and no build/test execution by this reviewer.
-- The PR's recorded CI was not used as a substitute for the requested read-only review and no runtime conclusion is made here.
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-001 | high | A `Presence` postcondition still discharges a lower-bound increase on a required single-valued collection, so `[0,1]` → `[1,1]` can be admitted without evidence that the collection contains an element. | qsl-semantics/src/check/field_refinement.rs:293-303 | implementation-bug-despite-evidence |
+
+## Coverage
+
+- Rust lane: reviewed ownership, error/refusal behavior, integer conversion, visibility/docs, and test oracles; no build or test command was run.
+- Test-oracle check: TC-895 directly asserts required `[0,1]` maps to `Sequence(maximum: 1)`, optional `[1,1]` maps to `Option`, and optional `[0,1]` maps to `Option<Sequence>`. TC-896 exercises optional-to-required presence narrowing and equal-presence controls. Neither exercises required `[0,1]` to required `[1,1]` with a `Presence` postcondition, which exposes the finding.
+- `git diff --check`: clean.
+
+## Disposition summary
+
+Round 1 reviewed at `48f2cb3ae969ccbe7223dbe1403ad7d2e13ee284` against base `f8a641ed53e8d15ca40d04701133024369486216`. FND-001 is fixed by `6005c96b96d4a84ca12b23f322e726a4d2161df2`; the regression oracle rejects the required `[0,1]` to `[1,1]` case with a `Presence` postcondition using `no-proof-form`. No new code-review finding was found in the current diff.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6005c96b96d4a84ca12b23f322e726a4d2161df2 |
+
+The new test constructs both fields as `required`, raises the lower bound from 0 to 1, adds a `Presence` postcondition, and asserts `UnprovedRefinement` with `no-proof-form`. The current branch separates the presence check from the lower-multiplicity refusal, so the old false admission is prevented.
+
+Fixed implementation excerpt (`after_excerpt`, `qsl-semantics/src/check/field_refinement.rs`):
+
+```rust
+    if raises_lower {
+        return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "refinement",
+            code: Code::UndefinedExpression,
+            cause: ModelRefusalCause::UnprovedRefinement,
+            detail: format!(
+                "{} raises the lower multiplicity bound of {}, which no FR-146 fact form proves (obligation no-proof-form)",
+                redefining_key.node, redefined_key.node
+            ),
+        }]));
+    }
+```
+

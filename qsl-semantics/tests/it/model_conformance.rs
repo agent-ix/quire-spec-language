@@ -66,12 +66,32 @@ fn field_member_redefining(
     redefines: Option<&str>,
     subsets: Vec<&str>,
 ) -> DomainPackageRecord {
+    field_member_with_presence(
+        identity,
+        owner,
+        value_type,
+        m,
+        quire_exact::Presence::Required,
+        redefines,
+        subsets,
+    )
+}
+
+fn field_member_with_presence(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    m: Multiplicity,
+    presence: quire_exact::Presence,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: m,
-        presence: quire_exact::Presence::Required,
+        presence,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -698,13 +718,21 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
 /// `[0,9]` and `model.Small` `[0,5]`; field `model.A.x` typed `model.A`
 /// `{0,1}`; field `model.A.c` typed `model.Count` `{1,1}`; operation
 /// `model.A.set()` with no result and effect writing `[model.A.x, model.A.c]`.
-fn r08_base() -> Vec<DomainPackageRecord> {
+fn r08_base_with_presence(presence: quire_exact::Presence) -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A", vec![]),
         object_type("model.B", vec!["model.A"]),
         scalar_type("model.Count", 0, 9),
         scalar_type("model.Small", 0, 5),
-        field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+        field_member_with_presence(
+            "model.A.x",
+            "model.A",
+            "model.A",
+            mult(0, Some(1)),
+            presence,
+            None,
+            vec![],
+        ),
         field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
         operation(
             "model.A.set",
@@ -719,15 +747,20 @@ fn r08_base() -> Vec<DomainPackageRecord> {
     ]
 }
 
-#[trace("TC-221", "FR-082-AC-4")]
+fn r08_base() -> Vec<DomainPackageRecord> {
+    r08_base_with_presence(quire_exact::Presence::Required)
+}
+
+#[trace("TC-221", "TC-896", "FR-082-AC-4", "FR-082-AC-8")]
 #[test]
 fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
+    let mut records = r08_base_with_presence(quire_exact::Presence::Optional);
+    records.push(field_member_with_presence(
         "model.B.xb",
         "model.B",
         "model.A",
-        mult(1, Some(1)),
+        mult(0, Some(1)),
+        quire_exact::Presence::Required,
         Some("model.A.x"),
         vec![],
     ));
@@ -748,15 +781,16 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     }
 }
 
-#[trace("TC-221", "FR-082-AC-4")]
+#[trace("TC-221", "TC-896", "FR-082-AC-4", "FR-082-AC-8")]
 #[test]
 fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
+    let mut records = r08_base_with_presence(quire_exact::Presence::Optional);
+    records.push(field_member_with_presence(
         "model.B.xb",
         "model.B",
         "model.A",
-        mult(1, Some(1)),
+        mult(0, Some(1)),
+        quire_exact::Presence::Required,
         Some("model.A.x"),
         vec![],
     ));
@@ -784,6 +818,124 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         Ok(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
+}
+
+#[trace("TC-896", "FR-082-AC-8")]
+#[test]
+fn presence_narrowing_uses_declared_presence_independently_of_multiplicity() {
+    let check = |base_presence,
+                 redefining_presence,
+                 base_multiplicity,
+                 redefining_multiplicity,
+                 establishes_presence| {
+        let mut records = vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            field_member_with_presence(
+                "model.A.x",
+                "model.A",
+                "model.A",
+                base_multiplicity,
+                base_presence,
+                None,
+                vec![],
+            ),
+            operation(
+                "model.A.set",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            field_member_with_presence(
+                "model.B.xb",
+                "model.B",
+                "model.A",
+                redefining_multiplicity,
+                redefining_presence,
+                Some("model.A.x"),
+                vec![],
+            ),
+        ];
+        if establishes_presence {
+            records.push(operation_redefining(
+                "model.B.set",
+                "model.B",
+                vec![],
+                None,
+                vec![],
+                vec![],
+                vec![],
+                vec![PostconditionClause::Presence {
+                    field: DeclarationKey::fixture("model.B.xb"),
+                }],
+                Some("model.A.set"),
+            ));
+        }
+        check_field_refinement_obligation(
+            &ModelIndex::build(DomainPackage::new(
+                DomainPackageRef::fixture("bundle.tc896"),
+                records,
+            )),
+            &DeclarationKey::fixture("model.B.xb"),
+            &DeclarationKey::fixture("model.A.x"),
+        )
+    };
+
+    let optional = quire_exact::Presence::Optional;
+    let required = quire_exact::Presence::Required;
+    let singleton = mult(1, Some(1));
+    let optional_singleton = match check(optional, required, singleton, singleton, false) {
+        Ok(ConformanceOutcome::Refused(failures)) => failures,
+        other => panic!("expected Refused(field-presence), got {other:?}"),
+    };
+    assert_eq!(optional_singleton.len(), 1);
+    assert_eq!(
+        optional_singleton[0].cause,
+        ModelRefusalCause::UnprovedRefinement
+    );
+    assert!(optional_singleton[0].detail.contains("field-presence"));
+
+    assert!(matches!(
+        check(optional, required, mult(0, Some(1)), mult(0, Some(1)), false),
+        Ok(ConformanceOutcome::Refused(failures))
+            if failures.len() == 1 && failures[0].detail.contains("field-presence")
+    ));
+    assert!(matches!(
+        check(optional, required, singleton, singleton, true),
+        Ok(ConformanceOutcome::Compatible)
+    ));
+    assert!(matches!(
+        check(
+            required,
+            required,
+            mult(0, Some(1)),
+            mult(0, Some(1)),
+            false
+        ),
+        Ok(ConformanceOutcome::Compatible)
+    ));
+    assert!(matches!(
+        check(optional, optional, singleton, singleton, false),
+        Ok(ConformanceOutcome::Compatible)
+    ));
+
+    let presence_does_not_prove_collection_nonempty =
+        match check(required, required, mult(0, Some(1)), singleton, true) {
+            Ok(ConformanceOutcome::Refused(failures)) => failures,
+            other => panic!("expected Refused(no-proof-form), got {other:?}"),
+        };
+    assert_eq!(presence_does_not_prove_collection_nonempty.len(), 1);
+    assert_eq!(
+        presence_does_not_prove_collection_nonempty[0].cause,
+        ModelRefusalCause::UnprovedRefinement
+    );
+    assert!(presence_does_not_prove_collection_nonempty[0]
+        .detail
+        .contains("no-proof-form"));
 }
 
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
@@ -1571,7 +1723,7 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
 /// `model.B.xb` verbatim (a full-key match, so `names_field` cannot be what
 /// excludes it -- only the writer search itself can). `test/orders`'s
 /// actual writer, `model.A.set`, states no postcondition at all, so the
-/// real answer stays `Refused(field-presence)`.
+/// real answer stays `Refused(no-proof-form)` for the multiplicity narrowing.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_redefined_field_node()
@@ -1643,13 +1795,13 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1658,7 +1810,7 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
 /// redefining field's own node, in a different package -- rather than the
 /// redefined field's node. The writer search must still exclude it by full
 /// key, and `test/orders`'s real writer, `model.A.set`, still states no
-/// postcondition, so the real answer stays `Refused(field-presence)`.
+/// postcondition, so the real answer stays `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_redefining_field_node()
@@ -1730,13 +1882,13 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1750,7 +1902,7 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
 /// postcondition clause names `test/orders`'s actual `model.B.xb` verbatim,
 /// so only the target comparison, not `names_field`, can exclude it.
 /// `test/orders`'s real writer, `model.A.set`, has no genuine redefiner in
-/// this fixture, so the obligation must stay `Refused(field-presence)`.
+/// this fixture, so the obligation must stay `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_writers_node() {
@@ -1814,13 +1966,13 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1829,7 +1981,7 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
 /// the real writer (`test/orders:model.A.set`), but its owner names
 /// `other/pkg`'s `model.B` -- the redefining field's owner's own node,
 /// wrong package. The owner comparison must still exclude it by full key,
-/// so the obligation stays `Refused(field-presence)`.
+/// so the obligation stays `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_owners_node() {
@@ -1893,13 +2045,13 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1912,7 +2064,7 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
 /// different package's field that shares the redefining field's own node.
 /// That clause must not be read as establishing anything about
 /// `test/orders`'s `model.B.xb`, so the obligation stays undischarged and
-/// the real answer is `Refused(field-presence)`.
+/// the real answer is `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_the_redefining_field_node(
@@ -1971,13 +2123,13 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
@@ -1986,7 +2138,7 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
 /// -- a different package's field that shares the redefined field's own
 /// node, rather than the redefining field's. That clause must still be
 /// excluded by full key, so the obligation stays undischarged and the real
-/// answer is `Refused(field-presence)`.
+/// answer is `Refused(no-proof-form)`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_the_redefined_field_node(
@@ -2045,13 +2197,13 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     axis: "refinement",
                     code: Code::UndefinedExpression,
                     cause: ModelRefusalCause::UnprovedRefinement,
-                    detail: "model.B.xb narrows the multiplicity of model.A.x with no \
-                              establishing presence fact (obligation field-presence)"
+                    detail: "model.B.xb raises the lower multiplicity bound of model.A.x, \
+                              which no FR-146 fact form proves (obligation no-proof-form)"
                         .to_owned(),
                 }]
             );
         }
-        other => panic!("expected Refused(field-presence), got {other:?}"),
+        other => panic!("expected Refused(no-proof-form), got {other:?}"),
     }
 }
 
