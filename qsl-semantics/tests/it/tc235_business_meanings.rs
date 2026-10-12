@@ -691,6 +691,7 @@ fn tc235_m09_namespace_binder() {
     type_named_mut(&mut document, "OrderManagement")["clauses"] =
         json!([clause("OrderManagement", "Scoped", "true")]);
     assert_unsupported_refusal(&document, "OrderManagement/Scoped");
+}
 
 fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRefusal> {
     let package = read_k2(document).expect("the mutated K2 document is reader-valid");
