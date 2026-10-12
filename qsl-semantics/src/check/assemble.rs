@@ -789,6 +789,11 @@ fn model_value_type(
             NativeValueType::Timestamp => ValueType::Timestamp,
             NativeValueType::Float32 => return Err(Unmapped::Float(IeeeWidth::Binary32)),
             NativeValueType::Float64 => return Err(Unmapped::Float(IeeeWidth::Binary64)),
+            // FR-056 admits these native names at the domain-package boundary,
+            // but the current checked-model value algebra has no corresponding
+            // element types. Preserve them in intake; do not coerce either to
+            // text or an integer during assembly.
+            NativeValueType::Uuid | NativeValueType::String => return Err(Unmapped::Unsupported),
             // Intake refuses these: their domain parameters have no Semantic
             // IR spelling, so no unparameterized kernel type stands for them.
             NativeValueType::Rational | NativeValueType::Decimal | NativeValueType::Text => {

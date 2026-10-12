@@ -1092,6 +1092,72 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
     Ok(())
 }
 
+/// FR-208 record-value constraints that are semantic binder decisions rather
+/// than reader-shape errors. `build` calls this only after admitting every
+/// `normalize.record` charge, so a refusal retains the meter for the exact
+/// records already processed.
+fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut record_types: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::RecordValueType(record) => Some(record),
+            _ => None,
+        })
+        .collect();
+    record_types.sort_by(|left, right| left.key.cmp(&right.key));
+
+    let mut refusals = Vec::new();
+    for record_type in record_types {
+        if !record_type.identity_fields.is_empty() {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: record_type.key.node.clone(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: format!(
+                    "{}: TypeDefinition.identityFields: a record value type has no identity field",
+                    record_type.key.node
+                ),
+            });
+            continue;
+        }
+
+        let mut operations: Vec<_> = domain_package
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation)
+                    if operation.owner == record_type.key =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .collect();
+        operations.sort_by(|left, right| left.key.cmp(&right.key));
+        if let Some(operation) = operations.first() {
+            refusals.push(ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: operation.key.node.clone(),
+                    what: format!(
+                        "{}:operations",
+                        crate::model::intake::meaning::RECORD_VALUE_TYPE
+                    ),
+                },
+                detail: format!(
+                    "{}: TypeDefinition.operations[0]: a record value type declares no operations",
+                    operation.key.node
+                ),
+            });
+        }
+    }
+    refusals
+}
+
 /// Every FR-154 per-node check for one already-key-validated node, in
 /// FR-154's own table order, the object id check first
 /// (`model-complete.md`:81). Returns every failing check for this node, in
@@ -1201,8 +1267,14 @@ fn check_node<'a>(
                 if !index.is_record_value_type(general) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownGeneral { supertype: record.key.clone(), general: general.clone() },
-                        detail: format!("record value type {} names no record ancestor {}", record.key.node, general.node),
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: record.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "record value type {} names no record ancestor {}",
+                            record.key.node, general.node
+                        ),
                     });
                 }
             }
@@ -1211,20 +1283,44 @@ fn check_node<'a>(
             if !index.is_record_value_type(&clause.owner) && !index.is_namespace(&clause.owner) {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner { member: clause.key.clone(), owner: clause.owner.clone() },
-                    detail: format!("clause {} names no admitted business owner {}", clause.key.node, clause.owner.node),
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: clause.key.clone(),
+                        owner: clause.owner.clone(),
+                    },
+                    detail: format!(
+                        "clause {} names no admitted business owner {}",
+                        clause.key.node, clause.owner.node
+                    ),
                 });
             }
         }
         DomainPackageRecord::Namespace(namespace) => {
             for member in &namespace.members {
                 if index.is_namespace(member) {
-                    refusals.push(ModelRefusal { code: Code::InvalidModelBinding, cause: ModelRefusalCause::MalformedDeclaration,
-                        detail: format!("namespace {} contains namespace {}", namespace.key.node, member.node) });
-                } else if !domain_package.records.iter().any(|record| record.key() == member) {
-                    refusals.push(ModelRefusal { code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownMember { record: namespace.key.clone(), member: member.clone() },
-                        detail: format!("namespace {} names absent member {}", namespace.key.node, member.node) });
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::MalformedDeclaration,
+                        detail: format!(
+                            "namespace {} contains namespace {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
+                } else if !domain_package
+                    .records
+                    .iter()
+                    .any(|record| record.key() == member)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: namespace.key.clone(),
+                            member: member.clone(),
+                        },
+                        detail: format!(
+                            "namespace {} names absent member {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
                 }
             }
         }
@@ -1485,6 +1581,9 @@ fn build(
                 .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
         )?;
     }
+    if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
+        return Err(Denial::Refused(refusals));
+    }
     let index = RecordIndex::build(domain_package);
     // QSL #199: every `normalize.record` charge above is admitted before any
     // intake refusal is reported. `model-complete.md`:80: "Intake reports
@@ -1504,9 +1603,17 @@ fn build(
     let mut direct_fields = Vec::with_capacity(type_keys.len());
     for type_key in &type_keys {
         charges.fact()?;
-        let mut fields: Vec<DeclarationKey> = index.sorted_direct_fields(&domain_package.records, type_key)
-            .iter().map(|field| field.key.clone()).collect();
-        fields.extend(index.sorted_direct_clauses(&domain_package.records, type_key).iter().map(|clause| clause.key.clone()));
+        let mut fields: Vec<DeclarationKey> = index
+            .sorted_direct_fields(&domain_package.records, type_key)
+            .iter()
+            .map(|field| field.key.clone())
+            .collect();
+        fields.extend(
+            index
+                .sorted_direct_clauses(&domain_package.records, type_key)
+                .iter()
+                .map(|clause| clause.key.clone()),
+        );
         fields.sort();
         for _ in &fields {
             charges.fact()?;
