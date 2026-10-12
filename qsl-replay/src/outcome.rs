@@ -1396,12 +1396,24 @@ mod tests {
     }
 
     #[trace("TC-522", "FR-127-AC-9")]
+    #[trace("TC-770", "FR-286-AC-3")]
     #[test]
-    fn proof_step_wire_refuses_an_unowned_spelling_without_dropping_the_index() {
+    fn proof_step_wire_preserves_each_part_and_canonical_index() {
         use crate::QueryPart;
 
-        for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
-            for index in [0, 7, u64::MAX] {
+        for (part, expected_part) in [
+            (QueryPart::Unrolling, "unrolling"),
+            (QueryPart::Base, "base"),
+            (QueryPart::Step, "step"),
+        ] {
+            for (index, expected_index) in [
+                (0, "0"),
+                (7, "7"),
+                (41, "41"),
+                (9_007_199_254_740_992, "9007199254740992"),
+                (9_223_372_036_854_775_808, "9223372036854775808"),
+                (u64::MAX, "18446744073709551615"),
+            ] {
                 let at = CertificateLocus::ProofStep { part, index };
                 let item = record(
                     2,
@@ -1415,19 +1427,67 @@ mod tests {
                     item.cause.as_ref().unwrap().certificate_at,
                     Some(at.clone())
                 );
-                let document =
-                    OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), vec![item]);
-                let failure = document
+                let document = OutcomeDocument::settled(
+                    Operation::Analyze,
+                    Some(OutcomeStage::S6c),
+                    vec![
+                        record(
+                            0,
+                            TerminalValue::Proved {
+                                basis: ProofBasis::Exhaustive,
+                                certification: Certification::Trusted,
+                            },
+                        ),
+                        record(
+                            1,
+                            TerminalValue::Inconclusive(InconclusiveCause::BoundReached {
+                                depth: 9,
+                            }),
+                        ),
+                        item,
+                    ],
+                );
+                let bytes = document
                     .to_bytes()
-                    .expect_err("an unowned proof-step spelling must not produce bytes");
-                assert!(
-                    failure
-                        .to_string()
-                        .contains("no wire spelling for a proof-step certificate locus"),
-                    "{failure}"
+                    .expect("proof-step rejection document encodes");
+                assert_eq!(document.to_bytes().unwrap(), bytes);
+                let written: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(
+                    written,
+                    json!({
+                        "format": "quire-outcome/1",
+                        "operation": "analyze",
+                        "last_stage": "S6c",
+                        "category": "inconclusive",
+                        "items": [{
+                            "request_index": 0,
+                            "result": "proved",
+                            "cause": null,
+                            "basis": {"type": "exhaustive"},
+                            "certification": "trusted",
+                            "category": "success",
+                        }, {
+                            "request_index": 1,
+                            "result": "inconclusive",
+                            "cause": {"kind": "bound-reached", "depth": 9},
+                            "category": "inconclusive",
+                        }, {
+                            "request_index": 2,
+                            "result": "inconclusive",
+                            "cause": {
+                                "kind": "certificate-rejected",
+                                "rule": "proof-step-invalid",
+                                "at": {"part": expected_part, "index": expected_index},
+                            },
+                            "category": "inconclusive",
+                        }],
+                        "diagnostics": [],
+                        "artifacts": [],
+                        "result": null,
+                    })
                 );
                 assert_eq!(
-                    document.items()[0].cause.as_ref().unwrap().certificate_at,
+                    document.items()[2].cause.as_ref().unwrap().certificate_at,
                     Some(at)
                 );
             }
