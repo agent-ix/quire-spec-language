@@ -3243,9 +3243,9 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// `redefinition-target`, not `derivation-conflict` (that shape needs
 /// distinct, non-dominating owners; see
 /// `r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize`
-/// above for the field analog). Resolving an operation contest still builds
-/// no `EffectiveView` member entry (see the module docs): only the ambiguity
-/// check itself is shared with fields.
+/// above for the field analog). Operation redefinitions now populate
+/// `EffectiveView` member entries; this contested group itself refuses before
+/// producing a completed view, preserving its existing conflict semantics.
 ///
 /// Cross-checked by hand: `f(A) = 1` (`A`'s own qualify fact only), `f(B) =
 /// 2` (qualify plus its own inherit-`A` fact) — both types are otherwise
