@@ -577,6 +577,26 @@ fn all_instances_requires_declared_subtype_closure() {
         }
     }
 
+    // Closure is decided before the member walk: even when the first
+    // population.visit would be denied, the result remains typed closure
+    // incompleteness and consumes no work.
+    let mut no_work = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..SCALAR_UNLIMITED
+    });
+    match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut no_work) {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => panic!("closure incompleteness must precede charging: {other:?}"),
+    }
+    assert_eq!(no_work.consumed(LimitKind::WorkUnits), 0);
+    assert!(admitted_charge_points(&no_work).is_empty());
+
     let complete_document = PopulationDocument {
         model_identity: document.model_identity.clone(),
         members: vec![
@@ -634,16 +654,10 @@ fn all_instances_does_not_walk_unrelated_type_catalog() {
         records.push(object_type(&current, vec![previous.as_str()]));
         previous = current;
     }
-    records.push(population_record(
-        "model.pop",
-        &["model.T"],
-        Extent::Closed,
-    ));
+    records.push(population_record("model.pop", &["model.T"], Extent::Closed));
 
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("tc-227-no-catalog-walk"),
-        records,
-    );
+    let domain_package =
+        DomainPackage::new(DomainPackageRef::fixture("tc-227-no-catalog-walk"), records);
     let view = view_of(&domain_package);
     let document = PopulationDocument {
         model_identity: "test/orders".to_owned(),

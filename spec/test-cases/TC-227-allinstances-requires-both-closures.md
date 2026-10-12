@@ -27,7 +27,8 @@ The implementation binders are delivered by companion PR #763:
 `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`
 for the S6a incomplete result, and
 `qsl-semantics/tests/it/model_population.rs::all_instances_requires_declared_subtype_closure`
-for the complete-coverage/canonical-order control, and
+for the complete-coverage/canonical-order control and the zero-work
+pre-charge incompleteness assertion, and
 `qsl-semantics/tests/it/model_population.rs::all_instances_does_not_walk_unrelated_type_catalog`
 for the no-catalog-walk guard. Both names were verified on the companion PR
 branch; the source implementation remains in that code PR.
