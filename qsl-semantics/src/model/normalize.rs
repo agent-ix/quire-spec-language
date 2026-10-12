@@ -1487,10 +1487,19 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             })
                     })
                 {
-                    refusals.push(malformed(
-                        &format!("TypeDefinition.transitions[{position}].guard"),
-                        "guard must name a quire clause used by a transition",
-                    ));
+                    let path = format!("TypeDefinition.transitions[{position}].guard");
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                            node: transition.key.node.clone(),
+                            artifact: None,
+                            span: None,
+                        },
+                        detail: format!(
+                            "{}: {path}: guard must name a quire clause used by a transition",
+                            transition.key.node
+                        ),
+                    });
                 }
             }
             if let Some(previous) = transition_shapes.insert(

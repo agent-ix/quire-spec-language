@@ -153,6 +153,10 @@ fn read_step_events(
     field: &'static str,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let values = NodeCtx::new(step, step_at).array_field(field)?;
+    let step_identity = step
+        .get("identity")
+        .and_then(Value::as_str)
+        .unwrap_or(process);
     let mut result = Vec::with_capacity(values.len());
     for (position, value) in values.iter().enumerate() {
         let at = format!("{step_at}.{field}[{position}]");
@@ -172,7 +176,7 @@ fn read_step_events(
             }
             None => {
                 return Err(ModelRefusal {
-                    code: Code::DanglingReference,
+                    code: Code::MissingDeclaration,
                     cause: ModelRefusalCause::UnknownMember {
                         record: DeclarationKey {
                             package: package.to_owned(),
@@ -180,7 +184,9 @@ fn read_step_events(
                         },
                         member: key,
                     },
-                    detail: format!("{at}: names no event type of this domain package"),
+                    detail: format!(
+                        "{at} on {step_identity}: names no event type of this domain package"
+                    ),
                 })
             }
         }

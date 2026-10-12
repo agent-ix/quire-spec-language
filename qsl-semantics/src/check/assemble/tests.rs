@@ -17,9 +17,8 @@ use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    NativeValueType, OperationEffect, OperationMemberRecord, ProcessRecord, ProcessStepKind,
-    ProcessStepRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
-    StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
+    NativeValueType, OperationEffect, OperationMemberRecord, ScalarTypeRecord, ScalarValueDomain,
+    StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
@@ -75,10 +74,10 @@ fn errors(declarations: &str) -> (String, Vec<AssemblyError>) {
 
 #[test]
 fn a_state_machine_meaning_is_emitted_as_an_object_type() {
-    let machine = DeclarationKey::fixture("model.OrderLifecycle");
-    let draft = DeclarationKey::fixture("model.OrderLifecycle/Draft");
-    let placed = DeclarationKey::fixture("model.OrderLifecycle/Placed");
-    let advance = DeclarationKey::fixture("model.OrderLifecycle/advance");
+    let machine = DeclarationKey::fixture("ix://test/orders/OrderLifecycle");
+    let draft = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Draft");
+    let placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Placed");
+    let advance = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/advance");
     let package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.tc235-state-machine-assembly"),
         vec![
@@ -96,7 +95,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                     },
                 ],
                 transitions: vec![StateMachineTransitionRecord {
-                    key: DeclarationKey::fixture("model.OrderLifecycle/place_order"),
+                    key: DeclarationKey::fixture("ix://test/orders/OrderLifecycle/place_order"),
                     from: draft,
                     to: placed,
                     trigger: advance.clone(),
@@ -107,7 +106,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                 }],
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
-                key: DeclarationKey::fixture("model.OrderLifecycle/status"),
+                key: DeclarationKey::fixture("ix://test/orders/OrderLifecycle/status"),
                 owner: machine.clone(),
                 value_type: ValueTypeRef::Native(NativeValueType::Integer),
                 multiplicity: Multiplicity {
@@ -158,7 +157,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
     let identity = selected
         .view
         .type_identities()
-        .get(&DeclarationKey::fixture("model.OrderLifecycle"))
+        .get(&DeclarationKey::fixture("ix://test/orders/OrderLifecycle"))
         .expect("normalization indexed the state-machine identity");
     assert_eq!(
         operations
