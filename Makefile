@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -199,7 +199,7 @@ endif
 ci-default-features:
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo fmt --all -- --check
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked --workspace --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace -- --skip formatter_identity::all_three_deep_source_generators_keep_format_identity --skip formatter_identity::replay_large_source_generator_keeps_format_identity --skip formatter_identity::dependency_chain_and_order_variants_keep_format_identity
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-qsl-semantics --locked -p qsl-semantics
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
@@ -207,7 +207,14 @@ ci-default-features:
 
 ci-all-features:
 	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features
+	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features -- --skip formatter_identity::all_three_deep_source_generators_keep_format_identity --skip formatter_identity::replay_large_source_generator_keeps_format_identity --skip formatter_identity::dependency_chain_and_order_variants_keep_format_identity
+
+# Full-depth formatter identity checks are isolated by their exact test name
+# from root IT and remain part of the aggregate gate in this named target.
+test-deep-format:
+	CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it formatter_identity::all_three_deep_source_generators_keep_format_identity -- --exact --test-threads=1
+	CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it formatter_identity::replay_large_source_generator_keeps_format_identity -- --exact --test-threads=1
+	CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it formatter_identity::dependency_chain_and_order_variants_keep_format_identity -- --exact --test-threads=1
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
@@ -250,7 +257,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.
