@@ -9,9 +9,9 @@ use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, D
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
 use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
-    normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+    ModelRefusal, ModelRefusalCause, NormalizeOutcome, normalize_with_meter,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const PACKAGE: &str = "test/orders";
 const BUSINESS: &str = "test/business";
@@ -118,6 +118,14 @@ fn domain_document(types: Vec<Value>, mut constructs: Vec<Value>) -> Value {
                     "mappingVersions": [], "profileVersions": [], "lockDigest": digest},
         "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })
+}
+
+#[test]
+fn qsl_owned_digest_fixture_uses_sha256_jcs() {
+    assert_eq!(
+        jcs_digest(&json!({"a": 1})),
+        "sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+    );
 }
 
 fn k2() -> Value {
@@ -344,18 +352,21 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         21,
         "M01 charges normalize.record once per original declaration",
     );
-    assert!(view
-        .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
-            package: PACKAGE.to_owned(),
-            node: id("Money"),
-        }));
-    assert!(!view
-        .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
-            package: PACKAGE.to_owned(),
-            node: id("OrderManagement"),
-        }));
+    assert!(
+        view.type_identities()
+            .contains_key(&qsl_semantics::model::key::DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: id("Money"),
+            })
+    );
+    assert!(
+        !view
+            .type_identities()
+            .contains_key(&qsl_semantics::model::key::DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: id("OrderManagement"),
+            })
+    );
 }
 
 /// M03: record-value meanings reject identity and operations, while retaining
@@ -442,10 +453,12 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     assert_eq!(foreign.language, "ocl");
     assert_eq!(foreign.text, "self.amount_minor >= 0");
     let view = record_charges(&package, 22);
-    assert!(!view
-        .declarations()
-        .iter()
-        .any(|declaration| declaration.preimage.original == foreign_key));
+    assert!(
+        !view
+            .declarations()
+            .iter()
+            .any(|declaration| declaration.preimage.original == foreign_key)
+    );
 }
 
 /// M17's record-value portion is exercised on an FCD-valid record/object
