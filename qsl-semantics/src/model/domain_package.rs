@@ -62,6 +62,9 @@ pub struct ObjectTypeRecord {
 pub struct RecordValueTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
+    /// Authored identity fields, retained until the charged FR-208 binder
+    /// rejects this record meaning. A record value type has no identity field.
+    pub identity_fields: Vec<DeclarationKey>,
     /// Declared ancestors of this same business meaning.
     pub supertypes: Vec<DeclarationKey>,
 }
@@ -116,6 +119,8 @@ pub struct NamespaceRecord {
 /// (see [`Self::unsupported_parameters`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeValueType {
+    /// `UUID`.
+    Uuid,
     /// `Boolean`.
     Boolean,
     /// `Integer`.
@@ -130,6 +135,8 @@ pub enum NativeValueType {
     Float64,
     /// `Text`.
     Text,
+    /// `String`.
+    String,
     /// `Timestamp`.
     Timestamp,
 }
@@ -138,6 +145,7 @@ impl NativeValueType {
     /// The `<Name>` past `ix://quire/native/`.
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::Uuid => "UUID",
             Self::Boolean => "Boolean",
             Self::Integer => "Integer",
             Self::Rational => "Rational",
@@ -145,6 +153,7 @@ impl NativeValueType {
             Self::Float32 => "Float32",
             Self::Float64 => "Float64",
             Self::Text => "Text",
+            Self::String => "String",
             Self::Timestamp => "Timestamp",
         }
     }
@@ -163,7 +172,13 @@ impl NativeValueType {
     /// is empty for them.
     pub fn unsupported_parameters(&self) -> &'static [&'static str] {
         match self {
-            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 | Self::Timestamp => &[],
+            Self::Uuid
+            | Self::Boolean
+            | Self::Integer
+            | Self::Float32
+            | Self::Float64
+            | Self::String
+            | Self::Timestamp => &[],
             Self::Rational | Self::Decimal => &["dmin", "dmax"],
             Self::Text => &["profile"],
         }
@@ -176,6 +191,7 @@ impl std::str::FromStr for NativeValueType {
     #[qsl_attrs::string_edge]
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         match name {
+            "UUID" => Ok(Self::Uuid),
             "Boolean" => Ok(Self::Boolean),
             "Integer" => Ok(Self::Integer),
             "Rational" => Ok(Self::Rational),
@@ -183,6 +199,7 @@ impl std::str::FromStr for NativeValueType {
             "Float32" => Ok(Self::Float32),
             "Float64" => Ok(Self::Float64),
             "Text" => Ok(Self::Text),
+            "String" => Ok(Self::String),
             "Timestamp" => Ok(Self::Timestamp),
             _ => Err(()),
         }

@@ -1096,6 +1096,7 @@ fn a_field_member_owned_by_a_record_value_type_normalizes() {
         .push(DomainPackageRecord::RecordValueType(
             qsl_semantics::model::domain_package::RecordValueTypeRecord {
                 key: DeclarationKey::fixture("model.Money"),
+                identity_fields: Vec::new(),
                 supertypes: Vec::new(),
             },
         ));
@@ -1204,6 +1205,7 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
         .push(DomainPackageRecord::RecordValueType(
             qsl_semantics::model::domain_package::RecordValueTypeRecord {
                 key: DeclarationKey::fixture("model.Money"),
+                identity_fields: Vec::new(),
                 supertypes: Vec::new(),
             },
         ));

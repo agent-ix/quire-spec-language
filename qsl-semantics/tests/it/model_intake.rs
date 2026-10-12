@@ -442,6 +442,7 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     assert!(records.contains(&DomainPackageRecord::RecordValueType(
         RecordValueTypeRecord {
             key: count.clone(),
+            identity_fields: Vec::new(),
             supertypes: Vec::new()
         }
     )));
