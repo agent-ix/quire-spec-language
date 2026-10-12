@@ -8,7 +8,10 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{
+    CheckedPackageEvaluation, InvocationBinding, ObservationIdentity, QualifiedName,
+    RuntimeValuePath, ValuePathSubject,
+};
 use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::IntakeLimits;
@@ -368,7 +371,16 @@ fn lifecycle_invariant_observations(
         ),
         pre: None,
         post: None,
-        self_object: admitted.self_object.clone(),
+        self_object: if post {
+            admitted.receiver_post.as_ref()
+        } else {
+            admitted.receiver_pre.as_ref()
+        }
+        .unwrap_or(&admitted.self_object)
+        .clone(),
+        receiver_invocation: admitted.receiver_invocation.clone(),
+        receiver_pre: admitted.receiver_pre.clone(),
+        receiver_post: admitted.receiver_post.clone(),
         parameters: Vec::new(),
         result: None,
         created: Vec::new(),
@@ -944,6 +956,27 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         inconsistent.evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
+    assert_eq!(
+        inconsistent.receiver_path(),
+        Some(&RuntimeValuePath {
+            observation: ObservationIdentity {
+                authority: "test".to_owned(),
+                identity: "q1".to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+            },
+            subject: ValuePathSubject::Invocation {
+                invocation: ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "i1".to_owned(),
+                    revision_namespace: "tc235".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                binding: InvocationBinding::Receiver,
+            },
+            steps: Vec::new(),
+        })
+    );
 
     let (snapshots, invocations, invocation) = run(&[], &[(true, false)]);
     let wrong_context = lifecycle_observations(
