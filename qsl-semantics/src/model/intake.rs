@@ -1428,20 +1428,16 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
                     .to_owned()
             };
             let (artifact, span) = located_span(located);
-            Some(malformed_declaration(
-                node,
-                artifact,
-                span,
-                format!(
-                    "agent-ix-semantic-ir refused this document at {} ({}) on {node} ({}): {}",
-                    semantic_member_path(&located.pointer)
-                        .as_deref()
-                        .unwrap_or("the source member"),
-                    located.pointer,
-                    located.code,
-                    located.message
-                ),
-            ))
+            let detail = format!(
+                "agent-ix-semantic-ir refused this document at {} ({}) on {node} ({}): {}",
+                semantic_member_path(&located.pointer)
+                    .as_deref()
+                    .unwrap_or("the source member"),
+                located.pointer,
+                located.code,
+                located.message
+            );
+            Some(malformed_declaration(node, artifact, span, detail))
         })
         .collect();
     if refusals.is_empty() {
