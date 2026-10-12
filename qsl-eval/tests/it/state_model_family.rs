@@ -305,7 +305,7 @@ fn five_negative_source_units_refuse_at_s3_with_owned_raw_catalog_pairs_and_loci
         ("function F using v(r: M::A): Boolean pure { deref(r).missing }", "ill_typed", "type-mismatch", "missing"),
         ("function F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure { allInstances<M::Missing>(p) }", "missing_declaration", "missing-name", "allInstances"),
         ("function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }", "ill_typed", "type-mismatch", "r"),
-        ("invariant F using v on M::A at current { reaches(self,self,flag) }", "ill_typed", "operator-ineligible", "reaches"),
+        ("invariant F using v on M::A at current { reaches(self,self,missing) }", "missing_declaration", "missing-name", "missing"),
         ("pre F using v on M::A::ready { self.missing() }", "missing_declaration", "missing-name", "missing"),
     ] {
         let (declarations, _, source) = declarations(body, true);
@@ -365,6 +365,7 @@ fn available_source_attribute_and_reaches_have_declared_nodes_and_types() {
 }
 
 /// Successful native source assembly followed by an owned S3 refusal.
+#[trace("TC-790", "FR-300-AC-2")]
 #[test]
 fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loci() {
     for (body, authored, expected_cause, expected_code) in [
@@ -383,6 +384,14 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
             "reaches",
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
             ("ill_typed", "operator-ineligible"),
+        ),
+        (
+            // FR-300-AC-2: an edge absent from the admitted model is an
+            // unresolved declaration, not a declared but ineligible edge.
+            "invariant F using v on M::A at current { reaches(self,self,missing) }",
+            "missing",
+            CheckCause::MissingName("missing".to_owned()),
+            ("missing_declaration", "missing-name"),
         ),
     ] {
         let (declarations, _, source) = declarations(body, true);
