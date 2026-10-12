@@ -458,10 +458,24 @@ fn tc213_retained_map(
     (admitted_keys, retained_origins)
 }
 
+fn tc213_type_identities(
+    document: &Value,
+) -> BTreeMap<DeclarationKey, qsl_semantics::model::key::EffectiveId> {
+    let mut document = document.clone();
+    refresh_manifest_digest(&mut document);
+    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("TC-213 fixture normalizes: {outcome:?}");
+    };
+    view.type_identities().clone()
+}
+
 #[trace("TC-213", "FR-081-AC-1", "FR-081-AC-7")]
 #[test]
 fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls() {
     let baseline = tc213_retained_map(&tc213_fixture());
+    let baseline_ids = tc213_type_identities(&tc213_fixture());
 
     let mut reversed = tc213_fixture();
     reversed["types"].as_array_mut().unwrap().reverse();
@@ -469,6 +483,11 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
     assert_eq!(
         reordered, baseline,
         "record order cannot change correspondence"
+    );
+    assert_ne!(
+        tc213_type_identities(&reversed),
+        baseline_ids,
+        "a different package selection changes effective identities"
     );
 
     let mut selected = tc213_fixture();
@@ -483,6 +502,11 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
     assert_eq!(
         changed_selection.1[&DeclarationKey::fixture("ix://test/orders/A")]["source"]["endColumn"],
         17
+    );
+    assert_ne!(
+        tc213_type_identities(&selected),
+        baseline_ids,
+        "a digest-changing selection changes effective identities"
     );
 
     for (label, mutate) in [

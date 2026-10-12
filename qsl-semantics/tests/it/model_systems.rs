@@ -472,6 +472,28 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
             ],
         ),
         (
+            "model.Sys.pump.out",
+            vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
+            vec![
+                vec![DeclarationKey::fixture("model.Sys.pump.out")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump.out"),
+                ],
+            ],
+        ),
+        (
+            "model.rel.parts",
+            vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
+            vec![
+                vec![DeclarationKey::fixture("model.rel.parts")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.rel.parts"),
+                ],
+            ],
+        ),
+        (
             "model.Pump.alloc",
             vec![RULE_QUALIFY.identity, RULE_INHERIT.identity],
             vec![
