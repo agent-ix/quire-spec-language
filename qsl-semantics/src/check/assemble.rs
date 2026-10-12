@@ -674,7 +674,6 @@ fn model_object_types(
             }
             DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::EventType(_)
-            | DomainPackageRecord::Process(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
             | DomainPackageRecord::Component(_)
@@ -682,6 +681,7 @@ fn model_object_types(
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
             DomainPackageRecord::ObjectType(_)
             | DomainPackageRecord::StateMachine(_)
+            | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::Relationship(_)
@@ -697,6 +697,7 @@ fn model_object_types(
         let (key, supertypes): (&DeclarationKey, &[DeclarationKey]) = match record {
             DomainPackageRecord::ObjectType(object) => (&object.key, &object.supertypes[..]),
             DomainPackageRecord::StateMachine(machine) => (&machine.key, &machine.supertypes[..]),
+            DomainPackageRecord::Process(process) => (&process.key, &process.supertypes[..]),
             DomainPackageRecord::PersistenceInterface(interface) => (&interface.key, &[]),
             _ => continue,
         };

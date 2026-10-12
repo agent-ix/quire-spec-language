@@ -3407,17 +3407,12 @@ fn read_type_node(
 }
 
 /// What a domain package record names, for FR-103's frame-entry
-/// classification. No `Process` case exists: `read_type_node` already
-/// refuses a real FR-208 meaning with no reader (`unsupported_at`), so a
-/// process declaration (QSpec `model-complete.md`'s Frames row admits
-/// `creates`/`deletes` naming one) never reaches an admitted document's
-/// records at all -- the whole document refuses earlier, at the process
-/// type's own node. FR-103's own "or a process" case is therefore
-/// unreachable through this reader today, not silently mis-classified.
+/// classification.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum FrameEntryKind {
     Field,
     ObjectType,
+    Process,
     Relationship,
     /// Every other record kind: a value type, a population, a component, an
     /// endpoint, an allocation or an operation.
@@ -3428,11 +3423,11 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
     match record {
         DomainPackageRecord::FieldMember(_) => FrameEntryKind::Field,
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
+        DomainPackageRecord::Process(_) => FrameEntryKind::Process,
         DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
         DomainPackageRecord::RecordValueType(_)
         | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::StateMachine(_)
-        | DomainPackageRecord::Process(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)
@@ -3448,21 +3443,17 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
 /// One `modifies`/`creates`/`deletes` array's entries, resolved against
 /// `classification` in document order, checking the entries of `modifies`,
 /// then `creates`, then `deletes` (FR-103's own document order), and
-/// reporting the first that fails within this array. `expected` is the one
-/// [`FrameEntryKind`] this array admits (`Field` for `modifies`,
-/// `ObjectType` for `creates`/`deletes`); `unsupported`, when given, is the
+/// reporting the first that fails within this array. `expected` lists the
+/// [`FrameEntryKind`] values this array admits (`Field` for `modifies`,
+/// `ObjectType` or `Process` for `creates`/`deletes`); `unsupported`, when given, is the
 /// other kind the Frames row admits but this reader cannot grant
-/// (`Relationship` for `modifies`). `creates`/`deletes` pass `None`: the
-/// Frames row also admits a process there, but [`FrameEntryKind`] has no
-/// case for it (see its own doc), so every other kind there is
-/// `malformed-declaration`, never `unsupported-feature`, until a process
-/// can actually be classified.
+/// (`Relationship` for `modifies`).
 fn resolve_frame_array(
     package: &str,
     classification: &HashMap<&str, FrameEntryKind>,
     frame: &PendingFrame,
     entries: &[(String, String)],
-    expected: FrameEntryKind,
+    expected: &[FrameEntryKind],
     unsupported: Option<FrameEntryKind>,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let mut keys = Vec::with_capacity(entries.len());
@@ -3477,7 +3468,7 @@ fn resolve_frame_array(
                     at,
                 ))
             }
-            Some(kind) if *kind == expected => keys.push(declaration_key(package, entry)),
+            Some(kind) if expected.contains(kind) => keys.push(declaration_key(package, entry)),
             Some(kind) if Some(*kind) == unsupported => {
                 return Err(unsupported_frame_feature(
                     frame.node.clone(),
@@ -3514,7 +3505,7 @@ fn resolve_frame(
         classification,
         frame,
         &frame.modifies,
-        FrameEntryKind::Field,
+        &[FrameEntryKind::Field],
         Some(FrameEntryKind::Relationship),
     )?;
     let creates = resolve_frame_array(
@@ -3522,7 +3513,7 @@ fn resolve_frame(
         classification,
         frame,
         &frame.creates,
-        FrameEntryKind::ObjectType,
+        &[FrameEntryKind::ObjectType, FrameEntryKind::Process],
         None,
     )?;
     let deletes = resolve_frame_array(
@@ -3530,7 +3521,7 @@ fn resolve_frame(
         classification,
         frame,
         &frame.deletes,
-        FrameEntryKind::ObjectType,
+        &[FrameEntryKind::ObjectType, FrameEntryKind::Process],
         None,
     )?;
     Ok(OperationEffect {
