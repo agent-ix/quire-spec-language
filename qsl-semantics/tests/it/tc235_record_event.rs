@@ -402,7 +402,7 @@ fn tc235_m10_business_meanings_are_not_object_reference_targets() {
         m10_refusal_mismatches(
             &namespace_relationship,
             22,
-            &id("relationship/Order-scope-OrderManagement"),
+            &id("Order/scope"),
             "Relationship.target",
         )
         .into_iter()
