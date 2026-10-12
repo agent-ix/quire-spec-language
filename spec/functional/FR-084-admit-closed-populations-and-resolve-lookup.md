@@ -96,10 +96,11 @@ reports unknown closure and admits no binding when the population extent is
 not `closed` or object closure otherwise cannot be established. Therefore,
 `allInstances<T>` SHALL check only per-`T` subtype closure on an admitted
 binding. Subtype closure holds exactly when `T` conforms to at least one of
-the population's declared member types; conformance is reflexive, so a
-declared type covers itself and its conforming descendants, but a declared
-child does not cover its parent. If no declared member type covers `T`, the
-model checker SHALL return a typed incomplete result naming `T` and SHALL
+the population's declared member types. Conformance is reflexive: a declared
+member type covers itself and every type that conforms to that declared
+member type, but a declared child does not cover its parent. If no declared
+member type covers `T`, the model checker SHALL return a typed incomplete
+result naming `T` and SHALL
 return no collection, complete or partial. When surfaced through S6a evaluation, that result is
 `FamilyResult::Undefined` with reason `incomplete-closure`, naming queried
 type `T`, as specified by FR-090. When

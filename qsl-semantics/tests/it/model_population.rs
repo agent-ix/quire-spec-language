@@ -703,7 +703,7 @@ fn all_instances_declared_child_does_not_cover_parent_query() {
 /// A declared grandparent covers the queried type by conformance.
 #[trace("TC-227", "FR-084-AC-2")]
 #[test]
-fn all_instances_declared_grandparent_covers_query_descendants() {
+fn all_instances_declared_grandparent_covers_query_by_conformance() {
     let outcome = all_instances_for_declared_type_tree(
         &[
             ("model.G", &[]),

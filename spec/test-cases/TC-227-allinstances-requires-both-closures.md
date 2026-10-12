@@ -16,8 +16,8 @@ Verify that `allInstances<T>` on a successfully admitted population returns
 a typed incomplete result naming subtype closure and queried type `T` when
 `T` conforms to no declared member type, and otherwise returns the complete
 deduplicated set in canonical reference-key order independent of input order.
-Conformance is reflexive: a declared type covers itself and descendants, but
-a declared child does not cover its parent or sibling. Scope:
+Conformance is reflexive: a declared member type covers itself and every type
+that conforms to it, but a declared child does not cover its parent or sibling. Scope:
 FR-084-AC-2 and FR-090-AC-21. The separate object-closure admission case
 (open extent yields unknown-closure and no binding) is owned by TC-226 under
 FR-084-AC-1; no query runs without an admitted binding. This test targets
