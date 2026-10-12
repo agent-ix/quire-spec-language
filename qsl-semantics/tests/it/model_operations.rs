@@ -1699,9 +1699,9 @@ fn process_model_members_assemble_as_an_identified_run_type() {
                 "identityFields": [correlation],
                 "supertypes": [workflow],
                 "fields": [wire_field(
-                    &correlation,
+                    &format!("{process}/correlation_id"),
                     "correlation_id",
-                    "ix://quire/native/Boolean",
+                    "ix://quire/native/UUID",
                     "required",
                     1,
                 )],
@@ -1785,8 +1785,8 @@ fn process_model_members_assemble_as_an_identified_run_type() {
         .attributes()
         .iter()
         .find(|field| field.name() == "correlation_id")
-        .expect("the supported process identity field is projected");
-    assert_eq!(correlation.value_type(), &ValueType::Boolean);
+        .expect("the process correlation field is projected");
+    assert_eq!(correlation.value_type(), &ValueType::Uuid);
     assert_eq!(correlation.presence(), Presence::Required);
 
     let operation = declarations
