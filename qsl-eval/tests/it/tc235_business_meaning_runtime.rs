@@ -102,16 +102,26 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
         .iter_mut()
         .find(|operation| operation["identity"] == crate::tc235_k2::id("OrderLifecycle/place"))
         .expect("K2 OrderLifecycle/place operation");
-    place["pre"] = serde_json::json!([crate::tc235_k2::clause(
+    let mut requires = crate::tc235_k2::clause(
         "OrderLifecycle/place",
         "PlaceRequires",
         requires,
-    )]);
-    place["post"] = serde_json::json!([crate::tc235_k2::clause(
+    );
+    requires
+        .as_object_mut()
+        .expect("operation pre clause")
+        .remove("clauseId");
+    place["pre"] = serde_json::json!([requires]);
+    let mut ensures = crate::tc235_k2::clause(
         "OrderLifecycle/place",
         "PlaceEnsures",
         "self.placed and not self.cancelled",
-    )]);
+    );
+    ensures
+        .as_object_mut()
+        .expect("operation post clause")
+        .remove("clauseId");
+    place["post"] = serde_json::json!([ensures]);
     place["frame"]["modifies"] = serde_json::json!([crate::tc235_k2::id("OrderLifecycle/placed")]);
     let digest = crate::tc235_k2::jcs_digest(&document["types"]);
     document["source"]["digest"] = serde_json::json!(digest);
