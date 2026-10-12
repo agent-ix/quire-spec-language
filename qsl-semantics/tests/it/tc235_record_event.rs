@@ -7,6 +7,8 @@
 
 use super::*;
 
+use qsl_foundation::SourceIdentity;
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::domain_package::{
     ClauseRecord, DomainPackageRecord, FieldMemberRecord, RecordValueTypeRecord, ValueTypeRef,
 };
@@ -471,6 +473,110 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
         &id("Money/owner"),
         "TypeDefinition.relationships[0]",
     );
+}
+
+/// TC-235 M22's assembly half: the invocation parameter is a declared record
+/// type owned by the operation signature. Runtime-value-path comparison for
+/// `self.placed` versus `flags.placed` is an evaluator assertion and remains
+/// outside this source/assembly test.
+#[test]
+fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(field(
+                "OrderLifecycle",
+                "cancelled",
+                "ix://quire/native/Boolean",
+            ));
+        type_named_mut(document, "OrderLifecycle")["clauses"] = json!([clause(
+            "OrderLifecycle",
+            "Consistent",
+            "not (self.placed and self.cancelled)",
+        )]);
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "Flags",
+            "money",
+            json!({
+                "identityFields": [],
+                "fields": [field("Flags", "placed", "ix://quire/native/Boolean")],
+                "operations": [],
+            }),
+        ));
+        let place = operation("OrderLifecycle", "place");
+        let mut place = place;
+        place["params"] = json!([{
+            "identity": id("OrderLifecycle/place/flags"),
+            "typeRef": id("Flags"),
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        }]);
+        place["pre"] = json!([clause(
+            "OrderLifecycle/place",
+            "RequiresNotPlaced",
+            "not self.placed",
+        )]);
+        place["post"] = json!([clause(
+            "OrderLifecycle/place",
+            "PlacedAndNotCancelled",
+            "self.placed and not self.cancelled",
+        )]);
+        place["frame"]["modifies"] = json!([id("OrderLifecycle/placed")]);
+        type_named_mut(document, "OrderLifecycle")["operations"][0] = place;
+    });
+
+    let package = read_k2(&document).expect("M22 K2 plus Flags passes the reader");
+    let view = record_charges(&package, 25);
+
+    let bytes = serde_json::to_vec(&document).expect("M22 package serializes");
+    let packages = package_input([bytes.as_slice()]);
+    let digest = hex(packages.keys().next().expect("one offered package"));
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\\
+         profile v = \"quire.value.complete/v1\";\n\\
+         model K2 = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\\
+         function noop using v(): Boolean pure {{ true }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "tc-235", "m22-flags", "fixture:1"),
+        "unit.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("M22 assembly unit parses");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("M22 assembly unit builds");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("M22 package admits for assembly");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("M22 package assembles");
+    let lifecycle = view.type_identities()[&key("OrderLifecycle")];
+    let place = declarations
+        .operations
+        .declared_by(lifecycle)
+        .iter()
+        .find(|operation| operation.name() == "place")
+        .expect("place operation is assembled");
+    assert_eq!(place.parameters().len(), 1);
+    assert_eq!(place.parameters()[0].0, "flags");
+    assert!(matches!(
+        place.parameters()[0].1,
+        quire_exact::ValueType::Record { .. }
+    ));
+    assert_eq!(
+        clause_for(&package, "OrderLifecycle/Consistent").text,
+        "not (self.placed and self.cancelled)"
+    );
+    assert_eq!(place.effect().modifies, [key("OrderLifecycle/placed")]);
 }
 
 /// TC-235 M02 adds a record-valued field and an object invariant that compares
