@@ -619,6 +619,62 @@ fn all_instances_requires_declared_subtype_closure() {
     assert!(canonical.windows(2).all(|pair| pair[0] < pair[1]));
 }
 
+/// FR-084-AC-2 / TC-227: subtype coverage checks the query against its
+/// declared member types. A deep, unrelated catalog chain must not be walked
+/// as part of the query: with a zero ancestor-step ceiling, the reflexive
+/// query succeeds while any attempt to inspect that chain would be refused.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_does_not_walk_unrelated_type_catalog() {
+    let mut records = vec![object_type("model.T", vec![])];
+    let mut previous = "model.U0".to_owned();
+    records.push(object_type(&previous, vec![]));
+    for index in 1..=4 {
+        let current = format!("model.U{index}");
+        records.push(object_type(&current, vec![previous.as_str()]));
+        previous = current;
+    }
+    records.push(population_record(
+        "model.pop",
+        &["model.T"],
+        Extent::Closed,
+    ));
+
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("tc-227-no-catalog-walk"),
+        records,
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("t1", "model.T")],
+    };
+    let limits = PopulationAdmissionLimits {
+        ancestor_steps: 0,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(limits),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted reflexive population, got {other:?}"),
+    };
+
+    match all_instances(
+        &binding,
+        &DeclarationKey::fixture("model.T"),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    ) {
+        AllInstancesOutcome::Completed(set) => assert_eq!(set.members().len(), 1),
+        other => panic!("unrelated catalog ancestry must not affect the query: {other:?}"),
+    }
+}
+
 /// Runs one admitted `allInstances` query over a small explicitly declared
 /// type tree. The population's declared types describe coverage; the member
 /// rows independently provide a nonempty result when the queried closure is
