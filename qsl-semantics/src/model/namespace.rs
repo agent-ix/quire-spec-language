@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-208 namespace binder.
+#![allow(
+    clippy::result_large_err,
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+)]
 
 use crate::model::intake::{read_namespace, NodeCtx};
 use crate::model::normalize::ModelRefusal;
