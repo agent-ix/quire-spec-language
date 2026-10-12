@@ -7,7 +7,7 @@
 //! FR-338 and FR-314's rejection vocabulary retains the failing rule and
 //! query or proof-step locus independently of any checker implementation.
 
-use serde::{Serialize, Serializer};
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 /// FR-314's part of an SMT proof obligation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -50,8 +50,8 @@ pub enum CertificateRule {
 /// FR-338 and FR-314: where a certificate rejection occurred.
 ///
 /// Query loci serialize with QSpec FR-331's query-part spelling. A proof-step
-/// locus retains its part and index, but serialization refuses it because
-/// FR-331 defines no lossless string spelling for that payload.
+/// locus serializes as an object containing its part and its canonical decimal
+/// `u64` index string.
 #[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CertificateLocus {
@@ -73,9 +73,13 @@ impl Serialize for CertificateLocus {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             Self::Query { part } => part.serialize(serializer),
-            Self::ProofStep { .. } => Err(serde::ser::Error::custom(
-                "QSpec FR-331 defines no wire spelling for a proof-step certificate locus",
-            )),
+            Self::ProofStep { part, index } => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 2)?;
+                object.serialize_field("part", part)?;
+                let index = index.to_string();
+                object.serialize_field("index", &index)?;
+                object.end()
+            }
         }
     }
 }
