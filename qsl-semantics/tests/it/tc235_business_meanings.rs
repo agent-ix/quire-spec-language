@@ -8,9 +8,9 @@ use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, D
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
 use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
-    ModelRefusal, ModelRefusalCause, NormalizeOutcome, normalize_with_meter,
+    normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 const PACKAGE: &str = "test/orders";
 const BUSINESS: &str = "test/business";
@@ -351,21 +351,18 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         21,
         "M01 charges normalize.record once per original declaration",
     );
-    assert!(
-        view.type_identities()
-            .contains_key(&qsl_semantics::model::key::DeclarationKey {
-                package: PACKAGE.to_owned(),
-                node: id("Money"),
-            })
-    );
-    assert!(
-        !view
-            .type_identities()
-            .contains_key(&qsl_semantics::model::key::DeclarationKey {
-                package: PACKAGE.to_owned(),
-                node: id("OrderManagement"),
-            })
-    );
+    assert!(view
+        .type_identities()
+        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("Money"),
+        }));
+    assert!(!view
+        .type_identities()
+        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderManagement"),
+        }));
 }
 
 /// M03: record-value meanings reject identity and operations, while retaining
@@ -452,12 +449,10 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     assert_eq!(foreign.language, "ocl");
     assert_eq!(foreign.text, "self.amount_minor >= 0");
     let view = record_charges(&package, 22);
-    assert!(
-        !view
-            .declarations()
-            .iter()
-            .any(|declaration| declaration.preimage.original == foreign_key)
-    );
+    assert!(!view
+        .declarations()
+        .iter()
+        .any(|declaration| declaration.preimage.original == foreign_key));
 }
 
 /// Supporting control for the later full M17 vector: a record subtype keeps
@@ -518,9 +513,9 @@ fn record_value_subtype_preserves_effective_fields_support() {
     assert_eq!(
         effective_fields,
         [
+            id("Money/NonNegative"),
             id("Money/amount_minor"),
             id("Money/currency"),
-            id("Money/NonNegative"),
             id("TaxedMoney/tax_minor")
         ]
     );
