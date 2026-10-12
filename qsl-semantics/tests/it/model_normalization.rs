@@ -3058,7 +3058,7 @@ fn fixture_operation_redefinition() -> DomainPackage {
 /// relationships, not declarations, and never charge their own
 /// `normalize.record`.
 ///
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn operation_redefinition_is_charged_like_a_field_redefinition() {
     let domain_package = fixture_operation_redefinition();
@@ -3271,7 +3271,7 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// operation loop back to charge-only (dropping the `Err` branch's
 /// `record_phase4_refusal` call) turns this test's outcome back into
 /// `Completed`, confirmed locally, then restored.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-272-AC-6")]
 #[test]
 fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
     let domain_package = fixture_operation_redefinition_conflict();
@@ -3378,7 +3378,7 @@ fn fixture_operation_diamond_conflict(reversed: bool) -> DomainPackage {
 /// `DerivationConflict`'s `redefiners` list, and this test's own second
 /// half (the reversed-order run) would see `[C.op3, B.op2]` instead of the
 /// sorted `[B.op2, C.op3]` both runs assert here.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-272-AC-6")]
 #[test]
 fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
     for reversed in [false, true] {
@@ -3425,7 +3425,7 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
 /// opposed to the same-owner and diamond refusal cases exercised above and
 /// in `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`.
 /// A resolved operation contest retains the winning member and every fact.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
     let domain_package = DomainPackage::new(
