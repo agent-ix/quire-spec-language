@@ -111,13 +111,14 @@ fn fcd_fixtures_dir() -> &'static Path {
 }
 
 /// FR-260-AC-1 (TC-730 step 2), on a 512 KiB stack: every corpus domain
-/// package FR-056's tests admit still admits under the `sha256-jcs` digest
-/// it had. The digests are SHA-256 over each document's RFC 8785 text,
-/// computed outside this crate; the architecture document is the one FCD's
-/// real lift produces at the pinned exact-numeric rev (c620d6be).
+/// package FR-056's tests admit also admits when selected by the
+/// `sha256-jcs` digest of its document. The architecture document is the one
+/// FCD's real lift produces at the pinned rev. The stable, QSL-owned
+/// `domain_package_digest_matches_its_golden_vector` test separately pins
+/// the digest algorithm against QSL-owned bytes.
 #[trace("TC-730", "FR-260-AC-1")]
 #[test]
-fn every_corpus_package_admits_under_its_recorded_digest() {
+fn every_corpus_package_admits_under_its_canonical_digest() {
     on_a_small_stack(|| {
         let fixtures = fcd_fixtures_dir();
         let architecture = lift_document(
@@ -129,29 +130,20 @@ fn every_corpus_package_admits_under_its_recorded_digest() {
             ],
         )
         .expect("FCD's real architecture fixture lifts cleanly");
-        let corpus: [(&str, Vec<u8>, &str); 3] = [
+        let corpus: [(&str, Vec<u8>); 3] = [
             (
                 "spine-model",
                 include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json").to_vec(),
-                "876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114",
             ),
             (
                 "systems-interface",
                 include_bytes!("../../../tests/fixtures/systems-interface.semantic-ir.json")
                     .to_vec(),
-                "f98a8274e60d0341c4bb1e83f667db592de8593248a2873559bf4a8671df5203",
             ),
-            (
-                "architecture",
-                architecture,
-                "4090c5dd0982184b93a3488998b9c3e6830c0fb7cf447f0946a8494524f716a8",
-            ),
+            ("architecture", architecture),
         ];
-        for (name, bytes, recorded) in corpus {
-            let mut digest = [0_u8; 32];
-            for (index, byte) in digest.iter_mut().enumerate() {
-                *byte = u8::from_str_radix(&recorded[2 * index..2 * index + 2], 16).unwrap();
-            }
+        for (name, bytes) in corpus {
+            let digest = parse_document(&bytes).jcs_digest();
             let package: Value = serde_json::from_slice(&bytes).unwrap();
             let offered = DomainPackageRef {
                 identity: package["package"]["identity"].as_str().unwrap().to_owned(),
