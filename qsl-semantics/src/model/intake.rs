@@ -3631,6 +3631,7 @@ mod tests {
     fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
         serde_json::json!({
             "contractVersion": "2.0.0",
+            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
             "source": {
                 "identity": format!("ix://{package_identity}/spec"),
                 "version": "1.0.0",
