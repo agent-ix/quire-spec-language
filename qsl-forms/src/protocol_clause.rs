@@ -12,7 +12,7 @@
 //! builder are defined once, in the `forms` core (ADR-012 §4.3): only the
 //! declaration-level production is `ProtocolClause`'s own.
 
-use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
+use qsl_cst::{CstNode, CstToken, LosslessCst, Production, TokenKind};
 
 use std::ops::ControlFlow;
 
@@ -81,10 +81,8 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
             let operation_items = items(cst, operation_name);
             let type_name = only(&operation_items, Production::TypeName, operation_name)?;
             let context = name_form(cst, type_name)?;
-            let member = tokens_of(&operation_items, TokenKind::Identifier)
-                .first()
-                .copied()
-                .ok_or_else(|| unexpected(operation_name))?;
+            let member =
+                operation_member(&operation_items).ok_or_else(|| unexpected(operation_name))?;
             let operation = DeclaredName {
                 name: text(member, operation_name)?,
                 span: member.span(),
@@ -877,10 +875,7 @@ fn attempt_form(
     let operation_items = items(cst, operation_name);
     let type_name = only(&operation_items, Production::TypeName, operation_name)?;
     let context = name_form(cst, type_name)?;
-    let member = tokens_of(&operation_items, TokenKind::Identifier)
-        .first()
-        .copied()
-        .ok_or_else(|| unexpected(operation_name))?;
+    let member = operation_member(&operation_items).ok_or_else(|| unexpected(operation_name))?;
     let operation = DeclaredName {
         name: text(member, operation_name)?,
         span: member.span(),
@@ -891,6 +886,18 @@ fn attempt_form(
         context,
         operation,
         contracts,
+    })
+}
+
+/// Read the final segment of an `OperationName` without requiring the
+/// segment to retain the ordinary identifier token class. Complete-V1
+/// reserves words such as `absent` for lookup syntax, while the grammar's
+/// `MemberName` deliberately admits those spellings after `::`; operation
+/// names must preserve that same member rule at S2.
+fn operation_member<'a>(items: &'a [Item<'a>]) -> Option<&'a qsl_cst::CstToken> {
+    items.iter().rev().find_map(|item| match item {
+        Item::Token(token) if token.spelling() != b"::" => Some(*token),
+        Item::Token(_) | Item::Node(_) => None,
     })
 }
 

@@ -372,6 +372,19 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
     assert_eq!(declaration.name.name, "Tried");
 }
 
+/// QSL-667 reserves `absent` for lookup's absence mode, but the CST grammar
+/// still admits it as an operation member after `::`. S2 must read that
+/// structural member without requiring the ordinary identifier token class.
+#[test]
+fn s2_preserves_reserved_operation_member_names() {
+    let (_, unit) = build("post P using v on Config::ConfigVersion::absent { true }");
+    let form = state_clause(unit.forms()[0].form());
+    assert_eq!(
+        form.operation.as_ref().map(|operation| operation.name.as_str()),
+        Some("absent")
+    );
+}
+
 /// SR-770 FND-001/FND-008: S2 records what S3 needs to decide
 /// whether it checks a protocol in full -- the `using` alias, each role,
 /// each binder's declared type, each body block (whether it is a bare
