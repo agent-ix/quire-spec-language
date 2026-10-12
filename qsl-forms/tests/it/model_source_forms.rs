@@ -44,7 +44,7 @@ fn span(source: &str, needle: &str) -> Span {
     }
 }
 
-#[trace("TC-790", "TC-792", "FR-300-AC-1", "FR-301-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn lookup_retains_target_operands_explicit_absence_and_spans() {
     for (word, expected) in [
@@ -87,11 +87,16 @@ fn lookup_retains_target_operands_explicit_absence_and_spans() {
     }
 }
 
-#[trace("TC-790", "FR-300-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn population_type_forms_retain_element_name_and_maximum() {
     for (spelling, expected_bounds) in [
         ("Population<M::Order>[3]", vec!["3".to_owned()]),
+        ("Population<M::Order>[0]", vec!["0".to_owned()]),
+        (
+            "Population<M::Order>[123456789012345678901234567890]",
+            vec!["123456789012345678901234567890".to_owned()],
+        ),
         ("Population<M::Order>", Vec::<String>::new()),
     ] {
         let declaration = format!("function f using v(p: {spelling}): Boolean pure {{ true }}");
@@ -123,7 +128,28 @@ fn population_type_forms_retain_element_name_and_maximum() {
     }
 }
 
-#[trace("TC-790", "TC-792", "FR-300-AC-1", "FR-301-AC-2")]
+#[trace("TC-790")]
+#[test]
+fn population_keyword_forms_keep_case_and_contextual_member_rules() {
+    let (_, parsed) = parse("predicate population using v(): Boolean { true }");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = build_unit(&parsed).expect("S2 maps lowercase predicate name");
+    let DeclarationForm::Function(predicate) = unit.forms()[0].form() else {
+        panic!("expected predicate function form");
+    };
+    assert_eq!(predicate.name, "population");
+
+    for body in ["M::Population", "receiver.Population"] {
+        let (_, function) = function(body);
+        match function.body.root_node() {
+            ExprNode::Name(name) => assert_eq!(name, "M::Population"),
+            ExprNode::Field { field, .. } => assert_eq!(field, "Population"),
+            node => panic!("unexpected contextual form: {node:?}"),
+        }
+    }
+}
+
+#[trace("TC-790")]
 #[test]
 fn dispatch_preserves_receiver_and_argument_order_in_a_precondition() {
     let body = "deref(r).query(11, 22)";
@@ -160,7 +186,7 @@ fn dispatch_preserves_receiver_and_argument_order_in_a_precondition() {
     }
 }
 
-#[trace("TC-790", "FR-300-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn chained_calls_and_fields_keep_each_receiver_before_its_arguments() {
     let body = "deref(r).first(11).field.second(22, lookup<M::T>(p, r) absent empty)";
@@ -212,7 +238,7 @@ fn chained_calls_and_fields_keep_each_receiver_before_its_arguments() {
     assert_eq!(spans.span(first), Some(span(&source, "deref(r).first(11)")));
 }
 
-#[trace("TC-790", "FR-300-AC-1", "FR-300-AC-2")]
+#[trace("TC-790")]
 #[test]
 fn model_source_admission_defers_missing_names_and_wrong_keys_to_checking() {
     for (body, member) in [("r.missing()", "missing"), ("r.exhausted()", "exhausted")] {
@@ -260,7 +286,7 @@ fn model_source_admission_defers_missing_names_and_wrong_keys_to_checking() {
     );
 }
 
-#[trace("TC-790", "FR-300-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn named_calls_stay_distinct_from_member_calls_and_type_arguments_survive() {
     let (_, function) = function("query(r).member(convert<Int[-2,3]>(1))");

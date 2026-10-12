@@ -19,7 +19,7 @@ fn parse(text: &str, limits: Limits) -> ParsedSource {
     .expect("source metadata admitted")
 }
 
-#[trace("TC-790", "TC-792", "FR-300-AC-1", "FR-301-AC-1", "FR-301-AC-2")]
+#[trace("TC-790")]
 #[test]
 fn model_forms_preserve_source_bytes_and_named_productions() {
     for body in [
@@ -51,29 +51,138 @@ fn model_forms_preserve_source_bytes_and_named_productions() {
     }
 }
 
-#[trace("TC-790", "FR-300-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn population_type_references_are_admitted_as_named_type_productions() {
-    let text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: Population<M::Order>[3]): Boolean pure { true }\n";
-    let parsed = parse(text, Limits::default());
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    assert_eq!(parsed.cst().render(), text.as_bytes());
-    let population = parsed
-        .cst()
-        .nodes()
-        .iter()
-        .find(|node| {
-            node.production() == Production::TypeReference
-                && node.span().start == text.find("Population<M::Order>[3]").unwrap()
-        })
-        .expect("population type reference");
-    assert_eq!(
-        population.span().end,
-        population.span().start + "Population<M::Order>[3]".len()
-    );
+    for spelling in [
+        "Population<M::Order>[3]",
+        "Population<M::Order>[0]",
+        "Population<M::Order>[123456789012345678901234567890]",
+        "Population<M::Order>",
+    ] {
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: {spelling}): Boolean pure {{ true }}\n"
+        );
+        let parsed = parse(&text, Limits::default());
+        assert!(
+            parsed.is_admissible(),
+            "{spelling}: {:?}",
+            parsed.diagnostics()
+        );
+        assert_eq!(parsed.cst().render(), text.as_bytes());
+        let start = text.find(spelling).unwrap();
+        let population = parsed
+            .cst()
+            .nodes()
+            .iter()
+            .find(|node| {
+                node.production() == Production::TypeReference && node.span().start == start
+            })
+            .expect("population type reference");
+        assert_eq!(population.span().end, start + spelling.len());
+    }
 }
 
-#[trace("TC-790", "FR-300-AC-2")]
+#[trace("TC-790")]
+#[test]
+fn population_type_references_reject_malformed_maxima_at_the_offending_token() {
+    for (spelling, offending, cause) in [
+        (
+            "Population<M::Order>[]",
+            "]",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<M::Order>[-1]",
+            "-",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<M::Order>[03]",
+            "03",
+            CompleteCause::InvalidToken,
+        ),
+        (
+            "Population<M::Order>[1.5]",
+            "1.5",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<M::Order>[1e3]",
+            "1e3",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<M::Order>[*]",
+            "*",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<M::Order>[0,3]",
+            ",",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<M::Order[3]",
+            "[",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "Population<Boolean>[3]",
+            "Boolean",
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "population<M::Order>[3]",
+            "<",
+            CompleteCause::UnexpectedToken,
+        ),
+    ] {
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: {spelling}): Boolean pure {{ true }}\n"
+        );
+        let parsed = parse(&text, Limits::default());
+        assert!(!parsed.is_admissible(), "{spelling}");
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax, "{spelling}");
+        assert_eq!(diagnostic.cause, cause, "{spelling}");
+        let spelling_start = text.find(spelling).unwrap();
+        let start = spelling_start + text[spelling_start..].find(offending).unwrap();
+        let region = diagnostic.region.as_ref().expect("located refusal");
+        assert_eq!(
+            usize::try_from(region.start()).unwrap(),
+            start,
+            "{spelling}: text={text:?}, diagnostic={diagnostic:?}"
+        );
+        assert!(
+            usize::try_from(region.end()).unwrap() >= start + offending.len(),
+            "{spelling}: {region:?}"
+        );
+    }
+}
+
+#[trace("TC-790")]
+#[test]
+fn population_keyword_is_reserved_only_in_type_and_binder_positions() {
+    let uppercase_text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; predicate Population using v(): Boolean { true }\n";
+    let uppercase = parse(uppercase_text, Limits::default());
+    assert!(!uppercase.is_admissible());
+    assert_eq!(
+        usize::try_from(uppercase.diagnostics()[0].region.as_ref().unwrap().start()).unwrap(),
+        uppercase_text.find("Population").unwrap()
+    );
+
+    let lowercase_text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; predicate population using v(): Boolean { true }\n";
+    let lowercase = parse(lowercase_text, Limits::default());
+    assert!(lowercase.is_admissible(), "{:?}", lowercase.diagnostics());
+
+    for body in ["M::Population", "receiver.Population"] {
+        let parsed = parse(&source(body), Limits::default());
+        assert!(parsed.is_admissible(), "{body}: {:?}", parsed.diagnostics());
+    }
+}
+
+#[trace("TC-790")]
 #[test]
 fn invalid_model_productions_refuse_at_the_offending_token() {
     for (body, token) in [
