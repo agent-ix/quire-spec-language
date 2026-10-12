@@ -463,9 +463,9 @@ fn tc235_m03_record_shape_and_clause_meanings() {
 
 /// M17's record-value portion is exercised on an FCD-valid record/object
 /// fixture while the full K2 vector waits for its event-type binder. It
-/// checks that a record subtype keeps inherited and local fields under one
-/// effective type, and that its parent is not silently substituted for the
-/// subtype identity.
+/// checks that a record subtype keeps its inherited field and invariant with
+/// its local field under one effective type, and that its parent is not
+/// silently substituted for the subtype identity.
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m17_record_value_subtype_keeps_effective_fields() {
@@ -524,6 +524,7 @@ fn tc235_m17_record_value_subtype_keeps_effective_fields() {
         [
             id("Money/amount_minor"),
             id("Money/currency"),
+            id("Money/NonNegative"),
             id("TaxedMoney/tax_minor")
         ]
     );
