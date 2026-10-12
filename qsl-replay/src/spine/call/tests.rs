@@ -361,7 +361,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
         &[],
         &types,
         &[("population".to_owned(), ValueType::Population(Some(2)))],
-        &[population.clone()],
+        std::slice::from_ref(&population),
         &objects,
     )
     .expect_err("a declared maximum mismatch refuses before evaluation");
