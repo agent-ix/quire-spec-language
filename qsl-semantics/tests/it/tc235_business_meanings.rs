@@ -717,7 +717,7 @@ fn tc235_m07_process_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
-    assert_process_missing_event_refusal(&document, "Order");
+    assert_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("StockReserved")]);
