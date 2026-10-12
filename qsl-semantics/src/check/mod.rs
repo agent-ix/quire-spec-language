@@ -712,8 +712,8 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
-        let complete_identity = crate::value::DefinitionLock::pinned()
-            .entry(crate::value::CatalogRole::Root)
+        let complete_identity = crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
             .identity;
         let complete_value = self
             .function_selections

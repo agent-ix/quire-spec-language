@@ -417,8 +417,8 @@ fn check_clause(
     .with_cancel(input.cancel)
     .with_complete_value(
         form.selection.identity
-            == crate::value::DefinitionLock::pinned()
-                .entry(crate::value::CatalogRole::Root)
+            == crate::value::definition::DefinitionLock::pinned()
+                .entry(crate::value::definition::CatalogRole::Root)
                 .identity,
     )
     .with_context(cx.reborrow(input.scope));
