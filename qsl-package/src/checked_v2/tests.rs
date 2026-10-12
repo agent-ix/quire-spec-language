@@ -1441,6 +1441,38 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
         Read::Verified { package, .. } => assert_eq!(package.package_id(), package_id),
         other => panic!("expected I2 to admit QSpec's union vectors, got {other:?}"),
     }
+
+    let empty = member_keys["Empty"];
+    let retained_key = empty["node_id"]["digest"]
+        .as_str()
+        .expect("nullary vector has a retained node key");
+    let structural_key = crate::emit::tests::rebuilt_structural_key(empty, &[]);
+    assert_ne!(structural_key, retained_key);
+    let empty_index = nodes
+        .iter()
+        .position(|node| node["body"]["members"][0]["name"] == "Empty")
+        .expect("nullary vector belongs to the fixture graph");
+    let encoded = serde_json::to_string(&envelope).expect("fixture serializes");
+    let mut stale = serde_json::from_str(&encoded.replace(retained_key, &structural_key))
+        .expect("structural-preimage key mutation parses");
+    refresh_frame_identity(&mut stale);
+
+    let (_, outcome) = read_fixture_wire(&stale);
+    match outcome {
+        Read::Refused(V2ReadRefusal::Envelope { refusal, locus }) => {
+            assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
+            assert_eq!(
+                refusal.cause,
+                Some(CheckedPackageRefusalCause::StaleNodeKey)
+            );
+            assert!(matches!(
+                locus.as_deref(),
+                Some(Locus::Artifact { pointer, .. })
+                    if pointer.as_str() == format!("/semantic_graph/nodes/{empty_index}/node_id")
+            ));
+        }
+        other => panic!("expected I2 to refuse the stale union key, got {other:?}"),
+    }
 }
 
 /// QSL's whole I2 read (`read_checked_package_v2`) admits every
