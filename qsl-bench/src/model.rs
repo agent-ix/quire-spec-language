@@ -34,7 +34,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_foundation::IntakeLimits;
-use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::conformance::{resolve_redefinition_target, RedefinitionTargetOutcome};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
@@ -46,7 +46,7 @@ use qsl_semantics::model::intake::{
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
-    normalize_shared, EffectiveView, ModelRefusal, NormalizeOutcome,
+    normalize_shared, normalize_with_meter, EffectiveView, ModelRefusal, NormalizeOutcome,
 };
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::model::population::{
@@ -502,29 +502,43 @@ mod tests {
 
         let package = intake(&offered)
             .expect("intake retains typed reader refusals until normalization charges records");
-        let NormalizeOutcome::Refused(refusals) = normalize_shared(
-            Arc::new(package),
-            ModelNormalizationLimits::default(),
-        ) else {
+        let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+        assert_eq!(
+            meter
+                .admitted_charges()
+                .iter()
+                .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+                .count(),
+            3,
+            "the type, field, and population are charged before refusals",
+        );
+        let NormalizeOutcome::Refused(refusals) = outcome else {
             panic!("normalization reports the retained reader refusal");
         };
-        let refusal = refusals
-            .iter()
-            .find(|refusal| {
-                matches!(
-                    &refusal.cause,
-                    qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
-                        node,
-                        ..
-                    } if node == "ix://bench/model/C0/flag"
-                )
-            })
-            .expect("the field's reader refusal is retained");
-        assert_eq!(refusal.code.as_str(), "invalid_model_binding");
-        assert!(refusal.detail.contains("SCHEMA_VIOLATION"));
-        assert!(refusal.detail.contains("/ir/types/0/fields/0/presence"));
-        assert!(refusal
+        assert_eq!(refusals.len(), 2, "both reader diagnostics are retained");
+        for (refusal, node) in [
+            (&refusals[0], "ix://bench/model/C0"),
+            (&refusals[1], "ix://bench/model/C0/flag"),
+        ] {
+            assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+            assert!(matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: actual,
+                    ..
+                } if actual == node
+            ));
+        }
+        assert!(refusals[0].detail.contains("SCHEMA_VIOLATION"));
+        assert!(refusals[0]
+            .detail
+            .contains("/ir/types/0/fields/0/presence"));
+        assert!(refusals[0]
             .detail
             .contains("presence is a closed enumeration"));
+        assert!(refusals[1].detail.contains("$.types[0].fields[0]"));
+        assert!(refusals[1]
+            .detail
+            .contains("presence: \"sometimes\" is not required/optional"));
     }
 }
