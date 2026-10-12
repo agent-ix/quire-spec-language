@@ -1004,6 +1004,7 @@ mod tests {
     use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
     use qsl_semantics::library::LibraryName;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
     use serde_json::{json, Value};
 
@@ -1713,6 +1714,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &call,
+            &ObjectEnvironment::default(),
             &Cancel::new(),
         )
         .expect("seven runs");
@@ -1742,6 +1744,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &starved,
+            &ObjectEnvironment::default(),
             &Cancel::new(),
         )
         .expect("seven runs");
@@ -1977,6 +1980,7 @@ mod tests {
                 arguments: Vec::new(),
                 accounting: default_accounting(1_000_000),
             },
+            &ObjectEnvironment::default(),
             cancel,
         )
     }

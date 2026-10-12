@@ -119,10 +119,9 @@ fn typed_model_values_bind_without_integer_coercion() {
         ],
     )
     .unwrap();
-    assert_eq!(
-        bound,
-        vec![Value::Reference(reference), Value::Population(population)]
-    );
+    assert_eq!(bound.len(), 2);
+    assert!(matches!(&bound[0], Value::Reference(value) if value == &reference));
+    assert!(matches!(&bound[1], Value::Population(value) if value == &population));
 }
 
 #[test]
@@ -167,7 +166,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         object_type,
         quire_exact::ObjectId::new("g1").unwrap(),
     );
-    let world = qsl_semantic_value::object_closure::ObjectClosure::new(
+    let world = quire_semantic_value::object_closure::ObjectClosure::new(
         checked.package().graph().scope().types(),
         [(
             reference.clone(),
@@ -227,6 +226,7 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .unwrap();
@@ -256,6 +256,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .unwrap()

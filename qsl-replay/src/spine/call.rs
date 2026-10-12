@@ -63,7 +63,7 @@ pub fn default_accounting(work_units: u64) -> ScalarLimits {
 /// One `{parameter, value}` argument of a [`Call`], keyed by the parameter's
 /// declared name. File request adapters lower their canonical integer
 /// assignments to this shared typed carrier before entering the spine.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct CallArgument {
     /// The parameter's declared name.
     pub parameter: String,
@@ -512,7 +512,7 @@ pub(crate) fn bind_arguments(
                 parameter: argument.parameter.clone(),
             })
         })?;
-        if slot.replace(argument.value).is_some() {
+        if slot.replace(argument.value.clone()).is_some() {
             return Err(Box::new(RunRefusal::DuplicateArgument {
                 parameter: argument.parameter.clone(),
             }));
@@ -553,8 +553,8 @@ pub(crate) fn argument_value(
     match value_type {
         ValueType::Boolean => match value {
             Value::Boolean(value) => Ok(Value::Boolean(value)),
-            Value::Integer(value) if value == Integer::from(0) => Ok(Value::Boolean(false)),
-            Value::Integer(value) if value == Integer::from(1) => Ok(Value::Boolean(true)),
+            Value::Integer(value) if value == Integer::from(0_i64) => Ok(Value::Boolean(false)),
+            Value::Integer(value) if value == Integer::from(1_i64) => Ok(Value::Boolean(true)),
             _ => Err(wrong()),
         },
         ValueType::Integer | ValueType::Int(_) => match value {
