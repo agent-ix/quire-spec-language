@@ -370,20 +370,27 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
     };
     assert_eq!(key.node, id("Fulfilment/reserve_stock"));
     assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
+    assert!(
+        refusals[0].detail.contains("/types/5/steps/3/identity"),
+        "duplicate step pointer missing: {refusals:?}"
+    );
 }
 
 fn assert_process_non_event_refusal(document: &Value) {
     let refusals = read_refusals(document);
-    assert_eq!(refusals.len(), 1, "one process non-event refusal: {refusals:?}");
+    assert_eq!(
+        refusals.len(),
+        1,
+        "one process non-event refusal: {refusals:?}"
+    );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause
-    else {
+    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
         panic!(
             "expected malformed process event binding, got {:?}",
             refusals[0].cause
         );
     };
-    assert_eq!(node, &id("Fulfilment"));
+    assert_eq!(node, &id("Fulfilment/reserve_stock"));
     assert!(
         refusals[0].detail.contains("steps[1].emits[0]"),
         "reader locus missing from refusal: {refusals:?}"
