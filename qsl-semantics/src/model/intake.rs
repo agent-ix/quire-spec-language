@@ -1896,7 +1896,7 @@ fn business_generalization_refusal(
                     },
                     detail: format!(
                         "{}: record generalization returns to {owner} through {current}",
-                        located.pointer
+                        located.pointer,
                     ),
                 });
             }
