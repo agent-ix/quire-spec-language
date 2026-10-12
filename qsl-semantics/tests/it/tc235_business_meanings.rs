@@ -649,7 +649,9 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         "M01 charges normalize.record once per original declaration",
     );
     assert!(view.type_identities().contains_key(&package_key("Money")));
-    assert!(view.type_identities().contains_key(&package_key("OrderPlaced")));
+    assert!(view
+        .type_identities()
+        .contains_key(&package_key("OrderPlaced")));
     assert!(view
         .type_identities()
         .contains_key(&package_key("OrderLifecycle")));
