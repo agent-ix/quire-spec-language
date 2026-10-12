@@ -576,7 +576,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     assert_eq!(place.parameters()[0].0, "flags");
     assert!(matches!(
         place.parameters()[0].1,
-        quire_exact::ValueType::Record { .. }
+        quire_exact::ValueType::Composite(_)
     ));
     assert_eq!(
         clause_for(&package, "OrderLifecycle/Consistent").text,
