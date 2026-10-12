@@ -1384,10 +1384,7 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// reader accepts: [`read_value_type_ref`] independently refuses any
 /// `<Name>` outside [`NativeValueType`]'s own closed set (QSpec's
 /// `type-ref`, R5's ruling -- narrower than FCD's) as
-/// `malformed-declaration`, a later, separate refusal from this one --
-/// which is exactly why `Pump.id`/`Sys.id`/`Tank.id` still refuse in
-/// `tests/model_intake.rs`'s golden-shape test even though the schema
-/// itself now admits them.
+/// `malformed-declaration`, a later, separate refusal from this one.
 fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<ModelRefusal>> {
     let verdict = agent_ix_semantic_ir::decide(&document.bundle);
     let mut namespace_forms = std::collections::BTreeSet::new();
@@ -5169,7 +5166,7 @@ mod tests {
     // and why it still does not widen what this reader accepts), and
     // end-to-end native-typeRef resolution is exercised via
     // `tests/model_intake.rs`'s
-    // `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`.
+    // `reading_fcd_199s_golden_shape_reads_all_12_types`.
     // These tests instead drive [`read_value_type_ref`] directly, the same
     // resolver every field/parameter/`returns` typeRef site calls, so each
     // one's own refusal/success shape is pinned independently of any one
@@ -5400,7 +5397,7 @@ mod tests {
     /// [`read_records`]: at this crate's now-pinned `agent-ix-semantic-ir`
     /// rev the schema for this shape admits `sourceEnd`/`targetEnd`, so the
     /// full pipeline would work too (confirmed by
-    /// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`
+    /// `reading_fcd_199s_golden_shape_reads_all_12_types`
     /// in `tests/model_intake.rs`, whose `Flow2` type reads clean this same
     /// way); this unit test still drives `read_object_type` directly so its
     /// own hand-rolled `sourceEnd`/`targetEnd` shape is pinned independently
