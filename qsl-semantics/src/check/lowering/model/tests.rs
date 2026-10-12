@@ -1390,7 +1390,8 @@ fn state_machine_declaration_keys_as_a_state_machine_model_node() {
             query("Lifecycle/place", "Lifecycle", None),
         ],
     );
-    let NormalizeOutcome::Completed(view) = normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
     else {
         panic!("the state machine normalizes");
     };

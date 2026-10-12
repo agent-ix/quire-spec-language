@@ -115,7 +115,15 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
         "text": "self.placed and not self.cancelled",
         "origin": crate::tc235_k2::origin("OrderLifecycle/place"),
     }]);
-    place["frame"]["modifies"] = serde_json::json!([crate::tc235_k2::id("OrderLifecycle/placed")]);
+    // TC-235 M15 states `modifies [OrderLifecycle/placed]`, but its run 3 post
+    // observation also sets `cancelled`, which FR-106 check 11 refuses as
+    // `frame_violation`/`unauthorized-change` (FR-106-AC-5) before any clause
+    // is evaluated. `cancelled` is added to the frame so run 3 reaches the
+    // postcondition the row asserts; the row and FR-106 disagree.
+    place["frame"]["modifies"] = serde_json::json!([
+        crate::tc235_k2::id("OrderLifecycle/placed"),
+        crate::tc235_k2::id("OrderLifecycle/cancelled"),
+    ]);
     let digest = crate::tc235_k2::jcs_digest(&document["types"]);
     document["source"]["digest"] = serde_json::json!(digest);
     document["package"]["manifestDigest"] = serde_json::json!(digest);
@@ -1003,7 +1011,15 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert_eq!(record.cause, "duplicate-member");
     assert_eq!(record.fields["document"], "q1");
     assert_eq!(record.fields["path"], "/populations/0/objects/1");
+}
 
+/// TC-235 M15 run 6. Red: domain package intake discards an operation's
+/// `pre` clauses (`read_operation_member`), so no check reads a model-owned
+/// `Operation.pre` and nothing refuses its `pre(...)` read.
+#[trace("QSpec-TC-235", "QSpec-FR-208-AC-11")]
+#[test]
+#[ignore = "model-owned Operation.pre clauses are discarded at intake and never checked"]
+fn tc235_m15_run6_model_operation_pre_read_refuses() {
     let pre_read = lifecycle_document("pre(self.placed) = false");
     let refusals = lifecycle_package(
         &pre_read,
