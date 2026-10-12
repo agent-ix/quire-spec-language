@@ -263,6 +263,42 @@ fn scenario() -> Scenario {
     }
 }
 
+/// TC-227's S6a case: population admission is valid (closed extent and every
+/// actual member is declared), but its declaration omits effective subtypes
+/// of the queried `model.A`.
+fn subtype_incomplete_scenario() -> Scenario {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc-227"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: p1_population_key(),
+                member_types: vec![DeclarationKey::fixture("model.B")],
+                extent: Extent::Closed,
+            }),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let universe = view.object_universe().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("b1", "model.B")],
+    };
+    let binding = admitted_binding(&view, &document);
+    let model = AdmittedModel::new(&domain_package, &view).unwrap();
+    Scenario {
+        universe,
+        a,
+        b,
+        binding,
+        model,
+    }
+}
+
 /// TC-198 P1 (see [`p1`]) after `model.A.remove` deletes `a2`: `a1`/`b1`
 /// survive unchanged.
 fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
@@ -838,6 +874,112 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     // comment above), so the shared `b1` reference is `value`'s last
     // element, not its first.
     assert_eq!(*reference_elements(&value).last().unwrap(), b1_via_b);
+}
+
+/// FR-084-AC-2 / FR-090-AC-21 / TC-227: successful object admission does not
+/// let an incomplete subtype set become a partial collection at S6a.
+#[test]
+#[trace("TC-227", "FR-084-AC-2", "FR-090-AC-21")]
+fn tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate() {
+    let scenario = subtype_incomplete_scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(Some(3)))];
+    let expression = all_instances(ValueType::Reference(scenario.a));
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![population_argument(&scenario)],
+            &population_environment(&scenario),
+            &mut meter,
+        )
+        .expect("an admitted population's incomplete subtype closure is an evaluation result");
+
+    let cause = match evaluation.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => cause,
+        other => panic!(
+            "expected S6a FamilyResult::Undefined for incomplete subtype closure, got {other:?}"
+        ),
+    };
+    let record = cause.undefined_record();
+    assert_eq!(record.reason, UndefinedReason::IncompleteClosure);
+    assert_eq!(record.fields.get("closure"), Some(&"subtype".to_owned()));
+    assert_eq!(
+        record.fields.get("queried_type"),
+        Some(&"model.A".to_owned())
+    );
+    assert_eq!(
+        record.fields.get("uncovered_subtypes"),
+        Some(&"model.A".to_owned())
+    );
+}
+
+/// TC-227: checked evaluation uses reflexive conformance for coverage before
+/// member walking. With a zero-step bound, querying the declared type itself
+/// completes without an ancestor walk, including for an empty population.
+#[test]
+#[trace("TC-227", "FR-084-AC-2", "FR-090-AC-21")]
+fn tc_227_checked_evaluate_uses_reflexive_coverage_without_query_walk() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc-227-reflexive-coverage"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: p1_population_key(),
+                member_types: vec![DeclarationKey::fixture("model.B")],
+                extent: Extent::Closed,
+            }),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: Vec::new(),
+    };
+    let mut admission =
+        AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED.with_ancestor_steps(0));
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted empty population, got {other:?}"),
+    };
+    let scenario = Scenario {
+        universe: view.object_universe().identity(),
+        a: type_id(&view, "model.A"),
+        b: type_id(&view, "model.B"),
+        binding,
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
+    };
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(Some(3)))];
+    let expression = all_instances(ValueType::Reference(scenario.b));
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![population_argument(&scenario)],
+            &population_environment(&scenario),
+            &mut meter,
+        )
+        .expect("reflexive coverage completes without an ancestor walk");
+
+    let outcome = match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("a declared type covers itself without an ancestor walk, got {other:?}"),
+    };
+    let Outcome::Completed(value) = outcome else {
+        panic!("reflexive coverage should complete the empty selection, got {outcome:?}");
+    };
+    assert!(reference_elements(&value).is_empty());
 }
 
 /// TC-198 L13: `allInstances<M::A>(p)` still charges `population.visit` per

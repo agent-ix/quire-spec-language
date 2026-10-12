@@ -524,6 +524,320 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(*b1_via_a, b1_via_b);
 }
 
+/// FR-084-AC-2 / TC-227: object closure can hold while the declared member
+/// types omit the queried type itself. Such a query must not publish the
+/// members it happened to gather; complete coverage remains deterministic
+/// under member order changes.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_requires_declared_subtype_closure() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("tc-227"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record("model.pop", &["model.B"], Extent::Closed),
+            population_record(
+                "model.pop.complete",
+                &["model.A", "model.B"],
+                Extent::Closed,
+            ),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("b1", "model.B")],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected object-closed binding, got {other:?}"),
+    };
+
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter);
+    match outcome {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => {
+            panic!("expected typed subtype-closure incompleteness without a set, got {other:?}")
+        }
+    }
+
+    // Closure is decided before the member walk: even when the first
+    // population.visit would be denied, the result remains typed closure
+    // incompleteness and consumes no work.
+    let mut no_work = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..SCALAR_UNLIMITED
+    });
+    match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut no_work) {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => panic!("closure incompleteness must precede charging: {other:?}"),
+    }
+    assert_eq!(no_work.consumed(LimitKind::WorkUnits), 0);
+    assert!(admitted_charge_points(&no_work).is_empty());
+
+    let complete_document = PopulationDocument {
+        model_identity: document.model_identity.clone(),
+        members: vec![
+            member("b1", "model.B"),
+            member("a2", "model.A"),
+            member("a1", "model.A"),
+        ],
+    };
+    let reordered = PopulationDocument {
+        model_identity: complete_document.model_identity.clone(),
+        members: complete_document.members.iter().rev().cloned().collect(),
+    };
+    let complete_binding = |document: &PopulationDocument| match admit_binding(
+        &view,
+        document,
+        &DeclarationKey::fixture("model.pop.complete"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected subtype-closed binding, got {other:?}"),
+    };
+    let first = complete_binding(&complete_document);
+    let second = complete_binding(&reordered);
+    let mut first_meter = Meter::new(SCALAR_UNLIMITED);
+    let mut second_meter = Meter::new(SCALAR_UNLIMITED);
+    let select = |binding: &PopulationBinding, meter: &mut Meter| match all_instances(
+        binding,
+        &DeclarationKey::fixture("model.A"),
+        meter,
+    ) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected complete allInstances<A>, got {other:?}"),
+    };
+    let first_set = select(&first, &mut first_meter);
+    let second_set = select(&second, &mut second_meter);
+    assert_eq!(first_set, second_set);
+    let canonical: Vec<_> = first_set.members().iter().collect();
+    assert!(canonical.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+/// FR-084-AC-2 / TC-227: subtype coverage checks the query against its
+/// declared member types. A deep, unrelated catalog chain must not be walked
+/// as part of the query: with a zero ancestor-step ceiling, the reflexive
+/// query succeeds while any attempt to inspect that chain would be refused.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_does_not_walk_unrelated_type_catalog() {
+    let mut records = vec![object_type("model.T", vec![])];
+    let mut previous = "model.U0".to_owned();
+    records.push(object_type(&previous, vec![]));
+    for index in 1..=4 {
+        let current = format!("model.U{index}");
+        records.push(object_type(&current, vec![previous.as_str()]));
+        previous = current;
+    }
+    records.push(population_record("model.pop", &["model.T"], Extent::Closed));
+
+    let domain_package =
+        DomainPackage::new(DomainPackageRef::fixture("tc-227-no-catalog-walk"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("t1", "model.T")],
+    };
+    let limits = PopulationAdmissionLimits {
+        ancestor_steps: 0,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(limits),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted reflexive population, got {other:?}"),
+    };
+
+    match all_instances(
+        &binding,
+        &DeclarationKey::fixture("model.T"),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    ) {
+        AllInstancesOutcome::Completed(set) => assert_eq!(set.members().len(), 1),
+        other => panic!("unrelated catalog ancestry must not affect the query: {other:?}"),
+    }
+}
+
+/// Runs one admitted `allInstances` query over a small explicitly declared
+/// type tree. The population's declared types describe coverage; the member
+/// rows independently provide a nonempty result when the queried closure is
+/// covered.
+fn all_instances_for_declared_type_tree(
+    types: &[(&str, &[&str])],
+    declared: &[&str],
+    queried: &str,
+    members: Vec<PopulationMember>,
+) -> AllInstancesOutcome {
+    let mut records: Vec<_> = types
+        .iter()
+        .map(|(identity, supertypes)| object_type(identity, supertypes.to_vec()))
+        .collect();
+    records.push(population_record("model.pop", declared, Extent::Closed));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("tc-227"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members,
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    all_instances(
+        &binding,
+        &DeclarationKey::fixture(queried),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    )
+}
+
+/// FR-153 coverage is reflexive conformance from queried T to a declared
+/// member type: a declared parent covers its queried child.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_parent_covers_queried_child() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.A", &[]), ("model.B", &["model.A"])],
+        &["model.A"],
+        "model.B",
+        vec![member("b1", "model.B")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared parent covers its queried child, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.B"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "b1");
+}
+
+/// A declared child does not conform upward to its parent query.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_child_does_not_cover_parent_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[]), ("model.C", &["model.T"])],
+        &["model.C"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a declared child does not cover its parent query, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.T"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.T")]
+    );
+}
+
+/// A declared grandparent covers the queried type by conformance.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_grandparent_covers_query_by_conformance() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.G", &[]),
+            ("model.P", &["model.G"]),
+            ("model.T", &["model.P"]),
+            ("model.C", &["model.T"]),
+        ],
+        &["model.G"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared grandparent covers the query closure, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "c1");
+}
+
+/// FR-153 conformance is reflexive: declaring T covers query T.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_query_type_covers_itself() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[])],
+        &["model.T"],
+        "model.T",
+        vec![member("t1", "model.T")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("the declared query type covers itself, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "t1");
+}
+
+/// A declared child does not cover a sibling query type.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_sibling_does_not_cover_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.T", &[]),
+            ("model.C1", &["model.T"]),
+            ("model.C2", &["model.T"]),
+        ],
+        &["model.C1"],
+        "model.C2",
+        vec![member("c1", "model.C1")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a sibling does not cover the queried type, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.C2"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.C2")]
+    );
+}
+
 /// TC-198 L01's boundary: with `work_units: 4`, `allInstances<M::A>(p)`
 /// denies exactly at `collection.result-retain`.
 ///

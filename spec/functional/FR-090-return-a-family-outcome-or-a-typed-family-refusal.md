@@ -58,15 +58,17 @@ carrying the undefined reasons `precondition-false` and `absent-key`. None of
 the four is a variant of the kernel `Refusal` or `Undefined`.
 
 An `allInstances<T>` result that is incomplete because its admitted
-population does not cover one or more effective subtypes of `T` SHALL reach
+population has no declared member type to which `T` conforms SHALL reach
 the S6a caller as
 `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))`, with undefined
 reason `incomplete-closure`. Its structured fields SHALL name queried type
-`T` and every uncovered effective subtype. This is a family-owned undefined
-result, not a third `FamilyResult` or `FamilyOutcome` variant, and it carries
-no partial collection. Object closure is established at admission under
-FR-084; an object-closure failure admits no binding and is not an S6a query
-result.
+`T` and `uncovered_subtypes` equal to `[T]`, the minimal witness that no
+declared member type covers the query. Declaring `T` itself or any supertype
+of `T` as a member type resolves this subtype-closure incompleteness. This is
+a family-owned undefined result, not a third `FamilyResult` or `FamilyOutcome`
+variant, and it carries no partial collection. Object closure is established
+at admission under FR-084; an object-closure failure admits no binding and
+is not an S6a query result.
 
 This requirement carries testable criteria for decisions already taken:
 
@@ -604,7 +606,7 @@ undefined cause type.
 | FR-090-AC-10 | Given a checked `Value` function with a `Population<T>[N]` parameter, `CheckedPackage::call` with an argument whose `PopulationId` names no recorded binding, or whose resolved binding's declared maximum differs from `N`, returns `Err(CallFailure::Input(_))` before S6a runs. Given the same argument passed directly to the S6a seam, bypassing admission, S6a returns `Err(InternalFault)`, not a kernel or family refusal. | Test |
 | FR-090-AC-11 | Given an FR-151 dispatched call `receiver.member(args)` whose selected method's effective precondition evaluates to `false` (QSpec TC-196 D06), evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `precondition-false` and `fields` naming the called effective operation, the selected method's effective identity and the receiver reference, and `e.location` is the location of the dispatched call node, not of the evaluated expression's root. The result is not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Evaluated(Outcome::Undefined(_))` and not a panic. | Test |
 | FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and not a panic. The same query with `absent refused` returns `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test |
-| FR-090-AC-21 | Given an admitted population that does not cover one or more effective subtypes of queried type `T`, an `allInstances<T>` query evaluated through `CheckedPackage::evaluate` returns `Ok(e)` with `e.outcome` exactly `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`; `cause.undefined_record()` has reason `incomplete-closure`, fields naming queried type `T` and every uncovered effective subtype, and no member collection. `FamilyResult` and `FamilyOutcome` retain exactly their two variants. | Test |
+| FR-090-AC-21 | Given an admitted population with no declared member type to which queried type `T` conforms, an `allInstances<T>` query evaluated through `CheckedPackage::evaluate` returns `Ok(e)` with `e.outcome` exactly `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`; `cause.undefined_record()` has reason `incomplete-closure`, names queried type `T`, and has `uncovered_subtypes` equal to `[T]` as the minimal witness, with no member collection. Declaring `T` itself or any supertype of `T` as a member type resolves this subtype-closure incompleteness. `FamilyResult` and `FamilyOutcome` retain exactly their two variants. | Test (TC-227) |
 | FR-090-AC-13 | For an admitted population binding containing a selected member with empty object identity, public `allInstances` evaluation returns `CallFailure::Fault` with stage `S6a` and invariant `model-query-object-identity-empty`. The fault has no synthetic kernel cause. | Test |
 | FR-090-AC-14 | Each model-query shape producer in the table returns the table's `S6a` fault when its stated condition is supplied through a private seam, including option wrapping after a successful query. | Test |
 | FR-090-AC-15 | Each production evaluator producer in the table other than `record-present-value-missing`, exercised at the detecting site with its stated malformed state, returns the table's `S6a` fault rather than a manufactured kernel CheckedInvariant. | Test |

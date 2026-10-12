@@ -278,6 +278,15 @@ pub(crate) enum StateModelUndefined {
         /// [`identity_string`].
         key: String,
     },
+    /// FR-090-AC-21: an `allInstances<T>` query cannot produce a complete
+    /// result because no declared population member type covers the queried
+    /// type by reflexive conformance.
+    IncompleteClosure {
+        /// The queried effective type's canonical node name.
+        queried_type: String,
+        /// The queried type as the minimal uncovered-subtype witness.
+        uncovered_subtypes: Vec<String>,
+    },
 }
 
 impl std::fmt::Debug for StateModelUndefined {
@@ -310,6 +319,17 @@ impl UndefinedCoded for StateModelUndefined {
             Self::AbsentKey { binding, key } => UndefinedRecord {
                 reason: UndefinedReason::AbsentKey,
                 fields: BTreeMap::from([("binding", binding.clone()), ("key", key.clone())]),
+            },
+            Self::IncompleteClosure {
+                queried_type,
+                uncovered_subtypes,
+            } => UndefinedRecord {
+                reason: UndefinedReason::IncompleteClosure,
+                fields: BTreeMap::from([
+                    ("closure", "subtype".to_owned()),
+                    ("queried_type", queried_type.clone()),
+                    ("uncovered_subtypes", uncovered_subtypes.join(", ")),
+                ]),
             },
         }
     }

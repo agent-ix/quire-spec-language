@@ -629,6 +629,16 @@ mod tests {
         }
     }
 
+    /// FR-090-AC-21 (TC-227): incomplete allInstances coverage renders as
+    /// undefined with its exact reason and exits 10. The structured `[T]`
+    /// witness is asserted at the CheckedPackage boundary; CLI output carries
+    /// the undefined reason only.
+    #[test]
+    #[trace("FR-090-AC-21", "TC-227")]
+    fn incomplete_closure_undefined_renders_and_exits_10() {
+        assert_undefined_renders("incomplete-closure");
+    }
+
     fn render(outcome: CallOutcome) -> RunResult {
         spine_run_result(
             ByteDigest::of(b"request"),

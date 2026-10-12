@@ -95,26 +95,27 @@ Successful admission establishes object closure: the admission rule above
 reports unknown closure and admits no binding when the population extent is
 not `closed` or object closure otherwise cannot be established. Therefore,
 `allInstances<T>` SHALL check only per-`T` subtype closure on an admitted
-binding. It SHALL return a complete result only when every effective type
-conforming to `T` is covered by the population's declared member types. If
-one or more such subtypes are not covered, the model checker SHALL return a
-typed incomplete result naming the missing subtype closure and every
-uncovered effective subtype, and SHALL return no collection, complete or
-partial. When surfaced through S6a evaluation, that result is
+binding. Subtype closure holds exactly when `T` conforms to at least one of
+the population's declared member types. Conformance is reflexive: a declared
+member type covers itself and every type that conforms to that declared
+member type, but a declared child does not cover its parent. If no declared
+member type covers `T`, the model checker SHALL return a typed incomplete
+result naming `T` and SHALL
+return no collection, complete or partial. When surfaced through S6a evaluation, that result is
 `FamilyResult::Undefined` with reason `incomplete-closure`, naming queried
-type `T` and the uncovered effective subtypes, as specified by FR-090. When
+type `T`, as specified by FR-090. When
 subtype closure holds, the returned set SHALL contain each qualifying member
 exactly once, keyed by its reference identity, in canonical reference-key
 order, independent of the input member order.
 
 Admission establishes graph-level closure, not coverage for a queried `T`.
-Normalization computes and charges the phase-3 type-derivation facts, which
-the normalized view retains. Each `allInstances<T>` query decides subtype
-coverage for its `T` from those retained facts before its first query charge;
-the lookup adds no charge point. This follows quire-specification's
-`proposals/quire-v1/definitions/value-accounting.md` rule for
-`allInstances<T>`: subtype coverage uses the retained facts, while member
-walking alone uses the existing `population.visit` charge.
+Before its first query charge, each `allInstances<T>` query checks whether
+`T` conforms to any declared member type using the admitted model index. The
+index's existing conformance operation provides the reflexive and bounded
+generalization check; this coverage check adds no charge point. Member
+walking uses the existing `population.visit` charge. This ordering and charge
+allocation follow the QSpec `allInstances<T>` value-accounting mechanism in
+[`quire-specification/proposals/quire-v1/definitions/value-accounting.md`](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/definitions/value-accounting.md): coverage is determined before the first query charge without a new charge row, while member walking remains charged at `population.visit`.
 
 ### lookup distinguishes a genuine absence from a genuine refusal or incompleteness
 
@@ -194,7 +195,7 @@ their content digest are equal.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-084-AC-1 | Given a population declared with an `open` extent, admission reports the distinct unknown-closure outcome, carrying no binding; given the same closed-extent population whose generalization graph is not itself closed (`GeneralizationClosure::Open`), admission likewise reports the distinct unknown-closure outcome, naming the unresolved type, and carries no binding; given the same population declared `closed`, with a closed generalization graph and every member covered, admission succeeds; given a member of a type the population does not declare, admission is refused (not unknown-closure). | Test (TC-226) |
-| FR-084-AC-2 | Given a successfully admitted population whose declared member types do not cover every effective subtype of queried type `T`, `allInstances<T>` returns a typed incomplete result naming subtype closure and every uncovered effective subtype, with no collection; given the same population with every effective subtype of `T` covered, it returns the complete deduplicated set in canonical reference-key order regardless of input member order. Object closure is guaranteed by successful admission under the admission rule above. | Test (TC-227; `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`) |
+| FR-084-AC-2 | Given a successfully admitted population, `allInstances<T>` returns a complete deduplicated set in canonical reference-key order exactly when `T` conforms to at least one declared member type, including when `T` equals that member type; otherwise it returns a typed incomplete result naming subtype closure and `T`, with no collection. Object closure is guaranteed by successful admission under the admission rule above. | Test (TC-227; `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`) |
 | FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode, a genuine completed result. | Test (TC-228) |
 | FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
 | FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |

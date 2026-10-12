@@ -13,9 +13,11 @@ relationships:
 ## Description
 
 Verify that `allInstances<T>` on a successfully admitted population returns
-a typed incomplete result naming uncovered subtype closure and returns the
-complete deduplicated set only when every effective subtype of `T` is
-covered, in canonical reference-key order independent of input order. Scope:
+a typed incomplete result naming subtype closure and queried type `T` when
+`T` conforms to no declared member type, and otherwise returns the complete
+deduplicated set in canonical reference-key order independent of input order.
+Conformance is reflexive: a declared member type covers itself and every type
+that conforms to it, but a declared child does not cover its parent or sibling. Scope:
 FR-084-AC-2 and FR-090-AC-21. The separate object-closure admission case
 (open extent yields unknown-closure and no binding) is owned by TC-226 under
 FR-084-AC-1; no query runs without an admitted binding. This test targets
@@ -25,53 +27,42 @@ The implementation binders are delivered by companion PR #763:
 `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`
 for the S6a incomplete result, and
 `qsl-semantics/tests/it/model_population.rs::all_instances_requires_declared_subtype_closure`
-for the complete-coverage/canonical-order control. Both names were verified
-on the companion PR branch; the source implementation remains in that code PR.
+for the complete-coverage/canonical-order control and the zero-work
+pre-charge incompleteness assertion, and
+`qsl-semantics/tests/it/model_population.rs::all_instances_does_not_walk_unrelated_type_catalog`
+for the no-catalog-walk guard. Both names were verified on the companion PR
+branch; the source implementation remains in that code PR.
 
-Catches an implementation that, on discovering mid-query that the
-population's declared member types do not cover every effective subtype of
-`T`, returns the members it has already visited as if they were the
-complete answer, rather than discarding the partial collection and
-reporting incompleteness — invisible to a test that only checks "the query
-did not silently return `false`/`None`," since a partial `Set` is neither.
+Catches an implementation that returns a complete collection when `T` does
+not conform to any declared member type, or returns a partial collection
+instead of the typed incomplete result.
 
 ## Test Procedure
 
-1. Declare object type `Item` with a subtype `SpecialItem` (`supertypes:
-   [Item]`).
-2. Declare an incomplete-subtype-closure population with extent `closed` and
-   declared member types `{Item}` only. Admit a binding containing several
-   plain `Item` members and no `SpecialItem` members. Every member's
-   most-specific effective type is covered by the declaration, so population
-   admission succeeds. `SpecialItem` remains an effective subtype in the type
-   graph but is deliberately absent from this population's runtime members;
-   the declaration nevertheless does not cover it as a subtype of queried
-   type `Item`.
-3. Query `allInstances<Item>` through `CheckedPackage::evaluate` against this
+1. Query `T` with a declared parent and then a declared grandparent; both
+   cover the query. Query `T` when `T` itself is declared; reflexivity covers
+   that query.
+2. Query a parent `T` with only its child declared, and query one child with
+   only its sibling declared. Both are incomplete because `T` does not
+   conform to a child or sibling.
+3. Through `CheckedPackage::evaluate`, query an incomplete case against an
    admitted binding. This is the separate S6a incomplete-closure case, not an
    object-closure admission failure.
-4. Declare a complete-subtype-closure population, extent `closed`, with
-   declared member types `{Item, SpecialItem}` and members including several
-   plain `Item`s and at least one `SpecialItem`. Admit its binding and query
-   `allInstances<Item>` against it, once with members supplied in one order
-   and again with members supplied in a different order.
+4. For a covered case, admit equivalent members in different input orders
+   and query `allInstances<T>` against both bindings.
 
 ## Expected Results
 
-Step 3 returns `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`;
+Step 2/3 returns `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`;
 `cause.undefined_record()` has reason `incomplete-closure`, queried type
-`Item`, and the uncovered subtype `SpecialItem`, with no collection. It does
-not return a refusal or a partial set containing only the plain `Item`
-members it managed to visit. Step 4 returns the complete set (every `Item`
-and `SpecialItem` member) in the same canonical reference-key order
-regardless of input member order. A mutant that returns the partially-gathered
-`Item`-only set in step 3 produces a non-empty, plausible-looking `Set`
-there, failing the result-type assertion.
+`T`, and subtype marker `T`, with no collection. It does not return a
+refusal or a partial set. Step 4 returns the complete set in the same
+canonical reference-key order regardless of input member order. A mutant
+that returns a set in an incomplete case fails the result-type assertion.
 
 The subtype-incomplete result is evaluated through the public
 `CheckedPackage::evaluate` adapter. Its outcome is
 `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, whose
 `undefined_record()` has reason `incomplete-closure`, `closure` `subtype`,
-queried `type` `Item`, and the complete missing-subtype list containing
-`SpecialItem`; it exposes no member collection. The exact query and every
-missing effective subtype are retained structurally at that boundary.
+queried `type` `T`, and subtype marker `T`; it exposes no member collection.
+The query and marker are retained structurally at that boundary.

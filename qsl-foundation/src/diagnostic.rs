@@ -1256,6 +1256,9 @@ pub enum UndefinedReason {
     /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
     /// names no member of the population bound to `p`.
     AbsentKey,
+    /// FR-090-AC-21: an `allInstances<T>` query cannot establish subtype
+    /// closure for the admitted population declaration.
+    IncompleteClosure,
 }
 
 impl UndefinedReason {
@@ -1264,6 +1267,7 @@ impl UndefinedReason {
         match self {
             Self::PreconditionFalse => "precondition-false",
             Self::AbsentKey => "absent-key",
+            Self::IncompleteClosure => "incomplete-closure",
         }
     }
 }
