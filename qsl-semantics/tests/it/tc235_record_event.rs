@@ -233,6 +233,53 @@ fn tc235_m14_event_invariant_is_bound_without_an_event_value() {
     }
 }
 
+/// TC-235 M10 keeps the boundary between value/event/state/process/storage/
+/// namespace meanings and the object references allowed by object fields.
+#[test]
+fn tc235_m10_business_meanings_are_not_object_reference_targets() {
+    for target in [
+        "OrderManagement",
+        "OrderStore",
+        "OrderPlaced",
+        "OrderLifecycle",
+        "Fulfilment",
+    ] {
+        let document = mutate_k2(|document| {
+            type_named_mut(document, "Order")["fields"]
+                .as_array_mut()
+                .unwrap()
+                .push(field("Order", "ref", &id(target)));
+        });
+        let refusals = normalized_refusals(&document, 22);
+        assert_eq!(
+            refusals.len(),
+            1,
+            "M10 field target {target} has one refusal: {refusals:?}"
+        );
+        assert_malformed_at(&refusals[0], &id("Order/ref"), "Field.typeRef");
+    }
+
+    let namespace_supertype = mutate_k2(|document| {
+        type_named_mut(document, "Order")["supertypes"] = json!([id("OrderManagement")]);
+    });
+    let refusals = normalized_refusals(&namespace_supertype, 21);
+    assert_eq!(refusals.len(), 1, "M10 namespace supertype: {refusals:?}");
+    assert_malformed_at(&refusals[0], &id("Order"), "TypeDefinition.supertypes[0]");
+
+    let operation_frame = mutate_k2(|document| {
+        let mut open = super::operation("Order", "open");
+        open["frame"]["creates"] = json!([id("OrderStore")]);
+        type_named_mut(document, "Order")["operations"] = json!([open]);
+    });
+    let refusals = normalized_refusals(&operation_frame, 22);
+    assert_eq!(refusals.len(), 1, "M10 storage frame: {refusals:?}");
+    assert_malformed_at(
+        &refusals[0],
+        &id("Order/open"),
+        "Operation.frame.creates[0]",
+    );
+}
+
 /// TC-235 M17 keeps the record subtype's inherited fields and invariant under
 /// its own effective identity, and reports wrong-meaning ancestry and a
 /// specialization cycle with the specified typed outcomes.
