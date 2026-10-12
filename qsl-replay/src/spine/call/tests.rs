@@ -207,13 +207,22 @@ fn lookup_driver_context(
     );
     let world = ObjectClosure::new(
         checked.package().graph().scope().types(),
-        [(
-            present.clone(),
-            vec![(
-                "code",
-                quire_exact::FieldValue::Present(Value::Integer(Integer::from(7_i64))),
-            )],
-        )],
+        [
+            (
+                present.clone(),
+                vec![(
+                    "code",
+                    quire_exact::FieldValue::Present(Value::Integer(Integer::from(7_i64))),
+                )],
+            ),
+            (
+                absent.clone(),
+                vec![(
+                    "code",
+                    quire_exact::FieldValue::Present(Value::Integer(Integer::from(8_i64))),
+                )],
+            ),
+        ],
         &[],
     )
     .expect("the lookup driver object closure admits");
