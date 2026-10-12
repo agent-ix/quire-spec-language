@@ -14,7 +14,9 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId, Fact, RuleRef, RULE_REDEFINE};
+use qsl_semantics::model::key::{
+    DeclarationKey, EffectiveId, Fact, RuleRef, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+};
 use qsl_semantics::model::normalize::{
     normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     ObjectUniverse, Refusals,
@@ -3031,12 +3033,8 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
     }
 }
 
-/// An operation-member redefinition record is charged by
-/// `normalize.redefinition-check` exactly like a field one, and
-/// its owner's effective-member count `m` includes operation members —
-/// `apply_redefinitions` itself still skips operation-member redefinition
-/// for conflict *resolution* (see the module docs; `crate::model::conformance`
-/// resolves that directly), so this checks the charge alone.
+/// Operation members receive qualify, inherit, and both redefine facts in
+/// the effective view, with the same ordered charges as field members.
 fn fixture_operation_redefinition() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.op-redef"),
@@ -3059,14 +3057,6 @@ fn fixture_operation_redefinition() -> DomainPackage {
 /// relationships, not declarations, and never charge their own
 /// `normalize.record`.
 ///
-/// Revert probe: reverting the `m` computation to count only
-/// `member_counts_by_owner`'s pre-fix (field-only) tally, with no
-/// operation-member contribution, makes both assertions below fail: the
-/// total drops from `16` to `14` (the redefinition-check charge drops from
-/// `2` to `0`), and `work_units = 8` no longer denies at
-/// `normalize.redefinition-check` (`next_charge` drops to `0`) — confirmed
-/// by hand: removing the operation-member contribution locally reproduces
-/// both failures, restoring it returns this test to green.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn operation_redefinition_is_charged_like_a_field_redefinition() {
@@ -3074,7 +3064,7 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    assert!(matches!(&outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
         admitted
@@ -3082,8 +3072,7 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
             .filter(|point| **point == ChargePoint::NormalizeRedefinitionCheck)
             .count(),
         1,
-        "the operation redefinition record is charged even though \
-         apply_redefinitions itself never resolves it"
+        "the operation redefinition record is charged before its facts"
     );
     assert_eq!(
         admitted
@@ -3091,28 +3080,98 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
             .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
             .count(),
         0,
-        "operation-member redefinition resolution stays out of scope for \
-         apply_redefinitions (see the module docs); only the charge changed"
+        "one operation redefiner has no competing-target check"
+    );
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeFact)
+            .count(),
+        9,
+        "four qualify, three inherit/qualify, and two redefine facts"
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        16,
-        "4 normalize.record (A, B, A.op, B.op2 -- Supertype/Redefinition \
-         records are relationships, not declarations) + 2 normalize.fact \
-         (A/B qualify) + 1 normalize.cycle-check + 1 normalize.fact (B's \
-         own inherit-A path) + 1 normalize.redefinition-check (m + r = 2 + \
-         0) + 2 normalize.declaration + 2 normalize.hash (per type \
-         declaration) + 2 normalize.hash (universe/view) = 16; no member \
-         declarations at all, since operation members never enter \
-         member_preimages"
+        28,
+        "4 records + 4 phase-2 facts + 1 cycle-check + 3 phase-3 facts \
+         + 2 redefinition-check units + 2 phase-4 facts + 5 declarations \
+         + 5 declaration hashes + 2 universe/view hashes = 28"
     );
 
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the operation redefinition fixture completes");
+    };
+    assert_eq!(view.declarations().len(), 5);
+    let owner_a = view
+        .type_identities()
+        .get(&DeclarationKey::fixture("model.A"))
+        .expect("A has an effective type identity");
+    let direct = view
+        .declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner_a)
+                && entry.preimage.original == DeclarationKey::fixture("model.A.op")
+        })
+        .expect("A contains its direct operation");
+    assert_eq!(
+        direct.preimage.derivation.iter().map(|fact| fact.rule.identity).collect::<Vec<_>>(),
+        vec![RULE_QUALIFY.identity]
+    );
+    assert!(direct.visible);
+    let owner = view
+        .type_identities()
+        .get(&DeclarationKey::fixture("model.B"))
+        .expect("B has an effective type identity");
+    let inherited = view
+        .declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner)
+                && entry.preimage.original == DeclarationKey::fixture("model.A.op")
+        })
+        .expect("B contains inherited A.op");
+    assert_eq!(
+        inherited.preimage.derivation.iter().map(|fact| fact.rule.identity).collect::<Vec<_>>(),
+        vec![RULE_QUALIFY.identity, RULE_INHERIT.identity, RULE_REDEFINE.identity]
+    );
+    assert!(!inherited.visible);
+    let redefining = view
+        .declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner)
+                && entry.preimage.original == DeclarationKey::fixture("model.B.op2")
+        })
+        .expect("B contains direct B.op2");
+    assert_eq!(
+        redefining.preimage.derivation.iter().map(|fact| fact.rule.identity).collect::<Vec<_>>(),
+        vec![RULE_QUALIFY.identity, RULE_REDEFINE.identity]
+    );
+    assert!(redefining.visible);
+
+    for (fact_limit, expected_work) in [(4, 9), (7, 14)] {
+        let mut limits = ModelNormalizationLimits::UNLIMITED;
+        limits.derivation_facts = fact_limit;
+        let (limited, limited_meter) = normalize_with_meter(&domain_package, limits);
+        match limited {
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
+                assert_eq!(incomplete.consumed, fact_limit);
+                assert_eq!(incomplete.next_charge, fact_limit + 1);
+                assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+                assert_eq!(limited_meter.consumed(LimitKind::WorkUnits), expected_work);
+            }
+            other => panic!("expected operation fact cap {fact_limit} to deny, got {other:?}"),
+        }
+    }
+
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 8;
+    limits.work_units = 12;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.consumed, 8);
+            assert_eq!(incomplete.consumed, 12);
             assert_eq!(
                 incomplete.next_charge, 2,
                 "m(B) = 2 (A.op inherited, B.op2 direct), r = 0"
