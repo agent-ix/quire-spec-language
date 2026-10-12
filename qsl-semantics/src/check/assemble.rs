@@ -674,7 +674,6 @@ fn model_object_types(
             }
             DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::EventType(_)
-            | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
@@ -690,10 +689,15 @@ fn model_object_types(
     }
     let mut declarations = Vec::new();
     for record in &package.records {
-        let DomainPackageRecord::ObjectType(object) = record else {
-            continue;
+        // FR-208 state-machine meanings bind through the same checked object
+        // type surface as ordinary object types. Their states and transitions
+        // remain source records; only their declared type and owner-linked
+        // fields/operations participate in this assembly seam.
+        let (key, supertypes) = match record {
+            DomainPackageRecord::ObjectType(object) => (&object.key, &object.supertypes),
+            DomainPackageRecord::StateMachine(machine) => (&machine.key, &machine.supertypes),
+            _ => continue,
         };
-        let key = &object.key;
         let (Some(artifact), Some(identity)) = (
             type_identity_segment(&key.package, &key.node),
             identities.get(key),
@@ -701,10 +705,10 @@ fn model_object_types(
             errors.push(broken(&key.node));
             continue;
         };
-        let mut supertypes = Vec::with_capacity(object.supertypes.len());
-        for supertype in &object.supertypes {
+        let mut effective_supertypes = Vec::with_capacity(supertypes.len());
+        for supertype in supertypes {
             match identities.get(supertype) {
-                Some(id) => supertypes.push(*id),
+                Some(id) => effective_supertypes.push(*id),
                 None => errors.push(broken(&supertype.node)),
             }
         }
@@ -717,7 +721,7 @@ fn model_object_types(
                 format!("{alias}::{artifact}"),
                 fields.remove(key).unwrap_or_default(),
             )
-            .with_supertypes(supertypes),
+            .with_supertypes(effective_supertypes),
         );
     }
     // An operation whose owner is no object type: a broken record (every
