@@ -796,11 +796,16 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
 #[test]
 #[trace("TC-921", "FR-100-AC-13")]
 fn native_run_integer_bits_limit_reaches_evaluation() {
-    let program = std::fs::read(RUN_FIXTURE).unwrap();
+    let fixture = std::fs::read_to_string(RUN_FIXTURE).unwrap();
+    let program = fixture.replace(
+        "function seven using v(): Digit pure { 7 }",
+        "function seven using v(): Digit pure { 7 + 1 }",
+    );
+    assert_ne!(program, fixture, "the fixture's seven body must be updated");
     let directory = tempfile::tempdir().unwrap();
     let mut request = call("seven", json!([]));
     request["accounting"] = json!({"integer_bits": 0});
-    spine_run_request(directory.path(), &program, request);
+    spine_run_request(directory.path(), program.as_bytes(), request);
 
     let output = run(directory.path());
     assert_eq!(
