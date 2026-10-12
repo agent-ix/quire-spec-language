@@ -1433,7 +1433,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
                 artifact,
                 span,
                 format!(
-                    "agent-ix-semantic-ir refused this document at {} ({}) ({}): {}",
+                    "agent-ix-semantic-ir refused this document at {} ({}) on {node} ({}): {}",
                     semantic_member_path(&located.pointer)
                         .as_deref()
                         .unwrap_or("the source member"),
@@ -1580,11 +1580,19 @@ fn declared_node_for_pointer<'a>(
         }
         return None;
     }
-    document
+    let declaration = document
         .tree
         .get(collection)?
         .as_array()?
-        .get(position.parse::<usize>().ok()?)
+        .get(position.parse::<usize>().ok()?)?;
+    if segments.next()? == "transitions" {
+        let transition_index = segments.next()?.parse::<usize>().ok()?;
+        return declaration
+            .get("transitions")?
+            .as_array()?
+            .get(transition_index);
+    }
+    Some(declaration)
 }
 
 /// FR-208 Generalization / AC-12: the schema gate still refuses the document,
@@ -1630,8 +1638,9 @@ fn business_generalization_refusal(
         && !ctx.array_field("supertypes").ok()?.is_empty()
     {
         let mut refusal = unsupported_at(node, &ctx.at, format!("{resolved}:supertypes"));
+        let member = semantic_member_path(&located.pointer).unwrap_or_default();
         refusal.detail = format!(
-            "{}: {owner}: supertypes are unsupported for {resolved}",
+            "{}: {owner}: {member} are unsupported for {resolved}",
             ctx.at
         );
         return Some(refusal);
