@@ -332,6 +332,22 @@ fn assert_malformed_refusal(document: &Value, detail: &str) {
     assert!(refusals[0].detail.contains(detail), "{refusals:?}");
 }
 
+fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
+    let refusals = normalized_refusals(document, 21);
+    assert_eq!(
+        refusals.len(),
+        1,
+        "one normalized M07 refusal: {refusals:?}"
+    );
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert!(matches!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            | ModelRefusalCause::MalformedDeclaration
+    ));
+    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+}
+
 fn assert_unsupported_refusal(document: &Value, detail: &str) {
     let refusals = read_refusals(document);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
@@ -355,7 +371,7 @@ fn assert_missing_refusal(document: &Value, detail: &str) {
 }
 
 fn assert_process_duplicate_step_refusal(document: &Value) {
-    let refusals = read_refusals(document);
+    let refusals = normalized_refusals(document, 21);
     assert_eq!(
         refusals.len(),
         1,
@@ -377,7 +393,7 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
 }
 
 fn assert_process_non_event_refusal(document: &Value) {
-    let refusals = read_refusals(document);
+    let refusals = normalized_refusals(document, 21);
     assert_eq!(
         refusals.len(),
         1,
@@ -398,7 +414,7 @@ fn assert_process_non_event_refusal(document: &Value) {
 }
 
 fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
-    let refusals = read_refusals(document);
+    let refusals = normalized_refusals(document, 21);
     assert_eq!(refusals.len(), 1, "one process event refusal: {refusals:?}");
     assert_eq!(refusals[0].code, Code::MissingDeclaration);
     let ModelRefusalCause::IntakeMissingDeclaration {
@@ -716,11 +732,11 @@ fn tc235_m07_process_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["identityFields"] = json!([]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_normalized_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"] = json!([]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_normalized_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"]
@@ -738,7 +754,7 @@ fn tc235_m07_process_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][0]["consumes"] = json!([id("Money")]);
-    assert_malformed_refusal(&document, "Fulfilment");
+    assert_normalized_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
