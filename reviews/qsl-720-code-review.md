@@ -3,7 +3,7 @@ id: SR-7818
 title: "Code and Rust review — QSL-720 formatter/CI changes"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@e64eeb642b6d8fc1b5fcbda18ea8f6533ce10762; Makefile, tests/it/formatter_identity.rs, xtask/src/ci_feature_lane_tests.rs, xtask/src/ci_feature_lane_tests/cargo_double.rs, reviews/qsl-720-code-review.md, reviews/qsl-720-gap-analysis.md; NFR-013-AC-1..3, FR-003-AC-9, TC-915"
+scope: "agent-ix/quire-spec-language@f25cdc3aa9e3b17d8113435adbb2c67f5992d7b9; Makefile, tests/it/formatter_identity.rs, xtask/src/ci_feature_lane_tests.rs, xtask/src/ci_feature_lane_tests/cargo_double.rs, reviews/qsl-720-code-review.md, reviews/qsl-720-gap-analysis.md; NFR-013-AC-1..3, FR-003-AC-9, TC-915"
 review_set: subset
 relationships:
   - { target: "ix://agent-ix/quire-spec-language/NFR-013", type: reviews }
@@ -27,6 +27,8 @@ Re-reviewed the complete QSL-720 pull-request diff at `e64eeb642b6d8fc1b5fcbda18
 
 ## Dispositions
 
+### Round 3 — reviewed e64eeb642b6d8fc1b5fcbda18ea8f6533ce10762
+
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | 44d0993591db98a64782e7029a8a49cb1fbf82fb |
@@ -40,8 +42,20 @@ Round 3, exact-head recheck: the default/all-feature workspace test recipes no l
 - Rust-specific review: repo `AGENTS.md`/`CLAUDE.md`, Rust test tracing, ignored-test target routing, mutation/oracle behavior, stack-bound control, panic surface, and exact current diff.
 - The prior FND-001 disposition was checked against commit `44d0993591db98a64782e7029a8a49cb1fbf82fb` and current source at the reviewed head.
 
+### Round 4 — reviewed f25cdc3aa9e3b17d8113435adbb2c67f5992d7b9
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44d0993591db98a64782e7029a8a49cb1fbf82fb |
+
+Outcome re-confirmed: formatting and verbatim artifact copies do not alter the unchanged argv recipes or their independent oracle. No new finding.
+
 ## Verification
 
 - `git diff --check origin/main...HEAD`: reported trailing blank lines in the two review artifacts; no source whitespace issue was reported.
 - GitHub checks read at review time: CLA and CLA gate checks passed; these are not the PR's local build gate.
 - No Cargo build/test/clippy gate was run during this review. The queued gate is independent and was not awaited.
+
+## Follow-up round 4
+
+At `f25cdc3aa9e3b17d8113435adbb2c67f5992d7b9`, the only source delta since the prior reviewed head is rustfmt layout in `xtask/src/ci_feature_lane_tests.rs`. Running rustfmt on both revisions produces byte-identical output. The two committed review artifacts compare byte-for-byte with their prior scratchpad versions. Neither change affects the NFR-013-AC-3 receipts or the FND-001 fix; no new code/Rust finding was found. Focused acceptance-to-test checks confirmed NFR-013-AC-1/2/3 bind to the recorder tests, FR-003-AC-9 remains tagged on formatter identity cases, and the exact ignored cases still run through `test-deep-format` in `CI_CHECKS`.
