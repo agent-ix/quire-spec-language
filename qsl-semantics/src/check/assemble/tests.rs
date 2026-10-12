@@ -15,10 +15,12 @@ use quire_exact::{
 use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ScalarTypeRecord,
-    ScalarValueDomain, ValueTypeRef,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    NativeValueType, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, ValueTypeRef,
 };
+use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::{normalize, ModelNormalizationLimits, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldDeclaration;
 use quire_semantic_value::location::{Location, Origin};
@@ -66,6 +68,34 @@ fn errors(declarations: &str) -> (String, Vec<AssemblyError>) {
         Err(refusal) => (text, refusal.errors),
         Ok(_) => panic!("{declarations}: the assembler refuses"),
     }
+}
+
+#[test]
+fn a_state_machine_meaning_is_emitted_as_an_object_type() {
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc235-state-machine-assembly"),
+        vec![DomainPackageRecord::StateMachine(StateMachineRecord {
+            key: DeclarationKey::fixture("model.OrderLifecycle"),
+            supertypes: Vec::new(),
+            states: Vec::new(),
+            transitions: Vec::new(),
+        })],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the state-machine domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+    };
+    let mut operations = super::OperationTable::default();
+    let declarations = super::model_object_types("M", &selected, selected.span, &mut operations)
+        .expect("state-machine meaning is supported by the object-type seam");
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name(), "M::OrderLifecycle");
 }
 
 /// The span of the last occurrence of `needle` in `text`.
