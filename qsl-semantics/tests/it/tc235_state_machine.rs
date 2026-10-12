@@ -110,6 +110,7 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
         type_named_mut(document, "OrderLifecycle")["operations"] = json!([]);
     });
     let refusals = normalized_refusals(&empty_operations, 19);
+    for r in &refusals {}
     assert_eq!(refusals.len(), 4);
     assert_malformed_at(
         &refusals[0],
@@ -157,6 +158,20 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let package = read_k2(&extra_invariant).expect("an unreferenced invariant is valid");
     record_charges(&package, 22);
+    // M06 run 4: `Extra` is retained as a clause of the machine, and
+    // `NotYetPlaced` stays the guard of transition `[0]`.
+    assert!(package.records.iter().any(|record| matches!(
+        record,
+        DomainPackageRecord::Clause(clause)
+            if clause.key.node == id("OrderLifecycle/Extra")
+                && clause.owner.node == id("OrderLifecycle")
+    )));
+    assert!(package.records.iter().any(|record| matches!(
+        record,
+        DomainPackageRecord::StateMachine(machine)
+            if machine.key.node == id("OrderLifecycle")
+                && machine.transitions[0].guard.as_deref() == Some("NotYetPlaced")
+    )));
 
     let duplicate_state = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["states"]
@@ -166,6 +181,7 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_state, 21);
     assert_eq!(refusals.len(), 1);
+    for r in &refusals {}
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "conflicting-binding");
     assert!(refusals[0].detail.contains("TypeDefinition.states[3]"));
@@ -190,10 +206,14 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     assert!(refusals[0].detail.contains("TypeDefinition.transitions[3]"));
 
     let operation_postcondition = mutate_k2(|document| {
-        type_named_mut(document, "OrderLifecycle")["operations"][0]["ensures"] =
-            json!([clause("OrderLifecycle/place", "Placed", "self.placed")]);
+        type_named_mut(document, "OrderLifecycle")["operations"][0]["post"] = json!([{
+            "language": "quire",
+            "text": "self.placed",
+            "origin": origin("OrderLifecycle/place"),
+        }]);
     });
     let package = read_k2(&operation_postcondition).expect("operation postcondition is valid");
+    // "no added declaration": the same 21 charges as K2 itself.
     record_charges(&package, 21);
 }
 

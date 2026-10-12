@@ -1306,24 +1306,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             })
             .collect();
         operations.sort_by(|left, right| left.key.cmp(&right.key));
-        if operations.is_empty() {
-            refusals.push(malformed(
-                "TypeDefinition.operations",
-                "a state machine declares at least one operation",
-            ));
-        }
-        if machine.states.is_empty() {
-            refusals.push(malformed(
-                "TypeDefinition.states",
-                "a state machine declares at least one state",
-            ));
-        }
-        if machine.transitions.is_empty() {
-            refusals.push(malformed(
-                "TypeDefinition.transitions",
-                "a state machine declares at least one transition",
-            ));
-        }
+        refusals.extend(state_machine_required_members(
+            machine,
+            operations.is_empty(),
+        ));
 
         let mut machine_chain = HashSet::from([machine.key.clone()]);
         let mut effective_states: HashSet<DeclarationKey> = machine
@@ -1356,10 +1342,8 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             if let Some(previous) = state_names.insert(&state.name, &state.key) {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::DerivationConflict {
-                        type_: machine.key.clone(),
-                        member: previous.clone(),
-                        redefiners: vec![state.key.clone()],
+                    cause: ModelRefusalCause::ConflictingBinding {
+                        key: state.key.clone(),
                     },
                     detail: format!(
                         "{}: TypeDefinition.states[{position}] conflicts with {}",
@@ -1502,10 +1486,8 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             ) {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::DerivationConflict {
-                        type_: machine.key.clone(),
-                        member: previous.clone(),
-                        redefiners: vec![transition.key.clone()],
+                    cause: ModelRefusalCause::ConflictingBinding {
+                        key: transition.key.clone(),
                     },
                     detail: format!(
                         "{}: TypeDefinition.transitions[{position}] conflicts with {}",
@@ -1632,6 +1614,69 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
 /// Process subtype identity and ancestry checks are normalization decisions:
 /// an empty authored identity list inherits from a process supertype, while a
 /// missing list and a cross-meaning supertype retain their ordered loci.
+/// FR-208-AC-5: a state machine declares at least one operation, state and
+/// transition. Each missing member is `invalid_model_binding`/
+/// `malformed-declaration` naming the machine.
+fn state_machine_required_members(
+    machine: &crate::model::domain_package::StateMachineRecord,
+    no_operations: bool,
+) -> Vec<ModelRefusal> {
+    let malformed = |path: &str, reason: &str| ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+            node: machine.key.node.clone(),
+            artifact: None,
+            span: None,
+        },
+        detail: format!("{}: {path}: {reason}", machine.key.node),
+    };
+    let mut refusals = Vec::new();
+    if no_operations {
+        refusals.push(malformed(
+            "TypeDefinition.operations",
+            "a state machine declares at least one operation",
+        ));
+    }
+    if machine.states.is_empty() {
+        refusals.push(malformed(
+            "TypeDefinition.states",
+            "a state machine declares at least one state",
+        ));
+    }
+    if machine.transitions.is_empty() {
+        refusals.push(malformed(
+            "TypeDefinition.transitions",
+            "a state machine declares at least one transition",
+        ));
+    }
+    refusals
+}
+
+/// The required-member refusals of every state machine, for the intake
+/// phase: intake reports every refusal in node order, so a machine's missing
+/// members precede its own unresolved references.
+fn intake_state_machine_refusals(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut machines: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::StateMachine(machine) => Some(machine),
+            _ => None,
+        })
+        .collect();
+    machines.sort_by(|left, right| left.key.cmp(&right.key));
+    machines
+        .into_iter()
+        .flat_map(|machine| {
+            let no_operations = !domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::OperationMember(operation)
+                    if operation.owner == machine.key)
+            });
+            state_machine_required_members(machine, no_operations)
+        })
+        .collect()
+}
+
 fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
     let mut processes: Vec<_> = domain_package
         .records
@@ -2371,8 +2416,16 @@ fn build(
                 .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
         )?;
     }
-    if let Ok(refusals) = Refusals::try_from(domain_package.intake_refusals.clone()) {
-        return Err(Denial::Refused(refusals));
+    if !domain_package.intake_refusals.is_empty() {
+        let mut refusals = intake_state_machine_refusals(domain_package);
+        refusals.extend(domain_package.intake_refusals.iter().cloned());
+        // Stable: a machine's missing members stay ahead of its references.
+        refusals.sort_by(|left, right| {
+            crate::model::intake::refusal_node(left).cmp(&crate::model::intake::refusal_node(right))
+        });
+        if let Ok(refusals) = Refusals::try_from(refusals) {
+            return Err(Denial::Refused(refusals));
+        }
     }
     if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
         return Err(Denial::Refused(refusals));
