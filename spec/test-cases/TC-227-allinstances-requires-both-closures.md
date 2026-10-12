@@ -39,8 +39,10 @@ did not silently return `false`/`None`," since a partial `Set` is neither.
    declared member types `{Item}` only. Admit a binding containing several
    plain `Item` members and no `SpecialItem` members. Every member's
    most-specific effective type is covered by the declaration, so population
-   admission succeeds; the population declaration nevertheless does not
-   cover the effective subtype `SpecialItem` of the queried type `Item`.
+   admission succeeds. `SpecialItem` remains an effective subtype in the type
+   graph but is deliberately absent from this population's runtime members;
+   the declaration nevertheless does not cover it as a subtype of queried
+   type `Item`.
 3. Query `allInstances<Item>` through `CheckedPackage::evaluate` against this
    admitted binding. This is the separate S6a incomplete-closure case, not an
    object-closure admission failure.

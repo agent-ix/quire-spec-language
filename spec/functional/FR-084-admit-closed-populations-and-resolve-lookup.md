@@ -110,9 +110,9 @@ order, independent of the input member order.
 The per-`T` coverage decision reads the subtype-closure facts retained by
 normalization under the admission-established closed-graph authority; it is
 made before query charging and adds no charge point. This follows
-quire-specification's value-accounting rule for `allInstances<T>`: subtype
-coverage is read from the admitted closure facts, while member walking alone
-uses the existing `population.visit` charge.
+quire-specification's `proposals/quire-v1/definitions/value-accounting.md`
+rule for `allInstances<T>`: subtype coverage is read from the retained closure
+facts, while member walking alone uses the existing `population.visit` charge.
 
 ### lookup distinguishes a genuine absence from a genuine refusal or incompleteness
 
