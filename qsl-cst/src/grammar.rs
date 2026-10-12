@@ -380,6 +380,13 @@ fn source_and_types(g: &mut Grammar) {
                 x("]"),
             ]),
             s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
+            s(vec![
+                x("Population"),
+                x("<"),
+                r(P::QualifiedName),
+                x(">"),
+                opt(s(vec![x("["), uint(), x("]")])),
+            ]),
             r(P::QualifiedName),
         ]),
     );

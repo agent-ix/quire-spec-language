@@ -527,6 +527,7 @@ fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal
         b"Text" => TypeFormHead::Builtin(BuiltinType::Text),
         b"Option" => TypeFormHead::Builtin(BuiltinType::Option),
         b"Reference" => TypeFormHead::Builtin(BuiltinType::Reference),
+        b"Population" => TypeFormHead::Population,
         b"Sequence" => TypeFormHead::Collection(CollectionKind::Sequence),
         b"Set" => TypeFormHead::Collection(CollectionKind::Set),
         b"Bag" => TypeFormHead::Collection(CollectionKind::Bag),

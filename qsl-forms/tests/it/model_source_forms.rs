@@ -87,6 +87,42 @@ fn lookup_retains_target_operands_explicit_absence_and_spans() {
     }
 }
 
+#[trace("TC-790", "FR-300-AC-1")]
+#[test]
+fn population_type_forms_retain_element_name_and_maximum() {
+    for (spelling, expected_bounds) in [
+        ("Population<M::Order>[3]", vec!["3".to_owned()]),
+        ("Population<M::Order>", Vec::<String>::new()),
+    ] {
+        let declaration = format!("function f using v(p: {spelling}): Boolean pure {{ true }}");
+        let (source, parsed) = parse(&declaration);
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = build_unit(&parsed).expect("S2 maps the population type");
+        let DeclarationForm::Function(function) = unit.forms()[0].form() else {
+            panic!("expected function");
+        };
+        let [(name, parameter)] = function.parameters.as_slice() else {
+            panic!("expected one parameter");
+        };
+        assert_eq!(name, "p");
+        assert_eq!(parameter.head, TypeFormHead::Population);
+        assert_eq!(parameter.arguments.len(), 1);
+        assert_eq!(
+            parameter.arguments[0].head,
+            TypeFormHead::Name("M::Order".into())
+        );
+        assert_eq!(parameter.bounds, expected_bounds);
+        let start = source.find(spelling).unwrap();
+        assert_eq!(
+            parameter.span,
+            Span {
+                start,
+                end: start + spelling.len()
+            }
+        );
+    }
+}
+
 #[trace("TC-790", "TC-792", "FR-300-AC-1", "FR-301-AC-2")]
 #[test]
 fn dispatch_preserves_receiver_and_argument_order_in_a_precondition() {

@@ -51,6 +51,28 @@ fn model_forms_preserve_source_bytes_and_named_productions() {
     }
 }
 
+#[trace("TC-790", "FR-300-AC-1")]
+#[test]
+fn population_type_references_are_admitted_as_named_type_productions() {
+    let text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: Population<M::Order>[3]): Boolean pure { true }\n";
+    let parsed = parse(text, Limits::default());
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(parsed.cst().render(), text.as_bytes());
+    let population = parsed
+        .cst()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.production() == Production::TypeReference
+                && node.span().start == text.find("Population<M::Order>[3]").unwrap()
+        })
+        .expect("population type reference");
+    assert_eq!(
+        population.span().end,
+        population.span().start + "Population<M::Order>[3]".len()
+    );
+}
+
 #[trace("TC-790", "FR-300-AC-2")]
 #[test]
 fn invalid_model_productions_refuse_at_the_offending_token() {
