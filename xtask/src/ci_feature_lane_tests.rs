@@ -29,13 +29,6 @@ const DEFAULT_COMMANDS: &[&[&str]] = &[
         "default-workspace",
         "--locked",
         "--workspace",
-        "--",
-        "--skip",
-        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-        "--skip",
-        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-        "--skip",
-        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
     ],
     &[
         "clippy",
@@ -104,13 +97,6 @@ const ALL_COMMANDS: &[&[&str]] = &[
         "--locked",
         "--workspace",
         "--all-features",
-        "--",
-        "--skip",
-        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-        "--skip",
-        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-        "--skip",
-        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
     ],
 ];
 
@@ -175,6 +161,22 @@ impl Recipe {
     }
 
     fn run(&self, targets: &[&str], root: Option<&str>, overrides: &[&str]) -> String {
+        let output = self.run_raw(targets, root, overrides, None);
+        assert!(
+            output.status.success(),
+            "actual Make recipes failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::read_to_string(self.directory.path().join("calls")).unwrap()
+    }
+
+    fn run_raw(
+        &self,
+        targets: &[&str],
+        root: Option<&str>,
+        overrides: &[&str],
+        list_count: Option<&str>,
+    ) -> std::process::Output {
         let log = self.directory.path().join("calls");
         if log.exists() {
             fs::remove_file(&log).unwrap();
@@ -204,13 +206,10 @@ impl Recipe {
         if let Some(root) = root {
             make.env("CARGO_TARGET_DIR", root);
         }
-        let output = make.output().unwrap();
-        assert!(
-            output.status.success(),
-            "actual Make recipes failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        fs::read_to_string(log).unwrap()
+        if let Some(count) = list_count {
+            make.env("FEATURE_LANE_LIST_COUNT", count);
+        }
+        make.output().unwrap()
     }
 }
 
@@ -334,20 +333,30 @@ fn deep_formatter_target_runs_each_full_size_case_and_is_in_ci() {
     let recipe = Recipe::new();
     let expected_calls: String = CASES
         .iter()
-        .map(|case| {
-            expected(
-                "target/test-deep-format",
-                &[&[
-                    "test",
-                    "--locked",
-                    "--test",
-                    "it",
-                    case,
-                    "--",
-                    "--exact",
-                    "--test-threads=1",
-                ]],
-            )
+        .flat_map(|case| {
+            [
+                expected(
+                    "target/test-deep-format",
+                    &[&[
+                        "test", "--locked", "--test", "it", case, "--", "--ignored",
+                        "--exact", "--list",
+                    ]],
+                ),
+                expected(
+                    "target/test-deep-format",
+                    &[&[
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        case,
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--test-threads=1",
+                    ]],
+                ),
+            ]
         })
         .collect();
     assert_eq!(
@@ -367,6 +376,19 @@ fn deep_formatter_target_runs_each_full_size_case_and_is_in_ci() {
             .any(|name| name == "test-deep-format"),
         "the named full-size target is included in make ci"
     );
+
+    for count in ["0", "2"] {
+        let output = recipe.run_raw(&["test-deep-format"], None, &[], Some(count));
+        assert!(
+            !output.status.success(),
+            "the deep target must reject {count} selected tests"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains(&format!("found {count}")),
+            "the failure reports the selected count"
+        );
+    }
 }
 
 #[test]
@@ -392,8 +414,8 @@ fn routing_oracle_rejects_safe_path_and_command_mutations() {
             "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features-mutant}\" cargo fmt --all -- --check",
         ),
         (
-            "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}\" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace -- --skip formatter_identity::all_three_deep_source_generators_keep_format_identity --skip formatter_identity::replay_large_source_generator_keeps_format_identity --skip formatter_identity::dependency_chain_and_order_variants_keep_format_identity\n",
-            "CARGO_TARGET_DIR=\"$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}\" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features -- --skip formatter_identity::all_three_deep_source_generators_keep_format_identity --skip formatter_identity::replay_large_source_generator_keeps_format_identity --skip formatter_identity::dependency_chain_and_order_variants_keep_format_identity\n",
+            "CARGO_TARGET_DIR=\"$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}\" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace\n",
+            "CARGO_TARGET_DIR=\"$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}\" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features\n",
         ),
     ] {
         // Mutate only the fixture copy, retaining safe shell-variable expansion.

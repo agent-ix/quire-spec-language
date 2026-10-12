@@ -199,7 +199,7 @@ endif
 ci-default-features:
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo fmt --all -- --check
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked --workspace --all-targets -- -D warnings
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace -- --skip formatter_identity::all_three_deep_source_generators_keep_format_identity --skip formatter_identity::replay_large_source_generator_keeps_format_identity --skip formatter_identity::dependency_chain_and_order_variants_keep_format_identity
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-workspace --locked --workspace
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo run --locked --package xtask -- test-suites default-qsl-semantics --locked -p qsl-semantics
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
@@ -207,14 +207,24 @@ ci-default-features:
 
 ci-all-features:
 	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features -- --skip formatter_identity::all_three_deep_source_generators_keep_format_identity --skip formatter_identity::replay_large_source_generator_keeps_format_identity --skip formatter_identity::dependency_chain_and_order_variants_keep_format_identity
+	CARGO_TARGET_DIR="$${CI_ALL_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-all-features}" cargo run --locked --package xtask -- test-suites all-features-workspace --locked --workspace --all-features
 
 # Full-depth formatter identity checks are isolated by their exact test name
 # from root IT and remain part of the aggregate gate in this named target.
 test-deep-format:
-	CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it formatter_identity::all_three_deep_source_generators_keep_format_identity -- --exact --test-threads=1
-	CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it formatter_identity::replay_large_source_generator_keeps_format_identity -- --exact --test-threads=1
-	CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it formatter_identity::dependency_chain_and_order_variants_keep_format_identity -- --exact --test-threads=1
+	@set -eu; \
+	for test in \
+		formatter_identity::all_three_deep_source_generators_keep_format_identity \
+		formatter_identity::replay_large_source_generator_keeps_format_identity \
+		formatter_identity::dependency_chain_and_order_variants_keep_format_identity; do \
+		listing=$$(CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --list); \
+		count=$$(printf '%s\n' "$$listing" | awk -v expected="$$test: test (ignored)" '$$0 == expected { count++ } END { print count+0 }'); \
+		if [ "$$count" -ne 1 ]; then \
+			echo "test-deep-format: expected exactly one ignored test for $$test, found $$count" >&2; \
+			exit 1; \
+		fi; \
+		CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --test-threads=1; \
+	done
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.

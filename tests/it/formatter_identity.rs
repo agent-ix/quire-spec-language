@@ -1319,6 +1319,7 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
 
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
 fn all_three_deep_source_generators_keep_format_identity() {
     let fixture = include_str!("../../qsl-package/src/emit/tests/deep_bodies.rs");
     let header = source_literal(fixture, "HEADER");
@@ -1382,6 +1383,7 @@ fn all_three_deep_source_generators_keep_format_identity() {
 
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
 fn replay_large_source_generator_keeps_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/execute/tests/composite.rs");
     let profile = source_literal(
@@ -1714,6 +1716,7 @@ fn dependency_library_and_scalar_variants_keep_format_identity() {
 
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
 fn dependency_chain_and_order_variants_keep_format_identity() {
     use crate::support::front_end::dependency_fixture_identity;
     use qsl_replay::spine::SuppliedLibrary;
