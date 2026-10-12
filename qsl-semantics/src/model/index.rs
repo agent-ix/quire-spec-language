@@ -1012,6 +1012,43 @@ mod tests {
     /// Mutation used: comparing the found ordinal with `<` instead of `<=`
     /// fails the chain's exact-ceiling cases.
     #[test]
+    fn native_uuid_and_string_types_are_distinct_identity_leaves() {
+        use super::super::domain_package::{NativeValueType, ValueTypeRef};
+
+        let uuid = ValueTypeRef::Native(NativeValueType::Uuid);
+        let string = ValueTypeRef::Native(NativeValueType::String);
+        assert_eq!(uuid, ValueTypeRef::Native(NativeValueType::Uuid));
+        assert_eq!(string, ValueTypeRef::Native(NativeValueType::String));
+        assert_ne!(uuid, string);
+        assert_eq!(uuid.to_string(), "ix://quire/native/UUID");
+        assert_eq!(string.to_string(), "ix://quire/native/String");
+
+        let package = DomainPackage::new(
+            DomainPackageRef::fixture("native-leaves"),
+            Vec::new(),
+        );
+        let index = RecordIndex::build(&package);
+        for native in [&uuid, &string] {
+            assert!(index
+                .value_type_conforms(
+                    native,
+                    native,
+                    0,
+                    qsl_foundation::Setting::ModelAncestorSteps
+                )
+                .expect("native conformance is not fallible"));
+        }
+        assert!(!index
+            .value_type_conforms(
+                &uuid,
+                &string,
+                0,
+                qsl_foundation::Setting::ModelAncestorSteps
+            )
+            .expect("native conformance is not fallible"));
+    }
+
+    #[test]
     #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-151-AC-5")]
     fn conforms_matches_the_bounded_walk_everywhere() {
         let packages = [
