@@ -1573,8 +1573,12 @@ fn process_subtype_identity_schema_diagnostic(
         "featureOrder",
     ];
     let has_root_shape = type_value.as_object().is_some_and(|object| {
-        required_root_members.iter().all(|member| object.contains_key(*member))
-            && object.keys().all(|member| known_type_members.contains(&member.as_str()))
+        required_root_members
+            .iter()
+            .all(|member| object.contains_key(*member))
+            && object
+                .keys()
+                .all(|member| known_type_members.contains(&member.as_str()))
     });
     let missing_identity = member.is_empty()
         && !type_value.get("identityFields").is_some()
