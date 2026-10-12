@@ -21,6 +21,8 @@ FR-084-AC-2 and FR-090-AC-21. The separate object-closure admission case
 FR-084-AC-1; no query runs without an admitted binding. This test targets
 the "no partial substitute" exit condition: it must fail against an
 implementation that returns a collection when subtype closure is missing.
+The executable S6a binder is
+`qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`.
 
 Catches an implementation that, on discovering mid-query that the
 population's declared member types do not cover every effective subtype of

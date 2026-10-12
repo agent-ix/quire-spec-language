@@ -107,6 +107,13 @@ subtype closure holds, the returned set SHALL contain each qualifying member
 exactly once, keyed by its reference identity, in canonical reference-key
 order, independent of the input member order.
 
+The per-`T` coverage decision reads the subtype-closure facts retained by
+normalization under the admission-established closed-graph authority; it is
+made before query charging and adds no charge point. This follows
+quire-specification's value-accounting rule for `allInstances<T>`: subtype
+coverage is read from the admitted closure facts, while member walking alone
+uses the existing `population.visit` charge.
+
 ### lookup distinguishes a genuine absence from a genuine refusal or incompleteness
 
 `lookup<T>(p, r)` SHALL resolve `r` against the population binding's members
@@ -185,7 +192,7 @@ their content digest are equal.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-084-AC-1 | Given a population declared with an `open` extent, admission reports the distinct unknown-closure outcome, carrying no binding; given the same closed-extent population whose generalization graph is not itself closed (`GeneralizationClosure::Open`), admission likewise reports the distinct unknown-closure outcome, naming the unresolved type, and carries no binding; given the same population declared `closed`, with a closed generalization graph and every member covered, admission succeeds; given a member of a type the population does not declare, admission is refused (not unknown-closure). | Test (TC-226) |
-| FR-084-AC-2 | Given a successfully admitted population whose declared member types do not cover every effective subtype of queried type `T`, `allInstances<T>` returns a typed incomplete result naming subtype closure and every uncovered effective subtype, with no collection; given the same population with every effective subtype of `T` covered, it returns the complete deduplicated set in canonical reference-key order regardless of input member order. Object closure is guaranteed by successful admission under the admission rule above. | Test |
+| FR-084-AC-2 | Given a successfully admitted population whose declared member types do not cover every effective subtype of queried type `T`, `allInstances<T>` returns a typed incomplete result naming subtype closure and every uncovered effective subtype, with no collection; given the same population with every effective subtype of `T` covered, it returns the complete deduplicated set in canonical reference-key order regardless of input member order. Object closure is guaranteed by successful admission under the admission rule above. | Test (TC-227; `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`) |
 | FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode, a genuine completed result. | Test (TC-228) |
 | FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
 | FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |
