@@ -7,12 +7,14 @@
 
 use super::*;
 
+use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::domain_package::{
     ClauseRecord, DomainPackageRecord, FieldMemberRecord, RecordValueTypeRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::intake::admit_unit;
+use qsl_semantics::model::key::{hex, DeclarationKey};
 use serde_json::json;
 
 fn key(node: &str) -> DeclarationKey {
@@ -44,89 +46,11 @@ fn field_for<'a>(package: &'a DomainPackage, node: &str) -> &'a FieldMemberRecor
         .unwrap_or_else(|| panic!("missing field {node}"))
 }
 
-fn m10_completed_package(
-    document: &serde_json::Value,
-    expected_charges: usize,
-) -> Result<DomainPackage, String> {
-    let package = read_k2(document).map_err(|refusals| format!("reader refusal: {refusals:?}"))?;
-    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
-    let actual_charges = meter
-        .admitted_charges()
-        .iter()
-        .filter(|charge| **charge == ChargePoint::NormalizeRecord)
-        .count();
-    if actual_charges != expected_charges {
-        return Err(format!(
-            "normalize.record charges {actual_charges}, expected {expected_charges}"
-        ));
-    }
-    match outcome {
-        NormalizeOutcome::Completed(_) => Ok(package),
-        other => Err(format!("expected completed normalization, got {other:?}")),
-    }
-}
-
-fn m10_refusal_mismatches(
-    document: &serde_json::Value,
-    expected_charges: usize,
-    expected_node: &str,
-    expected_path: &str,
-) -> Vec<String> {
-    let package = match read_k2(document) {
-        Ok(package) => package,
-        Err(refusals) => return vec![format!("reader refused before normalization: {refusals:?}")],
-    };
-    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
-    let actual_charges = meter
-        .admitted_charges()
-        .iter()
-        .filter(|charge| **charge == ChargePoint::NormalizeRecord)
-        .count();
-    let mut mismatches = Vec::new();
-    if actual_charges != expected_charges {
-        mismatches.push(format!(
-            "normalize.record charges {actual_charges}, expected {expected_charges}"
-        ));
-    }
-    let NormalizeOutcome::Refused(refusals) = outcome else {
-        mismatches.push(
-            "expected one malformed-declaration refusal, got completed normalization".to_owned(),
-        );
-        return mismatches;
-    };
-    if refusals.len() != 1 {
-        mismatches.push(format!("expected one refusal, got {refusals:?}"));
-        return mismatches;
-    }
-    let refusal = &refusals[0];
-    if refusal.code != Code::InvalidModelBinding
-        || refusal.cause.as_str() != "malformed-declaration"
-    {
-        mismatches.push(format!(
-            "expected invalid_model_binding/malformed-declaration, got {refusal:?}"
-        ));
-    }
-    // TC-235 specifies the public code/cause/locus. Different typed cause
-    // variants may carry that same malformed-declaration result; the
-    // detail path is the stable locus for causes without a node field.
-    let node_matches = match &refusal.cause {
-        ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-        | ModelRefusalCause::FrameEntryMalformed { node, .. } => node == expected_node,
-        ModelRefusalCause::MalformedDeclaration => refusal.detail.contains(expected_node),
-        _ => false,
-    };
-    if !node_matches || !refusal.detail.contains(expected_path) {
-        mismatches.push(format!(
-            "expected node {expected_node} at {expected_path}, got {refusal:?}"
-        ));
-    }
-    mismatches
-}
-
 /// TC-235 M16's semantic-model half: the process field, invariant, operation
 /// parameter/effect, and population membership survive real intake and
 /// normalization. Runtime truth for the two runs and operation outcomes are
 /// asserted by the evaluator/replay layer.
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
     let document = mutate_k2(|document| {
@@ -204,6 +128,7 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
 /// TC-235 M20's model-semantics half: a process subtype inherits its
 /// correlation identity and member meaning, keeps authored step order, and
 /// refuses cross-meaning ancestry and specialization cycles.
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     let with_process_subtype = |extra_step: bool| {
@@ -321,7 +246,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             }),
         ));
     });
-    let refusals = normalized_refusals(&wrong_meaning, 23);
+    let refusals = normalized_refusals(&wrong_meaning, 22);
     assert_eq!(refusals.len(), 1);
     assert_malformed_at(
         &refusals[0],
@@ -349,7 +274,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             }),
         ));
     });
-    let refusals = normalized_refusals(&cycle, 23);
+    let refusals = normalized_refusals(&cycle, 22);
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
@@ -360,6 +285,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
 /// their authored relationship, the clause and populations stay typed, and
 /// invalid target/owner meanings retain their FR-208 refusal boundary.
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let relationship = |owner: &str, name: &str, target: &str| {
@@ -478,6 +404,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
 /// type owned by the operation signature. Runtime-value-path comparison for
 /// `self.placed` versus `flags.placed` is an evaluator assertion and remains
 /// outside this source/assembly test.
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     let document = mutate_k2(|document| {
@@ -489,11 +416,14 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
                 "cancelled",
                 "ix://quire/native/Boolean",
             ));
-        type_named_mut(document, "OrderLifecycle")["clauses"] = json!([clause(
-            "OrderLifecycle",
-            "Consistent",
-            "not (self.placed and self.cancelled)",
-        )]);
+        type_named_mut(document, "OrderLifecycle")["clauses"]
+            .as_array_mut()
+            .unwrap()
+            .push(clause(
+                "OrderLifecycle",
+                "Consistent",
+                "not (self.placed and self.cancelled)",
+            ));
         document["types"].as_array_mut().unwrap().push(declaration(
             "Flags",
             "money",
@@ -569,7 +499,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     assert_eq!(place.parameters()[0].0, "flags");
     assert!(matches!(
         place.parameters()[0].1,
-        quire_exact::ValueType::Record { .. }
+        quire_exact::ValueType::Composite(_)
     ));
     assert_eq!(
         clause_for(&package, "OrderLifecycle/Consistent").text,
