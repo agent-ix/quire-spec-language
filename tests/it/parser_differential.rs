@@ -31,6 +31,12 @@ const INPUTS_PER_FAMILY: usize = 10_000;
 /// The always-on run: the first 1,000 inputs of each family, 30 buckets.
 const QUICK_INPUTS_PER_FAMILY: usize = 1_000;
 const BUCKET: usize = 100;
+// The complete-family baseline includes parser refusal expected-token sets.
+// QSL-667 adds valid `Population` type and `lookup` expression forms, so those
+// sets legitimately gain the new grammar tokens. The generated inputs and
+// parser trees remain unchanged; the complete-family buckets were regenerated
+// to record the expanded diagnostics. Historical and composed native outputs
+// remain byte-identical.
 const BASELINE: &str = include_str!("../fixtures/parser-differential/baseline.txt");
 
 /// xorshift64*: a fixed, dependency-free generator so the inputs are the
