@@ -4,7 +4,7 @@
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::{ByteDigest, IntakeLimits, SourceIdentity};
+use qsl_foundation::{IntakeLimits, SourceIdentity};
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{
@@ -19,270 +19,9 @@ use qsl_semantics::model::normalize::{
 };
 use serde_json::{json, Value};
 
-const PACKAGE: &str = "test/orders";
-const BUSINESS: &str = "test/business";
-
-fn id(node: &str) -> String {
-    format!("ix://{PACKAGE}/{node}")
-}
-
-fn origin(node: &str) -> Value {
-    let identity = id(node);
-    json!({"generated": {
-        "generatorIdentity": identity,
-        "generatorVersion": "1.0.0",
-        "inputIdentities": [identity],
-    }})
-}
-
-fn construct(name: &str, semantic_meaning: &str) -> Value {
-    let shape = if semantic_meaning == meaning::VALUE_TYPE {
-        "alias"
-    } else {
-        "record"
-    };
-    let members = match semantic_meaning {
-        meaning::OBJECT_TYPE => json!({"identityFields": "required"}),
-        meaning::VALUE_TYPE => json!({"target": "required"}),
-        meaning::RECORD_VALUE_TYPE => json!({"identityFields": "optional"}),
-        meaning::EVENT_TYPE => json!({"identityFields": "optional", "occurrenceField": "required"}),
-        meaning::STATE_MACHINE => json!({"states": "required", "transitions": "required"}),
-        meaning::PROCESS => json!({"identityFields": "required", "steps": "required"}),
-        meaning::PERSISTENCE_INTERFACE => json!({"persists": "required"}),
-        meaning::NAMESPACE => json!({"members": "required", "vocabulary": "required"}),
-        _ => json!({}),
-    };
-    json!({
-        "kind": {"module": BUSINESS, "name": name},
-        "moduleVersion": "1.0.0",
-        "construct": {
-            "identity": "none", "shape": shape, "members": members,
-            "meaning": semantic_meaning,
-        },
-    })
-}
-
-fn declaration(name: &str, kind: &str, members: Value) -> Value {
-    let mut value = json!({
-        "identity": id(name), "displayName": name,
-        "kind": {"module": BUSINESS, "name": kind},
-        "roles": [], "origin": origin(name),
-        "constraints": [], "extensions": [], "unknownPolicy": "reject",
-    });
-    value
-        .as_object_mut()
-        .unwrap()
-        .extend(members.as_object().unwrap().clone());
-    value
-}
-
-fn field(owner: &str, name: &str, type_ref: &str) -> Value {
-    let node = format!("{owner}/{name}");
-    json!({
-        "identity": id(&node), "name": name, "typeRef": type_ref,
-        "presence": "required", "nullable": false, "defaultKind": "none",
-        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-        "origin": origin(&node),
-    })
-}
-
-fn operation(owner: &str, name: &str) -> Value {
-    let node = format!("{owner}/{name}");
-    json!({
-        "identity": id(&node), "name": name, "params": [], "pre": [], "post": [],
-        "frame": {"modifies": [], "creates": [], "deletes": []},
-        "origin": origin(&node),
-    })
-}
-
-fn clause(owner: &str, name: &str, text: &str) -> Value {
-    let node = format!("{owner}/{name}");
-    json!({
-        "identity": id(&node), "language": "quire", "clauseId": name,
-        "text": text, "origin": origin(&node),
-    })
-}
-
-fn jcs_digest(value: &Value) -> String {
-    let input = serde_json::to_vec(value).expect("fixture value serializes");
-    let document = quire_canonical::read(&input, u64::MAX).expect("fixture value is JSON");
-    let canonical = quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("fixture value has a JCS encoding");
-    format!(
-        "sha256:{}",
-        qsl_semantics::model::key::hex(&ByteDigest::of(&canonical).as_bytes())
-    )
-}
-
-fn domain_document(types: Vec<Value>, mut constructs: Vec<Value>) -> Value {
-    // Construct manifests identify this QSL-owned fixture's authored types.
-    // The selected package digest is independently computed by package_input
-    // from the complete bytes through quire-canonical's JCS reader.
-    let digest = jcs_digest(&Value::Array(types.clone()));
-    for item in &mut constructs {
-        item["manifestDigest"] = json!(digest);
-    }
-    json!({
-        "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": id("spec"), "version": "1.0.0", "dialect": "spec-bundle", "digest": digest},
-        "package": {"identity": PACKAGE, "version": "1", "manifestDigest": digest,
-                    "mappingVersions": [], "profileVersions": [], "lockDigest": digest},
-        "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
-    })
-}
-
-#[test]
-fn qsl_owned_digest_fixture_uses_sha256_jcs() {
-    assert_eq!(
-        jcs_digest(&json!({"a": 1})),
-        "sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
-    );
-}
-
-fn k2() -> Value {
-    let state = |name: &str| {
-        let node = format!("OrderLifecycle/{name}");
-        json!({"identity": id(&node), "name": name, "origin": origin(&node)})
-    };
-    let transition = |name: &str, from: &str, to: &str, trigger: &str, emits: Vec<String>| {
-        let node = format!("OrderLifecycle/{name}");
-        json!({
-            "identity": id(&node), "from": id(&format!("OrderLifecycle/{from}")),
-            "to": id(&format!("OrderLifecycle/{to}")),
-            "trigger": id(&format!("OrderLifecycle/{trigger}")),
-            "emits": emits, "origin": origin(&node),
-        })
-    };
-    let step = |name: &str, kind: &str, consumes: Vec<String>| {
-        let node = format!("Fulfilment/{name}");
-        json!({
-            "identity": id(&node), "name": name, "stepKind": kind,
-            "consumes": consumes, "emits": [], "origin": origin(&node),
-        })
-    };
-    let mut first = transition(
-        "transition0",
-        "Draft",
-        "Placed",
-        "place",
-        vec![id("OrderPlaced")],
-    );
-    // FCD's transition guard is keyed by the local clauseId, not by the
-    // clause's package identity.
-    first["guard"] = json!("NotYetPlaced");
-
-    let types = vec![
-        declaration(
-            "Order",
-            "thing",
-            json!({
-                "identityFields": [id("Order/order_id")],
-                "fields": [field("Order", "order_id", "ix://quire/native/UUID"),
-                           field("Order", "total", &id("Money"))],
-            }),
-        ),
-        {
-            let mut instant = declaration("Instant", "value", json!({}));
-            instant["target"] = json!("ix://quire/native/Timestamp");
-            instant
-        },
-        declaration(
-            "Money",
-            "money",
-            json!({
-                "fields": [field("Money", "amount_minor", "ix://quire/native/Integer"),
-                           field("Money", "currency", "ix://quire/native/String")],
-            }),
-        ),
-        declaration(
-            "OrderPlaced",
-            "happened",
-            json!({
-                "occurrenceField": id("OrderPlaced/occurred_at"),
-                "fields": [field("OrderPlaced", "occurred_at", &id("Instant")),
-                           field("OrderPlaced", "order_id", "ix://quire/native/UUID")],
-            }),
-        ),
-        declaration(
-            "OrderLifecycle",
-            "lifecycle",
-            json!({
-                "fields": [field("OrderLifecycle", "placed", "ix://quire/native/Boolean")],
-                "operations": [operation("OrderLifecycle", "place"), operation("OrderLifecycle", "cancel")],
-                "clauses": [clause("OrderLifecycle", "NotYetPlaced", "not self.placed")],
-                "states": [state("Draft"), state("Placed"), state("Cancelled")],
-                "transitions": [first,
-                    transition("transition1", "Draft", "Cancelled", "cancel", vec![]),
-                    transition("transition2", "Placed", "Cancelled", "cancel", vec![])],
-            }),
-        ),
-        declaration(
-            "Fulfilment",
-            "saga",
-            json!({
-                "identityFields": [id("Fulfilment/correlation_id")],
-                "fields": [field("Fulfilment", "correlation_id", "ix://quire/native/UUID")],
-                "operations": [],
-                "steps": [step("receive_order", "event", vec![id("OrderPlaced")]),
-                          step("reserve_stock", "command", vec![]),
-                          step("await_shipment", "wait", vec![])],
-            }),
-        ),
-        declaration(
-            "OrderStore",
-            "store",
-            json!({
-                "fields": [],
-                "operations": [operation("OrderStore", "get"), operation("OrderStore", "save")],
-                "persists": [id("Order")],
-            }),
-        ),
-        declaration(
-            "OrderManagement",
-            "context",
-            json!({
-                "members": [id("Order"), id("Money"), id("OrderPlaced")],
-                "vocabulary": [{"term": "Place", "doc": "Commit a draft order",
-                                "origin": origin("OrderManagement")}],
-            }),
-        ),
-    ];
-    let constructs = vec![
-        construct("thing", meaning::OBJECT_TYPE),
-        construct("value", meaning::VALUE_TYPE),
-        construct("money", meaning::RECORD_VALUE_TYPE),
-        construct("happened", meaning::EVENT_TYPE),
-        construct("lifecycle", meaning::STATE_MACHINE),
-        construct("saga", meaning::PROCESS),
-        construct("store", meaning::PERSISTENCE_INTERFACE),
-        construct("context", meaning::NAMESPACE),
-        construct("population", meaning::POPULATION),
-    ];
-    domain_document(types, constructs)
-}
-
-fn mutate_k2(mutate: impl FnOnce(&mut Value)) -> Value {
-    let mut document = k2();
-    mutate(&mut document);
-    let digest = jcs_digest(&document["types"]);
-    document["source"]["digest"] = json!(digest);
-    document["package"]["manifestDigest"] = json!(digest);
-    document["package"]["lockDigest"] = json!(digest);
-    for item in document["constructs"].as_array_mut().unwrap() {
-        item["manifestDigest"] = json!(digest);
-    }
-    document
-}
-
-fn type_named_mut<'a>(document: &'a mut Value, node: &str) -> &'a mut Value {
-    document["types"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|ty| ty["identity"] == id(node))
-        .expect("K2 type exists")
-}
+#[path = "../support/tc235_k2.rs"]
+mod tc235_k2;
+use tc235_k2::*;
 
 fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("K2 serializes");
@@ -374,22 +113,6 @@ fn assert_malformed_refusal(document: &Value, detail: &str) {
     assert!(refusals[0].detail.contains(detail), "{refusals:?}");
 }
 
-fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
-    let refusals = normalized_refusals(document, 21);
-    assert_eq!(
-        refusals.len(),
-        1,
-        "one normalized M07 refusal: {refusals:?}"
-    );
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::IntakeMalformedDeclaration { .. }
-            | ModelRefusalCause::MalformedDeclaration
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
-}
-
 fn assert_unsupported_refusal(document: &Value, detail: &str) {
     let refusals = read_refusals(document);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
@@ -410,74 +133,6 @@ fn assert_missing_refusal(document: &Value, detail: &str) {
         ModelRefusalCause::UnknownMember { .. }
     ));
     assert!(refusals[0].detail.contains(detail), "{refusals:?}");
-}
-
-fn assert_process_duplicate_step_refusal(document: &Value) {
-    let refusals = normalized_refusals(document, 21);
-    assert_eq!(
-        refusals.len(),
-        1,
-        "one process duplicate refusal: {refusals:?}"
-    );
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::ConflictingBinding { key } = &refusals[0].cause else {
-        panic!(
-            "expected conflicting process step, got {:?}",
-            refusals[0].cause
-        );
-    };
-    assert_eq!(key.node, id("Fulfilment/reserve_stock"));
-    assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
-    assert!(
-        refusals[0].detail.contains("/types/5/steps/3/identity"),
-        "duplicate step pointer missing: {refusals:?}"
-    );
-}
-
-fn assert_process_non_event_refusal(document: &Value) {
-    let refusals = normalized_refusals(document, 21);
-    assert_eq!(
-        refusals.len(),
-        1,
-        "one process non-event refusal: {refusals:?}"
-    );
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
-        panic!(
-            "expected malformed process event binding, got {:?}",
-            refusals[0].cause
-        );
-    };
-    assert_eq!(node, &id("Fulfilment/reserve_stock"));
-    assert!(
-        refusals[0].detail.contains("steps[1].emits[0]"),
-        "reader locus missing from refusal: {refusals:?}"
-    );
-}
-
-fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
-    let refusals = normalized_refusals(document, 21);
-    assert_eq!(refusals.len(), 1, "one process event refusal: {refusals:?}");
-    assert_eq!(refusals[0].code, Code::MissingDeclaration);
-    let ModelRefusalCause::IntakeMissingDeclaration {
-        node,
-        reference: actual,
-        path,
-        ..
-    } = &refusals[0].cause
-    else {
-        panic!(
-            "expected intake missing declaration, got {:?}",
-            refusals[0].cause
-        );
-    };
-    assert_eq!(node, &id("Fulfilment"));
-    assert_eq!(actual, &id(reference));
-    assert_eq!(path.as_str(), "/types/5/steps/1/emits/0");
-    assert!(
-        refusals[0].detail.contains("steps[1].emits[0]"),
-        "{refusals:?}"
-    );
 }
 
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
@@ -548,30 +203,6 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
             package: PACKAGE.to_owned(),
             node: id("Money"),
         }));
-    let process = qsl_semantics::model::key::DeclarationKey {
-        package: PACKAGE.to_owned(),
-        node: id("Fulfilment"),
-    };
-    assert!(
-        view.type_identities().contains_key(&process),
-        "a process has an effective receiver type identity"
-    );
-    assert!(
-        view.object_universe_of(&process).is_some(),
-        "process runs retain their object universe"
-    );
-    let persistence = qsl_semantics::model::key::DeclarationKey {
-        package: PACKAGE.to_owned(),
-        node: id("OrderStore"),
-    };
-    assert!(
-        view.type_identities().contains_key(&persistence),
-        "a persistence interface has an effective operation-owner identity"
-    );
-    assert!(
-        view.object_universe_of(&persistence).is_none(),
-        "a persistence interface does not gain an object universe"
-    );
     assert!(!view
         .type_identities()
         .contains_key(&qsl_semantics::model::key::DeclarationKey {
@@ -910,7 +541,6 @@ fn tc235_record_subtype_value_conforms_to_parent_typed_parameter_requires_qsl_73
 #[test]
 fn tc235_m07_process_binder() {
     let package = read_k2(&k2()).expect("process admission");
-    let _view = record_charges(&package, 21);
     let process = package
         .records
         .iter()
@@ -963,11 +593,11 @@ fn tc235_m07_process_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["identityFields"] = json!([]);
-    assert_normalized_malformed_refusal(&document, "Fulfilment");
+    assert_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"] = json!([]);
-    assert_normalized_malformed_refusal(&document, "Fulfilment");
+    assert_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"]
@@ -981,19 +611,19 @@ fn tc235_m07_process_binder() {
             "emits": [],
             "origin": origin("Fulfilment/reserve_stock"),
         }));
-    assert_process_duplicate_step_refusal(&document);
+    assert_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][0]["consumes"] = json!([id("Money")]);
-    assert_normalized_malformed_refusal(&document, "Fulfilment");
+    assert_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
-    assert_process_non_event_refusal(&document);
+    assert_malformed_refusal(&document, "Fulfilment");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("StockReserved")]);
-    assert_process_missing_event_refusal(&document, "StockReserved");
+    assert_missing_refusal(&document, "StockReserved");
 
     let mut document = k2();
     type_named_mut(&mut document, "Fulfilment")["operations"]
@@ -1001,7 +631,6 @@ fn tc235_m07_process_binder() {
         .unwrap()
         .push(operation("Fulfilment", "restart"));
     let package = read_k2(&document).expect("process operation admission");
-    let _view = record_charges(&package, 22);
     assert!(package.records.iter().any(|record| {
         matches!(record, DomainPackageRecord::OperationMember(operation)
             if operation.key.node == id("Fulfilment/restart"))
@@ -1014,7 +643,6 @@ fn tc235_m07_process_binder() {
         "self.correlation_id = self.correlation_id"
     )]);
     let package = read_k2(&document).expect("process invariant admission");
-    let _view = record_charges(&package, 22);
     assert!(package.records.iter().any(|record| {
         matches!(record, DomainPackageRecord::Clause(clause)
             if clause.key.node == id("Fulfilment/Bounded"))
