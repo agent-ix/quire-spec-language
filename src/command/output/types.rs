@@ -166,12 +166,45 @@ pub(super) enum Details<'a> {
         required: String,
         supplied: String,
     },
+    /// FR-100 typed model-selection admission details for a document offer.
+    AdmissionForeignModelDocument {
+        position: usize,
+        model_identity: String,
+        expected: AdmissionModelSelection,
+    },
+    /// FR-100 typed model-selection admission details for a population offer.
+    AdmissionForeignModelPopulation {
+        position: usize,
+        population: AdmissionDeclarationKey,
+        expected: AdmissionModelSelection,
+    },
+    /// FR-100 typed foreign-type admission details.
+    AdmissionForeignType {
+        position: usize,
+        member: String,
+        #[serde(rename = "type")]
+        type_name: AdmissionDeclarationKey,
+    },
     /// FR-100 "Internal failure at S6a": the `InternalFault`'s own stable
     /// stage and invariant identifiers (`runtime_invariant`, exit 30).
     Invariant {
         stage: &'static str,
         invariant: &'static str,
     },
+}
+
+#[derive(Serialize)]
+pub(super) struct AdmissionModelSelection {
+    pub identity: String,
+    pub version: String,
+    pub digest_domain: &'static str,
+    pub digest: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct AdmissionDeclarationKey {
+    pub package: String,
+    pub node: String,
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its

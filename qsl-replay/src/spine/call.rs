@@ -30,6 +30,7 @@ use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::refusal::OfferedSelection;
 use quire_exact::{
     Cancel, CancelCause, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value,
     ValueType,
@@ -596,11 +597,47 @@ fn admit_model_arguments(
     objects: &ObjectEnvironment,
 ) -> Result<(), Box<RunRefusal>> {
     for (position, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
+        if let (ValueType::Population(maximum), Value::Population(population_id)) =
+            (value_type, argument)
+        {
+            let Some(binding) = objects.resolve_population(*population_id) else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            if binding.declared_maximum() != *maximum {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            }
+            let Some(expected) = models.first().map(|model| model.view.model_selection()) else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            if !models
+                .iter()
+                .any(|model| model.view.model_selection() == binding.model_selection())
+            {
+                return Err(Box::new(RunRefusal::Admission {
+                    position,
+                    refusal: ModelRefusal {
+                        code: Code::ForeignReference,
+                        cause: ModelRefusalCause::ForeignModelSelection {
+                            actual: OfferedSelection::Population(binding.population_key().clone()),
+                            expected: expected.clone(),
+                        },
+                        detail: format!(
+                            "population {}/{} names model {}, expected {}",
+                            binding.population_key().package,
+                            binding.population_key().node,
+                            binding.model_identity(),
+                            expected.identity
+                        ),
+                    },
+                }));
+            }
+            continue;
+        }
         let (ValueType::Reference(declared), Value::Reference(reference)) = (value_type, argument)
         else {
             continue;
         };
-        let expected = models.iter().find_map(|model| {
+        let expected_model = models.iter().find_map(|model| {
             model
                 .view
                 .type_identities()
@@ -615,10 +652,39 @@ fn admit_model_arguments(
                         })
                         .flatten()
                 })
+                .map(|expected| (model, expected))
         });
-        let Some(expected) = expected else {
+        let Some((expected_model, expected)) = expected_model else {
             return Err(Box::new(RunRefusal::WrongValueKind { position }));
         };
+        let supplied_model = models.iter().find(|model| {
+            model
+                .view
+                .type_identities()
+                .values()
+                .any(|identity| identity == reference.object_type())
+        });
+        if let Some(supplied_model) = supplied_model {
+            if supplied_model.view.model_selection() != expected_model.view.model_selection() {
+                return Err(Box::new(RunRefusal::Admission {
+                    position,
+                    refusal: ModelRefusal {
+                        code: Code::ForeignReference,
+                        cause: ModelRefusalCause::ForeignModelSelection {
+                            actual: OfferedSelection::Document(
+                                supplied_model.view.model_selection().identity.clone(),
+                            ),
+                            expected: expected_model.view.model_selection().clone(),
+                        },
+                        detail: format!(
+                            "reference names model {}, expected {}",
+                            supplied_model.view.model_selection().identity,
+                            expected_model.view.model_selection().identity
+                        ),
+                    },
+                }));
+            }
+        }
         if reference.universe() != expected {
             return Err(Box::new(RunRefusal::Admission {
                 position,

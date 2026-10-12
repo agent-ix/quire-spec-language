@@ -274,8 +274,49 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                             expected,
                         } => types::Details::AdmissionForeignUniverse {
                             position: *position,
-                            required: expected.to_string(),
+                            required: qsl_semantics::model::key::hex(expected.as_bytes()),
                             supplied: qsl_semantics::model::key::hex(actual),
+                        },
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignModelSelection {
+                            actual,
+                            expected,
+                        } => {
+                            let expected = types::AdmissionModelSelection {
+                                identity: expected.identity.clone(),
+                                version: expected.version.clone(),
+                                digest_domain: "sha256-jcs",
+                                digest: qsl_semantics::model::key::hex(&expected.digest),
+                            };
+                            match actual {
+                                qsl_semantics::model::refusal::OfferedSelection::Document(
+                                    model_identity,
+                                ) => types::Details::AdmissionForeignModelDocument {
+                                    position: *position,
+                                    model_identity: model_identity.clone(),
+                                    expected,
+                                },
+                                qsl_semantics::model::refusal::OfferedSelection::Population(
+                                    population,
+                                ) => types::Details::AdmissionForeignModelPopulation {
+                                    position: *position,
+                                    population: types::AdmissionDeclarationKey {
+                                        package: population.package.clone(),
+                                        node: population.node.clone(),
+                                    },
+                                    expected,
+                                },
+                            }
+                        }
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                            member,
+                            type_name,
+                        } => types::Details::AdmissionForeignType {
+                            position: *position,
+                            member: member.clone(),
+                            type_name: types::AdmissionDeclarationKey {
+                                package: type_name.package.clone(),
+                                node: type_name.node.clone(),
+                            },
                         },
                         _ => types::Details::Position {
                             position: *position,

@@ -159,7 +159,13 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     let (type_key, object_type) = model
         .type_identities()
         .iter()
-        .find_map(|(key, identity)| (key.node == "Gadget").then_some((key, *identity)))
+        .find_map(|(key, identity)| {
+            key.node
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name == "Gadget")
+                .then_some((key, *identity))
+        })
         .expect("Gadget is in the model fixture");
     let reference = quire_exact::ObjectReference::new(
         model.object_universe_of(type_key).unwrap().identity(),
@@ -204,7 +210,9 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     ));
 }
 
-fn synthetic_model(placeholder: &str) -> (
+fn synthetic_model(
+    placeholder: &str,
+) -> (
     qsl_semantics::model::normalize::EffectiveView,
     DeclarationKey,
     DeclarationKey,
@@ -243,13 +251,13 @@ fn synthetic_model(placeholder: &str) -> (
 
 #[test]
 fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
-    use qsl_semantics::model::intake::SelectedModel;
-    use qsl_semantics::model::population::{
-        admit_binding, AdmissionMeter, AdmissionOutcome,
-        PopulationAdmissionLimits, PopulationDocument, PopulationMember,
-    };
     use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::intake::SelectedModel;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use qsl_semantics::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
+        PopulationDocument, PopulationMember,
+    };
     use quire_semantic_value::declaration::TypeEnvironment;
 
     let types = TypeEnvironment::new([], []).unwrap();
@@ -331,7 +339,10 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
     let declared = selected_view.type_identities()[&selected_type];
     let supplied = foreign_view.type_identities()[&foreign_type];
     let reference = Value::Reference(quire_exact::ObjectReference::new(
-        foreign_view.object_universe_of(&foreign_type).unwrap().identity(),
+        foreign_view
+            .object_universe_of(&foreign_type)
+            .unwrap()
+            .identity(),
         supplied,
         quire_exact::ObjectId::new("f1").unwrap(),
     ));
@@ -350,7 +361,6 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
             if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })
     ));
 }
-
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
 /// integer `7`, and the returned `package_id` equals the composed operations'.

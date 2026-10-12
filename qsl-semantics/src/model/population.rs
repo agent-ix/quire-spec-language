@@ -618,6 +618,10 @@ fn values_of<'a>(member: &'a PopulationMember, field: &DeclarationKey) -> &'a [S
 /// was checked (see the module docs' "Binding/domain package correspondence").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
+    /// The population declaration this binding was admitted from. Retained
+    /// so callers can report the offered declaration when its model selection
+    /// does not correspond to the selected model.
+    population_key: DeclarationKey,
     /// This binding's own object universe, computed once at admission
     /// (ADR-013 §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId`).
     universe: UniverseId,
@@ -691,6 +695,11 @@ impl PopulationBinding {
     /// The `DomainPackageRef` identity this binding was admitted against.
     pub fn model_identity(&self) -> &str {
         &self.index.package().model_selection.identity
+    }
+
+    /// The population declaration this binding was admitted from.
+    pub fn population_key(&self) -> &DeclarationKey {
+        &self.population_key
     }
 
     /// This binding's own object universe.
@@ -1521,6 +1530,7 @@ fn admit_binding_as(
         Err(failure) => return population_identity_admission_failure(failure),
     };
     AdmissionOutcome::Admitted(PopulationBinding {
+        population_key: population_key.clone(),
         universe,
         members: admitted,
         declared_maximum,
