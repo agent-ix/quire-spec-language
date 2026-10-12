@@ -1735,6 +1735,7 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::Process(_) => {}
         DomainPackageRecord::Clause(clause) => {
             if !index.is_record_value_type(&clause.owner)
                 && !index.is_event_type(&clause.owner)

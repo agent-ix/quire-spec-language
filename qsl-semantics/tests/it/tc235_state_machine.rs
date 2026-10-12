@@ -233,9 +233,9 @@ fn tc235_m12_state_machine_meaning_is_explicit() {
                 .find(|entry| entry["kind"]["name"] == kind)
                 .expect("K2 construct exists");
             construct["construct"]["meaning"] = json!(if kind == "lifecycle" {
-                meaning::STATE_MACHINE
+                "quire.meaning.state-machine"
             } else {
-                meaning::PROCESS
+                "quire.meaning.process"
             });
         });
         let refusals = normalized_refusals(&document, 21);
@@ -273,7 +273,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited"), lifecycle_state("Placed")],
+                "states": [lifecycle_state("Expedited")],
                 "transitions": [lifecycle_transition(
                     "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],

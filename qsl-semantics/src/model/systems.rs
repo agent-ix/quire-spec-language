@@ -223,6 +223,7 @@ pub fn classify(
             }
             DomainPackageRecord::EventType(_) => {}
             DomainPackageRecord::StateMachine(_) => {}
+            DomainPackageRecord::Process(_) => {}
             DomainPackageRecord::FieldMember(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
