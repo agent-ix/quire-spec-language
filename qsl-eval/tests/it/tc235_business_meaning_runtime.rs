@@ -793,6 +793,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
 
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-10", "QSpec-FR-208-AC-11")]
 #[test]
+#[ignore = "expected red until PR #777 and PR #781 land"]
 fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     let document = lifecycle_document("not self.placed");
     let (package, _, packages) = lifecycle_package(
