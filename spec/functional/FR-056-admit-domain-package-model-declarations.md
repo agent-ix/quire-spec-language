@@ -212,10 +212,10 @@ node, artifact id and span.
 
 The complete domain-model vocabulary is not limited to the native type
 spellings of QSL source grammar. The compiler SHALL retain the distinct native
-types `UUID`, `Int`, `String`, `Boolean` and `Timestamp` required by QSpec
+types `UUID`, `Integer`, `String`, `Boolean` and `Timestamp` required by QSpec
 [TC-235](ix://agent-ix/quire-specification/TC-235)'s K2 domain package.
 These natives are not IR type-definition nodes. A value type `Instant`
-bound to `Timestamp` SHALL resolve to that native type; binding it to `Int`
+bound to `Timestamp` SHALL resolve to that native type; binding it to `Integer`
 does not satisfy an event's `Timestamp` occurrence-field requirement under
 [FR-208](ix://agent-ix/quire-specification/FR-208).
 The compiler SHALL NOT replace `UUID`, `String` or `Timestamp` with a local
@@ -326,7 +326,7 @@ matrix and schedule. A key does not authorize `<`, `<=`, `>` or `>=`.
 quire-exact owns distinct native type/value identity, caller-text admission,
 typed invalid-payload refusal, equality and keys. QSL owns the JSON envelope
 and its diagnostic mapping, and binding K2's
-`Instant` to `Timestamp` and refusing its substitution by `Int` under the
+`Instant` to `Timestamp` and refusing its substitution by `Integer` under the
 event occurrence-field rule. Payload admission grants no model admission,
 source identity or package authority. Record subtype conformance remains the
 shared-value/QSL integration obligation stated below.
@@ -607,7 +607,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-14 | The one parse refuses a document holding `9007199254740993.5`, `0.1000000000000000000001`, `1e-400`, `-1e-400` or `4.9e-324` at `/package/count` with `noncanonical_wire`/`inexact-number` and `document_pointer` `/package/count`; the same document holding `9007199254740993`, which fits both cases, refuses `inexact-integer`, as does `1e20`; and a document holding `0.5` at `/a/0` and `1e-400` at `/a/1` names `/a/1`. The same document holding `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`, `1e15` or `9007199254740991` at `/package/count` is admitted, with the digest of the RFC 8785 text of the same value. A document holding `0.1000000000000000000001` at `/package/count`, offered under the `sha256-jcs` digest of the same document holding `0.1`, refuses `noncanonical_wire`/`inexact-number`, and the document holding `0.1` admits under it. The double nearest `1125899906842624.25` has two equally close shortest texts: a document holding `1125899906842624.2` (the even digit, RFC 8785's text) at `/package/count` is admitted, as are `1500000000000000.2` and `2.9802322387695312e-8`, and one holding `1125899906842624.3`, `1500000000000000.3` or `2.9802322387695313e-8` refuses `noncanonical_wire`/`inexact-number`. | Test |
 | FR-056-AC-15 | The derived view of an admitted document holds, for each non-whole number, the correctly rounded double of its text, the double its `sha256-jcs` digest encodes: a document holding `1.5e-300` admits, and its tree holds the double `1.5e-300` reads as, whatever `serde_json`'s own float parse reads. | Test |
 | FR-056-AC-16 | A domain package whose scalar type `Wide` is bound to `Integer` with `min` the canonical string `"0"` and `max` the canonical string `"18446744073709551615"` is admitted, and `Wide` resolves to `Int[0, 18446744073709551615]` exactly. With `max` the string `"9223372036854775808"` it resolves to `Int[0, 9223372036854775808]`; with `max` the string `"1000"` it resolves to `Int[0, 1000]`. With `min` the JSON number `0` or `max` the JSON number `1000`, intake refuses `invalid_model_binding`/`malformed-declaration`, retaining the reader's `agent-ix.semantic-ir.INVALID_OPERAND` diagnostic at that operand and admitting no declaration. With `max` the JSON number `18446744073709551615` the read refuses `noncanonical_wire`/`inexact-integer` at that number's pointer; with `max` the string `"170141183460469231731687303715884105728"` (`i128::MAX + 1`) or the noncanonical string `"0018"`, intake refuses `invalid_model_binding`/`malformed-declaration` at the scalar type, naming the constraint and the value. | Test |
-| FR-056-AC-17 | The canonical native controls below admit exactly the stated UUID and Timestamp payloads, retain their distinct native identities and refuse the stated alternatives without normalization. K2's `Instant` resolves to `Timestamp`; changing that binding to `Int` gives TC-235 M04 run 5's `invalid_model_binding`/`malformed-declaration` at `OrderPlaced`'s `TypeDefinition.occurrenceField`, rather than an admitted substitute. | Test |
+| FR-056-AC-17 | The canonical native controls below admit exactly the stated UUID and Timestamp payloads, retain their distinct native identities and refuse the stated alternatives without normalization. K2's `Instant` resolves to `Timestamp`; changing that binding to `Integer` gives TC-235 M04 run 5's `invalid_model_binding`/`malformed-declaration` at `OrderPlaced`'s `TypeDefinition.occurrenceField`, rather than an admitted substitute. | Test |
 | FR-056-AC-18 | TC-235 M17 run 1 retains `TaxedMoney`'s inherited `amount_minor`, `currency` and invariant `NonNegative`, its own `tax_minor`, and conformance to `Money`: its stated value is admitted at `Order/total` and wherever a parameter or result names `Money`, yet is unequal to the stated `Money` value because their most-specific types differ. M17 runs 2 and 3 retain the exact wrong-meaning and specialization-cycle refusals, including the cycle list, rather than object-reference or Boolean substitutes. | Test |
 | FR-056-AC-19 | Offering K2 bytes that the actual Semantic IR reader refuses retains every reader diagnostic and exposes no declaration, effective view or `normalize.record` charge. No downstream native binding repairs a reader refusal. Once the reader contract admits those inputs, K2's version `1`, unused `population` construct, Timestamp binding and all TC-235 vectors remain unchanged; native payload admission alone does not establish their declaration counts, refusals, normalization or runtime results. | Test |
 | FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` has no assembled field type and refuses at the unit's `model` declaration with `unknown_required_feature`/`unsupported-feature`; it yields no `PackageDeclarations`. The refusal does not assign a rounding mode. A function parameter of either floating type remains admitted under FR-091-OQ-4. | Test |
@@ -640,7 +640,7 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
   wrong tag and non-string payload, including the bare JSON number `0`,
   before payload admission. No rejected input produces a repaired value.
 - Same-kind equal payloads give true and equal canonical keys; changing one
-  UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Int
+  UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Integer
   pairs give a typed refusal, not false, under FR-149. These controls do not
   select an ordering or arithmetic operation.
 

@@ -268,6 +268,48 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let package = read_domain_package(selection, &admitted)
         .expect("TC-235 K2 must reach the semantic model reader");
     assert_eq!(package.records.len(), 21, "K2's declared source count");
+    let mut keys: Vec<DeclarationKey> = package
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    keys.sort();
+    let mut expected: Vec<DeclarationKey> = [
+        "Order",
+        "Order/order_id",
+        "Order/total",
+        "Instant",
+        "Money",
+        "Money/amount_minor",
+        "Money/currency",
+        "OrderPlaced",
+        "OrderPlaced/occurred_at",
+        "OrderPlaced/order_id",
+        "OrderLifecycle",
+        "OrderLifecycle/placed",
+        "OrderLifecycle/place",
+        "OrderLifecycle/cancel",
+        "OrderLifecycle/NotYetPlaced",
+        "Fulfilment",
+        "Fulfilment/correlation_id",
+        "OrderStore",
+        "OrderStore/get",
+        "OrderStore/save",
+        "OrderManagement",
+    ]
+    .iter()
+    .map(|node| DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(node),
+    })
+    .collect();
+    expected.sort();
+    assert_eq!(keys, expected, "K2's 21 declared keys");
+    assert!(
+        package.records.iter().any(|record| matches!(record,
+            DomainPackageRecord::RecordValueType(record) if record.key.node == id("Money"))),
+        "Money is a record value type"
+    );
     let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("M01 K2 normalization must admit, got {outcome:?}");
