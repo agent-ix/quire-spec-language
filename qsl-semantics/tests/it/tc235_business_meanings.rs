@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-235 business-meaning vectors at the real QSL intake/normalization boundary.
 
+use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{ByteDigest, IntakeLimits};
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
-use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ProcessStepKind,
+};
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
+use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -577,6 +580,120 @@ fn record_value_subtype_preserves_effective_fields_support() {
     assert!(view.object_universe_of(&taxed_key).is_none());
 }
 
+/// M07: processes retain their run identity and ordered event steps, while
+/// ordinary operations and invariants use the object-type member readers.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m07_process_binder() {
+    let package = read_k2(&k2()).expect("process admission");
+    let process = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Process(process) if process.key.node == id("Fulfilment") => {
+                Some(process)
+            }
+            _ => None,
+        })
+        .expect("Fulfilment process record");
+    assert_eq!(
+        process.identity_fields,
+        vec![DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("Fulfilment/correlation_id"),
+        }]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["receive_order", "reserve_stock", "await_shipment"]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.step_kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ProcessStepKind::Event,
+            ProcessStepKind::Command,
+            ProcessStepKind::Wait
+        ]
+    );
+    assert_eq!(
+        process.steps[0].consumes,
+        vec![DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: id("OrderPlaced"),
+        }]
+    );
+    assert!(process.steps[0].emits.is_empty());
+    assert!(process.steps[1].consumes.is_empty());
+    assert!(process.steps[1].emits.is_empty());
+    assert!(process.steps[2].consumes.is_empty());
+    assert!(process.steps[2].emits.is_empty());
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["identityFields"] = json!([]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"] = json!([]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "identity": id("Fulfilment/reserve_stock"),
+            "name": "reserve_stock",
+            "stepKind": "command",
+            "consumes": [],
+            "emits": [],
+            "origin": origin("Fulfilment/reserve_stock"),
+        }));
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"][0]["consumes"] = json!([id("Money")]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("StockReserved")]);
+    assert_missing_refusal(&document, "StockReserved");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["operations"]
+        .as_array_mut()
+        .unwrap()
+        .push(operation("Fulfilment", "restart"));
+    let package = read_k2(&document).expect("process operation admission");
+    assert!(package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::OperationMember(operation)
+            if operation.key.node == id("Fulfilment/restart"))
+    }));
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["clauses"] = json!([clause(
+        "Fulfilment",
+        "Bounded",
+        "self.correlation_id = self.correlation_id"
+    )]);
+    let package = read_k2(&document).expect("process invariant admission");
+    assert!(package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::Clause(clause)
+            if clause.key.node == id("Fulfilment/Bounded"))
+    }));
+}
+
 /// M08: persistence interfaces bind their object targets and operation
 /// signatures, while storage contracts and clauses remain outside this
 /// structural binder.
@@ -914,3 +1031,9 @@ fn tc235_m18_event_type_specialization_vectors() {
         "TypeDefinition.supertypes[0]",
     );
 }
+
+#[path = "tc235_state_machine.rs"]
+mod tc235_state_machine;
+
+#[path = "tc235_record_event.rs"]
+mod tc235_record_event;

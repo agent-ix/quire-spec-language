@@ -85,6 +85,94 @@ pub struct EventTypeRecord {
     pub supertypes: Vec<DeclarationKey>,
 }
 
+/// A state declared by an FR-208 state machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateMachineStateRecord {
+    /// The state's original declaration key.
+    pub key: DeclarationKey,
+    /// The authored local state name.
+    pub name: String,
+}
+
+/// A transition declared by an FR-208 state machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateMachineTransitionRecord {
+    /// The transition's original declaration key.
+    pub key: DeclarationKey,
+    /// The transition's source state.
+    pub from: DeclarationKey,
+    /// The transition's target state.
+    pub to: DeclarationKey,
+    /// The operation serving as its trigger.
+    pub trigger: DeclarationKey,
+    /// The optional authored guard clause id.
+    pub guard: Option<String>,
+    /// Emitted event-type identities in authored order.
+    pub emits: Vec<DeclarationKey>,
+    /// Original JSON document pointer to this transition.
+    pub path: String,
+    /// The transition's exact FCD origin value.
+    pub origin: serde_json::Value,
+}
+
+/// A state-machine meaning (FR-208). Its fields, operations, and clauses
+/// remain ordinary owner-linked records alongside this type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateMachineRecord {
+    /// This type's original declaration key.
+    pub key: DeclarationKey,
+    /// Declared state-machine ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+    /// States in source order.
+    pub states: Vec<StateMachineStateRecord>,
+    /// Transitions in source order.
+    pub transitions: Vec<StateMachineTransitionRecord>,
+}
+
+/// One process step, retained as structural process data rather than a
+/// declaration/member in the domain package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessStepRecord {
+    /// The step's authored identity.
+    pub key: DeclarationKey,
+    /// The authored step name.
+    pub name: String,
+    /// The closed process step-kind vocabulary.
+    pub step_kind: ProcessStepKind,
+    /// Event types consumed by this step.
+    pub consumes: Vec<DeclarationKey>,
+    /// Event types emitted by this step.
+    pub emits: Vec<DeclarationKey>,
+}
+
+/// The closed step-kind vocabulary defined by FR-208.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessStepKind {
+    /// A command step.
+    Command,
+    /// An event step.
+    Event,
+    /// A decision step.
+    Decision,
+    /// A compensation step.
+    Compensation,
+    /// A wait step.
+    Wait,
+}
+
+/// A process declaration: an identified run type and its ordered steps.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessRecord {
+    /// The original process declaration key.
+    pub key: DeclarationKey,
+    /// The process correlation key fields.
+    pub identity_fields: Vec<DeclarationKey>,
+    /// Declared process ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+    /// Authored steps, preserving declaration order.
+    pub steps: Vec<ProcessStepRecord>,
+}
+
 /// An authored clause member. Its language and text are retained verbatim;
 /// retaining a clause does not parse or evaluate it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -593,6 +681,10 @@ pub enum DomainPackageRecord {
     RecordValueType(RecordValueTypeRecord),
     /// An event type (FR-208).
     EventType(EventTypeRecord),
+    /// A state machine (FR-208).
+    StateMachine(StateMachineRecord),
+    /// A process type (FR-208).
+    Process(ProcessRecord),
     /// An authored clause member (FR-208).
     Clause(ClauseRecord),
     /// An original namespace with no effective type (FR-208).
@@ -624,6 +716,8 @@ impl DomainPackageRecord {
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
             Self::EventType(record) => &record.key,
+            Self::StateMachine(record) => &record.key,
+            Self::Process(record) => &record.key,
             Self::Clause(record) => &record.key,
             Self::Namespace(record) => &record.key,
             Self::PersistenceInterface(record) => &record.key,

@@ -40,6 +40,10 @@ pub enum DeclarationKind {
     RecordValueType,
     /// An event type with a Timestamp occurrence field (FR-208).
     EventType,
+    /// A state machine with states and transitions (FR-208).
+    StateMachine,
+    /// A process type with an object universe (FR-208).
+    Process,
     /// An authored clause member.
     Clause,
     /// An original namespace.
@@ -180,6 +184,8 @@ impl AdmittedPackage {
                 DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::EventType(_)
+                | DomainPackageRecord::StateMachine(_)
+                | DomainPackageRecord::Process(_)
                 | DomainPackageRecord::Namespace(_)
                 | DomainPackageRecord::PersistenceInterface(_)
                 | DomainPackageRecord::ScalarType(_)
@@ -310,6 +316,8 @@ impl AdmittedPackage {
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
             DomainPackageRecord::EventType(_) => DeclarationKind::EventType,
+            DomainPackageRecord::StateMachine(_) => DeclarationKind::StateMachine,
+            DomainPackageRecord::Process(_) => DeclarationKind::Process,
             DomainPackageRecord::Clause(_) => DeclarationKind::Clause,
             DomainPackageRecord::Namespace(_) => DeclarationKind::Namespace,
             DomainPackageRecord::PersistenceInterface(_) => DeclarationKind::PersistenceInterface,

@@ -6,6 +6,9 @@
 
 pub(crate) mod support;
 
+#[path = "../../../qsl-semantics/tests/support/tc235_k2.rs"]
+mod tc235_k2;
+
 mod call_verdicts;
 mod checked_package_call;
 mod collection_algebra;
@@ -21,4 +24,5 @@ mod kernel_refusal_payloads;
 mod model_reference_queries;
 mod source_call;
 mod state_model_family;
+mod tc235_business_meaning_runtime;
 mod total_functions;
