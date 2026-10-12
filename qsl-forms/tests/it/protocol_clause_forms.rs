@@ -375,7 +375,7 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
 /// QSL-667 reserves `absent` for lookup's absence mode, but the CST grammar
 /// still admits it as an operation member after `::`. S2 must read that
 /// structural member without requiring the ordinary identifier token class.
-#[trace("TC-513")]
+#[trace("FR-102-AC-2")]
 #[test]
 fn s2_preserves_reserved_operation_member_names() {
     let (_, unit) = build("post P using v on Config::ConfigVersion::absent { true }");
@@ -385,6 +385,32 @@ fn s2_preserves_reserved_operation_member_names() {
             .as_ref()
             .map(|operation| operation.name.as_str()),
         Some("absent")
+    );
+}
+
+/// The same reserved member spelling is legal in an attempt operation name;
+/// retain its context and exact source span while the ordinary-name control
+/// remains covered by `s2_captures_an_attempts_operation_name_and_contracts_list`.
+#[trace("TC-513")]
+#[test]
+fn s2_preserves_reserved_attempt_operation_members() {
+    let source = recovery_flow("Main::Committed", true, "").replacen(
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate",
+        "attempt Tried by R on Config::ConfigVersion::absent",
+        1,
+    );
+    let (text, unit) = build(&source);
+    let form = protocol_form(unit.forms()[0].form());
+    let attempt = &form.attempts[0];
+    assert_eq!(attempt.context.name, "Config::ConfigVersion");
+    assert_eq!(attempt.operation.name, "absent");
+    assert_eq!(
+        &text[attempt.context.span.start..attempt.context.span.end],
+        "Config::ConfigVersion"
+    );
+    assert_eq!(
+        &text[attempt.operation.span.start..attempt.operation.span.end],
+        "absent"
     );
 }
 
