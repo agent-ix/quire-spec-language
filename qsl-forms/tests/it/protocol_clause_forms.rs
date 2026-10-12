@@ -375,6 +375,7 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
 /// QSL-667 reserves `absent` for lookup's absence mode, but the CST grammar
 /// still admits it as an operation member after `::`. S2 must read that
 /// structural member without requiring the ordinary identifier token class.
+#[trace("TC-513")]
 #[test]
 fn s2_preserves_reserved_operation_member_names() {
     let (_, unit) = build("post P using v on Config::ConfigVersion::absent { true }");
