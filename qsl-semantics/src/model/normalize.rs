@@ -1712,6 +1712,28 @@ fn check_node<'a>(
                     ),
                 });
             }
+            if let Some(target) = member.value_type.as_package() {
+                let is_process = domain_package.records.iter().any(|candidate| {
+                    matches!(candidate, DomainPackageRecord::Process(process) if process.key == *target)
+                });
+                if (!index.is_object_type(target) || is_process)
+                    && !index.is_record_value_type(target)
+                    && !index.is_scalar_type(target)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                            node: member.key.node.clone(),
+                            artifact: None,
+                            span: None,
+                        },
+                        detail: format!(
+                            "{}: Field.typeRef names {}, which has a different model meaning",
+                            member.key.node, target.node
+                        ),
+                    });
+                }
+            }
             if let Some(redefines) = &member.redefines {
                 if !index.is_field_member(redefines) && !index.is_operation_member(redefines) {
                     refusals.push(ModelRefusal {
@@ -1967,7 +1989,7 @@ fn check_node<'a>(
         // a declared object type; a missing one refuses
         // `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
-            for type_name in &population.member_types {
+            for (position, type_name) in population.member_types.iter().enumerate() {
                 // FR-208-AC-9: a record value type is a declared type of
                 // another meaning, not a missing one.
                 if index.is_record_value_type(type_name) {
@@ -1980,17 +2002,32 @@ fn check_node<'a>(
                         ),
                     });
                 } else if !index.is_object_type(type_name) {
-                    refusals.push(ModelRefusal {
-                        code: Code::MissingDeclaration,
-                        cause: ModelRefusalCause::UnknownPopulationMemberType {
-                            population: population.key.clone(),
-                            type_name: type_name.clone(),
-                        },
-                        detail: format!(
-                            "population {} names member type {}, which is not a declared object type",
-                            population.key.node, type_name.node
-                        ),
-                    });
+                    if domain_package
+                        .records
+                        .iter()
+                        .any(|candidate| candidate.key() == type_name)
+                    {
+                        refusals.push(ModelRefusal {
+                            code: Code::InvalidModelBinding,
+                            cause: ModelRefusalCause::MalformedDeclaration,
+                            detail: format!(
+                                "{}: Population.members[{position}].type names {}, which is not an object or process type",
+                                population.key.node, type_name.node
+                            ),
+                        });
+                    } else {
+                        refusals.push(ModelRefusal {
+                            code: Code::MissingDeclaration,
+                            cause: ModelRefusalCause::UnknownPopulationMemberType {
+                                population: population.key.clone(),
+                                type_name: type_name.clone(),
+                            },
+                            detail: format!(
+                                "population {} names member type {}, which is not a declared object type",
+                                population.key.node, type_name.node
+                            ),
+                        });
+                    }
                 }
             }
         }
