@@ -1229,8 +1229,9 @@ fn native_string_field_assembles_as_a_distinct_kernel_type() {
     field.value_type = ValueTypeRef::Native(NativeValueType::String);
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
 
-    let declaration = model_field(&field, &records, &identities)
+    let declaration = model_field(&field, &records, &identities, &meaning_handles)
         .expect("native String is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::String);
