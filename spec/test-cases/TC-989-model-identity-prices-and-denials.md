@@ -1,12 +1,12 @@
 ---
-id: TC-986
+id: TC-989
 title: "Model identity writer prices exact bytes and denies before work"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-081
     type: verifies
 ---
-# TC-986: Model identity writer prices exact bytes and denies before work
+# TC-989: Model identity writer prices exact bytes and denies before work
 
 ## Description
 

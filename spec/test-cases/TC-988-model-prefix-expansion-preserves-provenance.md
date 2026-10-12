@@ -1,12 +1,12 @@
 ---
-id: TC-985
+id: TC-988
 title: "Canonical shared-prefix runs expand to exact model provenance"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-081
     type: verifies
 ---
-# TC-985: Canonical shared-prefix runs expand to exact model provenance
+# TC-988: Canonical shared-prefix runs expand to exact model provenance
 
 ## Description
 

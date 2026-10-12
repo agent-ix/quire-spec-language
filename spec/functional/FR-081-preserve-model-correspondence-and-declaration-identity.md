@@ -280,10 +280,10 @@ qualify the replacement closure or the new adverse accounting cases.
   [FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md) resolve
   conformance, dispatch and population membership over the correspondence
   this requirement produces.
-- [TC-985](../test-cases/TC-985-model-prefix-expansion-preserves-provenance.md),
-  [TC-986](../test-cases/TC-986-model-identity-prices-and-denials.md),
-  [TC-987](../test-cases/TC-987-model-replacement-cohort-is-atomic.md) and
-  [TC-988](../test-cases/TC-988-full-size-model-identity-cost.md) specify the
+- [TC-988](../test-cases/TC-988-model-prefix-expansion-preserves-provenance.md),
+  [TC-989](../test-cases/TC-989-model-identity-prices-and-denials.md),
+  [TC-990](../test-cases/TC-990-model-replacement-cohort-is-atomic.md) and
+  [TC-991](../test-cases/TC-991-full-size-model-identity-cost.md) specify the
   new expansion, accounting, cohort and full-size evidence procedures.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-03 and O-05 record QSL's ownership of original declaration identity and

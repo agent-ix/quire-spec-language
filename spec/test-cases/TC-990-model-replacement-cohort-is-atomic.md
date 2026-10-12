@@ -1,12 +1,12 @@
 ---
-id: TC-987
+id: TC-990
 title: "Model normalization refuses every mixed replacement cohort"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-081
     type: verifies
 ---
-# TC-987: Model normalization refuses every mixed replacement cohort
+# TC-990: Model normalization refuses every mixed replacement cohort
 
 ## Description
 

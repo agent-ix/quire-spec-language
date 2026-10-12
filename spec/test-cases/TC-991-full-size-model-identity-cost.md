@@ -1,5 +1,5 @@
 ---
-id: TC-988
+id: TC-991
 title: "The full 10,000-edge model case meets deterministic cost and memory bounds"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-012
     type: verifies
 ---
-# TC-988: The full 10,000-edge model case meets deterministic cost and memory bounds
+# TC-991: The full 10,000-edge model case meets deterministic cost and memory bounds
 
 ## Description
 
