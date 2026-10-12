@@ -1,6 +1,6 @@
 ---
 id: TC-914
-title: "Registry allocation failure preserves its native measurement through QSL admission"
+title: "Registry storage failures preserve their native measurements through QSL admission"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-082
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-semantic-value/FR-108
     type: references
 ---
-# TC-914: Registry allocation failure preserves its native measurement through QSL admission
+# TC-914: Registry storage failures preserve their native measurements through QSL admission
 
 ## Description
 
