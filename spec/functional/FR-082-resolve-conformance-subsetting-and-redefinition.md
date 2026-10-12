@@ -225,12 +225,12 @@ a checked package. Re-reporting by a caller SHALL retain the originating
 admission stage and the typed payload.
 
 The registry allocation payload SHALL identify type-environment storage and
-carry `requested` with an explicit native reservation unit:
+carry exactly one `requested` field, rendered as `<unit>:<amount>`:
 
 | Unit | Meaning of `requested` |
 | --- | --- |
-| bytes | The byte amount passed to the failed reservation. |
-| additional elements | The additional element count passed to the failed collection reservation, not its length or final capacity. |
+| `bytes` | The byte amount passed to the failed reservation, in unpadded base-10. |
+| `additional-elements` | The additional element count passed to the failed collection reservation, not its length or final capacity, in unpadded base-10. |
 
 QSL SHALL preserve the amount and unit observed at the upstream production
 reservation boundary without inferring bytes from a count, multiplying by a
@@ -242,9 +242,18 @@ input, an ill-typed declaration, a Boolean `false`, cancellation, or an
 
 When upstream instead reports reservation-size arithmetic or representation
 overflow, QSL SHALL preserve that distinct typed capacity/size resource
-failure and its upstream reason. It SHALL NOT report `allocation-failed` or
-claim a measured allocator-denied request for that case. This requirement
-does not require converting native reservation counts to bytes.
+failure as `resource_exhausted`/`reservation-size-overflow`, preserving the
+upstream `StorageRequest` amount and native unit. It SHALL NOT report
+`allocation-failed` or claim a measured allocator-denied request for that
+case. This requirement does not require converting native reservation counts
+to bytes.
+
+The registry's resource-failure causes and payloads are:
+
+| Code | Cause | Payload |
+| --- | --- | --- |
+| `resource_exhausted` | `allocation-failed` | Exactly `requested`: the native unit and upstream amount as `<unit>:<amount>` (`bytes` or `additional-elements`, then unpadded base-10 amount). |
+| `resource_exhausted` | `reservation-size-overflow` | `upstream`: the exact upstream `StorageRequest` amount and unit rendered as `<unit>:<amount>`; `<unit>` is `bytes` or `additional-elements`, and `<amount>` is unpadded base-10. Preserve the capacity/size arithmetic or representation overflow reason. |
 
 When either storage failure stops admission, QSL SHALL expose no admitted
 descriptor prefix, registry index, member key join, type environment, or
@@ -276,8 +285,8 @@ be presented as canonical `IdentityRefusal::Allocation`.
 | FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 | FR-082-AC-8 | Given a field `f` declared `optional` with multiplicity `[1, 1]`, redefined by a field declared `required` with multiplicity `[1, 1]` and written by an exposed operation whose postcondition establishes no presence fact, the checker refuses `unproved-refinement` with obligation `field-presence`; with `present(self.f)` established it admits the redefinition. Given `f` and its redefinition both declared `required` with multiplicity `[0, 1]`, or both `optional` with multiplicity `[1, 1]`, written by the same operation with no established fact, the checker admits the redefinition and engages no obligation. | Test (TC-896) |
 | FR-082-AC-9 | Given a domain package whose scalar type `Wide` is bound to `[0, 18446744073709551615]` (its bounds written as decimal strings, FR-056), a field `f: Wide` redefined by a field of scalar type `Narrow` bound to `[0, 9223372036854775808]`, and an exposed operation writing `f` whose stated postcondition is `self.f <= 9223372036854775808`, the checker admits the redefinition; with the postcondition `self.f <= 9223372036854775809` it refuses `unproved-refinement` with obligation `field-domain`. | Test (TC-911) |
-| FR-082-AC-10 | With valid declarations and sufficient configured limits, an isolated allocator seam denies a real production reservation during shared registry, index or traversal construction. S3 returns `StageFailure::Refused` with `resource_exhausted`/`allocation-failed` and the registry payload's exact upstream `requested` and declared native unit (bytes or additional elements), with no bound or setting. The consumer neither returns false nor reports a limit, malformed/type refusal, cancellation or fault. | Test |
-| FR-082-AC-11 | A production reservation-size arithmetic or representation overflow reaches QSL as the distinct upstream capacity/size resource failure with its original reason, never `allocation-failed` or a fabricated measured request. A genuine allocator denial with representable request remains the AC-10 case. | Test |
+| FR-082-AC-10 | With valid declarations and sufficient configured limits, an isolated allocator seam denies a real production reservation during shared registry, index or traversal construction. S3 returns `StageFailure::Refused` with `resource_exhausted`/`allocation-failed` and exactly one `requested` field containing the upstream native unit and amount as `<unit>:<amount>` (`bytes` or `additional-elements`, then unpadded base-10), with no bound or setting. The consumer neither returns false nor reports a limit, malformed/type refusal, cancellation or fault. | Test |
+| FR-082-AC-11 | A production reservation-size arithmetic or representation overflow reaches QSL as `resource_exhausted`/`reservation-size-overflow`, preserving the upstream amount and native unit, never `allocation-failed` or a fabricated measured allocator-denied request. A genuine allocator denial with representable request remains the AC-10 case. | Test |
 | FR-082-AC-12 | Denial after earlier descriptors or member links have been staged exposes no admitted prefix, index, key join, environment or checked package; evaluation invocation count and evaluation charge are both zero. Removing the denial and retrying identical declarations gives the same complete environment and member links as fresh admission. | Test |
 | FR-082-AC-13 | For the same valid declaration fixture with allocation enabled, exact N-1/N controls for `environment.work_units` and `environment.ancestor_steps` retain their original stage-limit kind, configured bound and actual denied counter, and admit at sufficient limits. Malformed input, cancellation, FR-259's 4096-byte canonical allocation control and released checked-invariant causes retain their existing classifications and payloads. Budget denial and capacity overflow do not stand in for AC-10's measured reservation failure. | Test |
 

@@ -823,7 +823,6 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
 /// currency fields.
-#[ignore = "expected red until PR #765 runtime vectors land"]
 #[test]
 fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let document = mutate_k2(|document| {
@@ -856,7 +855,6 @@ fn tc235_m02_record_value_field_and_clause_bind_to_order() {
 /// TC-235 M13 preserves all six Money-valued access paths used by the runtime
 /// vector: two direct fields, a bounded sequence, a present optional, and an
 /// invocation parameter, plus the Money invariant itself.
-#[ignore = "expected red until PR #765 runtime vectors land"]
 #[test]
 fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
     let document = mutate_k2(|document| {
@@ -882,7 +880,12 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
         let mut requote = super::operation("Order", "requote");
         requote["params"] = json!([{
             "identity": id("Order/requote/amount"),
+            "name": "amount",
+            "origin": origin("Order/requote/amount"),
             "typeRef": id("Money"),
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
             "multiplicity": {
                 "lower": 1,
                 "upper": 1,
@@ -890,6 +893,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
                 "unique": true,
             },
         }]);
+        order["operations"] = json!([]);
         order["operations"].as_array_mut().unwrap().push(requote);
     });
 
@@ -954,7 +958,12 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
         let mut requote = super::operation("Order", "requote");
         requote["params"] = json!([{
             "identity": id("Order/requote/amount"),
+            "name": "amount",
+            "origin": origin("Order/requote/amount"),
             "typeRef": id("Money"),
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
             "multiplicity": {
                 "lower": 1,
                 "upper": 1,
@@ -962,6 +971,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
                 "unique": true,
             },
         }]);
+        order["operations"] = json!([]);
         order["operations"].as_array_mut().unwrap().push(requote);
         let mut discount = field("Order", "discount", &id("Money"));
         discount["presence"] = json!("optional");
@@ -1102,10 +1112,20 @@ fn tc235_m17_record_value_specialization_vectors() {
         ));
     });
     let cycle_refusals = normalized_refusals(&cycle, 24);
-    assert_eq!(cycle_refusals.len(), 1);
-    assert_eq!(cycle_refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(cycle_refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(cycle_refusals[0]
-        .detail
-        .contains("[ix://test/orders/Money, ix://test/orders/TaxedMoney]"));
+    assert_eq!(cycle_refusals.len(), 2, "{cycle_refusals:#?}");
+    for (refusal, (ancestor, via)) in cycle_refusals
+        .iter()
+        .zip([("Money", "TaxedMoney"), ("TaxedMoney", "Money")])
+    {
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        let ModelRefusalCause::SpecializationCycle {
+            ancestor: actual,
+            via: actual_via,
+        } = &refusal.cause
+        else {
+            panic!("expected typed specialization cycle cause: {refusal:?}");
+        };
+        assert_eq!(actual, &key(ancestor));
+        assert_eq!(actual_via, &key(via));
+    }
 }

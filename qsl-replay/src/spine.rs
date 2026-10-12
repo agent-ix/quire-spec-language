@@ -39,6 +39,7 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
 pub use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 pub use lifecycle::{
@@ -429,6 +430,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::IdentityAllocation { requested } => {
             format!("an identity preimage could not reserve {requested} bytes of memory")
         }
+        AssemblyCause::StorageAllocation { requested, unit } => format!(
+            "the type registry could not reserve {requested} {} of storage",
+            match unit {
+                StorageUnit::Bytes => "bytes",
+                StorageUnit::AdditionalElements => "additional elements",
+            }
+        ),
+        AssemblyCause::StorageCapacity { requested, unit } => format!(
+            "the type registry could not represent a reservation of {requested} {}",
+            match unit {
+                StorageUnit::Bytes => "bytes",
+                StorageUnit::AdditionalElements => "additional elements",
+            }
+        ),
         AssemblyCause::TypeLimit(limit) | AssemblyCause::IdentityLimit(limit) => format!(
             "{} (bound {}, reached {})",
             limit.kind().catalog_cause(),

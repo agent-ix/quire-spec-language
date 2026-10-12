@@ -72,7 +72,8 @@ use crate::value::environment_stage::stage_limit;
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
-    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageUnit, TypeEnvironment,
+    TypeEnvironmentLimits,
 };
 use quire_semantic_value::semantic_node::{IdentityRefusal, InvalidSemanticGraph};
 
@@ -217,6 +218,22 @@ pub enum AssemblyCause {
     IdentityAllocation {
         /// The size in bytes of the reservation that failed.
         requested: usize,
+    },
+    /// A shared type-environment storage reservation failed. Preserve the
+    /// kernel's native unit: an element count is not a byte measurement.
+    StorageAllocation {
+        /// The amount passed to the kernel's reservation boundary.
+        requested: usize,
+        /// The unit passed to that boundary.
+        unit: StorageUnit,
+    },
+    /// The type registry could not compute or represent the requested
+    /// reservation size. Preserve the kernel's native unit and amount.
+    StorageCapacity {
+        /// The amount passed to the kernel's reservation boundary.
+        requested: usize,
+        /// The unit passed to that boundary.
+        unit: StorageUnit,
     },
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
@@ -379,7 +396,9 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => Code::RuntimeInvariant,
             },
             Self::TypeLimit(_) | Self::IdentityLimit(_) => Code::StageLimitExceeded,
-            Self::IdentityAllocation { .. } => Code::ResourceExhausted,
+            Self::IdentityAllocation { .. }
+            | Self::StorageAllocation { .. }
+            | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
         }
     }
@@ -450,10 +469,43 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => "established-invariant-broken",
             },
             Self::TypeLimit(limit) | Self::IdentityLimit(limit) => limit.kind().catalog_cause(),
-            Self::IdentityAllocation { .. } => "allocation-failed",
+            Self::IdentityAllocation { .. } | Self::StorageAllocation { .. } => "allocation-failed",
+            Self::StorageCapacity { .. } => "reservation-size-overflow",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
         };
         CatalogCode::new(self.code().as_str(), cause)
+    }
+
+    /// The exact native storage request for a type-environment storage cause.
+    pub fn storage_request(&self) -> Option<(usize, StorageUnit)> {
+        match self {
+            Self::StorageAllocation { requested, unit }
+            | Self::StorageCapacity { requested, unit } => Some((*requested, *unit)),
+            _ => None,
+        }
+    }
+
+    /// The typed catalog payload for a registry storage refusal. Capacity
+    /// overflow uses QSpec's `upstream` field with the exact request object.
+    pub fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        match self {
+            Self::StorageAllocation { requested, unit } => Some(BTreeMap::from([(
+                "requested",
+                format!("{}:{requested}", storage_unit_name(*unit)),
+            )])),
+            Self::StorageCapacity { requested, unit } => Some(BTreeMap::from([(
+                "upstream",
+                format!("{}:{requested}", storage_unit_name(*unit)),
+            )])),
+            _ => None,
+        }
+    }
+}
+
+fn storage_unit_name(unit: StorageUnit) -> &'static str {
+    match unit {
+        StorageUnit::Bytes => "bytes",
+        StorageUnit::AdditionalElements => "additional-elements",
     }
 }
 
@@ -886,7 +938,7 @@ fn model_value_type(
             // but the current checked-model value algebra has no corresponding
             // element types. Preserve them in intake; do not coerce either to
             // text or an integer during assembly.
-            NativeValueType::String => return Err(Unmapped::Unsupported),
+            NativeValueType::String => ValueType::String,
             // Intake refuses these: their domain parameters have no Semantic
             // IR spelling, so no unparameterized kernel type stands for them.
             NativeValueType::Rational | NativeValueType::Decimal | NativeValueType::Text => {
@@ -1280,20 +1332,48 @@ fn refuse<T>(errors: Vec<AssemblyError>) -> Result<T, AssemblyRefusal> {
 /// not reported. Each round sets aside at least one declaration, so this
 /// ends.
 fn admit_types(
-    mut declarations: Vec<CompositeDeclaration>,
+    declarations: Vec<CompositeDeclaration>,
     object_types: &[ObjectTypeDeclaration],
     spans: &BTreeMap<String, Span>,
     environment: TypeEnvironmentLimits,
     cancel: &Cancel,
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
+    admit_types_with(
+        declarations,
+        object_types,
+        spans,
+        environment,
+        cancel,
+        |declarations, object_types, environment, cancel| {
+            TypeEnvironment::bounded_with_cancel(
+                declarations.iter().cloned(),
+                object_types.iter().cloned(),
+                environment,
+                cancel,
+            )
+        },
+    )
+}
+
+/// The admission loop with its registry constructor injected. Production
+/// supplies the shared kernel constructor above; tests inject exact upstream
+/// failures so the complete production failure mapping stays exercised.
+fn admit_types_with(
+    mut declarations: Vec<CompositeDeclaration>,
+    object_types: &[ObjectTypeDeclaration],
+    spans: &BTreeMap<String, Span>,
+    environment: TypeEnvironmentLimits,
+    cancel: &Cancel,
+    mut construct: impl FnMut(
+        &[CompositeDeclaration],
+        &[ObjectTypeDeclaration],
+        TypeEnvironmentLimits,
+        &Cancel,
+    ) -> Result<TypeEnvironment, EnvironmentFailure>,
+) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
     loop {
-        match TypeEnvironment::bounded_with_cancel(
-            declarations.clone(),
-            object_types.iter().cloned(),
-            environment,
-            cancel,
-        ) {
+        match construct(&declarations, object_types, environment, cancel) {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
             Err(EnvironmentFailure::Limit(limit)) => {
@@ -1326,6 +1406,26 @@ fn admit_types(
                 if !set_aside {
                     return refuse(errors);
                 }
+            }
+            Err(EnvironmentFailure::Allocation(request)) => {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::StorageAllocation {
+                        requested: request.amount(),
+                        unit: request.unit(),
+                    },
+                    span: Span { start: 0, end: 0 },
+                });
+                return refuse(errors);
+            }
+            Err(EnvironmentFailure::Capacity(request)) => {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::StorageCapacity {
+                        requested: request.amount(),
+                        unit: request.unit(),
+                    },
+                    span: Span { start: 0, end: 0 },
+                });
+                return refuse(errors);
             }
         }
     }

@@ -221,16 +221,19 @@ does not satisfy an event's `Timestamp` occurrence-field requirement under
 The compiler SHALL NOT replace `UUID`, `String` or `Timestamp` with a local
 alias or a Boolean stand-in.
 
-### K2 canonical native payloads
+### K2 canonical native String, UUID and Timestamp payloads
 
-The following representation choices define the K2 UUID and Timestamp
+The following representation choices define the K2 String, UUID and Timestamp
 capabilities. They are selected here, not inferred from earlier native-name
 admission or from a JSON string's shape. Each is a distinct native type and
 value kind in the shared kernel. A caller supplies the canonical payload;
-the kernel validates it before constructing a typed value.
+the kernel validates it before constructing a typed value. Every Unicode
+scalar sequence is a valid String payload; unlike UUID and Timestamp, String
+has no narrower canonical payload grammar.
 
 | Native | Payload and single accepted text form | Closed wire object |
 | --- | --- | --- |
+| `String` | Any Unicode scalar sequence, with no normalization or case folding. Its single accepted text form is a JSON string under RFC 8259 encoded as UTF-8; lone surrogate code points are not Unicode scalar values and are refused. The empty string is valid. | `{"kind":"string","text":"..."}` |
 | `UUID` | Exactly 128 opaque bits, rendered as 32 lowercase ASCII hexadecimal digits in groups `8-4-4-4-12`, with four ASCII hyphens. The bits are decoded left to right, most-significant octet first. | `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}` |
 | `Timestamp` | An exact signed count of nanoseconds on the POSIX epoch scale, epoch `1970-01-01T00:00:00Z`, one unit = one billionth of a POSIX second, inclusive domain `-170141183460469231731687303715884105728` through `170141183460469231731687303715884105727` (signed 128-bit). Its text is ASCII `0` or an optional `-` followed by a nonzero digit and zero or more digits. | `{"kind":"timestamp","nanoseconds":"0"}` |
 
@@ -255,13 +258,25 @@ conversion or timezone capability. The payload has no offset, timezone,
 calendar fields or precision selector. Calendar text, including RFC 3339
 timestamps, is not an alternative accepted form.
 
+Native String equality compares the exact Unicode scalar sequence; it does
+not normalize or case-fold. Its type-owned key is the UTF-8 encoding of that
+sequence, ordered bytewise with a proper prefix first. The sequence's UTF-8
+bytes are the variable portion of its result-size accounting; it uses the
+existing typed-result size path and adds no separate budget. An empty String
+has zero variable payload bytes. The closed String wire object has exactly
+`kind` and `text`; `text` is the decoded scalar sequence, and the selected
+canonical JSON serializer determines member order and JSON escape spelling.
+String equality and key ordering do not authorize arithmetic, concatenation,
+or general relational operators.
+
 The wire objects have exactly the displayed members and tags. Object-member
 order is determined by the enclosing selected canonical JSON serializer,
-not by these examples. The payload string's decoded ASCII content is the
-single literal form; JSON escape choices belong to that serializer, not to
-kernel payload admission. QSL owns decoding and validation of the closed JSON
-envelope and passes only the decoded canonical-payload text to quire-exact;
-the kernel owns no JSON parser or envelope-member checks.
+not by these examples. For UUID and Timestamp, each payload string's decoded
+ASCII content is the single literal form. For String, the decoded Unicode
+scalar sequence is the payload. JSON escape choices belong to the enclosing
+serializer, not to kernel payload admission. QSL owns decoding and validation
+of the closed JSON envelope and passes only the decoded canonical-payload
+text to quire-exact; the kernel owns no JSON parser or envelope-member checks.
 
 Kernel admission SHALL return its `ConstructionRefusal` at `Component::Value`
 with one of three distinct typed `ConstructionCause` classes: noncanonical
@@ -297,13 +312,14 @@ non-ASCII digits, fractional or exponent forms and calendar/offset text are
 noncanonical. A bare JSON number is not a payload, even for zero.
 
 Within one native kind, equality SHALL compare the canonical payload content.
-Its type-owned key is that same content, compared unsigned ASCII bytewise
-with a proper prefix first, extending
+Its type-owned key is that same content, compared bytewise with a proper
+prefix first, extending
 [FR-144](ix://agent-ix/quire-specification/FR-144)'s equality/key invariant.
-For Timestamp this key order is deliberately a representation order, not
-chronological order. UUID and Timestamp have distinct type identities;
-cross-kind equality, including a Timestamp against `Int` or a UUID against
-text containing the same characters, refuses without a Boolean or coercion.
+For String the key bytes are UTF-8; for UUID and Timestamp this key order is
+deliberately a representation order, not chronological order. String, UUID
+and Timestamp have distinct type identities; cross-kind equality, including
+a String and a UUID with identical-looking text, refuses without a Boolean or
+coercion.
 [FR-149](ix://agent-ix/quire-specification/FR-149) owns the typed equality
 matrix and schedule. A key does not authorize `<`, `<=`, `>` or `>=`.
 
@@ -597,6 +613,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` has no assembled field type and refuses at the unit's `model` declaration with `unknown_required_feature`/`unsupported-feature`; it yields no `PackageDeclarations`. The refusal does not assign a rounding mode. A function parameter of either floating type remains admitted under FR-091-OQ-4. | Test |
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
+| FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator. | Test (TC-992) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17

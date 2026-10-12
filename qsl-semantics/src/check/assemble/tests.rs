@@ -12,7 +12,10 @@ use quire_exact::{
     Presence, RoundingMode, ValueType,
 };
 
-use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
+use super::{
+    admit_types_with, model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault,
+    Unmapped,
+};
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -24,8 +27,11 @@ use crate::model::domain_package::{
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
+use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::FieldDeclaration;
+use quire_semantic_value::declaration::{
+    EnvironmentFailure, FieldDeclaration, StorageRequest, StorageUnit, TypeEnvironmentLimits,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -551,6 +557,85 @@ fn each_assembler_cause_has_its_catalog_code() {
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
+    }
+}
+
+/// FR-082-AC-10: assembler allocation refusals preserve the kernel's exact
+/// request amount and unit, including element counts that are not bytes.
+#[trace("FR-082-AC-10")]
+#[test]
+fn assembler_allocation_cause_preserves_native_request_unit() {
+    for (request, expected_unit) in [
+        (StorageRequest::new(6, StorageUnit::Bytes), "bytes"),
+        (
+            StorageRequest::new(3, StorageUnit::AdditionalElements),
+            "additional-elements",
+        ),
+    ] {
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| Err(EnvironmentFailure::Allocation(request)),
+        )
+        .expect_err("injected registry allocation failure must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("registry allocation failure must produce one assembly error")
+        };
+        let cause = &error.cause;
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/allocation-failed"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        let fields =
+            BTreeMap::from([("requested", format!("{expected_unit}:{}", request.amount()))]);
+        assert_eq!(cause.catalog_fields(), Some(fields));
+    }
+}
+
+/// FR-082-AC-11: reservation size overflow is distinct from allocation
+/// denial and preserves the kernel's exact request amount and unit.
+#[trace("FR-082-AC-11")]
+#[test]
+fn assembler_capacity_cause_preserves_native_request_unit() {
+    for (request, expected_upstream) in [
+        (StorageRequest::new(9, StorageUnit::Bytes), "bytes:9"),
+        (
+            StorageRequest::new(4, StorageUnit::AdditionalElements),
+            "additional-elements:4",
+        ),
+    ] {
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| Err(EnvironmentFailure::Capacity(request)),
+        )
+        .expect_err("injected reservation overflow must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("reservation overflow must produce one assembly error")
+        };
+        let cause = &error.cause;
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/reservation-size-overflow"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        assert_eq!(
+            cause.catalog_fields(),
+            Some(BTreeMap::from([("upstream", expected_upstream.to_owned())]))
+        );
     }
 }
 
@@ -1134,6 +1219,29 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
         .expect("native Timestamp is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::Timestamp);
+}
+
+/// Native `String` is a distinct checked leaf, not profile-bounded `Text`.
+#[trace("FR-056-AC-11")]
+#[test]
+fn native_string_field_assembles_as_a_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    field.value_type = ValueTypeRef::Native(NativeValueType::String);
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+
+    let declaration = model_field(&field, &records, &identities, &meaning_handles)
+        .expect("native String is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::String);
+    assert_ne!(
+        *declaration.value_type(),
+        ValueType::Text(
+            quire_exact::TextType::new(0, 1, quire_exact::TextProfile::UnicodeScalars,)
+                .expect("valid Text bounds")
+        )
+    );
 }
 
 /// A lower bound of `0` makes an empty collection legal; it never makes a

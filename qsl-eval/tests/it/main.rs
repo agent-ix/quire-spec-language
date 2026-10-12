@@ -7,6 +7,7 @@
 pub(crate) mod support;
 
 #[path = "../../../qsl-semantics/tests/support/tc235_k2.rs"]
+#[allow(dead_code)]
 mod tc235_k2;
 
 mod call_verdicts;

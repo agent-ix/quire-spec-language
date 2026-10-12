@@ -1363,6 +1363,7 @@ impl<'a> Typer<'a> {
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
+                | ValueType::String
                 | ValueType::Composite(_)
                 | ValueType::Reference(_)
                 | ValueType::Population(_) => {}
@@ -1740,6 +1741,7 @@ impl<'a> Typer<'a> {
             | ValueType::Reference(_)
             | ValueType::Population(_)
             | ValueType::Uuid
+            | ValueType::String
             | ValueType::Timestamp => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))

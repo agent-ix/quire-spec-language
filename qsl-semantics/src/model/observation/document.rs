@@ -5,7 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
+use quire_exact::{
+    CollectionKind, FieldValue, Integer, ObjectId, ObjectReference, UniverseId, Value,
+};
 
 use qsl_foundation::diagnostic::Code;
 
@@ -1346,6 +1348,172 @@ pub(super) fn admit_population_values<'t>(
     })
 }
 
+/// Admit one state-machine context alongside any ordinary declared
+/// populations in the same snapshot. A machine context is owned by its
+/// observation and therefore receives an internal observation-scoped
+/// reference only for evaluator lookup; that reference is never exposed as
+/// a declared-object path subject.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn admit_state_machine_context_values<'t>(
+    views: &[ModelView],
+    types: &'t TypeEnvironment,
+    context_view: &ModelView,
+    context_name: &str,
+    populations: &[RawPopulation],
+    observation: &DocumentRef,
+    invocation: &DocumentRef,
+    range: PostStateRange,
+    ancestor_steps: u64,
+) -> Result<(PopulationValues<'t>, ObjectReference), AdmissionFailure> {
+    let mut contexts = Vec::new();
+    let mut ordinary = Vec::new();
+    for (population_index, population) in populations.iter().enumerate() {
+        if population.population == context_name {
+            for (object_index, object) in population.objects.iter().enumerate() {
+                contexts.push((population_index, object_index, object));
+            }
+        } else {
+            ordinary.push(population.clone());
+        }
+    }
+
+    let required = format!("({context_name}, {})", invocation.identity);
+    let Some((_, _, context)) = contexts.first().copied() else {
+        return Err(refuse(
+            admission_record(Code::InvalidModelBinding, "wrong-context")
+                .with("document", observation.identity.clone())
+                .with("required", required)
+                .with("actual", "none"),
+        ));
+    };
+    if let Some((population_index, object_index, _)) = contexts.get(1).copied() {
+        return Err(refuse(
+            admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                .with("document", observation.identity.clone())
+                .with(
+                    "path",
+                    format!("/populations/{population_index}/objects/{object_index}"),
+                ),
+        ));
+    }
+
+    let context_key = context_view
+        .view
+        .type_identities()
+        .keys()
+        .find(|key| key.node == context_name)
+        .ok_or_else(|| fault("context-type-unresolved"))?;
+    if context.type_identity.as_str() != context_name {
+        return Err(refuse(
+            admission_record(Code::InvalidModelBinding, "wrong-context")
+                .with("document", observation.identity.clone())
+                .with("required", required)
+                .with("actual", context.type_identity.as_str().to_owned()),
+        ));
+    }
+    let effective_type = *context_view
+        .view
+        .type_identities()
+        .get(context_key)
+        .ok_or_else(|| fault("context-type-has-no-effective-id"))?;
+    let declared = types
+        .attributes(effective_type)
+        .ok_or_else(|| fault("context-type-has-no-checked-attributes"))?;
+
+    for attribute in declared {
+        if let quire_exact::ValueType::Collection(collection) = attribute.field().value_type() {
+            if collection.kind() != CollectionKind::Sequence {
+                return Err(refuse(
+                    admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                        .with("field", attribute.field().name().to_owned()),
+                ));
+            }
+        }
+    }
+    for attribute in declared {
+        let name = attribute.field().name();
+        if raw_field(&context.fields, name).is_none() {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "missing-member")
+                    .with("document", observation.identity.clone())
+                    .with("field", name.to_owned()),
+            ));
+        }
+    }
+    for (name, _) in &context.fields {
+        if !declared
+            .iter()
+            .any(|attribute| attribute.field().name() == name)
+        {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "unknown-member")
+                    .with("document", observation.identity.clone())
+                    .with("field", name.clone()),
+            ));
+        }
+    }
+
+    let mut references = References::over(views, types, &ordinary);
+    let mut attributes = Vec::with_capacity(declared.len());
+    let mut breaches = Vec::new();
+    for attribute in declared {
+        let name = attribute.field().name();
+        let value_type = attribute.field().value_type();
+        let presence = attribute.field().presence();
+        let raw = raw_field(&context.fields, name)
+            .ok_or_else(|| fault("context-field-missing-after-check"))?;
+        if !object_field_kind_matches(raw, value_type, presence) {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                    .with("document", observation.identity.clone())
+                    .with("field", name.to_owned()),
+            ));
+        }
+        let mut found = Vec::new();
+        let witness = match range {
+            PostStateRange::Witness => Some(&mut found),
+            PostStateRange::Refuse => None,
+        };
+        let value = admit_object_field(&mut references, raw, value_type, presence, witness)
+            .map_err(|record| {
+                refuse(
+                    record
+                        .with("document", observation.identity.clone())
+                        .with("field", name.to_owned()),
+                )
+            })?;
+        breaches.extend(
+            found
+                .into_iter()
+                .map(|breach| (attribute.identity(), breach)),
+        );
+        attributes.push((name, value));
+    }
+
+    let object = ObjectId::new(invocation.identity.clone()).map_err(|_| {
+        refuse(
+            admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "identity"),
+        )
+    })?;
+    let reference = ObjectReference::new(
+        UniverseId::from_digest(observation.digest),
+        effective_type,
+        object,
+    );
+    let mut values = admit_population_values(views, types, &ordinary, range, ancestor_steps)?;
+    values
+        .out_of_range
+        .extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
+            object: reference.clone(),
+            field,
+            index: breach.index,
+            range: breach.range,
+            observed: breach.observed,
+        }));
+    values.objects.push((reference.clone(), attributes));
+    Ok((values, reference))
+}
+
 /// FR-106's required populations from parameters: every population of the
 /// package that a reference inside the raw value of one of `operation`'s
 /// declared reference-valued parameters names, in declared parameter order
@@ -1396,6 +1564,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
             | quire_exact::ValueType::Enum(_)
             | quire_exact::ValueType::Composite(_)
             | quire_exact::ValueType::Population(_)

@@ -346,6 +346,7 @@ pub(super) fn derive(
             ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Float(_)
+            | ValueType::String
             | ValueType::Text(_)
             | ValueType::Quantity(_)
             | ValueType::Reference(_)
