@@ -162,7 +162,10 @@ impl FamilyContract for StateModelFamily {
                 }
                 Form::Reaches { source, source_type, target, target_type, edge } => {
                     let (ValueType::Reference(object), ValueType::Reference(other)) = (source_type, target_type) else { return Err(ineligible(location)); };
-                    let attribute = scope.types().attribute(*object, edge).ok_or_else(|| ineligible(location))?;
+                    let attribute = scope
+                        .types()
+                        .attribute(*object, edge)
+                        .ok_or_else(|| missing(edge))?;
                     let owner = attribute.owner();
                     let endpoints_admitted = if scope.complete_model {
                         scope.types().conforms(*object, owner) && scope.types().conforms(*other, owner)
