@@ -6,13 +6,9 @@ use ix_trace_rs::trace;
 use qsl_semantics::check::CheckedBody;
 use quire_semantic_value::location::Origin;
 
-fn admitted_charge_points(meter: &Meter) -> Vec<ChargePoint> {
-    meter
-        .admitted_charges()
-        .iter()
-        .map(|charge| charge.point)
-        .collect()
-}
+#[path = "../../../../../tests/support/admitted_charge.rs"]
+mod admitted_charge;
+use admitted_charge::admitted_charge_points;
 
 macro_rules! probe {
     ($identifier:expr, $machine:ident, $charges:expr, $action:block) => {{

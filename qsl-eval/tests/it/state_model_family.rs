@@ -484,8 +484,7 @@ fn all_instances_missing_target_type_refuses_during_assembly() {
     ));
     assert_eq!(error.cause.code().as_str(), "missing_declaration");
     assert_eq!(error.cause.catalog_code().cause(), "missing-name");
-    let authored = &source
-        [usize::try_from(error.span.start).unwrap()..usize::try_from(error.span.end).unwrap()];
+    let authored = &source[error.span.start..error.span.end];
     assert_eq!(authored, "M::Missing");
 }
 

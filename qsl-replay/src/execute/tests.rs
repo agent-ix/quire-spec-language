@@ -20,13 +20,9 @@ use crate::scalar::ScalarOutcome;
 use crate::spine::{compose, ComposedUnit, SpineLimits, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
-fn admitted_charge_points(meter: &quire_exact::Meter) -> Vec<quire_exact::ChargePoint> {
-    meter
-        .admitted_charges()
-        .iter()
-        .map(|charge| charge.point)
-        .collect()
-}
+#[path = "../../../tests/support/admitted_charge.rs"]
+mod admitted_charge;
+use admitted_charge::admitted_charge_points;
 
 mod composite;
 mod composite_parity;
