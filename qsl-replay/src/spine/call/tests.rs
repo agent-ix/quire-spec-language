@@ -295,7 +295,7 @@ fn synthetic_reference_hierarchy(
                 key: unrelated.clone(),
                 interface_features: None,
                 abstract_type: false,
-                supertypes: vec![root],
+                supertypes: vec![root.clone()],
             }),
         ],
     );
@@ -361,7 +361,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
         &[],
         &types,
         &[("population".to_owned(), ValueType::Population(Some(2)))],
-        &[population],
+        &[population.clone()],
         &objects,
     )
     .expect_err("a declared maximum mismatch refuses before evaluation");
@@ -603,10 +603,11 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
 fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners() {
+    use qsl_foundation::absence::AbsenceMode;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::population::{
-        admit_binding, lookup, AbsenceMode, AdmissionMeter, AdmissionOutcome, LookupKey,
-        LookupOutcome, PopulationAdmissionLimits, PopulationDocument, PopulationMember,
+        admit_binding, lookup, AdmissionMeter, AdmissionOutcome, LookupKey, LookupOutcome,
+        PopulationAdmissionLimits, PopulationDocument, PopulationMember,
     };
     use quire_exact::{LimitKind, Meter};
 

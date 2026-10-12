@@ -667,7 +667,7 @@ fn admit_model_arguments(
             let Some(supplied_model) = supplied_model else {
                 return Err(Box::new(RunRefusal::WrongValueKind { position }));
             };
-            let Some((_, type_name)) = supplied_model
+            let Some((type_name, _)) = supplied_model
                 .view
                 .type_identities()
                 .iter()
