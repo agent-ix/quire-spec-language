@@ -14,10 +14,6 @@ relationships:
 
 When a native-run/1 request selects program extraction in an enabled build, the command shall compile its selected Markdown clause through FR-030 and execute the existing runtime workflow.
 
-The native-run/1 code still reads and emits the body record's old
-`revision_namespace`, `revision` and `formal_revision` fields and no `digest`;
-it moves to the `{authority, identity, document, digest}` record in Inputs.
-
 ## Inputs
 
 With the quire-extraction feature, program accepts an optional closed extraction

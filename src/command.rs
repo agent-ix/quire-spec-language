@@ -401,7 +401,13 @@ impl RunError {
 
     /// JSON error with original stage/code and available source/reference details.
     pub fn value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
-        output::error(self)
+        output::error(self, false)
+    }
+
+    /// JSON error for an artifact command, retaining its exact request
+    /// identity and refusal/incomplete status.
+    pub fn artifact_value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
+        output::error(self, true)
     }
 }
 

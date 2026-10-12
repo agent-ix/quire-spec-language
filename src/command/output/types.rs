@@ -309,3 +309,20 @@ pub(super) struct Failure<'a> {
     pub details: Details<'a>,
     pub basis: &'static str,
 }
+
+/// Artifact commands retain their request identity and completion status on
+/// stderr. The `run` command uses the closed command-error shape above.
+#[derive(Serialize)]
+pub(super) struct ArtifactFailure<'a> {
+    #[serde(flatten)]
+    pub failure: Failure<'a>,
+    pub request_digest: Option<String>,
+    pub status: ArtifactFailureStatus,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ArtifactFailureStatus {
+    Refused,
+    Incomplete,
+}

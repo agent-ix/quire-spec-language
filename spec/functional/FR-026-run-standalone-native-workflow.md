@@ -25,8 +25,8 @@ declares, with FR-027's edition reader. This requirement owns the `0-draft`
 route, which also takes a source declaring no edition. A `1-draft` program runs a named function through the spine under
 [FR-100](FR-100-run-a-named-function-through-the-spine.md), which owns that
 route's request members (`call`, `libraries`), outcome document
-(`spine-run-result/1`, the `quire-spec` CLI's current output, retired when
-the driver's verbs land; the outcome document is FR-286's `quire-outcome/1`)
+(`spine-run-result/1` for the `quire-spec` CLI; FR-286 owns the driver's
+`quire-outcome/1`)
 and exit statuses. The members, outcome and exit
 contract below apply to `0-draft` programs.
 
@@ -34,8 +34,8 @@ The code applies fixed 1 MiB, 64-file and
 8 MiB ceilings; they become the configurable `request_bytes` and
 `dependent_bytes` limits in Behavior (FR-026-AC-4).
 
-The request and result identities still carry `revision_namespace` and
-`revision` until the QSL-381 change (QSpec STD-150).
+The `0-draft` request and result identities carry `revision_namespace` and
+`revision` (QSpec STD-150).
 
 ## Inputs
 

@@ -183,8 +183,13 @@ enum Output {
     Artifact(Vec<u8>),
 }
 
-fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String) {
-    match error.value() {
+fn command_error(error: &quire_spec_language::command::RunError, artifact: bool) -> (u8, String) {
+    let value = if artifact {
+        error.artifact_value()
+    } else {
+        error.value()
+    };
+    match value {
         Ok(value) => (error.category().exit_code(), value.to_string()),
         // Serializing the outcome is an internal failure, distinct from the
         // request-level disposition it failed to encode.
@@ -207,14 +212,14 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
         Command::Run { path, limits } => {
             quire_spec_language::command::run_with_limits(path, limits)
                 .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
-                .map_err(|error| command_error(&error))
+                .map_err(|error| command_error(&error, false))
         }
         Command::Compile { path } => quire_spec_language::command::compile(path)
             .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
-            .map_err(|error| command_error(&error)),
+            .map_err(|error| command_error(&error, true)),
         Command::Lower { path, target } => quire_spec_language::command::lower_for(path, target)
             .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
-            .map_err(|error| command_error(&error)),
+            .map_err(|error| command_error(&error, true)),
     }
 }
 
