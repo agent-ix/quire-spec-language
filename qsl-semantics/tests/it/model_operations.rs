@@ -1826,6 +1826,8 @@ fn process_model_members_assemble_as_an_identified_run_type() {
 fn state_machine_fields_assemble_on_the_state_owner() {
     let machine = format!("ix://{PACKAGE_IDENTITY}/OrderLifecycle");
     let placed = format!("{machine}/placed");
+    let place = format!("{machine}/place");
+    let transition = format!("{machine}/place_transition");
     let state = |name: &str| {
         let identity = format!("{machine}/{name}");
         json!({
@@ -1857,11 +1859,38 @@ fn state_machine_fields_assemble_on_the_state_owner() {
                     "required",
                     1,
                 )],
-                "operations": [],
+                "operations": [{
+                    "identity": place,
+                    "name": "place",
+                    "params": [],
+                    "pre": [],
+                    "post": [],
+                    "frame": {"modifies": [placed], "creates": [], "deletes": []},
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": place,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [place],
+                        }
+                    },
+                }],
                 "clauses": [],
                 "supertypes": [],
                 "states": [state("Draft"), state("Placed")],
-                "transitions": [],
+                "transitions": [{
+                    "identity": transition,
+                    "from": format!("{machine}/Draft"),
+                    "to": format!("{machine}/Placed"),
+                    "trigger": place,
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": transition,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [transition],
+                        }
+                    },
+                }],
             }),
         )]),
         json!([]),
