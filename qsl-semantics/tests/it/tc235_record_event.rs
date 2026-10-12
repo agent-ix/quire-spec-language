@@ -363,7 +363,11 @@ fn tc235_m10_business_meanings_are_not_object_reference_targets() {
     );
 
     let relationship = |owner: &str, name: &str, target: &str| {
-        let node = format!("{owner}/{name}");
+        let target_name = target
+            .rsplit('/')
+            .next()
+            .expect("package target has a name");
+        let node = format!("relationship/{owner}-{name}-{target_name}");
         json!({
             "identity": id(&node),
             "category": "structural",
@@ -389,7 +393,7 @@ fn tc235_m10_business_meanings_are_not_object_reference_targets() {
         m10_refusal_mismatches(
             &namespace_relationship,
             22,
-            &id("Order/scope"),
+            &id("relationship/Order-scope-OrderManagement"),
             "Relationship.target",
         )
         .into_iter()
