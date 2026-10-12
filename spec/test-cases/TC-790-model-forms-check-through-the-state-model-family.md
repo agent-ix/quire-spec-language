@@ -93,8 +93,9 @@ Catches a form left in the `Value` typer: its refusal would carry
 2. Every ill-formed unit from step 2 refuses at S3. Each cause has family `FamilyKind::StateModel`,
    a catalog code beginning `state-model`, and the QSpec code and cause the
    expected table in the test states as literals: `ill_typed`/`type-mismatch`
-   for a field absent from the effective static type, a nonconforming lookup
-   key and an admitted non-population operand; `missing_declaration`/
+   for a field absent from the effective static type and a nonconforming lookup
+   key; `ill_typed`/`operator-ineligible` for an admitted non-population
+   operand; `missing_declaration`/
    `missing-name` for the undeclared reaches member and operation.
 3. The undeclared `allInstances` model type from step 3 refuses at S2 in the
    assembler as `missing_declaration`/`missing-name` under FR-091-AC-8; it is
