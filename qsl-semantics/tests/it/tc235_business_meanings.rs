@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-235 business-meaning vectors at the real QSL intake/normalization boundary.
 
-use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{ByteDigest, IntakeLimits};
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
@@ -461,14 +460,11 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     );
 }
 
-/// M17's record-value portion is exercised on an FCD-valid record/object
-/// fixture while the full K2 vector waits for its event-type binder. It
-/// checks that a record subtype keeps its inherited field and invariant with
-/// its local field under one effective type, and that its parent is not
-/// silently substituted for the subtype identity.
-#[trace("QSpec-TC-235")]
+/// Supporting control for the later full M17 vector: a record subtype keeps
+/// its inherited field and invariant with its local field under one effective
+/// type, and its parent is not silently substituted for the subtype identity.
 #[test]
-fn tc235_m17_record_value_subtype_keeps_effective_fields() {
+fn record_value_subtype_preserves_effective_fields_support() {
     let types = vec![
         declaration(
             "Order",
