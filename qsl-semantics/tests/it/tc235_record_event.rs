@@ -355,6 +355,123 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     assert!(refusals[0].detail.contains(&id("Fulfilment")));
  }
 
+/// TC-235 M21's semantic-model half: relationship ends remain attached to
+/// their authored relationship, the clause and populations stay typed, and
+/// invalid target/owner meanings retain their FR-208 refusal boundary.
+#[test]
+fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
+    let relationship = |owner: &str, name: &str, target: &str| {
+        let node = format!("{owner}/{name}");
+        json!({
+            "identity": id(&node),
+            "category": "structural",
+            "composite": false,
+            "direction": "source-to-target",
+            "origin": origin(&node),
+            "sourceEnd": {
+                "role": name,
+                "type": id(owner),
+                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+            },
+            "targetEnd": {
+                "type": id(target),
+                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+            },
+        })
+    };
+
+    let order_link = mutate_k2(|document| {
+        type_named_mut(document, "Order")["relationships"] =
+            json!([relationship("Order", "fulfilments", "Fulfilment")]);
+    });
+    let package = read_k2(&order_link).expect("M21 object relationship reads");
+    let view = record_charges(&package, 22);
+    let link = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Relationship(link) if link.key == key("Order/fulfilments") => {
+            Some(link)
+        }
+        _ => None,
+    });
+    let link = link.expect("Order/fulfilments remains a relationship record");
+    assert_eq!(link.source.type_identity, key("Order"));
+    assert_eq!(link.source.role.as_deref(), Some("fulfilments"));
+    assert_eq!(link.target.type_identity, key("Fulfilment"));
+    assert_eq!(
+        link.direction,
+        qsl_semantics::model::domain_package::RelationshipDirection::SourceToTarget
+    );
+    assert!(view.type_identities().contains_key(&key("Order")));
+    assert!(view.type_identities().contains_key(&key("Fulfilment")));
+
+    let fulfilment_link = mutate_k2(|document| {
+        type_named_mut(document, "Fulfilment")["relationships"] =
+            json!([relationship("Fulfilment", "order", "Order")]);
+        type_named_mut(document, "Fulfilment")["clauses"] =
+            json!([clause("Fulfilment", "HasOrder", "present(self.order)")]);
+        document["populations"] = json!([
+            {
+                "identity": id("PF"),
+                "displayName": id("PF"),
+                "kind": {"module": BUSINESS, "name": "population"},
+                "members": [id("Fulfilment")],
+                "extent": "closed",
+                "origin": origin("PF"),
+            },
+            {
+                "identity": id("PO"),
+                "displayName": id("PO"),
+                "kind": {"module": BUSINESS, "name": "population"},
+                "members": [id("Order")],
+                "extent": "closed",
+                "origin": origin("PO"),
+            },
+        ]);
+    });
+    let package = read_k2(&fulfilment_link).expect("M21 reverse relationship reads");
+    record_charges(&package, 25);
+    let link = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Relationship(link) if link.key == key("Fulfilment/order") => {
+            Some(link)
+        }
+        _ => None,
+    });
+    let link = link.expect("Fulfilment/order remains a relationship record");
+    assert_eq!(link.source.type_identity, key("Fulfilment"));
+    assert_eq!(link.target.type_identity, key("Order"));
+    assert_eq!(
+        clause_for(&package, "Fulfilment/HasOrder").text,
+        "present(self.order)"
+    );
+    assert!(package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::Population(population)
+            if population.key == key("PF") && population.member_types == [key("Fulfilment")])
+    }));
+    assert!(package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::Population(population)
+            if population.key == key("PO") && population.member_types == [key("Order")])
+    }));
+
+    let bad_target = mutate_k2(|document| {
+        type_named_mut(document, "Fulfilment")["relationships"] =
+            json!([relationship("Fulfilment", "store", "OrderStore")]);
+    });
+    let refusals = normalized_refusals(&bad_target, 22);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(&refusals[0], &id("Fulfilment/store"), "Relationship.target");
+
+    let bad_owner = mutate_k2(|document| {
+        type_named_mut(document, "Money")["relationships"] =
+            json!([relationship("Money", "owner", "Order")]);
+    });
+    let refusals = normalized_refusals(&bad_owner, 22);
+    assert_eq!(refusals.len(), 1);
+    assert_malformed_at(
+        &refusals[0],
+        &id("Money/owner"),
+        "TypeDefinition.relationships[0]",
+    );
+}
+
 /// TC-235 M02 adds a record-valued field and an object invariant that compares
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
