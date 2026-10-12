@@ -312,6 +312,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::PersistenceInterface(_)
         | DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::Process(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)

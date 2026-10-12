@@ -69,6 +69,50 @@ pub struct RecordValueTypeRecord {
     pub supertypes: Vec<DeclarationKey>,
 }
 
+/// One process step, retained as structural process data rather than a
+/// declaration/member in the domain package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessStepRecord {
+    /// The step's authored identity.
+    pub key: DeclarationKey,
+    /// The authored step name.
+    pub name: String,
+    /// The closed process step-kind vocabulary.
+    pub step_kind: ProcessStepKind,
+    /// Event types consumed by this step.
+    pub consumes: Vec<DeclarationKey>,
+    /// Event types emitted by this step.
+    pub emits: Vec<DeclarationKey>,
+}
+
+/// The closed step-kind vocabulary defined by FR-208.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessStepKind {
+    /// A command step.
+    Command,
+    /// An event step.
+    Event,
+    /// A decision step.
+    Decision,
+    /// A compensation step.
+    Compensation,
+    /// A wait step.
+    Wait,
+}
+
+/// A process declaration: an identified run type and its ordered steps.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessRecord {
+    /// The original process declaration key.
+    pub key: DeclarationKey,
+    /// The process correlation key fields.
+    pub identity_fields: Vec<DeclarationKey>,
+    /// Declared process ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+    /// Authored steps, preserving declaration order.
+    pub steps: Vec<ProcessStepRecord>,
+}
+
 /// An authored clause member. Its language and text are retained verbatim;
 /// retaining a clause does not parse or evaluate it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -575,6 +619,8 @@ pub enum DomainPackageRecord {
     FieldMember(FieldMemberRecord),
     /// A record value type (FR-208).
     RecordValueType(RecordValueTypeRecord),
+    /// A process type (FR-208).
+    Process(ProcessRecord),
     /// An authored clause member (FR-208).
     Clause(ClauseRecord),
     /// An original namespace with no effective type (FR-208).
@@ -605,6 +651,7 @@ impl DomainPackageRecord {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
+            Self::Process(record) => &record.key,
             Self::Clause(record) => &record.key,
             Self::Namespace(record) => &record.key,
             Self::PersistenceInterface(record) => &record.key,
