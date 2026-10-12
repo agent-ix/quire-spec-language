@@ -380,7 +380,9 @@ fn s2_preserves_reserved_operation_member_names() {
     let (_, unit) = build("post P using v on Config::ConfigVersion::absent { true }");
     let form = state_clause(unit.forms()[0].form());
     assert_eq!(
-        form.operation.as_ref().map(|operation| operation.name.as_str()),
+        form.operation
+            .as_ref()
+            .map(|operation| operation.name.as_str()),
         Some("absent")
     );
 }
