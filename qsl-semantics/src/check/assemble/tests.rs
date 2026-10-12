@@ -16,9 +16,10 @@ use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, Topology
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    NativeValueType, OperationEffect, OperationMemberRecord, ScalarTypeRecord, ScalarValueDomain,
-    StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
+    ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
+    Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
+    ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, StateMachineStateRecord,
+    StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
@@ -78,6 +79,9 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
     let draft = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Draft");
     let placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Placed");
     let advance = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/advance");
+    let not_yet_placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/NotYetPlaced");
+    let consistent = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Consistent");
+    let management = DeclarationKey::fixture("ix://test/orders/OrderManagement");
     let package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.tc235-state-machine-assembly"),
         vec![
@@ -121,13 +125,30 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
             }),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
                 key: advance,
-                owner: machine,
+                owner: machine.clone(),
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: not_yet_placed,
+                owner: machine.clone(),
+                language: "quire".to_owned(),
+                text: "not self.status = 1".to_owned(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: consistent,
+                owner: machine.clone(),
+                language: "quire".to_owned(),
+                text: "self.status = 1".to_owned(),
+            }),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: management,
+                members: vec![machine.clone()],
+                vocabulary: Vec::new(),
             }),
         ],
     );

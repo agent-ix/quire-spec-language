@@ -3568,6 +3568,8 @@ fn into_outcome(
 mod tests {
     use ix_trace_rs::trace;
 
+    use crate::model::domain_package::{ClauseRecord, NamespaceRecord};
+
     use super::*;
 
     /// A synthetic type-level [`ViewEntry`] whose own effective identity is
@@ -3689,6 +3691,65 @@ mod tests {
 
     fn package(records: Vec<DomainPackageRecord>) -> DomainPackage {
         DomainPackage::new(DomainPackageRef::fixture("test/bounded"), records)
+    }
+
+    /// State-machine clauses are accepted by assembly, but a clause owned by
+    /// an ordinary object type remains a dangling model member. A namespace
+    /// cannot contain another namespace, so that invalid placement remains a
+    /// typed malformed-declaration refusal as well.
+    #[test]
+    fn invalid_clause_owner_and_nested_namespace_are_refused() {
+        let clause_key = DeclarationKey::fixture("model.Order/NotAStateClause");
+        let clause_owner = DeclarationKey::fixture("model.Order");
+        let clause_package = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: clause_key.clone(),
+                owner: clause_owner.clone(),
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+        ]);
+        let NormalizeOutcome::Refused(clause_refusals) =
+            normalize(&clause_package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a clause owned by an object type must be refused");
+        };
+        assert!(clause_refusals.iter().any(|refusal| {
+            refusal.code == Code::DanglingReference
+                && matches!(
+                    &refusal.cause,
+                    ModelRefusalCause::UnknownOwner { member, owner }
+                        if member == &clause_key && owner == &clause_owner
+                )
+        }));
+
+        let outer = DeclarationKey::fixture("model/Outer");
+        let inner = DeclarationKey::fixture("model/Inner");
+        let nested_namespaces = package(vec![
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: outer.clone(),
+                members: vec![inner.clone()],
+                vocabulary: Vec::new(),
+            }),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: inner.clone(),
+                members: Vec::new(),
+                vocabulary: Vec::new(),
+            }),
+        ]);
+        let NormalizeOutcome::Refused(namespace_refusals) =
+            normalize(&nested_namespaces, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a namespace containing a namespace must be refused");
+        };
+        assert!(namespace_refusals.iter().any(|refusal| {
+            refusal.code == Code::InvalidModelBinding
+                && refusal.cause == ModelRefusalCause::MalformedDeclaration
+                && refusal
+                    .detail
+                    .contains("namespace model/Outer contains namespace model/Inner")
+        }));
     }
 
     #[trace("QSpec-TC-235")]
