@@ -383,6 +383,503 @@ fn record_invariant_is_preserved_as_a_charged_declaration() {
     normalized(&package, 3);
 }
 
+fn object_clause_document(clauses: Vec<Value>) -> Value {
+    let p = "test/object-invariant";
+    document(
+        p,
+        "1.0.0",
+        vec![construct("entity", meaning::OBJECT_TYPE)],
+        vec![definition(
+            p,
+            "Order",
+            "entity",
+            json!({
+                "identityFields": [identity(p, "Order/id")],
+                "fields": [field(p, "Order", "id", "ix://quire/native/Integer")],
+                "clauses": clauses,
+            }),
+        )],
+    )
+}
+
+fn isolated_owner_document(owner: &str, owner_meaning: &str, clauses: Vec<Value>) -> Value {
+    let p = "test/owner-boundary";
+    let members = match owner_meaning {
+        meaning::PROCESS => json!({
+            "identityFields": [identity(p, &format!("{owner}/id"))],
+            "fields": [field(p, owner, "id", "ix://quire/native/Integer")],
+            "steps": [{"identity": identity(p, &format!("{owner}/work")), "name": "work",
+                "stepKind": "command", "consumes": [], "emits": [], "origin": origin(p, &format!("{owner}/work"))}],
+            "clauses": clauses,
+        }),
+        meaning::PERSISTENCE_INTERFACE => json!({
+            "persists": [identity(p, "Order")], "operations": [operation(p, owner, "get")], "clauses": clauses,
+        }),
+        meaning::NAMESPACE => json!({
+            "members": [identity(p, "Order")], "vocabulary": [{"term": "Order", "doc": "Order scope", "origin": origin(p, owner)}],
+            "clauses": clauses,
+        }),
+        _ => panic!("unsupported isolated owner fixture"),
+    };
+    document(
+        p,
+        "1.0.0",
+        vec![
+            construct("entity", meaning::OBJECT_TYPE),
+            construct("owner", owner_meaning),
+        ],
+        vec![
+            definition(
+                p,
+                "Order",
+                "entity",
+                json!({
+                    "identityFields": [identity(p, "Order/id")], "fields": [field(p, "Order", "id", "ix://quire/native/Integer")],
+                }),
+            ),
+            definition(p, owner, "owner", members),
+        ],
+    )
+}
+
+/// Typed inputs isolate normalization's owner and signature rules from wire admission.
+fn normalization_owner_package() -> DomainPackage {
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRef, EventTypeRecord, FieldMemberRecord, Multiplicity, NamespaceRecord,
+        NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+        PersistenceInterfaceRecord, ProcessRecord, ProcessStepKind, ProcessStepRecord,
+        RecordValueTypeRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
+        StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
+    };
+    let p = "test/owner-boundary";
+    let native_field = |owner: &str, name: &str, native| {
+        DomainPackageRecord::FieldMember(FieldMemberRecord {
+            key: key(p, &format!("{owner}/{name}")),
+            owner: key(p, owner),
+            value_type: ValueTypeRef::Native(native),
+            multiplicity: Multiplicity {
+                lower: 1,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+            presence: quire_exact::Presence::Required,
+            subsets: Vec::new(),
+            redefines: None,
+        })
+    };
+    let op = |owner: &str, name: &str| {
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: key(p, &format!("{owner}/{name}")),
+            owner: key(p, owner),
+            parameters: Vec::new(),
+            result: None,
+            effect: OperationEffect::default(),
+            own_postcondition_clauses: Vec::new(),
+            has_body: false,
+            redefines: None,
+        })
+    };
+    DomainPackage::new(
+        DomainPackageRef::fixture(p),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: key(p, "Order"),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            native_field("Order", "id", NativeValueType::Integer),
+            DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                key: key(p, "Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            }),
+            native_field("Money", "amount_minor", NativeValueType::Integer),
+            DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: key(p, "Count"),
+                domain: ScalarValueDomain::Integer {
+                    lower: 0,
+                    upper: 100,
+                },
+            }),
+            DomainPackageRecord::EventType(EventTypeRecord {
+                key: key(p, "OrderPlaced"),
+                identity_fields: Vec::new(),
+                occurrence_field: Some(key(p, "OrderPlaced/occurred_at")),
+                supertypes: Vec::new(),
+            }),
+            native_field("OrderPlaced", "occurred_at", NativeValueType::Timestamp),
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: key(p, "OrderLifecycle"),
+                supertypes: Vec::new(),
+                states: vec![StateMachineStateRecord {
+                    key: key(p, "OrderLifecycle/Ready"),
+                    name: "Ready".to_owned(),
+                }],
+                transitions: vec![StateMachineTransitionRecord {
+                    key: key(p, "OrderLifecycle/place"),
+                    from: key(p, "OrderLifecycle/Ready"),
+                    to: key(p, "OrderLifecycle/Ready"),
+                    trigger: key(p, "OrderLifecycle/advance"),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: origin(p, "OrderLifecycle/place"),
+                }],
+            }),
+            op("OrderLifecycle", "advance"),
+            DomainPackageRecord::Process(ProcessRecord {
+                key: key(p, "Fulfilment"),
+                identity_fields: vec![key(p, "Fulfilment/id")],
+                identity_fields_declared: true,
+                supertypes: Vec::new(),
+                steps: vec![ProcessStepRecord {
+                    key: key(p, "Fulfilment/work"),
+                    name: "work".to_owned(),
+                    step_kind: ProcessStepKind::Command,
+                    consumes: Vec::new(),
+                    emits: Vec::new(),
+                }],
+            }),
+            native_field("Fulfilment", "id", NativeValueType::Integer),
+            DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                key: key(p, "OrderStore"),
+                persists: vec![key(p, "Order")],
+            }),
+            op("OrderStore", "get"),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: key(p, "OrderManagement"),
+                members: vec![key(p, "Order")],
+                vocabulary: Vec::new(),
+            }),
+        ],
+    )
+}
+
+/// Object invariants retain authored order and provenance and reach the effective view.
+/// Trace: FR-056-AC-1, QSpec-FR-208-AC-10
+#[trace("FR-056-AC-1", "QSpec-TC-235")]
+#[test]
+fn object_clauses_preserve_order_identity_and_effective_declarations() {
+    let p = "test/object-invariant";
+    let package = read_authored(&object_clause_document(vec![
+        clause(p, "Order", "ZPositive", "self.id > 0"),
+        clause(p, "Order", "ABounded", "self.id < 100"),
+    ]));
+    let clauses: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| {
+            if let DomainPackageRecord::Clause(clause) = record {
+                Some(clause)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        clauses.len(),
+        2,
+        "both authored object clauses must be read"
+    );
+    for (clause, (name, text)) in clauses
+        .iter()
+        .zip([("ZPositive", "self.id > 0"), ("ABounded", "self.id < 100")])
+    {
+        assert_eq!(clause.key, key(p, &format!("Order/{name}")));
+        assert_eq!(clause.owner, key(p, "Order"));
+        assert_eq!(clause.language, "quire");
+        assert_eq!(clause.text, text);
+        let original = package
+            .original(&clause.key)
+            .expect("clause has original provenance");
+        assert_eq!(original.member_name.as_deref(), Some(name));
+        assert_eq!(original.origin, origin(p, &format!("Order/{name}")));
+    }
+    let view = normalized(&package, 4);
+    let owner = view.type_identities()[&key(p, "Order")];
+    for clause in clauses {
+        assert_eq!(
+            view.declarations()
+                .iter()
+                .filter(|entry| {
+                    entry.visible
+                        && entry.preimage.original == clause.key
+                        && entry.preimage.owner_effective_type == Some(owner)
+                })
+                .count(),
+            1,
+            "each invariant reaches its owner's effective declaration exactly once"
+        );
+    }
+}
+
+/// Object clauses apply the same identity/name check as record clauses.
+/// Trace: FR-056-AC-1, QSpec-FR-208-AC-10
+#[trace("FR-056-AC-1", "QSpec-TC-235")]
+#[test]
+fn malformed_object_clause_is_refused_like_a_record_clause() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/object-invariant";
+    let mut malformed = clause(p, "Order", "Positive", "self.id > 0");
+    malformed["clauseId"] = json!("Different");
+    let object = object_clause_document(vec![malformed]);
+    let mut record = object.clone();
+    record["constructs"][0]["kind"]["name"] = json!("value_record");
+    record["constructs"][0]["construct"]["meaning"] = json!(meaning::RECORD_VALUE_TYPE);
+    record["constructs"][0]["construct"]["members"]["identityFields"] = json!("optional");
+    record["types"][0]["kind"]["name"] = json!("value_record");
+    record["types"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("identityFields");
+    let mut expected_cause = None;
+    for fixture in [record, object] {
+        let refusals = authored_refusals(&fixture);
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert!(
+            matches!(&refusals[0].cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+            if node == &identity(p, "Order/Positive"))
+        );
+        if let Some(expected) = &expected_cause {
+            assert_eq!(&refusals[0].cause, expected);
+        } else {
+            expected_cause = Some(refusals[0].cause.clone());
+        }
+        assert!(refusals[0].detail.contains("clauses[0]"));
+        assert!(refusals[0]
+            .detail
+            .contains("clauseId: differs from its identity's member name"));
+    }
+}
+
+/// The process reader shares object member reading and retains clauses only once.
+/// Trace: QSpec-FR-208-AC-10
+#[trace("QSpec-TC-235")]
+#[test]
+fn process_clause_is_read_and_normalized_exactly_once() {
+    let p = "test/owner-boundary";
+    let fixture = isolated_owner_document(
+        "Fulfilment",
+        meaning::PROCESS,
+        vec![clause(p, "Fulfilment", "HasCorrelation", "true")],
+    );
+    let package = read_authored(&fixture);
+    let clause_key = key(p, "Fulfilment/HasCorrelation");
+    assert_eq!(
+        package
+            .records
+            .iter()
+            .filter(|record| record.key() == &clause_key)
+            .count(),
+        1
+    );
+    let view = normalized(&package, 5);
+    assert_eq!(
+        view.declarations()
+            .iter()
+            .filter(|entry| { entry.visible && entry.preimage.original == clause_key })
+            .count(),
+        1
+    );
+}
+
+/// Business containers refuse quire invariants at their authored clause.
+/// Trace: QSpec-FR-208-AC-10
+#[trace("QSpec-TC-235")]
+#[test]
+fn business_container_quire_clauses_refuse_and_foreign_clauses_are_retained() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/owner-boundary";
+    for (owner, owner_meaning, declarations) in [
+        ("OrderStore", meaning::PERSISTENCE_INTERFACE, 5),
+        ("OrderManagement", meaning::NAMESPACE, 4),
+    ] {
+        let mut fixture = isolated_owner_document(
+            owner,
+            owner_meaning,
+            vec![clause(p, owner, "Forbidden", "true")],
+        );
+        let refusals = authored_refusals(&fixture);
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
+        assert!(matches!(
+            &refusals[0].cause,
+            ModelRefusalCause::UnsupportedDeclarationForm { .. }
+        ));
+        assert!(refusals[0].detail.contains("clauses[0]"));
+        fixture["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|node| node["displayName"] == owner)
+            .unwrap()["clauses"][0]["language"] = json!("ocl");
+        let package = read_authored(&fixture);
+        let clause_key = key(p, &format!("{owner}/Forbidden"));
+        assert_eq!(
+            package.original(&clause_key).unwrap().origin,
+            origin(p, &format!("{owner}/Forbidden"))
+        );
+        let view = normalized(&package, declarations);
+        assert!(!view
+            .declarations()
+            .iter()
+            .any(|entry| entry.preimage.original == clause_key));
+    }
+}
+
+/// Sharing the object record shape does not grant systems interfaces invariant ownership.
+#[trace("FR-056-AC-1")]
+#[test]
+fn systems_interface_clause_owner_remains_refused() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/object-invariant";
+    let mut fixture = object_clause_document(vec![clause(p, "Order", "Forbidden", "true")]);
+    fixture["constructs"][0]["kind"]["name"] = json!("interface");
+    fixture["types"][0]["kind"]["name"] = json!("interface");
+    fixture["constructs"][0]["construct"]["meaning"] = json!(meaning::SYSTEMS_INTERFACE);
+    fixture["constructs"][0]["construct"]["members"] = json!({"featureOrder": "required"});
+    fixture["types"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("identityFields");
+    fixture["types"][0]["featureOrder"] = json!([identity(p, "Order/id")]);
+    let refusals = authored_refusals(&fixture);
+    assert!(
+        refusals.iter().any(|refusal| {
+            refusal.code == Code::DanglingReference
+                && matches!(&refusal.cause,
+            ModelRefusalCause::UnknownOwner { member, owner }
+            if member == &key(p, "Order/Forbidden") && owner == &key(p, "Order"))
+        }),
+        "{refusals:?}"
+    );
+}
+
+/// Each invariant-bearing business type admits its clause as an effective member.
+#[trace("FR-056-AC-1", "QSpec-TC-235")]
+#[test]
+fn business_type_invariant_owner_matrix_is_admitted() {
+    use qsl_semantics::model::domain_package::ClauseRecord;
+    let p = "test/owner-boundary";
+    for owner in [
+        "Order",
+        "Money",
+        "OrderPlaced",
+        "OrderLifecycle",
+        "Fulfilment",
+    ] {
+        let base = normalization_owner_package();
+        let clause_key = key(p, &format!("{owner}/Invariant"));
+        let mut records = base.records;
+        records.push(DomainPackageRecord::Clause(ClauseRecord {
+            key: clause_key.clone(),
+            owner: key(p, owner),
+            language: "quire".to_owned(),
+            text: "true".to_owned(),
+        }));
+        let package = DomainPackage::new(base.model_selection, records);
+        let view = normalized(&package, 15);
+        assert_eq!(
+            view.declarations()
+                .iter()
+                .filter(|entry| entry.visible && entry.preimage.original == clause_key)
+                .count(),
+            1
+        );
+    }
+}
+
+/// Signature types exclude business containers, event values, state machines and process runs.
+#[trace("FR-103-AC-6", "QSpec-TC-235")]
+#[test]
+fn operation_signature_type_meaning_matrix() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::domain_package::{
+        Multiplicity, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+        OperationResult, ValueTypeRef,
+    };
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/owner-boundary";
+    let base = normalization_owner_package();
+    for (name, allowed) in [
+        ("Order", true),
+        ("Money", true),
+        ("Count", true),
+        ("OrderPlaced", false),
+        ("OrderLifecycle", false),
+        ("Fulfilment", false),
+        ("OrderStore", false),
+        ("OrderManagement", false),
+    ] {
+        let operation_key = key(p, "Order/change");
+        let parameter_key = key(p, "Order/change/value");
+        let value_type = ValueTypeRef::Package(key(p, name));
+        let multiplicity = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        let mut records = base.records.clone();
+        records.push(DomainPackageRecord::OperationMember(
+            OperationMemberRecord {
+                key: operation_key.clone(),
+                owner: key(p, "Order"),
+                parameters: vec![OperationParameterRecord {
+                    key: parameter_key.clone(),
+                    value_type: value_type.clone(),
+                    multiplicity,
+                }],
+                result: Some(OperationResult {
+                    value_type: value_type.clone(),
+                    multiplicity,
+                }),
+                effect: OperationEffect::default(),
+                own_postcondition_clauses: Vec::new(),
+                has_body: false,
+                redefines: None,
+            },
+        ));
+        let package = DomainPackage::new(base.model_selection.clone(), records);
+        let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+        if allowed {
+            let NormalizeOutcome::Completed(view) = outcome else {
+                panic!("declared signature type {name} must admit: {outcome:?}");
+            };
+            assert!(view
+                .domain_package()
+                .records
+                .iter()
+                .any(|record| record.key() == &operation_key));
+        } else {
+            let NormalizeOutcome::Refused(refusals) = outcome else {
+                panic!("signature type {name} must refuse");
+            };
+            assert_eq!(refusals.len(), 2, "parameter and result must each refuse");
+            for refusal in refusals.iter() {
+                assert_eq!(refusal.code, Code::InvalidModelBinding);
+                assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+                assert!(refusal.detail.contains(&value_type.to_string()));
+                assert!(refusal.detail.contains(&operation_key.node));
+            }
+            for position in [
+                format!("parameter {}", parameter_key.node),
+                "result".to_owned(),
+            ] {
+                assert!(refusals
+                    .iter()
+                    .any(|refusal| { refusal.detail.contains(&position) }));
+            }
+        }
+    }
+}
+
 /// A record may specialize its own meaning and inherit every ancestor field.
 /// Trace: QSpec-FR-208-AC-12
 #[trace("QSpec-TC-235")]
