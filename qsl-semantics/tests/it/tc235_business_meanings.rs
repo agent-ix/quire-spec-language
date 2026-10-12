@@ -914,3 +914,6 @@ fn tc235_m18_event_type_specialization_vectors() {
         "TypeDefinition.supertypes[0]",
     );
 }
+
+#[path = "tc235_state_machine.rs"]
+mod tc235_state_machine;
