@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
-use qsl_foundation::{SourceIdentity, Span};
+use qsl_foundation::{IdentityLimits, SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
     Presence, RoundingMode, ValueType,
@@ -163,8 +163,17 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         view,
     };
     let mut operations = super::OperationTable::default();
-    let declarations = super::model_object_types("M", &selected, selected.span, &mut operations)
-        .expect("state-machine meaning is supported by the object-type seam");
+    let owner = super::SourceOwner::new("test", "unit").expect("fixture source owner");
+    let (declarations, composites) = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        &owner,
+        IdentityLimits::default(),
+    )
+    .expect("state-machine meaning is supported by the object-type seam");
+    assert!(composites.is_empty());
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].name(), "M::OrderLifecycle");
     assert_eq!(
@@ -1075,7 +1084,8 @@ fn model_field_of(
     let field = presence_field(multiplicity, presence);
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
-    model_field(&field, &records, &identities)
+    let meaning_handles = BTreeMap::new();
+    model_field(&field, &records, &identities, &meaning_handles)
 }
 
 fn mult(lower: u64, upper: Option<u64>, ordered: bool, unique: bool) -> Multiplicity {
@@ -1118,8 +1128,9 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> =
         BTreeMap::from([(&alias_key, &alias)]);
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
 
-    let declaration = model_field(&field, &records, &identities)
+    let declaration = model_field(&field, &records, &identities, &meaning_handles)
         .expect("native Timestamp is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::Timestamp);
