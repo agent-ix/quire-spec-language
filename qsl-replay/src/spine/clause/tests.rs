@@ -874,7 +874,7 @@ fn tc_792_native_argument_refusal_preserves_typed_fields() {
         serde_json::json!({
             "position": "2",
             "member": "w",
-            "type": {"package": "test/orders", "node": "foreign/W"}
+            "type": "test/orders/foreign/W"
         })
     );
 }

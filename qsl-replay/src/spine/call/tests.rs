@@ -245,9 +245,10 @@ fn synthetic_model(placeholder: &str) -> (
 fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
     use qsl_semantics::model::intake::SelectedModel;
     use qsl_semantics::model::population::{
-        admit_binding, AdmissionMeter, AdmissionOutcome, GeneralizationClosure,
+        admit_binding, AdmissionMeter, AdmissionOutcome,
         PopulationAdmissionLimits, PopulationDocument, PopulationMember,
     };
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -313,7 +314,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
 #[test]
 fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
     use qsl_semantics::model::intake::SelectedModel;
-    use qsl_semantic_value::declaration::TypeEnvironment;
+    use quire_semantic_value::declaration::TypeEnvironment;
 
     let (selected_view, selected_type, _) = synthetic_model("selected-reference");
     let (foreign_view, foreign_type, _) = synthetic_model("foreign-reference");
