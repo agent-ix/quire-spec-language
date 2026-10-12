@@ -1838,7 +1838,12 @@ fn check_node<'a>(
         DomainPackageRecord::PersistenceInterface(_) => {}
         DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
-            if !index.is_object_type(&op.owner) && !index.is_state_machine(&op.owner) {
+            // FR-208:48,217-219 gives a persistence interface its own
+            // operation signatures, distinct from object-type operations.
+            if !index.is_object_type(&op.owner)
+                && !index.is_state_machine(&op.owner)
+                && !index.is_persistence_interface(&op.owner)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -3663,6 +3668,57 @@ mod tests {
 
     fn package(records: Vec<DomainPackageRecord>) -> DomainPackage {
         DomainPackage::new(DomainPackageRef::fixture("test/bounded"), records)
+    }
+
+    #[trace("QSpec-TC-235")]
+    #[test]
+    fn persistence_interface_owns_its_declared_operations() {
+        use crate::model::domain_package::{
+            OperationEffect, OperationMemberRecord, PersistenceInterfaceRecord,
+        };
+
+        let interface = DeclarationKey::fixture("model.Store");
+        let order = DeclarationKey::fixture("model.Order");
+        let operation = |owner: DeclarationKey| {
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.Store.get"),
+                owner,
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                own_postcondition_clauses: Vec::new(),
+                has_body: false,
+                redefines: None,
+            })
+        };
+        let valid = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                key: interface.clone(),
+                persists: vec![order],
+            }),
+            operation(interface),
+        ]);
+        assert!(matches!(
+            normalize(&valid, ModelNormalizationLimits::UNLIMITED),
+            NormalizeOutcome::Completed(_)
+        ));
+
+        let unknown_owner = package(vec![operation(DeclarationKey::fixture("model.Missing"))]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&unknown_owner, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("an undeclared operation owner must be refused");
+        };
+        assert!(refusals.iter().any(|refusal| {
+            refusal.code == Code::DanglingReference
+                && matches!(
+                    &refusal.cause,
+                    ModelRefusalCause::UnknownOwner { owner, .. }
+                        if owner == &DeclarationKey::fixture("model.Missing")
+                )
+                && refusal.detail.contains("not a declared object type")
+        }));
     }
 
     /// `A` declaring `fields` fields, and `B` generalizing `A`, so `B`

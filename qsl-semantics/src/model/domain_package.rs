@@ -495,12 +495,12 @@ impl PostconditionClause {
     }
 }
 
-/// An operation member of an object type.
+/// An operation member of an object type, state machine, or persistence interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
     /// This member's own original declaration key.
     pub key: DeclarationKey,
-    /// The owning object type's original declaration key (the receiver type).
+    /// The owning declaration's original key (the receiver type when it has one).
     pub owner: DeclarationKey,
     /// Declared parameters, in signature order.
     pub parameters: Vec<OperationParameterRecord>,

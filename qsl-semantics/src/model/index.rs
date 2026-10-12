@@ -75,6 +75,7 @@ struct DeclFlags {
     record_value_type: bool,
     event_type: bool,
     state_machine: bool,
+    persistence_interface: bool,
     namespace: bool,
     field_member: bool,
     operation_member: bool,
@@ -453,7 +454,9 @@ impl RecordIndex {
                 DomainPackageRecord::Namespace(_) => {
                     index.flags[own.0].namespace = true;
                 }
-                DomainPackageRecord::PersistenceInterface(_) => {}
+                DomainPackageRecord::PersistenceInterface(_) => {
+                    index.flags[own.0].persistence_interface = true;
+                }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
                     if let ScalarValueDomain::Integer { lower, upper } = &scalar.domain {
@@ -545,6 +548,11 @@ impl RecordIndex {
     /// Whether `key` is an FR-208 state-machine type.
     pub(crate) fn is_state_machine(&self, key: &DeclarationKey) -> bool {
         self.flags(key).state_machine
+    }
+
+    /// Whether some FR-208 `PersistenceInterfaceRecord` declares `key`.
+    pub(crate) fn is_persistence_interface(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).persistence_interface
     }
 
     /// Whether some `FieldMember` record declares `key`.
