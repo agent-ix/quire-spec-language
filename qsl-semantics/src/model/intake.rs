@@ -1491,7 +1491,7 @@ fn missing_reader_reference(
             path: pointer.parse().ok()?,
         },
         detail: format!(
-            "{source_member} ({pointer}): {reference:?} names no declaration of this domain package"
+            "{source_member} ({pointer}) on {node}: {reference:?} names no declaration of this domain package"
         ),
     })
 }
@@ -1603,7 +1603,15 @@ fn business_generalization_refusal(
     let kind = ctx.kind_key().ok()?;
     let meanings = meaning_index(&document.tree).ok()?;
     let resolved = meanings.get(&(kind.0.to_owned(), kind.1.to_owned()))?;
-    if resolved == meaning::NAMESPACE
+    let supports_same_meaning_supertypes = matches!(
+        resolved,
+        meaning::OBJECT_TYPE
+            | meaning::EVENT_TYPE
+            | meaning::RECORD_VALUE_TYPE
+            | meaning::STATE_MACHINE
+            | meaning::PROCESS
+    );
+    if !supports_same_meaning_supertypes
         && [
             UNRESOLVED_CONSTRUCT_REF,
             CONSTRUCT_TARGET_KIND,
@@ -1615,7 +1623,7 @@ fn business_generalization_refusal(
         return Some(unsupported_at(
             node,
             &ctx.at,
-            format!("{}:supertypes", meaning::NAMESPACE),
+            format!("{resolved}:supertypes"),
         ));
     }
     if resolved != meaning::RECORD_VALUE_TYPE || located.code != SUPERTYPE_CYCLE {

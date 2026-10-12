@@ -309,7 +309,7 @@ fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
         version: "1".to_owned(),
         digest,
     };
-    let (selection, admitted) = admit(
+    let (_selection, admitted) = admit(
         &selection,
         SHA256_JCS_DIGEST_DOMAIN,
         &offered,
