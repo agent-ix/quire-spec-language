@@ -1978,12 +1978,48 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::Relationship(relationship) => {
+            let owner = &relationship.source.type_identity;
+            let owner_is_process = domain_package.records.iter().any(|candidate| {
+                matches!(candidate, DomainPackageRecord::Process(process) if process.key == *owner)
+            });
+            let relationship_node = relationship
+                .source
+                .role
+                .as_deref()
+                .map(|role| format!("{}/{}", owner.node, role))
+                .unwrap_or_else(|| relationship.key.node.clone());
+            if !index.is_object_type(owner) && !owner_is_process {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::MalformedDeclaration,
+                    detail: format!(
+                        "{relationship_node}: TypeDefinition.relationships[0] owner {} is not an object or process type",
+                        owner.node
+                    ),
+                });
+            } else {
+                let target = &relationship.target.type_identity;
+                let target_is_process = domain_package.records.iter().any(|candidate| {
+                    matches!(candidate, DomainPackageRecord::Process(process) if process.key == *target)
+                });
+                if !index.is_object_type(target) && !target_is_process {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::MalformedDeclaration,
+                        detail: format!(
+                            "{relationship_node}: Relationship.target names {}, which is not an object or process type",
+                            target.node
+                        ),
+                    });
+                }
+            }
+        }
         // FR-152 systems-model records validate their own references
         // independently (crate::model::systems); FR-150's phase 1 does
         // not concern itself with them.
         DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
         | DomainPackageRecord::Allocation(_) => {}
         // model-complete.md's "Populations" row: each member type names
         // a declared object type; a missing one refuses
