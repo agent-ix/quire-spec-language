@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Locus;
-use qsl_foundation::diagnostic::{CatalogCoded, Code, InternalFault};
+use qsl_foundation::diagnostic::{CatalogCoded, Category, Code};
 use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord};
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;
@@ -1976,10 +1976,11 @@ impl Disposition {
                     });
                 }
                 CallOutcome::Completed(CallValue::Reference(_)) => {
-                    return Err(InternalFault::new(
-                        "native-result",
-                        "clause-completes-reference",
-                    ));
+                    result.category = Category::InternalFailure.as_str();
+                    result.internal_fault = Some(InternalFaultWire {
+                        stage: "native-result",
+                        invariant: "clause-completes-reference",
+                    });
                 }
                 CallOutcome::Refused(refusal) => {
                     result.outcome = Some(match refusal {

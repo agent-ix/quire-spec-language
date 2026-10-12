@@ -172,7 +172,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
             reference.clone(),
             vec![(
                 "code",
-                quire_exact::FieldValue::Present(Value::Integer(Integer::from(7))),
+                quire_exact::FieldValue::Present(Value::Integer(Integer::from(7_i64))),
             )],
         )],
         &[],
