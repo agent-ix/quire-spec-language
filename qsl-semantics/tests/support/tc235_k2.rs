@@ -22,8 +22,14 @@ pub(crate) fn origin(node: &str) -> Value {
 }
 
 pub(crate) fn construct(name: &str, semantic_meaning: &str) -> Value {
+    let shape = if semantic_meaning == meaning::VALUE_TYPE {
+        "alias"
+    } else {
+        "record"
+    };
     let members = match semantic_meaning {
         meaning::OBJECT_TYPE => json!({"identityFields": "required"}),
+        meaning::VALUE_TYPE => json!({"target": "required"}),
         meaning::RECORD_VALUE_TYPE => json!({"identityFields": "optional"}),
         meaning::EVENT_TYPE => json!({"identityFields": "optional", "occurrenceField": "required"}),
         meaning::STATE_MACHINE => json!({"states": "required", "transitions": "required"}),
@@ -36,7 +42,7 @@ pub(crate) fn construct(name: &str, semantic_meaning: &str) -> Value {
         "kind": {"module": BUSINESS, "name": name},
         "moduleVersion": "1.0.0",
         "construct": {
-            "identity": "none", "shape": "record", "members": members,
+            "identity": "none", "shape": shape, "members": members,
             "meaning": semantic_meaning,
         },
     })
