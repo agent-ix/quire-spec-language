@@ -791,6 +791,31 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     );
 }
 
+/// FR-100-AC-6 (TC-451 step 7): the `run_complete` handoff forwards a
+/// non-work counter so `seven`'s integer result exhausts `integer_bits`.
+#[test]
+#[trace("TC-451", "FR-100-AC-6")]
+fn tc_451_step_7_zero_integer_bits_is_incomplete() {
+    let program = std::fs::read(RUN_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut request = call("seven", json!([]));
+    request["accounting"] = json!({"integer_bits": 0});
+    spine_run_request(directory.path(), &program, request);
+
+    let output = run(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(22),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document["outcome"],
+        json!({"kind": "incomplete", "limit": "integer_bits"})
+    );
+}
+
 /// FR-100-AC-3 (TC-450 step 4): an `accounting` member `work_units` of
 /// `18446744073709551616` (above `u64::MAX`), `-1`, `1.5` or `null`, an
 /// `accounting` member `depth`, a member named twice, an `accounting` of
