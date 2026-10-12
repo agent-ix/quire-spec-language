@@ -411,8 +411,7 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
 #[test]
 fn tc235_m20_json_acceptance_reports_specialization_cycle() {
     let document = mutate_k2(|document| {
-        type_named_mut(document, "Fulfilment")["supertypes"] =
-            json!([id("ExpressFulfilment")]);
+        type_named_mut(document, "Fulfilment")["supertypes"] = json!([id("ExpressFulfilment")]);
         document["types"].as_array_mut().unwrap().push(declaration(
             "ExpressFulfilment",
             "saga",
@@ -443,9 +442,7 @@ fn tc235_m20_json_acceptance_reports_specialization_cycle() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(refusals[0]
-        .detail
-        .contains("ix://test/orders/Fulfilment"));
+    assert!(refusals[0].detail.contains("ix://test/orders/Fulfilment"));
     assert!(refusals[0]
         .detail
         .contains("ix://test/orders/ExpressFulfilment"));
