@@ -1914,7 +1914,11 @@ fn admission_corpus_authored_units_keep_format_identity() {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
     let source = fixture_text(
-        function_literal(fixture, "emit", "language "),
+        format!(
+            "{}{}",
+            source_literal(fixture, "COMPLETE_V1_HEADER"),
+            source_literal(fixture, "SYSTEMS_INTERFACE_UNIT"),
+        ),
         &[("", &digest)],
     );
     emitted(
