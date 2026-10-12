@@ -368,6 +368,7 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
             "ExpressFulfilment",
             "saga",
             json!({
+                "identityFields": [],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -389,12 +390,65 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
             "origin": origin("PF"),
         }]);
     });
-    let refusals = read_refusals(&document);
+    let refusals = normalized_refusals(&document, 23);
     assert_eq!(refusals.len(), 2);
+    assert_malformed_at(
+        &refusals[0],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.identityFields",
+    );
+    assert_malformed_at(
+        &refusals[1],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.supertypes[0]",
+    );
+}
+
+/// The cyclic JSON acceptance vector retains the normalization-level cycle
+/// diagnostic and names both process identities in the cycle.
+#[ignore = "expected red until QSL-777 exposes normalization-level process cycles"]
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m20_json_acceptance_reports_specialization_cycle() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "Fulfilment")["supertypes"] =
+            json!([id("ExpressFulfilment")]);
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressFulfilment",
+            "saga",
+            json!({
+                "identityFields": [],
+                "supertypes": [id("Fulfilment")],
+                "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/expedite"),
+                    "name": "expedite",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/expedite"),
+                }],
+            }),
+        ));
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
+    });
+    let refusals = normalized_refusals(&document, 23);
+    assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(refusals[0].detail.contains("requires identityFields"));
-    assert_eq!(refusals[1].code, Code::InvalidModelBinding);
-    assert!(refusals[1].detail.contains("CONSTRUCT_TARGET_KIND"));
+    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
+    assert!(refusals[0]
+        .detail
+        .contains("ix://test/orders/Fulfilment"));
+    assert!(refusals[0]
+        .detail
+        .contains("ix://test/orders/ExpressFulfilment"));
 }
 
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
