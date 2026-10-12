@@ -154,11 +154,30 @@ fn population_type_references_reject_malformed_maxima_at_the_offending_token() {
             start,
             "{spelling}: text={text:?}, diagnostic={diagnostic:?}"
         );
-        assert!(
-            usize::try_from(region.end()).unwrap() >= start + offending.len(),
+        assert_eq!(
+            usize::try_from(region.end()).unwrap(),
+            start + offending.len(),
             "{spelling}: {region:?}"
         );
     }
+}
+
+#[trace("TC-790")]
+#[test]
+fn population_type_reference_reports_missing_maximum_close_at_eof() {
+    let spelling = "Population<M::Order>[3";
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: {spelling}): Boolean pure {{ true }}\n"
+    );
+    let parsed = parse(&text, Limits::default());
+    assert!(!parsed.is_admissible(), "{spelling}");
+    let diagnostic = &parsed.diagnostics()[0];
+    assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax);
+    assert_eq!(diagnostic.cause, CompleteCause::UnexpectedToken);
+    let region = diagnostic.region.as_ref().expect("located EOF refusal");
+    let eof = text.find(spelling).unwrap() + spelling.len();
+    assert_eq!(usize::try_from(region.start()).unwrap(), eof);
+    assert_eq!(usize::try_from(region.end()).unwrap(), eof);
 }
 
 #[trace("TC-790")]
@@ -167,9 +186,15 @@ fn population_keyword_is_reserved_only_in_type_and_binder_positions() {
     let uppercase_text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; predicate Population using v(): Boolean { true }\n";
     let uppercase = parse(uppercase_text, Limits::default());
     assert!(!uppercase.is_admissible());
+    let region = uppercase.diagnostics()[0]
+        .region
+        .as_ref()
+        .expect("located reserved binder refusal");
+    let start = uppercase_text.find("Population").unwrap();
+    assert_eq!(usize::try_from(region.start()).unwrap(), start);
     assert_eq!(
-        usize::try_from(uppercase.diagnostics()[0].region.as_ref().unwrap().start()).unwrap(),
-        uppercase_text.find("Population").unwrap()
+        usize::try_from(region.end()).unwrap(),
+        start + "Population".len()
     );
 
     let lowercase_text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; predicate population using v(): Boolean { true }\n";
@@ -222,7 +247,7 @@ fn invalid_model_productions_refuse_at_the_offending_token() {
     }
 }
 
-#[trace("TC-790", "FR-300-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn absence_words_remain_identifiers_outside_the_lookup_mode() {
     let text = "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function empty using v(undefined: Boolean, refused: Boolean): Boolean pure { undefined and refused }";
@@ -237,7 +262,7 @@ fn absence_words_remain_identifiers_outside_the_lookup_mode() {
     }
 }
 
-#[trace("TC-790", "FR-300-AC-1")]
+#[trace("TC-790")]
 #[test]
 fn model_sources_keep_the_existing_budget_refusals() {
     let text = source("r.query(lookup<M::T>(p, r) absent refused, 3)");
