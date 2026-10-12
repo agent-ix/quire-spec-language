@@ -137,7 +137,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
         field_for(&package, "Order/discount").presence,
         quire_exact::Presence::Optional
     );
-    let operation = package
+    let operation_record = package
         .records
         .iter()
         .find_map(|record| match record {
@@ -149,9 +149,9 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
             _ => None,
         })
         .expect("requote operation is retained");
-    assert_eq!(operation.parameters.len(), 1);
+    assert_eq!(operation_record.parameters.len(), 1);
     assert_eq!(
-        operation.parameters[0].value_type,
+        operation_record.parameters[0].value_type,
         ValueTypeRef::Package(key("Money")),
     );
 
