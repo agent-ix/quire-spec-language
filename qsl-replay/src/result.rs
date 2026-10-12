@@ -13,7 +13,9 @@ use std::collections::BTreeMap;
 
 use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
+use qsl_foundation::witness::{
+    InvocationBinding, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
 use quire_exact::{compare_keys, Incomplete, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -377,6 +379,19 @@ impl SeparatingWitnessRecord {
         let observation = &self.value_path.observation;
         let subject = match &self.value_path.subject {
             ValuePathSubject::Object(object) => 64 + object.object().as_str().len(),
+            ValuePathSubject::Invocation {
+                invocation,
+                binding,
+            } => {
+                invocation.authority.len()
+                    + invocation.identity.len()
+                    + invocation.revision_namespace.len()
+                    + invocation.revision.len()
+                    + match binding {
+                        InvocationBinding::Parameter(parameter) => 1 + parameter.len(),
+                        InvocationBinding::Result | InvocationBinding::Receiver => 1,
+                    }
+            }
             ValuePathSubject::Built(occurrence) => {
                 32 + occurrence.origin().role().as_str().len() + 8
             }

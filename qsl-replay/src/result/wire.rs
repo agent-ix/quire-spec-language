@@ -17,7 +17,8 @@ use qsl_foundation::diagnostic::catalog_category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 use qsl_package::CheckedPackage;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
@@ -534,9 +535,23 @@ enum SubjectWire {
         object_type: String,
         object_identity: String,
     },
+    Invocation {
+        invocation: ObservationWire,
+        binding: InvocationBindingWire,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        parameter: Option<String>,
+    },
     Built {
         occurrence: OccurrenceWire,
     },
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum InvocationBindingWire {
+    Parameter,
+    Result,
+    Receiver,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -562,6 +577,33 @@ impl PathWire {
                 quire_exact::ObjectId::new(object_identity.clone())
                     .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
+            SubjectWire::Invocation {
+                invocation,
+                binding,
+                parameter,
+            } => {
+                if invocation.authority.is_empty() {
+                    return Err(CauseCodecError::Empty("authority"));
+                }
+                if invocation.identity.is_empty() {
+                    return Err(CauseCodecError::Empty("identity"));
+                }
+                if invocation.revision_namespace.is_empty() {
+                    return Err(CauseCodecError::Empty("revision_namespace"));
+                }
+                if invocation.revision.is_empty() {
+                    return Err(CauseCodecError::Empty("revision"));
+                }
+                match (binding, parameter) {
+                    (InvocationBindingWire::Parameter, Some(parameter))
+                        if !parameter.is_empty() => {}
+                    (InvocationBindingWire::Result | InvocationBindingWire::Receiver, None) => {}
+                    (InvocationBindingWire::Parameter, Some(_)) => {
+                        return Err(CauseCodecError::Empty("parameter"));
+                    }
+                    _ => return Err(CauseCodecError::Shape("invocation_binding")),
+                }
+            }
             SubjectWire::Built { occurrence } => {
                 occurrence.clone().read()?;
             }
@@ -586,6 +628,31 @@ impl PathWire {
                         object_type: hex(object.object_type().as_bytes()),
                         object_identity: object.object().as_str().to_owned(),
                     },
+                    ValuePathSubject::Invocation {
+                        invocation,
+                        binding,
+                    } => {
+                        let (binding, parameter) = match binding {
+                            InvocationBinding::Parameter(parameter) => (
+                                InvocationBindingWire::Parameter,
+                                Some(parameter.clone()),
+                            ),
+                            InvocationBinding::Result => (InvocationBindingWire::Result, None),
+                            InvocationBinding::Receiver => {
+                                (InvocationBindingWire::Receiver, None)
+                            }
+                        };
+                        SubjectWire::Invocation {
+                            invocation: ObservationWire {
+                                authority: invocation.authority.clone(),
+                                identity: invocation.identity.clone(),
+                                revision_namespace: invocation.revision_namespace.clone(),
+                                revision: invocation.revision.clone(),
+                            },
+                            binding,
+                            parameter,
+                        }
+                    }
                     ValuePathSubject::Built(occurrence) => SubjectWire::Built {
                         occurrence: OccurrenceWire::of(occurrence),
                     },
@@ -625,6 +692,26 @@ impl PathWire {
                     &object_type,
                     object_identity,
                 )?),
+                SubjectWire::Invocation {
+                    invocation,
+                    binding,
+                    parameter,
+                } => ValuePathSubject::Invocation {
+                    invocation: ObservationIdentity {
+                        authority: invocation.authority,
+                        identity: invocation.identity,
+                        revision_namespace: invocation.revision_namespace,
+                        revision: invocation.revision,
+                    },
+                    binding: match (binding, parameter) {
+                        (InvocationBindingWire::Parameter, Some(parameter)) => {
+                            InvocationBinding::Parameter(parameter)
+                        }
+                        (InvocationBindingWire::Result, None) => InvocationBinding::Result,
+                        (InvocationBindingWire::Receiver, None) => InvocationBinding::Receiver,
+                        _ => return Err(CauseCodecError::Shape("invocation_binding")),
+                    },
+                },
                 SubjectWire::Built { occurrence } => ValuePathSubject::Built(occurrence.read()?),
             },
             steps: self
