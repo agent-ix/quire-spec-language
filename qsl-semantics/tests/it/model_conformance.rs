@@ -883,13 +883,14 @@ fn presence_narrowing_uses_declared_presence_independently_of_multiplicity() {
             &DeclarationKey::fixture("model.B.xb"),
             &DeclarationKey::fixture("model.A.x"),
         )
+        .expect("field refinement obligation should normalize")
     };
 
     let optional = quire_exact::Presence::Optional;
     let required = quire_exact::Presence::Required;
     let singleton = mult(1, Some(1));
     let optional_singleton = match check(optional, required, singleton, singleton, false) {
-        Ok(ConformanceOutcome::Refused(failures)) => failures,
+        ConformanceOutcome::Refused(failures) => failures,
         other => panic!("expected Refused(field-presence), got {other:?}"),
     };
     assert_eq!(optional_singleton.len(), 1);
@@ -901,12 +902,12 @@ fn presence_narrowing_uses_declared_presence_independently_of_multiplicity() {
 
     assert!(matches!(
         check(optional, required, mult(0, Some(1)), mult(0, Some(1)), false),
-        Ok(ConformanceOutcome::Refused(failures))
+        ConformanceOutcome::Refused(failures)
             if failures.len() == 1 && failures[0].detail.contains("field-presence")
     ));
     assert!(matches!(
         check(optional, required, singleton, singleton, true),
-        Ok(ConformanceOutcome::Compatible)
+        ConformanceOutcome::Compatible
     ));
     assert!(matches!(
         check(
@@ -916,16 +917,16 @@ fn presence_narrowing_uses_declared_presence_independently_of_multiplicity() {
             mult(0, Some(1)),
             false
         ),
-        Ok(ConformanceOutcome::Compatible)
+        ConformanceOutcome::Compatible
     ));
     assert!(matches!(
         check(optional, optional, singleton, singleton, false),
-        Ok(ConformanceOutcome::Compatible)
+        ConformanceOutcome::Compatible
     ));
 
     let presence_does_not_prove_collection_nonempty =
         match check(required, required, mult(0, Some(1)), singleton, true) {
-            Ok(ConformanceOutcome::Refused(failures)) => failures,
+            ConformanceOutcome::Refused(failures) => failures,
             other => panic!("expected Refused(no-proof-form), got {other:?}"),
         };
     assert_eq!(presence_does_not_prove_collection_nonempty.len(), 1);
