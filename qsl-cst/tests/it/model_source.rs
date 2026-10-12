@@ -173,7 +173,7 @@ fn population_type_reference_reports_missing_maximum_close_at_eof() {
     assert!(!parsed.is_admissible(), "{spelling}");
     let diagnostic = &parsed.diagnostics()[0];
     assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax);
-    assert_eq!(diagnostic.cause, CompleteCause::UnexpectedToken);
+    assert_eq!(diagnostic.cause, CompleteCause::UnexpectedEnd);
     let region = diagnostic.region.as_ref().expect("located EOF refusal");
     // The parser's located EOF is the virtual byte immediately after the final
     // source byte, and the refusal span is zero-width there.
