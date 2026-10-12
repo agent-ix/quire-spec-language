@@ -2,23 +2,24 @@
 
 use super::*;
 
-fn lifecycle_state(name: &str) -> Value {
-    let node = format!("OrderLifecycle/{name}");
+fn lifecycle_state(owner: &str, name: &str) -> Value {
+    let node = format!("{owner}/{name}");
     json!({"identity": id(&node), "name": name, "origin": origin(&node)})
 }
 
 fn lifecycle_transition(
+    owner: &str,
     name: &str,
     from: &str,
     to: &str,
     trigger: &str,
     emits: Vec<String>,
 ) -> Value {
-    let node = format!("OrderLifecycle/{name}");
+    let node = format!("{owner}/{name}");
     json!({
-        "identity": id(&node), "from": id(&format!("OrderLifecycle/{from}")),
-        "to": id(&format!("OrderLifecycle/{to}")),
-        "trigger": id(&format!("OrderLifecycle/{trigger}")),
+        "identity": id(&node), "from": id(&format!("{owner}/{from}")),
+        "to": id(&format!("{owner}/{to}")),
+        "trigger": id(&format!("{owner}/{trigger}")),
         "emits": emits, "origin": origin(&node),
     })
 }
@@ -161,7 +162,7 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
         type_named_mut(document, "OrderLifecycle")["states"]
             .as_array_mut()
             .unwrap()
-            .push(lifecycle_state("Draft"));
+            .push(lifecycle_state("OrderLifecycle", "Draft"));
     });
     let refusals = normalized_refusals(&duplicate_state, 21);
     assert_eq!(refusals.len(), 1);
@@ -174,6 +175,7 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
             .as_array_mut()
             .unwrap()
             .push(lifecycle_transition(
+                "OrderLifecycle",
                 "transition3",
                 "Draft",
                 "Cancelled",
@@ -256,8 +258,9 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
+                    "ExpressLifecycle",
                     "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],
             }),
@@ -273,8 +276,9 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
+                    "ExpressLifecycle",
                     "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],
             }),
@@ -298,8 +302,9 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
+                    "ExpressLifecycle",
                     "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],
             }),
@@ -319,10 +324,10 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited"), lifecycle_state("Placed")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited"), lifecycle_state("ExpressLifecycle", "Placed")],
                 "transitions": [
-                    lifecycle_transition("transition0", "Placed", "Expedited", "expedite", vec![]),
-                    lifecycle_transition("transition1", "Draft", "Placed", "place", vec![]),
+                    lifecycle_transition("ExpressLifecycle", "transition0", "Placed", "Expedited", "expedite", vec![]),
+                    lifecycle_transition("ExpressLifecycle", "transition1", "Draft", "Placed", "place", vec![]),
                 ],
             }),
         ));
@@ -340,6 +345,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
             .as_array_mut()
             .unwrap()
             .push(lifecycle_transition(
+                "OrderLifecycle",
                 "transition3",
                 "Draft",
                 "Expedited",
@@ -352,8 +358,9 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
+                    "ExpressLifecycle",
                     "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],
             }),
@@ -374,8 +381,9 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("Fulfilment")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("Expedited")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
+                    "ExpressLifecycle",
                     "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],
             }),
