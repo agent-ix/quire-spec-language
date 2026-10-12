@@ -1199,7 +1199,6 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Enum(_)
             | ValueType::Reference(_)
             | ValueType::Population(_) => {}
-            ValueType::String => {}
             ValueType::Uuid | ValueType::Timestamp => {}
         }
         Ok(None)
