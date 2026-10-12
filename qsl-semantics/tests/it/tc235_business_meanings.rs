@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-235 business-meaning vectors at the real QSL intake/normalization boundary.
 
+use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{ByteDigest, IntakeLimits};
 use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
@@ -87,6 +88,35 @@ fn clause(owner: &str, name: &str, text: &str) -> Value {
     json!({
         "identity": id(&node), "language": "quire", "clauseId": name,
         "text": text, "origin": origin(&node),
+    })
+}
+
+fn jcs_digest(value: &Value) -> String {
+    let input = serde_json::to_vec(value).expect("fixture value serializes");
+    let document = quire_canonical::read(&input, u64::MAX).expect("fixture value is JSON");
+    let canonical = quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX))
+        .expect("fixture value has a JCS encoding");
+    format!(
+        "sha256:{}",
+        qsl_semantics::model::key::hex(&ByteDigest::of(&canonical).as_bytes())
+    )
+}
+
+fn domain_document(types: Vec<Value>, mut constructs: Vec<Value>) -> Value {
+    // Construct manifests identify this QSL-owned fixture's authored types.
+    // The selected package digest is independently computed by package_input
+    // from the complete bytes through quire-canonical's JCS reader.
+    let digest = jcs_digest(&Value::Array(types.clone()));
+    for item in &mut constructs {
+        item["manifestDigest"] = json!(digest);
+    }
+    json!({
+        "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "source": {"identity": id("spec"), "version": "1.0.0", "dialect": "spec-bundle", "digest": digest},
+        "package": {"identity": PACKAGE, "version": "1", "manifestDigest": digest,
+                    "mappingVersions": [], "profileVersions": [], "lockDigest": digest},
+        "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })
 }
 
@@ -198,7 +228,7 @@ fn k2() -> Value {
             }),
         ),
     ];
-    let mut constructs = vec![
+    let constructs = vec![
         construct("thing", meaning::OBJECT_TYPE),
         construct("money", meaning::RECORD_VALUE_TYPE),
         construct("happened", meaning::EVENT_TYPE),
@@ -208,34 +238,13 @@ fn k2() -> Value {
         construct("context", meaning::NAMESPACE),
         construct("population", meaning::POPULATION),
     ];
-    let digest = format!(
-        "sha256:{}",
-        qsl_semantics::model::key::hex(
-            &ByteDigest::of(&serde_json::to_vec(&types).unwrap()).as_bytes()
-        )
-    );
-    for item in &mut constructs {
-        item["manifestDigest"] = json!(digest);
-    }
-    json!({
-        "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": id("spec"), "version": "1.0.0", "dialect": "spec-bundle", "digest": digest},
-        "package": {"identity": PACKAGE, "version": "1", "manifestDigest": digest,
-                    "mappingVersions": [], "profileVersions": [], "lockDigest": digest},
-        "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
-    })
+    domain_document(types, constructs)
 }
 
 fn mutate_k2(mutate: impl FnOnce(&mut Value)) -> Value {
     let mut document = k2();
     mutate(&mut document);
-    let digest = format!(
-        "sha256:{}",
-        qsl_semantics::model::key::hex(
-            &ByteDigest::of(&serde_json::to_vec(&document["types"]).unwrap()).as_bytes()
-        )
-    );
+    let digest = jcs_digest(&document["types"]);
     document["source"]["digest"] = json!(digest);
     document["package"]["manifestDigest"] = json!(digest);
     document["package"]["lockDigest"] = json!(digest);
@@ -437,4 +446,73 @@ fn tc235_m03_record_shape_and_clause_meanings() {
         .declarations()
         .iter()
         .any(|declaration| declaration.preimage.original == foreign_key));
+}
+
+/// M17's record-value portion is exercised on an FCD-valid record/object
+/// fixture while the full K2 vector waits for its event-type binder. It
+/// checks that a record subtype keeps inherited and local fields under one
+/// effective type, and that its parent is not silently substituted for the
+/// subtype identity.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m17_record_value_subtype_keeps_effective_fields() {
+    let types = vec![
+        declaration(
+            "Order",
+            "thing",
+            json!({
+                "identityFields": [id("Order/order_id")],
+                "fields": [field("Order", "order_id", "ix://quire/native/UUID"),
+                           field("Order", "total", &id("Money"))],
+            }),
+        ),
+        declaration(
+            "Money",
+            "money",
+            json!({
+                "fields": [field("Money", "amount_minor", "ix://quire/native/Integer"),
+                           field("Money", "currency", "ix://quire/native/String")],
+                "clauses": [clause("Money", "NonNegative", "self.amount_minor >= 0")],
+            }),
+        ),
+        declaration(
+            "TaxedMoney",
+            "money",
+            json!({
+                "supertypes": [id("Money")],
+                "fields": [field("TaxedMoney", "tax_minor", "ix://quire/native/Integer")],
+            }),
+        ),
+    ];
+    let document = domain_document(
+        types,
+        vec![
+            construct("thing", meaning::OBJECT_TYPE),
+            construct("money", meaning::RECORD_VALUE_TYPE),
+        ],
+    );
+    let package = read_k2(&document)
+        .expect("reader admits the record-value slice without event declarations");
+    let view = record_charges(&package, 9);
+    let taxed_key = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("TaxedMoney"),
+    };
+    let taxed_type = view.type_identities()[&taxed_key];
+    let mut effective_fields: Vec<_> = view
+        .declarations()
+        .iter()
+        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(taxed_type))
+        .map(|entry| entry.preimage.original.node.clone())
+        .collect();
+    effective_fields.sort();
+    assert_eq!(
+        effective_fields,
+        [
+            id("Money/amount_minor"),
+            id("Money/currency"),
+            id("TaxedMoney/tax_minor")
+        ]
+    );
+    assert!(view.object_universe_of(&taxed_key).is_none());
 }
