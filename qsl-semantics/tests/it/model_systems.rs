@@ -20,6 +20,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::key::{RULE_INHERIT, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{
     normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -167,6 +168,8 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
     let mut records = vec![
         scalar_type("model.Count", 0, 9),
         object_type("model.Sys", None, vec![]),
+        object_type("model.SysBridge", None, vec!["model.Sys"]),
+        object_type("model.SysSub", None, vec!["model.Sys", "model.SysBridge"]),
         object_type("model.Pump", None, vec![]),
         object_type("model.Tank", None, vec![]),
         object_type("model.Flow", Some(vec!["model.Flow.rate"]), vec![]),
@@ -383,6 +386,238 @@ fn y01_roleless_systems_connection_survives_model_normalization() {
         NormalizeOutcome::Completed(_) => {}
         other => panic!("the role-less systems connection must survive normalization: {other:?}"),
     }
+}
+
+/// Phase 2 retains each systems member at its resolved end-owner type.
+#[trace("TC-213", "FR-081-AC-1")]
+#[trace("QSpec-TC-197", "QSpec-FR-150-AC-1")]
+#[test]
+fn systems_members_have_effective_owner_entries() {
+    let view = match normalize(&fixture_y(|_| {}), ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("systems fixture must normalize: {other:?}"),
+    };
+    let cases = [
+        ("model.Sys", "model.Sys.pump", 1),
+        ("model.Sys", "model.Sys.pump.out", 1),
+        ("model.Sys", "model.Sys.pipe", 2),
+        ("model.Pump", "model.Pump.alloc", 1),
+        ("model.Sys", "model.Pump.alloc", 1),
+        ("model.Sys", "model.rel.parts", 1),
+        ("model.Pump", "model.rel.home", 1),
+    ];
+    for (owner, member, qualify_facts) in cases {
+        let owner = view.type_identities()[&DeclarationKey::fixture(owner)];
+        let entries: Vec<_> = view
+            .declarations()
+            .iter()
+            .filter(|entry| {
+                entry.preimage.owner_effective_type == Some(owner)
+                    && entry.preimage.original == DeclarationKey::fixture(member)
+            })
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "{member} must have one effective entry at its owner"
+        );
+        let facts = &entries[0].preimage.derivation;
+        assert_eq!(
+            facts.len(),
+            qualify_facts,
+            "{member} must retain every end fact"
+        );
+        assert!(facts.iter().all(|fact| fact.rule == RULE_QUALIFY));
+    }
+}
+
+/// A subtype inherits every systems member from its composite ancestor. The
+/// role-less connection has two same-owner qualify facts, and inheritance adds
+/// exactly one ordered fact after that duplicate pair. This also exercises the
+/// repeated same-owner path control: dropping the ancestor member grouping or
+/// retaining only one connection end makes this assertion fail.
+#[trace("TC-213", "QSpec-TC-197", "QSpec-FR-150-AC-1")]
+#[test]
+fn systems_members_inherit_with_ordered_duplicate_end_facts() {
+    let view = match normalize(&fixture_y(|_| {}), ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("systems subtype fixture must normalize: {other:?}"),
+    };
+    let owner = view.type_identities()[&DeclarationKey::fixture("model.SysSub")];
+    for (member, expected_rules, expected_inputs) in [
+        (
+            "model.Sys.pump",
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
+            vec![
+                vec![DeclarationKey::fixture("model.Sys.pump")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump"),
+                ],
+            ],
+        ),
+        (
+            "model.Sys.pipe",
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
+            vec![
+                vec![DeclarationKey::fixture("model.Sys.pipe")],
+                vec![DeclarationKey::fixture("model.Sys.pipe")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pipe"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pipe"),
+                ],
+            ],
+        ),
+        (
+            "model.Sys.pump.out",
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
+            vec![
+                vec![DeclarationKey::fixture("model.Sys.pump.out")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump.out"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Sys.pump.out"),
+                ],
+            ],
+        ),
+        (
+            "model.rel.parts",
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
+            vec![
+                vec![DeclarationKey::fixture("model.rel.parts")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.rel.parts"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.rel.parts"),
+                ],
+            ],
+        ),
+        (
+            "model.Pump.alloc",
+            vec![
+                RULE_QUALIFY.identity,
+                RULE_INHERIT.identity,
+                RULE_INHERIT.identity,
+            ],
+            vec![
+                vec![DeclarationKey::fixture("model.Pump.alloc")],
+                vec![
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Pump.alloc"),
+                ],
+                vec![
+                    DeclarationKey::fixture("model.SysBridge"),
+                    DeclarationKey::fixture("model.Sys"),
+                    DeclarationKey::fixture("model.Pump.alloc"),
+                ],
+            ],
+        ),
+    ] {
+        let entry = view
+            .declarations()
+            .iter()
+            .find(|entry| {
+                entry.preimage.owner_effective_type == Some(owner)
+                    && entry.preimage.original == DeclarationKey::fixture(member)
+            })
+            .unwrap_or_else(|| panic!("{member} is inherited by model.SysSub"));
+        assert_eq!(
+            entry
+                .preimage
+                .derivation
+                .iter()
+                .map(|fact| fact.rule.identity)
+                .collect::<Vec<_>>(),
+            expected_rules,
+            "{member} retains the full ordered derivation"
+        );
+        assert_eq!(
+            entry
+                .preimage
+                .derivation
+                .iter()
+                .map(|fact| fact.inputs.clone())
+                .collect::<Vec<_>>(),
+            expected_inputs,
+            "{member} retains every inherited input path"
+        );
+    }
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    // The reduced fixture below has six type facts and eleven direct member
+    // facts, followed by four repeated-path type facts. The next charge is
+    // the first inherited systems member fact, so this boundary cannot pass
+    // if the ancestor members are dropped before phase 3.
+    limits.derivation_facts = 21;
+    match normalize(&systems_only_repeated_fixture(), limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+            assert_eq!(incomplete.consumed, 21);
+        }
+        other => panic!("the inherited systems facts must hit the fact boundary: {other:?}"),
+    }
+}
+
+fn systems_only_repeated_fixture() -> DomainPackage {
+    let keep = [
+        "model.Flow",
+        "model.Pump",
+        "model.Sys",
+        "model.SysBridge",
+        "model.SysSub",
+        "model.Tank",
+        "model.Sys.pump",
+        "model.Sys.tank",
+        "model.Sys.pump.out",
+        "model.Sys.tank.in",
+        "model.Sys.pipe",
+        "model.Pump.run",
+        "model.Pump.alloc",
+        "model.rel.parts",
+        "model.rel.home",
+    ];
+    let mut package = fixture_y(|records| {
+        records.retain(|record| keep.contains(&record.key().node.as_str()));
+    });
+    package
+        .records
+        .retain(|record| keep.contains(&record.key().node.as_str()));
+    package
 }
 
 #[trace("TC-235", "FR-086-AC-3")]

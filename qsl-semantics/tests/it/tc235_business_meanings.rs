@@ -18,6 +18,7 @@ use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[path = "../support/tc235_k2.rs"]
 mod tc235_k2;
@@ -40,6 +41,291 @@ fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     )
     .expect("S1 admits the authored package bytes");
     read_domain_package(selection, &admitted)
+}
+
+fn node_named_mut<'a>(value: &'a mut Value, identity: &str) -> Option<&'a mut Value> {
+    if value.get("identity").and_then(Value::as_str) == Some(identity) {
+        return Some(value);
+    }
+    match value {
+        Value::Array(values) => values
+            .iter_mut()
+            .find_map(|value| node_named_mut(value, identity)),
+        Value::Object(values) => values
+            .values_mut()
+            .find_map(|value| node_named_mut(value, identity)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
+    }
+}
+
+fn refresh_manifest_digest(document: &mut Value) {
+    let digest = jcs_digest(&document["types"]);
+    document["source"]["digest"] = json!(digest);
+    document["package"]["manifestDigest"] = json!(digest);
+    document["package"]["lockDigest"] = json!(digest);
+    for construct in document["constructs"].as_array_mut().unwrap() {
+        construct["manifestDigest"] = json!(digest);
+    }
+}
+
+fn tc213_fixture() -> Value {
+    let mut count = declaration("Count", "value", json!({}));
+    count["target"] = json!("ix://quire/native/Integer");
+    let mut document = domain_document(
+        vec![
+            declaration(
+                "A",
+                "thing",
+                json!({
+                    "identityFields": [id("A/x")],
+                    "fields": [field("A", "x", "ix://quire/native/UUID")],
+                    "operations": [operation("A", "set")],
+                }),
+            ),
+            declaration(
+                "B",
+                "thing",
+                json!({
+                    "identityFields": [id("A/x")],
+                    "supertypes": [id("A")],
+                }),
+            ),
+            count,
+        ],
+        vec![
+            construct("thing", meaning::OBJECT_TYPE),
+            construct("value", meaning::VALUE_TYPE),
+        ],
+    );
+    let source = |node: &str, end: Option<(u64, u64)>| {
+        let mut origin = json!({
+            "source": {
+                "sourceIdentity": "ix://test/origin/spec",
+                "path": format!("spec/{node}.md"),
+                "startLine": if node == "A" { 2 } else { 3 },
+                "startColumn": if node == "A" { 1 } else { 2 },
+            }
+        });
+        if let Some((line, column)) = end {
+            origin["source"]["endLine"] = json!(line);
+            origin["source"]["endColumn"] = json!(column);
+        }
+        origin
+    };
+    for (node, origin) in [
+        ("A", source("A", Some((8, 9)))),
+        ("B", source("B", None)),
+        ("A/x", source("A-x", Some((4, 12)))),
+        ("A/set", source("A-set", Some((5, 14)))),
+        (
+            "Count",
+            json!({"generated": {
+                "generatorIdentity": "ix://test/origin/generator",
+                "generatorVersion": "1.2.3",
+                "inputIdentities": [id("A"), id("B")],
+            }}),
+        ),
+    ] {
+        node_named_mut(&mut document, &id(node))
+            .unwrap_or_else(|| panic!("TC-213 fixture has {node}"))["origin"] = origin;
+    }
+    refresh_manifest_digest(&mut document);
+    document
+}
+
+fn tc213_retained_map(
+    document: &Value,
+) -> (BTreeSet<DeclarationKey>, BTreeMap<DeclarationKey, Value>) {
+    let mut document = document.clone();
+    refresh_manifest_digest(&mut document);
+    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let admitted_keys = package
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect::<BTreeSet<_>>();
+    let admitted_origins = package
+        .records
+        .iter()
+        .map(|record| {
+            (
+                record.key().clone(),
+                package
+                    .original(record.key())
+                    .expect("every TC-213 record has an origin")
+                    .origin
+                    .clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("TC-213 fixture normalizes: {outcome:?}");
+    };
+    let retained = view.domain_package();
+    let retained_origins = retained
+        .records
+        .iter()
+        .map(|record| {
+            (
+                record.key().clone(),
+                retained
+                    .original(record.key())
+                    .expect("normalized inventory retains every origin")
+                    .origin
+                    .clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(retained_origins, admitted_origins);
+    assert_eq!(
+        retained_origins.keys().cloned().collect::<BTreeSet<_>>(),
+        admitted_keys
+    );
+    for entry in view.declarations() {
+        assert!(admitted_keys.contains(&entry.preimage.original));
+        for fact in &entry.preimage.derivation {
+            for key in fact.inputs.iter() {
+                assert!(
+                    admitted_keys.contains(key),
+                    "fact {:?} cites a key outside the retained inventory",
+                    fact
+                );
+            }
+        }
+    }
+    (admitted_keys, retained_origins)
+}
+
+fn tc213_type_identities(
+    document: &Value,
+) -> BTreeMap<DeclarationKey, qsl_semantics::model::key::EffectiveId> {
+    let mut document = document.clone();
+    refresh_manifest_digest(&mut document);
+    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("TC-213 fixture normalizes: {outcome:?}");
+    };
+    view.type_identities().clone()
+}
+
+fn tc213_view_identity(document: &Value) -> qsl_semantics::model::key::EffectiveId {
+    let mut document = document.clone();
+    refresh_manifest_digest(&mut document);
+    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("TC-213 fixture normalizes: {outcome:?}");
+    };
+    view.identity()
+}
+
+#[trace("TC-213", "FR-081-AC-1", "FR-081-AC-7")]
+#[test]
+fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls() {
+    let baseline = tc213_retained_map(&tc213_fixture());
+    let baseline_ids = tc213_type_identities(&tc213_fixture());
+    let baseline_view_id = tc213_view_identity(&tc213_fixture());
+
+    let mut reversed = tc213_fixture();
+    reversed["types"].as_array_mut().unwrap().reverse();
+    let reordered = tc213_retained_map(&reversed);
+    assert_eq!(
+        reordered, baseline,
+        "record order cannot change correspondence"
+    );
+    assert_eq!(
+        tc213_type_identities(&reversed),
+        baseline_ids,
+        "equal declaration keys and facts retain their type identities"
+    );
+    assert_ne!(
+        tc213_view_identity(&reversed),
+        baseline_view_id,
+        "a different package selection changes the effective-view identity"
+    );
+
+    let mut selected = tc213_fixture();
+    selected["types"][0]["origin"]["source"]["endColumn"] = json!(17);
+    selected["types"].as_array_mut().unwrap().reverse();
+    let changed_selection = tc213_retained_map(&selected);
+    assert_eq!(changed_selection.0, baseline.0);
+    assert_ne!(
+        changed_selection.1, baseline.1,
+        "the control changed one origin only"
+    );
+    assert_eq!(
+        changed_selection.1[&DeclarationKey::fixture("ix://test/orders/A")]["source"]["endColumn"],
+        17
+    );
+    assert_eq!(
+        tc213_type_identities(&selected),
+        baseline_ids,
+        "equal declaration keys and facts retain their type identities"
+    );
+    assert_ne!(
+        tc213_view_identity(&selected),
+        baseline_view_id,
+        "a digest-changing selection changes the effective-view identity"
+    );
+
+    for (label, mutate) in [
+        (
+            "swap source origins",
+            Box::new(|document: &mut Value| {
+                let a = node_named_mut(document, &id("A")).unwrap()["origin"].clone();
+                let b = node_named_mut(document, &id("B")).unwrap()["origin"].clone();
+                node_named_mut(document, &id("A")).unwrap()["origin"] = b;
+                node_named_mut(document, &id("B")).unwrap()["origin"] = a;
+            }) as Box<dyn Fn(&mut Value)>,
+        ),
+        (
+            "change generated version",
+            Box::new(|document: &mut Value| {
+                node_named_mut(document, &id("Count")).unwrap()["origin"]["generated"]
+                    ["generatorVersion"] = json!("9.9.9");
+            }),
+        ),
+        (
+            "reverse generated inputs",
+            Box::new(|document: &mut Value| {
+                node_named_mut(document, &id("Count")).unwrap()["origin"]["generated"]
+                    ["inputIdentities"] = json!([id("B"), id("A")]);
+            }),
+        ),
+        (
+            "remove optional source endLine",
+            Box::new(|document: &mut Value| {
+                node_named_mut(document, &id("A")).unwrap()["origin"]["source"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("endLine");
+            }),
+        ),
+        (
+            "replace generated origin with source origin",
+            Box::new(|document: &mut Value| {
+                node_named_mut(document, &id("Count")).unwrap()["origin"] = json!({
+                    "source": {
+                        "sourceIdentity": "ix://test/origin/spec",
+                        "path": "spec/Count.md",
+                        "startLine": 9,
+                        "startColumn": 1,
+                    }
+                });
+            }),
+        ),
+    ] {
+        let mut mutant = tc213_fixture();
+        mutate(&mut mutant);
+        let actual = tc213_retained_map(&mutant);
+        assert_eq!(actual.0, baseline.0, "{label} must not re-key declarations");
+        assert_ne!(
+            actual.1, baseline.1,
+            "{label} must remain observable by key"
+        );
+    }
 }
 
 /// Admit a K2-derived package as model `M` and assemble a source unit which
@@ -80,6 +366,183 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("model value assembly succeeds: {refusal:?}"))
+}
+
+/// Intake's own admitted record keys remain the exact original inventory of
+/// the completed view, including declarations without effective entries.
+#[trace("TC-213", "FR-081-AC-1")]
+#[test]
+fn admitted_original_keys_survive_normalization() {
+    let document = k2();
+    let bytes = serde_json::to_vec(&document).expect("K2 serializes");
+    let offered = package_input([bytes.as_slice()]);
+    let digest = *offered.keys().next().expect("one offered package");
+    let selection = DomainPackageRef {
+        identity: PACKAGE.to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let (_, admitted) = admit(
+        &selection,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &offered,
+        IntakeLimits::default(),
+    )
+    .expect("S1 admits K2");
+    let admitted_records = read_records(PACKAGE, &admitted).expect("reader admits K2 records");
+    let admitted_keys: BTreeSet<_> = admitted_records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    let package = read_domain_package(selection, &admitted).expect("reader retains K2 origins");
+    let view = match normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED).0 {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("K2 normalization must complete: {other:?}"),
+    };
+    let retained_keys: BTreeSet<_> = view
+        .domain_package()
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    assert_eq!(retained_keys, admitted_keys);
+    for key in &admitted_keys {
+        assert!(
+            view.domain_package().original(key).is_some(),
+            "missing origin for {key:?}"
+        );
+    }
+    let effective_origins: BTreeSet<_> = view
+        .declarations()
+        .iter()
+        .map(|entry| entry.preimage.original.clone())
+        .collect();
+    assert!(effective_origins.is_subset(&admitted_keys));
+    assert!(effective_origins.contains(&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderLifecycle/place")
+    }));
+    assert!(!effective_origins.contains(&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderManagement")
+    }));
+    assert!(!effective_origins.contains(&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("Instant")
+    }));
+}
+
+/// The original inventory includes a scalar even though phase 2 gives it no
+/// effective entry or derivation charge.
+#[trace("FR-081-AC-8")]
+#[test]
+fn scalar_original_has_no_effective_entry_or_extra_charge() {
+    let mut scalar = declaration("Instant", "value", json!({}));
+    scalar["target"] = json!("ix://quire/native/Timestamp");
+    let document = domain_document(
+        vec![
+            declaration(
+                "Order",
+                "thing",
+                json!({
+                    "identityFields": [id("Order/order_id")],
+                    "fields": [field("Order", "order_id", "ix://quire/native/UUID")],
+                    "operations": [operation("Order", "submit")],
+                }),
+            ),
+            declaration(
+                "Draft",
+                "thing",
+                json!({
+                    "identityFields": [id("Order/order_id")],
+                    "supertypes": [id("Order")],
+                }),
+            ),
+            scalar,
+        ],
+        vec![
+            construct("thing", meaning::OBJECT_TYPE),
+            construct("value", meaning::VALUE_TYPE),
+        ],
+    );
+    let package = read_k2(&document).expect("two objects, a field, operation, and scalar admit");
+    let admitted_keys: BTreeSet<_> = package
+        .records
+        .iter()
+        .map(|record| record.key().clone())
+        .collect();
+    let expected: BTreeSet<_> = [
+        "Order",
+        "Draft",
+        "Order/order_id",
+        "Order/submit",
+        "Instant",
+    ]
+    .into_iter()
+    .map(|node| DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(node),
+    })
+    .collect();
+    assert_eq!(admitted_keys, expected);
+    for key in &expected {
+        assert_eq!(
+            package.original(key).map(|original| &original.origin),
+            Some(&origin(
+                key.node
+                    .strip_prefix(&format!("ix://{PACKAGE}/"))
+                    .expect("fixture key prefix")
+            ))
+        );
+    }
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("phase-2 fixture must normalize: {outcome:?}");
+    };
+    let effective: BTreeSet<_> = view
+        .declarations()
+        .iter()
+        .map(|entry| entry.preimage.original.clone())
+        .collect();
+    assert_eq!(
+        effective,
+        expected
+            .into_iter()
+            .filter(|key| key.node != id("Instant"))
+            .collect()
+    );
+    let without_scalar = domain_document(
+        document["types"]
+            .as_array()
+            .expect("types array")
+            .iter()
+            .filter(|value| value["identity"] != id("Instant"))
+            .cloned()
+            .collect(),
+        vec![construct("thing", meaning::OBJECT_TYPE)],
+    );
+    let control = read_k2(&without_scalar).expect("control admits");
+    let (control_outcome, control_meter) =
+        normalize_with_meter(&control, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(control_outcome, NormalizeOutcome::Completed(_)));
+    for charge in [
+        ChargePoint::NormalizeFact,
+        ChargePoint::NormalizeDeclaration,
+        ChargePoint::NormalizeHash,
+    ] {
+        let count = |meter: &qsl_semantics::model::accounting::Meter| {
+            meter
+                .admitted_charges()
+                .iter()
+                .filter(|point| **point == charge)
+                .count()
+        };
+        assert_eq!(
+            count(&meter),
+            count(&control_meter),
+            "scalar must not add {charge:?}"
+        );
+    }
 }
 
 fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
