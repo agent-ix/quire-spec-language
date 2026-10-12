@@ -1642,6 +1642,85 @@ fn persistence_interface_model_members_do_not_block_assembly() {
         .expect("an original-only persistence interface must not block model assembly");
 }
 
+/// FR-322's model operation owners include processes. A process's identified
+/// runs use the object-type surface, so assembly must keep its fields,
+/// supertypes and operation signatures while its ordered steps remain domain
+/// package data.
+#[trace("FR-322-AC-25", "TC-235")]
+#[test]
+fn process_model_members_assemble_as_an_identified_run_type() {
+    let process = format!("ix://{PACKAGE_IDENTITY}/Fulfilment");
+    let correlation = format!("{process}/correlation_id");
+    let restart = format!("{process}/restart");
+    let step = format!("{process}/receive");
+    let document = wire_envelope(
+        json!([wire_construct(
+            "process",
+            meaning::PROCESS,
+            json!({"identityFields": "required", "steps": "required"}),
+        )]),
+        json!([wire_type(
+            &process,
+            "process",
+            json!({
+                "identityFields": [correlation],
+                "fields": [wire_field(
+                    &format!("{process}/correlation_id"),
+                    "correlation_id",
+                    "ix://quire/native/Boolean",
+                    "required",
+                    1,
+                )],
+                "operations": [{
+                    "identity": restart,
+                    "name": "restart",
+                    "params": [],
+                    "returns": {
+                        "typeRef": "ix://quire/native/Boolean",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true,
+                        },
+                        "nullable": false,
+                    },
+                    "pre": [],
+                    "post": [],
+                    "frame": {"modifies": [], "creates": [], "deletes": []},
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": restart,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [restart],
+                        }
+                    },
+                }],
+                "steps": [{
+                    "identity": step,
+                    "name": "receive",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": step,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [step],
+                        }
+                    },
+                }],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    admit_and_assemble(&document)
+        .expect("a process's identified-run members must assemble through the model surface");
+}
+
 /// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by
 /// the real producer -> intake -> assembler path. The width is part of the
 /// refusal oracle; floating signatures and bodies have their own admission
