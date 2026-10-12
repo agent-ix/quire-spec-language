@@ -1104,7 +1104,7 @@ fn record_specialization_cycle_refuses_before_effective_view() {
     assert_eq!(
         refusals.len(),
         2,
-        "each cyclic declaration refuses: {refusals:?}"
+        "each declaration on the specialization cycle refuses: {refusals:?}"
     );
     for (refusal, (ancestor, via)) in refusals
         .iter()

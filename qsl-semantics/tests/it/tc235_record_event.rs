@@ -1112,10 +1112,20 @@ fn tc235_m17_record_value_specialization_vectors() {
         ));
     });
     let cycle_refusals = normalized_refusals(&cycle, 24);
-    assert_eq!(cycle_refusals.len(), 1);
-    assert_eq!(cycle_refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(cycle_refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(cycle_refusals[0]
-        .detail
-        .contains("[ix://test/orders/Money, ix://test/orders/TaxedMoney]"));
+    assert_eq!(cycle_refusals.len(), 2, "{cycle_refusals:#?}");
+    for (refusal, (ancestor, via)) in cycle_refusals
+        .iter()
+        .zip([("Money", "TaxedMoney"), ("TaxedMoney", "Money")])
+    {
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        let ModelRefusalCause::SpecializationCycle {
+            ancestor: actual,
+            via: actual_via,
+        } = &refusal.cause
+        else {
+            panic!("expected typed specialization cycle cause: {refusal:?}");
+        };
+        assert_eq!(actual, &key(ancestor));
+        assert_eq!(actual_via, &key(via));
+    }
 }
