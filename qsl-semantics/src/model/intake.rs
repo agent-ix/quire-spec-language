@@ -1514,7 +1514,14 @@ fn process_subtype_identity_schema_diagnostic(
             .get("identityFields")
             .and_then(Value::as_array)
             .is_some_and(Vec::is_empty);
-    let missing_identity = member.is_empty() && !type_value.get("identityFields").is_some();
+    let has_process_member_shape = type_value.get("operations").is_some_and(Value::is_array)
+        && type_value
+            .get("steps")
+            .and_then(Value::as_array)
+            .is_some_and(|steps| !steps.is_empty() && steps.iter().all(Value::is_object));
+    let missing_identity = member.is_empty()
+        && !type_value.get("identityFields").is_some()
+        && has_process_member_shape;
     empty_identity || missing_identity
 }
 
@@ -4075,6 +4082,8 @@ fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
         .iter()
         .map(|(key, (_, own_fields))| {
             let mut fields = own_fields.clone();
+            let mut field_set: std::collections::HashSet<DeclarationKey> =
+                own_fields.iter().cloned().collect();
             let mut visited = std::collections::HashSet::new();
             let mut pending: Vec<DeclarationKey> = process_map
                 .get(key)
@@ -4088,7 +4097,7 @@ fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
                     continue;
                 };
                 for field in parent_fields {
-                    if !fields.contains(field) {
+                    if field_set.insert(field.clone()) {
                         fields.push(field.clone());
                     }
                 }

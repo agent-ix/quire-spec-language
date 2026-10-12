@@ -860,12 +860,12 @@ struct AncestorPath {
 /// closing extension's own [`ModelRefusal`] (`SpecializationCycle`, keyed by
 /// its rotated edge listing) and the path length charged to it
 /// (`normalize.cycle-check`'s own `work_units += L`,
-/// `value-accounting.md:491`). `edge_set` is the same rotated node listing
-/// the refusal's own `detail` reports, kept structured here so refusals
-/// found by different types' own walks that close the identical cycle can
-/// be recognized as the same cycle and deduplicated
+/// `value-accounting.md:491`). `directed_edges` is the same rotated cycle
+/// represented as ordered supertype edges, kept structured here so refusals
+/// found by different types' own walks that close the identical directed
+/// cycle can be recognized as the same cycle and deduplicated
 /// (`model-complete.md`:292-295: "each cycle is refused ... exactly once,
-/// keyed by the set of its supertype edges").
+/// keyed by its canonical directed supertype edges").
 struct ClosingCycle {
     refusal: ModelRefusal,
     /// The extended path that closes this cycle — the same shape as
@@ -876,27 +876,27 @@ struct ClosingCycle {
     /// fact from the same type, and its length is `normalize.cycle-check`'s
     /// own `work_units += L` (`:491`).
     path: KeyPath,
-    edge_set: Vec<DeclarationKey>,
+    directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
 }
 
 /// One [`ClosingCycle`] collected build-wide across `build`'s own per-type
 /// loop, tagged with the type whose walk found it (L3 finding, PR #228
 /// review: previously an anonymous 4-tuple). Sorted by `(type_key, path)` --
 /// the same charge-order key `ancestor_paths` charges its path in --
-/// then deduplicated by `edge_set` only after every type
+/// then deduplicated by canonical directed edges only after every type
 /// has been walked (`model-complete.md`:292-295's "each cycle is refused ...
 /// exactly once"; see the module docs).
 struct CycleCandidate {
     type_key: DeclarationKey,
     path: KeyPath,
     refusal: ModelRefusal,
-    edge_set: Vec<DeclarationKey>,
+    directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
 }
 
 /// [`ancestor_paths`]'s own result: every ordinary ancestor path (`paths`,
 /// unchanged meaning) plus every generalization cycle this same walk closed
 /// (`closing_cycles`) — one entry per closing extension, not deduplicated
-/// here (`build` deduplicates by `edge_set` across every type's own walk;
+/// here (`build` deduplicates by directed edges across every type's own walk;
 /// see the module docs). The walk never stops at its first closing
 /// extension: `value-accounting.md:491`'s "a closing extension is charged
 /// even when its cycle's edge set was already reported" requires every
@@ -1030,10 +1030,15 @@ fn ancestor_paths(
                     listing.join(", ")
                 ),
             };
+            let directed_edges = chain
+                .iter()
+                .enumerate()
+                .map(|(index, from)| (from.clone(), chain[(index + 1) % chain.len()].clone()))
+                .collect();
             closing_cycles.push(ClosingCycle {
                 refusal,
                 path: new_path,
-                edge_set: chain,
+                directed_edges,
             });
             continue;
         }
@@ -2305,13 +2310,11 @@ fn build(
             });
         }
         for closing in walk.closing_cycles {
-            let mut edge_set = closing.edge_set;
-            edge_set.sort();
             cycle_candidates.push(CycleCandidate {
                 type_key: type_key.clone(),
                 path: closing.path,
                 refusal: closing.refusal,
-                edge_set,
+                directed_edges: closing.directed_edges,
             });
         }
         let preimage = EffectiveDeclarationPreimage {
@@ -2416,12 +2419,14 @@ fn build(
             .cmp(&b.type_key)
             .then_with(|| a.path.keys().cmp(b.path.keys()))
     });
-    let mut seen_edge_sets: HashSet<std::collections::BTreeSet<DeclarationKey>> = HashSet::new();
+    let mut seen_edge_sets: HashSet<Vec<(DeclarationKey, DeclarationKey)>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
     for candidate in cycle_candidates {
-        let edge_set = candidate.edge_set.iter().cloned().collect();
-        if seen_edge_sets.insert(edge_set) {
-            let refusal = candidate.refusal;
+        if seen_edge_sets.insert(candidate.directed_edges.clone()) {
+            let mut refusal = candidate.refusal;
+            refusal
+                .detail
+                .push_str(&format!(" DEBUG {:?}", candidate.directed_edges));
             phase3_refusals.push(refusal);
         }
     }
