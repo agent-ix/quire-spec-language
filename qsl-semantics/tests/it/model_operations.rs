@@ -1699,7 +1699,7 @@ fn process_model_members_assemble_as_an_identified_run_type() {
                 "identityFields": [correlation],
                 "supertypes": [workflow],
                 "fields": [wire_field(
-                    &format!("{process}/correlation_id"),
+                    &correlation,
                     "correlation_id",
                     "ix://quire/native/Boolean",
                     "required",
@@ -1785,7 +1785,7 @@ fn process_model_members_assemble_as_an_identified_run_type() {
         .attributes()
         .iter()
         .find(|field| field.name() == "correlation_id")
-        .expect("the process correlation field is projected");
+        .expect("the supported process identity field is projected");
     assert_eq!(correlation.value_type(), &ValueType::Boolean);
     assert_eq!(correlation.presence(), Presence::Required);
 
@@ -1800,6 +1800,154 @@ fn process_model_members_assemble_as_an_identified_run_type() {
     assert_eq!(operation.effect().modifies, Vec::new());
     assert_eq!(operation.effect().creates, vec![key(&process)]);
     assert_eq!(operation.effect().deletes, vec![key(&process)]);
+}
+
+/// FR-322 model-owned fields project from a state-machine owner through the
+/// same checked object surface used for its operations.
+#[trace("FR-322-AC-30", "TC-235")]
+#[test]
+fn state_machine_fields_assemble_on_the_state_owner() {
+    let machine = format!("ix://{PACKAGE_IDENTITY}/OrderLifecycle");
+    let placed = format!("{machine}/placed");
+    let place = format!("{machine}/place");
+    let transition = format!("{machine}/place_transition");
+    let state = |name: &str| {
+        let identity = format!("{machine}/{name}");
+        json!({
+            "identity": identity,
+            "name": name,
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    };
+    let document = wire_envelope(
+        json!([wire_construct(
+            "state_machine",
+            meaning::STATE_MACHINE,
+            json!({"states": "required", "transitions": "required"}),
+        )]),
+        json!([wire_type(
+            &machine,
+            "state_machine",
+            json!({
+                "fields": [wire_field(
+                    &placed,
+                    "placed",
+                    "ix://quire/native/Boolean",
+                    "required",
+                    1,
+                )],
+                "operations": [{
+                    "identity": place,
+                    "name": "place",
+                    "params": [],
+                    "pre": [],
+                    "post": [],
+                    "frame": {"modifies": [placed], "creates": [], "deletes": []},
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": place,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [place],
+                        }
+                    },
+                }],
+                "clauses": [],
+                "supertypes": [],
+                "states": [state("Draft"), state("Placed")],
+                "transitions": [{
+                    "identity": transition,
+                    "from": format!("{machine}/Draft"),
+                    "to": format!("{machine}/Placed"),
+                    "trigger": place,
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": transition,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [transition],
+                        }
+                    },
+                }],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document)
+        .expect("a representable state-machine field assembles on its state owner");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the state-machine package admits");
+    let machine_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: machine,
+    };
+    let machine_effective = views[0].view.type_identities()[&machine_key];
+    let declared = declarations
+        .types
+        .object_type(machine_effective)
+        .expect("OrderLifecycle is projected on the checked object surface");
+    let placed = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "placed")
+        .expect("the state-machine field is projected");
+    assert_eq!(placed.value_type(), &ValueType::Boolean);
+    assert_eq!(placed.presence(), Presence::Required);
+}
+
+/// Owner-specific process/state handling must not silently broaden the field
+/// value types assembled for ordinary object owners.
+#[trace("FR-322-AC-31", "TC-235")]
+#[test]
+fn object_uuid_field_remains_an_unsupported_model_member() {
+    let order = format!("ix://{PACKAGE_IDENTITY}/Order");
+    let order_id = format!("{order}/order_id");
+    let document = wire_envelope(
+        json!([wire_construct(
+            "object_type",
+            meaning::OBJECT_TYPE,
+            json!({"identityFields": "required"}),
+        )]),
+        json!([wire_type(
+            &order,
+            "object_type",
+            json!({
+                "identityFields": [order_id],
+                "fields": [wire_field(
+                    &format!("{order}/order_id"),
+                    "order_id",
+                    "ix://quire/native/UUID",
+                    "required",
+                    1,
+                )],
+                "operations": [],
+                "relationships": [],
+                "supertypes": [],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let refusal = admit_and_assemble(&document)
+        .expect_err("an object UUID field remains outside this owner-specific assembly change");
+    assert!(refusal.contains("UnsupportedModelMember"), "{refusal}");
+    assert!(refusal.contains(&format!("{order}/order_id")), "{refusal}");
 }
 
 /// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by
