@@ -34,3 +34,15 @@ The new member collection is sorted before charging and includes fields, clauses
 ## Verdict rationale
 
 The ticket behavior is implemented with direct derivation records and charge tests. FND-001 is low because it affects reviewer and maintainer understanding, not runtime behavior. Merge readiness remains blocked by the repository's documented full local gate (`make ci`) until the failure is resolved or an authorized policy exception is recorded; baseline provenance is not a passing gate.
+
+## Dispositions
+
+Round 2, reviewed at `d931afed01d1b68dcef6529983818e5142379e2b`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4d645b3867a13a1e240308bc9476234cb7bc59c2 |
+
+FND-001 after_excerpt: “Operation redefinitions now populate `EffectiveView` member entries; this contested group itself refuses before producing a completed view, preserving its existing conflict semantics.”
+
+The replacement text is present at both the fix commit and current PR head. The trailing `d931afed` commit changes only the two `reviews/` documents, so it does not alter the fix.
