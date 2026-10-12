@@ -580,9 +580,9 @@ impl Unit {
 
 /// The names the assembler resolves type forms against while it builds the
 /// package: each declared record's and tuple's `ValueType::Composite`, each
-/// alias once resolved, and each admitted domain package's object type
-/// `M::T` as `ValueType::Reference` (the order `check`'s scope binds them
-/// in).
+/// alias once resolved, each admitted domain package's object type `M::T` as
+/// `ValueType::Reference`, and each record/event value type `M::T` as
+/// `ValueType::Composite` (the order `check`'s scope binds them in).
 #[derive(Default)]
 struct Names {
     types: BTreeMap<String, Vec<ValueType>>,
@@ -603,9 +603,10 @@ impl TypeNames for Names {
 /// declaration `alias`, each named `alias::T` with `T` its artifact id, and
 /// declaring its supertypes by their effective identities and its fields
 /// with their value types, presences and redefinitions, and its operations
-/// (FR-103). Every other record an object type's shape would need and the
-/// type environment cannot hold (a record value type, a systems part, port
-/// or allocation) refuses as [`AssemblyCause::UnsupportedModelMember`].
+/// (FR-103). Record and event value types are emitted as composites with
+/// their effective fields. Every other record an object type's shape would
+/// need and the type environment cannot hold (a systems part, port or
+/// allocation) refuses as [`AssemblyCause::UnsupportedModelMember`].
 /// Relationship and population records name no type environment entry;
 /// they stay in the admitted model `check` keys model nodes from. Each
 /// object type's operations go into `table`, keyed by its effective
@@ -785,11 +786,25 @@ fn model_object_types(
         let Some(artifact) = type_identity_segment(&key.package, &key.node) else {
             continue;
         };
+        let Some(effective_type) = identities.get(key) else {
+            errors.push(broken(&key.node));
+            continue;
+        };
         let mut declared_fields = Vec::new();
-        for field in package.records.iter().filter_map(|record| match record {
-            DomainPackageRecord::FieldMember(field) if &field.owner == key => Some(field),
-            _ => None,
-        }) {
+        let mut effective_fields: Vec<_> = model
+            .view
+            .declarations()
+            .iter()
+            .filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(*effective_type)
+            })
+            .filter_map(|entry| match records.get(&entry.preimage.original) {
+                Some(DomainPackageRecord::FieldMember(field)) => Some(field),
+                Some(_) | None => None,
+            })
+            .collect();
+        effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
+        for field in effective_fields {
             match model_field(field, &records, identities, &meaning_handles) {
                 Ok(field) => declared_fields.push(field),
                 Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
@@ -1091,12 +1106,13 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
 
 /// The declared-name check of one type form tree (FR-091 "The assembler
 /// refuses"): every name must bind exactly one declaration of the unit or
-/// one object type of an admitted domain package, a `Reference<Q>` target
-/// must name such an object type, and a floating type's rounding mode must
-/// be spellable (FR-091-OQ-4: floating types are admitted).
+/// one object, record or event type of an admitted domain package. A
+/// `Reference<Q>` target must name an object type, and a floating type's
+/// rounding mode must be spellable (FR-091-OQ-4: floating types are admitted).
 fn check_names(
     unit: &Unit,
     object_types: &BTreeMap<String, EffectiveId>,
+    model_composites: &BTreeSet<String>,
     imports: &BTreeMap<String, AdmittedImport>,
     form: &TypeForm,
     errors: &mut Vec<AssemblyError>,
@@ -1133,7 +1149,8 @@ fn check_names(
                 }
             }
             TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
-                None | Some(0) if object_types.contains_key(name) => {}
+                None | Some(0)
+                    if object_types.contains_key(name) || model_composites.contains(name) => {}
                 None | Some(0)
                     if name
                         .split_once("::")
@@ -1415,6 +1432,10 @@ impl PackageDeclarations {
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
+        let model_composite_names: BTreeSet<String> = model_composites
+            .iter()
+            .map(|declaration| declaration.name().to_owned())
+            .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
         // names one of its profile selections.
@@ -1542,9 +1563,16 @@ impl PackageDeclarations {
             };
 
         // Every type form names declarations of the unit or admitted model
-        // object types.
+        // object and record/event types.
         for alias in &unit.aliases {
-            check_names(&unit, &object_names, &qualified, &alias.target, &mut errors);
+            check_names(
+                &unit,
+                &object_names,
+                &model_composite_names,
+                &qualified,
+                &alias.target,
+                &mut errors,
+            );
         }
         for composite in &unit.composites {
             match &composite.members {
@@ -1553,6 +1581,7 @@ impl PackageDeclarations {
                         check_names(
                             &unit,
                             &object_names,
+                            &model_composite_names,
                             &qualified,
                             &field.type_form,
                             &mut errors,
@@ -1561,22 +1590,50 @@ impl PackageDeclarations {
                 }
                 Members::Tuple(elements) => {
                     for element in elements {
-                        check_names(&unit, &object_names, &qualified, element, &mut errors);
+                        check_names(
+                            &unit,
+                            &object_names,
+                            &model_composite_names,
+                            &qualified,
+                            element,
+                            &mut errors,
+                        );
                     }
                 }
             }
         }
         for function in &unit.functions {
             for form in signature_type_forms(function) {
-                check_names(&unit, &object_names, &qualified, form, &mut errors);
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &qualified,
+                    form,
+                    &mut errors,
+                );
             }
             for form in body_type_forms(function) {
-                check_names(&unit, &object_names, &qualified, &form, &mut errors);
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &qualified,
+                    &form,
+                    &mut errors,
+                );
             }
         }
         for clause in &unit.state_clauses {
             for form in expression_type_forms([&clause.body]) {
-                check_names(&unit, &object_names, &qualified, &form, &mut errors);
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &qualified,
+                    &form,
+                    &mut errors,
+                );
             }
         }
         if !errors.is_empty() {
@@ -1588,6 +1645,13 @@ impl PackageDeclarations {
             object_types: object_names.clone(),
             ..Names::default()
         };
+        for composite in &model_composites {
+            names
+                .types
+                .entry(composite.name().to_owned())
+                .or_default()
+                .push(ValueType::Composite(composite.key()));
+        }
         for (name, identity) in &object_names {
             names
                 .types
