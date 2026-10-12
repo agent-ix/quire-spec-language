@@ -642,18 +642,8 @@ fn model_object_types(
     for record in &package.records {
         match record {
             DomainPackageRecord::FieldMember(field) => {
-                let owner_retains_unprojected_field = matches!(
-                    records.get(&field.owner),
-                    Some(DomainPackageRecord::Process(_) | DomainPackageRecord::StateMachine(_))
-                );
                 match model_field(field, &records, identities) {
                     Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
-                    // Process and state-machine declarations remain admitted
-                    // when one of their fields has no checked-value type in
-                    // FR-322's model-member table. Representable sibling
-                    // fields still project onto their checked object surface;
-                    // resolving the retained field later remains ineligible.
-                    Err(Unmapped::Unsupported) if owner_retains_unprojected_field => {}
                     Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                     Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                     Err(Unmapped::Float(width)) => {
