@@ -107,12 +107,14 @@ subtype closure holds, the returned set SHALL contain each qualifying member
 exactly once, keyed by its reference identity, in canonical reference-key
 order, independent of the input member order.
 
-The per-`T` coverage decision reads the subtype-closure facts retained by
-normalization under the admission-established closed-graph authority; it is
-made before query charging and adds no charge point. This follows
-quire-specification's `proposals/quire-v1/definitions/value-accounting.md`
-rule for `allInstances<T>`: subtype coverage is read from the retained closure
-facts, while member walking alone uses the existing `population.visit` charge.
+Admission establishes graph-level closure, not coverage for a queried `T`.
+Normalization computes and charges the phase-3 type-derivation facts, which
+the normalized view retains. Each `allInstances<T>` query decides subtype
+coverage for its `T` from those retained facts before its first query charge;
+the lookup adds no charge point. This follows quire-specification's
+`proposals/quire-v1/definitions/value-accounting.md` rule for
+`allInstances<T>`: subtype coverage uses the retained facts, while member
+walking alone uses the existing `population.visit` charge.
 
 ### lookup distinguishes a genuine absence from a genuine refusal or incompleteness
 
