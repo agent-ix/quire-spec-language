@@ -3780,6 +3780,7 @@ fn refusal_node(refusal: &ModelRefusal) -> Option<&str> {
         ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
         | ModelRefusalCause::IntakeMissingDeclaration { node, .. }
         | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => Some(node),
+        ModelRefusalCause::ConflictingBinding { key } => Some(&key.node),
         _ => None,
     }
 }
