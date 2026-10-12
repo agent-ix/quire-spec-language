@@ -674,7 +674,7 @@ fn operation_signature_type_meaning_matrix() {
                 parameters: vec![OperationParameterRecord {
                     key: parameter_key.clone(),
                     value_type: value_type.clone(),
-                    multiplicity: multiplicity.clone(),
+                    multiplicity,
                 }],
                 result: Some(OperationResult {
                     value_type: value_type.clone(),
