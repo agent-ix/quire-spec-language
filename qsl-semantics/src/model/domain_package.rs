@@ -168,6 +168,10 @@ pub struct ProcessRecord {
     pub key: DeclarationKey,
     /// The process correlation key fields.
     pub identity_fields: Vec<DeclarationKey>,
+    /// Whether the source supplied `identityFields`. A subtype may supply an
+    /// empty list to inherit its process identity; omission remains a
+    /// normalization diagnostic.
+    pub identity_fields_declared: bool,
     /// Declared process ancestors.
     pub supertypes: Vec<DeclarationKey>,
     /// Authored steps, preserving declaration order.

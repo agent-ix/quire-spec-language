@@ -1406,6 +1406,11 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // entry it also flags, so it is filtered out and left entirely to
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
+        // Process subtypes may explicitly inherit identityFields from their
+        // process supertype. The pinned semantic-IR schema still applies the
+        // root-process min-items rule to that wire shape; preserve this one
+        // subtype case for QSL's typed process binder and normalizer.
+        .filter(|located| !process_subtype_identity_schema_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_process_step_refusal(document, located) {
                 return Some(refusal);
@@ -1454,6 +1459,58 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+fn process_subtype_identity_schema_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let (position, member) = rest.split_once('/').unwrap_or((rest, ""));
+    let Some(type_value) = document
+        .tree
+        .get("types")
+        .and_then(Value::as_array)
+        .and_then(|types| {
+            position
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| types.get(index))
+        })
+    else {
+        return false;
+    };
+    let Ok(kind) = NodeCtx::new(type_value, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    if meanings
+        .get(&(kind.0.to_owned(), kind.1.to_owned()))
+        .map(String::as_str)
+        != Some(meaning::PROCESS)
+    {
+        return false;
+    }
+    let has_supertype = type_value
+        .get("supertypes")
+        .and_then(Value::as_array)
+        .is_some_and(|supertypes| !supertypes.is_empty());
+    if !has_supertype {
+        return false;
+    }
+    let empty_identity = member == "identityFields"
+        && type_value
+            .get("identityFields")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty);
+    let missing_identity = member.is_empty()
+        && !type_value.get("identityFields").is_some()
+        && located.message.contains("requires identityFields");
+    empty_identity || missing_identity
 }
 
 /// FR-208 process binding owns duplicate step identities. The semantic-IR
@@ -1722,6 +1779,13 @@ fn business_generalization_refusal(
         meaning::PROCESS,
     ]
     .contains(&resolved.as_str());
+    if resolved == meaning::PROCESS
+        && [CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE].contains(&located.code)
+    {
+        // Process meaning validation belongs to normalization so it can
+        // retain the declaration and report every ordered locus.
+        return None;
+    }
     if !supports_same_meaning_supertypes
         && [
             UNRESOLVED_CONSTRUCT_REF,
@@ -3931,6 +3995,7 @@ fn read_nodes_partial(
             }
         }
     }
+    inherit_process_identity_fields(&mut records);
     // FR-103: resolve every queued operation frame against the whole
     // package's own records, only once every node above has been read --
     // an entry may name a sibling type's field or a type declared later in
@@ -3941,6 +4006,39 @@ fn read_nodes_partial(
         resolve_pending_frames(package_identity, &pending, &mut records, &mut refusals);
     }
     (records, refusals)
+}
+
+/// Resolve the authored empty identity list of a process subtype from its
+/// process ancestry after every type has been read. Keeping this at the
+/// package boundary makes the result independent of declaration order.
+fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
+    loop {
+        let mut changed = false;
+        let snapshot = records.to_vec();
+        for record in records.iter_mut() {
+            let DomainPackageRecord::Process(process) = record else {
+                continue;
+            };
+            if !process.identity_fields_declared || !process.identity_fields.is_empty() {
+                continue;
+            }
+            let Some(identity_fields) = process.supertypes.iter().find_map(|supertype| {
+                snapshot.iter().find_map(|record| match record {
+                    DomainPackageRecord::Process(parent) if parent.key == *supertype => {
+                        (!parent.identity_fields.is_empty()).then(|| parent.identity_fields.clone())
+                    }
+                    _ => None,
+                })
+            }) else {
+                continue;
+            };
+            process.identity_fields = identity_fields;
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
 }
 
 #[cfg(test)]

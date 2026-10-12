@@ -142,7 +142,6 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
 /// correlation identity and member meaning, keeps authored step order, and
 /// refuses cross-meaning ancestry and specialization cycles.
 #[trace("QSpec-TC-235")]
-#[ignore = "expected red until QSL-777 process subtype identity contract lands"]
 #[test]
 fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     let with_process_subtype = |extra_step: bool| {
@@ -260,17 +259,24 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             }),
         ));
     });
-    let refusals = read_refusals(&missing_identity);
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(refusals[0].detail.contains("requires identityFields"));
+    let refusals = normalized_refusals(&missing_identity, 22);
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
+    assert_malformed_at(
+        &refusals[0],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.identityFields",
+    );
+    assert_malformed_at(
+        &refusals[1],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.supertypes[0]",
+    );
 
     let wrong_meaning = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -293,9 +299,14 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         }]);
     });
     let refusals = normalized_refusals(&wrong_meaning, 23);
-    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
     assert_malformed_at(
         &refusals[0],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.identityFields",
+    );
+    assert_malformed_at(
+        &refusals[1],
         &id("ExpressFulfilment"),
         "TypeDefinition.supertypes[0]",
     );
@@ -352,15 +363,17 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(refusals[0]
-        .detail
-        .contains("[ix://test/orders/Fulfilment, ix://test/orders/ExpressFulfilment]"));
+    assert!(
+        refusals[0]
+            .detail
+            .contains("[ix://test/orders/ExpressFulfilment, ix://test/orders/Fulfilment]"),
+        "{refusals:#?}"
+    );
 }
 
 /// The JSON acceptance vector records the two diagnostics that the producer
 /// must retain for one malformed process subtype: missing identity fields
 /// first, followed by the cross-meaning supertype.
-#[ignore = "expected red until QSL-777 exposes both ordered M20 diagnostics"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
@@ -369,7 +382,6 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -407,7 +419,6 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
 
 /// The cyclic JSON acceptance vector retains the normalization-level cycle
 /// diagnostic and names both process identities in the cycle.
-#[ignore = "expected red until QSL-777 exposes normalization-level process cycles"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m20_json_acceptance_reports_specialization_cycle() {
@@ -582,7 +593,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
 /// type owned by the operation signature. Runtime-value-path comparison for
 /// `self.placed` versus `flags.placed` is an evaluator assertion and remains
 /// outside this source/assembly test.
-#[ignore = "expected red until QSL-729/#777 record/event arms land"]
+#[ignore = "expected red until PR #777 / QSL-729 record/event arms land"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m22_flags_parameter_is_assembled_as_a_record() {

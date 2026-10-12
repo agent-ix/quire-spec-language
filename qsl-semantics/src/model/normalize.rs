@@ -1635,6 +1635,82 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
     refusals
 }
 
+/// Process subtype identity and ancestry checks are normalization decisions:
+/// an empty authored identity list inherits from a process supertype, while a
+/// missing list and a cross-meaning supertype retain their ordered loci.
+fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut processes: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Process(process) => Some(process),
+            _ => None,
+        })
+        .collect();
+    processes.sort_by(|left, right| left.key.cmp(&right.key));
+    let process_keys: std::collections::HashSet<_> = processes
+        .iter()
+        .map(|process| process.key.clone())
+        .collect();
+    let declared_kinds: std::collections::HashMap<_, _> = domain_package
+        .records
+        .iter()
+        .map(|record| (record.key().clone(), record))
+        .collect();
+    let mut refusals = Vec::new();
+    for process in processes {
+        let has_process_supertype = process
+            .supertypes
+            .iter()
+            .any(|supertype| process_keys.contains(supertype));
+        if !process.identity_fields_declared
+            || (process.identity_fields.is_empty() && !has_process_supertype)
+        {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: process.key.node.clone(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: format!(
+                    "{}: TypeDefinition.identityFields: a process declaration must supply identityFields or inherit them from a process supertype",
+                    process.key.node
+                ),
+            });
+        }
+        for (position, supertype) in process.supertypes.iter().enumerate() {
+            if process_keys.contains(supertype) {
+                continue;
+            }
+            let detail = match declared_kinds.get(supertype) {
+                Some(DomainPackageRecord::ObjectType(_)) => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} resolves to a non-process type",
+                    process.key.node, supertype.node
+                ),
+                Some(record) => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} resolves to {:?}, a process may generalize only a process",
+                    process.key.node, supertype.node, record.key()
+                ),
+                None => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} names no type of this domain package",
+                    process.key.node, supertype.node
+                ),
+            };
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: process.key.node.clone(),
+                    artifact: None,
+                    span: None,
+                },
+                detail,
+            });
+        }
+    }
+    refusals
+}
+
 /// Every FR-154 per-node check for one already-key-validated node, in
 /// FR-154's own table order, the object id check first
 /// (`model-complete.md`:81). Returns every failing check for this node, in
@@ -2120,6 +2196,9 @@ fn build(
         return Err(Denial::Refused(refusals));
     }
     if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
+        return Err(Denial::Refused(refusals));
+    }
+    if let Ok(refusals) = Refusals::try_from(validate_process_meanings(domain_package)) {
         return Err(Denial::Refused(refusals));
     }
     let index = RecordIndex::build(domain_package);
