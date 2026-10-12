@@ -315,6 +315,37 @@ event occurrence-field rule. Payload admission grants no model admission,
 source identity or package authority. Record subtype conformance remains the
 shared-value/QSL integration obligation stated below.
 
+### Checked native String and UUID leaves
+
+At the complete-V1 model-assembly boundary, a field typed by native `String`
+SHALL have the distinct checked value type `String`, and a field typed by
+native `UUID` SHALL have the distinct checked value type `UUID`. Both are
+first-class value leaves, not `Reference` types. The `UUID` leaf uses the
+canonical 128-bit payload and lowercase text form defined above. Native
+`String` is a Unicode scalar sequence with no `TextProfile`, length bound,
+normalization or case folding; it is not `Text[min, max; profile]` and does
+not inherit any `Text` comparison rule. Two `String` values are equal exactly
+when their Unicode scalar sequences are identical, so canonically equivalent
+but differently normalized sequences remain unequal. A `UUID` value is equal
+exactly when its 128 payload bits are equal, as already defined for the
+canonical UUID leaf. Cross-type `String`/`UUID` equality is ill-typed and
+does not coerce either operand.
+
+Checked type display SHALL identify these leaves as `String` and `UUID`,
+distinct from `Text` and `Reference`. A UUID value display SHALL use its
+canonical lowercase `8-4-4-4-12` text. A String value display SHALL preserve
+its exact scalar sequence using the existing value-display escaping; it
+SHALL NOT normalize, case-fold or truncate it. These checked leaves do not
+add QSL source type constructors or change FR-056 intake's native-name rules.
+
+The binding is exercised by QSpec
+[TC-235](ix://agent-ix/quire-specification/TC-235)'s native fields:
+`Money.currency` is `String`, and `Order.order_id`,
+`OrderPlaced.order_id` and `Fulfilment.correlation_id` are `UUID`. A native
+field of either type therefore has a checked leaf rather than refusing as an
+unsupported model member. A separate profile-bounded `Text` field remains a
+`Text` value type.
+
 ### K2 admission and composite boundary
 
 This vocabulary requirement does not bypass the reader or change FR-154's
@@ -597,6 +628,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` has no assembled field type and refuses at the unit's `model` declaration with `unknown_required_feature`/`unsupported-feature`; it yields no `PackageDeclarations`. The refusal does not assign a rounding mode. A function parameter of either floating type remains admitted under FR-091-OQ-4. | Test |
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
+| FR-056-AC-23 | The complete-V1 type environment maps native `String` and `UUID` fields to distinct first-class value leaves, never to `Text` or `Reference`; it maps TC-235's `Money.currency` to `String` and `Order.order_id`, `OrderPlaced.order_id` and `Fulfilment.correlation_id` to `UUID`. String equality compares the exact Unicode scalar sequence without normalization (NFC `é` differs from `e` plus combining acute), UUID equality compares the canonical 128 bits, and mixed String/UUID equality is ill-typed. Checked type display distinguishes `String`, `UUID`, `Text` and `Reference`; UUID value display is canonical lowercase text and String value display preserves its scalar sequence. Existing parameterized Text bounds/profile and UUID canonical-payload controls remain unchanged. | Test |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17
@@ -662,3 +694,6 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
 - IR-704 owns quire-exact's UUID/Timestamp implementation against the canonical
   payload contract above. Reader alignment and QSL/shared-value integration
   remain separate dependencies; accepting this spec does not deliver them.
+- [TC-992](../test-cases/TC-992-native-string-and-uuid-checked-leaves.md)
+  verifies checked leaf mapping, exact String equality, UUID identity and
+  display. QSpec TC-235 owns the K2 source declarations.
