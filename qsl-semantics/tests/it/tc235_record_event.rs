@@ -168,7 +168,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
                 "ExpressFulfilment",
                 "saga",
                 json!({
-                    "identityFields": [id("Fulfilment/correlation_id")],
+                    "identityFields": [],
                     "supertypes": [id("Fulfilment")],
                     "operations": [],
                     "steps": steps,
