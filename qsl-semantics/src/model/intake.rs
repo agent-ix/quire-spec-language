@@ -1522,9 +1522,64 @@ fn process_subtype_identity_schema_diagnostic(
             .get("steps")
             .and_then(Value::as_array)
             .is_some_and(|steps| !steps.is_empty() && steps.iter().all(Value::is_object));
+    let required_root_members = [
+        "identity",
+        "displayName",
+        "kind",
+        "roles",
+        "origin",
+        "constraints",
+        "extensions",
+        "unknownPolicy",
+    ];
+    let known_type_members = [
+        "identity",
+        "displayName",
+        "kind",
+        "roles",
+        "origin",
+        "constraints",
+        "extensions",
+        "unknownPolicy",
+        "scalar",
+        "fields",
+        "variants",
+        "target",
+        "items",
+        "values",
+        "relationships",
+        "operations",
+        "clauses",
+        "supertypes",
+        "abstract",
+        "identityFields",
+        "owner",
+        "members",
+        "occurrenceField",
+        "states",
+        "transitions",
+        "steps",
+        "persists",
+        "vocabulary",
+        "direction",
+        "interfaceType",
+        "multiplicity",
+        "declaredType",
+        "flowDirection",
+        "sourceEnd",
+        "targetEnd",
+        "sourceElement",
+        "targetElement",
+        "featureOrder",
+    ];
+    let has_root_shape = type_value.as_object().is_some_and(|object| {
+        required_root_members.iter().all(|member| object.contains_key(*member))
+            && object.keys().all(|member| known_type_members.contains(&member.as_str()))
+    });
     let missing_identity = member.is_empty()
         && !type_value.get("identityFields").is_some()
-        && has_process_member_shape;
+        && has_process_member_shape
+        && has_root_shape;
     empty_identity || missing_identity
 }
 

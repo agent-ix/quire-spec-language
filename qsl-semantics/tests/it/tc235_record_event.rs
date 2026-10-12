@@ -467,7 +467,7 @@ fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
                     "emits": [],
                     "origin": origin("ExpressFulfilment/record"),
                 }],
-                "displayName": 0,
+                "unexpected": true,
             }),
         ));
     });
@@ -476,7 +476,7 @@ fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
     assert_malformed_at(
         &refusals[0],
         &id("ExpressFulfilment"),
-        "TypeDefinition.displayName",
+        "TypeDefinition",
     );
 }
 
