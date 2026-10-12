@@ -1396,6 +1396,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
             | quire_exact::ValueType::Enum(_)
             | quire_exact::ValueType::Composite(_)
             | quire_exact::ValueType::Population(_)
