@@ -1411,6 +1411,10 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // root-process min-items rule to that wire shape; preserve this one
         // subtype case for QSL's typed process binder and normalizer.
         .filter(|located| !process_subtype_identity_schema_diagnostic(document, located))
+        // The upstream validator also emits generic supertype diagnostics for
+        // process cross-meaning edges and cycles. The process binder retains
+        // those edges so normalization can report the ordered QSL loci.
+        .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_process_step_refusal(document, located) {
                 return Some(refusal);
@@ -1511,6 +1515,47 @@ fn process_subtype_identity_schema_diagnostic(
         && !type_value.get("identityFields").is_some()
         && located.message.contains("requires identityFields");
     empty_identity || missing_identity
+}
+
+fn process_subtype_generalization_schema_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    use agent_ix_semantic_ir::constructs::{CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE};
+    if ![CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE].contains(&located.code) {
+        return false;
+    }
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let Some((position, member)) = rest.split_once('/') else {
+        return false;
+    };
+    if member != "supertypes" && !member.starts_with("supertypes/") {
+        return false;
+    }
+    let Some(type_value) = document
+        .tree
+        .get("types")
+        .and_then(Value::as_array)
+        .and_then(|types| {
+            position
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| types.get(index))
+        })
+    else {
+        return false;
+    };
+    let Ok(kind) = NodeCtx::new(type_value, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    meanings
+        .get(&(kind.0.to_owned(), kind.1.to_owned()))
+        .is_some_and(|resolved| resolved == meaning::PROCESS)
 }
 
 /// FR-208 process binding owns duplicate step identities. The semantic-IR
