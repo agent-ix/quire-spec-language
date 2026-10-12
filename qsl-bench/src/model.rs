@@ -34,7 +34,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_foundation::IntakeLimits;
-use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::conformance::{resolve_redefinition_target, RedefinitionTargetOutcome};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
@@ -46,7 +46,7 @@ use qsl_semantics::model::intake::{
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
-    normalize_shared, normalize_with_meter, EffectiveView, ModelRefusal, NormalizeOutcome,
+    normalize_shared, EffectiveView, ModelRefusal, NormalizeOutcome,
 };
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::model::population::{
@@ -417,6 +417,8 @@ pub fn resolve_root_field_redefinition(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use qsl_semantics::model::accounting::ChargePoint;
+    use qsl_semantics::model::normalize::normalize_with_meter;
 
     #[test]
     fn smallest_shape_admits_and_queries() {
