@@ -148,13 +148,12 @@ fn read_k2(document: &serde_json::Value) -> (DomainPackage, BTreeMap<[u8; 32], V
     )
 }
 
+type LifecycleFixture = (CheckedPackage, EffectiveView, BTreeMap<[u8; 32], Vec<u8>>);
+
 fn lifecycle_package(
     document: &serde_json::Value,
     body: &str,
-) -> Result<
-    (CheckedPackage, EffectiveView, BTreeMap<[u8; 32], Vec<u8>>),
-    Vec<qsl_semantics::check::CheckRefusal>,
-> {
+) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
     let (domain, packages) = read_k2(document);
     let (outcome, meter) = normalize_with_meter(&domain, ModelNormalizationLimits::default());
     let NormalizeOutcome::Completed(view) = outcome else {
