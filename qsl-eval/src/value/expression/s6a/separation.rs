@@ -21,7 +21,8 @@ use std::sync::Arc;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 pub use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, CheckedGraph, Operator};
 use qsl_semantics::model::observation::DocumentRef;
@@ -66,11 +67,26 @@ pub struct ClauseEvaluation {
     /// The S6a evaluation, unchanged.
     pub evaluation: Evaluation,
     trail: Trail,
+    receiver_path: Option<RuntimeValuePath>,
 }
 
 impl ClauseEvaluation {
-    pub(crate) fn new(evaluation: Evaluation, trail: Trail) -> Self {
-        Self { evaluation, trail }
+    pub(crate) fn new(
+        evaluation: Evaluation,
+        trail: Trail,
+        receiver_path: Option<RuntimeValuePath>,
+    ) -> Self {
+        Self {
+            evaluation,
+            trail,
+            receiver_path,
+        }
+    }
+
+    /// The root path of `self` when this clause evaluated an invocation
+    /// receiver with no declared object identity.
+    pub fn receiver_path(&self) -> Option<&RuntimeValuePath> {
+        self.receiver_path.as_ref()
     }
 
     /// The decision recorded at the `and`, `or`, `implies` or `if` node at

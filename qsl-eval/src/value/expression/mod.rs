@@ -27,8 +27,8 @@ use s6a::{ReferenceEvaluation, S6aFamilyKind};
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use s6a::separation::{
-    ClauseEvaluation, ObservationIdentity, RuntimeValuePath, Separation, SeparationStep,
-    StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+    ClauseEvaluation, InvocationBinding, ObservationIdentity, RuntimeValuePath, Separation,
+    SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
@@ -438,6 +438,7 @@ struct ClauseSetup<'a> {
     pre: Option<&'a ObjectEnvironment>,
     bindings: Vec<Value>,
     trail: s6a::separation::Trail,
+    receiver_path: Option<s6a::separation::RuntimeValuePath>,
 }
 
 impl<'a> ClauseSetup<'a> {
@@ -505,6 +506,16 @@ impl<'a> ClauseSetup<'a> {
         // snapshot for a precondition (FR-104).
         let own = s6a::separation::observation_identity(&current.identity);
         let trail = s6a::separation::Trail::new(own, pre);
+        let receiver_path = observations.receiver_invocation.as_ref().map(|invocation| {
+            s6a::separation::RuntimeValuePath {
+                observation: s6a::separation::observation_identity(&current.identity),
+                subject: s6a::separation::ValuePathSubject::Invocation {
+                    invocation: s6a::separation::observation_identity(invocation),
+                    binding: s6a::separation::InvocationBinding::Receiver,
+                },
+                steps: Vec::new(),
+            }
+        });
         Ok(Self {
             declaration,
             current: &current.environment,
@@ -514,6 +525,7 @@ impl<'a> ClauseSetup<'a> {
                 .map(|observation| &observation.environment),
             bindings,
             trail,
+            receiver_path,
         })
     }
 }
@@ -674,7 +686,11 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 "clause-evaluation-environment-carries-a-trail",
             ))
         })?;
-        Ok(ClauseEvaluation::new(evaluation, trail))
+        Ok(ClauseEvaluation::new(
+            evaluation,
+            trail,
+            setup.receiver_path,
+        ))
     }
 
     fn check_separation(
