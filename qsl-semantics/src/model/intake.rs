@@ -1703,9 +1703,14 @@ fn missing_reader_reference(
     let process_step_reference = pointer.contains("/steps/")
         && matches!(transition_member, "consumes" | "emits")
         && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
-    // FR-208-AC-4: an occurrence field naming no field is a missing name,
-    // carried at the event type's own `occurrenceField` pointer.
-    let occurrence_reference = member == "occurrenceField"
+    // FR-208-AC-4, -7 and -8: an occurrence field, a `persists` entry or a
+    // namespace member naming nothing is a missing name, carried at that
+    // member's own pointer on the type.
+    let occurrence_reference = pointer.starts_with("/types/")
+        && matches!(
+            transition_member,
+            "occurrenceField" | "persists" | "members"
+        )
         && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
     if !transition_reference
         && !process_step_reference

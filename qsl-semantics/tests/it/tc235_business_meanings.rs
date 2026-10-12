@@ -564,18 +564,6 @@ fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
     read_records(PACKAGE, &admitted).expect_err("mutation must refuse")
 }
 
-fn assert_malformed_refusal(document: &Value, detail: &str) {
-    let refusals = read_refusals(document);
-    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::IntakeMalformedDeclaration { .. }
-            | ModelRefusalCause::MalformedDeclaration
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
-}
-
 fn assert_normalized_malformed_refusal(document: &Value, declaration: &str) {
     let refusals = normalized_refusals(document, 21);
     assert_eq!(
@@ -595,26 +583,52 @@ fn assert_normalized_malformed_refusal(document: &Value, declaration: &str) {
     }
 }
 
-fn assert_unsupported_refusal(document: &Value, detail: &str) {
+/// One typed `invalid_model_binding`/`malformed-declaration` naming `node`.
+/// The member path has no typed field on this cause, so it is not asserted.
+fn assert_malformed_refusal(document: &Value, node: &str) {
+    let refusals = read_refusals(document);
+    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    let ModelRefusalCause::IntakeMalformedDeclaration { node: actual, .. } = &refusals[0].cause
+    else {
+        panic!("expected intake malformed-declaration, got {refusals:?}");
+    };
+    assert_eq!(actual, &id(node));
+}
+
+/// One typed `unsupported_construct`/`declaration-form` naming `node`.
+fn assert_unsupported_refusal(document: &Value, node: &str) {
     let refusals = read_refusals(document);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
     assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::UnsupportedDeclarationForm { .. }
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+    assert_eq!(refusals[0].cause.as_str(), "declaration-form");
+    let ModelRefusalCause::UnsupportedDeclarationForm { node: actual, .. } = &refusals[0].cause
+    else {
+        panic!("expected declaration-form, got {refusals:?}");
+    };
+    assert_eq!(actual, &id(node));
 }
 
-fn assert_missing_refusal(document: &Value, detail: &str) {
+/// One typed `missing_declaration`/`missing-name` on `node` whose reader
+/// pointer is `path` and whose absent declaration is `reference`.
+fn assert_missing_refusal(document: &Value, node: &str, path: &str, reference: &str) {
     let refusals = read_refusals(document);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
     assert_eq!(refusals[0].code, Code::MissingDeclaration);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::UnknownMember { .. }
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    let ModelRefusalCause::IntakeMissingDeclaration {
+        node: actual,
+        reference: absent,
+        path: actual_path,
+        ..
+    } = &refusals[0].cause
+    else {
+        panic!("expected intake missing-name, got {refusals:?}");
+    };
+    assert_eq!(actual, &id(node));
+    assert_eq!(absent, &id(reference));
+    assert_eq!(actual_path.as_str(), path);
 }
 
 fn assert_process_duplicate_step_refusal(document: &Value) {
@@ -1281,12 +1295,22 @@ fn tc235_m08_persistence_interface_binder() {
             package: PACKAGE.to_owned(),
             node: id("Order")
         }));
-    assert!(!view
-        .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
-            package: PACKAGE.to_owned(),
-            node: id("OrderStore")
-        }));
+    // M01: `persists: [Order]`.
+    assert!(package.records.iter().any(|record| matches!(
+        record,
+        DomainPackageRecord::PersistenceInterface(interface)
+            if interface.key.node == id("OrderStore")
+                && interface.persists.iter().map(|key| key.node.clone()).eq([id("Order")])
+    )));
+    // FR-322-AC-25: a persistence interface is a declaring `model` node for
+    // its operations, so it has an effective identity; it has no object
+    // universe (FR-208: only a process does).
+    let store = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderStore"),
+    };
+    assert!(view.type_identities().contains_key(&store));
+    assert!(view.object_universe_of(&store).is_none());
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["fields"] =
@@ -1299,19 +1323,22 @@ fn tc235_m08_persistence_interface_binder() {
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([]);
-    assert_malformed_refusal(&document, "persists");
+    assert_malformed_refusal(&document, "OrderStore");
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Money")]);
-    assert_malformed_refusal(&document, "persists[0]");
+    assert_malformed_refusal(&document, "OrderStore");
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Invoice")]);
-    assert_missing_refusal(&document, "Invoice");
+    assert_missing_refusal(&document, "OrderStore", "/types/6/persists/0", "Invoice");
 
     let mut document = k2();
-    type_named_mut(&mut document, "OrderStore")["operations"][1]["pre"] =
-        json!([{"language": "ix:native", "clauseId": "Requires"}]);
+    type_named_mut(&mut document, "OrderStore")["operations"][1]["pre"] = json!([{
+        "language": "quire",
+        "text": "true",
+        "origin": origin("OrderStore/save"),
+    }]);
     assert_unsupported_refusal(&document, "OrderStore/save");
 
     let mut document = k2();
@@ -1334,6 +1361,30 @@ fn tc235_m09_namespace_binder() {
         })
         .expect("OrderManagement original");
     assert_eq!(namespace.meaning.as_deref(), Some(meaning::NAMESPACE));
+    assert_eq!(namespace.origin, origin("OrderManagement"));
+    // M01: members `[Order, Money, OrderPlaced]`, vocabulary `[Place]`.
+    let key = |name: &str| qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(name),
+    };
+    let record = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Namespace(namespace)
+                if namespace.key == key("OrderManagement") =>
+            {
+                Some(namespace)
+            }
+            _ => None,
+        })
+        .expect("OrderManagement retains its namespace record");
+    assert_eq!(
+        record.members,
+        [key("Order"), key("Money"), key("OrderPlaced")]
+    );
+    assert_eq!(record.vocabulary.len(), 1);
+    assert_eq!(record.vocabulary[0].term, "Place");
     let view = record_charges(&package, 21);
     assert!(!view
         .type_identities()
@@ -1360,7 +1411,7 @@ fn tc235_m09_namespace_binder() {
             "vocabulary": [{"term": "Bill", "doc": "Bill an order", "origin": origin("Billing")}],
         }),
     ));
-    assert_malformed_refusal(&document, "Billing");
+    assert_malformed_refusal(&document, "OrderManagement");
 
     let mut document = k2();
     document["types"].as_array_mut().unwrap().push(declaration(
@@ -1376,7 +1427,7 @@ fn tc235_m09_namespace_binder() {
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["members"] =
         json!([id("Order"), id("Money"), id("OrderPlaced"), id("Ghost")]);
-    assert_missing_refusal(&document, "Ghost");
+    assert_missing_refusal(&document, "OrderManagement", "/types/7/members/3", "Ghost");
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["clauses"] =
