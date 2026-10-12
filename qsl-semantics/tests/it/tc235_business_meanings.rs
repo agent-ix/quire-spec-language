@@ -8,7 +8,9 @@ use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLim
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ProcessStepKind,
 };
-use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
+use qsl_semantics::model::intake::{
+    admit, meaning, package_input, read_domain_package, read_records,
+};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
@@ -314,7 +316,7 @@ fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
         IntakeLimits::default(),
     )
     .expect("S1 admits the authored package bytes");
-    read_domain_package(selection, &admitted).expect_err("mutation must refuse")
+    read_records(PACKAGE, &admitted).expect_err("mutation must refuse")
 }
 
 fn assert_malformed_refusal(document: &Value, detail: &str) {
@@ -817,7 +819,7 @@ fn tc235_m09_namespace_binder() {
 }
 
 fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRefusal> {
-    let package = read_k2(document).expect("the mutated K2 document is reader-valid");
+    let package = read_k2(document).expect("intake retains the typed refusal for normalization");
     let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
     assert_record_charge_count(&meter, expected_charges);
     let NormalizeOutcome::Refused(refusals) = outcome else {
@@ -874,8 +876,7 @@ fn tc235_m04_event_type_refusal_vectors() {
     let absent_occurrence_document = mutate_k2(|document| {
         type_named_mut(document, "OrderPlaced")["occurrenceField"] = json!(id("OrderPlaced/at"));
     });
-    let refusals = read_k2(&absent_occurrence_document)
-        .expect_err("an occurrence field naming no field is a reader missing-name refusal");
+    let refusals = read_refusals(&absent_occurrence_document);
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::MissingDeclaration);
     assert_eq!(refusals[0].cause.as_str(), "missing-name");

@@ -2092,11 +2092,17 @@ fn build(
     // property of the declaration record that owns it, never a record of
     // its own, so `records.len()` is the exact IR node count. Only the
     // running position is charged (#141 F11).
-    for position in 0..domain_package.records.len() {
+    let declared_record_count = domain_package
+        .declared_record_count
+        .unwrap_or(domain_package.records.len());
+    for position in 0..declared_record_count {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
                 .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
         )?;
+    }
+    if let Ok(refusals) = Refusals::try_from(domain_package.intake_refusals.clone()) {
+        return Err(Denial::Refused(refusals));
     }
     if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
         return Err(Denial::Refused(refusals));

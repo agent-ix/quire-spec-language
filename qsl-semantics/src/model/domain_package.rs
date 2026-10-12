@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use quire_canonical::FixedShape;
 use quire_exact::{OrderingOperator, Presence};
@@ -818,6 +819,12 @@ pub struct DomainPackage {
     pub records: Vec<DomainPackageRecord>,
     /// Original intake provenance, separate from normalized identities.
     pub(crate) originals: BTreeMap<DeclarationKey, OriginalDeclaration>,
+    /// FR-154 intake refusals retained until normalization has charged every
+    /// declaration in the source package. Synthetic packages carry none.
+    pub(crate) intake_refusals: Vec<ModelRefusal>,
+    /// Source declaration count before a refusing node can be omitted from
+    /// the partial typed records. `None` means use `records.len()`.
+    pub(crate) declared_record_count: Option<usize>,
 }
 
 /// An original declaration's authored provenance. The FCD origin is
@@ -844,6 +851,8 @@ impl DomainPackage {
             model_selection,
             records,
             originals: BTreeMap::new(),
+            intake_refusals: Vec::new(),
+            declared_record_count: None,
         }
     }
 

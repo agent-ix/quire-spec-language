@@ -49,7 +49,7 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
         let document = mutate_k2(|document| {
             type_named_mut(document, "OrderLifecycle")["transitions"][0][member] = value;
         });
-        let refusals = read_refusals(&document);
+        let refusals = normalized_refusals(&document, 21);
         assert!(
             refusals.iter().any(|refusal| {
                 refusal.code == Code::MissingDeclaration
@@ -77,7 +77,7 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
         type_named_mut(document, "OrderLifecycle")["transitions"][0]["emits"] =
             json!([id("OrderShipped")]);
     });
-    let refusals = read_refusals(&unknown_emitted_node);
+    let refusals = normalized_refusals(&unknown_emitted_node, 21);
     assert!(
         refusals.iter().any(|refusal| {
             refusal.code == Code::MissingDeclaration

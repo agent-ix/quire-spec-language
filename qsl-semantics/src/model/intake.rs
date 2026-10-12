@@ -1421,7 +1421,11 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
             let node = if located.owner.is_empty() {
                 "$".to_owned()
             } else {
-                located.owner.clone()
+                declared_node_for_pointer(document, &located.pointer)
+                    .and_then(|node| node.get("identity"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(&located.owner)
+                    .to_owned()
             };
             let (artifact, span) = located_span(located);
             Some(malformed_declaration(
@@ -1450,35 +1454,82 @@ fn missing_reader_reference(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> Option<ModelRefusal> {
-    if located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let member = pointer.rsplit('/').next()?;
+    let transition_reference = pointer.contains("/transitions/")
+        && matches!(member, "from" | "to" | "trigger" | "guard" | "emits")
+        && (located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF
+            || located.code == agent_ix_semantic_ir::rules::DANGLING_CLAUSE_REF);
+    if !transition_reference
+        && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
     {
         return None;
     }
-    let pointer = located.pointer.strip_prefix("/ir")?;
     let reference = document.tree.pointer(pointer)?.as_str()?;
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     // A malformed native or foreign identity is not a missing declaration
     // of this selected package.
-    type_identity_segment(package, reference)?;
-    let mut owner_pointer = pointer;
-    let origin = loop {
-        let owner = document.tree.pointer(owner_pointer)?;
-        if owner.get("identity").and_then(Value::as_str) == Some(located.owner.as_str()) {
-            break owner.get("origin")?.clone();
-        }
-        owner_pointer = owner_pointer.rsplit_once('/')?.0;
-    };
+    if !transition_reference {
+        type_identity_segment(package, reference)?;
+    }
+    let owner = declared_node_for_pointer(document, pointer)?;
+    let node = owner.get("identity")?.as_str()?;
+    let origin = owner.get("origin")?.clone();
     Some(ModelRefusal {
         code: Code::MissingDeclaration,
         cause: ModelRefusalCause::IntakeMissingDeclaration {
-            node: located.owner.clone(),
+            node: node.to_owned(),
             reference: reference.to_owned(),
             origin,
             path: pointer.parse().ok()?,
         },
         detail: format!("{pointer}: {reference:?} names no declaration of this domain package"),
     })
+}
+
+fn declared_node_for_pointer<'a>(
+    document: &'a PackageDocument,
+    pointer: &str,
+) -> Option<&'a Value> {
+    let mut segments = pointer.strip_prefix('/')?.split('/');
+    let collection = segments.next()?;
+    let position = segments.next()?;
+    if !matches!(collection, "types" | "populations") {
+        if collection == "constructs" && pointer.contains("/construct/meaning") {
+            let construct = document
+                .tree
+                .get("constructs")?
+                .as_array()?
+                .get(position.parse::<usize>().ok()?)?;
+            let kind = construct.get("kind")?;
+            let module = kind.get("module")?.as_str()?;
+            let name = kind.get("name")?.as_str()?;
+            return document
+                .tree
+                .get("types")?
+                .as_array()?
+                .iter()
+                .find(|type_value| {
+                    type_value
+                        .get("kind")
+                        .and_then(|kind| kind.get("module"))
+                        .and_then(Value::as_str)
+                        == Some(module)
+                        && type_value
+                            .get("kind")
+                            .and_then(|kind| kind.get("name"))
+                            .and_then(Value::as_str)
+                            == Some(name)
+                });
+        }
+        return None;
+    }
+    document
+        .tree
+        .get(collection)?
+        .as_array()?
+        .get(position.parse::<usize>().ok()?)
 }
 
 /// FR-208 Generalization / AC-12: the schema gate still refuses the document,
@@ -3392,121 +3443,192 @@ pub fn read_records(
 
 /// Read an admitted document with every declaration's original construct
 /// meaning and FCD origin. No origin is inferred from a key or another
-/// declaration, and no metadata enters a normalization preimage.
+/// declaration, and no metadata enters a normalization preimage. Typed
+/// declaration refusals are retained on the package until normalization has
+/// charged all source records, as FR-154 requires.
 pub fn read_domain_package(
     selection: DomainPackageRef,
     document: &PackageDocument,
 ) -> Result<DomainPackage, Vec<ModelRefusal>> {
-    let records = read_records(&selection.identity, document)?;
-    let meanings = meaning_index(&document.tree).map_err(|refusal| vec![refusal])?;
+    let mut intake_refusals = validate_with_semantic_ir(document)
+        .err()
+        .unwrap_or_default();
+    let semantic_refused_nodes: std::collections::BTreeSet<String> = intake_refusals
+        .iter()
+        .filter_map(refusal_node)
+        .map(str::to_owned)
+        .collect();
+    let (records, reader_refusals) = read_nodes_partial(
+        &selection.identity,
+        &document.tree,
+        intake_refusals.is_empty(),
+    );
+    for refusal in reader_refusals {
+        if refusal_node(&refusal).is_some_and(|node| semantic_refused_nodes.contains(node)) {
+            continue;
+        }
+        intake_refusals.push(refusal);
+    }
+    intake_refusals.sort_by(|left, right| refusal_node(left).cmp(&refusal_node(right)));
+    let refused_nodes: std::collections::BTreeSet<String> = intake_refusals
+        .iter()
+        .filter_map(refusal_node)
+        .map(str::to_owned)
+        .collect();
+    let (meanings, read_meanings) = match meaning_index(&document.tree) {
+        Ok(meanings) => (meanings, true),
+        Err(refusal) if intake_refusals.is_empty() => {
+            intake_refusals.push(refusal);
+            (HashMap::new(), false)
+        }
+        Err(_) => (HashMap::new(), false),
+    };
     let mut originals = BTreeMap::new();
     let declared: std::collections::BTreeSet<_> = records
         .iter()
         .map(DomainPackageRecord::key)
         .cloned()
         .collect();
-    let mut refusals = Vec::new();
-    for array in ["types", "populations"] {
-        for (position, node) in document
-            .tree
-            .get(array)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            let at = format!("$.{array}[{position}]");
-            let ctx = NodeCtx::new(node, &at);
-            let result = (|| {
-                let identity = ctx.str_field("identity")?;
-                let meaning = match node.get("kind") {
-                    Some(kind) if kind.is_object() => {
-                        let kind = ctx.kind_key()?;
-                        Some(
-                            meanings
-                                .get(&(kind.0.to_owned(), kind.1.to_owned()))
-                                .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?
-                                .clone(),
-                        )
-                    }
-                    Some(kind)
-                        if kind.as_str() == Some("alias")
-                            && node.get("target").and_then(Value::as_str)
-                                == Some("ix://quire/native/Timestamp") =>
-                    {
-                        // This one FCD core alias has a reader admission but
-                        // no FR-208 construct meaning. `read_records` already
-                        // validates its exact native Timestamp shape.
-                        None
-                    }
-                    _ => {
-                        return Err(ctx.malformed(
-                            "kind: a bare-string core kind is not a declared FR-208 meaning",
-                        ));
-                    }
-                };
-                let origin = node
-                    .get("origin")
-                    .ok_or_else(|| ctx.malformed("origin: missing"))?;
-                originals.insert(
-                    declaration_key(&selection.identity, identity),
-                    OriginalDeclaration {
-                        meaning,
-                        origin: origin.clone(),
-                        member_name: None,
-                    },
-                );
-                for members in ["fields", "operations", "relationships", "clauses"] {
-                    for (member_position, member) in node
-                        .get(members)
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .enumerate()
-                    {
-                        let member_at = format!("{at}.{members}[{member_position}]");
-                        let member_ctx = NodeCtx::new(member, &member_at);
-                        let member_identity = member_ctx.str_field("identity")?;
-                        let member_key = declaration_key(&selection.identity, member_identity);
-                        if !declared.contains(&member_key) {
-                            continue;
+    if read_meanings {
+        for array in ["types", "populations"] {
+            for (position, node) in document
+                .tree
+                .get(array)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                if node
+                    .get("identity")
+                    .and_then(Value::as_str)
+                    .is_some_and(|identity| refused_nodes.contains(identity))
+                {
+                    continue;
+                }
+                let at = format!("$.{array}[{position}]");
+                let ctx = NodeCtx::new(node, &at);
+                let result = (|| {
+                    let identity = ctx.str_field("identity")?;
+                    let meaning = match node.get("kind") {
+                        Some(kind) if kind.is_object() => {
+                            let kind = ctx.kind_key()?;
+                            Some(
+                                meanings
+                                    .get(&(kind.0.to_owned(), kind.1.to_owned()))
+                                    .ok_or_else(|| {
+                                        ctx.malformed("kind: names no constructs[] entry")
+                                    })?
+                                    .clone(),
+                            )
                         }
-                        let name = member
-                            .get("sourceEnd")
-                            .and_then(|end| end.get("role"))
-                            .and_then(Value::as_str)
-                            .or_else(|| member_identity_name(identity, member_identity))
-                            .ok_or_else(|| {
-                                member_ctx.malformed("identity: has no declared member name")
-                            })?;
-                        let origin = member
-                            .get("origin")
-                            .ok_or_else(|| member_ctx.malformed("origin: missing"))?;
-                        originals.insert(
-                            member_key,
-                            OriginalDeclaration {
-                                meaning: None,
-                                origin: origin.clone(),
-                                member_name: Some(name.to_owned()),
-                            },
-                        );
+                        Some(kind)
+                            if kind.as_str() == Some("alias")
+                                && node.get("target").and_then(Value::as_str)
+                                    == Some("ix://quire/native/Timestamp") =>
+                        {
+                            // This one FCD core alias has a reader admission but
+                            // no FR-208 construct meaning. `read_records` already
+                            // validates its exact native Timestamp shape.
+                            None
+                        }
+                        _ => {
+                            return Err(ctx.malformed(
+                                "kind: a bare-string core kind is not a declared FR-208 meaning",
+                            ));
+                        }
+                    };
+                    let origin = node
+                        .get("origin")
+                        .ok_or_else(|| ctx.malformed("origin: missing"))?;
+                    originals.insert(
+                        declaration_key(&selection.identity, identity),
+                        OriginalDeclaration {
+                            meaning,
+                            origin: origin.clone(),
+                            member_name: None,
+                        },
+                    );
+                    for members in ["fields", "operations", "relationships", "clauses"] {
+                        for (member_position, member) in node
+                            .get(members)
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .enumerate()
+                        {
+                            let member_at = format!("{at}.{members}[{member_position}]");
+                            let member_ctx = NodeCtx::new(member, &member_at);
+                            let member_identity = member_ctx.str_field("identity")?;
+                            let member_key = declaration_key(&selection.identity, member_identity);
+                            if !declared.contains(&member_key) {
+                                continue;
+                            }
+                            let name = member
+                                .get("sourceEnd")
+                                .and_then(|end| end.get("role"))
+                                .and_then(Value::as_str)
+                                .or_else(|| member_identity_name(identity, member_identity))
+                                .ok_or_else(|| {
+                                    member_ctx.malformed("identity: has no declared member name")
+                                })?;
+                            let origin = member
+                                .get("origin")
+                                .ok_or_else(|| member_ctx.malformed("origin: missing"))?;
+                            originals.insert(
+                                member_key,
+                                OriginalDeclaration {
+                                    meaning: None,
+                                    origin: origin.clone(),
+                                    member_name: Some(name.to_owned()),
+                                },
+                            );
+                        }
+                    }
+                    Ok::<_, ModelRefusal>(())
+                })();
+                if let Err(refusal) = result {
+                    if !refusal_node(&refusal).is_some_and(|node| refused_nodes.contains(node)) {
+                        intake_refusals.push(refusal);
                     }
                 }
-                Ok::<_, ModelRefusal>(())
-            })();
-            if let Err(refusal) = result {
-                refusals.push(refusal);
             }
         }
     }
-    if !refusals.is_empty() {
-        return Err(refusals);
-    }
+    intake_refusals.sort_by(|left, right| refusal_node(left).cmp(&refusal_node(right)));
     Ok(DomainPackage {
         model_selection: selection,
         records,
         originals,
+        intake_refusals,
+        declared_record_count: Some(source_record_count(&document.tree)),
     })
+}
+
+fn refusal_node(refusal: &ModelRefusal) -> Option<&str> {
+    match &refusal.cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+        | ModelRefusalCause::IntakeMissingDeclaration { node, .. }
+        | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => Some(node),
+        _ => None,
+    }
+}
+
+/// The source declaration count FR-154 normalization charges, including
+/// nested members that a partial typed read may omit after an earlier refusal.
+fn source_record_count(document: &Value) -> usize {
+    let types = document.get("types").and_then(Value::as_array);
+    let populations = document.get("populations").and_then(Value::as_array);
+    let mut count = types.map_or(0, Vec::len) + populations.map_or(0, Vec::len);
+    for type_value in types.into_iter().flatten() {
+        for member in ["fields", "operations", "relationships", "clauses"] {
+            count += type_value
+                .get(member)
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len);
+        }
+    }
+    count
 }
 
 /// [`read_records`]'s per-node reader over a document
@@ -3517,18 +3639,37 @@ fn read_nodes(
     package_identity: &str,
     document: &Value,
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
-    let meanings = meaning_index(document).map_err(|refusal| vec![refusal])?;
+    let (records, refusals) = read_nodes_partial(package_identity, document, true);
+    if refusals.is_empty() {
+        Ok(records)
+    } else {
+        Err(refusals)
+    }
+}
+
+fn read_nodes_partial(
+    package_identity: &str,
+    document: &Value,
+    resolve_frames: bool,
+) -> (Vec<DomainPackageRecord>, Vec<ModelRefusal>) {
+    let meanings = match meaning_index(document) {
+        Ok(meanings) => meanings,
+        Err(refusal) => return (Vec::new(), vec![refusal]),
+    };
     // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
     // `expect_array` guarantees it is an array; `populations` is optional
     // but array-shaped when present.
     let root = NodeCtx::new(document, "$");
-    let types = document
-        .get("types")
-        .and_then(Value::as_array)
-        .ok_or_else(|| vec![root.malformed("types: missing or not an array")])?;
-    let populations = root
-        .array_field("populations")
-        .map_err(|refusal| vec![refusal])?;
+    let Some(types) = document.get("types").and_then(Value::as_array) else {
+        return (
+            Vec::new(),
+            vec![root.malformed("types: missing or not an array")],
+        );
+    };
+    let populations = match root.array_field("populations") {
+        Ok(populations) => populations,
+        Err(refusal) => return (Vec::new(), vec![refusal]),
+    };
 
     // Each type identity -> the meaning its `kind` resolves to, for the
     // cross-node meaning checks (a record value type's supertypes).
@@ -3634,14 +3775,10 @@ fn read_nodes(
     // the document (TC-458-AC-5: admission is deterministic regardless of
     // document order). Skipped entirely when an earlier node already
     // refused: a broken package resolves no frame.
-    if refusals.is_empty() {
+    if refusals.is_empty() && resolve_frames {
         resolve_pending_frames(package_identity, &pending, &mut records, &mut refusals);
     }
-    if refusals.is_empty() {
-        Ok(records)
-    } else {
-        Err(refusals)
-    }
+    (records, refusals)
 }
 
 #[cfg(test)]
