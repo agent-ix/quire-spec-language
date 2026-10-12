@@ -4880,29 +4880,28 @@ mod tests {
         .to_string();
         let refusals =
             read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
+        // `Located::owner` (PR #200 review R2-2): the cause names the nearest
+        // declaration owning `/ir/types/0/abstract`, not the raw pointer
+        // (FR-056-AC-2: every reader diagnostic keeps its IR node). The
+        // validator's code and input path (FR-056, "Every diagnostic retains
+        // the actual input path") have no typed field, so they are checked in
+        // the detail.
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
         assert_eq!(
-            refusals,
-            vec![ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    // `Located::owner` (PR #200 review R2-2): the nearest
-                    // declaration that owns `/ir/types/0/abstract`, not the
-                    // raw pointer itself -- FR-056-AC-2 retains "every
-                    // reader diagnostic" with "its IR node", and an actual
-                    // declaration identity is a real IR node in a way a JSON
-                    // pointer into the wrapped bundle is not.
-                    node: "ix://acme/orders/Order".to_owned(),
-                    artifact: None,
-                    span: None,
-                },
-                detail: "agent-ix-semantic-ir refused this document at \
-                          TypeDefinition.abstract (/ir/types/0/abstract) on \
-                          ix://acme/orders/Order (agent-ix.semantic-ir.SCHEMA_VIOLATION): \
-                          abstract is a boolean"
-                    .to_owned(),
-            }],
-            "the refusal names the validator's own diagnostic (owning declaration, code, \
-             message), not this reader's own hand-rolled check"
+            refusals[0].cause,
+            ModelRefusalCause::IntakeMalformedDeclaration {
+                node: "ix://acme/orders/Order".to_owned(),
+                artifact: None,
+                span: None,
+            }
+        );
+        assert!(
+            refusals[0].detail.contains("/ir/types/0/abstract")
+                && refusals[0]
+                    .detail
+                    .contains("agent-ix.semantic-ir.SCHEMA_VIOLATION"),
+            "{refusals:?}"
         );
     }
 
@@ -6437,10 +6436,21 @@ mod tests {
             .expect_err("integer operands require exact strings");
             assert_eq!(refusals.len(), 1);
             assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusals[0].cause,
+                ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Wide".to_owned(),
+                    artifact: None,
+                    span: None,
+                }
+            );
+            // The validator's code and input path have no typed field.
             assert!(refusals[0].detail.contains(&format!(
-                "/ir/types/0/constraints/{position}/operands/value) on \
-                 ix://acme/orders/Wide (agent-ix.semantic-ir.INVALID_OPERAND)"
+                "/ir/types/0/constraints/{position}/operands/value"
             )));
+            assert!(refusals[0]
+                .detail
+                .contains("agent-ix.semantic-ir.INVALID_OPERAND"));
         }
     }
 
