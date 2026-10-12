@@ -404,7 +404,7 @@ fn s2_preserves_reserved_operation_member_names() {
 /// The same reserved member spelling is legal in an attempt operation name;
 /// retain its context and exact source span while the ordinary-name control
 /// remains covered by `s2_captures_an_attempts_operation_name_and_contracts_list`.
-#[trace("TC-513")]
+#[trace("FR-114-AC-1", "TC-513")]
 #[test]
 fn s2_preserves_reserved_attempt_operation_members() {
     let source = recovery_flow("Main::Committed", true, "").replacen(
