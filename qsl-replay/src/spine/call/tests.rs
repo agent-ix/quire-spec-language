@@ -62,6 +62,7 @@ fn arg(parameter: &str, value: i64) -> CallArgument {
 /// shared typed values and the admitted object context, then preserves the
 /// existing scalar/accounting/cancel inputs around that call.
 #[test]
+#[trace("TC-792", "FR-100-AC-16")]
 fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
     let call = Call {
         function: "held".to_owned(),
@@ -125,6 +126,7 @@ fn typed_model_values_bind_without_integer_coercion() {
 }
 
 #[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_driver_returns_the_admitted_reference_identity() {
     let bytes = include_bytes!("../../../../tests/fixtures/spine-model.native");
     let document = include_bytes!("../../../../tests/fixtures/spine-model.semantic-ir.json");
@@ -249,7 +251,63 @@ fn synthetic_model(
     (view, object, population)
 }
 
+fn synthetic_reference_hierarchy(
+    placeholder: &str,
+) -> (
+    qsl_semantics::model::normalize::EffectiveView,
+    DeclarationKey,
+    DeclarationKey,
+    DeclarationKey,
+    DeclarationKey,
+) {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
+    };
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+
+    let root = DeclarationKey::fixture(format!("{placeholder}/Root"));
+    let target = DeclarationKey::fixture(format!("{placeholder}/T"));
+    let subtype = DeclarationKey::fixture(format!("{placeholder}/S"));
+    let unrelated = DeclarationKey::fixture(format!("{placeholder}/U"));
+    let domain = DomainPackage::new(
+        DomainPackageRef::fixture(placeholder),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: root.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: target.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![root.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: subtype.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![target.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: unrelated.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![root],
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) = normalize(&domain, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("synthetic reference hierarchy normalizes");
+    };
+    (view, target, subtype, unrelated, root)
+}
+
 #[test]
+#[trace("TC-792", "FR-100-AC-16")]
 fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::intake::SelectedModel;
@@ -299,6 +357,18 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
     let objects = ObjectEnvironment::default()
         .with_population(binding)
         .unwrap();
+    let maximum_mismatch = admit_model_arguments(
+        &[],
+        &types,
+        &[("population".to_owned(), ValueType::Population(Some(2)))],
+        &[population],
+        &objects,
+    )
+    .expect_err("a declared maximum mismatch refuses before evaluation");
+    assert!(matches!(
+        *maximum_mismatch,
+        RunRefusal::WrongValueKind { position: 0 }
+    ));
     let selected = SelectedModel {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
@@ -320,6 +390,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
 }
 
 #[test]
+#[trace("TC-792", "FR-100-AC-16")]
 fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
     use qsl_semantics::model::intake::SelectedModel;
     use quire_semantic_value::declaration::TypeEnvironment;
@@ -360,6 +431,263 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
         RunRefusal::Admission { position: 0, refusal }
             if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })
     ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+
+    let (selected_view, selected_type, _) = synthetic_model("selected-controls");
+    let (foreign_view, foreign_type, _) = synthetic_model("foreign-controls");
+    let models = vec![
+        SelectedModel {
+            alias: "M".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+            view: selected_view.clone(),
+        },
+        SelectedModel {
+            alias: "M2".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+            view: foreign_view.clone(),
+        },
+    ];
+    let foreign_reference = Value::Reference(quire_exact::ObjectReference::new(
+        foreign_view
+            .object_universe_of(&foreign_type)
+            .unwrap()
+            .identity(),
+        foreign_view.type_identities()[&foreign_type],
+        quire_exact::ObjectId::new("foreign").unwrap(),
+    ));
+    let unknown_type = quire_exact::EffectiveId::from_digest([7; 32]);
+    let foreign_type_refusal = admit_model_arguments(
+        &models,
+        &TypeEnvironment::new([], []).unwrap(),
+        &[("reference".to_owned(), ValueType::Reference(unknown_type))],
+        &[foreign_reference],
+        &ObjectEnvironment::default(),
+    )
+    .expect_err("an uncovered supplied type retains foreign-type admission");
+    assert!(matches!(
+        *foreign_type_refusal,
+        RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignType { .. })
+    ));
+
+    let selected_identity = selected_view.type_identities()[&selected_type];
+    let selected_reference = Value::Reference(quire_exact::ObjectReference::new(
+        selected_view
+            .object_universe_of(&selected_type)
+            .unwrap()
+            .identity(),
+        selected_identity,
+        quire_exact::ObjectId::new("dangling").unwrap(),
+    ));
+    let types = TypeEnvironment::new(
+        [],
+        [ObjectTypeDeclaration::new(
+            selected_identity,
+            "A",
+            Vec::new(),
+        )],
+    )
+    .unwrap();
+    let dangling = admit_model_arguments(
+        &models[..1],
+        &types,
+        &[(
+            "reference".to_owned(),
+            ValueType::Reference(selected_identity),
+        )],
+        &[selected_reference],
+        &ObjectEnvironment::default(),
+    )
+    .expect_err("an admitted type with no object retains dangling-reference admission");
+    assert!(matches!(
+        *dangling,
+        RunRefusal::DanglingReference { position: 0 }
+    ));
+
+    let malformed = quire_exact::ObjectId::new("");
+    assert!(
+        malformed.is_err(),
+        "raw malformed object identity is refused"
+    );
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+    use quire_semantic_value::object_closure::ObjectClosure;
+
+    let (view, target, subtype, unrelated, root) = synthetic_reference_hierarchy("tc-792-vectors");
+    let target_id = view.type_identities()[&target];
+    let subtype_id = view.type_identities()[&subtype];
+    let unrelated_id = view.type_identities()[&unrelated];
+    let root_id = view.type_identities()[&root];
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(root_id, "Root", Vec::new()),
+            ObjectTypeDeclaration::new(target_id, "T", Vec::new()).with_supertypes(vec![root_id]),
+            ObjectTypeDeclaration::new(subtype_id, "S", Vec::new())
+                .with_supertypes(vec![target_id]),
+            ObjectTypeDeclaration::new(unrelated_id, "U", Vec::new())
+                .with_supertypes(vec![root_id]),
+        ],
+    )
+    .unwrap();
+    let universe = view.object_universe_of(&target).unwrap().identity();
+    let target_ref = quire_exact::ObjectReference::new(
+        universe,
+        target_id,
+        quire_exact::ObjectId::new("t").unwrap(),
+    );
+    let subtype_ref = quire_exact::ObjectReference::new(
+        universe,
+        subtype_id,
+        quire_exact::ObjectId::new("s").unwrap(),
+    );
+    let unrelated_ref = quire_exact::ObjectReference::new(
+        universe,
+        unrelated_id,
+        quire_exact::ObjectId::new("u").unwrap(),
+    );
+    let world = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [
+                (target_ref.clone(), Vec::new()),
+                (subtype_ref.clone(), Vec::new()),
+                (unrelated_ref.clone(), Vec::new()),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
+    let model = SelectedModel {
+        alias: "M".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view,
+    };
+    let parameter = [("key".to_owned(), ValueType::Reference(target_id))];
+    for reference in [target_ref, subtype_ref] {
+        admit_model_arguments(
+            std::slice::from_ref(&model),
+            &types,
+            &parameter,
+            &[Value::Reference(reference)],
+            &world,
+        )
+        .expect("exact and proper subtype references admit");
+    }
+    let unrelated = admit_model_arguments(
+        std::slice::from_ref(&model),
+        &types,
+        &parameter,
+        &[Value::Reference(unrelated_ref)],
+        &world,
+    )
+    .expect_err("an in-model unrelated type refuses");
+    assert!(matches!(
+        *unrelated,
+        RunRefusal::WrongValueKind { position: 0 }
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
+fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners() {
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::population::{
+        admit_binding, lookup, AbsenceMode, AdmissionMeter, AdmissionOutcome, LookupKey,
+        LookupOutcome, PopulationAdmissionLimits, PopulationDocument, PopulationMember,
+    };
+    use quire_exact::{LimitKind, Meter};
+
+    let (view, object_type, population_key) = synthetic_model("tc-792-lookup");
+    let document = PopulationDocument {
+        model_identity: view.model_selection().identity.clone(),
+        members: vec![PopulationMember {
+            object: "present".to_owned(),
+            type_identity: object_type.clone(),
+            field_values: Vec::new(),
+        }],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let AdmissionOutcome::Admitted(binding) = admit_binding(
+        &view,
+        &document,
+        &population_key,
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut admission,
+    ) else {
+        panic!("the lookup population admits");
+    };
+    let universe = *binding.universe();
+    let type_identity = view.type_identities()[&object_type];
+    let key = |object: &[u8]| LookupKey {
+        static_type: object_type.clone(),
+        universe: universe.as_bytes().to_vec(),
+        type_identity,
+        object: object.to_vec(),
+    };
+    let mut present_meter = Meter::new(default_accounting(1_000_000));
+    let present = lookup(
+        &binding,
+        &object_type,
+        &key(b"present"),
+        AbsenceMode::Refused,
+        &mut present_meter,
+    );
+    assert!(matches!(
+        present,
+        LookupOutcome::Completed(Some(reference))
+            if reference.key().object == "present"
+    ));
+    assert!(present_meter.consumed(LimitKind::WorkUnits) > 0);
+
+    let mut absent_meter = Meter::new(default_accounting(1_000_000));
+    let absent = lookup(
+        &binding,
+        &object_type,
+        &key(b"absent"),
+        AbsenceMode::Refused,
+        &mut absent_meter,
+    );
+    assert!(matches!(
+        absent,
+        LookupOutcome::Refused(refusal)
+            if matches!(refusal.cause, ModelRefusalCause::AbsentKey { .. })
+    ));
+
+    let malformed = lookup(
+        &binding,
+        &object_type,
+        &key(&[0xff, 0xfe]),
+        AbsenceMode::Refused,
+        &mut Meter::new(default_accounting(1_000_000)),
+    );
+    assert!(matches!(
+        malformed,
+        LookupOutcome::Refused(refusal)
+            if matches!(refusal.cause, ModelRefusalCause::AbsentKey { key, .. } if key == vec![0xff, 0xfe])
+    ));
+
+    let exhausted = lookup(
+        &binding,
+        &object_type,
+        &key(b"present"),
+        AbsenceMode::Refused,
+        &mut Meter::new(default_accounting(0)),
+    );
+    assert!(matches!(exhausted, LookupOutcome::Incomplete(_)));
 }
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes

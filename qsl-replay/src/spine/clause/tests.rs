@@ -851,6 +851,7 @@ fn run_clause_evaluates_a_clause_selection() {
 }
 
 #[test]
+#[trace("TC-792", "FR-100-AC-16")]
 fn tc_792_native_argument_refusal_preserves_typed_fields() {
     let (request, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
     let mut report = run_clause(request).expect("the fixture compiles");

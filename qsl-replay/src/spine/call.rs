@@ -596,7 +596,9 @@ fn admit_model_arguments(
     arguments: &[Value],
     objects: &ObjectEnvironment,
 ) -> Result<(), Box<RunRefusal>> {
-    for (position, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
+    for (position, ((parameter, value_type), argument)) in
+        parameters.iter().zip(arguments).enumerate()
+    {
         if let (ValueType::Population(maximum), Value::Population(population_id)) =
             (value_type, argument)
         {
@@ -654,16 +656,40 @@ fn admit_model_arguments(
                 })
                 .map(|expected| (model, expected))
         });
-        let Some((expected_model, expected)) = expected_model else {
-            return Err(Box::new(RunRefusal::WrongValueKind { position }));
-        };
         let supplied_model = models.iter().find(|model| {
             model
                 .view
                 .type_identities()
                 .values()
-                .any(|identity| identity == reference.object_type())
+                .any(|identity| *identity == reference.object_type())
         });
+        let Some((expected_model, expected)) = expected_model else {
+            let Some(supplied_model) = supplied_model else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            let Some((_, type_name)) = supplied_model
+                .view
+                .type_identities()
+                .iter()
+                .find(|(_, identity)| **identity == reference.object_type())
+            else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            return Err(Box::new(RunRefusal::Admission {
+                position,
+                refusal: ModelRefusal {
+                    code: Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignType {
+                        member: parameter.clone(),
+                        type_name: type_name.clone(),
+                    },
+                    detail: format!(
+                        "reference parameter {} names undeclared type {}/{}",
+                        parameter, type_name.package, type_name.node
+                    ),
+                },
+            }));
+        };
         if let Some(supplied_model) = supplied_model {
             if supplied_model.view.model_selection() != expected_model.view.model_selection() {
                 return Err(Box::new(RunRefusal::Admission {
