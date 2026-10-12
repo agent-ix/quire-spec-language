@@ -16,13 +16,14 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire,
 };
 use crate::limits::CallerLimits;
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
+use qsl_foundation::BackendId;
 use qsl_foundation::Code;
 use qsl_foundation::IntakeLimits;
 use qsl_foundation::{AccountingSetting, Setting, SettingName};
@@ -211,7 +212,7 @@ pub struct ReplayRequest {
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
     obligation_identity: ObligationIdentity,
-    backend: Backend,
+    backend: BackendId,
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
@@ -257,7 +258,7 @@ impl ReplayRequest {
         self.obligation_identity
     }
     /// The backend that produced the originating counterexample.
-    pub fn backend(&self) -> &Backend {
+    pub fn backend(&self) -> &BackendId {
         &self.backend
     }
     /// The scalar environment the replay starts from.
@@ -774,7 +775,7 @@ impl ReplayRequest {
             source: wire.source,
             profile_selections: wire.profile_selections,
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
-            backend: Backend::new(wire.backend),
+            backend: BackendId::new(wire.backend),
             state_environment: wire.state_environment,
             accounting_limits,
             stage_limits,
@@ -813,7 +814,7 @@ impl ReplayRequest {
             selected_function: self.selected_function.clone(),
             source: self.source.clone(),
             obligation_identity: *self.obligation_identity.as_bytes(),
-            backend: self.backend.identity().to_owned(),
+            backend: self.backend.as_str().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
@@ -1254,7 +1255,7 @@ mod tests {
         let mut spaced = wire(1);
         spaced.backend = " kani ".to_owned();
         let request = ReplayRequest::decode(spaced, crate::ReplayLimits::default()).unwrap();
-        assert_eq!(request.backend().identity(), " kani ");
+        assert_eq!(request.backend().as_str(), " kani ");
     }
 
     /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field
