@@ -426,7 +426,7 @@ pub(crate) fn value_bytes(value: &Value) -> usize {
             Value::Decimal(decimal) => digits(decimal.representation().coefficient()) + 4,
             Value::Float(_) => 8,
             Value::Uuid(_) | Value::Timestamp(_) => 16,
-            Value::String(text) => text.as_bytes().len(),
+            Value::String(text) => text.len(),
             Value::Quantity(quantity) => {
                 let magnitude = quantity.magnitude();
                 digits(magnitude.numerator()) + digits(magnitude.denominator()) + 32

@@ -70,48 +70,40 @@ mod tests {
             )
             .unwrap();
             assert_eq!(encoded.get(), expected);
-            let document =
-                quire_canonical::read(encoded.get().as_bytes(), Limits::new(u64::MAX)).unwrap();
+            let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
             validate_element_shape(document.root()).unwrap();
-            assert_eq!(
-                decode_element(document.root(), Keys::new(&package)).unwrap(),
-                Value::String(text.to_owned())
-            );
+            match decode_element(document.root(), Keys::new(&package)).unwrap() {
+                Value::String(decoded) => assert_eq!(decoded, text),
+                other => panic!("decoded native String as {other:?}"),
+            }
         }
     }
 
     #[trace("TC-992", "FR-056-AC-23")]
     #[test]
     fn native_string_wire_refuses_extra_members_and_lone_surrogates() {
-        let extra = quire_canonical::read(
-            br#"{"kind":"string","text":"x","extra":true}"#,
-            Limits::new(u64::MAX),
-        )
-        .unwrap();
+        let extra =
+            quire_canonical::read(br#"{"kind":"string","text":"x","extra":true}"#, u64::MAX)
+                .unwrap();
         assert!(validate_element_shape(extra.root()).is_err());
 
-        assert!(quire_canonical::read(
-            br#"{"kind":"string","text":"\ud800"}"#,
-            Limits::new(u64::MAX),
-        )
-        .is_err());
+        assert!(quire_canonical::read(br#"{"kind":"string","text":"\ud800"}"#, u64::MAX,).is_err());
     }
 
     #[trace("TC-992", "FR-056-AC-23")]
     #[test]
     fn native_string_type_uses_a_string_leaf_tag() {
         let package = package();
-        let value = Value::Option(OptionValue::none(ValueType::String));
+        let value = OptionValue::none(ValueType::String);
         let encoded = encode_element(&value).unwrap();
         assert!(encoded
             .get()
             .contains(r#""payload_type":{"kind":"string"}"#));
-        let document =
-            quire_canonical::read(encoded.get().as_bytes(), Limits::new(u64::MAX)).unwrap();
-        assert_eq!(
-            decode_element(document.root(), Keys::new(&package)).unwrap(),
-            value
-        );
+        let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
+        match decode_element(document.root(), Keys::new(&package)).unwrap() {
+            Value::Option(option) => assert_eq!(option.payload_type(), &ValueType::String),
+            other => panic!("decoded String type leaf in {other:?}"),
+        }
     }
 
     #[trace("TC-992", "FR-056-AC-23")]
