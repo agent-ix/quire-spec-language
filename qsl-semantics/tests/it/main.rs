@@ -32,3 +32,7 @@ mod quantities;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
+
+#[path = "../../../tests/support/admitted_charge.rs"]
+mod admitted_charge;
+pub(crate) use admitted_charge::admitted_charge_points;

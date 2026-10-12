@@ -978,7 +978,7 @@ fn tc_740_a_refuted_forall_derives_its_record_and_visits_nothing_after_the_stop(
     let visits = meter
         .admitted_charges()
         .iter()
-        .filter(|point| **point == ChargePoint::CollectionVisit)
+        .filter(|charge| charge.point == ChargePoint::CollectionVisit)
         .count();
     assert_eq!(visits, 2, "elements 0 and 1 are visited, element 2 is not");
     assert_eq!(derive(&unit, "AllBelow", Snapshot::Low, "child"), closed());

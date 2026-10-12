@@ -1018,7 +1018,10 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                 &mut meter,
             )
             .unwrap();
-        (evaluated(evaluation), meter.admitted_charges().to_vec())
+        (
+            evaluated(evaluation),
+            crate::support::admitted_charge_points(&meter),
+        )
     };
     let (nan, charges) = convert(0x7FF8_0000_0000_0000);
     assert!(matches!(nan, Outcome::Undefined(Undefined::IeeeNotFinite)));

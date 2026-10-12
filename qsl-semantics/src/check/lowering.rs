@@ -188,7 +188,7 @@ pub enum NominalNode {
     Dimension(Option<DimensionPreimage>),
     /// `quire.unit-node/v1` (FR-094), `None` for a unit another owner than
     /// the checked unit's own source declares, as for [`Self::Dimension`].
-    Unit(Option<UnitPreimage>),
+    Unit(Option<Box<UnitPreimage>>),
 }
 
 impl SemanticNode {

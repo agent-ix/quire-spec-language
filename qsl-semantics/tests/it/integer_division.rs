@@ -31,6 +31,8 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
+use crate::admitted_charge_points as admitted_points;
+
 fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
 }
@@ -329,7 +331,7 @@ fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
         let mut meter = Meter::new(DIV_08);
         assert_eq!(completed(div_08(member, &mut meter)), expected);
         assert_eq!(
-            meter.admitted_charges(),
+            admitted_points(&meter).as_slice(),
             [
                 ChargePoint::IntegerDivisionOperands,
                 ChargePoint::IntegerDivisionArithmetic,
@@ -372,7 +374,9 @@ fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
                 charge_point: ChargePoint::IntegerDivisionResultRetain,
             })
         );
-        for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
+        for (work, point) in
+            (0_u64..).zip(meter.admitted_charges().iter().map(|charge| &charge.point))
+        {
             let mut denied = Meter::new(DIV_08).with_injected_denial(InjectedDenial {
                 point: *point,
                 occurrence: NonZeroU64::MIN,
@@ -417,7 +421,7 @@ fn div_10_mod_charges_only_the_integer_modulus_points() {
         ChargePoint::IntegerModulusDomain,
         ChargePoint::IntegerModulusResultRetain,
     ];
-    assert_eq!(meter.admitted_charges(), points);
+    assert_eq!(admitted_points(&meter).as_slice(), points);
     for (work, point) in (0_u64..).zip(points) {
         let mut denied = Meter::new(DIV_10).with_injected_denial(InjectedDenial {
             point,
@@ -451,7 +455,7 @@ fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
         Outcome::Undefined(Undefined::DivisionByZero)
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [ChargePoint::IntegerDivisionOperands]
     );
     let mut meter = Meter::new(one(DIV_10));
@@ -460,7 +464,7 @@ fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
         Outcome::Undefined(Undefined::DivisionByZero)
     );
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [ChargePoint::IntegerModulusOperands]
     );
 
@@ -504,7 +508,7 @@ fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
         Outcome::Refused(Refusal::ModuloOutOfDomain { .. })
     ));
     assert_eq!(
-        meter.admitted_charges(),
+        admitted_points(&meter).as_slice(),
         [
             ChargePoint::IntegerModulusOperands,
             ChargePoint::IntegerModulusArithmetic,
@@ -678,7 +682,11 @@ fn generated_members_match_the_law_oracle_domains_and_every_denial() {
                         &IntegerDomain::Mathematical,
                         &mut metered,
                     );
-                    for point in metered.admitted_charges() {
+                    for point in metered
+                        .admitted_charges()
+                        .iter()
+                        .map(|charge| &charge.point)
+                    {
                         let mut denied =
                             Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
                                 point: *point,

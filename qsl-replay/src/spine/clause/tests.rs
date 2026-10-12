@@ -479,7 +479,7 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let graph_charges: Vec<_> = meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,
@@ -3382,7 +3382,7 @@ fn step3_graph_charges(meter: &Meter) -> Vec<ChargePoint> {
     meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,

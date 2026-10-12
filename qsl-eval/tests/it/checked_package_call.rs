@@ -311,7 +311,7 @@ fn call_charges_the_top_level_function_call_to_the_callers_meter() {
         assert_eq!(meter.consumed(quire_exact::LimitKind::WorkUnits), calls);
     }
     assert_eq!(
-        meter.admitted_charges(),
+        crate::support::admitted_charge_points(&meter),
         [quire_exact::ChargePoint::FunctionCall; 2]
     );
 }

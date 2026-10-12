@@ -168,7 +168,7 @@ pub use definition::{
 };
 pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
-// `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
+// `IeeeExact`, the five entry points (`evaluate_ieee`/
 // `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and
 // the private rounding/arithmetic engine beneath them were this module's
 // own `ieee` submodule, a byte-identical duplicate of `quire_exact`'s

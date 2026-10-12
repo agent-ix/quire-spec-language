@@ -55,6 +55,8 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
+use crate::admitted_charge_points;
+
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
@@ -484,8 +486,7 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(meter_a.consumed(LimitKind::ResultUnits), 4);
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 4);
     assert_eq!(
-        meter_a
-            .admitted_charges()
+        admitted_charge_points(&meter_a)
             .iter()
             .filter(|point| **point == ChargePoint::PopulationVisit)
             .count(),

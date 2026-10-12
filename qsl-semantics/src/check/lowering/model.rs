@@ -576,7 +576,11 @@ impl<'a> Lowering<'a> {
                     )
                     .ok()
                     .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
-                    ("unit", Some(dimension), NominalNode::Unit(preimage))
+                    (
+                        "unit",
+                        Some(dimension),
+                        NominalNode::Unit(preimage.map(Box::new)),
+                    )
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| *base));

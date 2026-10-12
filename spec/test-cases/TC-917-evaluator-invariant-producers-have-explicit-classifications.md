@@ -15,14 +15,13 @@ relationships:
 
 Verify every production evaluator detecting site in FR-090's producer
 table. Scope: FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18,
-FR-090-AC-19, FR-090-AC-20 and FR-096-AC-15.
+FR-090-AC-20 and FR-096-AC-15.
 Fixtures are private malformed checked-state probes, not public unchecked
 authority. A test of `InternalFault::new` alone does not exercise a producer.
 `record-present-value-missing` uses its existing local source-inspection
-proof. The fixed Rational caller's `ieee-conversion-rejected` uses the bounded
-temporary Inspection proof below until the reviewed, merged IR-728 API is
-adopted by QSL. All other rows require real detecting sites and malformed-state
-controls; neither exception grants unchecked public authority.
+proof. Every other table row requires a real detecting site and malformed-state
+controls; the locally unreachable Record condition is the sole inspection-only
+producer proof.
 
 ## Test Procedure
 
@@ -37,8 +36,7 @@ controls; neither exception grants unchecked public authority.
    accumulator checks, and iteration start/resume/finish). For every fixture,
    mutate only the prerequisite needed to reach the stated condition and
    assert the table's exact identifier at the actual producer, except for
-   `record-present-value-missing` and the fixed Rational caller's temporary
-   `ieee-conversion-rejected` exception. For the Record row, inspect the Record path
+   `record-present-value-missing`. For the Record row, inspect the Record path
    and `pop_many` in `qsl-eval/src/value/expression/evaluate.rs`: `present`
    counts all Present slots; `pop_many(present)` either stops with stack
    underflow or returns exactly `present` values; the zip with declared
@@ -48,17 +46,6 @@ controls; neither exception grants unchecked public authority.
    proof against FR-090-AC-18 and inspect the defensive branch's table
    classification. Do not replace producer logic or inject a preconstructed
    fault to simulate execution of that branch.
-   For `ieee-conversion-rejected` only, inspect the real
-   `NodeKind::IeeeToRational` arm in `Machine::apply` in
-   `qsl-eval/src/value/expression/evaluate.rs`, together with the typed API
-   `quire_exact::ieee_to_exact` and `quire_exact::IeeeExactTarget` and their
-   implementation in `quire-exact/src/ieee.rs`. Establish that the call
-   selects Rational unconditionally and that the kernel's outer Err
-   discriminant selects only Decimal, Integer or BoundedInteger; all Rational
-   results are wrapped in Ok. Record the API/caller proof against FR-090-AC-19
-   and inspect the retained defensive S6a fault mapping. Do not replace the
-   target with a non-Rational target, mock the kernel, inject a fault, throw or
-   panic to claim producer execution.
 2. Include direct S6a `not x`, `x: Boolean`, with an Integer argument bypassing
    admission. Pair it with a valid Boolean argument and with the same Integer
    supplied through each public package API's normal admission.
@@ -80,12 +67,11 @@ controls; neither exception grants unchecked public authority.
    retain their ordinary Outcome discriminants and precise charge prefixes.
    Exercise request cancellation through QSL's own polling/stop boundary,
    not an invented kernel Outcome cancellation variant.
-6. On QSL adoption of the reviewed, merged IR-728 Rational-only API, inspect
-   that the obsolete outer-Err arm, its producer-table row and the temporary
-   exception are removed together under FR-090-AC-20. Reconcile the inventory
-   with actual remaining producers; retain the Record proof and every other
-   detecting-site fixture. If caller/API discriminants change earlier, the
-   old proof is invalid and must not exempt a now-reachable producer.
+6. Inspect that the production caller uses the Rational-only
+   `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` API directly,
+   with no outer-error arm or `ieee-conversion-rejected` producer row.
+   Reconcile the inventory with actual remaining producers; retain the Record
+   proof and every other detecting-site fixture under FR-090-AC-20.
 
 ## Expected Results
 
@@ -96,11 +82,10 @@ Evaluation. The inventory exposes missing sites rather than treating a shared
 helper test as coverage for its callers. Compile-only seam probes are excluded.
 The Record inspection-only row establishes the count/iterator proof and retains
 the specified `record-present-value-missing` classification without claiming
-an executed fault. The temporary Rational inspection establishes only the
-outer-Err API/caller proof and preserves its safe fault classification while
-the arm exists. Neither proof grants an exception to any other row, especially
-the publicly admission-reachable empty object identity. Step 6 enforces the
-adoption-bound expiry, not an indefinite waiver.
+an executed fault. The Rational-only API inspection establishes that the
+retired outer-error producer no longer exists. The Record proof grants no
+exception to any other row, especially the publicly admission-reachable empty
+object identity.
 
 Step 2 returns `boolean-value-expected` directly, completes for Boolean, and
 returns `CallFailure::Input` at public admission for Integer. Step 3 retains

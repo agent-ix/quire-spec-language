@@ -305,7 +305,7 @@ fn five_negative_source_units_refuse_at_s3_with_owned_raw_catalog_pairs_and_loci
         ("function F using v(r: M::A): Boolean pure { deref(r).missing }", "ill_typed", "type-mismatch", "missing"),
         ("function F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure { allInstances<M::Missing>(p) }", "missing_declaration", "missing-name", "allInstances"),
         ("function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }", "ill_typed", "type-mismatch", "r"),
-        ("invariant F using v on M::A at current { reaches(self,self,flag) }", "ill_typed", "operator-ineligible", "reaches"),
+        ("invariant F using v on M::A at current { reaches(self,self,missing) }", "missing_declaration", "missing-name", "missing"),
         ("pre F using v on M::A::ready { self.missing() }", "missing_declaration", "missing-name", "missing"),
     ] {
         let (declarations, _, source) = declarations(body, true);
@@ -365,6 +365,7 @@ fn available_source_attribute_and_reaches_have_declared_nodes_and_types() {
 }
 
 /// Successful native source assembly followed by an owned S3 refusal.
+#[trace("TC-790", "FR-300-AC-2")]
 #[test]
 fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loci() {
     for (body, authored, expected_cause, expected_code) in [
@@ -383,6 +384,36 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
             "reaches",
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
             ("ill_typed", "operator-ineligible"),
+        ),
+        (
+            // FR-300-AC-2: an edge absent from the admitted model is an
+            // unresolved declaration, not a declared but ineligible edge.
+            "invariant F using v on M::A at current { reaches(self,self,missing) }",
+            "missing",
+            CheckCause::MissingName("missing".to_owned()),
+            ("missing_declaration", "missing-name"),
+        ),
+        (
+            // FR-153-AC-4: a declared target with a non-population operand
+            // reaches S3 and is refused as an ineligible operator use.
+            "function F using v(r: M::A): Set<M::A>[0,3] pure { allInstances<M::A>(r) }",
+            "r",
+            CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
+            ("ill_typed", "operator-ineligible"),
+        ),
+        (
+            // FR-153-AC-8: lookup's key type does not conform to its target.
+            "function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }",
+            "r",
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+            ("ill_typed", "type-mismatch"),
+        ),
+        (
+            // FR-151-AC-2: a dispatched operation absent from the model.
+            "pre F using v on M::A::ready { self.missing() }",
+            "missing",
+            CheckCause::MissingName("missing".to_owned()),
+            ("missing_declaration", "missing-name"),
         ),
     ] {
         let (declarations, _, source) = declarations(body, true);
@@ -407,6 +438,54 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
             [usize::try_from(region.start()).unwrap()..usize::try_from(region.end()).unwrap()];
         assert!(locus.contains(authored), "{authored}: {locus:?}");
     }
+}
+
+/// FR-091-AC-8: an allInstances target naming no admitted type is refused
+/// during assembly, before the StateModel S3 check.
+#[trace("TC-790", "FR-091-AC-8")]
+#[test]
+fn all_instances_missing_target_type_refuses_during_assembly() {
+    let view = view();
+    let selection = view.model_selection();
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
+        selection.identity,
+        selection.version,
+        qsl_semantics::model::key::hex(&selection.digest),
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
+        "sm1.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses source");
+    assert!(parsed.is_admissible(), "S1: {:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds source");
+    let model_span = unit.selections().models[0].span;
+    let refusal = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        vec![SelectedModel {
+            alias: "M".to_owned(),
+            span: model_span,
+            view,
+        }],
+        vec![],
+    )
+    .expect_err("the unresolved allInstances target refuses at assembly");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one assembly error: {refusal:?}");
+    };
+    assert!(matches!(
+        &error.cause,
+        qsl_semantics::check::AssemblyCause::UnresolvedTypeName { name }
+            if name == "M::Missing"
+    ));
+    assert_eq!(error.cause.code().as_str(), "missing_declaration");
+    assert_eq!(error.cause.catalog_code().cause(), "missing-name");
+    let authored = &source[error.span.start..error.span.end];
+    assert_eq!(authored, "M::Missing");
 }
 
 fn objects(

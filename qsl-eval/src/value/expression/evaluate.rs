@@ -42,7 +42,7 @@ use quire_exact::{
     OrderingOperator, RationalArithmetic,
 };
 use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
-use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeExactTarget, IeeeFlags, IeeeOperation};
+use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
     PopulationId,
@@ -1609,10 +1609,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 if self.scope.ieee_profile().is_none() {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
-                let exact = outcome_into_stop(
-                    ieee_to_exact(value, IeeeExactTarget::Rational(domain), self.meter)
-                        .map_err(|_| invariant("ieee-conversion-rejected"))?,
-                )?;
+                let exact = outcome_into_stop(ieee_to_exact(value, domain, self.meter))?;
                 if let Some(loss) = exact.loss() {
                     self.record(node, ValueLoss::IeeeExact(loss));
                 }
@@ -3105,7 +3102,7 @@ mod tests {
         let charges: Vec<_> = meter
             .admitted_charges()
             .iter()
-            .copied()
+            .map(|charge| charge.point)
             .filter(|point| matches!(point, ChargePoint::ModelDeref | ChargePoint::ModelNavigate))
             .collect();
         assert_eq!(
