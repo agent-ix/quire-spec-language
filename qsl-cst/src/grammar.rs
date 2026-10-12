@@ -13,6 +13,8 @@ pub(super) enum Terminal {
     Text,
     TextValue(&'static str),
     UnsignedInteger,
+    /// An unsigned integer that fits `u64`: an interval bound.
+    Bound,
     End,
 }
 
@@ -96,6 +98,9 @@ fn text() -> Rule {
 }
 fn uint() -> Rule {
     Rule::Terminal(Terminal::UnsignedInteger)
+}
+fn bound() -> Rule {
+    Rule::Terminal(Terminal::Bound)
 }
 fn r(production: P) -> Rule {
     Rule::Production(production)
@@ -885,12 +890,22 @@ fn temporal(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::Fairness,
+        s(vec![
+            x("fair"),
+            opt(c(vec![x("weak"), x("strong")])),
+            opt(c(vec![x("whole"), x("each")])),
+            r(P::QualifiedName),
+            x(";"),
+        ]),
+    );
+    g.insert(
         P::Interval,
         s(vec![
             x("["),
-            uint(),
+            bound(),
             x(","),
-            c(vec![uint(), x("*")]),
+            c(vec![bound(), x("*")]),
             x("]"),
         ]),
     );
@@ -907,6 +922,7 @@ fn temporal(g: &mut Grammar) {
             text(),
             r(P::Activation),
             x("{"),
+            star(r(P::Fairness)),
             star(r(P::Capture)),
             r(P::TemporalExpression),
             x("}"),
@@ -940,7 +956,7 @@ fn temporal(g: &mut Grammar) {
             r(P::TemporalUnary),
             opt(s(vec![
                 c(vec![x("until"), x("release"), x("since"), x("triggered")]),
-                r(P::Interval),
+                opt(r(P::Interval)),
                 r(P::TemporalUnary),
             ])),
         ]),
@@ -956,7 +972,7 @@ fn temporal(g: &mut Grammar) {
                     x("once"),
                     x("historically"),
                 ]),
-                r(P::Interval),
+                opt(r(P::Interval)),
                 r(P::TemporalUnary),
             ]),
             r(P::TemporalPrimary),

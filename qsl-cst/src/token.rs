@@ -187,6 +187,7 @@ vocabulary! {
     Any => "any", Quorum => "quorum",
     Outstanding => "outstanding", Continue => "continue", Cancel => "cancel",
     Variant => "variant", Relation => "relation", Hyper => "hyper", Trace => "trace",
+    Fair => "fair", Weak => "weak", Strong => "strong", Whole => "whole",
     Bounded => "bounded", Hybrid => "hybrid", Mode => "mode", Flow => "flow",
     Transition => "transition", Reset => "reset", Synthesis => "synthesis",
     Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",

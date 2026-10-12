@@ -124,6 +124,8 @@ productions! {
     Activation,
     #[doc = "`capture <parameter> = <expression> ;`: binds a named value inside a `temporal` clause body."]
     Capture,
+    #[doc = "`fair [weak | strong] [whole | each] <qualified-name> ;`: a fairness constraint over one model operation, before a `temporal` clause's captures."]
+    Fairness,
     Interval, TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
