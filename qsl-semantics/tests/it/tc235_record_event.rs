@@ -299,7 +299,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         }]);
     });
     let refusals = normalized_refusals(&wrong_meaning, 23);
-    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
     assert_malformed_at(
         &refusals[0],
         &id("ExpressFulfilment"),
