@@ -218,7 +218,7 @@ test-deep-format:
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity; do \
 		listing=$$(CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --list); \
-		count=$$(printf '%s\n' "$$listing" | awk -v expected="$$test: test (ignored)" '$$0 == expected { count++ } END { print count+0 }'); \
+		count=$$(printf '%s\n' "$$listing" | awk -v expected="$$test: test" '$$0 == expected { count++ } END { print count+0 }'); \
 		if [ "$$count" -ne 1 ]; then \
 			echo "test-deep-format: expected exactly one ignored test for $$test, found $$count" >&2; \
 			exit 1; \

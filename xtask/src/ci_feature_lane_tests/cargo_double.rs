@@ -26,7 +26,7 @@ fn main() {
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(1);
         for _ in 0..count {
-            println!("{test}: test (ignored)");
+            println!("{test}: test");
         }
     }
 }
