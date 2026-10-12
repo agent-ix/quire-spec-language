@@ -305,7 +305,7 @@ fn five_negative_source_units_refuse_at_s3_with_owned_raw_catalog_pairs_and_loci
         ("function F using v(r: M::A): Boolean pure { deref(r).missing }", "missing_declaration", "missing-name", "missing"),
         ("function F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure { allInstances<M::Missing>(p) }", "missing_declaration", "missing-name", "allInstances"),
         ("function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }", "ill_typed", "type-mismatch", "r"),
-        ("invariant F using v on M::A at current { reaches(self,self,missing) }", "missing_declaration", "missing-name", "reaches"),
+        ("invariant F using v on M::A at current { reaches(self,self,flag) }", "ill_typed", "operator-ineligible", "reaches"),
         ("pre F using v on M::A::ready { self.missing() }", "missing_declaration", "missing-name", "missing"),
     ] {
         let (declarations, _, source) = declarations(body, true);
@@ -375,7 +375,9 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
             ("missing_declaration", "missing-name"),
         ),
         (
-            "invariant F using v on M::A at current { reaches(self,self,missing) }",
+            // FR-104-AC-4: `flag` is a declared Boolean field, so it is
+            // ineligible as a reference edge.
+            "invariant F using v on M::A at current { reaches(self,self,flag) }",
             "reaches",
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
             ("ill_typed", "operator-ineligible"),
