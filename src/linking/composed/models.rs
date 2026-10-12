@@ -1109,6 +1109,8 @@ impl<'a> ModelBindings<'a> {
             NativeType::Object { role, .. } => &role.record,
             NativeType::Record { declaration, .. } => declaration.name(),
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }

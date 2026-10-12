@@ -154,8 +154,6 @@ fn domain_leaf_type<'a>(
             | NativeValueType::Decimal
             | NativeValueType::Float32
             | NativeValueType::Float64
-            | NativeValueType::Uuid
-            | NativeValueType::String
             | NativeValueType::Text
             | NativeValueType::Timestamp,
         ) => return None,

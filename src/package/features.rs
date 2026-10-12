@@ -111,6 +111,10 @@ fn native_type(ty: &NativeType<'_>, features: &mut Features) -> Result<(), Box<P
         NativeType::Boolean => {
             features.insert("boolean");
         }
+        // The legacy package wire has no native UUID/String leaves.  These
+        // checked leaves are admitted for the checker and semantic model
+        // paths, but must not be misreported as Boolean package features.
+        NativeType::Uuid | NativeType::String => return Err(invalid_model()),
         NativeType::Scalar { role, .. } => match role.kind {
             ScalarKind::Integer { .. } => {
                 features.insert("integer");

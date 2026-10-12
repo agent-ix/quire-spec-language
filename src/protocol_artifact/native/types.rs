@@ -261,6 +261,8 @@ impl<'a> ValueBuilder<'a> {
                     current = element;
                 }
                 NativeType::Boolean
+                | NativeType::Uuid
+                | NativeType::String
                 | NativeType::Scalar { .. }
                 | NativeType::Enumeration { .. }
                 | NativeType::Record { .. }
@@ -453,9 +455,10 @@ impl<'a> ValueBuilder<'a> {
                     w::Type::Record { export }
                 }
             }
-            NativeType::Option(_) | NativeType::Sequence { .. } => {
-                return Err(Error::Invalid(Invalid::Type))
-            }
+            NativeType::Uuid
+            | NativeType::String
+            | NativeType::Option(_)
+            | NativeType::Sequence { .. } => return Err(Error::Invalid(Invalid::Type)),
         })
     }
 }

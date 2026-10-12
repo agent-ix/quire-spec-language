@@ -1023,10 +1023,7 @@ mod tests {
         assert_eq!(uuid.to_string(), "ix://quire/native/UUID");
         assert_eq!(string.to_string(), "ix://quire/native/String");
 
-        let package = DomainPackage::new(
-            DomainPackageRef::fixture("native-leaves"),
-            Vec::new(),
-        );
+        let package = DomainPackage::new(DomainPackageRef::fixture("native-leaves"), Vec::new());
         let index = RecordIndex::build(&package);
         for native in [&uuid, &string] {
             assert!(index
