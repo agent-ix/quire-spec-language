@@ -1642,9 +1642,14 @@ fn duplicate_process_step_refusal(
         return None;
     }
     let type_position = segments.next()?.parse::<usize>().ok()?;
-    if segments.next()? != "steps" {
-        return None;
-    }
+    // FR-208-AC-5: a state machine's duplicate state or transition identity
+    // is a conflicting binding, as a process's duplicate step is (AC-6).
+    let (member, expected_meaning) = match segments.next()? {
+        "steps" => ("steps", meaning::PROCESS),
+        "states" => ("states", meaning::STATE_MACHINE),
+        "transitions" => ("transitions", meaning::STATE_MACHINE),
+        _ => return None,
+    };
     let step_position = segments.next()?.parse::<usize>().ok()?;
     if segments.next()? != "identity" || segments.next().is_some() {
         return None;
@@ -1658,10 +1663,10 @@ fn duplicate_process_step_refusal(
         kind.get("module")?.as_str()?.to_owned(),
         kind.get("name")?.as_str()?.to_owned(),
     );
-    if meaning_index(&document.tree).ok()?.get(&kind_key)? != meaning::PROCESS {
+    if meaning_index(&document.tree).ok()?.get(&kind_key)? != expected_meaning {
         return None;
     }
-    let step = process.get("steps")?.as_array()?.get(step_position)?;
+    let step = process.get(member)?.as_array()?.get(step_position)?;
     let step_identity = step.get("identity")?.as_str()?;
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     let source_member = semantic_member_path(&located.pointer)?;
@@ -1671,7 +1676,7 @@ fn duplicate_process_step_refusal(
             key: declaration_key(package, step_identity),
         },
         detail: format!(
-            "{source_member} ({}) on {process_identity}: duplicate process step identity {step_identity:?}",
+            "{source_member} ({}) on {process_identity}: duplicate {member} identity {step_identity:?}",
             located.pointer
         ),
     })
@@ -1703,18 +1708,33 @@ fn missing_reader_reference(
     let process_step_reference = pointer.contains("/steps/")
         && matches!(transition_member, "consumes" | "emits")
         && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
+    // FR-208-AC-4, -7 and -8: an occurrence field, a `persists` entry or a
+    // namespace member naming nothing is a missing name, carried at that
+    // member's own pointer on the type.
+    let occurrence_reference = pointer.starts_with("/types/")
+        && matches!(
+            transition_member,
+            "occurrenceField" | "persists" | "members"
+        )
+        && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
     if !transition_reference
         && !process_step_reference
+        && !occurrence_reference
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
     {
         return None;
     }
     let reference = document.tree.pointer(pointer)?.as_str()?;
+    // An occurrence field that is declared, but is a field of no ancestor, is
+    // a malformed binding (TC-235 M18 run 3), not a missing name.
+    if transition_member == "occurrenceField" && document_declares(&document.tree, reference) {
+        return None;
+    }
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     // A malformed native or foreign identity is not a missing declaration
     // of this selected package.
-    if !transition_reference {
+    if !transition_reference && transition_member != "occurrenceField" {
         type_identity_segment(package, reference)?;
     }
     if process_step_reference {
@@ -1745,14 +1765,39 @@ fn missing_reader_reference(
         });
     }
     let owner = declared_node_for_pointer(document, pointer)?;
-    let node = owner.get("identity")?.as_str()?;
     let origin = owner.get("origin")?.clone();
+    // TC-235 M05/M06: a transition's unresolved `from`, `to`, `trigger`,
+    // `guard` or `emits` names the state machine, not the transition node.
+    let node = if transition_reference {
+        let position = pointer
+            .strip_prefix("/types/")?
+            .split('/')
+            .next()?
+            .parse::<usize>()
+            .ok()?;
+        document
+            .tree
+            .get("types")?
+            .as_array()?
+            .get(position)?
+            .get("identity")?
+            .as_str()?
+    } else {
+        owner.get("identity")?.as_str()?
+    };
     let source_member = semantic_member_path(&located.pointer)?;
+    // A guard names a clause by its authored id; the absent declaration is
+    // that clause of the machine (TC-235 M05: `OrderLifecycle/Unknown`).
+    let reference = if transition_reference && transition_member == "guard" {
+        format!("{node}/{reference}")
+    } else {
+        reference.to_owned()
+    };
     Some(ModelRefusal {
         code: Code::MissingDeclaration,
         cause: ModelRefusalCause::IntakeMissingDeclaration {
             node: node.to_owned(),
-            reference: reference.to_owned(),
+            reference: reference.clone(),
             origin,
             path: pointer.parse().ok()?,
         },
@@ -1760,6 +1805,18 @@ fn missing_reader_reference(
             "{source_member} ({pointer}) on {node}: {reference:?} names no declaration of this domain package"
         ),
     })
+}
+
+/// Whether any node of the document declares `identity`.
+fn document_declares(value: &Value, identity: &str) -> bool {
+    match value {
+        Value::Object(object) => object.iter().any(|(key, child)| {
+            (key == "identity" && child.as_str() == Some(identity))
+                || document_declares(child, identity)
+        }),
+        Value::Array(items) => items.iter().any(|item| document_declares(item, identity)),
+        _ => false,
+    }
 }
 
 /// Keep the source document's canonical member path in the diagnostic while
@@ -3798,7 +3855,13 @@ pub fn read_domain_package(
         intake_refusals.is_empty(),
     );
     for refusal in reader_refusals {
-        if refusal_node(&refusal).is_some_and(|node| semantic_refused_nodes.contains(node)) {
+        // The reader's own dangling `persists`/`members` entry repeats what the
+        // semantic-IR missing-name refusal already reports for that node.
+        let reader_node = match &refusal.cause {
+            ModelRefusalCause::UnknownMember { record, .. } => Some(record.node.as_str()),
+            _ => refusal_node(&refusal),
+        };
+        if reader_node.is_some_and(|node| semantic_refused_nodes.contains(node)) {
             continue;
         }
         intake_refusals.push(refusal);
@@ -3939,7 +4002,7 @@ pub fn read_domain_package(
     })
 }
 
-fn refusal_node(refusal: &ModelRefusal) -> Option<&str> {
+pub(crate) fn refusal_node(refusal: &ModelRefusal) -> Option<&str> {
     match &refusal.cause {
         ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
         | ModelRefusalCause::IntakeMissingDeclaration { node, .. }

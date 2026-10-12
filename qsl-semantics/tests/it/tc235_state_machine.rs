@@ -24,6 +24,37 @@ fn lifecycle_transition(
     })
 }
 
+/// A typed `missing_declaration`/`missing-name` naming the state machine
+/// `OrderLifecycle` itself (not a transition node), at reader pointer `path`.
+fn assert_missing_name(refusal: &ModelRefusal, path: &str, reference: Option<&str>) {
+    assert_eq!(refusal.code, Code::MissingDeclaration);
+    assert_eq!(refusal.cause.as_str(), "missing-name");
+    let ModelRefusalCause::IntakeMissingDeclaration {
+        node,
+        reference: absent,
+        path: actual,
+        ..
+    } = &refusal.cause
+    else {
+        panic!("expected intake missing-name, got {refusal:?}");
+    };
+    assert_eq!(node, &id("OrderLifecycle"));
+    assert_eq!(actual.as_str(), path);
+    if let Some(reference) = reference {
+        assert_eq!(absent, &id(reference));
+    }
+}
+
+/// A typed `conflicting-binding` whose key is the repeated declaration.
+fn assert_conflicting_binding(refusal: &ModelRefusal, key: &str) {
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    assert_eq!(refusal.cause.as_str(), "conflicting-binding");
+    let ModelRefusalCause::ConflictingBinding { key: actual } = &refusal.cause else {
+        panic!("expected conflicting-binding, got {refusal:?}");
+    };
+    assert_eq!(actual.node, id(key));
+}
+
 /// M05: resolve transition targets, triggers, guards, and emitted event types
 /// at the K2 intake/normalization boundary without accepting invalid forms.
 #[test]
@@ -32,33 +63,29 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
         (
             "to",
             json!(id("OrderLifecycle/Shipped")),
-            "TypeDefinition.transitions[0].to",
+            "/types/4/transitions/0/to",
+            "OrderLifecycle/Shipped",
         ),
         (
             "trigger",
             json!(id("OrderLifecycle/ship")),
-            "TypeDefinition.transitions[0].trigger",
+            "/types/4/transitions/0/trigger",
+            "OrderLifecycle/ship",
         ),
         (
             "guard",
             json!("Unknown"),
-            "TypeDefinition.transitions[0].guard",
+            "/types/4/transitions/0/guard",
+            "OrderLifecycle/Unknown",
         ),
     ];
-    for (member, value, path) in cases {
+    for (member, value, path, reference) in cases {
         let document = mutate_k2(|document| {
             type_named_mut(document, "OrderLifecycle")["transitions"][0][member] = value;
         });
         let refusals = normalized_refusals(&document, 21);
-        assert!(
-            refusals.iter().any(|refusal| {
-                refusal.code == Code::MissingDeclaration
-                    && refusal.cause.as_str() == "missing-name"
-                    && refusal.detail.contains(path)
-                    && refusal.detail.contains("OrderLifecycle")
-            }),
-            "M05 {member} should retain the typed missing-name locus: {refusals:?}"
-        );
+        assert_eq!(refusals.len(), 1, "M05 {member}: {refusals:?}");
+        assert_missing_name(&refusals[0], path, Some(reference));
     }
 
     let wrong_emitted_kind = mutate_k2(|document| {
@@ -78,16 +105,11 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
             json!([id("OrderShipped")]);
     });
     let refusals = normalized_refusals(&unknown_emitted_node, 21);
-    assert!(
-        refusals.iter().any(|refusal| {
-            refusal.code == Code::MissingDeclaration
-                && refusal.cause.as_str() == "missing-name"
-                && refusal
-                    .detail
-                    .contains("TypeDefinition.transitions[0].emits[0]")
-                && refusal.detail.contains("OrderShipped")
-        }),
-        "M05 absent emitted event must be missing-name: {refusals:?}"
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_missing_name(
+        &refusals[0],
+        "/types/4/transitions/0/emits/0",
+        Some("OrderShipped"),
     );
 
     let wrong_guard_language = mutate_k2(|document| {
@@ -116,10 +138,17 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
         &id("OrderLifecycle"),
         "TypeDefinition.operations",
     );
-    for refusal in refusals.iter().skip(1) {
-        assert_eq!(refusal.code, Code::MissingDeclaration);
-        assert_eq!(refusal.cause.as_str(), "missing-name");
-        assert!(refusal.detail.contains("TypeDefinition.transitions"));
+    for (position, (refusal, reference)) in refusals
+        .iter()
+        .skip(1)
+        .zip(["place", "cancel", "cancel"])
+        .enumerate()
+    {
+        assert_missing_name(
+            refusal,
+            &format!("/types/4/transitions/{position}/trigger"),
+            Some(&format!("OrderLifecycle/{reference}")),
+        );
     }
 
     let empty_states = mutate_k2(|document| {
@@ -128,11 +157,11 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     let refusals = normalized_refusals(&empty_states, 21);
     assert_eq!(refusals.len(), 7);
     assert_malformed_at(&refusals[0], &id("OrderLifecycle"), "TypeDefinition.states");
-    assert!(refusals.iter().skip(1).all(|refusal| {
-        refusal.code == Code::MissingDeclaration
-            && refusal.cause.as_str() == "missing-name"
-            && (refusal.detail.contains(".from") || refusal.detail.contains(".to"))
-    }));
+    for (refusal, path) in refusals.iter().skip(1).zip((0..3).flat_map(|position| {
+        ["from", "to"].map(|member| format!("/types/4/transitions/{position}/{member}"))
+    })) {
+        assert_missing_name(refusal, &path, None);
+    }
 
     let empty_transitions = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["transitions"] = json!([]);
@@ -157,6 +186,47 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let package = read_k2(&extra_invariant).expect("an unreferenced invariant is valid");
     record_charges(&package, 22);
+    // M06 run 4: a machine's invariants are its owned `quire` clauses that no
+    // transition names as a guard (FR-208). `Extra` is one; `NotYetPlaced` is
+    // the guard of `[0]` and so is no invariant. (The FR-094 clause kind is
+    // chosen in check/lowering, outside this model-layer check.)
+    let machine = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::StateMachine(machine)
+                if machine.key.node == id("OrderLifecycle") =>
+            {
+                Some(machine)
+            }
+            _ => None,
+        })
+        .expect("OrderLifecycle retains its state machine");
+    assert_eq!(
+        machine.transitions[0].guard.as_deref(),
+        Some("NotYetPlaced")
+    );
+    let guards: Vec<_> = machine
+        .transitions
+        .iter()
+        .filter_map(|transition| transition.guard.as_deref())
+        .map(|guard| id(&format!("OrderLifecycle/{guard}")))
+        .collect();
+    let invariants: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Clause(clause)
+                if clause.owner == machine.key
+                    && clause.language == "quire"
+                    && !guards.contains(&clause.key.node) =>
+            {
+                Some(clause.key.node.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(invariants, [id("OrderLifecycle/Extra")]);
 
     let duplicate_state = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["states"]
@@ -166,9 +236,7 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_state, 21);
     assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "conflicting-binding");
-    assert!(refusals[0].detail.contains("TypeDefinition.states[3]"));
+    assert_conflicting_binding(&refusals[0], "OrderLifecycle/Draft");
 
     let duplicate_transition = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["transitions"]
@@ -185,16 +253,38 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_transition, 21);
     assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "conflicting-binding");
-    assert!(refusals[0].detail.contains("TypeDefinition.transitions[3]"));
+    assert_conflicting_binding(&refusals[0], "OrderLifecycle/transition3");
 
     let operation_postcondition = mutate_k2(|document| {
-        type_named_mut(document, "OrderLifecycle")["operations"][0]["ensures"] =
-            json!([clause("OrderLifecycle/place", "Placed", "self.placed")]);
+        type_named_mut(document, "OrderLifecycle")["operations"][0]["post"] = json!([{
+            "language": "quire",
+            "text": "self.placed",
+            "origin": origin("OrderLifecycle/place"),
+        }]);
     });
     let package = read_k2(&operation_postcondition).expect("operation postcondition is valid");
+    // "no added declaration": the same 21 charges as K2 itself.
     record_charges(&package, 21);
+}
+
+/// M06 run 7: `self.placed` is bound as the postcondition of `place`.
+#[test]
+#[ignore = "QSL-726: intake keeps no operation pre/post clauses yet"]
+fn tc235_m06_run7_postcondition_is_bound_to_place() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["operations"][0]["post"] = json!([{
+            "language": "quire",
+            "text": "self.placed",
+            "origin": origin("OrderLifecycle/place"),
+        }]);
+    });
+    let package = read_k2(&document).expect("operation postcondition is valid");
+    assert!(package.records.iter().any(|record| matches!(
+        record,
+        DomainPackageRecord::OperationMember(operation)
+            if operation.key.node == id("OrderLifecycle/place")
+                && !operation.own_postcondition_clauses.is_empty()
+    )));
 }
 
 /// M11: only object/event/record/state-machine/process meanings admit
