@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-150 model normalization: phases 1 (decode), 2 (qualify), 3 (inherit),
-//! 4 (`quire.model.normalize.redefine/v1`, explicit field redefinition) and
+//! 4 (`quire.model.normalize.redefine/v1`, explicit member redefinition) and
 //! 5 (canonicalize).
 //!
-//! Phase 4 here covers exactly TC-195 N06's shape: **field** members' own
+//! Phase 4 covers TC-195 N06's field members' and operation members' own
 //! explicit `redefines` property (`model-complete.md`:159/160), resolved by
 //! the same proper-descendant dominance FR-151 dispatch later reuses (a
 //! redefining owner that is a proper descendant of every other contesting owner wins
@@ -17,28 +17,12 @@
 //! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
 //! — FR-153 territory, not yet implemented anywhere in this crate (see
 //! `crate::model::conformance`'s own module doc).
-//! **Operation-member** redefinition (TC-196 R02–R08) builds no *view* entry
-//! here: `crate::model::conformance` constructs its own
-//! [`EffectiveDeclarationPreimage`] directly over the domain package's
-//! [`crate::model::domain_package::OperationMemberRecord`]'s own `redefines`
-//! property for FR-151's conformance checking, so this pass — which exists to
-//! grow [`EffectiveView`] itself — has no member to add for operations. This
-//! split is a scope decision recorded here, not a silent gap. It covers only
-//! the *view* this pass grows, though: the `m + r`
-//! `normalize.redefinition-check` charge below still prices every
-//! redefining member and every effective member the spec names,
-//! operation and field alike (QSL #145), and a contested operation target
-//! (`c >= 2` redefining operation members reaching the same target) is
-//! detected and resolved by the identical proper-descendant dominance search
-//! this pass's own field-redefinition contention uses (#173): a winner if
-//! one redefiner's owner dominates every other, otherwise a typed
-//! `redefinition-target`/`derivation-conflict` refusal, naming every
-//! competing redefiner exactly as the field case does, and priced by the
-//! same `Σ (c − 1) × f(o)` `normalize.conflict-check` charge (QSL #145).
-//! Resolving a contested operation target this way builds no
-//! [`EffectiveView`] member entry and touches no `member_preimages`/`hidden`
-//! state: the view stays field-only, as above; only the ambiguity check
-//! itself is shared.
+//! Operation members enter [`EffectiveView`] with qualify and inherit facts,
+//! then receive both redefine facts for each reachable redefinition. The
+//! `m + r` redefinition check counts field and operation members alike.
+//! Contested operation targets retain the proper-descendant dominance search
+//! and typed `redefinition-target` or `derivation-conflict` refusal. Operation
+//! conformance axes remain checked by `crate::model::conformance`.
 //!
 //! This engine takes a [`DomainPackage`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
@@ -212,7 +196,7 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, NativeValueType, PopulationRecord,
     ScalarValueDomain, ValueTypeRef,
 };
-use crate::model::index::{DeclIdx, ModelIndex, RecordIndex, Redefiner};
+use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
     EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRefWire,
@@ -2254,30 +2238,37 @@ fn build(
     let mut charges = Charges::new(meter);
     let type_keys: Vec<DeclarationKey> = index.normalizable_types().cloned().collect();
 
-    // Phase 2: one qualify fact per type and one per directly declared field
-    // member. Every phase-2 fact sorts before every phase-3 fact, and every
-    // `normalize.fact` charge differs only in the running count it sizes, so
-    // charging them here, in any order, admits the same sequence as charging
-    // them sorted.
-    let mut direct_fields = Vec::with_capacity(type_keys.len());
+    // Phase 2: owner-less type facts first, then each owner's field, clause
+    // and operation member facts in key order.
+    let mut direct_members = Vec::with_capacity(type_keys.len());
     for type_key in &type_keys {
-        charges.fact()?;
-        let mut fields: Vec<DeclarationKey> = index
+        let mut members: Vec<DeclarationKey> = index
             .sorted_direct_fields(&domain_package.records, type_key)
             .iter()
             .map(|field| field.key.clone())
             .collect();
-        fields.extend(
+        members.extend(
             index
                 .sorted_direct_clauses(&domain_package.records, type_key)
                 .iter()
                 .map(|clause| clause.key.clone()),
         );
-        fields.sort();
-        for _ in &fields {
+        members.extend(
+            index
+                .direct_operations(type_key)
+                .iter()
+                .map(|operation| index.key(*operation).clone()),
+        );
+        members.sort();
+        direct_members.push(members);
+    }
+    for _ in &type_keys {
+        charges.fact()?;
+    }
+    for members in &direct_members {
+        for _ in members {
             charges.fact()?;
         }
-        direct_fields.push(fields);
     }
 
     // Phase 3, type level: every type's ancestor paths, charged as each walk
@@ -2344,9 +2335,9 @@ fn build(
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
     > = HashMap::new();
-    for (type_key, fields) in type_keys.iter().zip(&direct_fields) {
+    for (type_key, members) in type_keys.iter().zip(&direct_members) {
         let owner_effective_id = type_effective_ids[type_key];
-        for member in fields {
+        for member in members {
             member_preimages.insert(
                 (type_key.clone(), member.clone()),
                 EffectiveDeclarationPreimage {
@@ -2374,6 +2365,12 @@ fn build(
                     .sorted_direct_clauses(&domain_package.records, &ancestor.ancestor_key)
                     .iter()
                     .map(|clause| clause.key.clone()),
+            );
+            inherited.extend(
+                index
+                    .direct_operations(&ancestor.ancestor_key)
+                    .iter()
+                    .map(|operation| index.key(*operation).clone()),
             );
             inherited.sort();
             for member in inherited {
@@ -2408,7 +2405,7 @@ fn build(
             }
         }
     }
-    drop(direct_fields);
+    drop(direct_members);
 
     // QSL #193: keep each distinct cycle's own first (charge-order-earliest)
     // closing extension (`model-complete.md`:292-295), reported once every
@@ -2442,23 +2439,8 @@ fn build(
     for (owner, _member) in member_preimages.keys() {
         *member_counts_by_owner.entry(owner.clone()).or_insert(0) += 1;
     }
-    // `m` counts *every* effective member, not only fields (QSL #145): each
-    // type's own directly-declared operation members, plus every operation
-    // directly declared on a proper ancestor reached along that type's own
-    // phase-3 `type_paths`.
-    for type_key in &type_keys {
-        let mut effective_operations: HashSet<DeclIdx> = HashSet::new();
-        effective_operations.extend(index.direct_operations(type_key));
-        if let Some(paths) = type_paths.get(type_key) {
-            for ancestor in paths {
-                effective_operations.extend(index.direct_operations(&ancestor.ancestor_key));
-            }
-        }
-        if !effective_operations.is_empty() {
-            *member_counts_by_owner.entry(type_key.clone()).or_insert(0) +=
-                length_amount(effective_operations.len());
-        }
-    }
+    // `member_preimages` contains every effective field, clause and operation,
+    // so its count is the complete `m` used by redefinition accounting.
     let type_fact_counts: HashMap<DeclarationKey, u64> = type_preimages
         .iter()
         .map(|(key, preimage)| (key.clone(), length_amount(preimage.derivation.len())))
@@ -2790,10 +2772,7 @@ struct Phase4Accounting<'a> {
     conflict_charges: &'a mut Vec<(EffectiveId, DeclarationKey, u64)>,
     /// The running count of phase-4 redefine facts awaiting their own
     /// `normalize.fact` charge (`build` charges each type's after this
-    /// function returns) — field redefinition only, exactly like `member_preimages`/
-    /// `hidden`: an operation-member redefinition edge never reaches
-    /// [`Fact`] construction here at all (see the module docs), so it
-    /// contributes nothing to this count.
+    /// function returns), for field and operation members alike.
     phase4_fact_count: &'a mut u64,
     /// Every phase-4 refusal this pass exposes, across every `type_key`'s
     /// own call, each tagged with its own [`Phase4Rank`] — every one, not
@@ -2836,15 +2815,10 @@ fn record_phase4_refusal(
     accounting.refusals.push((rank, refusal));
 }
 
-/// Phase 4 (TC-195 N06): grows [`EffectiveView`] for field redefinition
-/// only — operation-member redefinition contributes no view entry here (see
-/// the module docs); `conformance` resolves each operation redefinition's
-/// own conformance axes directly against its own
-/// [`EffectiveDeclarationPreimage`] values instead of this pass's exposure
-/// bookkeeping. This function still detects and resolves *contention* — two
-/// or more redefiners of the same target — for operation members as well as
-/// fields (#173), sharing [`resolve_redefinition_contest`]'s dominance
-/// search; see this function's own operation-edges loop below.
+/// Phase 4 grows [`EffectiveView`] for field and operation redefinitions.
+/// Conformance resolves each operation's own axes directly against its own
+/// [`EffectiveDeclarationPreimage`]. Both member kinds use the same dominance
+/// search for contested targets.
 ///
 /// For every field member's own `redefines` property reachable at `type_key` (declared on
 /// `type_key` itself or a generalization ancestor, per `paths` — already
@@ -2902,19 +2876,9 @@ fn plan_redefinitions(
     // yet grouped by target) and split by member kind, from each field's or
     // operation's own inline `redefines` property (`model-complete.md`:159/
     // 160/270/271).
-    // `normalize.redefinition-check`'s own charge sequence does not come
-    // from either list: it is `build`'s own domain-package-wide pass over every
-    // redefining member, field and operation alike; `all_edges`
-    // (field-only) feeds this type's own field conflict *resolution and
-    // view growth*, exactly as the module docs describe. `operation_edges`
-    // feeds the contention *charge* below (QSL #145) and, like `all_edges`,
-    // its own dominance-search *resolution* (#173) — but never
-    // `member_preimages`/`hidden`/view growth: `crate::model::conformance`
-    // still checks each operation redefinition's own conformance axes
-    // directly (see the module docs), and a contested operation target
-    // (`c >= 2`) still owes `normalize.conflict-check`'s own
-    // `value-accounting.md:456` price, exactly as a contested field target
-    // does.
+    // `normalize.redefinition-check` is charged by `build`'s package-wide
+    // pass over both kinds. These lists plan each type's facts, visibility,
+    // and any contested-target charge.
     //
     // Read from the index's redefiners grouped by owner, for the
     // owners that reach `type_key` only, in the records' own order: the
@@ -3000,36 +2964,45 @@ fn plan_redefinitions(
         });
     }
 
-    let mut operation_groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
+    let mut operation_groups_by_target: HashMap<DeclarationKey, Vec<RedefinitionEdge>> =
+        HashMap::new();
     for edge in operation_edges {
-        operation_groups
+        operation_groups_by_target
             .entry(edge.target.clone())
             .or_default()
             .push(edge);
     }
-    let mut operation_target_keys: Vec<DeclarationKey> = operation_groups.keys().cloned().collect();
+    let mut operation_target_keys: Vec<DeclarationKey> =
+        operation_groups_by_target.keys().cloned().collect();
     operation_target_keys.sort();
-    let mut contested_operations = Vec::new();
+    let mut operation_groups = Vec::new();
     for target_key in operation_target_keys {
-        let edges = operation_groups.remove(&target_key).expect("just listed");
-        // Operation redefinitions derive no fact and grow no view entry (see
-        // the module docs); a contested target (`c >= 2`) still owes the same
-        // `normalize.conflict-check` price as a field target (QSL #145, #173).
-        if edges.len() < 2 {
-            continue;
+        let mut edges = operation_groups_by_target
+            .remove(&target_key)
+            .expect("just listed");
+        edges.sort_by(|a, b| {
+            a.owner
+                .cmp(&b.owner)
+                .then_with(|| a.redefining.cmp(&b.redefining))
+        });
+        let reachable = member_preimages.contains_key(&(type_key.clone(), target_key.clone()));
+        if reachable {
+            *accounting.phase4_fact_count += 2 * length_amount(edges.len());
         }
-        push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
-        contested_operations.push(TargetGroup {
+        if edges.len() >= 2 {
+            push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
+        }
+        operation_groups.push(TargetGroup {
             target: target_key,
             edges,
-            reachable: true,
+            reachable,
         });
     }
 
     TypeRedefinitions {
         owner_effective_id,
         field_groups,
-        contested_operations,
+        operation_groups,
     }
 }
 
@@ -3065,8 +3038,7 @@ fn push_conflict_charge(
 struct TargetGroup {
     target: DeclarationKey,
     edges: Vec<RedefinitionEdge>,
-    /// Whether `target` is one of the type's effective members. Always
-    /// `true` for an operation group.
+    /// Whether `target` is one of the type's effective members.
     reachable: bool,
 }
 
@@ -3077,14 +3049,13 @@ struct TypeRedefinitions {
     owner_effective_id: EffectiveId,
     /// Field target groups, ascending by target key.
     field_groups: Vec<TargetGroup>,
-    /// Operation target groups with two or more redefiners, ascending by
-    /// target key.
-    contested_operations: Vec<TargetGroup>,
+    /// Operation target groups, ascending by target key.
+    operation_groups: Vec<TargetGroup>,
 }
 
 /// Resolves one type's planned phase-4 work, once every phase-4 charge is
 /// admitted: each field group's dominance contest, its redefine
-/// facts and hidden members, and each contested operation group's contest.
+/// facts and hidden members, and each operation group's facts and contest.
 /// Every refusal goes to `accounting.refusals`, ranked for charge order, and
 /// every remaining group is still resolved (see the module docs).
 fn resolve_redefinitions(
@@ -3097,7 +3068,7 @@ fn resolve_redefinitions(
     let TypeRedefinitions {
         owner_effective_id,
         field_groups,
-        contested_operations,
+        operation_groups,
     } = plan;
     'targets: for group in field_groups {
         let TargetGroup {
@@ -3285,36 +3256,64 @@ fn resolve_redefinitions(
         hidden.insert(member_key);
     }
 
-    // Operation-member redefinition contention (#173): applies the identical
-    // `resolve_redefinition_contest` dominance rule field targets get above —
-    // a winner if one edge's owner dominates every other, otherwise a typed
-    // `redefinition-target`/`derivation-conflict` refusal — but touches no
-    // `member_preimages`/`hidden` state: operation members never enter
-    // `member_preimages` (see the module docs), so there is nothing here for
-    // a winner to resolve or hide; a resolved group's winner needs no further
-    // bookkeeping in this pass, and a contested target still owes
-    // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
-    // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
-    // contested field target (QSL #145), whether or not it resolves.
+    // Reachable operation members keep both facts for every declared edge;
+    // only the winning redefiner stays visible. Unreachable targets retain
+    // the existing operation contention check without deriving a fact.
     for TargetGroup {
         target: target_key,
         edges,
-        ..
-    } in contested_operations
+        reachable,
+    } in operation_groups
     {
-        if let Err((rank, refusal)) = resolve_redefinition_contest(
-            accounting.owner_ancestor_sets,
-            &owner_effective_id,
-            type_key,
-            &target_key,
-            &edges,
-        ) {
-            // `resolve_redefinition_contest` bundles its own `Phase4Rank`
-            // with its refusal (M1 finding, PR #228 round 2 review) -- see
-            // the field-edges loop's identical call above -- so there is no
-            // cause to re-match here.
-            record_phase4_refusal(accounting, rank, refusal);
+        let winner_index = if edges.len() < 2 {
+            Some(0)
+        } else {
+            match resolve_redefinition_contest(
+                accounting.owner_ancestor_sets,
+                &owner_effective_id,
+                type_key,
+                &target_key,
+                &edges,
+            ) {
+                Ok(index) => Some(index),
+                Err((rank, refusal)) => {
+                    record_phase4_refusal(accounting, rank, refusal);
+                    None
+                }
+            }
+        };
+        if !reachable {
+            continue;
         }
+        for (index, edge) in edges.iter().enumerate() {
+            let inputs = FactInputs::new(
+                edge.path.clone(),
+                vec![edge.redefining.clone(), edge.target.clone()],
+            );
+            let redefining_key = (type_key.clone(), edge.redefining.clone());
+            let redefining_entry = member_preimages
+                .get_mut(&redefining_key)
+                .expect("reachable operation redefiner is an effective member");
+            let ordinal = redefining_entry.derivation.len();
+            redefining_entry.derivation.push(Fact {
+                ordinal,
+                rule: RULE_REDEFINE,
+                inputs: inputs.clone(),
+            });
+            if winner_index != Some(index) {
+                hidden.insert(redefining_key);
+            }
+            let target_entry = member_preimages
+                .get_mut(&(type_key.clone(), target_key.clone()))
+                .expect("reachable operation target is an effective member");
+            let ordinal = target_entry.derivation.len();
+            target_entry.derivation.push(Fact {
+                ordinal,
+                rule: RULE_REDEFINE,
+                inputs,
+            });
+        }
+        hidden.insert((type_key.clone(), target_key));
     }
 }
 
@@ -3365,14 +3364,9 @@ fn owner_dominates(
 ///
 /// Sorted here, once, by `(owner, redefining)` (M1, #204 round 1) so the
 /// refusal payload built below (`DerivationConflict`'s own `redefiners`/
-/// `detail`, and `RedefinitionTarget`'s `detail`) is deterministic
-/// regardless of a caller's own incoming order: the field-target loop above
-/// already sorts its own `edges` the identical way before calling, for its
-/// *other* (`member_preimages`/`hidden`) needs downstream, so this sort is a
-/// stable no-op there and `Ok(i)` still indexes that caller's own slice the
-/// same way; the operation-target loop does not pre-sort, and never reads
-/// `Ok(i)` (operation members have no winner bookkeeping of their own — see
-/// that loop's comment), so sorting only here, once, covers both callers.
+/// `detail`, and `RedefinitionTarget`'s `detail`) is deterministic.
+/// Both callers sort their edges in the same order before calling, so the
+/// returned `Ok(i)` indexes the caller's slice for visibility bookkeeping.
 ///
 /// `Err`'s own [`Phase4Rank`] travels with its refusal (MEDIUM finding, PR
 /// #228 round 2 review): both callers used to re-derive it from the returned

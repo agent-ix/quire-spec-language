@@ -441,6 +441,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
 /// display node, so their two redefiners of `model.Root.x` are a genuine
 /// derivation conflict, never a same-owner ambiguity.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
 #[test]
 fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_redefinition_target(
 ) {
@@ -1499,7 +1500,7 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
 fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender() {
     let view = completed(&fixture_n06_resolved(), ModelNormalizationLimits::UNLIMITED);
 
-    // Type-level identities are unaffected by phase 4 (field-only): D's
+    // Type-level identities are unaffected by phase-4 member facts: D's
     // identity is exactly N02's fixture_f2() type D.
     let type_d = find_type(&view, "ix://test/orders/D");
     let owner_d = type_d.effective_id;
@@ -1758,7 +1759,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
+                     which is not a declared object, record value, event, or state-machine type"
                 .to_owned(),
         },
         ModelRefusal {
@@ -1799,7 +1800,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
+                     which is not a declared object, record value, event, or state-machine type"
                 .to_owned(),
         },
         ModelRefusal {
@@ -1840,7 +1841,7 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.Z.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
+                     which is not a declared object, record value, event, or state-machine type"
                 .to_owned(),
         },
     ]));
@@ -2023,7 +2024,7 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
+                     which is not a declared object, record value, event, or state-machine type"
                 .to_owned(),
         },
         ModelRefusal {
@@ -2096,7 +2097,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
                             owner: DeclarationKey::fixture("model.no-such-owner"),
                         },
                         detail: "field member model.A.y names owner model.no-such-owner, \
-                                 which is not a declared object type or record value type"
+                                 which is not a declared object, record value, event, or state-machine type"
                             .to_owned(),
                     },
                     ModelRefusal {
@@ -3115,8 +3116,17 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
         })
         .expect("A contains its direct operation");
     assert_eq!(
-        direct.preimage.derivation.iter().map(|fact| fact.rule.identity).collect::<Vec<_>>(),
+        direct
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| fact.rule.identity)
+            .collect::<Vec<_>>(),
         vec![RULE_QUALIFY.identity]
+    );
+    assert_eq!(
+        direct.preimage.derivation[0].inputs,
+        vec![DeclarationKey::fixture("model.A.op")]
     );
     assert!(direct.visible);
     let owner = view
@@ -3132,8 +3142,31 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
         })
         .expect("B contains inherited A.op");
     assert_eq!(
-        inherited.preimage.derivation.iter().map(|fact| fact.rule.identity).collect::<Vec<_>>(),
-        vec![RULE_QUALIFY.identity, RULE_INHERIT.identity, RULE_REDEFINE.identity]
+        inherited
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| fact.rule.identity)
+            .collect::<Vec<_>>(),
+        vec![
+            RULE_QUALIFY.identity,
+            RULE_INHERIT.identity,
+            RULE_REDEFINE.identity
+        ]
+    );
+    assert_eq!(
+        inherited.preimage.derivation[1].inputs,
+        vec![
+            DeclarationKey::fixture("model.A"),
+            DeclarationKey::fixture("model.A.op")
+        ]
+    );
+    assert_eq!(
+        inherited.preimage.derivation[2].inputs,
+        vec![
+            DeclarationKey::fixture("model.B.op2"),
+            DeclarationKey::fixture("model.A.op")
+        ]
     );
     assert!(!inherited.visible);
     let redefining = view
@@ -3145,8 +3178,20 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
         })
         .expect("B contains direct B.op2");
     assert_eq!(
-        redefining.preimage.derivation.iter().map(|fact| fact.rule.identity).collect::<Vec<_>>(),
+        redefining
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| fact.rule.identity)
+            .collect::<Vec<_>>(),
         vec![RULE_QUALIFY.identity, RULE_REDEFINE.identity]
+    );
+    assert_eq!(
+        redefining.preimage.derivation[1].inputs,
+        vec![
+            DeclarationKey::fixture("model.B.op2"),
+            DeclarationKey::fixture("model.A.op")
+        ]
     );
     assert!(redefining.visible);
 
@@ -3188,8 +3233,7 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
 /// QSL #145: `B` declares two operation members, `B.op2` and `B.op3`, both
 /// redefining the identical inherited
 /// operation `A.op` — the operation-member analog of `fixture_n06_conflict`'s
-/// field contest, except `B` is the only owner (nothing dominates anything;
-/// this fixture is only about the `c >= 2` *charge*, never resolution).
+/// field contest, except `B` is the only owner (nothing dominates anything).
 fn fixture_operation_redefinition_conflict() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.op-redef-conflict"),
@@ -3276,26 +3320,19 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        20,
-        "5 normalize.record (A, B, A.op, B.op2, B.op3 -- Supertype/\
-         Redefinition records are relationships, not declarations) + 2 \
-         normalize.fact (A/B qualify) + 1 normalize.cycle-check + 1 \
-         normalize.fact (B's own inherit-A path) + 2 \
-         normalize.redefinition-check (m + r = 3 + 0, then 3 + 1) + 1 \
-         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * (2+2) = 4) = \
-         20; phase 4's own charges are exhaustive up to and including \
-         normalize.conflict-check (value-accounting.md:481), but the \
-         redefinition-target refusal that same-owner contest now reports \
-         (#173) ends checking there -- no normalize.declaration or \
-         normalize.hash charge ever runs (value-accounting.md:482)"
+        29,
+        "5 records + 5 phase-2 facts + 1 cycle-check + 3 phase-3 facts \
+         + 7 redefinition-check work units (m+r = 3, then 4) + 4 \
+         operation redefine facts + 4 conflict-check work units = 29; \
+         the phase-4 refusal prevents declaration and hash charges"
     );
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 16;
+    limits.work_units = 25;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.consumed, 16);
+            assert_eq!(incomplete.consumed, 25);
             assert_eq!(
                 incomplete.next_charge, 4,
                 "(c-1) * (f(B)+f(B)) = 1 * (2+2) = 4"
@@ -3387,9 +3424,7 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
 /// refusal -- the "a winner if one dominates" half of #173's rule, as
 /// opposed to the same-owner and diamond refusal cases exercised above and
 /// in `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`.
-/// Resolving an operation contest builds no `EffectiveView` member entry
-/// (see the module docs): there is nothing to assert about the view here,
-/// only that the ambiguity check itself does not refuse.
+/// A resolved operation contest retains the winning member and every fact.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
@@ -3432,14 +3467,11 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
     );
     // Cross-checked by running the crate directly (outcome is `Completed`,
     // so this is the exhaustive total through the final `normalize.hash`):
-    // 8 `normalize.record` (A, B, C, D, A.op, B.op2, C.op3, D.op4) + facts
-    // for every type's own qualify/inherit path (`f(A)=1, f(B)=f(C)=2,
-    // f(D)=4` under the diamond's own ancestor set `{A}`/`{A,B,C}`) + one
-    // `normalize.cycle-check` per generalization edge (B->A, C->A, D->B,
-    // D->C) + the `c=3` group's own `normalize.redefinition-check`/
-    // `normalize.conflict-check` charges + `normalize.declaration`/
-    // `normalize.hash` once the group resolves.
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 65);
+    // 8 records + 35 qualify/inherit/redefine facts + 8 cycle-check work
+    // units + 11 redefinition-check work units + 18 conflict-check work
+    // units + 13 declarations + 13 declaration hashes + 2 universe/view
+    // hashes = 108. D's type has five facts: qualify and four inherited paths.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 108);
 }
 
 /// `value-accounting.md:456` prices every contested `(effective type,
@@ -3467,36 +3499,11 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
 /// every field group (here, just the one `5`) before any operation group
 /// (`6`), regardless of which target key sorts first.
 ///
-/// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this domain package's phase 4 charges exhaustively up to and
-/// including the last `normalize.conflict-check`
-/// (value-accounting.md:481) at exactly `work_units = 69`
-/// (`normalize.record` charges its nine declaration records -- three
-/// object types, three fields and three operation members; `B`'s and `C`'s
-/// own `supertypes[]` entries and every member's own `redefines` property
-/// are inline on those same nine records, not separate declarations of
-/// their own, so there is nothing else to charge -- plus the field redefinition
-/// group's own six phase-4 redefine facts, `+6`: two at `B` for `redef.z1`
-/// reaching only `B`, and four at `C` for `redef.z1`/`redef.z2` both
-/// reaching `C`; the operation group's own two records contribute no facts
-/// at all, since operation members never enter `member_preimages` and get
-/// no `Fact` here, only a `normalize.conflict-check` charge -- see the
-/// module docs), then refuses `redefinition-target` there
-/// (value-accounting.md:482 ends checking at that stage's refusal): no
-/// `normalize.declaration` or `normalize.hash` charge ever runs, unlike
-/// before #173 resolved this contest. `work_units = 58` (`52 + 6`) is
-/// exactly enough to admit every charge up to and including the six
-/// phase-4 `normalize.fact` charges, denying at the first
-/// `normalize.conflict-check` -- the operation group's `6`, not the field
-/// group's `5`.
-///
-/// Revert probe: reverting `apply_redefinitions` back to each loop pushing
-/// its own charge straight to `conflict_check_work` (the pre-fix shape)
-/// makes the `work_units = 58` assertion fail -- `next_charge` becomes `5`
-/// (the field group, charged first again) instead of `6` -- confirmed by hand:
-/// reverting the two loops to push directly, locally, reproduces the
-/// failure; restoring the collect-sort-push shape returns this test to
-/// green.
+/// Nine records, 32 facts (nine phase 2, thirteen phase 3, ten phase 4),
+/// four cycle-check work units, and 27 redefinition-check work units reach
+/// exactly 72 before the conflict checks. The operation group charges six
+/// first, then the field group charges five, for 83 total. The same-owner
+/// operation refusal prevents declaration and hash charges.
 #[trace(
     "QSpec-TC-195",
     "QSpec-TC-196",
@@ -3574,23 +3581,22 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
          refuses redefinition-target (#173); the field group resolves \
          (C.z2 dominates B.z1) and stays unrefused"
     );
-    // Includes the field redefinition group's own six phase-4 redefine
-    // facts' `normalize.fact` charges (operation members derive no facts of
-    // their own -- see the module docs). Phase 4's own charges are
+    // Includes the field and operation groups' phase-4 redefine facts.
+    // Phase 4's own charges are
     // exhaustive up to and including the last normalize.conflict-check
     // (value-accounting.md:481), but the operation group's
     // redefinition-target refusal ends checking there (#173,
     // value-accounting.md:482): no normalize.declaration or normalize.hash
     // charge ever runs, unlike before #173 resolved this contest.
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 72);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 83);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 61;
+    limits.work_units = 72;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 61);
-            assert_eq!(incomplete.consumed, 61);
+            assert_eq!(incomplete.limit, 72);
+            assert_eq!(incomplete.consumed, 72);
             assert_eq!(
                 incomplete.next_charge, 6,
                 "model.A.a sorts before model.A.z, so the operation group's \
@@ -4439,7 +4445,7 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
                     member: DeclarationKey::fixture("model.A.y"),
                     owner: DeclarationKey::fixture("model.nope"),
                 },
-                detail: "field member model.A.y names owner model.nope, which is not a declared object type or record value type".to_string(),
+                detail: "field member model.A.y names owner model.nope, which is not a declared object, record value, event, or state-machine type".to_string(),
             },
             ModelRefusal {
                 code: qsl_foundation::diagnostic::Code::DanglingReference,
@@ -4518,7 +4524,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
                 member: DeclarationKey::fixture("model.Dup.f"),
                 owner: DeclarationKey::fixture("model.nope"),
             },
-            detail: "field member model.Dup.f names owner model.nope, which is not a declared object type or record value type".to_string(),
+            detail: "field member model.Dup.f names owner model.nope, which is not a declared object, record value, event, or state-machine type".to_string(),
         },
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
