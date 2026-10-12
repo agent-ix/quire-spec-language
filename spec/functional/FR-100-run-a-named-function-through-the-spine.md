@@ -143,6 +143,13 @@ and actual expected/supplied identities. Malformed identities retain their
 own construction/reader refusal before a typed value can be supplied.
 `with_unresolved_references` SHALL NOT admit a model call here.
 
+An evaluation lookup refusal retains FR-090's unchanged
+`ModelRefusal::catalog_code()` and catalog cause. FR-301's `StateModel`
+attribution identifies the owning family inside the enclosing result; it does
+not add a `state-model` prefix to the catalog code. TC-792 asserts both the
+family attribution and the unchanged `invalid_runtime_input` /
+`absent-key` spelling.
+
 The input guard SHALL NOT reinterpret other Value variants as one of these
 four admitted kinds. Binding-name checks run in full before value checks,
 in the existing order: unknown/duplicate arguments, missing parameters,
@@ -223,10 +230,18 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
     integer assignment FR-098 replays, read by the same rule. An integer
     type's parameter takes the integer. A `Boolean` parameter takes `0`
     (`false`) or `1` (`true`).
-  - `work_units`: optional, a JSON integer from 0 to 18446744073709551615
-    (`u64::MAX`). It is the S6a `quire.value.accounting/v1` `work_units`
-    limit of the call. An omitted `work_units` is 1,000,000. The call's
-    other nine accounting counters are each `u64::MAX`.
+  - `accounting`: optional, a closed object holding the call's S6a
+    `quire.value.accounting/v1` accounting limits. Each member is named by
+    one of the ten counters of FR-255's accounting table (`integer_bits`,
+    `decimal_digits`, `scale_expansion`, `text_input_bytes`,
+    `text_scalars`, `normalized_scalars`, `unit_edges`,
+    `value_occurrences`, `work_units`, `result_units`), and its value is a
+    JSON integer from 0 to 18446744073709551615 (`u64::MAX`), that
+    counter's bound. Any subset of the ten may be present. A counter the
+    object does not name, and every counter when `accounting` is omitted,
+    takes its FR-255 accounting-table default: `work_units` 1,000,000 and
+    each other counter `u64::MAX`. `call` has no top-level `work_units`
+    member.
 
 A `0-draft` request carries FR-026's members and no `call` or `libraries`.
 
@@ -414,7 +429,7 @@ exits with that code's exit status:
 | A declared edition other than `0-draft` or `1-draft` | `profile` | `unknown_edition` | as FR-027 | 20 |
 | A `1-draft` request carrying `selection`, `snapshots`, `invocations`, `package`, a set `validation_work` or `expression_steps`, `clauses`, `extraction`, or a model in a format other than `semantic-ir/2.0.0`; or carrying no `call` | `request` | `invalid-request` | as FR-026 | 20 |
 | A `0-draft` request carrying `call` or `libraries` | `request` | `invalid-request` | as FR-026 | 20 |
-| A `call` that is not the closed object above; an argument `value` that is not a JSON integer in the signed 64-bit range; a `work_units` that is not a JSON integer from 0 to `u64::MAX` | `request` | `invalid-request` | as FR-026 | 20 |
+| A `call` that is not the closed object above, including one carrying a top-level `work_units`; an argument `value` that is not a JSON integer in the signed 64-bit range; an `accounting` that is not an object, or that holds a member naming no counter of FR-255's accounting table, a member named twice, or a member value that is not a JSON integer from 0 to `u64::MAX` | `request` | `invalid-request` | as FR-026 | 20 |
 | A spine compile refusal | the refusing spine stage | that stage's cause code | as FR-027 | that code's |
 | A `function` that is empty, holds an empty segment or a segment that is not an identifier, has more than one segment, or names no function of the compiled package | `call` | `missing_declaration` | `{"function": "<the function string>"}` | 20 |
 | A function whose declared result is neither `Boolean`, an integer type nor `Reference` | `call` | `unsupported_construct` | `{"function": "<the function string>"}` | 21 |
@@ -471,9 +486,12 @@ exit 30.
 - Until that change, if the program declares `1-draft` and the request
   carries `clause`, then the run command shall refuse it with
   `invalid-request` at stage `request`, naming `clause`.
-- If a `call` member, an argument `value` or `work_units` is outside the
+- If a `call` member, an argument `value` or an `accounting` member is outside the
   shape Inputs states, then the run command shall refuse with
   `invalid-request` at stage `request`.
+- The run command shall build the call's accounting limits from
+  `accounting`: each named counter at its value, every other counter at
+  its FR-255 accounting-table default.
 - The run command shall hand the `1-draft` source, its domain packages, its
   dependency input, the default spine stage limits, the `call` and its
   accounting limits to `qsl_replay::spine::run`, and render its result by
@@ -543,10 +561,10 @@ exit 30.
 |----|----------|--------------|
 | FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test |
 | FR-100-AC-2 | A `0-draft` native-run/1 request writes the stdout bytes and exit status TC-103 and TC-104 fix for it. A program declaring `edition "7-draft"` refuses `unknown_edition` at stage `profile`, exit 20, empty stdout, with a `message` naming the file and the edition. | Test |
-| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A `work_units` of `18446744073709551616`, `-1` or `1.5` refuses the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test |
+| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. An `accounting` member `work_units` of `18446744073709551616`, `-1`, `1.5` or `null`, an `accounting` member `depth`, an `accounting` of `5`, and a `call` carrying a top-level `work_units` of `0` each refuse the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test |
 | FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, empty stdout, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test |
 | FR-100-AC-5 | `function` `nope`, `module.seven`, `""`, `seven.`, and `7x` each refuse `missing_declaration` at stage `call`, exit 20, empty stdout, with `details` `{"function": <that string>}`. A function whose declared result is a record refuses `unsupported_construct` at stage `call`, exit 21, before any call. A `1-draft` source with a syntax error refuses at stage `source` (`invalid_syntax`), and one declaring `inv(x: Int[0, 9]): Boolean { 1 / x > 0 }` refuses at stage `check` with `ill_typed` (integer `/` with no `Rational` expected type); each exits 20 with empty stdout (FR-027-AC-8). | Test |
-| FR-100-AC-6 | `seven` with `work_units` 0 writes outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test |
+| FR-100-AC-6 | `seven` with `accounting` `{"work_units": 0}` writes outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test |
 | FR-100-AC-7 | `qsl_replay::spine::run` called directly over each AC-1, AC-4, AC-5 and AC-6 input returns the same `package_id`, outcome category, value, code, reason, counter, and parameter name or position the CLI renders. The root crate names `qsl-eval` in no dependency table (TC-390). | Test |
 | FR-100-AC-8 | No public item of `qsl_replay::spine`, and no `qsl_replay` re-export, names a `qsl_eval` path; a `pub use` of a `qsl_eval` item from `qsl_replay`, or a `qsl_eval` type in `spine::run`'s signature, fails the check. | Test |
 | FR-100-AC-9 | The outcome mapping converts a constructed `Outcome::Completed` of each value kind, `Outcome::Refused` of each of the thirteen kernel refusals, `Outcome::Undefined` of each of the five kernel reasons, `Outcome::Incomplete`, `FamilyResult::Refused` with and without an FR-096 key-table row, `FamilyResult::Undefined` of each family reason, and a `CallFailure::Fault` into the `outcome` member and exit status the mapping tables state: each of the twelve kernel refusals other than `CheckedInvariant` renders its record's code, cause, fields (JSON strings) and locus, as the kernel-record table states, exit 20; a family cause with a record renders the same members; a family cause without a record renders its `catalog_code()` with no `fields`, exiting by that code (`AncestorSteps`, `resource_exhausted`, exits 22); and `CheckedInvariant` and `CallFailure::Fault` are `runtime_invariant` command errors with their stage and invariant in `details`, at the internal-failure exit status. | Test |
@@ -558,7 +576,7 @@ exit 30.
 | FR-100-AC-16 | Independently supply a wrong-kind argument, an unregistered PopulationId, a binding whose declared maximum differs from the parameter's, a foreign selected model/universe, and a dangling Reference. Each refuses before evaluation with its owning typed cause and parameter/identity fields. TC-792's actual selected-model exact type and genuine proper subtype both pass Reference admission, retaining the most-specific identity; an in-model unrelated type refuses WrongValueKind. Combined foreign-universe plus nonconforming type retains the foreign-universe cause before conformance. Unknown, duplicate and missing parameter failures retain precedence over value admission, and declared parameter order selects the first failing input. A function ignoring its arguments cannot bypass these checks. | Test |
 | FR-100-AC-17 | Malformed identity bytes rejected by the actual constructor/reader never become supplied typed references. A well-formed real object absent only from the query population reaches the AC-14 lookup refusal; an object absent from the complete object world produces dangling-reference admission instead. An unresolved-reference context cannot turn the latter into AC-14. | Test |
 | FR-100-AC-18 | The scalar inputs, values, refusals, category/exit mapping and internal-fault oracles in AC-1 through AC-12 remain equal after adapting callers to the shared Value field and explicit context. All ten actual accounting limits reach evaluation unchanged. Requested and Deadline stops remain distinct before and during S6a; applicable pre-call denial has zero evaluation consumption. | Test |
-| FR-100-AC-19 | Public signatures use the carriers in Typed public call and no qsl_eval path. The source, binding and object context are admitted through their actual owner APIs, with no copied/trusted substitute model view or second engine. The driver executes TC-792 through this reviewed public boundary and retains the absent/present and invalid-admission distinctions. | Test |
+| FR-100-AC-19 | Public signatures use the carriers in Typed public call and no qsl_eval path. The source, binding and object context are admitted through their actual owner APIs, with no copied/trusted substitute model view or second engine. The driver executes TC-792 through this reviewed public boundary and retains the absent/present and invalid-admission distinctions. | Test (TC-792) |
 
 The typed-call acceptance criteria supplement all existing scalar oracles;
 FR-100-AC-13 remains reserved to the QSL-656 accounting amendment.
@@ -611,12 +629,10 @@ AC-14–19 TC-792. These associations do not replace executable trace tags.
 The typed-public-call amendment is proposed for independent review under
 QSL-665. Its source, admission, result and TC-792 consumer qualification are
 UNRUN. Existing implementation statements below describe the scalar entry
-only. QSL-656's reviewed accounting amendment is a source-history
-prerequisite: its closed `accounting` object replaces the legacy file
-`work_units` member, with no compatibility member. The accounting owner
-retains that amendment and TC-951; this branch does not duplicate it.
-Source consumers must reconcile that exact amendment before implementation
-or qualification. No implementation branch is created by this spec.
+only. QSL-656 owns the reviewed `accounting` object, defaults and closed
+decoding; this branch does not duplicate that accounting amendment or TC-951.
+Source consumers must use that exact contract before implementation or
+qualification. No implementation branch is created by this spec.
 
 Remaining work (implementation, with the native-run deletion change, FR-312):
 the code still requires a `sha256:` source digest on each source selection

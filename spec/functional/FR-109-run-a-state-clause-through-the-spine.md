@@ -67,7 +67,7 @@ A `ClauseRunRequest`:
   model object type, resolved in the current snapshot `snapshot` names;
 - an optional expected `package_id`;
 - `SpineLimits`, `ObservationLimits` and the evaluation meter budget
-  (FR-100's `work_units`).
+  (FR-100's `accounting`).
 
 ## Outputs
 
@@ -188,7 +188,7 @@ binding receipt when CG consumes the serialized result.
 |----|----------|--------------|
 | FR-109-AC-1 | The healthy-parent request reports stage `evaluate`, `success`, `truth: true`, exit code 0, with the compiled `package_id`; violating-parent reports `violation`, `truth: false`, exit 10. | Test |
 | FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no `package_id`; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test |
-| FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test |
+| FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (`accounting` `{"work_units": 0}`) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test |
 | FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test |
 | FR-109-AC-5 | Running one request twice gives equal reports, including usage. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test |
 | FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; missing-model over the same source reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test |
@@ -202,9 +202,9 @@ binding receipt when CG consumes the serialized result.
   typed-public-call amendment supplies the Value-call boundary only;
   [TC-792](../test-cases/TC-792-state-model-causes-render-with-their-own-prefix.md)
   retains this claim runner for its separate dispatched-clause step 2.
-  QSL-656 owns reconciliation of the evaluation budget wording below to
-  the reviewed `accounting` object; this amendment does not reinstate the
-  legacy top-level `work_units` member or take ownership of TC-951.
+  QSL-656 owns the reviewed `accounting` object and evaluation budget
+  contract; this amendment does not duplicate that contract or take ownership
+  of TC-951.
 - FR-100 (the spine run's argument binding, outcome mapping, internal-failure
   handling and exit statuses), FR-106, FR-107 (admission and evaluation), FR-099 and FR-027
   (the spine compile), FR-098 (the stale `package_id` rule), FR-060 (the CG

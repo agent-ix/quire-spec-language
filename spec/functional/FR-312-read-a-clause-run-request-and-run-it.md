@@ -55,7 +55,8 @@ place of `call`. `clause` is a closed object:
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
 - `package_id`: optional, the expected `package_id`, lowercase hex;
-- `work_units`: optional, FR-100's evaluation budget;
+- `accounting`: optional, FR-100's `accounting` object, the evaluation
+  budget;
 - `observation_limits`: optional, FR-106's `ObservationLimits` overrides.
 
 The request's `models` and `libraries` are FR-100's and give FR-109's
@@ -131,10 +132,9 @@ method-only Verification cells do not replace the existing trace tags.
 ## Status
 
 QSL-665's typed-call clarification is proposed; its consumer qualification
-is UNRUN. QSL-656 owns the reviewed replacement of `clause.work_units` by
-`clause.accounting` and its defaults/closed decoding. That source-history
-amendment must be reconciled before consuming the legacy wording below;
-this clarification does not define a compatibility member.
+is UNRUN. QSL-656 owns the reviewed `clause.accounting` object, its defaults
+and closed decoding; this clarification does not duplicate that contract or
+define a compatibility member.
 
 Specified; not yet implemented -- TC-891 planned. Lands with the deletion of
 native `run` (ADR-031 R-1). That change also deletes the per-file `sha256:`
