@@ -106,6 +106,17 @@ pub struct NamespaceRecord {
     pub vocabulary: Vec<NamespaceTerm>,
 }
 
+/// A persistence interface declaration: the original storage contract and
+/// the object types whose values it persists. Its operation members remain
+/// ordinary [`OperationMemberRecord`]s owned by this key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistenceInterfaceRecord {
+    /// The original persistence-interface declaration key.
+    pub key: DeclarationKey,
+    /// The object types named by the declaration's `persists` list.
+    pub persists: Vec<DeclarationKey>,
+}
+
 /// QSL's own closed native value-type vocabulary: the unparameterized
 /// value-type keywords a `typeRef` may name directly, under
 /// `ix://quire/native/<Name>`, without naming a node of any package. It
@@ -568,6 +579,8 @@ pub enum DomainPackageRecord {
     Clause(ClauseRecord),
     /// An original namespace with no effective type (FR-208).
     Namespace(NamespaceRecord),
+    /// An original persistence interface with no effective type (FR-208).
+    PersistenceInterface(PersistenceInterfaceRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
@@ -594,6 +607,7 @@ impl DomainPackageRecord {
             Self::RecordValueType(record) => &record.key,
             Self::Clause(record) => &record.key,
             Self::Namespace(record) => &record.key,
+            Self::PersistenceInterface(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,
