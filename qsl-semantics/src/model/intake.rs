@@ -1635,7 +1635,7 @@ fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> Mode
     )
 }
 
-fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefusal {
+pub(super) fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefusal {
     let node = node_identity_label(value, at);
     let what = what.into();
     ModelRefusal {
@@ -1752,13 +1752,13 @@ fn unsupported_native_parameters(
 /// refusal against `value`'s own `identity`/`origin`, so a nested check
 /// (a field's `typeRef`, a multiplicity's `lower`) still names the owning
 /// declaration, not an anonymous sub-object with neither.
-struct NodeCtx<'a> {
+pub(super) struct NodeCtx<'a> {
     value: &'a Value,
     at: String,
 }
 
 impl<'a> NodeCtx<'a> {
-    fn new(value: &'a Value, at: impl Into<String>) -> Self {
+    pub(super) fn new(value: &'a Value, at: impl Into<String>) -> Self {
         Self {
             value,
             at: at.into(),
@@ -1922,7 +1922,7 @@ fn read_operation_parameter(
 /// declarations only after every node is read (`resolve_pending_frames`),
 /// since an entry may name a sibling type's field or a type declared later
 /// in the document (TC-458-AC-5: admission is order-independent).
-struct PendingFrame {
+pub(super) struct PendingFrame {
     /// This operation's own declaration key, to write the resolved
     /// [`OperationEffect`] back onto its [`OperationMemberRecord`].
     operation: DeclarationKey,
@@ -2253,7 +2253,7 @@ fn read_object_type(
 ///
 /// `type_meanings` maps each type identity of the document to the meaning
 /// its `kind` resolves to.
-fn read_record_value_type(
+pub(super) fn read_record_value_type(
     package: &str,
     type_value: &Value,
     node: &str,
@@ -2354,7 +2354,7 @@ fn read_clauses(
 }
 
 /// Namespace data is original-only: it never grants a type or frame role.
-fn read_namespace(
+pub(super) fn read_namespace(
     package: &str,
     node: &str,
     ctx: &NodeCtx<'_>,
@@ -3007,24 +3007,28 @@ fn read_type_node(
         return Err(unsupported_at(type_value, at, meaning::VALUE_TYPE));
     }
     let mut records = Vec::new();
+    let binding_result = {
+        let mut context = super::meaning_dispatch::MeaningBindingContext {
+            package,
+            type_value,
+            node,
+            at,
+            type_meanings,
+            records: &mut records,
+            pending,
+        };
+        super::meaning_dispatch::bind(construct_meaning, &mut context)
+    };
+    if let Some(result) = binding_result {
+        result?;
+        return Ok(records);
+    }
     match construct_meaning.as_str() {
         meaning::OBJECT_TYPE => {
             read_object_type(package, type_value, node, at, false, &mut records, pending)?
         }
         meaning::SYSTEMS_INTERFACE => {
             read_object_type(package, type_value, node, at, true, &mut records, pending)?
-        }
-        meaning::RECORD_VALUE_TYPE => read_record_value_type(
-            package,
-            type_value,
-            node,
-            at,
-            type_meanings,
-            &mut records,
-            pending,
-        )?,
-        meaning::NAMESPACE => {
-            read_namespace(package, node, &ctx, type_meanings, &mut records)?;
         }
         meaning::VALUE_TYPE => {
             records.push(DomainPackageRecord::ScalarType(read_value_type(
