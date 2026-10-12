@@ -1723,6 +1723,57 @@ fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> boo
     })
 }
 
+fn signature_type_refusal(
+    package: &DomainPackage,
+    operation: &DeclarationKey,
+    parameter: Option<&DeclarationKey>,
+    value_type: &ValueTypeRef,
+) -> ModelRefusal {
+    let forbidden_meaning = value_type.as_package().is_some_and(|key| {
+        package.records.iter().any(|record| {
+            record.key() == key
+                && match record {
+                    DomainPackageRecord::EventType(_)
+                    | DomainPackageRecord::StateMachine(_)
+                    | DomainPackageRecord::Process(_)
+                    | DomainPackageRecord::PersistenceInterface(_)
+                    | DomainPackageRecord::Namespace(_) => true,
+                    DomainPackageRecord::ObjectType(object) => object.interface_features.is_some(),
+                    _ => false,
+                }
+        })
+    });
+    let position = parameter.map_or_else(
+        || "result".to_owned(),
+        |key| format!("parameter {}", key.node),
+    );
+    let (code, cause, reason) = if forbidden_meaning {
+        (
+            Code::InvalidModelBinding,
+            ModelRefusalCause::MalformedDeclaration,
+            "has a meaning forbidden as a signature value type",
+        )
+    } else {
+        (
+            Code::DanglingReference,
+            ModelRefusalCause::UnknownValueType {
+                operation: operation.clone(),
+                parameter: parameter.cloned(),
+                value_type: value_type.clone(),
+            },
+            "is not a declared type",
+        )
+    };
+    ModelRefusal {
+        code,
+        cause,
+        detail: format!(
+            "operation {} {position} names value type {value_type}, which {reason}",
+            operation.node
+        ),
+    }
+}
+
 /// Every FR-154 per-node check for one already-key-validated node, in
 /// FR-154's own table order, the object id check first
 /// (`model-complete.md`:81). Returns every failing check for this node, in
@@ -2008,18 +2059,12 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_record_value_type(value_type)
                     {
-                        refusals.push(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownValueType {
-                                operation: op.key.clone(),
-                                parameter: Some(parameter.key.clone()),
-                                value_type: parameter.value_type.clone(),
-                            },
-                            detail: format!(
-                                "operation {} parameter {} names value type {}, which is not a declared type",
-                                op.key.node, parameter.key.node, parameter.value_type
-                            ),
-                        });
+                        refusals.push(signature_type_refusal(
+                            domain_package,
+                            &op.key,
+                            Some(&parameter.key),
+                            &parameter.value_type,
+                        ));
                     }
                 }
             }
@@ -2029,18 +2074,12 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_record_value_type(value_type)
                     {
-                        refusals.push(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownValueType {
-                                operation: op.key.clone(),
-                                parameter: None,
-                                value_type: result.value_type.clone(),
-                            },
-                            detail: format!(
-                                "operation {} result names value type {}, which is not a declared type",
-                                op.key.node, result.value_type
-                            ),
-                        });
+                        refusals.push(signature_type_refusal(
+                            domain_package,
+                            &op.key,
+                            None,
+                            &result.value_type,
+                        ));
                     }
                 }
             }

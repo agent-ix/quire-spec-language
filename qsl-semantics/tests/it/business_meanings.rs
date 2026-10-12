@@ -701,12 +701,20 @@ fn operation_signature_type_meaning_matrix() {
             let NormalizeOutcome::Refused(refusals) = outcome else {
                 panic!("signature type {name} must refuse");
             };
-            for parameter in [Some(parameter_key.clone()), None] {
-                assert!(refusals.iter().any(|refusal| {
-                    refusal.code == Code::DanglingReference && matches!(&refusal.cause,
-                        ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type }
-                        if operation == &operation_key && actual_parameter == &parameter && actual_type == &value_type)
-                }));
+            assert_eq!(refusals.len(), 2, "parameter and result must each refuse");
+            for refusal in refusals.iter() {
+                assert_eq!(refusal.code, Code::InvalidModelBinding);
+                assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+                assert!(refusal.detail.contains(&value_type.to_string()));
+                assert!(refusal.detail.contains(&operation_key.node));
+            }
+            for position in [
+                format!("parameter {}", parameter_key.node),
+                "result".to_owned(),
+            ] {
+                assert!(refusals
+                    .iter()
+                    .any(|refusal| { refusal.detail.contains(&position) }));
             }
         }
     }
