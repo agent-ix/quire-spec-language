@@ -1649,6 +1649,9 @@ fn persistence_interface_model_members_do_not_block_assembly() {
 #[trace("FR-322-AC-25", "TC-235")]
 #[test]
 fn process_model_members_assemble_as_an_identified_run_type() {
+    let workflow = format!("ix://{PACKAGE_IDENTITY}/Workflow");
+    let workflow_id = format!("{workflow}/id");
+    let workflow_step = format!("{workflow}/begin");
     let process = format!("ix://{PACKAGE_IDENTITY}/Fulfilment");
     let correlation = format!("{process}/correlation_id");
     let restart = format!("{process}/restart");
@@ -1659,11 +1662,42 @@ fn process_model_members_assemble_as_an_identified_run_type() {
             meaning::PROCESS,
             json!({"identityFields": "required", "steps": "required"}),
         )]),
-        json!([wire_type(
-            &process,
-            "process",
-            json!({
+        json!([
+            wire_type(
+                &workflow,
+                "process",
+                json!({
+                    "identityFields": [workflow_id],
+                    "fields": [wire_field(
+                        &format!("{workflow}/id"),
+                        "id",
+                        "ix://quire/native/Boolean",
+                        "required",
+                        1,
+                    )],
+                    "operations": [],
+                    "steps": [{
+                        "identity": workflow_step,
+                        "name": "begin",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": workflow_step,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [workflow_step],
+                            }
+                        },
+                    }],
+                }),
+            ),
+            wire_type(
+                &process,
+                "process",
+                json!({
                 "identityFields": [correlation],
+                "supertypes": [workflow],
                 "fields": [wire_field(
                     &format!("{process}/correlation_id"),
                     "correlation_id",
@@ -1714,16 +1748,58 @@ fn process_model_members_assemble_as_an_identified_run_type() {
                         }
                     },
                 }],
-            }),
-        )]),
+                }),
+            ),
+        ]),
         json!([]),
     )
     .to_string()
     .into_bytes();
 
-    admit_and_assemble(&document).expect(
+    let declarations = admit_and_assemble(&document).expect(
         "a process's identified-run members and process-valued create/delete frame entries must assemble",
     );
+
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the process package admits");
+    let identities = views[0].view.type_identities();
+    let key = |node: &str| DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: node.to_owned(),
+    };
+    let workflow_effective = identities[&key(&workflow)];
+    let process_effective = identities[&key(&process)];
+    let declared = declarations
+        .types
+        .object_type(process_effective)
+        .expect("Fulfilment is projected as an identified run type");
+    assert_eq!(declared.name(), "Config::Fulfilment");
+    assert_eq!(declared.supertypes(), &[workflow_effective]);
+    let correlation = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "correlation_id")
+        .expect("the process correlation field is projected");
+    assert_eq!(correlation.value_type(), &ValueType::Boolean);
+    assert_eq!(correlation.presence(), Presence::Required);
+
+    let operation = declarations
+        .operations
+        .declared_by(process_effective)
+        .iter()
+        .find(|operation| operation.name() == "restart")
+        .expect("the process operation is projected");
+    assert_eq!(operation.parameters(), &[]);
+    assert_eq!(operation.result(), Some(&ValueType::Boolean));
+    assert_eq!(operation.effect().modifies, Vec::new());
+    assert_eq!(operation.effect().creates, vec![key(&process)]);
+    assert_eq!(operation.effect().deletes, vec![key(&process)]);
 }
 
 /// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by
