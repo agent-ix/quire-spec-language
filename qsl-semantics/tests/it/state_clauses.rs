@@ -217,6 +217,51 @@ fn the_configversion_state_clauses_check() {
     );
 }
 
+/// V1-TYPE-024: a subtype source and base-type target traverse an inherited
+/// edge without erasing either operand's checked reference identity.
+#[test]
+#[trace("TC-459", "FR-104-AC-9", "QSpec-V1-TYPE-024", "QSpec-FR-043-AC-4")]
+fn subtype_reachability_accepts_an_inherited_supertype_edge() {
+    let document = subtype_document(probe_operation());
+    let body = "pre SubCycle using v on Config::Sub::probe { \
+        reaches(self, target, parent) }\n";
+    let graph = check(&document, body).expect("Sub conforms to the inherited parent edge owner");
+    let clause = graph
+        .state_clause("SubCycle")
+        .expect("checked state clause");
+    let NodeKind::Reaches {
+        source,
+        target,
+        edge,
+    } = clause.body().kind()
+    else {
+        panic!("expected a checked reachability node");
+    };
+    assert_eq!(
+        clause.body().at(*source).value_type(),
+        &ValueType::Reference(clause.context())
+    );
+    assert_eq!(
+        clause.body().at(*target).value_type(),
+        &ValueType::Reference(edge.owner)
+    );
+}
+
+/// V1-TYPE-024: the target must conform to the inherited edge owner.
+#[test]
+#[trace("TC-460", "FR-104-AC-9", "QSpec-V1-TYPE-024", "QSpec-FR-043-AC-4")]
+fn subtype_reachability_refuses_an_unrelated_target_type() {
+    let mut probe = probe_operation();
+    probe["params"][0]["typeRef"] = json!("ix://example/config-version/Other");
+    let document = with_unrelated_population(subtype_document(probe));
+    let body = "pre SubCycle using v on Config::Sub::probe { \
+        reaches(self, target, parent) }\n";
+    assert_eq!(
+        check(&document, body).expect_err("Other does not conform to ConfigVersion"),
+        vec![(Code::IllTyped, Some("operator-ineligible"))]
+    );
+}
+
 #[trace("FR-091-AC-39", "TC-394")]
 #[test]
 fn a_complete_function_does_not_enable_integer_operators_in_a_state_only_clause() {

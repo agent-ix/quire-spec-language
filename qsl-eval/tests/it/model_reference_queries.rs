@@ -1115,6 +1115,101 @@ fn equal(left: Expression, right: Expression) -> Expression {
     Expression::binary(BinaryOperator::Equal, left, right)
 }
 
+/// V1-TYPE-022: equal empty object payloads do not replace explicit object
+/// identity, and a matching label from another universe cannot name a
+/// member of the selected population.
+#[test]
+#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-1", "QSpec-FR-009-AC-3")]
+fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let left = object_reference(&scenario.universe, &scenario.a, "a1");
+    let right = object_reference(&scenario.universe, &scenario.a, "a2");
+    let world = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types(&scenario),
+            [(left.clone(), vec![]), (right.clone(), vec![])],
+            &[],
+        )
+        .unwrap(),
+    );
+    let parameters = [
+        ("left", ValueType::Reference(scenario.a)),
+        ("right", ValueType::Reference(scenario.a)),
+    ];
+    let expression = equal(Expression::name("left"), Expression::name("right"));
+    for (candidate, expected) in [(left.clone(), true), (right, false)] {
+        let (outcome, _) = run(
+            &package,
+            &parameters,
+            &expression,
+            vec![Value::Reference(left.clone()), Value::Reference(candidate)],
+            SCALAR_UNLIMITED,
+            &world,
+        );
+        match outcome {
+            Outcome::Completed(Value::Boolean(equal)) => assert_eq!(equal, expected),
+            other => panic!("expected identity equality, got {other:?}"),
+        }
+    }
+
+    let foreign = object_reference(&foreign_universe_id(), &scenario.a, "a1");
+    let foreign_world = ObjectEnvironment::new(
+        ObjectClosure::new(&types(&scenario), [(foreign.clone(), vec![])], &[]).unwrap(),
+    )
+    .with_population(scenario.binding.clone())
+    .unwrap();
+    let (outcome, _) = run_family(
+        &package,
+        &[
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(scenario.a)),
+        ],
+        &lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
+        vec![population_argument(&scenario), Value::Reference(foreign)],
+        SCALAR_UNLIMITED,
+        &foreign_world,
+    );
+    let code = refused_catalog_code(outcome);
+    assert_eq!(code.code(), "foreign_reference");
+    assert_eq!(code.cause(), "foreign-universe");
+}
+
+/// V1-TYPE-022: a surviving object keeps its identity when the same
+/// population is read through pre and post observations.
+#[test]
+#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-2")]
+fn a_surviving_object_compares_equal_across_pre_and_post() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(scenario.a);
+    let expression = equal(
+        pre(lookup(target.clone(), AbsenceMode::Refused)),
+        lookup(target, AbsenceMode::Refused),
+    );
+    let reference = object_reference(&scenario.universe, &scenario.a, "a1");
+    let world = ObjectEnvironment::new(
+        ObjectClosure::new(&types(&scenario), [(reference.clone(), vec![])], &[]).unwrap(),
+    )
+    .with_population(scenario.binding.clone())
+    .unwrap();
+    let (outcome, _) = run_postcondition(
+        &package,
+        &[
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(scenario.a)),
+        ],
+        &expression,
+        vec![population_argument(&scenario), Value::Reference(reference)],
+        SCALAR_UNLIMITED,
+        &world,
+    );
+    match outcome {
+        Outcome::Completed(Value::Boolean(equal)) => assert!(equal),
+        other => panic!("expected identity equality across observations, got {other:?}"),
+    }
+}
+
 /// TC-198 L08: `(lookup<M::A>(p, r) absent refused) = r`
 /// with `r: Reference<M::B>` checks, although the operands' static types are
 /// `Reference<M::A>` and `Reference<M::B>`: `M::B` conforms to `M::A`. Both
