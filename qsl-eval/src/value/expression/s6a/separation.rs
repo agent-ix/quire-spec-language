@@ -166,6 +166,22 @@ impl Provenance {
         }
     }
 
+    pub(crate) fn receiver_field(
+        observation: ObservationIdentity,
+        invocation: ObservationIdentity,
+        field: String,
+    ) -> Self {
+        Self {
+            observation,
+            subject: ValuePathSubject::Invocation {
+                invocation,
+                binding: InvocationBinding::Receiver,
+            },
+            steps: vec![ValuePathStep::Field(field)],
+            positions: None,
+        }
+    }
+
     /// The provenance of `field` of the record stored here; `None` for a
     /// selection of elements, which has no fields.
     pub(crate) fn field(&self, field: &str) -> Option<Self> {
@@ -236,6 +252,9 @@ pub(crate) struct Trail {
     pub(crate) observation: ObservationIdentity,
     /// The pre observation, when admission gave one.
     pub(crate) pre: Option<ObservationIdentity>,
+    pub(crate) receiver: Option<ObjectReference>,
+    pub(crate) receiver_pre: Option<ObjectReference>,
+    pub(crate) receiver_invocation: Option<ObservationIdentity>,
     decisions: BTreeMap<Location, bool>,
     stops: BTreeMap<Location, StopReport>,
     /// Each recorded collection or record beside its provenance; looked up
@@ -248,6 +267,9 @@ impl Trail {
         Self {
             observation,
             pre,
+            receiver: None,
+            receiver_pre: None,
+            receiver_invocation: None,
             decisions: BTreeMap::new(),
             stops: BTreeMap::new(),
             located: Vec::new(),

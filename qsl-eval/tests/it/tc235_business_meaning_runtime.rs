@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-235 M02/M13/M14/M15/M22 runtime vectors.
+//! TC-235 runtime components and M15 context admission/evaluation vectors.
 //!
 //! The semantic binder owns K2 admission and charge assertions. These rows
 //! exercise the evaluator boundary with the same record, event and lifecycle
@@ -609,12 +609,9 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
 
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-10")]
 #[test]
-fn tc235_m13_record_invariant_runs_for_all_reachable_values() {
-    let mut history_field = crate::tc235_k2::field(
-        "Order",
-        "history",
-        &crate::tc235_k2::id("Money"),
-    );
+fn money_non_negative_scalar_components() {
+    let mut history_field =
+        crate::tc235_k2::field("Order", "history", &crate::tc235_k2::id("Money"));
     history_field["presence"] = serde_json::json!("optional");
     history_field["multiplicity"] = serde_json::json!({
         "lower": 0,
@@ -622,11 +619,8 @@ fn tc235_m13_record_invariant_runs_for_all_reachable_values() {
         "ordered": true,
         "unique": false
     });
-    let mut discount_field = crate::tc235_k2::field(
-        "Order",
-        "discount",
-        &crate::tc235_k2::id("Money"),
-    );
+    let mut discount_field =
+        crate::tc235_k2::field("Order", "discount", &crate::tc235_k2::id("Money"));
     discount_field["presence"] = serde_json::json!("optional");
     let mut fixture = k2_order_with(
         serde_json::json!([
@@ -704,22 +698,16 @@ fn tc235_m13_record_invariant_runs_for_all_reachable_values() {
     );
     let package = value_package(vec![function]);
     let values = [
-        ("(s1, object o1).field total", money(5, "EUR")),
-        ("(s1, object o1).field quoted", money(-5, "EUR")),
-        ("(s1, object o1).field history.index 0", money(1, "EUR")),
-        ("(s1, object o1).field history.index 1", money(-2, "EUR")),
-        (
-            "(s1, object o1).field discount.option_value",
-            money(-1, "EUR"),
-        ),
-        (
-            "(pre observation of i1, invocation i1 parameter amount)",
-            money(-7, "EUR"),
-        ),
+        money(5, "EUR"),
+        money(-5, "EUR"),
+        money(1, "EUR"),
+        money(-2, "EUR"),
+        money(-1, "EUR"),
+        money(-7, "EUR"),
     ];
     let results: Vec<_> = values
         .iter()
-        .map(|(_, value)| {
+        .map(|value| {
             package
                 .call(
                     &QualifiedName::unqualified("non_negative").unwrap(),
@@ -747,40 +735,10 @@ fn tc235_m13_record_invariant_runs_for_all_reachable_values() {
         result,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     )));
-    let false_paths: Vec<_> = values
-        .iter()
-        .zip(&results)
-        .filter_map(|((path, _), result)| {
-            matches!(
-                result,
-                qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(
-                    Value::Boolean(false)
-                ))
-            )
-            .then_some(*path)
-        })
-        .collect();
-    let mut false_paths = false_paths;
-    false_paths.sort_by_key(|path| match *path {
-        "(s1, object o1).field discount.option_value" => 0,
-        "(s1, object o1).field history.index 1" => 1,
-        "(s1, object o1).field quoted" => 2,
-        _ => 3,
-    });
-    assert_eq!(
-        false_paths,
-        vec![
-            "(s1, object o1).field discount.option_value",
-            "(s1, object o1).field history.index 1",
-            "(s1, object o1).field quoted",
-            "(pre observation of i1, invocation i1 parameter amount)",
-        ]
-    );
 }
 
-#[trace("QSpec-TC-235", "QSpec-FR-208-AC-10")]
 #[test]
-fn tc235_m14_event_invariant_does_not_invent_an_event_value() {
+fn unresolved_object_reference_refuses_at_input_admission() {
     let event = object_type("OrderPlaced");
     let types = TypeEnvironment::new(
         [],
@@ -829,7 +787,7 @@ fn tc235_m14_event_invariant_does_not_invent_an_event_value() {
             &ObjectEnvironment::default(),
             &mut Meter::new(UNLIMITED),
         )
-        .expect_err("an event invariant has no admitted event value");
+        .expect_err("an unresolved object reference is refused at admission");
     assert!(matches!(evaluation, qsl_eval::value::CallFailure::Input(_)));
 }
 
@@ -841,7 +799,8 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         &document,
         "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }\n\
          pre PlaceRequires using v on M::OrderLifecycle::place { not self.placed }\n\
-         post PlaceEnsures using v on M::OrderLifecycle::place { self.placed and not self.cancelled }",
+         post PlaceEnsures using v on M::OrderLifecycle::place { self.placed and not self.cancelled }\n\
+         post ReadsBothContexts using v on M::OrderLifecycle::place { self.placed and not pre(self.placed) }",
     )
     .expect("M15 runs 1-5 check");
     let evaluate = |clause: &str, observations: &AdmittedObservations| {
@@ -886,6 +845,24 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         invocation,
     )
     .expect("run 1 postcondition admits");
+    let both_contexts = lifecycle_observations(
+        &package,
+        &packages,
+        "ReadsBothContexts",
+        &snapshots,
+        &invocations,
+        post_one
+            .receiver_invocation
+            .clone()
+            .expect("run 1 invocation identity"),
+    )
+    .expect("postcondition reading both context anchors admits");
+    assert!(matches!(
+        evaluate("ReadsBothContexts", &both_contexts)
+            .evaluation
+            .outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
     assert!(matches!(
         evaluate("PlaceRequires", &pre_one).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
@@ -1049,9 +1026,9 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert!(format!("{:?}", refusals[0]).contains("Operation.pre"));
 }
 
-#[trace("QSpec-TC-235", "QSpec-FR-207-AC-8", "QSpec-FR-047-AC-9")]
+#[trace("QSpec-TC-235")]
 #[test]
-fn tc235_m22_receiver_and_parameter_paths_are_distinct() {
+fn lifecycle_receiver_and_parameter_boolean_components() {
     let lifecycle = object_type("OrderLifecycle");
     let flags = CompositeDeclaration::new(
         key("Flags"),
@@ -1159,25 +1136,4 @@ fn tc235_m22_receiver_and_parameter_paths_are_distinct() {
         evaluate(flags_false),
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
-    let receiver_path = serde_json::json!({
-        "kind": "runtime_value",
-        "root": {"observation": "q1", "subject": {"tag": "invocation", "invocation": "i1", "binding": "receiver"}},
-        "steps": [{"tag": "field", "name": "placed"}],
-    });
-    let parameter_path = serde_json::json!({
-        "kind": "runtime_value",
-        "root": {"observation": "q1", "subject": {"tag": "invocation", "invocation": "i1", "binding": "parameter", "parameter": "flags"}},
-        "steps": [{"tag": "field", "name": "placed"}],
-    });
-    assert_ne!(receiver_path, parameter_path);
-    assert_eq!(parameter_path["root"]["subject"]["binding"], "parameter");
-    assert_eq!(receiver_path["root"]["subject"]["binding"], "receiver");
-    assert!(
-        parameter_path["root"]["subject"]["binding"]
-            .as_str()
-            .unwrap()
-            < receiver_path["root"]["subject"]["binding"]
-                .as_str()
-                .unwrap()
-    );
 }

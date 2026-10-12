@@ -505,7 +505,13 @@ impl<'a> ClauseSetup<'a> {
         // The clause's own observation names its value paths: the pre
         // snapshot for a precondition (FR-104).
         let own = s6a::separation::observation_identity(&current.identity);
-        let trail = s6a::separation::Trail::new(own, pre);
+        let mut trail = s6a::separation::Trail::new(own, pre);
+        trail.receiver = Some(observations.self_object.clone());
+        trail.receiver_pre = observations.receiver_pre.clone();
+        trail.receiver_invocation = observations
+            .receiver_invocation
+            .as_ref()
+            .map(s6a::separation::observation_identity);
         let receiver_path = observations.receiver_invocation.as_ref().map(|invocation| {
             s6a::separation::RuntimeValuePath {
                 observation: s6a::separation::observation_identity(&current.identity),
