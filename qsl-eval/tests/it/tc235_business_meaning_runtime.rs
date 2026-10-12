@@ -20,7 +20,7 @@ use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations, WrongS
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::intake::{admit_unit, package_input, read_domain_package};
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
