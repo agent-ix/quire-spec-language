@@ -1865,9 +1865,9 @@ fn business_generalization_refusal(
         .iter()
         .filter_map(|value| Some((value.get("identity")?.as_str()?, value)))
         .collect();
-    let mut pending = vec![owner];
+    let mut pending = vec![(owner, vec![owner])];
     let mut visited = std::collections::BTreeSet::new();
-    while let Some(current) = pending.pop() {
+    while let Some((current, path)) = pending.pop() {
         if !visited.insert(current) {
             continue;
         }
@@ -1880,6 +1880,13 @@ fn business_generalization_refusal(
         {
             let parent = parent.as_str()?;
             if parent == owner {
+                // The semantic-IR validator reports the same directed cycle
+                // once per participating owner. Keep only the canonical
+                // rotation; distinct directed cycles over the same nodes have
+                // their own canonical edge ordering and remain separate.
+                if path.iter().copied().min()? != owner {
+                    return None;
+                }
                 let package = document.tree.get("package")?.get("identity")?.as_str()?;
                 return Some(ModelRefusal {
                     code: Code::InvalidModelBinding,
@@ -1893,7 +1900,9 @@ fn business_generalization_refusal(
                     ),
                 });
             }
-            pending.push(parent);
+            let mut next_path = path.clone();
+            next_path.push(parent);
+            pending.push((parent, next_path));
         }
     }
     None

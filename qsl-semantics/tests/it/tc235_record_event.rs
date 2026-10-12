@@ -1087,7 +1087,7 @@ fn tc235_m17_record_value_specialization_vectors() {
         ));
     });
     let cycle_refusals = normalized_refusals(&cycle, 24);
-    assert_eq!(cycle_refusals.len(), 1, "{cycle_refusals:#?}");
+    assert_eq!(cycle_refusals.len(), 1);
     assert_eq!(cycle_refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(cycle_refusals[0].cause.as_str(), "specialization-cycle");
     assert!(cycle_refusals[0]

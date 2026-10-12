@@ -2422,12 +2422,8 @@ fn build(
     let mut seen_edge_sets: HashSet<Vec<(DeclarationKey, DeclarationKey)>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
     for candidate in cycle_candidates {
-        if seen_edge_sets.insert(candidate.directed_edges.clone()) {
-            let mut refusal = candidate.refusal;
-            refusal
-                .detail
-                .push_str(&format!(" DEBUG {:?}", candidate.directed_edges));
-            phase3_refusals.push(refusal);
+        if seen_edge_sets.insert(candidate.directed_edges) {
+            phase3_refusals.push(candidate.refusal);
         }
     }
     if let Ok(refusals) = Refusals::try_from(phase3_refusals) {
@@ -3816,6 +3812,33 @@ mod tests {
 
     fn package(records: Vec<DomainPackageRecord>) -> DomainPackage {
         DomainPackage::new(DomainPackageRef::fixture("test/bounded"), records)
+    }
+
+    /// Directed cycles over the same node set remain distinct: A→B→C→A and
+    /// A→C→B→A have different edge orderings even though their members match.
+    #[trace("QSpec-TC-196")]
+    #[test]
+    fn distinct_directed_cycles_with_the_same_nodes_are_not_deduplicated() {
+        let package = DomainPackage::new(
+            DomainPackageRef::fixture("test/orders"),
+            vec![
+                object_type("A", &["B".to_owned(), "C".to_owned()]),
+                object_type("B", &["A".to_owned(), "C".to_owned()]),
+                object_type("C", &["A".to_owned(), "B".to_owned()]),
+            ],
+        );
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the directed cycle graph must be refused");
+        };
+        let details: Vec<_> = refusals
+            .iter()
+            .filter(|refusal| refusal.cause.as_str() == "specialization-cycle")
+            .map(|refusal| refusal.detail.as_str())
+            .collect();
+        assert!(details.iter().any(|detail| detail.contains("A, B, C")));
+        assert!(details.iter().any(|detail| detail.contains("A, C, B")));
     }
 
     /// State-machine clauses are accepted by assembly, but a clause owned by
