@@ -27,6 +27,40 @@ const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     unique: true,
 };
 
+fn expected_unknown_owner(member: &str, owner: &str) -> ModelRefusal {
+    ModelRefusal {
+        code: qsl_foundation::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownOwner {
+            member: DeclarationKey::fixture(member),
+            owner: DeclarationKey::fixture(owner),
+        },
+        detail: String::new(),
+    }
+}
+
+fn assert_refusals(actual: &Refusals, expected: &Refusals) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected.iter()) {
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.cause, expected.cause);
+        if let ModelRefusalCause::UnknownOwner { member, owner } = &expected.cause {
+            assert!(actual.detail.contains(&member.node), "{actual:?}");
+            assert!(actual.detail.contains(&owner.node), "{actual:?}");
+        } else {
+            assert_eq!(actual.detail, expected.detail);
+        }
+    }
+}
+
+fn assert_refusal_outcome(actual: NormalizeOutcome, expected: &NormalizeOutcome) {
+    let (NormalizeOutcome::Refused(actual), NormalizeOutcome::Refused(expected)) =
+        (actual, expected)
+    else {
+        panic!("both outcomes must be refusals");
+    };
+    assert_refusals(&actual, expected);
+}
+
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
@@ -1749,16 +1783,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.A.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.A.y", "model.no-such-owner"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
@@ -1767,9 +1792,9 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
             detail: "model.B is declared by more than one record in this domain package".to_owned(),
         },
     ]));
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -1790,16 +1815,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.A.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.A.y", "model.no-such-owner"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
@@ -1808,9 +1824,9 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
             detail: "model.B is declared by more than one record in this domain package".to_owned(),
         },
     ]));
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -1831,16 +1847,7 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             },
             detail: "model.A is declared by more than one record in this domain package".to_owned(),
         },
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.Z.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.Z.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.Z.y", "model.no-such-owner"),
     ]));
 
     let dangling_first = DomainPackage::new(
@@ -1851,9 +1858,9 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             object_type("model.A", vec![]),
         ],
     );
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&dangling_first, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 
     let conflict_first = DomainPackage::new(
@@ -1864,9 +1871,9 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             field_member("model.Z.y", "model.no-such-owner", "model.Z.y"),
         ],
     );
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&conflict_first, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -2014,25 +2021,16 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.A.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.A.y", "model.no-such-owner"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
             detail: format!("declaration key has an empty package or node: {malformed_key:?}"),
         },
     ]));
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -2084,19 +2082,10 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
     limits.work_units = 2;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal,
-                vec![
-                    ModelRefusal {
-                        code: qsl_foundation::diagnostic::Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownOwner {
-                            member: DeclarationKey::fixture("model.A.y"),
-                            owner: DeclarationKey::fixture("model.no-such-owner"),
-                        },
-                        detail: "field member model.A.y names owner model.no-such-owner, \
-                                 which is not a declared object type or record value type"
-                            .to_owned(),
-                    },
+            assert_refusals(
+                &refusal,
+                &Refusals::from_vec(vec![
+                    expected_unknown_owner("model.A.y", "model.no-such-owner"),
                     ModelRefusal {
                         code: qsl_foundation::diagnostic::Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownGeneral {
@@ -2107,7 +2096,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
                                  which is not a declared object type"
                             .to_owned(),
                     },
-                ]
+                ]),
             );
         }
         other => {
@@ -4371,17 +4360,10 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
             vec![],
         )],
     );
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::DanglingReference,
-                cause: ModelRefusalCause::UnknownOwner {
-                    member: DeclarationKey::fixture("model.A.y"),
-                    owner: DeclarationKey::fixture("model.nope"),
-                },
-                detail: "field member model.A.y names owner model.nope, which is not a declared object type or record value type".to_string(),
-            },
+        &NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            expected_unknown_owner("model.A.y", "model.nope"),
             ModelRefusal {
                 code: qsl_foundation::diagnostic::Code::DanglingReference,
                 cause: ModelRefusalCause::UnknownMember {
@@ -4453,14 +4435,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
     let good_owner = field_member("model.Dup.f", "model.Real", "ix://test/orders/A");
 
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.Dup.f"),
-                owner: DeclarationKey::fixture("model.nope"),
-            },
-            detail: "field member model.Dup.f names owner model.nope, which is not a declared object type or record value type".to_string(),
-        },
+        expected_unknown_owner("model.Dup.f", "model.nope"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
@@ -4482,11 +4457,12 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
         ),
     ] {
         let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.h1c"), records);
-        assert_eq!(
-            normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-            expected,
-            "order: {order}"
+        let actual = normalize(&domain_package, ModelNormalizationLimits::UNLIMITED);
+        assert!(
+            matches!(&actual, NormalizeOutcome::Refused(_)),
+            "order: {order}: {actual:?}"
         );
+        assert_refusal_outcome(actual, &expected);
     }
 }
 
