@@ -1603,14 +1603,14 @@ fn business_generalization_refusal(
     let kind = ctx.kind_key().ok()?;
     let meanings = meaning_index(&document.tree).ok()?;
     let resolved = meanings.get(&(kind.0.to_owned(), kind.1.to_owned()))?;
-    let supports_same_meaning_supertypes = matches!(
-        resolved,
-        meaning::OBJECT_TYPE
-            | meaning::EVENT_TYPE
-            | meaning::RECORD_VALUE_TYPE
-            | meaning::STATE_MACHINE
-            | meaning::PROCESS
-    );
+    let supports_same_meaning_supertypes = [
+        meaning::OBJECT_TYPE,
+        meaning::EVENT_TYPE,
+        meaning::RECORD_VALUE_TYPE,
+        meaning::STATE_MACHINE,
+        meaning::PROCESS,
+    ]
+    .contains(&resolved.as_str());
     if !supports_same_meaning_supertypes
         && [
             UNRESOLVED_CONSTRUCT_REF,

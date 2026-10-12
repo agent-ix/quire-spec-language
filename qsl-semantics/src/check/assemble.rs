@@ -682,6 +682,7 @@ fn model_object_types(
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
             DomainPackageRecord::ObjectType(_)
+            | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
