@@ -458,6 +458,15 @@ pub struct AdmittedObservations {
     pub post: Option<Observation>,
     /// The selected self object's reference.
     pub self_object: ObjectReference,
+    /// The selected invocation when `self` is a context with no declared
+    /// object identity. Evaluators use it to root receiver value paths.
+    pub receiver_invocation: Option<DocumentRef>,
+    /// The pre-observation receiver context's evaluator reference, when
+    /// this is a state-machine invocation.
+    pub receiver_pre: Option<ObjectReference>,
+    /// The post-observation receiver context's evaluator reference, when
+    /// this is a state-machine invocation with a post observation.
+    pub receiver_post: Option<ObjectReference>,
     /// The parameter values of an invocation or a pre-call observation, in
     /// declared order (empty for an invariant).
     pub parameters: Vec<(String, Value)>,
@@ -1327,6 +1336,7 @@ pub fn admit_observations(
                 &context,
                 PreCallInput {
                     call: None,
+                    receiver_invocation: None,
                     invocation_usage: AdmissionUsage::default(),
                     pre: read,
                     self_object,
@@ -1453,6 +1463,9 @@ fn admit_invariant(
         pre: None,
         post: None,
         self_object: self_reference,
+        receiver_invocation: None,
+        receiver_pre: None,
+        receiver_post: None,
         parameters: Vec::new(),
         result: None,
         created: Vec::new(),
@@ -1543,8 +1556,26 @@ struct InvocationAdmission {
     pre: document::AdmittedEnvironment,
     post: document::AdmittedEnvironment,
     self_reference: ObjectReference,
+    receiver_invocation: Option<DocumentRef>,
+    receiver_pre: Option<ObjectReference>,
+    receiver_post: Option<ObjectReference>,
     parameters: Vec<(String, Value)>,
     result: Option<Value>,
+}
+
+fn is_state_machine_context(context_view: &ModelView, context_name: &str) -> bool {
+    context_view
+        .view
+        .domain_package()
+        .records
+        .iter()
+        .any(|record| {
+            matches!(
+                record,
+                crate::model::domain_package::DomainPackageRecord::StateMachine(machine)
+                    if machine.key.node == context_name
+            )
+        })
 }
 
 impl InvocationAdmission {
@@ -1639,31 +1670,63 @@ fn admit_invocation_documents(
     // FR-106 check 9: `self` is required in the post snapshot only for a
     // postcondition (SR-750 FND-006), never for a `Frame` run, whose
     // operation may delete it.
-    let post_self_population = post_self.then_some(self_object.population.as_str());
-    let pre_values = document::admit_population_values(
-        views,
-        types,
-        &pre_snapshot.populations,
-        PostStateRange::Refuse,
-        ancestor_steps,
-    )?;
-    let post_values = document::admit_population_values(
-        views,
-        types,
-        &post_snapshot.populations,
-        // Only a postcondition reads the post snapshot as the
-        // subject's output; a frame run refuses as for any input.
-        if post_self {
-            limits.post_state
-        } else {
-            PostStateRange::Refuse
-        },
-        ancestor_steps,
-    )?;
+    let state_machine = is_state_machine_context(context_view, context_name);
+    let post_range = if post_self {
+        limits.post_state
+    } else {
+        PostStateRange::Refuse
+    };
+    let (pre_values, receiver_pre, post_values, receiver_post) = if state_machine {
+        let (pre, pre_reference) = document::admit_state_machine_context_values(
+            views,
+            types,
+            context_view,
+            context_name,
+            &pre_snapshot.populations,
+            &documents.pre.identity,
+            selected,
+            PostStateRange::Refuse,
+            ancestor_steps,
+        )?;
+        let (post, post_reference) = document::admit_state_machine_context_values(
+            views,
+            types,
+            context_view,
+            context_name,
+            &post_snapshot.populations,
+            &documents.post.identity,
+            selected,
+            post_range,
+            ancestor_steps,
+        )?;
+        (pre, Some(pre_reference), post, Some(post_reference))
+    } else {
+        (
+            document::admit_population_values(
+                views,
+                types,
+                &pre_snapshot.populations,
+                PostStateRange::Refuse,
+                ancestor_steps,
+            )?,
+            None,
+            document::admit_population_values(
+                views,
+                types,
+                &post_snapshot.populations,
+                post_range,
+                ancestor_steps,
+            )?,
+            None,
+        )
+    };
+    let pre_self_population = (!state_machine).then_some(self_object.population.as_str());
+    let post_self_population = (!state_machine && post_self)
+        .then_some(self_object.population.as_str());
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,
-        Some(&self_object.population),
+        pre_self_population,
         &document::parameter_populations(
             views,
             &operation.declaration,
@@ -1689,24 +1752,39 @@ fn admit_invocation_documents(
     let pre_admitted = document::finish_populations(types, pre_values)?;
     let post_admitted = document::finish_populations(types, post_values)?;
 
-    let self_reference = document::resolve_self(
-        views,
-        types,
-        context_view,
-        context_name,
-        &pre_admitted.environment,
-        self_object,
-    )?;
-    if post_self {
-        let _ = document::resolve_self(
+    let self_reference = if state_machine {
+        if post_self {
+            receiver_post
+                .as_ref()
+                .ok_or_else(|| fault("post-context-reference-missing"))?
+                .clone()
+        } else {
+            receiver_pre
+                .as_ref()
+                .ok_or_else(|| fault("pre-context-reference-missing"))?
+                .clone()
+        }
+    } else {
+        let reference = document::resolve_self(
             views,
             types,
             context_view,
             context_name,
-            &post_admitted.environment,
+            &pre_admitted.environment,
             self_object,
         )?;
-    }
+        if post_self {
+            let _ = document::resolve_self(
+                views,
+                types,
+                context_view,
+                context_name,
+                &post_admitted.environment,
+                self_object,
+            )?;
+        }
+        reference
+    };
 
     // Check 10: parameters and result.
     // A reference parameter resolves against the pre snapshot's objects, a
@@ -1733,6 +1811,9 @@ fn admit_invocation_documents(
         pre: pre_admitted,
         post: post_admitted,
         self_reference,
+        receiver_invocation: state_machine.then(|| selected.clone()),
+        receiver_pre,
+        receiver_post,
         parameters,
         result,
     })
@@ -1772,6 +1853,7 @@ fn check_operation(
 /// object and the parameters.
 struct PreCallInput<'a> {
     call: Option<&'a document::InvocationCall>,
+    receiver_invocation: Option<&'a DocumentRef>,
     invocation_usage: AdmissionUsage,
     pre: document::ReadDocument,
     self_object: &'a SelectedObject,
@@ -1809,6 +1891,7 @@ fn admit_pre_call_invocation(
         context,
         PreCallInput {
             call: Some(call),
+            receiver_invocation: Some(selected),
             invocation_usage: invocation_read.usage,
             pre: pre_read,
             self_object: &call.self_object,
@@ -1853,17 +1936,37 @@ fn admit_pre_call(
 
     // Checks 6 to 8, with every declared population a reference parameter
     // names required alongside `self`'s.
-    let values = document::admit_population_values(
-        context.views,
-        context.types,
-        &snapshot.populations,
-        PostStateRange::Refuse,
-        context.ancestor_steps,
-    )?;
+    let state_machine = is_state_machine_context(context.context_view, context.context_name);
+    let receiver_identity = input.receiver_invocation.unwrap_or(&input.pre.identity);
+    let (values, receiver_pre) = if state_machine {
+        let (values, reference) = document::admit_state_machine_context_values(
+            context.views,
+            context.types,
+            context.context_view,
+            context.context_name,
+            &snapshot.populations,
+            &input.pre.identity,
+            receiver_identity,
+            PostStateRange::Refuse,
+            context.ancestor_steps,
+        )?;
+        (values, Some(reference))
+    } else {
+        (
+            document::admit_population_values(
+                context.views,
+                context.types,
+                &snapshot.populations,
+                PostStateRange::Refuse,
+                context.ancestor_steps,
+            )?,
+            None,
+        )
+    };
     document::check_population_completeness(
         &snapshot.populations,
         &values.completeness,
-        Some(&input.self_object.population),
+        (!state_machine).then_some(input.self_object.population.as_str()),
         &document::parameter_populations(
             context.views,
             &context.operation.declaration,
@@ -1878,14 +1981,18 @@ fn admit_pre_call(
     let admitted = document::finish_populations(context.types, values)?;
 
     // Check 9: self.
-    let self_reference = document::resolve_self(
-        context.views,
-        context.types,
-        context.context_view,
-        context.context_name,
-        &admitted.environment,
-        input.self_object,
-    )?;
+    let self_reference = if let Some(reference) = receiver_pre.as_ref() {
+        reference.clone()
+    } else {
+        document::resolve_self(
+            context.views,
+            context.types,
+            context.context_view,
+            context.context_name,
+            &admitted.environment,
+            input.self_object,
+        )?
+    };
 
     // Check 10: parameters, resolved against the pre snapshot. A pre-call
     // observation carries no result.
@@ -1910,6 +2017,9 @@ fn admit_pre_call(
         }),
         post: None,
         self_object: self_reference,
+        receiver_invocation: state_machine.then(|| receiver_identity.clone()),
+        receiver_pre,
+        receiver_post: None,
         parameters,
         result: None,
         created: Vec::new(),
@@ -1979,6 +2089,9 @@ fn admit_operation(
             out_of_range: admitted.post.out_of_range,
         }),
         self_object: admitted.self_reference,
+        receiver_invocation: admitted.receiver_invocation,
+        receiver_pre: admitted.receiver_pre,
+        receiver_post: admitted.receiver_post,
         parameters: admitted.parameters,
         result: admitted.result,
         created,
