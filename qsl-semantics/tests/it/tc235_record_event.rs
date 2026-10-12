@@ -42,6 +42,82 @@ fn field_for<'a>(package: &'a DomainPackage, node: &str) -> &'a FieldMemberRecor
         .unwrap_or_else(|| panic!("missing field {node}"))
 }
 
+fn m10_completed_package(
+    document: &serde_json::Value,
+    expected_charges: usize,
+) -> Result<DomainPackage, String> {
+    let package = read_k2(document).map_err(|refusals| format!("reader refusal: {refusals:?}"))?;
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    let actual_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+        .count();
+    if actual_charges != expected_charges {
+        return Err(format!(
+            "normalize.record charges {actual_charges}, expected {expected_charges}"
+        ));
+    }
+    match outcome {
+        NormalizeOutcome::Completed(_) => Ok(package),
+        other => Err(format!("expected completed normalization, got {other:?}")),
+    }
+}
+
+fn m10_refusal_mismatches(
+    document: &serde_json::Value,
+    expected_charges: usize,
+    expected_node: &str,
+    expected_path: &str,
+) -> Vec<String> {
+    let package = match read_k2(document) {
+        Ok(package) => package,
+        Err(refusals) => return vec![format!("reader refused before normalization: {refusals:?}")],
+    };
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    let actual_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+        .count();
+    let mut mismatches = Vec::new();
+    if actual_charges != expected_charges {
+        mismatches.push(format!(
+            "normalize.record charges {actual_charges}, expected {expected_charges}"
+        ));
+    }
+    let NormalizeOutcome::Refused(refusals) = outcome else {
+        mismatches.push(
+            "expected one malformed-declaration refusal, got completed normalization".to_owned(),
+        );
+        return mismatches;
+    };
+    if refusals.len() != 1 {
+        mismatches.push(format!("expected one refusal, got {refusals:?}"));
+        return mismatches;
+    }
+    let refusal = &refusals[0];
+    if refusal.code != Code::InvalidModelBinding
+        || refusal.cause.as_str() != "malformed-declaration"
+    {
+        mismatches.push(format!(
+            "expected invalid_model_binding/malformed-declaration, got {refusal:?}"
+        ));
+    }
+    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusal.cause else {
+        mismatches.push(format!(
+            "expected typed IntakeMalformedDeclaration, got {refusal:?}"
+        ));
+        return mismatches;
+    };
+    if node != expected_node || !refusal.detail.contains(expected_path) {
+        mismatches.push(format!(
+            "expected node {expected_node} at {expected_path}, got {refusal:?}"
+        ));
+    }
+    mismatches
+}
+
 /// TC-235 M02 adds a record-valued field and an object invariant that compares
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
