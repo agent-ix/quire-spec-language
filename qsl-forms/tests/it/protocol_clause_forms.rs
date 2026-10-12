@@ -378,14 +378,27 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
 #[trace("FR-102-AC-2")]
 #[test]
 fn s2_preserves_reserved_operation_member_names() {
-    let (_, unit) = build("post P using v on Config::ConfigVersion::absent { true }");
-    let form = state_clause(unit.forms()[0].form());
-    assert_eq!(
-        form.operation
-            .as_ref()
-            .map(|operation| operation.name.as_str()),
-        Some("absent")
-    );
+    for (source, kind) in [
+        (
+            "pre P using v on Config::ConfigVersion::absent { true }",
+            StateClauseKind::Precondition,
+        ),
+        (
+            "post P using v on Config::ConfigVersion::absent { true }",
+            StateClauseKind::Postcondition,
+        ),
+    ] {
+        let (text, unit) = build(source);
+        let form = state_clause(unit.forms()[0].form());
+        assert_eq!(form.kind, kind);
+        let operation = form.operation.as_ref().expect("the operation member");
+        assert_eq!(operation.name, "absent");
+        assert_eq!(
+            &text[form.context.span.start..form.context.span.end],
+            "Config::ConfigVersion"
+        );
+        assert_eq!(&text[operation.span.start..operation.span.end], "absent");
+    }
 }
 
 /// The same reserved member spelling is legal in an attempt operation name;
