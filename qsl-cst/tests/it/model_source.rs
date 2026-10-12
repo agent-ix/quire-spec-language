@@ -167,7 +167,7 @@ fn population_type_references_reject_malformed_maxima_at_the_offending_token() {
 fn population_type_reference_reports_missing_maximum_close_at_eof() {
     let spelling = "Population<M::Order>[3";
     let text = format!(
-        "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: {spelling}): Boolean pure {{ true }}\n"
+        "language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(p: {spelling}"
     );
     let parsed = parse(&text, Limits::default());
     assert!(!parsed.is_admissible(), "{spelling}");
@@ -175,7 +175,7 @@ fn population_type_reference_reports_missing_maximum_close_at_eof() {
     assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax);
     assert_eq!(diagnostic.cause, CompleteCause::UnexpectedToken);
     let region = diagnostic.region.as_ref().expect("located EOF refusal");
-    let eof = text.find(spelling).unwrap() + spelling.len();
+    let eof = text.len();
     assert_eq!(usize::try_from(region.start()).unwrap(), eof);
     assert_eq!(usize::try_from(region.end()).unwrap(), eof);
 }
