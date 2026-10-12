@@ -3588,10 +3588,12 @@ fn read_type_node(
     }
     match construct_meaning.as_str() {
         meaning::OBJECT_TYPE => {
-            read_object_type(package, type_value, node, at, false, &mut records, pending)?
+            read_object_type(package, type_value, node, at, false, &mut records, pending)?;
+            read_clauses(package, node, &ctx, &mut records)?;
         }
         meaning::SYSTEMS_INTERFACE => {
-            read_object_type(package, type_value, node, at, true, &mut records, pending)?
+            read_object_type(package, type_value, node, at, true, &mut records, pending)?;
+            read_clauses(package, node, &ctx, &mut records)?;
         }
         meaning::VALUE_TYPE => {
             records.push(DomainPackageRecord::ScalarType(read_value_type(

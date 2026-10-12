@@ -383,6 +383,258 @@ fn record_invariant_is_preserved_as_a_charged_declaration() {
     normalized(&package, 3);
 }
 
+fn object_clause_document(clauses: Vec<Value>) -> Value {
+    let p = "test/object-invariant";
+    document(
+        p,
+        "1.0.0",
+        vec![construct("entity", meaning::OBJECT_TYPE)],
+        vec![definition(
+            p,
+            "Order",
+            "entity",
+            json!({
+                "identityFields": [identity(p, "Order/id")],
+                "fields": [field(p, "Order", "id", "ix://quire/native/Integer")],
+                "clauses": clauses,
+            }),
+        )],
+    )
+}
+
+/// Object invariants retain authored order and provenance and reach the effective view.
+/// Trace: FR-056-AC-1, QSpec-FR-208-AC-10
+#[trace("FR-056-AC-1", "QSpec-TC-235")]
+#[test]
+fn object_clauses_preserve_order_identity_and_effective_declarations() {
+    let p = "test/object-invariant";
+    let package = read_authored(&object_clause_document(vec![
+        clause(p, "Order", "ZPositive", "self.id > 0"),
+        clause(p, "Order", "ABounded", "self.id < 100"),
+    ]));
+    let clauses: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| {
+            if let DomainPackageRecord::Clause(clause) = record {
+                Some(clause)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        clauses.len(),
+        2,
+        "both authored object clauses must be read"
+    );
+    for (clause, (name, text)) in clauses
+        .iter()
+        .zip([("ZPositive", "self.id > 0"), ("ABounded", "self.id < 100")])
+    {
+        assert_eq!(clause.key, key(p, &format!("Order/{name}")));
+        assert_eq!(clause.owner, key(p, "Order"));
+        assert_eq!(clause.language, "quire");
+        assert_eq!(clause.text, text);
+        let original = package
+            .original(&clause.key)
+            .expect("clause has original provenance");
+        assert_eq!(original.member_name.as_deref(), Some(name));
+        assert_eq!(original.origin, origin(p, &format!("Order/{name}")));
+    }
+    let view = normalized(&package, 4);
+    let owner = view.type_identities()[&key(p, "Order")];
+    for clause in clauses {
+        assert_eq!(
+            view.declarations()
+                .iter()
+                .filter(|entry| {
+                    entry.visible
+                        && entry.preimage.original == clause.key
+                        && entry.preimage.owner_effective_type == Some(owner)
+                })
+                .count(),
+            1,
+            "each invariant reaches its owner's effective declaration exactly once"
+        );
+    }
+}
+
+/// Object clauses apply the same identity/name check as record clauses.
+/// Trace: FR-056-AC-1, QSpec-FR-208-AC-10
+#[trace("FR-056-AC-1", "QSpec-TC-235")]
+#[test]
+fn malformed_object_clause_is_refused_like_a_record_clause() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/object-invariant";
+    let mut malformed = clause(p, "Order", "Positive", "self.id > 0");
+    malformed["clauseId"] = json!("Different");
+    let object = object_clause_document(vec![malformed]);
+    let mut record = object.clone();
+    record["constructs"][0]["kind"]["name"] = json!("value_record");
+    record["constructs"][0]["construct"]["meaning"] = json!(meaning::RECORD_VALUE_TYPE);
+    record["constructs"][0]["construct"]["members"]["identityFields"] = json!("optional");
+    record["types"][0]["kind"]["name"] = json!("value_record");
+    record["types"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("identityFields");
+    let mut expected_cause = None;
+    for fixture in [record, object] {
+        let refusals = authored_refusals(&fixture);
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert!(
+            matches!(&refusals[0].cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+            if node == &identity(p, "Order/Positive"))
+        );
+        if let Some(expected) = &expected_cause {
+            assert_eq!(&refusals[0].cause, expected);
+        } else {
+            expected_cause = Some(refusals[0].cause.clone());
+        }
+        assert!(refusals[0].detail.contains("clauses[0]"));
+        assert!(refusals[0]
+            .detail
+            .contains("clauseId: differs from its identity's member name"));
+    }
+}
+
+/// The process reader shares object member reading and retains clauses only once.
+/// Trace: QSpec-FR-208-AC-10
+#[trace("QSpec-TC-235")]
+#[test]
+fn process_clause_is_read_and_normalized_exactly_once() {
+    let p = "test/orders";
+    let mut fixture = k2();
+    let process = fixture["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["displayName"] == "Fulfilment")
+        .expect("K2 process");
+    process["clauses"] = json!([clause(p, "Fulfilment", "HasCorrelation", "true")]);
+    let package = read_authored(&fixture);
+    let clause_key = key(p, "Fulfilment/HasCorrelation");
+    assert_eq!(
+        package
+            .records
+            .iter()
+            .filter(|record| record.key() == &clause_key)
+            .count(),
+        1
+    );
+    let view = normalized(&package, 22);
+    assert_eq!(
+        view.declarations()
+            .iter()
+            .filter(|entry| { entry.visible && entry.preimage.original == clause_key })
+            .count(),
+        1
+    );
+}
+
+/// Business containers refuse quire invariants at their authored clause.
+/// Trace: QSpec-FR-208-AC-10
+#[trace("QSpec-TC-235")]
+#[test]
+fn business_container_quire_clauses_refuse_and_foreign_clauses_are_retained() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    for owner in ["OrderStore", "OrderManagement"] {
+        let mut fixture = k2();
+        let node = fixture["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|node| node["displayName"] == owner)
+            .expect("K2 container");
+        node["clauses"] = json!([clause("test/orders", owner, "Forbidden", "true")]);
+        let refusals = authored_refusals(&fixture);
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
+        assert!(matches!(
+            &refusals[0].cause,
+            ModelRefusalCause::UnsupportedDeclarationForm { .. }
+        ));
+        assert!(refusals[0].detail.contains("clauses[0]"));
+        fixture["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|node| node["displayName"] == owner)
+            .unwrap()["clauses"][0]["language"] = json!("ocl");
+        let package = read_authored(&fixture);
+        let clause_key = key("test/orders", &format!("{owner}/Forbidden"));
+        assert_eq!(
+            package.original(&clause_key).unwrap().origin,
+            origin("test/orders", &format!("{owner}/Forbidden"))
+        );
+        let view = normalized(&package, 22);
+        assert!(!view
+            .declarations()
+            .iter()
+            .any(|entry| entry.preimage.original == clause_key));
+    }
+}
+
+/// Sharing the object record shape does not grant systems interfaces invariant ownership.
+#[trace("FR-056-AC-1")]
+#[test]
+fn systems_interface_clause_owner_remains_refused() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/object-invariant";
+    let mut fixture = object_clause_document(vec![clause(p, "Order", "Forbidden", "true")]);
+    fixture["constructs"][0]["construct"]["meaning"] = json!(meaning::SYSTEMS_INTERFACE);
+    fixture["types"][0]["featureOrder"] = json!([identity(p, "Order/id")]);
+    let refusals = authored_refusals(&fixture);
+    assert!(refusals.iter().any(|refusal| {
+        refusal.code == Code::DanglingReference
+            && matches!(&refusal.cause,
+            ModelRefusalCause::UnknownOwner { member, owner }
+            if member == &key(p, "Order/Forbidden") && owner == &key(p, "Order"))
+    }));
+}
+
+/// Each invariant-bearing business type retains its authored clause as an effective member.
+#[trace("FR-056-AC-1", "QSpec-TC-235")]
+#[test]
+fn business_type_invariant_owner_matrix_is_admitted() {
+    for owner in [
+        "Order",
+        "Money",
+        "OrderPlaced",
+        "OrderLifecycle",
+        "Fulfilment",
+    ] {
+        let mut fixture = k2();
+        let node = fixture["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|node| node["displayName"] == owner)
+            .unwrap();
+        let clause = clause("test/orders", owner, "Invariant", "true");
+        if let Some(clauses) = node.get_mut("clauses") {
+            clauses.as_array_mut().unwrap().push(clause);
+        } else {
+            node["clauses"] = json!([clause]);
+        }
+        let package = read_authored(&fixture);
+        let clause_key = key("test/orders", &format!("{owner}/Invariant"));
+        let view = normalized(&package, 22);
+        assert_eq!(
+            view.declarations()
+                .iter()
+                .filter(|entry| entry.visible && entry.preimage.original == clause_key)
+                .count(),
+            1
+        );
+    }
+}
+
 /// A record may specialize its own meaning and inherit every ancestor field.
 /// Trace: QSpec-FR-208-AC-12
 #[trace("QSpec-TC-235")]

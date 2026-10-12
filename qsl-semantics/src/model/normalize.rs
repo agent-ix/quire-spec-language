@@ -1877,15 +1877,36 @@ fn check_node<'a>(
         }
         DomainPackageRecord::Process(_) => {}
         DomainPackageRecord::Clause(clause) => {
-            if !index.is_record_value_type(&clause.owner)
+            let container_meaning = if index.is_namespace(&clause.owner) {
+                Some(crate::model::intake::meaning::NAMESPACE)
+            } else if index.is_persistence_interface(&clause.owner) {
+                Some(crate::model::intake::meaning::PERSISTENCE_INTERFACE)
+            } else {
+                None
+            };
+            if let Some(meaning) = container_meaning.filter(|_| clause.language == "quire") {
+                refusals.push(ModelRefusal {
+                    code: Code::UnsupportedConstruct,
+                    cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                        node: clause.key.node.clone(),
+                        what: format!("{meaning}:clauses"),
+                    },
+                    detail: format!(
+                        "clause {}: {meaning} owns no quire invariant",
+                        clause.key.node
+                    ),
+                });
+            } else if !index.is_record_value_type(&clause.owner)
                 && !index.is_event_type(&clause.owner)
                 && !index.is_state_machine(&clause.owner)
-                && !index.is_namespace(&clause.owner)
-                && !domain_package.records.iter().any(|record| {
-                    matches!(
-                        record,
-                        DomainPackageRecord::Process(process) if process.key == clause.owner
-                    )
+                && container_meaning.is_none()
+                && !index.is_operation_member(&clause.owner)
+                && !domain_package.records.iter().any(|record| match record {
+                    DomainPackageRecord::ObjectType(object) => {
+                        object.key == clause.owner && object.interface_features.is_none()
+                    }
+                    DomainPackageRecord::Process(process) => process.key == clause.owner,
+                    _ => false,
                 })
             {
                 refusals.push(ModelRefusal {
@@ -1957,7 +1978,10 @@ fn check_node<'a>(
             // here; only a package value type is checked.
             for parameter in &op.parameters {
                 if let Some(value_type) = parameter.value_type.as_package() {
-                    if !index.is_object_type(value_type) && !index.is_scalar_type(value_type) {
+                    if !index.is_object_type(value_type)
+                        && !index.is_scalar_type(value_type)
+                        && !index.is_record_value_type(value_type)
+                    {
                         refusals.push(ModelRefusal {
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::UnknownValueType {
@@ -1975,7 +1999,10 @@ fn check_node<'a>(
             }
             if let Some(result) = &op.result {
                 if let Some(value_type) = result.value_type.as_package() {
-                    if !index.is_object_type(value_type) && !index.is_scalar_type(value_type) {
+                    if !index.is_object_type(value_type)
+                        && !index.is_scalar_type(value_type)
+                        && !index.is_record_value_type(value_type)
+                    {
                         refusals.push(ModelRefusal {
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::UnknownValueType {
@@ -3841,36 +3868,87 @@ mod tests {
         assert!(details.iter().any(|detail| detail.contains("A, C, B")));
     }
 
-    /// State-machine clauses are accepted by assembly, but a clause owned by
-    /// an ordinary object type remains a dangling model member. A namespace
-    /// cannot contain another namespace, so that invalid placement remains a
-    /// typed malformed-declaration refusal as well.
+    /// A clause with an absent owner or a field, relationship or population as owner is dangling.
+    /// A namespace cannot contain another namespace.
+    #[trace("FR-056-AC-1", "QSpec-TC-235")]
     #[test]
     fn invalid_clause_owner_and_nested_namespace_are_refused() {
-        let clause_key = DeclarationKey::fixture("model.Order/NotAStateClause");
-        let clause_owner = DeclarationKey::fixture("model.Order");
-        let clause_package = package(vec![
-            object_type("model.Order", &[]),
-            DomainPackageRecord::Clause(ClauseRecord {
-                key: clause_key.clone(),
-                owner: clause_owner.clone(),
-                language: "quire".to_owned(),
-                text: "true".to_owned(),
-            }),
-        ]);
-        let NormalizeOutcome::Refused(clause_refusals) =
-            normalize(&clause_package, ModelNormalizationLimits::UNLIMITED)
-        else {
-            panic!("a clause owned by an object type must be refused");
+        use crate::model::domain_package::{
+            Extent, Multiplicity, RelationshipDirection, RelationshipEnd, RelationshipRecord,
         };
-        assert!(clause_refusals.iter().any(|refusal| {
-            refusal.code == Code::DanglingReference
-                && matches!(
-                    &refusal.cause,
-                    ModelRefusalCause::UnknownOwner { member, owner }
-                        if member == &clause_key && owner == &clause_owner
-                )
-        }));
+        for owner_name in [
+            "model.Absent",
+            "model.Order/id",
+            "model.Related",
+            "model.Orders",
+            "model.Interface",
+            "model.Number",
+        ] {
+            let clause_owner = DeclarationKey::fixture(owner_name);
+            let clause_key = DeclarationKey::fixture(&format!("{owner_name}/InvalidOwner"));
+            let clause_package = package(vec![
+                object_type("model.Order", &[]),
+                DomainPackageRecord::ObjectType(crate::model::domain_package::ObjectTypeRecord {
+                    key: DeclarationKey::fixture("model.Interface"),
+                    interface_features: Some(Vec::new()),
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::ScalarType(crate::model::domain_package::ScalarTypeRecord {
+                    key: DeclarationKey::fixture("model.Number"),
+                    domain: ScalarValueDomain::Native(NativeValueType::Integer),
+                }),
+                field("model.Order/id", "model.Order"),
+                DomainPackageRecord::Relationship(RelationshipRecord {
+                    key: DeclarationKey::fixture("model.Related"),
+                    source: RelationshipEnd {
+                        type_identity: DeclarationKey::fixture("model.Order"),
+                        role: Some("source".to_owned()),
+                        multiplicity: Multiplicity {
+                            lower: 0,
+                            upper: None,
+                            ordered: false,
+                            unique: true,
+                        },
+                    },
+                    target: RelationshipEnd {
+                        type_identity: DeclarationKey::fixture("model.Order"),
+                        role: Some("target".to_owned()),
+                        multiplicity: Multiplicity {
+                            lower: 0,
+                            upper: None,
+                            ordered: false,
+                            unique: true,
+                        },
+                    },
+                    direction: RelationshipDirection::SourceToTarget,
+                }),
+                DomainPackageRecord::Population(PopulationRecord {
+                    key: DeclarationKey::fixture("model.Orders"),
+                    member_types: vec![DeclarationKey::fixture("model.Order")],
+                    extent: Extent::Closed,
+                }),
+                DomainPackageRecord::Clause(ClauseRecord {
+                    key: clause_key.clone(),
+                    owner: clause_owner.clone(),
+                    language: "quire".to_owned(),
+                    text: "true".to_owned(),
+                }),
+            ]);
+            let NormalizeOutcome::Refused(clause_refusals) =
+                normalize(&clause_package, ModelNormalizationLimits::UNLIMITED)
+            else {
+                panic!("clause owner {owner_name} must be refused");
+            };
+            assert!(clause_refusals.iter().any(|refusal| {
+                refusal.code == Code::DanglingReference
+                    && matches!(
+                        &refusal.cause,
+                        ModelRefusalCause::UnknownOwner { member, owner }
+                            if member == &clause_key && owner == &clause_owner
+                    )
+            }));
+        }
 
         let outer = DeclarationKey::fixture("model/Outer");
         let inner = DeclarationKey::fixture("model/Inner");
@@ -3898,6 +3976,181 @@ mod tests {
                     .detail
                     .contains("namespace model/Outer contains namespace model/Inner")
         }));
+    }
+
+    /// The model-complete Invariant row permits an operation owner.
+    #[trace("FR-056-AC-1")]
+    #[test]
+    fn operation_clause_owner_is_admitted() {
+        use crate::model::domain_package::{OperationEffect, OperationMemberRecord};
+        let owner = DeclarationKey::fixture("model.Order/place");
+        let clause_key = DeclarationKey::fixture("model.Order/place/Contract");
+        let package = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: owner.clone(),
+                owner: DeclarationKey::fixture("model.Order"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                own_postcondition_clauses: Vec::new(),
+                has_body: false,
+                redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: clause_key.clone(),
+                owner,
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+        ]);
+        let NormalizeOutcome::Completed(view) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the declared operation may own its contract clause");
+        };
+        assert!(view
+            .domain_package()
+            .records
+            .iter()
+            .any(|record| record.key() == &clause_key));
+    }
+
+    /// Quire container clauses refuse even when constructed after intake.
+    #[trace("QSpec-TC-235")]
+    #[test]
+    fn business_container_quire_clause_normalization_is_unsupported() {
+        use crate::model::domain_package::PersistenceInterfaceRecord;
+        for (owner_name, meaning) in [
+            ("model.Scope", crate::model::intake::meaning::NAMESPACE),
+            (
+                "model.Store",
+                crate::model::intake::meaning::PERSISTENCE_INTERFACE,
+            ),
+        ] {
+            let owner = DeclarationKey::fixture(owner_name);
+            let clause_key = DeclarationKey::fixture(&format!("{owner_name}/Forbidden"));
+            let package = package(vec![
+                object_type("model.Order", &[]),
+                DomainPackageRecord::Namespace(NamespaceRecord {
+                    key: DeclarationKey::fixture("model.Scope"),
+                    members: vec![DeclarationKey::fixture("model.Order")],
+                    vocabulary: Vec::new(),
+                }),
+                DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                    key: DeclarationKey::fixture("model.Store"),
+                    persists: vec![DeclarationKey::fixture("model.Order")],
+                }),
+                DomainPackageRecord::Clause(ClauseRecord {
+                    key: clause_key.clone(),
+                    owner,
+                    language: "quire".to_owned(),
+                    text: "true".to_owned(),
+                }),
+            ]);
+            let NormalizeOutcome::Refused(refusals) =
+                normalize(&package, ModelNormalizationLimits::UNLIMITED)
+            else {
+                panic!("quire clause on {owner_name} must refuse");
+            };
+            assert!(refusals.iter().any(|refusal| {
+                refusal.code == Code::UnsupportedConstruct
+                    && matches!(&refusal.cause,
+                    ModelRefusalCause::UnsupportedDeclarationForm { node, what }
+                    if node == &clause_key.node && what == &format!("{meaning}:clauses"))
+            }));
+        }
+    }
+
+    /// Record values are operation signature types; declaration members are not.
+    #[trace("FR-103-AC-6", "QSpec-TC-235")]
+    #[test]
+    fn operation_signature_admits_records_and_refuses_non_type_names() {
+        use crate::model::domain_package::{
+            Multiplicity, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+            OperationResult, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+            RelationshipRecord,
+        };
+        let operation_key = DeclarationKey::fixture("model.Order/change");
+        let parameter_key = DeclarationKey::fixture("model.Order/change/value");
+        let multiplicity = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        for type_name in [
+            "model.Amount",
+            "model.Absent",
+            "model.Order/id",
+            "model.Related",
+        ] {
+            let value_type = ValueTypeRef::Package(DeclarationKey::fixture(type_name));
+            let end = RelationshipEnd {
+                type_identity: DeclarationKey::fixture("model.Order"),
+                role: None,
+                multiplicity: multiplicity.clone(),
+            };
+            let package = package(vec![
+                object_type("model.Order", &[]),
+                field("model.Order/id", "model.Order"),
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: DeclarationKey::fixture("model.Amount"),
+                    identity_fields: Vec::new(),
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::FieldMember(crate::model::domain_package::FieldMemberRecord {
+                    key: DeclarationKey::fixture("model.Amount/value"),
+                    owner: DeclarationKey::fixture("model.Amount"),
+                    value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                    multiplicity: multiplicity.clone(),
+                    presence: quire_exact::Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                }),
+                DomainPackageRecord::Relationship(RelationshipRecord {
+                    key: DeclarationKey::fixture("model.Related"),
+                    source: end.clone(),
+                    target: end,
+                    direction: RelationshipDirection::SourceToTarget,
+                }),
+                DomainPackageRecord::OperationMember(OperationMemberRecord {
+                    key: operation_key.clone(),
+                    owner: DeclarationKey::fixture("model.Order"),
+                    parameters: vec![OperationParameterRecord {
+                        key: parameter_key.clone(),
+                        value_type: value_type.clone(),
+                        multiplicity: multiplicity.clone(),
+                    }],
+                    result: Some(OperationResult {
+                        value_type: value_type.clone(),
+                        multiplicity: multiplicity.clone(),
+                    }),
+                    effect: OperationEffect::default(),
+                    own_postcondition_clauses: Vec::new(),
+                    has_body: false,
+                    redefines: None,
+                }),
+            ]);
+            let outcome = normalize(&package, ModelNormalizationLimits::UNLIMITED);
+            if type_name == "model.Amount" {
+                let NormalizeOutcome::Completed(view) = outcome else {
+                    panic!("record-valued parameter and result must normalize: {outcome:?}");
+                };
+                assert_eq!(view.domain_package().records, package.records);
+            } else {
+                let NormalizeOutcome::Refused(refusals) = outcome else {
+                    panic!("signature type {type_name} must refuse");
+                };
+                for parameter in [Some(parameter_key.clone()), None] {
+                    assert!(refusals.iter().any(|refusal| {
+                        refusal.code == Code::DanglingReference && matches!(&refusal.cause,
+                            ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type }
+                            if operation == &operation_key && actual_parameter == &parameter && actual_type == &value_type)
+                    }));
+                }
+            }
+        }
     }
 
     #[trace("QSpec-TC-235")]
