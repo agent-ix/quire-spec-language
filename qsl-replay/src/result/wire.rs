@@ -633,14 +633,11 @@ impl PathWire {
                         binding,
                     } => {
                         let (binding, parameter) = match binding {
-                            InvocationBinding::Parameter(parameter) => (
-                                InvocationBindingWire::Parameter,
-                                Some(parameter.clone()),
-                            ),
-                            InvocationBinding::Result => (InvocationBindingWire::Result, None),
-                            InvocationBinding::Receiver => {
-                                (InvocationBindingWire::Receiver, None)
+                            InvocationBinding::Parameter(parameter) => {
+                                (InvocationBindingWire::Parameter, Some(parameter.clone()))
                             }
+                            InvocationBinding::Result => (InvocationBindingWire::Result, None),
+                            InvocationBinding::Receiver => (InvocationBindingWire::Receiver, None),
                         };
                         SubjectWire::Invocation {
                             invocation: ObservationWire {
