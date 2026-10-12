@@ -134,6 +134,21 @@ const SYSTEMS_DOCUMENT: &[u8] =
 const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
     include_bytes!("../../../../tests/fixtures/spine-model-relationship.semantic-ir.json");
 
+/// The complete-V1 header shared by every model source unit below.
+const COMPLETE_V1_HEADER: &str =
+    "language \"ix:native\" edition \"1-draft\";\n\
+     profile v = \"quire.value.complete/v1\";\n";
+
+/// The relationship model source after [`COMPLETE_V1_HEADER`].
+const RELATIONSHIP_MODEL_UNIT: &str =
+    "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     function keep using v(g: M::Widget): M::Widget pure { g }\n";
+
+/// The systems-interface model source after [`COMPLETE_V1_HEADER`].
+const SYSTEMS_INTERFACE_UNIT: &str =
+    "model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     function keep using v(s: S::Sensor): S::Sensor pure { s }\n";
+
 /// One package of a fixture, checked, linked and emitted, with the domain
 /// package documents its read needs as evidence.
 struct Emitted {
@@ -203,21 +218,17 @@ impl Fixture {
             Self::RelationshipModel => {
                 let document = RELATIONSHIP_MODEL_DOCUMENT;
                 let unit = format!(
-                    "language \"ix:native\" edition \"1-draft\";\n\
-                     profile v = \"quire.value.complete/v1\";\n\
-                     model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-                     function keep using v(g: M::Widget): M::Widget pure {{ g }}\n",
-                    document_digest(document)
+                    "{}{}",
+                    COMPLETE_V1_HEADER,
+                    RELATIONSHIP_MODEL_UNIT.replace("{}", &document_digest(document)),
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::SystemsInterface => {
                 let unit = format!(
-                    "language \"ix:native\" edition \"1-draft\";\n\
-                     profile v = \"quire.value.complete/v1\";\n\
-                     model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-                     function keep using v(s: S::Sensor): S::Sensor pure {{ s }}\n",
-                    document_digest(SYSTEMS_DOCUMENT)
+                    "{}{}",
+                    COMPLETE_V1_HEADER,
+                    SYSTEMS_INTERFACE_UNIT.replace("{}", &document_digest(SYSTEMS_DOCUMENT)),
                 );
                 Emitted::placed(
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
