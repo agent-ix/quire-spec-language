@@ -142,7 +142,6 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
 /// correlation identity and member meaning, keeps authored step order, and
 /// refuses cross-meaning ancestry and specialization cycles.
 #[trace("QSpec-TC-235")]
-#[ignore = "expected red until QSL-777 process subtype identity contract lands"]
 #[test]
 fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     let with_process_subtype = |extra_step: bool| {
@@ -260,17 +259,24 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             }),
         ));
     });
-    let refusals = read_refusals(&missing_identity);
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(refusals[0].detail.contains("requires identityFields"));
+    let refusals = normalized_refusals(&missing_identity, 22);
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
+    assert_malformed_at(
+        &refusals[0],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.identityFields",
+    );
+    assert_malformed_at(
+        &refusals[1],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.supertypes[0]",
+    );
 
     let wrong_meaning = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -293,9 +299,14 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         }]);
     });
     let refusals = normalized_refusals(&wrong_meaning, 23);
-    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert_eq!(refusals.len(), 2, "{refusals:#?}");
     assert_malformed_at(
         &refusals[0],
+        &id("ExpressFulfilment"),
+        "TypeDefinition.identityFields",
+    );
+    assert_malformed_at(
+        &refusals[1],
         &id("ExpressFulfilment"),
         "TypeDefinition.supertypes[0]",
     );
@@ -352,15 +363,132 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(refusals[0]
-        .detail
-        .contains("[ix://test/orders/Fulfilment, ix://test/orders/ExpressFulfilment]"));
+    assert!(
+        refusals[0]
+            .detail
+            .contains("[ix://test/orders/ExpressFulfilment, ix://test/orders/Fulfilment]"),
+        "{refusals:#?}"
+    );
+}
+
+/// A subtype's effective identity is the stable union of every process
+/// ancestor, including a deep second parent, rather than the first parent
+/// encountered during intake.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m20_process_subtype_unions_deep_multi_parent_identities() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().extend([
+            declaration(
+                "AuditRoot",
+                "saga",
+                json!({
+                    "identityFields": [id("AuditRoot/id")],
+                    "fields": [field("AuditRoot", "id", "ix://quire/native/UUID")],
+                    "operations": [],
+                    "steps": [{
+                        "identity": id("AuditRoot/record"),
+                        "name": "record",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": origin("AuditRoot/record"),
+                    }],
+                }),
+            ),
+            declaration(
+                "AuditMid",
+                "saga",
+                json!({
+                    "identityFields": [],
+                    "supertypes": [id("AuditRoot")],
+                    "operations": [],
+                    "steps": [{
+                        "identity": id("AuditMid/record"),
+                        "name": "record",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": origin("AuditMid/record"),
+                    }],
+                }),
+            ),
+            declaration(
+                "ExpressFulfilment",
+                "saga",
+                json!({
+                    "identityFields": [],
+                    "supertypes": [id("Fulfilment"), id("AuditMid")],
+                    "operations": [],
+                    "steps": [{
+                        "identity": id("ExpressFulfilment/record"),
+                        "name": "record",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": origin("ExpressFulfilment/record"),
+                    }],
+                }),
+            ),
+        ]);
+    });
+    let package = read_k2(&document).expect("deep multi-parent process reads");
+    let process = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Process(process) if process.key == key("ExpressFulfilment") => {
+            Some(process)
+        }
+        _ => None,
+    });
+    assert_eq!(
+        process
+            .expect("ExpressFulfilment remains a process")
+            .identity_fields,
+        [key("Fulfilment/correlation_id"), key("AuditRoot/id")]
+    );
+}
+
+/// A missing unrelated process member must remain a schema refusal when the
+/// process subtype identity exception is applied.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_m20_unrelated_process_root_schema_error_is_retained() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressFulfilment",
+            "saga",
+            json!({
+                "supertypes": [id("Fulfilment")],
+                "operations": [],
+                "steps": [{
+                    "identity": id("ExpressFulfilment/record"),
+                    "name": "record",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": origin("ExpressFulfilment/record"),
+                }],
+                "unexpected": true,
+            }),
+        ));
+    });
+    let refusals = read_refusals(&document);
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert!(refusals.iter().all(|refusal| {
+        refusal.code == Code::InvalidModelBinding
+            && matches!(
+                refusal.cause,
+                ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            )
+            && refusal.detail.contains("TypeDefinition")
+    }));
+    assert!(refusals
+        .iter()
+        .any(|refusal| refusal.detail.contains("unexpected")));
 }
 
 /// The JSON acceptance vector records the two diagnostics that the producer
 /// must retain for one malformed process subtype: missing identity fields
 /// first, followed by the cross-meaning supertype.
-#[ignore = "expected red until QSL-777 exposes both ordered M20 diagnostics"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
@@ -369,7 +497,6 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -407,7 +534,6 @@ fn tc235_m20_json_acceptance_reports_missing_identity_then_wrong_supertype() {
 
 /// The cyclic JSON acceptance vector retains the normalization-level cycle
 /// diagnostic and names both process identities in the cycle.
-#[ignore = "expected red until QSL-777 exposes normalization-level process cycles"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m20_json_acceptance_reports_specialization_cycle() {
@@ -453,7 +579,6 @@ fn tc235_m20_json_acceptance_reports_specialization_cycle() {
 /// their authored relationship, the clause and populations stay typed, and
 /// invalid target/owner meanings retain their FR-208 refusal boundary.
 #[trace("QSpec-TC-235")]
-#[ignore = "expected red until QSL-777 relationship target binding lands"]
 #[test]
 fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     let relationship = |owner: &str, name: &str, target: &str| {
@@ -582,7 +707,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
 /// type owned by the operation signature. Runtime-value-path comparison for
 /// `self.placed` versus `flags.placed` is an evaluator assertion and remains
 /// outside this source/assembly test.
-#[ignore = "expected red until QSL-729/#777 record/event arms land"]
+#[ignore = "expected red until PR #777 / QSL-729 record/event arms land"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
@@ -698,6 +823,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
 /// currency fields.
+#[ignore = "expected red until PR #765 runtime vectors land"]
 #[test]
 fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let document = mutate_k2(|document| {
@@ -730,6 +856,7 @@ fn tc235_m02_record_value_field_and_clause_bind_to_order() {
 /// TC-235 M13 preserves all six Money-valued access paths used by the runtime
 /// vector: two direct fields, a bounded sequence, a present optional, and an
 /// invocation parameter, plus the Money invariant itself.
+#[ignore = "expected red until PR #765 runtime vectors land"]
 #[test]
 fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
     let document = mutate_k2(|document| {

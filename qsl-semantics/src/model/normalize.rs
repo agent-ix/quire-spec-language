@@ -860,12 +860,12 @@ struct AncestorPath {
 /// closing extension's own [`ModelRefusal`] (`SpecializationCycle`, keyed by
 /// its rotated edge listing) and the path length charged to it
 /// (`normalize.cycle-check`'s own `work_units += L`,
-/// `value-accounting.md:491`). `edge_set` is the same rotated node listing
-/// the refusal's own `detail` reports, kept structured here so refusals
-/// found by different types' own walks that close the identical cycle can
-/// be recognized as the same cycle and deduplicated
+/// `value-accounting.md:491`). `directed_edges` is the same rotated cycle
+/// represented as ordered supertype edges, kept structured here so refusals
+/// found by different types' own walks that close the identical directed
+/// cycle can be recognized as the same cycle and deduplicated
 /// (`model-complete.md`:292-295: "each cycle is refused ... exactly once,
-/// keyed by the set of its supertype edges").
+/// keyed by its canonical directed supertype edges").
 struct ClosingCycle {
     refusal: ModelRefusal,
     /// The extended path that closes this cycle — the same shape as
@@ -876,27 +876,27 @@ struct ClosingCycle {
     /// fact from the same type, and its length is `normalize.cycle-check`'s
     /// own `work_units += L` (`:491`).
     path: KeyPath,
-    edge_set: Vec<DeclarationKey>,
+    directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
 }
 
 /// One [`ClosingCycle`] collected build-wide across `build`'s own per-type
 /// loop, tagged with the type whose walk found it (L3 finding, PR #228
 /// review: previously an anonymous 4-tuple). Sorted by `(type_key, path)` --
 /// the same charge-order key `ancestor_paths` charges its path in --
-/// then deduplicated by `edge_set` only after every type
+/// then deduplicated by canonical directed edges only after every type
 /// has been walked (`model-complete.md`:292-295's "each cycle is refused ...
 /// exactly once"; see the module docs).
 struct CycleCandidate {
     type_key: DeclarationKey,
     path: KeyPath,
     refusal: ModelRefusal,
-    edge_set: Vec<DeclarationKey>,
+    directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
 }
 
 /// [`ancestor_paths`]'s own result: every ordinary ancestor path (`paths`,
 /// unchanged meaning) plus every generalization cycle this same walk closed
 /// (`closing_cycles`) — one entry per closing extension, not deduplicated
-/// here (`build` deduplicates by `edge_set` across every type's own walk;
+/// here (`build` deduplicates by directed edges across every type's own walk;
 /// see the module docs). The walk never stops at its first closing
 /// extension: `value-accounting.md:491`'s "a closing extension is charged
 /// even when its cycle's edge set was already reported" requires every
@@ -1030,10 +1030,15 @@ fn ancestor_paths(
                     listing.join(", ")
                 ),
             };
+            let directed_edges = chain
+                .iter()
+                .enumerate()
+                .map(|(index, from)| (from.clone(), chain[(index + 1) % chain.len()].clone()))
+                .collect();
             closing_cycles.push(ClosingCycle {
                 refusal,
                 path: new_path,
-                edge_set: chain,
+                directed_edges,
             });
             continue;
         }
@@ -1635,6 +1640,82 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
     refusals
 }
 
+/// Process subtype identity and ancestry checks are normalization decisions:
+/// an empty authored identity list inherits from a process supertype, while a
+/// missing list and a cross-meaning supertype retain their ordered loci.
+fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut processes: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Process(process) => Some(process),
+            _ => None,
+        })
+        .collect();
+    processes.sort_by(|left, right| left.key.cmp(&right.key));
+    let process_keys: std::collections::HashSet<_> = processes
+        .iter()
+        .map(|process| process.key.clone())
+        .collect();
+    let declared_kinds: std::collections::HashMap<_, _> = domain_package
+        .records
+        .iter()
+        .map(|record| (record.key().clone(), record))
+        .collect();
+    let mut refusals = Vec::new();
+    for process in processes {
+        let has_process_supertype = process
+            .supertypes
+            .iter()
+            .any(|supertype| process_keys.contains(supertype));
+        if !process.identity_fields_declared
+            || (process.identity_fields.is_empty() && !has_process_supertype)
+        {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: process.key.node.clone(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: format!(
+                    "{}: TypeDefinition.identityFields: a process declaration must supply identityFields or inherit them from a process supertype",
+                    process.key.node
+                ),
+            });
+        }
+        for (position, supertype) in process.supertypes.iter().enumerate() {
+            if process_keys.contains(supertype) {
+                continue;
+            }
+            let detail = match declared_kinds.get(supertype) {
+                Some(DomainPackageRecord::ObjectType(_)) => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} resolves to a non-process type",
+                    process.key.node, supertype.node
+                ),
+                Some(record) => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} resolves to {:?}, a process may generalize only a process",
+                    process.key.node, supertype.node, record.key()
+                ),
+                None => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} names no type of this domain package",
+                    process.key.node, supertype.node
+                ),
+            };
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: process.key.node.clone(),
+                    artifact: None,
+                    span: None,
+                },
+                detail,
+            });
+        }
+    }
+    refusals
+}
+
 /// Every FR-154 per-node check for one already-key-validated node, in
 /// FR-154's own table order, the object id check first
 /// (`model-complete.md`:81). Returns every failing check for this node, in
@@ -1959,9 +2040,46 @@ fn check_node<'a>(
         // FR-152 systems-model records validate their own references
         // independently (crate::model::systems); FR-150's phase 1 does
         // not concern itself with them.
+        DomainPackageRecord::Relationship(relationship) => {
+            // Systems-model connections have no source role; their endpoints
+            // are resolved by the systems boundary rather than this inline
+            // business-relationship rule.
+            if relationship.source.role.is_some()
+                && !index.is_object_type(&relationship.source.type_identity)
+            {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: relationship.source.type_identity.node.clone(),
+                        artifact: None,
+                        span: None,
+                    },
+                    detail: format!(
+                        "{}: TypeDefinition.relationships[0]: relationship source owner {} is not an object type",
+                        relationship.source.type_identity.node,
+                        relationship.source.type_identity.node
+                    ),
+                });
+            }
+            if relationship.source.role.is_some()
+                && !index.is_object_type(&relationship.target.type_identity)
+            {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: relationship.key.node.clone(),
+                        artifact: None,
+                        span: None,
+                    },
+                    detail: format!(
+                        "{}: Relationship.target: {} is not a declared object type",
+                        relationship.key.node, relationship.target.type_identity.node
+                    ),
+                });
+            }
+        }
         DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
         | DomainPackageRecord::Allocation(_) => {}
         // model-complete.md's "Populations" row: each member type names
         // a declared object type; a missing one refuses
@@ -2122,6 +2240,9 @@ fn build(
     if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
         return Err(Denial::Refused(refusals));
     }
+    if let Ok(refusals) = Refusals::try_from(validate_process_meanings(domain_package)) {
+        return Err(Denial::Refused(refusals));
+    }
     let index = RecordIndex::build(domain_package);
     // QSL #199: every `normalize.record` charge above is admitted before any
     // intake refusal is reported. `model-complete.md`:80: "Intake reports
@@ -2193,7 +2314,7 @@ fn build(
                 type_key: type_key.clone(),
                 path: closing.path,
                 refusal: closing.refusal,
-                edge_set: closing.edge_set,
+                directed_edges: closing.directed_edges,
             });
         }
         let preimage = EffectiveDeclarationPreimage {
@@ -2298,10 +2419,10 @@ fn build(
             .cmp(&b.type_key)
             .then_with(|| a.path.keys().cmp(b.path.keys()))
     });
-    let mut seen_edge_sets: HashSet<Vec<DeclarationKey>> = HashSet::new();
+    let mut seen_edge_sets: HashSet<Vec<(DeclarationKey, DeclarationKey)>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
     for candidate in cycle_candidates {
-        if seen_edge_sets.insert(candidate.edge_set) {
+        if seen_edge_sets.insert(candidate.directed_edges) {
             phase3_refusals.push(candidate.refusal);
         }
     }
@@ -3691,6 +3812,33 @@ mod tests {
 
     fn package(records: Vec<DomainPackageRecord>) -> DomainPackage {
         DomainPackage::new(DomainPackageRef::fixture("test/bounded"), records)
+    }
+
+    /// Directed cycles over the same node set remain distinct: A→B→C→A and
+    /// A→C→B→A have different edge orderings even though their members match.
+    #[trace("QSpec-TC-196")]
+    #[test]
+    fn distinct_directed_cycles_with_the_same_nodes_are_not_deduplicated() {
+        let package = DomainPackage::new(
+            DomainPackageRef::fixture("test/orders"),
+            vec![
+                object_type("A", &["B".to_owned(), "C".to_owned()]),
+                object_type("B", &["A".to_owned(), "C".to_owned()]),
+                object_type("C", &["A".to_owned(), "B".to_owned()]),
+            ],
+        );
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the directed cycle graph must be refused");
+        };
+        let details: Vec<_> = refusals
+            .iter()
+            .filter(|refusal| refusal.cause.as_str() == "specialization-cycle")
+            .map(|refusal| refusal.detail.as_str())
+            .collect();
+        assert!(details.iter().any(|detail| detail.contains("A, B, C")));
+        assert!(details.iter().any(|detail| detail.contains("A, C, B")));
     }
 
     /// State-machine clauses are accepted by assembly, but a clause owned by

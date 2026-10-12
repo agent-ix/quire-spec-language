@@ -24,23 +24,11 @@ use super::meaning_dispatch::MeaningBindingContext;
 pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), ModelRefusal> {
     let ctx = NodeCtx::new(context.type_value, context.at);
     let identity_fields = ctx.identity_keys(context.package, "identityFields")?;
-    if identity_fields.is_empty() {
-        return Err(ctx.malformed("identityFields: a process has one or more identity fields"));
-    }
+    let identity_fields_declared = context.type_value.get("identityFields").is_some();
     let supertypes = ctx.identity_keys(context.package, "supertypes")?;
     for (position, general) in supertypes.iter().enumerate() {
         match context.type_meanings.get(general.node.as_str()) {
-            Some(&meaning::PROCESS) => {}
-            Some(other) => {
-                return Err(NodeCtx::new(
-                    context.type_value,
-                    format!("{}.supertypes[{position}]", context.at),
-                )
-                .malformed(format!(
-                    "{} resolves to {other:?}; a process generalizes only a process",
-                    general.node
-                )))
-            }
+            Some(_) => {}
             None => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
@@ -147,6 +135,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
     *record = DomainPackageRecord::Process(ProcessRecord {
         key,
         identity_fields,
+        identity_fields_declared,
         supertypes,
         steps: step_records,
     });

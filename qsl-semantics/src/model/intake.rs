@@ -1406,6 +1406,18 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // entry it also flags, so it is filtered out and left entirely to
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
+        // Process subtypes may explicitly inherit identityFields from their
+        // process supertype. The pinned semantic-IR schema still applies the
+        // root-process min-items rule to that wire shape; preserve this one
+        // subtype case for QSL's typed process binder and normalizer.
+        .filter(|located| !process_subtype_identity_schema_diagnostic(document, located))
+        // The upstream validator also emits generic supertype diagnostics for
+        // process cross-meaning edges and cycles. The process binder retains
+        // those edges so normalization can report the ordered QSL loci.
+        .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
+        // Record-value cycle diagnostics are emitted once per owner by the
+        // upstream validator; retain only the canonical owner below.
+        .filter(|located| !noncanonical_record_cycle_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_process_step_refusal(document, located) {
                 return Some(refusal);
@@ -1454,6 +1466,166 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+fn process_subtype_identity_schema_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    if located.code != agent_ix_semantic_ir::schema::SCHEMA_VIOLATION {
+        return false;
+    }
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let (position, member) = rest.split_once('/').unwrap_or((rest, ""));
+    let Some(type_value) = document
+        .tree
+        .get("types")
+        .and_then(Value::as_array)
+        .and_then(|types| {
+            position
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| types.get(index))
+        })
+    else {
+        return false;
+    };
+    let Ok(kind) = NodeCtx::new(type_value, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    if meanings
+        .get(&(kind.0.to_owned(), kind.1.to_owned()))
+        .map(String::as_str)
+        != Some(meaning::PROCESS)
+    {
+        return false;
+    }
+    let has_supertype = type_value
+        .get("supertypes")
+        .and_then(Value::as_array)
+        .is_some_and(|supertypes| !supertypes.is_empty());
+    if !has_supertype {
+        return false;
+    }
+    let empty_identity = member == "identityFields"
+        && type_value
+            .get("identityFields")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty);
+    let has_process_member_shape = type_value.get("operations").is_some_and(Value::is_array)
+        && type_value
+            .get("steps")
+            .and_then(Value::as_array)
+            .is_some_and(|steps| !steps.is_empty() && steps.iter().all(Value::is_object));
+    let required_root_members = [
+        "identity",
+        "displayName",
+        "kind",
+        "roles",
+        "origin",
+        "constraints",
+        "extensions",
+        "unknownPolicy",
+    ];
+    let known_type_members = [
+        "identity",
+        "displayName",
+        "kind",
+        "roles",
+        "origin",
+        "constraints",
+        "extensions",
+        "unknownPolicy",
+        "scalar",
+        "fields",
+        "variants",
+        "target",
+        "items",
+        "values",
+        "relationships",
+        "operations",
+        "clauses",
+        "supertypes",
+        "abstract",
+        "identityFields",
+        "owner",
+        "members",
+        "occurrenceField",
+        "states",
+        "transitions",
+        "steps",
+        "persists",
+        "vocabulary",
+        "direction",
+        "interfaceType",
+        "multiplicity",
+        "declaredType",
+        "flowDirection",
+        "sourceEnd",
+        "targetEnd",
+        "sourceElement",
+        "targetElement",
+        "featureOrder",
+    ];
+    let has_root_shape = type_value.as_object().is_some_and(|object| {
+        required_root_members
+            .iter()
+            .all(|member| object.contains_key(*member))
+            && object
+                .keys()
+                .all(|member| known_type_members.contains(&member.as_str()))
+    });
+    let missing_identity = member.is_empty()
+        && !type_value.get("identityFields").is_some()
+        && has_process_member_shape
+        && has_root_shape;
+    empty_identity || missing_identity
+}
+
+fn process_subtype_generalization_schema_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    use agent_ix_semantic_ir::constructs::{CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE};
+    if ![CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE].contains(&located.code) {
+        return false;
+    }
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let Some((position, member)) = rest.split_once('/') else {
+        return false;
+    };
+    if member != "supertypes" && !member.starts_with("supertypes/") {
+        return false;
+    }
+    let Some(type_value) = document
+        .tree
+        .get("types")
+        .and_then(Value::as_array)
+        .and_then(|types| {
+            position
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| types.get(index))
+        })
+    else {
+        return false;
+    };
+    let Ok(kind) = NodeCtx::new(type_value, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    meanings
+        .get(&(kind.0.to_owned(), kind.1.to_owned()))
+        .is_some_and(|resolved| resolved == meaning::PROCESS)
 }
 
 /// FR-208 process binding owns duplicate step identities. The semantic-IR
@@ -1722,6 +1894,13 @@ fn business_generalization_refusal(
         meaning::PROCESS,
     ]
     .contains(&resolved.as_str());
+    if resolved == meaning::PROCESS
+        && [CONSTRUCT_TARGET_KIND, SUPERTYPE_CYCLE].contains(&located.code)
+    {
+        // Process meaning validation belongs to normalization so it can
+        // retain the declaration and report every ordered locus.
+        return None;
+    }
     if !supports_same_meaning_supertypes
         && [
             UNRESOLVED_CONSTRUCT_REF,
@@ -1748,9 +1927,9 @@ fn business_generalization_refusal(
         .iter()
         .filter_map(|value| Some((value.get("identity")?.as_str()?, value)))
         .collect();
-    let mut pending = vec![owner];
+    let mut pending = vec![(owner, vec![owner])];
     let mut visited = std::collections::BTreeSet::new();
-    while let Some(current) = pending.pop() {
+    while let Some((current, path)) = pending.pop() {
         if !visited.insert(current) {
             continue;
         }
@@ -1763,6 +1942,13 @@ fn business_generalization_refusal(
         {
             let parent = parent.as_str()?;
             if parent == owner {
+                // The semantic-IR validator reports the same directed cycle
+                // once per participating owner. Keep only the canonical
+                // rotation; distinct directed cycles over the same nodes have
+                // their own canonical edge ordering and remain separate.
+                if path.iter().copied().min()? != owner {
+                    return None;
+                }
                 let package = document.tree.get("package")?.get("identity")?.as_str()?;
                 return Some(ModelRefusal {
                     code: Code::InvalidModelBinding,
@@ -1771,25 +1957,66 @@ fn business_generalization_refusal(
                         via: declaration_key(package, current),
                     },
                     detail: format!(
-                        "{}: record generalization returns to {owner} through {current}",
-                        located.pointer
+                        "{}: record generalization returns to {owner} through {current}, through the cycle [{}]",
+                        located.pointer,
+                        path.join(", "),
                     ),
                 });
             }
-            pending.push(parent);
+            let mut next_path = path.clone();
+            next_path.push(parent);
+            pending.push((parent, next_path));
         }
     }
     None
 }
 
-/// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
-/// `locus` carries. `Located::locus` is already the `origin.source` object
-/// itself (see `agent_ix_semantic_ir::diag::locus_for`), not wrapped in an
-/// `origin` member the way [`node_span`] must unwrap from a node of
-/// [`PackageDocument::tree`] -- the two functions read the same
-/// `sourceIdentity`/`startLine`/`startColumn` shape from the two views a
-/// [`PackageDocument`] keeps of its one parse, one FCD's own `Json`, one this
-/// crate's `serde_json::Value` derived from it.
+/// Record-value specialization cycles are normalized by QSL so their typed
+/// refusal can include the canonical directed cycle. The upstream schema
+/// diagnostic is therefore suppressed for record-value types; process-cycle
+/// diagnostics follow the process-specific path above.
+fn noncanonical_record_cycle_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    use agent_ix_semantic_ir::constructs::SUPERTYPE_CYCLE;
+    if located.code != SUPERTYPE_CYCLE {
+        return false;
+    }
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let Some((position, member)) = rest.split_once('/') else {
+        return false;
+    };
+    if member != "supertypes" && !member.starts_with("supertypes/") {
+        return false;
+    }
+    let Some(types) = document.tree.get("types").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(node) = position
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| types.get(index))
+    else {
+        return false;
+    };
+    let Ok(kind) = NodeCtx::new(node, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    let Some(resolved) = meanings.get(&(kind.0.to_owned(), kind.1.to_owned())) else {
+        return false;
+    };
+    if resolved != meaning::RECORD_VALUE_TYPE {
+        return false;
+    }
+    true
+}
+
 fn located_span(
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> (Option<String>, Option<LocatedSpan>) {
@@ -2563,8 +2790,9 @@ pub(super) fn read_object_type(
 /// one naming no type of the document `dangling_reference`/`unknown-general`,
 /// and one naming a record value type preserves declared ancestry for
 /// normalization.
-/// An inline relationship refuses `malformed-declaration`,
-/// since a relationship end must name an object type.
+/// A well-formed inline relationship is retained for normalization to bind
+/// its owner and target meanings; malformed relationship shapes still refuse
+/// at their authored member path.
 ///
 /// `type_meanings` maps each type identity of the document to the meaning
 /// its `kind` resolves to.
@@ -2605,13 +2833,6 @@ pub(super) fn read_record_value_type(
             }
         }
     }
-    if !ctx.array_field("relationships")?.is_empty() {
-        return Err(
-            NodeCtx::new(type_value, format!("{at}.relationships[0]")).malformed(
-                "a record value type owns no relationship; a relationship end names an object type",
-            ),
-        );
-    }
     let fields = ctx.array_field("fields")?;
     records.push(DomainPackageRecord::RecordValueType(
         RecordValueTypeRecord {
@@ -2637,6 +2858,15 @@ pub(super) fn read_record_value_type(
             operation,
             &format!("{operations_at}[{position}]"),
             pending,
+        )?));
+    }
+    let relationships_at = format!("{at}.relationships");
+    for (position, relationship) in ctx.array_field("relationships")?.iter().enumerate() {
+        records.push(DomainPackageRecord::Relationship(read_relationship(
+            package,
+            node,
+            relationship,
+            &format!("{relationships_at}[{position}]"),
         )?));
     }
     read_clauses(package, node, &ctx, records)?;
@@ -3931,6 +4161,7 @@ fn read_nodes_partial(
             }
         }
     }
+    inherit_process_identity_fields(&mut records);
     // FR-103: resolve every queued operation frame against the whole
     // package's own records, only once every node above has been read --
     // an entry may name a sibling type's field or a type declared later in
@@ -3941,6 +4172,57 @@ fn read_nodes_partial(
         resolve_pending_frames(package_identity, &pending, &mut records, &mut refusals);
     }
     (records, refusals)
+}
+
+/// Resolve the authored empty identity list of a process subtype from its
+/// process ancestry after every type has been read. Keeping this at the
+/// package boundary makes the result independent of declaration order.
+fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
+    let process_map: HashMap<DeclarationKey, (Vec<DeclarationKey>, Vec<DeclarationKey>)> = records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Process(process) => Some((
+                process.key.clone(),
+                (process.supertypes.clone(), process.identity_fields.clone()),
+            )),
+            _ => None,
+        })
+        .collect();
+    let resolved: HashMap<DeclarationKey, Vec<DeclarationKey>> = process_map
+        .iter()
+        .map(|(key, (_, own_fields))| {
+            let mut fields = own_fields.clone();
+            let mut field_set: std::collections::HashSet<DeclarationKey> =
+                own_fields.iter().cloned().collect();
+            let mut visited = std::collections::HashSet::new();
+            let mut pending: Vec<DeclarationKey> = process_map
+                .get(key)
+                .map(|(supertypes, _)| supertypes.iter().rev().cloned().collect())
+                .unwrap_or_default();
+            while let Some(supertype) = pending.pop() {
+                if !visited.insert(supertype.clone()) {
+                    continue;
+                }
+                let Some((parents, parent_fields)) = process_map.get(&supertype) else {
+                    continue;
+                };
+                for field in parent_fields {
+                    if field_set.insert(field.clone()) {
+                        fields.push(field.clone());
+                    }
+                }
+                pending.extend(parents.iter().rev().cloned());
+            }
+            (key.clone(), fields)
+        })
+        .collect();
+    for record in records {
+        if let DomainPackageRecord::Process(process) = record {
+            if let Some(fields) = resolved.get(&process.key) {
+                process.identity_fields = fields.clone();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
