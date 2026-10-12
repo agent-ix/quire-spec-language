@@ -175,9 +175,9 @@ fn population_type_reference_reports_missing_maximum_close_at_eof() {
     assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax);
     assert_eq!(diagnostic.cause, CompleteCause::UnexpectedEnd);
     let region = diagnostic.region.as_ref().expect("located EOF refusal");
-    // The parser's located EOF is the virtual byte immediately after the final
-    // source byte, and the refusal span is zero-width there.
-    let eof = text.len() + 1;
+    // The parser's located EOF is the zero-width position at the end of the
+    // truncated source.
+    let eof = text.len();
     assert_eq!(usize::try_from(region.start()).unwrap(), eof);
     assert_eq!(usize::try_from(region.end()).unwrap(), eof);
 }
