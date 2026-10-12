@@ -3,7 +3,7 @@ id: SR-2445
 title: "QSL-656 code review of PR #665 (accounting budgets settable by counter name), with rust-review lane"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@0d34c5742a1c2841cec9fac4209324ff4949a4b5; PR #665 diff against origin/main (git diff origin/main...HEAD); qsl-foundation/src/setting.rs; qsl-foundation/src/diagnostic/stage.rs; qsl-replay/src/limits.rs; qsl-replay/src/request.rs; qsl-replay/src/scalar.rs; qsl-replay/src/execute/value_parity.rs; qsl-replay/src/outcome.rs; qsl-replay/src/spine.rs; qsl-replay/src/spine/call.rs; qsl-replay/src/lib.rs; qsl-semantics/src/check/refusal.rs; src/command.rs; src/command/wire.rs; tests in qsl-replay, qsl-package, tests/it/spine_run.rs"
+scope: "agent-ix/quire-spec-language@c8fe420b3969357081be9cca623762c2102f9482; PR #665 diff against origin/main 65daf24a988e3e49d844d24855df1ff0d9342b2f; Rust implementation and tests across qsl-foundation, qsl-replay, qsl-semantics, src/command.rs and tests/it/spine_run.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-255
@@ -61,7 +61,7 @@ Focused tests (TC-914, FR-255 limits, FR-100 CLI tests) were not run by this rev
 
 ## Verdict
 
-Approve with low findings. The override rule is implemented once, and both
+Historical initial verdict: approve with low findings. The override rule is implemented once, and both
 identity sites and every run path use it. The wire change is closed and
 strict. The public API changes are listed in the review report. Consumer
 `origin/main` greps show no compile break. All four findings are low and
@@ -177,3 +177,22 @@ No change from main is dropped. This round adds no new finding.
 | FND-007 | fixed | 0d81c68d7 |
 | FND-008 | fixed | 0d81c68d7 |
 | FND-009 | fixed | 0d81c68d7 |
+
+## Dispositions (round 6)
+
+Reviewed exact head c8fe420b3969357081be9cca623762c2102f9482 against
+origin/main 65daf24a988e3e49d844d24855df1ff0d9342b2f. Prior fixed findings
+FND-001 through FND-004 and FND-006 through FND-009 remain fixed. FND-005
+remains open: the actual quire-driver origin/main is a7fbfe7ed06de923d740a63fb24c04c0987899e7, and
+`src/limits.rs` still stores `Vec<(Setting, u64)>` and maps
+`parse_operands(..).map(Self)`, while this head returns
+`Vec<(SettingName, u64)>`. Its next dependency update cannot compile until
+the driver adapts. The ticket's later source-only candidate report does not
+change that current-main disposition; its comments also say publication,
+review and coordinated landing remain outstanding. FND-010 was already
+dispositioned fixed in the prior ticket round; its trace tag remains in this
+head, so no new disposition row is due.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | still-open | quire-driver origin/main a7fbfe7ed06de923d740a63fb24c04c0987899e7 still expects parse_operands to yield Setting; this QSL head yields SettingName, and no compatible driver main has landed |

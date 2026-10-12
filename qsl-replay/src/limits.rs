@@ -335,9 +335,6 @@ mod tests {
         );
         let code_names: BTreeSet<&str> = reported
             .iter()
-            // `format.output_bytes` is owned by the formatter's setting
-            // contract, not FR-255's replay stage-setting table.
-            .filter(|setting| **setting != Setting::FormatOutputBytes)
             .map(|setting| setting.name())
             .chain(
                 defaults
@@ -518,7 +515,7 @@ mod tests {
     fn unconfigured_limits_are_at_the_published_defaults() {
         let defaults = CallerLimits::from_operands([]).unwrap();
         let table: Vec<Row> = spec_table();
-        assert_eq!(table.len(), Setting::ALL.len() - 1);
+        assert_eq!(table.len(), Setting::ALL.len());
         for row in table {
             let setting = Setting::from_name(&row.name).expect("a table name is a setting");
             assert_eq!(
@@ -528,11 +525,6 @@ mod tests {
                 row.name
             );
         }
-        assert_eq!(
-            bound_of(&defaults, Setting::FormatOutputBytes),
-            qsl_cst::format::FormatLimits::default().output_bytes as u64,
-            "format.output_bytes is governed by the formatter's published default"
-        );
         let accounting = accounting_table();
         assert_eq!(accounting.len(), AccountingSetting::ALL.len());
         for (name, default) in accounting {

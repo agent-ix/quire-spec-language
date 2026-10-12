@@ -3,7 +3,7 @@ id: SR-2446
 title: "QSL-656 gap analysis of PR #665 (FR-255-AC-7 to AC-11, FR-100-AC-3/6/12, TC-914)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@0d34c5742a1c2841cec9fac4209324ff4949a4b5; PR #665 diff against origin/main; spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-098-execute-a-replay-request.md; spec/functional/FR-357-replay-scalar-parity-claims.md; spec/functional/FR-286-serialize-every-outcome-as-one-json-outcome-document.md; spec/functional/FR-263-replay-at-any-depth-under-the-request-limits.md; spec/test-cases/TC-914-accounting-budgets-are-settable-by-counter-name.md; QSpec FR-461 (read-only, qspec main fbd6ea0f)"
+scope: "agent-ix/quire-spec-language@c8fe420b3969357081be9cca623762c2102f9482; PR #665 diff against origin/main 65daf24a988e3e49d844d24855df1ff0d9342b2f; changed FR-255, FR-100, FR-098, FR-263, FR-286, FR-357, TC-450, TC-451, TC-770, TC-921 and spec/tests.md; QSpec FR-461"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-255
@@ -134,3 +134,16 @@ TC-914's scope, the `spec/tests.md` TC-914 row and the
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-003 | fixed | 0d81c68d7 |
+
+## Dispositions (round 6)
+
+Reviewed exact head c8fe420b3969357081be9cca623762c2102f9482. The latest
+prior outcomes for FND-001 and FND-002 are fixed (8c7fce235); FND-003 is
+fixed (0d81c68d7). The current affected test tags and FR-100 numbering were
+read in this head. The static matrix command did not return output within
+30 seconds and was stopped (exit 130); no matrix totals or whole-repository
+coverage claim is made. A source/spec binding review of the changed criteria
+found the declared TC-921 bindings in place.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |

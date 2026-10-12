@@ -48,8 +48,8 @@ Every limit has no ceiling: a caller raises or lowers it, and the value is
 used as given. The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`),
 NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
-(`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`)
-and FR-101 (`explore.*`). A limit of an operation QSL has not yet
+(`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
+FR-003 (`format.*`), and FR-101 (`explore.*`). A limit of an operation QSL has not yet
 ported takes its row, with its limits type, when that operation lands.
 
 | Setting | Stage | Limit kind | Library field | Default |
@@ -88,6 +88,7 @@ ported takes its row, with its limits type, when that operation lands.
 | `dependency.source_bytes` | S4 source resolution | input bytes | `DependencyLimits` source_bytes | 16777216 bytes |
 | `identity.input_bytes` | identity encoding | input bytes | `AssemblyLimits` identity (`IdentityLimits` input_bytes), carried into checking, bundle linking and exploration keys | 16777216 bytes |
 | `replay.input_bytes` | replay envelope readers | input bytes | the replay readers' encoded-byte bound | 1048576 bytes |
+| `format.output_bytes` | format | input bytes (shared catalog kind) | `qsl_cst::format::FormatLimits` output_bytes | 1048576 bytes |
 | `i2.input_bytes` | I2 v2 reader | input bytes | the v2 read limits' artifact bytes | 16777216 bytes |
 | `i2.nodes` | I2 v2 reader | node count | the v2 read limits' nodes | 10000 nodes |
 | `i2.edges` | I2 v2 reader | edge count | the v2 read limits' edges | 100000 edges |
@@ -139,7 +140,7 @@ these names through the same operand grammar as the stage settings
 
 ## Behavior
 
-1. **The outcome names the setting.** When a stage refuses a charge because
+1. **The outcome names the setting.** When a stage or operation refuses a charge because
    it would exceed a configured limit, QSL SHALL return that stage's limit
    outcome carrying the limit kind, the configured bound, the count the
    refused charge would have reached, the setting name of that limit, and
@@ -153,12 +154,15 @@ these names through the same operand grammar as the stage settings
 2. **One mapping per limits type.** Each stage's limits type SHALL map each
    of its fields to its setting name in one place, and every producer of a
    `LimitExceeded` for that stage SHALL take the setting from that mapping.
+   `FormatLimits` SHALL map its `output_bytes` field to
+   `format.output_bytes` through the shared `SettingLimits` interface; the
+   formatter's byte-budget diagnostic SHALL use that mapping.
 3. **Rendering.** When QSL renders a `stage_limit_exceeded` diagnostic, the
    text SHALL follow QSpec FR-461's rendering, filled from the outcome of
    Behavior 1.
-4. **The library raises every limit by its field.** Each stage's limits
-   type SHALL offer a builder method for each field in the table, which sets
-   that field's bound and changes nothing else.
+4. **The library raises every limit by its field.** Each stage's or
+   operation's limits type SHALL offer a builder method for each field in the
+   table, which sets that field's bound and changes nothing else.
 5. **The replay request raises every limit by name.** Replay SHALL read the
    request's `stage_limits` as a map from setting name to bound and pass
    every entry through to its stage (FR-263).
@@ -167,8 +171,10 @@ these names through the same operand grammar as the stage settings
    (ADR-029 CB-1). QSL SHALL provide the library settings operation that the
    driver CLI calls with those operands: given a list of `<name>=<value>`
    operands, where `<name>` is a setting name from either table and `<value>` a
-   non-negative decimal integer, it SHALL return the stages' limits with each
-   named limit at that value. When `<name>` is in neither table, `<value>` is
+   non-negative decimal integer, it SHALL return the caller limits with each
+   named limit at that value. For `format.output_bytes`, the returned caller
+   limits SHALL expose the resulting `FormatLimits` to the formatter. When
+   `<name>` is in neither table, `<value>` is
    not a non-negative decimal integer, or one name is given twice, it SHALL
    return a usage refusal that names the operand, and no stage runs.
 7. **Absent settings take their defaults.** When a caller does not
@@ -201,10 +207,10 @@ these names through the same operand grammar as the stage settings
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-255-AC-1 | For each row of the setting table, driving its stage past that limit at a configured bound `B` returns that stage's limit outcome with the row's limit kind, bound `B`, the count the refused charge would have reached, and the row's setting name, and its catalog record carries the stage's code with fields `kind`, `bound`, `actual` and `setting` holding those values. | Test (TC-720) |
+| FR-255-AC-1 | For each row of the setting table, driving its stage or operation past that limit at a configured bound `B` returns the row owner's specified limit outcome with the row's limit kind, bound `B`, the count the refused charge would have reached, and the row's setting name, and its catalog record carries the outcome code with fields `kind`, `bound`, `actual` and `setting` holding those values. The `format.output_bytes` case uses FR-003's `resource_exhausted` outcome over emitted UTF-8 bytes. | Test (TC-720, TC-931) |
 | FR-255-AC-2 | A function `f` whose body is `1 + 1 + 1` (five expression nodes), checked with `s3.nodes` at 4, renders as "S3 node limit 4 reached (5) at <locus>; raise it with `--limit s3.nodes=<n>` or the request's `stage_limits` entry `s3.nodes`", where <locus> renders FR-096's locus of the node whose entry failed, in QSpec FR-461's rendering. | Test (TC-720) |
-| FR-255-AC-3 | Each stage's limits type, and the call's accounting limits, maps every one of its fields to exactly one setting name, the names across all of them are distinct, and the union of those names equals the names of the setting table and the accounting table together. Setting a field through its builder method changes that field's bound and leaves every other field at its prior value. | Test (TC-720) |
-| FR-255-AC-4 | For each row of the setting table, an input that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each of: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, and a row whose stage a replay does not run, is exercised through the builder and the settings operation. | Test (TC-721) |
+| FR-255-AC-3 | Each stage's and operation's limits type, including `FormatLimits`, and the call's accounting limits, maps every one of its fields to exactly one setting name, the names across all of them are distinct, and the union of those names equals the names of the setting table and the accounting table together. Setting a field through its builder method changes that field's bound and leaves every other field at its prior value. | Test (TC-720) |
+| FR-255-AC-4 | For each row of the setting table, an input or operation that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each applicable entry point: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, `format.output_bytes`, and a row whose stage a replay does not run are exercised through the builder and the settings operation; the formatter receives the resulting `FormatLimits`. | Test (TC-721, TC-931) |
 | FR-255-AC-5 | The settings operation given `s9.nodes=1`, given `s3.nodes=ten`, given `s3.nodes=-1`, and given `s3.nodes=5` and `s3.nodes=6` together, each returns a usage refusal naming the offending operand, and no stage runs. | Test (TC-721) |
 | FR-255-AC-6 | A compile with no limit configured at any entry point runs each stage at the defaults the table lists, and the effective limits a checked package records equal those defaults; an unconfigured format operation uses 1048576 output bytes. | Test (TC-721, TC-931) |
 | FR-255-AC-7 | FR-100's `seven` (`tests/fixtures/spine-compile.native`), called under the accounting limits the settings operation returns for the operand `work_units=0`, settles `Incomplete` naming counter `work_units`, bound 0, count 1 and setting `work_units`; its outcome names setting `work_units`. Under the operand `work_units=1000000` the same call completes with 7. | Test (TC-921) |

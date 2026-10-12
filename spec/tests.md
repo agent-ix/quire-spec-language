@@ -596,7 +596,7 @@ names different artifacts in each.
 | TC-784 | One Value-family source runs through check, package and execute with documents and exit codes | Integration | P1 | FR-299-AC-1, FR-299-AC-2, FR-299-AC-3, FR-299-AC-4 | 🚧 |
 | TC-762 | analyze settles proved, refuted and unsupported items with one record each | Integration | P1 | FR-281-AC-1, FR-281-AC-2, FR-281-AC-3 | 🚧 |
 | TC-763 | analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict | Integration | P1 | FR-281-AC-4, FR-281-AC-5, FR-281-AC-6, FR-281-AC-7 | 🚧 |
-| TC-931 | The formatter output budget is a named caller setting | Integration | P1 | FR-003-AC-10, FR-255-AC-1, FR-255-AC-4, FR-255-AC-6, FR-277-AC-1 | 🚧 |
+| TC-931 | The formatter output budget is a named caller setting | Integration | P1 | FR-003-AC-10, FR-255-AC-1, FR-255-AC-3, FR-255-AC-4, FR-255-AC-6, FR-277-AC-1 | 🚧 |
 | TC-970 | Capability admits exactly the twelve FR-290 labels | Unit | P1 | FR-057-AC-1 | 🚧 |
 | TC-971 | Capability family projection matches FR-290 | Unit | P1 | FR-057-AC-11, FR-057-AC-13 | 🚧 |
 | TC-972 | same_kind compares all capability labels exactly | Unit | P1 | FR-057-AC-4 | 🚧 |
