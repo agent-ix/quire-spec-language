@@ -4020,7 +4020,10 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                         panic!("later cancellation must stay Incomplete");
                     };
                     assert_eq!(record.charge_point, prefix[stopped]);
-                    assert_eq!(meter.admitted_charges(), &prefix[..stopped]);
+                    assert_eq!(
+                        crate::support::admitted_charge_points(&meter),
+                        prefix[..stopped]
+                    );
                     assert_eq!(cancel.tripped(), Some(cause));
                 }
             }
@@ -4051,9 +4054,12 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                         panic!("denied query charge must remain Incomplete");
                     };
                     assert_eq!(record.charge_point, prefix[denied]);
-                    assert_eq!(meter.admitted_charges(), &prefix[..denied]);
+                    assert_eq!(
+                        crate::support::admitted_charge_points(&meter),
+                        prefix[..denied]
+                    );
                 } else {
-                    assert_eq!(meter.admitted_charges(), prefix);
+                    assert_eq!(crate::support::admitted_charge_points(&meter), prefix);
                     assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
                     if object.is_empty() {
                         let CallFailure::Fault(fault) =
@@ -4133,7 +4139,7 @@ fn model_query_shapes_fault_at_the_real_producers_without_added_query_charges() 
                 &mut meter,
             );
             assert_eq!(
-                meter.admitted_charges(),
+                crate::support::admitted_charge_points(&meter),
                 [ChargePoint::LookupKey, ChargePoint::LookupResultRetain]
             );
             assert_eq!(
@@ -4176,7 +4182,7 @@ fn model_query_shapes_fault_at_the_real_producers_without_added_query_charges() 
                 };
                 assert_eq!(record.charge_point, point);
                 assert_eq!(
-                    denied.admitted_charges(),
+                    crate::support::admitted_charge_points(&denied),
                     if point == ChargePoint::LookupKey {
                         &[][..]
                     } else {

@@ -292,7 +292,7 @@ fn t11_text_accounting_exact_bounds_and_named_denials() {
     assert_eq!(run(&mut exact), Outcome::Completed(true));
     assert_eq!(consumed(&exact), [0, 0, 0, 5, 3, 2, 0, 2, 6, 1]);
     assert_eq!(
-        exact.admitted_charges(),
+        crate::support::admitted_charge_points(&exact),
         [
             ChargePoint::TextInputBytes,
             ChargePoint::TextDecodeScalars,
@@ -909,7 +909,7 @@ fn enum_accounting_exact_bounds_and_named_denials() {
     assert_eq!(run(&mut exact), Outcome::Completed(true));
     assert_eq!(consumed(&exact), [0, 0, 0, 0, 0, 0, 0, 2, 3, 1]);
     assert_eq!(
-        exact.admitted_charges(),
+        crate::support::admitted_charge_points(&exact),
         [
             ChargePoint::EnumIdentityRead,
             ChargePoint::EnumIdentityRead,
@@ -1066,12 +1066,12 @@ fn generated_text_profiles_match_the_unicode_17_oracle() {
             let expected = compare_text(Equal, &left, &right, &mut meter).unwrap();
             assert!(matches!(expected, Outcome::Completed(_)));
             let mut seen: Vec<ChargePoint> = Vec::new();
-            for point in meter.admitted_charges() {
-                seen.push(*point);
+            for charge in meter.admitted_charges() {
+                seen.push(charge.point);
                 let occurrence =
-                    u64::try_from(seen.iter().filter(|p| *p == point).count()).unwrap();
+                    u64::try_from(seen.iter().filter(|p| **p == charge.point).count()).unwrap();
                 let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
-                    point: *point,
+                    point: charge.point,
                     occurrence: NonZeroU64::new(occurrence).expect("nonzero occurrence"),
                 });
                 assert!(matches!(
@@ -1310,7 +1310,11 @@ fn t16_length_refusal_follows_the_last_charge_that_measures_the_length() {
             ),
             "{profile:?}"
         );
-        assert_eq!(meter.admitted_charges(), charges, "{profile:?}");
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            charges,
+            "{profile:?}"
+        );
         assert!(
             matches!(
                 admit_text(&runtime(text), &bound, &mut Meter::new(denied)),
@@ -1346,7 +1350,7 @@ fn t14_non_normalizing_profiles_charge_no_normalization() {
             "{profile:?}"
         );
         assert_eq!(
-            meter.admitted_charges(),
+            crate::support::admitted_charge_points(&meter),
             [
                 ChargePoint::TextInputBytes,
                 ChargePoint::TextDecodeScalars,

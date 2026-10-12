@@ -41,6 +41,14 @@ use super::{
 };
 use crate::spine::{default_accounting, ComposedUnit, DependencyInput, SpineLimits};
 
+fn admitted_charge_points(meter: &Meter) -> Vec<ChargePoint> {
+    meter
+        .admitted_charges()
+        .iter()
+        .map(|charge| charge.point)
+        .collect()
+}
+
 // Keep the oracle where the private fixture's actual package input is owned.
 // Original refusals remain typed refusals; only a successful public S4 emission
 // reaches the strict formatted-package comparison.
@@ -479,7 +487,7 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let graph_charges: Vec<_> = meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,
@@ -3382,7 +3390,7 @@ fn step3_graph_charges(meter: &Meter) -> Vec<ChargePoint> {
     meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,

@@ -243,7 +243,7 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
     let result = completed(d05(&mut meter));
     assert_eq!(pair(result.value()).0, (33, 2));
     assert_eq!(
-        meter.admitted_charges(),
+        crate::support::admitted_charge_points(&meter),
         [
             ChargePoint::DecimalOperands,
             ChargePoint::DecimalScaleExpansion,
@@ -311,12 +311,12 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
         })
     );
 
-    for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
+    for (work, charge) in (0_u64..).zip(meter.admitted_charges()) {
         let mut denied = Meter::new(D09).with_injected_denial(InjectedDenial {
-            point: *point,
+            point: charge.point,
             occurrence: NonZeroU64::MIN,
         });
-        assert_eq!(d05(&mut denied), work_denied(work, *point));
+        assert_eq!(d05(&mut denied), work_denied(work, charge.point));
         assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
     }
 
@@ -442,7 +442,7 @@ fn d13_discarded_zero_digits_are_not_a_rounding_step() {
         assert_eq!(pair(result.value()).0, (3, 0), "{mode:?}");
         assert!(result.loss().is_none());
         assert_eq!(
-            meter.admitted_charges(),
+            crate::support::admitted_charge_points(&meter),
             [
                 ChargePoint::DecimalOperands,
                 ChargePoint::DecimalScaleExpansion,
@@ -808,7 +808,7 @@ fn working_scales_above_the_target_never_materialize_the_excess_power() {
         ),
         Outcome::Refused(Refusal::InexactDecimal { .. })
     ));
-    assert_eq!(meter.admitted_charges(), arithmetic);
+    assert_eq!(crate::support::admitted_charge_points(&meter), arithmetic);
 
     // Working scale 2 × u32::MAX: -6 × 10^-8589934590.
     let (left, right) = (dec(3, u32::MAX), dec(-2, u32::MAX));
@@ -818,7 +818,7 @@ fn working_scales_above_the_target_never_materialize_the_excess_power() {
         evaluate_decimal(product, &target(0, 10, 0, RoundingMode::Exact), &mut meter),
         Outcome::Refused(Refusal::InexactDecimal { .. })
     ));
-    assert_eq!(meter.admitted_charges(), arithmetic);
+    assert_eq!(crate::support::admitted_charge_points(&meter), arithmetic);
     assert!(matches!(
         evaluate_decimal(
             product,
@@ -1193,10 +1193,10 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                             }
                             (_, other) => panic!("{case}: oracle disagrees with {other:?}"),
                         }
-                        for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
+                        for (work, charge) in (0_u64..).zip(meter.admitted_charges()) {
                             let mut denied =
                                 Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
-                                    point: *point,
+                                    point: charge.point,
                                     occurrence: NonZeroU64::MIN,
                                 });
                             assert_eq!(

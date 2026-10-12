@@ -2144,7 +2144,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         quire_exact::ChargePoint::OrderingArithmetic,
         quire_exact::ChargePoint::OrderingResultRetain,
     ];
-    assert_eq!(meter_d.admitted_charges(), &charges);
+    assert_eq!(crate::support::admitted_charge_points(&meter_d), charges);
     assert_eq!(meter_d.consumed(LimitKind::WorkUnits), 6);
     assert_eq!(meter_d.consumed(LimitKind::ResultUnits), 1);
     assert_eq!(meter_d.consumed(LimitKind::ValueOccurrences), 2);
@@ -2186,7 +2186,10 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
                 charge_point: quire_exact::ChargePoint::OrderingResultRetain,
             })
     ));
-    assert_eq!(meter_five.admitted_charges(), &charges[..4]);
+    assert_eq!(
+        crate::support::admitted_charge_points(&meter_five),
+        charges[..4]
+    );
     assert_eq!(meter_five.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_five.consumed(LimitKind::ResultUnits), 0);
     assert_eq!(meter_five.consumed(LimitKind::ValueOccurrences), 2);

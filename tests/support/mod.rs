@@ -45,6 +45,14 @@ pub mod standalone_setup;
 pub mod temporal;
 pub mod workspace;
 
+pub(crate) fn admitted_charge_points(meter: &quire_exact::Meter) -> Vec<quire_exact::ChargePoint> {
+    meter
+        .admitted_charges()
+        .iter()
+        .map(|charge| charge.point)
+        .collect()
+}
+
 // See this module's own doc above: both are re-exports of copies nested
 // inside `standalone_setup`, not fresh `mod` declarations.
 pub(crate) use runtime_setup::native_rule_model;

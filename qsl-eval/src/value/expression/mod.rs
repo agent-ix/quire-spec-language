@@ -966,7 +966,11 @@ mod tests {
         assert_eq!(fault.invariant(), "boolean-value-expected");
         assert_eq!(fault.kernel_cause(), None);
         assert_eq!(
-            meter.admitted_charges(),
+            meter
+                .admitted_charges()
+                .iter()
+                .map(|charge| charge.point)
+                .collect::<Vec<_>>(),
             [quire_exact::ChargePoint::FunctionCall]
         );
         assert_eq!(

@@ -6,6 +6,14 @@ use ix_trace_rs::trace;
 use qsl_semantics::check::CheckedBody;
 use quire_semantic_value::location::Origin;
 
+fn admitted_charge_points(meter: &Meter) -> Vec<ChargePoint> {
+    meter
+        .admitted_charges()
+        .iter()
+        .map(|charge| charge.point)
+        .collect()
+}
+
 macro_rules! probe {
     ($identifier:expr, $machine:ident, $charges:expr, $action:block) => {{
         probe_environment!(
@@ -53,7 +61,7 @@ macro_rules! probe_package {
             fault
         };
         let expected: &[ChargePoint] = &$charges;
-        assert_eq!(meter.admitted_charges(), expected, "{}", $identifier);
+        assert_eq!(admitted_charge_points(&meter), expected, "{}", $identifier);
     }};
 }
 
@@ -443,7 +451,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
         if guarded {
             expected.push(ChargePoint::FunctionCall);
         }
-        assert_eq!(meter.admitted_charges(), expected);
+        assert_eq!(admitted_charge_points(&meter), expected);
     }
     let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
     let mut machine = Machine::new(
@@ -472,7 +480,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
     finish_tasks(&mut machine).unwrap_or_else(|_| panic!("guard result"));
     assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
     drop(machine);
-    assert_eq!(meter.admitted_charges(), [ChargePoint::FunctionCall]);
+    assert_eq!(admitted_charge_points(&meter), [ChargePoint::FunctionCall]);
     let node = CheckedBody::fixture(
         vec![ValueType::Reference(receiver.object_type())],
         |ids| NodeKind::Call {
@@ -496,7 +504,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
     finish_tasks(&mut machine).unwrap_or_else(|_| panic!("local call result"));
     assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
     drop(machine);
-    assert_eq!(meter.admitted_charges(), [ChargePoint::FunctionCall]);
+    assert_eq!(admitted_charge_points(&meter), [ChargePoint::FunctionCall]);
 }
 
 fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
@@ -657,7 +665,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
     assert!(matches!(machine.values.as_slice(), [Value::Boolean(true)]));
     assert!(machine.imported.is_empty());
     drop(machine);
-    assert_eq!(meter.admitted_charges(), [ChargePoint::FunctionCall]);
+    assert_eq!(admitted_charge_points(&meter), [ChargePoint::FunctionCall]);
 }
 
 #[test]
@@ -1468,7 +1476,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                 } else {
                     &[]
                 };
-                assert_eq!(meter.admitted_charges(), expected);
+                assert_eq!(admitted_charge_points(&meter), expected);
                 if call {
                     let mut denied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
                         .with_injected_denial(quire_exact::InjectedDenial {
@@ -2159,7 +2167,7 @@ fn scalar_query_resume_retains_the_valid_result_and_preserves_earlier_stops() {
         }
         drop(machine);
         assert_eq!(
-            meter.admitted_charges(),
+            admitted_charge_points(&meter),
             [ChargePoint::CollectionResultRetain]
         );
         earlier_charge_controls(
@@ -2232,7 +2240,7 @@ fn fold_resume_and_finish_retain_the_real_accumulator_and_earlier_stop() {
         assert!(machine.tasks.is_empty());
         drop(machine);
         assert_eq!(
-            meter.admitted_charges(),
+            admitted_charge_points(&meter),
             [ChargePoint::CollectionResultRetain]
         );
         assert_eq!(meter.consumed(quire_exact::LimitKind::ResultUnits), 1);

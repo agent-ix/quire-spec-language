@@ -20,6 +20,14 @@ use crate::scalar::ScalarOutcome;
 use crate::spine::{compose, ComposedUnit, SpineLimits, SpineStage};
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
+fn admitted_charge_points(meter: &quire_exact::Meter) -> Vec<quire_exact::ChargePoint> {
+    meter
+        .admitted_charges()
+        .iter()
+        .map(|charge| charge.point)
+        .collect()
+}
+
 mod composite;
 mod composite_parity;
 
@@ -1792,7 +1800,7 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
         } else {
             &[]
         };
-        assert_eq!(meter.admitted_charges(), expected);
+        assert_eq!(admitted_charge_points(&meter), expected);
     }
 }
 
@@ -1936,7 +1944,7 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
             ChargePoint::CollectionBound,
             ChargePoint::CollectionResultRetain,
         ]);
-        assert_eq!(meter.admitted_charges(), expected);
+        assert_eq!(admitted_charge_points(&meter), expected);
     }
     // This is the actual package -> replay fault-adapter path. A full replay
     // witness request cannot admit Population input under the existing input
@@ -2061,7 +2069,7 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
         } else {
             &[]
         };
-        assert_eq!(meter.admitted_charges(), prefix);
+        assert_eq!(admitted_charge_points(&meter), prefix);
     }
 }
 

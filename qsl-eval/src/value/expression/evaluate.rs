@@ -3102,7 +3102,7 @@ mod tests {
         let charges: Vec<_> = meter
             .admitted_charges()
             .iter()
-            .copied()
+            .map(|charge| charge.point)
             .filter(|point| matches!(point, ChargePoint::ModelDeref | ChargePoint::ModelNavigate))
             .collect();
         assert_eq!(

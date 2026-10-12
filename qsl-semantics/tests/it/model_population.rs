@@ -484,10 +484,9 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(meter_a.consumed(LimitKind::ResultUnits), 4);
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 4);
     assert_eq!(
-        meter_a
-            .admitted_charges()
+        crate::admitted_charge_points(&meter_a)
             .iter()
-            .filter(|charge| charge.point == ChargePoint::PopulationVisit)
+            .filter(|point| **point == ChargePoint::PopulationVisit)
             .count(),
         3
     );
