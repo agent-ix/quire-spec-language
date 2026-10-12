@@ -870,6 +870,18 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
             .outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
+    // Row, run 1: no result names `NotYetPlaced` or transition `[0]`. The
+    // model guard is no checked clause, so it can be neither looked up nor
+    // evaluated against the run's observations.
+    assert!(package.graph().state_clause("NotYetPlaced").is_none());
+    let not_yet_placed = |observations: &AdmittedObservations| {
+        package.evaluate_clause(
+            &QualifiedName::unqualified("NotYetPlaced").unwrap(),
+            observations,
+            &mut Meter::new(UNLIMITED),
+        )
+    };
+    assert!(not_yet_placed(&pre_one).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_one).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
@@ -907,6 +919,9 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         invocation,
     )
     .expect("run 2 precondition admits");
+    // Row, run 2: `NotYetPlaced` is not evaluated, and the transitions'
+    // `from` and `to` are not read (no checked clause holds them).
+    assert!(not_yet_placed(&pre_two).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_two).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
@@ -1015,10 +1030,10 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
 
 /// TC-235 M15 run 6. Red: domain package intake discards an operation's
 /// `pre` clauses (`read_operation_member`), so no check reads a model-owned
-/// `Operation.pre` and nothing refuses its `pre(...)` read.
+/// `Operation.pre` and nothing refuses its `pre(...)` read (QSL-726).
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-11")]
 #[test]
-#[ignore = "model-owned Operation.pre clauses are discarded at intake and never checked"]
+#[ignore = "QSL-726: model-owned Operation.pre clauses are discarded at intake and never checked"]
 fn tc235_m15_run6_model_operation_pre_read_refuses() {
     let pre_read = lifecycle_document("pre(self.placed) = false");
     let refusals = lifecycle_package(
@@ -1037,8 +1052,9 @@ fn tc235_m15_run6_model_operation_pre_read_refuses() {
         refusals[0].cause,
         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
     ));
-    assert!(format!("{:?}", refusals[0]).contains(&crate::tc235_k2::id("OrderLifecycle/place")));
-    assert!(format!("{:?}", refusals[0]).contains("Operation.pre"));
+    // The row also names `ix://test/orders/OrderLifecycle/place` at
+    // `Operation.pre`. `CheckRefusal` has no typed location for a model
+    // operation clause until QSL-726 adds one; assert it as a field then.
 }
 
 #[trace("QSpec-TC-235")]

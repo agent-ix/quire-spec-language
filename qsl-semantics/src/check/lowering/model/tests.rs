@@ -28,9 +28,9 @@ use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, RelationshipDirection,
-    RelationshipEnd, RelationshipRecord, StateMachineRecord, StateMachineStateRecord,
-    StateMachineTransitionRecord, ValueTypeRef,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, PersistenceInterfaceRecord,
+    RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+    StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
@@ -1353,11 +1353,11 @@ mod quantities {
     }
 }
 
-/// FR-322-AC-25 / FR-208: a state machine is a declaring `model` node of
+/// QSpec FR-322-AC-25 / FR-208: a state machine is a declaring `model` node of
 /// semantic form `state_machine`, so lowering keys it like an object type
 /// (a state clause or operation anchor on it needs its node) instead of
 /// refusing the declaration as an unnamed record kind.
-#[trace("FR-322-AC-25", "FR-094-AC-1")]
+#[trace("QSpec-FR-322-AC-25")]
 #[test]
 fn state_machine_declaration_keys_as_a_state_machine_model_node() {
     let package = DomainPackage::new(
@@ -1411,7 +1411,6 @@ fn state_machine_declaration_keys_as_a_state_machine_model_node() {
 /// three natives a record or event field may carry are distinct scalar type
 /// nodes, so a composite holding one keys instead of refusing the whole
 /// check as `ill_typed`/`type-mismatch`.
-#[trace("FR-056", "FR-092-AC-12")]
 #[test]
 fn native_string_uuid_and_timestamp_key_as_distinct_scalar_nodes() {
     let location = generated_location();
@@ -1439,4 +1438,69 @@ fn native_string_uuid_and_timestamp_key_as_distinct_scalar_nodes() {
             (NodeTag::ScalarType, "timestamp"),
         ]
     );
+}
+
+/// The node tag and form `name` keys to in a package holding `records`.
+fn keyed_form(records: Vec<DomainPackageRecord>, name: &str) -> (NodeTag, String) {
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: Sha256::digest(b"acme/orders@forms").into(),
+        },
+        records,
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the package normalizes");
+    };
+    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let location = generated_location();
+    let (node, graph) = lower(
+        std::slice::from_ref(&model),
+        Default::default(),
+        |lowering| lowering.model_node(&key(name), &location),
+    );
+    let node = graph
+        .node(node.expect("the declaration has a model node"))
+        .expect("the node is in the graph");
+    (node.node_tag(), node.semantic_form().to_owned())
+}
+
+/// QSpec FR-322-AC-25: a persistence interface declares operations, so an
+/// anchor on one needs its model node instead of an unnamed-record-kind fault.
+#[trace("QSpec-FR-322-AC-25")]
+#[test]
+fn persistence_interface_declaration_keys_as_a_model_node() {
+    let form = keyed_form(
+        vec![
+            object("Order", &[]),
+            DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                key: key("Store"),
+                persists: vec![key("Order")],
+            }),
+            query("Store/save", "Store", None),
+        ],
+        "Store",
+    );
+    assert_eq!(form, (NodeTag::Model, "persistence_interface".to_owned()));
+}
+
+/// QSpec FR-340: a frame field entry may be declared on a record value
+/// type, so its owner needs a model node instead of an unnamed-record-kind
+/// fault.
+#[test]
+fn record_value_type_declaration_keys_as_a_model_node() {
+    let form = keyed_form(
+        vec![DomainPackageRecord::RecordValueType(
+            RecordValueTypeRecord {
+                key: key("Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            },
+        )],
+        "Money",
+    );
+    assert_eq!(form, (NodeTag::Model, "record_value_type".to_owned()));
 }
