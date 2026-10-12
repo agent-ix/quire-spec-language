@@ -421,11 +421,26 @@ pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
     sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
 }
 
+/// The digest of a node's structural preimage, even for node families whose
+/// normal key is derived from an application preimage.
+pub(crate) fn rebuilt_structural_key(node: &Value, group: &[&Value]) -> String {
+    sha256_hex(&jcs(&rebuilt_preimage_as(node, group, true, Some(false))))
+}
+
 /// The preimage [`rebuilt_key`] hashes. With `labelled` false, a recursion
 /// group member's preimage omits `recursion.group`: its group-local form,
 /// whose digests the group label hashes. The owner is read from the wire
 /// node's own `owner` member, never from the owner the checked unit carries.
 pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -> Value {
+    rebuilt_preimage_as(node, group, labelled, None)
+}
+
+fn rebuilt_preimage_as(
+    node: &Value,
+    group: &[&Value],
+    labelled: bool,
+    application_override: Option<bool>,
+) -> Value {
     let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
     let in_group = |term: &Value| -> Value {
         fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
@@ -452,9 +467,12 @@ pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -
         walk(term, &ordinal)
     };
     let body = in_group(&node["body"]);
-    let application = serde_json::to_string(&body)
-        .unwrap()
-        .contains("\"application\"");
+    let application = application_override.unwrap_or_else(|| {
+        (node["node_tag"] == "value" && node["semantic_form"] == "union_value")
+            || serde_json::to_string(&body)
+                .unwrap()
+                .contains("\"application\"")
+    });
     let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
     let recursion = node.get("recursion_group").map(|label| {
         let position = ordinal(&node["node_id"]).unwrap();
