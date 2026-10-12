@@ -906,11 +906,12 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 - QSpec's `quire.native.diagnostics/v1` catalog now defines
   `resource_exhausted`/`reservation-size-overflow` and its `upstream` payload
   (QSL-729, merged QSpec commit `9e5f6a2343e411e43aa9fc1d7e8257fd3b2804fe`).
-  QSL preserves the upstream `StorageRequest` amount and unit. Allocation
+  QSL preserves the upstream `StorageRequest` amount and unit in the catalog's
+  single payload field: `requested` for `allocation-failed` and `upstream` for
+  `reservation-size-overflow`, each rendered as `<unit>:<amount>`. Allocation
   denial remains the existing QSL `resource_exhausted`/`allocation-failed`
-  mapping required by FR-082-AC-10; current QSpec catalog text does not list
-  `allocation-failed`, so catalog conformance for that existing mapping is
-  unresolved and is not claimed here.
+  mapping required by FR-082-AC-10; the corresponding allocation cause is
+  specified by QSpec #236.
 - **Downstream:** the ADR-011 §5 stage driver calls S1, S2, the assembler
   and `check` in that order.
 

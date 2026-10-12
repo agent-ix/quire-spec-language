@@ -593,10 +593,8 @@ fn assembler_allocation_cause_preserves_native_request_unit() {
             cause.storage_request(),
             Some((request.amount(), request.unit()))
         );
-        let fields = BTreeMap::from([
-            ("requested", request.amount().to_string()),
-            ("unit", expected_unit.to_owned()),
-        ]);
+        let fields =
+            BTreeMap::from([("requested", format!("{expected_unit}:{}", request.amount()))]);
         assert_eq!(cause.catalog_fields(), Some(fields));
     }
 }

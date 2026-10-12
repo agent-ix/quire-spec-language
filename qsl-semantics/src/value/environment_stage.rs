@@ -54,10 +54,10 @@ impl EnvironmentStageCause {
     /// byte counts.
     pub fn storage_catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
         match self {
-            Self::Allocation { request } => Some(BTreeMap::from([
-                ("requested", request.amount().to_string()),
-                ("unit", storage_unit_name(request.unit()).to_owned()),
-            ])),
+            Self::Allocation { request } => Some(BTreeMap::from([(
+                "requested",
+                format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
+            )])),
             Self::Capacity { request } => Some(BTreeMap::from([(
                 "upstream",
                 format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
@@ -141,10 +141,10 @@ mod tests {
             assert_eq!(cause.storage_catalog_code(), Some(ALLOCATION_FAILED));
             assert_eq!(
                 cause.storage_catalog_fields(),
-                Some(BTreeMap::from([
-                    ("requested", request.amount().to_string()),
-                    ("unit", storage_unit_name(request.unit()).to_owned(),),
-                ]))
+                Some(BTreeMap::from([(
+                    "requested",
+                    format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
+                )]))
             );
         }
     }

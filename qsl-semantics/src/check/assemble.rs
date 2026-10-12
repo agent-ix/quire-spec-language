@@ -489,10 +489,10 @@ impl AssemblyCause {
     /// overflow uses QSpec's `upstream` field with the exact request object.
     pub fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
         match self {
-            Self::StorageAllocation { requested, unit } => Some(BTreeMap::from([
-                ("requested", requested.to_string()),
-                ("unit", storage_unit_name(*unit).to_owned()),
-            ])),
+            Self::StorageAllocation { requested, unit } => Some(BTreeMap::from([(
+                "requested",
+                format!("{}:{requested}", storage_unit_name(*unit)),
+            )])),
             Self::StorageCapacity { requested, unit } => Some(BTreeMap::from([(
                 "upstream",
                 format!("{}:{requested}", storage_unit_name(*unit)),

@@ -29,9 +29,11 @@ the production reservation boundary delivered under
    deny a registry, index and traversal reservation in separate attempts.
    Capture the actual amount passed and whether its unit is bytes or
    additional elements. Assert the QSL public failure carries the identical
-   amount and unit in a type-environment registry payload, catalog
-   `resource_exhausted`/`allocation-failed`, through `StageFailure::Refused`;
-   assert the registry cause preserves the exact amount and unit.
+   amount and unit in exactly one `requested` catalog field rendered as
+   `<unit>:<amount>`, catalog `resource_exhausted`/`allocation-failed`, through
+   `StageFailure::Refused`; assert the registry cause preserves the exact
+   amount and unit. For example, requests of 6 bytes and 3 additional elements
+   render as `requested: bytes:6` and `requested: additional-elements:3`.
    Assert absence of bound and setting, no work-counter interpretation, and
    no replacement limit, input/type refusal, Boolean, cancellation or fault.
    Exercise every native unit used by delivered production storage; a
@@ -46,7 +48,7 @@ the production reservation boundary delivered under
 4. Trigger a reservation-size arithmetic or representation overflow through
    the production admission path without allocator denial. Assert the public
    failure is `resource_exhausted`/`reservation-size-overflow` and its
-   `upstream` payload preserves the exact `StorageRequest` as
+   exactly one `upstream` payload preserves the exact `StorageRequest` as
    `<unit>:<amount>` (`bytes` or `additional-elements`, then the unpadded
    base-10 amount); it is distinct from `allocation-failed` and does not claim
    an allocator-denied request.
@@ -65,9 +67,11 @@ Tag the implemented consumer tests with `TC-914` and the corresponding
 ## Expected Results
 
 A genuine allocator denial preserves the measured native request and unit in
-QSL's `resource_exhausted`/`allocation-failed` registry refusal. Capacity/size
-overflow is `resource_exhausted`/`reservation-size-overflow` with its upstream
-amount and unit, and configured limits retain their bounds and counters. Denied admission exposes
+QSL's `resource_exhausted`/`allocation-failed` registry refusal as exactly one
+`requested: <unit>:<amount>` field. Capacity/size overflow is
+`resource_exhausted`/`reservation-size-overflow` with exactly one
+`upstream: <unit>:<amount>` field, and configured limits retain their bounds
+and counters. Denied admission exposes
 no partial result and starts no evaluation; a retry succeeds with the complete
 environment. Canonical allocation, malformed input, cancellation and invariant
 failures retain their established contracts.
