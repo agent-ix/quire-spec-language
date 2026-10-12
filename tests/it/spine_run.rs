@@ -800,11 +800,7 @@ fn native_run_integer_bits_limit_reaches_evaluation() {
     let literal_directory = tempfile::tempdir().unwrap();
     let mut literal_call = call("seven", json!([]));
     literal_call["accounting"] = json!({"integer_bits": 0});
-    spine_run_request(
-        literal_directory.path(),
-        fixture.as_bytes(),
-        literal_call,
-    );
+    spine_run_request(literal_directory.path(), fixture.as_bytes(), literal_call);
     let literal_output = run(literal_directory.path());
     assert_eq!(literal_output.status.code(), Some(0));
     let literal_document: Value = serde_json::from_slice(&literal_output.stdout).unwrap();
