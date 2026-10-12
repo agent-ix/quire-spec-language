@@ -21,10 +21,12 @@ FR-084-AC-2 and FR-090-AC-21. The separate object-closure admission case
 FR-084-AC-1; no query runs without an admitted binding. This test targets
 the "no partial substitute" exit condition: it must fail against an
 implementation that returns a collection when subtype closure is missing.
-The executable S6a incomplete-result binder is
-`qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`.
-The complete-coverage/canonical-order control is bound by
-`qsl-semantics/tests/it/model_population.rs::all_instances_requires_declared_subtype_closure`.
+The implementation binders are delivered by companion PR #763:
+`qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`
+for the S6a incomplete result, and
+`qsl-semantics/tests/it/model_population.rs::all_instances_requires_declared_subtype_closure`
+for the complete-coverage/canonical-order control. Both names were verified
+on the companion PR branch; the source implementation remains in that code PR.
 
 Catches an implementation that, on discovering mid-query that the
 population's declared member types do not cover every effective subtype of
