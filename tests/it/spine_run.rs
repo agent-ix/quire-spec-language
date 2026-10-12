@@ -892,7 +892,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
     let program = format!(
         "{HEADER}\
          import \"test/geometry\" as g;\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd\";\n\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114\";\n\
          function seven using v(): Integer pure {{ 7 }}\n"
     )
     .into_bytes();

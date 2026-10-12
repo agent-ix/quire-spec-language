@@ -133,13 +133,13 @@ fn every_corpus_package_admits_under_its_recorded_digest() {
             (
                 "spine-model",
                 include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json").to_vec(),
-                "5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd",
+                "876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114",
             ),
             (
                 "systems-interface",
                 include_bytes!("../../../tests/fixtures/systems-interface.semantic-ir.json")
                     .to_vec(),
-                "47b316eca571f39b6f9d4592940e8c6467c3874d91d7c86faa1379ab95b5cf72",
+                "f98a8274e60d0341c4bb1e83f667db592de8593248a2873559bf4a8671df5203",
             ),
             (
                 "architecture",
