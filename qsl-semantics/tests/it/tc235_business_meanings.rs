@@ -239,6 +239,7 @@ fn k2() -> Value {
     ];
     let constructs = vec![
         construct("thing", meaning::OBJECT_TYPE),
+        construct("value", meaning::VALUE_TYPE),
         construct("money", meaning::RECORD_VALUE_TYPE),
         construct("happened", meaning::EVENT_TYPE),
         construct("lifecycle", meaning::STATE_MACHINE),
