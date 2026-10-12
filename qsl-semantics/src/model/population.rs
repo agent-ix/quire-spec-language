@@ -612,8 +612,10 @@ fn values_of<'a>(member: &'a PopulationMember, field: &DeclarationKey) -> &'a [S
 ///
 /// Every field is private; [`admit_binding`] is this type's only
 /// constructor, so a caller cannot assemble a binding that was never checked
-/// against a domain package's `modelIdentity`, object closure or subtype closure —
-/// and, because the admitted domain package itself lives here, cannot later evaluate
+/// against a domain package's `modelIdentity` or object closure. The declared
+/// member types are retained so [`all_instances`] can establish subtype
+/// closure for each queried type — and, because the admitted domain package
+/// itself lives here, cannot later evaluate
 /// [`all_instances`]/[`lookup`] against any domain package other than the one that
 /// was checked (see the module docs' "Binding/domain package correspondence").
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -627,6 +629,10 @@ pub struct PopulationBinding {
     universe: UniverseId,
     /// Every admitted member, ascending by [`ReferenceKey`].
     members: BTreeMap<ReferenceKey, DeclarationKey>,
+    /// The population declaration's member types, retained to establish
+    /// whether each effective subtype queried by `allInstances<T>` is
+    /// represented in the closed population.
+    declared_member_types: BTreeSet<DeclarationKey>,
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
@@ -1533,6 +1539,7 @@ fn admit_binding_as(
         population_key: population_key.clone(),
         universe,
         members: admitted,
+        declared_member_types: population.member_types.iter().cloned().collect(),
         declared_maximum,
         index: Arc::clone(view.shared_model_index()),
         ancestor_steps,
@@ -2100,6 +2107,16 @@ impl ReferenceSet {
 
 /// The outcome of one [`all_instances`] evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubtypeClosureIncomplete {
+    /// The type queried by `allInstances<T>`.
+    pub queried_type: DeclarationKey,
+    /// Effective object types conforming to `queried_type` that no declared
+    /// population member type covers.
+    pub missing_types: Vec<DeclarationKey>,
+}
+
+/// The outcome of one [`all_instances`] evaluation.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AllInstancesOutcome {
     /// Every and only member whose most-specific type conforms to `T`, once
     /// by reference key, in canonical reference-key order.
@@ -2108,6 +2125,9 @@ pub enum AllInstancesOutcome {
     Refused(ModelRefusal),
     /// A `ScalarLimitsV1` counter was exhausted; no collection.
     Incomplete(ScalarIncomplete),
+    /// The binding is object-closed, but its declared member types omit one
+    /// or more effective subtypes of the queried type; no collection exists.
+    IncompleteSubtypeClosure(SubtypeClosureIncomplete),
 }
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
@@ -2128,6 +2148,29 @@ pub fn all_instances(
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
             detail: format!("{} is not a model object type", t.node),
+        });
+    }
+
+    let mut missing_types = Vec::new();
+    for candidate in binding.type_catalog.by_key().keys() {
+        match binding.index.conforms(
+            candidate,
+            t,
+            binding.ancestor_steps,
+            qsl_foundation::Setting::AdmissionAncestorSteps,
+        ) {
+            Ok(false) => continue,
+            Err(refusal) => return AllInstancesOutcome::Refused(refusal),
+            Ok(true) => {}
+        }
+        if !binding.declared_member_types.contains(candidate) {
+            missing_types.push(candidate.clone());
+        }
+    }
+    if !missing_types.is_empty() {
+        return AllInstancesOutcome::IncompleteSubtypeClosure(SubtypeClosureIncomplete {
+            queried_type: t.clone(),
+            missing_types,
         });
     }
 

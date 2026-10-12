@@ -524,6 +524,97 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(*b1_via_a, b1_via_b);
 }
 
+/// FR-084-AC-2 / TC-227: object closure can hold while the declared member
+/// types omit a proper subtype. Such a query must not publish the members it
+/// happened to gather; complete coverage remains deterministic under member
+/// order changes.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_requires_declared_subtype_closure() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("tc-227"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record("model.pop", &["model.A"], Extent::Closed),
+            population_record(
+                "model.pop.complete",
+                &["model.A", "model.B"],
+                Extent::Closed,
+            ),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![
+            member("b1", "model.B"),
+            member("a2", "model.A"),
+            member("a1", "model.A"),
+        ],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected object-closed binding, got {other:?}"),
+    };
+
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter);
+    match outcome {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.B")]
+            );
+        }
+        other => {
+            panic!("expected typed subtype-closure incompleteness without a set, got {other:?}")
+        }
+    }
+
+    let reordered = PopulationDocument {
+        model_identity: document.model_identity.clone(),
+        members: document.members.iter().rev().cloned().collect(),
+    };
+    let complete_binding = |document: &PopulationDocument| match admit_binding(
+        &view,
+        document,
+        &DeclarationKey::fixture("model.pop.complete"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected subtype-closed binding, got {other:?}"),
+    };
+    let first = complete_binding(&document);
+    let second = complete_binding(&reordered);
+    let mut first_meter = Meter::new(SCALAR_UNLIMITED);
+    let mut second_meter = Meter::new(SCALAR_UNLIMITED);
+    let select = |binding: &PopulationBinding, meter: &mut Meter| match all_instances(
+        binding,
+        &DeclarationKey::fixture("model.A"),
+        meter,
+    ) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected complete allInstances<A>, got {other:?}"),
+    };
+    let first_set = select(&first, &mut first_meter);
+    let second_set = select(&second, &mut second_meter);
+    assert_eq!(first_set, second_set);
+    let canonical: Vec<_> = first_set.members().iter().collect();
+    assert!(canonical.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
 /// TC-198 L01's boundary: with `work_units: 4`, `allInstances<M::A>(p)`
 /// denies exactly at `collection.result-retain`.
 ///

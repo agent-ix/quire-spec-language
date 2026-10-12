@@ -201,6 +201,25 @@ pub fn evaluate_all_instances(
         }
         AllInstancesOutcome::Refused(refusal) => Err(ModelQueryHalt::Refused(Box::new(refusal))),
         AllInstancesOutcome::Incomplete(incomplete) => Err(incomplete.into()),
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            Err(ModelQueryHalt::Refused(Box::new(ModelRefusal {
+                code: Code::IncompletePopulation,
+                cause: ModelRefusalCause::UnclosedSubtypes {
+                    selection: binding.model_identity().to_owned(),
+                    type_name: incomplete.missing_types.first().cloned(),
+                },
+                detail: format!(
+                    "allInstances<{}> cannot establish subtype closure; missing {}",
+                    incomplete.queried_type.node,
+                    incomplete
+                        .missing_types
+                        .iter()
+                        .map(|missing| missing.node.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            })))
+        }
     }
 }
 
