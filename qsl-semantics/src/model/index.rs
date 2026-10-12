@@ -579,7 +579,11 @@ impl RecordIndex {
         self.flags(key).namespace
     }
 
-    /// Types that have effective type identities, ascending by key.
+    /// Types and operation-owning persistence interfaces that have effective
+    /// identities, ascending by key. Processes already carry the
+    /// `object_type` flag because their identified runs form object
+    /// universes; persistence interfaces gain only an effective identity and
+    /// never enter [`Self::object_types`].
     pub(crate) fn normalizable_types(&self) -> impl Iterator<Item = &DeclarationKey> {
         self.keys
             .iter()
@@ -589,6 +593,7 @@ impl RecordIndex {
                     || flags.record_value_type
                     || flags.event_type
                     || flags.state_machine
+                    || flags.persistence_interface
             })
             .map(|(key, _)| key)
     }
