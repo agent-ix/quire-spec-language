@@ -274,9 +274,10 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         Vec::<DeclarationKey>::new(),
         "the inherited correlation key is not copied into own identity fields"
     );
-    assert!(view
-        .type_identities()
-        .contains_key(&key("ExpressFulfilment")));
+    assert!(
+        view.type_identities()
+            .contains_key(&key("ExpressFulfilment"))
+    );
     assert!(view.type_identities().contains_key(&key("Fulfilment")));
     let population = package.records.iter().find_map(|record| match record {
         DomainPackageRecord::Population(population) if population.key == key("PF") => {
@@ -508,8 +509,13 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
         let mut place = place;
         place["params"] = json!([{
             "identity": id("OrderLifecycle/place/flags"),
+            "name": "flags",
             "typeRef": id("Flags"),
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": origin("OrderLifecycle/place/flags"),
         }]);
         place["pre"] = json!([clause(
             "OrderLifecycle/place",
@@ -1057,7 +1063,9 @@ fn tc235_m17_record_value_specialization_vectors() {
     assert_eq!(cycle_refusals.len(), 1);
     assert_eq!(cycle_refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(cycle_refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(cycle_refusals[0]
-        .detail
-        .contains("[ix://test/orders/Money, ix://test/orders/TaxedMoney]"));
+    assert!(
+        cycle_refusals[0]
+            .detail
+            .contains("[ix://test/orders/Money, ix://test/orders/TaxedMoney]")
+    );
 }
