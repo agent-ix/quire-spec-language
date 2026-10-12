@@ -27,4 +27,3 @@ Reviewed the changed requirements and test procedures at exact head c8fe420b aga
 ## Coverage
 
 Reviewed changed requirement statements, acceptance criteria, test procedures, trace tags listed in `spec/tests.md`, and cross-references to formatter accounting. No full test matrix was available: both `quoin matrix --repo . --json` and `quire matrix --scope . --format json` remained silent beyond 30 seconds and were stopped. No tests or build gates were run.
-

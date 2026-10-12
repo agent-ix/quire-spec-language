@@ -27,4 +27,3 @@ Checked completeness, cross-document consistency, atomicity and testability for 
 ## Coverage
 
 Reviewed changed requirement relationships, behavior clauses, acceptance criteria, test-case references and the changed table/data shape. The acceptance criteria remain concrete and observable. The finding is cross-artifact consistency, not a missing test assertion.
-

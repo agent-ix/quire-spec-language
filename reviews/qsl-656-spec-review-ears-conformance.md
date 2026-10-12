@@ -26,4 +26,3 @@ Reviewed the edited requirement statements for EARS grammar and semantic fit. Th
 ## Coverage
 
 `quire validate --scope . 'spec/**/*.md' --summary` scanned 1,568 documents; 1,560 were grammar-clean and it reported 14 grammar advisories across the repository. The edited requirement statements were manually checked against those diagnostics and the EARS patterns. The scan is advisory review input, not a PR gate; no tests/builds were run.
-

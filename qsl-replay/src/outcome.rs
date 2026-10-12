@@ -1722,6 +1722,7 @@ mod tests {
                 &DependencyInput::default(),
                 SpineLimits::default(),
                 &call,
+                &ObjectEnvironment::default(),
                 &Cancel::new(),
             )
             .expect("seven runs");
