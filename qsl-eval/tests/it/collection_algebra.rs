@@ -679,7 +679,7 @@ mod checked {
             .unwrap();
         match evaluation.outcome {
             FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)) => {
-                (value, meter.admitted_charges().to_vec())
+                (value, crate::support::admitted_charge_points(&meter))
             }
             other => panic!("a completed value, not {other:?}"),
         }

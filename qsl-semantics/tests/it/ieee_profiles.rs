@@ -1524,7 +1524,7 @@ fn check_vector(spec: Spec, operation: OOp, operands: &[u64], mode: RoundingMode
         }
         (expected, outcome) => panic!("{context}: expected {expected:?}, got {outcome:?}"),
     };
-    assert_eq!(admitted_points(meter).as_slice(), charges, "{context}");
+    assert_eq!(admitted_points(&meter).as_slice(), charges, "{context}");
     if deny {
         for (index, point) in charges.iter().enumerate() {
             let mut denied = injected(*point);

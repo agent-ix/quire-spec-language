@@ -1326,7 +1326,7 @@ fn run_three_sum(source: ValueType, values: &[i64]) -> SumRun {
         location: evaluation.location,
         sum: checked.root().location().clone(),
         summand: checked.root().children()[1].location().clone(),
-        charges: meter.admitted_charges().to_vec(),
+        charges: crate::support::admitted_charge_points(&meter),
     }
 }
 
