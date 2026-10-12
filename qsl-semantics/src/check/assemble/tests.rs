@@ -588,11 +588,11 @@ fn assembler_allocation_cause_preserves_native_request_unit() {
 #[trace("FR-082-AC-11")]
 #[test]
 fn assembler_capacity_cause_preserves_native_request_unit() {
-    for (request, unit_name) in [
-        (StorageRequest::new(9, StorageUnit::Bytes), "bytes"),
+    for (request, expected_upstream) in [
+        (StorageRequest::new(9, StorageUnit::Bytes), "bytes:9"),
         (
             StorageRequest::new(4, StorageUnit::AdditionalElements),
-            "additional-elements",
+            "additional-elements:4",
         ),
     ] {
         let cause = super::storage_capacity(request);
@@ -606,10 +606,7 @@ fn assembler_capacity_cause_preserves_native_request_unit() {
         );
         assert_eq!(
             cause.catalog_fields(),
-            Some(BTreeMap::from([
-                ("requested", request.amount().to_string()),
-                ("unit", unit_name.to_owned()),
-            ]))
+            Some(BTreeMap::from([("upstream", expected_upstream.to_owned())]))
         );
     }
 }

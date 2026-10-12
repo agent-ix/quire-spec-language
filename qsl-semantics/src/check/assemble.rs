@@ -495,11 +495,7 @@ impl AssemblyCause {
             ])),
             Self::StorageCapacity { requested, unit } => Some(BTreeMap::from([(
                 "upstream",
-                format!(
-                    "{{\"amount\":{},\"unit\":\"{}\"}}",
-                    requested,
-                    storage_unit_name(*unit)
-                ),
+                format!("{}:{requested}", storage_unit_name(*unit)),
             )])),
             _ => None,
         }

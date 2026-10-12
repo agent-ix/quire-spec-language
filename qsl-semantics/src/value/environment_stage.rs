@@ -60,11 +60,7 @@ impl EnvironmentStageCause {
             ])),
             Self::Capacity { request } => Some(BTreeMap::from([(
                 "upstream",
-                format!(
-                    "{{\"amount\":{},\"unit\":\"{}\"}}",
-                    request.amount(),
-                    storage_unit_name(request.unit())
-                ),
+                format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
             )])),
             Self::Declaration(_) => None,
         }
@@ -147,13 +143,7 @@ mod tests {
                 cause.storage_catalog_fields(),
                 Some(BTreeMap::from([
                     ("requested", request.amount().to_string()),
-                    (
-                        "unit",
-                        match request.unit() {
-                            StorageUnit::Bytes => "bytes".to_owned(),
-                            StorageUnit::AdditionalElements => "additional-elements".to_owned(),
-                        },
-                    ),
+                    ("unit", storage_unit_name(request.unit()).to_owned(),),
                 ]))
             );
         }
@@ -163,9 +153,12 @@ mod tests {
     /// remains distinct from allocator denial.
     #[test]
     fn capacity_refusal_keeps_exact_amount_and_native_unit() {
-        for request in [
-            StorageRequest::new(9, StorageUnit::Bytes),
-            StorageRequest::new(4, StorageUnit::AdditionalElements),
+        for (request, expected_upstream) in [
+            (StorageRequest::new(9, StorageUnit::Bytes), "bytes:9"),
+            (
+                StorageRequest::new(4, StorageUnit::AdditionalElements),
+                "additional-elements:4",
+            ),
         ] {
             let StageFailure::Refused(EnvironmentStageCause::Capacity { request: observed }) =
                 stage_failure(EnvironmentFailure::Capacity(request))
@@ -181,14 +174,7 @@ mod tests {
             assert_eq!(
                 cause.storage_catalog_fields(),
                 Some(BTreeMap::from([
-                    ("requested", request.amount().to_string()),
-                    (
-                        "unit",
-                        match request.unit() {
-                            StorageUnit::Bytes => "bytes".to_owned(),
-                            StorageUnit::AdditionalElements => "additional-elements".to_owned(),
-                        },
-                    ),
+                    ("upstream", expected_upstream.to_owned(),)
                 ]))
             );
         }

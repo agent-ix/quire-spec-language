@@ -46,9 +46,10 @@ the production reservation boundary delivered under
 4. Trigger a reservation-size arithmetic or representation overflow through
    the production admission path without allocator denial. Assert the public
    failure is `resource_exhausted`/`reservation-size-overflow` and its
-   `upstream` payload preserves the exact `StorageRequest` amount and native
-   unit; it is distinct from `allocation-failed` and does not claim an
-   allocator-denied request.
+   `upstream` payload preserves the exact `StorageRequest` as
+   `<unit>:<amount>` (`bytes` or `additional-elements`, then the unpadded
+   base-10 amount); it is distinct from `allocation-failed` and does not claim
+   an allocator-denied request.
 5. With allocation enabled, run the same fixture with work and ancestor
    limits at each required counter N-1 and N. Assert N-1 reports its existing
    `StageFailure::Limit`, kind, configured bound, actual denied counter and
