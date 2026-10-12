@@ -50,13 +50,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn admitted_points(meter: &Meter) -> Vec<ChargePoint> {
-    meter
-        .admitted_charges()
-        .iter()
-        .map(|charge| charge.point)
-        .collect()
-}
+use crate::admitted_charge_points as admitted_points;
 
 /// Independent RFC 8785 JCS for the string-only preimages.
 fn jcs(value: &Value) -> String {

@@ -124,13 +124,7 @@ fn to_rational(value: IeeeValue, domain: &RationalDomain, meter: &mut Meter) -> 
     ieee_to_exact(value, domain, meter)
 }
 
-fn admitted_points(meter: &Meter) -> Vec<ChargePoint> {
-    meter
-        .admitted_charges()
-        .iter()
-        .map(|charge| charge.point)
-        .collect()
-}
+use crate::admitted_charge_points as admitted_points;
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()

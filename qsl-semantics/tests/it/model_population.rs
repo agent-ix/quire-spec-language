@@ -55,13 +55,7 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn admitted_charge_points(meter: &Meter) -> Vec<ChargePoint> {
-    meter
-        .admitted_charges()
-        .iter()
-        .map(|charge| charge.point)
-        .collect()
-}
+use crate::admitted_charge_points;
 
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {

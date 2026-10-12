@@ -393,6 +393,27 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
             CheckCause::MissingName("missing".to_owned()),
             ("missing_declaration", "missing-name"),
         ),
+        (
+            // FR-153-AC-4: allInstances names an undeclared model type.
+            "function F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure { allInstances<M::Missing>(p) }",
+            "Missing",
+            CheckCause::MissingName("Missing".to_owned()),
+            ("missing_declaration", "missing-name"),
+        ),
+        (
+            // FR-153-AC-8: lookup's key type does not conform to its target.
+            "function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }",
+            "r",
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+            ("ill_typed", "type-mismatch"),
+        ),
+        (
+            // FR-151-AC-2: a dispatched operation absent from the model.
+            "pre F using v on M::A::missing { self.missing() }",
+            "missing",
+            CheckCause::MissingName("missing".to_owned()),
+            ("missing_declaration", "missing-name"),
+        ),
     ] {
         let (declarations, _, source) = declarations(body, true);
         let regions = declarations.regions();

@@ -31,13 +31,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn admitted_points(meter: &Meter) -> Vec<ChargePoint> {
-    meter
-        .admitted_charges()
-        .iter()
-        .map(|charge| charge.point)
-        .collect()
-}
+use crate::admitted_charge_points as admitted_points;
 
 fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
