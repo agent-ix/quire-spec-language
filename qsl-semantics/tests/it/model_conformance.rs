@@ -718,13 +718,21 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
 /// `[0,9]` and `model.Small` `[0,5]`; field `model.A.x` typed `model.A`
 /// `{0,1}`; field `model.A.c` typed `model.Count` `{1,1}`; operation
 /// `model.A.set()` with no result and effect writing `[model.A.x, model.A.c]`.
-fn r08_base() -> Vec<DomainPackageRecord> {
+fn r08_base_with_presence(presence: quire_exact::Presence) -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A", vec![]),
         object_type("model.B", vec!["model.A"]),
         scalar_type("model.Count", 0, 9),
         scalar_type("model.Small", 0, 5),
-        field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+        field_member_with_presence(
+            "model.A.x",
+            "model.A",
+            "model.A",
+            mult(0, Some(1)),
+            presence,
+            None,
+            vec![],
+        ),
         field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
         operation(
             "model.A.set",
@@ -739,15 +747,20 @@ fn r08_base() -> Vec<DomainPackageRecord> {
     ]
 }
 
-#[trace("TC-221", "FR-082-AC-4")]
+fn r08_base() -> Vec<DomainPackageRecord> {
+    r08_base_with_presence(quire_exact::Presence::Required)
+}
+
+#[trace("TC-221", "TC-896", "FR-082-AC-4", "FR-082-AC-8")]
 #[test]
 fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
+    let mut records = r08_base_with_presence(quire_exact::Presence::Optional);
+    records.push(field_member_with_presence(
         "model.B.xb",
         "model.B",
         "model.A",
-        mult(1, Some(1)),
+        mult(0, Some(1)),
+        quire_exact::Presence::Required,
         Some("model.A.x"),
         vec![],
     ));
@@ -768,15 +781,16 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     }
 }
 
-#[trace("TC-221", "FR-082-AC-4")]
+#[trace("TC-221", "TC-896", "FR-082-AC-4", "FR-082-AC-8")]
 #[test]
 fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation() {
-    let mut records = r08_base();
-    records.push(field_member_redefining(
+    let mut records = r08_base_with_presence(quire_exact::Presence::Optional);
+    records.push(field_member_with_presence(
         "model.B.xb",
         "model.B",
         "model.A",
-        mult(1, Some(1)),
+        mult(0, Some(1)),
+        quire_exact::Presence::Required,
         Some("model.A.x"),
         vec![],
     ));
