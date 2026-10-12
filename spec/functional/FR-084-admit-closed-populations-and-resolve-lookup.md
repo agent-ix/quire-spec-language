@@ -96,7 +96,11 @@ object closure is established and every effective type conforming to `T` is
 covered by the population's declared member types (subtype closure for `T`).
 If either closure does not hold, the model checker SHALL return a typed
 incomplete result naming which closure is missing and SHALL return no
-collection, complete or partial. When both closures hold, the returned set
+collection, complete or partial. When surfaced through S6a evaluation, that
+typed incomplete result is `FamilyResult::Undefined` with reason
+`incomplete-closure`, naming the closure kind and queried type `T` (and every
+missing effective subtype for subtype closure), as specified by FR-090. When
+both closures hold, the returned set
 SHALL contain each qualifying member exactly once, keyed by its reference
 identity, in canonical reference-key order, independent of the input member
 order.

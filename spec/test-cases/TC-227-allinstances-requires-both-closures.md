@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-084
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-090
+    type: verifies
 ---
 # TC-227: allInstances requires both object and subtype closure, never a partial set
 
@@ -50,3 +52,11 @@ the complete set (every `Item` and `SpecialItem` member) in the same
 canonical reference-key order regardless of input member order. A mutant
 that returns the partially-gathered `Item`-only set in step 3 produces a
 non-empty, plausible-looking `Set` there, failing the result-type assertion.
+
+The incomplete result is also evaluated through the public
+`CheckedPackage::evaluate` adapter. Its outcome is
+`FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, whose
+`undefined_record()` has reason `incomplete-closure`, `closure` `subtype`,
+queried `type` `Item`, and the complete missing-subtype list containing
+`SpecialItem`; it exposes no member collection. The exact query and every
+missing effective subtype are retained structurally at that boundary.
