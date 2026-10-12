@@ -279,12 +279,12 @@ pub(crate) enum StateModelUndefined {
         key: String,
     },
     /// FR-090-AC-21: an `allInstances<T>` query cannot produce a complete
-    /// result because the admitted population declaration does not cover its
-    /// complete subtype closure.
+    /// result because no declared population member type covers the queried
+    /// type by reflexive conformance.
     IncompleteClosure {
         /// The queried effective type's canonical node name.
         queried_type: String,
-        /// Canonically ordered uncovered subtype node names.
+        /// The queried type as the minimal uncovered-subtype witness.
         uncovered_subtypes: Vec<String>,
     },
 }

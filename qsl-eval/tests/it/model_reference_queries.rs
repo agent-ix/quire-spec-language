@@ -911,25 +911,24 @@ fn tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate() {
     );
     assert_eq!(
         record.fields.get("uncovered_subtypes"),
-        Some(&"model.A, model.C".to_owned())
+        Some(&"model.A".to_owned())
     );
 }
 
-/// TC-227: checked evaluation uses the normalized retained descendant
-/// relation for coverage, not a query-time conformance/catalog walk. With no
-/// members, the only possible ancestor walk would be the coverage check; the
-/// zero-step admission bound makes such a walk observably refuse.
+/// TC-227: checked evaluation uses reflexive conformance for coverage before
+/// member walking. With a zero-step bound, querying the declared type itself
+/// completes without an ancestor walk, including for an empty population.
 #[test]
 #[trace("TC-227", "FR-084-AC-2", "FR-090-AC-21")]
-fn tc_227_checked_evaluate_uses_retained_coverage_without_query_walk() {
+fn tc_227_checked_evaluate_uses_reflexive_coverage_without_query_walk() {
     let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.tc-227-retained-coverage"),
+        DomainPackageRef::fixture("bundle.tc-227-reflexive-coverage"),
         vec![
             object_type("model.A", vec![]),
             object_type("model.B", vec!["model.A"]),
             DomainPackageRecord::Population(PopulationRecord {
                 key: p1_population_key(),
-                member_types: vec![DeclarationKey::fixture("model.A")],
+                member_types: vec![DeclarationKey::fixture("model.B")],
                 extent: Extent::Closed,
             }),
         ],
@@ -971,16 +970,14 @@ fn tc_227_checked_evaluate_uses_retained_coverage_without_query_walk() {
             &population_environment(&scenario),
             &mut meter,
         )
-        .expect("retained coverage completes without a query-time ancestor walk");
+        .expect("reflexive coverage completes without an ancestor walk");
 
     let outcome = match evaluation.outcome {
         FamilyOutcome::Evaluated(outcome) => outcome,
-        other => panic!(
-            "a declared parent covers the queried child without a catalog walk, got {other:?}"
-        ),
+        other => panic!("a declared type covers itself without an ancestor walk, got {other:?}"),
     };
     let Outcome::Completed(value) = outcome else {
-        panic!("retained coverage should complete the empty selection, got {outcome:?}");
+        panic!("reflexive coverage should complete the empty selection, got {outcome:?}");
     };
     assert!(reference_elements(&value).is_empty());
 }

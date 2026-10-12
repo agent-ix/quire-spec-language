@@ -107,12 +107,12 @@ pub enum ModelQueryHalt {
         /// `r`'s object identity bytes, exactly as supplied.
         key: Vec<u8>,
     },
-    /// S6a could not establish the queried type's complete subtype closure;
-    /// this is an evaluation-time undefined result, not an admission refusal.
+    /// No declared member type covers the query by conformance; this is an
+    /// evaluation-time undefined result, not an admission refusal.
     IncompleteClosure {
         /// The queried effective type's canonical node name.
         queried_type: String,
-        /// Canonically ordered subtype node names not covered by the declaration.
+        /// The queried type as the minimal uncovered-subtype witness.
         uncovered_subtypes: Vec<String>,
     },
 }

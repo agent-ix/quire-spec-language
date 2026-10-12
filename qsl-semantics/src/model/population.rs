@@ -2110,8 +2110,8 @@ impl ReferenceSet {
 pub struct SubtypeClosureIncomplete {
     /// The type queried by `allInstances<T>`.
     pub queried_type: DeclarationKey,
-    /// Effective object types conforming to `queried_type` that no declared
-    /// population member type covers.
+    /// The queried type, which conforms to no declared population member
+    /// type and therefore marks the missing subtype coverage.
     pub missing_types: Vec<DeclarationKey>,
 }
 
@@ -2125,30 +2125,9 @@ pub enum AllInstancesOutcome {
     Refused(ModelRefusal),
     /// A `ScalarLimitsV1` counter was exhausted; no collection.
     Incomplete(ScalarIncomplete),
-    /// The binding is object-closed, but its declared member types do not
-    /// cover the full effective subtype closure of the queried type; no
-    /// collection exists.
+    /// The binding is object-closed, but no declared member type covers the
+    /// queried type by conformance; no collection exists.
     IncompleteSubtypeClosure(SubtypeClosureIncomplete),
-}
-
-/// Finds types in the queried closure that no declared member type covers.
-/// The catalog's retained descendant sets are inclusive and were derived
-/// during normalization, so this is set work only: it performs no conformance
-/// walk or catalog rebuild at query time.
-fn missing_declared_subtypes(
-    type_catalog: &TypeCatalog,
-    queried_descendants: &BTreeSet<DeclarationKey>,
-    declared_member_types: &BTreeSet<DeclarationKey>,
-) -> Vec<DeclarationKey> {
-    let mut covered = BTreeSet::new();
-    for declared_type in declared_member_types {
-        covered.insert(declared_type.clone());
-        if let Some(descendants) = type_catalog.descendants_of(declared_type) {
-            covered.extend(descendants.iter().cloned());
-        }
-    }
-
-    queried_descendants.difference(&covered).cloned().collect()
 }
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
@@ -2172,22 +2151,26 @@ pub fn all_instances(
         });
     }
 
-    let Some(descendants) = binding.type_catalog.descendants_of(t) else {
-        return AllInstancesOutcome::Refused(ModelRefusal {
-            code: Code::IllTyped,
-            cause: ModelRefusalCause::TypeMismatch,
-            detail: format!("{} is not a model object type", t.node),
-        });
-    };
-    let missing_types = missing_declared_subtypes(
-        &binding.type_catalog,
-        descendants,
-        &binding.declared_member_types,
-    );
-    if !missing_types.is_empty() {
+    let mut covered = false;
+    for declared_member_type in &binding.declared_member_types {
+        match binding.index.conforms(
+            t,
+            declared_member_type,
+            binding.ancestor_steps,
+            qsl_foundation::Setting::AdmissionAncestorSteps,
+        ) {
+            Ok(true) => {
+                covered = true;
+                break;
+            }
+            Ok(false) => {}
+            Err(refusal) => return AllInstancesOutcome::Refused(refusal),
+        }
+    }
+    if !covered {
         return AllInstancesOutcome::IncompleteSubtypeClosure(SubtypeClosureIncomplete {
             queried_type: t.clone(),
-            missing_types,
+            missing_types: vec![t.clone()],
         });
     }
 

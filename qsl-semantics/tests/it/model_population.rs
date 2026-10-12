@@ -659,9 +659,8 @@ fn all_instances_for_declared_type_tree(
     )
 }
 
-/// FR-153 coverage is conformance-based: a declared parent covers its
-/// queried child, while the result still selects members by their actual
-/// most-specific type.
+/// FR-153 coverage is reflexive conformance from queried T to a declared
+/// member type: a declared parent covers its queried child.
 #[trace("TC-227", "FR-084-AC-2")]
 #[test]
 fn all_instances_declared_parent_covers_queried_child() {
@@ -680,8 +679,28 @@ fn all_instances_declared_parent_covers_queried_child() {
     assert_eq!(result.members().first().unwrap().object, "b1");
 }
 
-/// A declared grandparent covers the queried type and every retained
-/// descendant beneath it.
+/// A declared child does not conform upward to its parent query.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_child_does_not_cover_parent_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[]), ("model.C", &["model.T"])],
+        &["model.C"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a declared child does not cover its parent query, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.T"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.T")]
+    );
+}
+
+/// A declared grandparent covers the queried type by conformance.
 #[trace("TC-227", "FR-084-AC-2")]
 #[test]
 fn all_instances_declared_grandparent_covers_query_descendants() {
@@ -705,31 +724,29 @@ fn all_instances_declared_grandparent_covers_query_descendants() {
     assert_eq!(result.members().first().unwrap().object, "c1");
 }
 
-/// Declaring the queried type covers its child even when that child is not
-/// separately listed in the population declaration.
+/// FR-153 conformance is reflexive: declaring T covers query T.
 #[trace("TC-227", "FR-084-AC-2")]
 #[test]
-fn all_instances_declared_query_type_covers_undeclared_child() {
+fn all_instances_declared_query_type_covers_itself() {
     let outcome = all_instances_for_declared_type_tree(
-        &[("model.T", &[]), ("model.C", &["model.T"])],
+        &[("model.T", &[])],
         &["model.T"],
         "model.T",
-        vec![member("c1", "model.C")],
+        vec![member("t1", "model.T")],
     );
 
     let AllInstancesOutcome::Completed(result) = outcome else {
-        panic!("the declared query type covers its child, got {outcome:?}");
+        panic!("the declared query type covers itself, got {outcome:?}");
     };
     assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
     assert_eq!(result.len(), 1);
-    assert_eq!(result.members().first().unwrap().object, "c1");
+    assert_eq!(result.members().first().unwrap().object, "t1");
 }
 
-/// A declared child covers only itself, not its parent or a sibling child;
-/// the incomplete outcome names exactly the uncovered types.
+/// A declared child does not cover a sibling query type.
 #[trace("TC-227", "FR-084-AC-2")]
 #[test]
-fn all_instances_declared_child_does_not_cover_parent_or_sibling() {
+fn all_instances_declared_sibling_does_not_cover_query() {
     let outcome = all_instances_for_declared_type_tree(
         &[
             ("model.T", &[]),
@@ -737,20 +754,17 @@ fn all_instances_declared_child_does_not_cover_parent_or_sibling() {
             ("model.C2", &["model.T"]),
         ],
         &["model.C1"],
-        "model.T",
+        "model.C2",
         vec![member("c1", "model.C1")],
     );
 
     let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
-        panic!("declaring only one child leaves the query closure incomplete, got {outcome:?}");
+        panic!("a sibling does not cover the queried type, got {outcome:?}");
     };
-    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.T"));
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.C2"));
     assert_eq!(
         incomplete.missing_types,
-        [
-            DeclarationKey::fixture("model.C2"),
-            DeclarationKey::fixture("model.T"),
-        ]
+        [DeclarationKey::fixture("model.C2")]
     );
 }
 
