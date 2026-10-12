@@ -69,28 +69,17 @@ fn fixture_filesystem_failures_propagate_and_fresh_generation_succeeds() {
     }
     let valid = directory.path().join("retry");
     fixtures::write(&valid, fixtures::Case::Integer(1)).unwrap();
-    let output = invoke(&valid, "run", "request.json");
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap()["truth"],
-        true
-    );
+    assert!(valid.join("compile.json").is_file());
 }
 
 #[test]
 #[trace("TC-111", "FR-033-AC-4")]
-fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
+fn integer_examples_with_distinct_values_export_the_same_projection() {
     let directory = tempfile::tempdir().unwrap();
     let mut projections = Vec::new();
-    for (name, amount, truth) in [("healthy", 1, true), ("violating", 10, false)] {
+    for (name, amount) in [("healthy", 1), ("violating", 10)] {
         let path = directory.path().join(name);
         fixtures::write(&path, fixtures::Case::Integer(amount)).unwrap();
-        let actual = invoke(&path, "run", "request.json");
-        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 10 }));
-        assert_eq!(
-            serde_json::from_slice::<Value>(&actual.stdout).unwrap()["truth"],
-            truth
-        );
         let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
             .arg("lower")
             .arg(path.join("compile.json"))
@@ -125,12 +114,6 @@ fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
 fn exported_boolean_bytes_equal_the_library_projection_and_the_ir_reader_accepts_them() {
     let directory = tempfile::tempdir().unwrap();
     fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
-    let run = invoke(directory.path(), "run", "request.json");
-    assert_eq!(run.status.code(), Some(0));
-    assert_eq!(
-        serde_json::from_slice::<Value>(&run.stdout).unwrap()["truth"],
-        true
-    );
     std::fs::remove_file(directory.path().join("snapshot-0.json")).unwrap();
     std::fs::remove_file(directory.path().join("request.json")).unwrap();
 

@@ -585,10 +585,12 @@ fn target_names_round_trip_and_command_usage_precedes_input_reads() {
             .unwrap();
         assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
-        assert_eq!(
-            String::from_utf8(output.stderr).unwrap(),
-            format!("usage: quire-spec {} <request-file>\n", arguments[0])
-        );
+        let usage = match arguments[0] {
+            "compile" => "usage: quire-spec compile <request-file>\n",
+            "run" => "usage: quire-spec run <request-file> [--request-bytes <n>] [--dependent-bytes <n>]\n",
+            _ => unreachable!("only compile and run are tested"),
+        };
+        assert_eq!(String::from_utf8(output.stderr).unwrap(), usage);
     }
 }
 

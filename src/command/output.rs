@@ -115,7 +115,7 @@ fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLoc
     }
 }
 
-pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
+pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         #[cfg(feature = "quire-extraction")]
         RunCause::Extraction(error) => {
@@ -301,7 +301,7 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
             },
         ),
     };
-    serde_json::to_value(types::Failure {
+    let failure = types::Failure {
         format: types::Format::RunResult,
         stage,
         code: error.cause.code().as_str(),
@@ -317,7 +317,20 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         message: error.to_string(),
         details,
         basis: "unavailable",
-    })
+    };
+    if artifact {
+        serde_json::to_value(types::ArtifactFailure {
+            failure,
+            request_digest: error.request_digest.map(|digest| digest.to_string()),
+            status: if error.cause.is_incomplete() {
+                types::ArtifactFailureStatus::Incomplete
+            } else {
+                types::ArtifactFailureStatus::Refused
+            },
+        })
+    } else {
+        serde_json::to_value(failure)
+    }
 }
 
 /// FR-267: expose the library's canonical clause report to the CLI adapter.

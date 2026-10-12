@@ -79,9 +79,12 @@ command-error envelope, with the refusing spine stage (`source`, `forms`,
 code. A consumer selects
 those bytes by their SHA-256 digest and may reread them using the existing
 NativePackage::read_verified API with explicit source/model bindings.
-Intake and static failures emit no package bytes and use FR-026's existing native-run-result/1
-command-error envelope on stderr, including the original request digest and
-stage/code when available. On FR-301's six-code contract, refusal, malformed
+Intake and static failures emit no package bytes and use the artifact-command
+refusal envelope on stderr: `format` is `native-run-result/2`, `status` is
+`refused` or `incomplete`, and `request_digest` retains the original request
+digest when available, alongside the stage and code. This artifact envelope
+is outside FR-267's closed `run` command-error reader. On FR-301's six-code
+contract, refusal, malformed
 requests, I/O failures and invalid command usage all exit 20; a selected model
 naming a real, profile-gated capability this build does not admit — a later
 native model profile or a rational scalar/value declared outside its admitting

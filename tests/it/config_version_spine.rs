@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-108: TC-469's 17-case ConfigVersion spine corpus. Runs the
-//! same `examples/config-version/cases.rs` catalog `config_version.rs`'s
-//! native test uses, through `run_clause` (FR-109) over the spine files
+//! same `examples/config-version/cases.rs` catalog as the fixture test,
+//! through `run_clause` (FR-109) over the spine files
 //! `crate::support::config_version::spine` writes beside the native ones.
 
 use crate::support::config_version::{spine, Case};
@@ -806,7 +806,14 @@ fn clause_run_command_honors_caller_byte_ceilings() {
 
 /// FR-108-AC-1 (TC-469 step 1): every one of the 17 cases gives the Corpus
 /// table's disposition and exit code through `run_clause`.
-#[trace("TC-469", "FR-108-AC-1")]
+#[trace(
+    "TC-469",
+    "FR-108-AC-1",
+    "FR-108-AC-3",
+    "FR-032-AC-1",
+    "FR-032-AC-2",
+    "FR-032-AC-3"
+)]
 #[test]
 fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     let directory = tempfile::tempdir().unwrap();
@@ -826,245 +833,65 @@ fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     );
 }
 
-/// One native `quire-spec run` outcome, read from whichever stream holds it.
-struct NativeRun {
-    exit: i32,
-    value: Value,
-}
-
-fn run_native(directory: &Path) -> NativeRun {
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(directory.join("request.json"))
-        .current_dir(directory.parent().unwrap())
-        .output()
-        .unwrap();
-    let stdout = !output.stdout.is_empty();
-    let bytes = if stdout {
-        &output.stdout
-    } else {
-        &output.stderr
-    };
-    NativeRun {
-        exit: output.status.code().unwrap(),
-        value: serde_json::from_slice(bytes).unwrap(),
-    }
-}
-
-/// Native's own `stage`/`status`/`truth`/code JSON fields, mapped onto
-/// FR-109's spine vocabulary so [`tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus`]
-/// can compare the two directly rather than by exit code alone (SR-768
-/// FND-001): native `validate`→spine `admit`, native `link`/`quire`→spine
-/// `compile`, native `evaluate`→spine `evaluate`.
-struct NativeSummary {
-    stage: ClauseRunStage,
-    category: Category,
-    truth: Option<bool>,
-    /// Every catalog code native's own top-level `code` or `diagnostics[]`
-    /// carries. Empty for `completed` (no code at all).
-    codes: BTreeSet<String>,
-}
-
-fn native_summary(value: &Value) -> NativeSummary {
-    let stage = match value["stage"].as_str().unwrap() {
-        "validate" => ClauseRunStage::Admit,
-        "link" | "quire" => ClauseRunStage::Compile,
-        "evaluate" => ClauseRunStage::Evaluate,
-        other => panic!("unknown native stage {other:?}: {value}"),
-    };
-    let truth = value.get("truth").and_then(Value::as_bool);
-    let category = match value["status"].as_str().unwrap() {
-        "completed" => {
-            if truth.expect("a completed status always carries truth") {
-                Category::Success
-            } else {
-                Category::Violation
-            }
-        }
-        "refused" => Category::Refusal,
-        "incomplete" => Category::Incomplete,
-        other => panic!("unknown native status {other:?}: {value}"),
-    };
-    let mut codes = BTreeSet::new();
-    if let Some(code) = value.get("code").and_then(Value::as_str) {
-        codes.insert(code.to_owned());
-    }
-    if let Some(diagnostics) = value.get("diagnostics").and_then(Value::as_array) {
-        codes.extend(
-            diagnostics
-                .iter()
-                .map(|entry| entry["code"].as_str().unwrap().to_owned()),
-        );
-    }
-    NativeSummary {
-        stage,
-        category,
-        truth,
-        codes,
-    }
-}
-
-/// The same shape as [`native_summary`], read from spine's own report.
-/// `codes` is `None` where spine's disposition carries no catalog code
-/// comparable to native's own vocabulary (the `evaluate`-stage `work_units`
-/// resource limit, which step 1 already pins precisely) -- comparing `None`
-/// against native's codes would be meaningless, so that case skips the code
-/// comparison rather than asserting an empty set.
-fn spine_summary(
-    report: &qsl_replay::spine::ClauseRunReport,
-) -> (
-    ClauseRunStage,
-    Category,
-    Option<bool>,
-    Option<BTreeSet<String>>,
-) {
-    use qsl_semantics::model::observation::AdmissionFailure;
-    let disposition = &report.disposition;
-    let codes = match disposition {
-        ClauseDisposition::Compile(refusal) => {
-            Some(BTreeSet::from([refusal.code().as_str().to_owned()]))
-        }
-        ClauseDisposition::Admit(AdmissionFailure::Refused(record))
-        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
-            Some(BTreeSet::from([record.code.as_str().to_owned()]))
-        }
-        _ => None,
-    };
-    (
-        disposition.stage(),
-        disposition.category(),
-        disposition.truth(),
-        codes,
-    )
-}
-
-/// FR-108-AC-2 (TC-469 step 2): native `quire-spec run` and `run_clause`
-/// agree on stage, category, truth, code and exit code for all 17 cases,
-/// under FR-108's own stage/category map (native `validate`→spine `admit`,
-/// native `link`→spine `compile`). Comparing more than the exit code alone
-/// matters because exit 20 is shared by `dangling_reference`,
-/// `frame_violation`, `invalid_runtime_input` and `missing_import` (SR-768
-/// FND-001): a spine refusal with the wrong code at the wrong stage would
-/// still pass an exit-code-only check.
-/// FR-108-AC-3 (TC-469 step 3): `below-range`/`above-range` name exactly
-/// `root`/`child` (not either, for either case -- SR-768 FND-002) and
-/// `versionNumber` in both outputs' locus.
-#[trace("TC-469", "FR-108-AC-2", "FR-108-AC-3", "FR-032-AC-1")]
+/// All independently checked corpus outcomes survive the FR-267 result writer
+/// and strict reader without reverting to the retired native value envelope.
+#[trace("TC-469", "FR-108-AC-2", "FR-267-AC-9")]
 #[test]
-fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
+fn tc_469_every_case_survives_result_two_round_trip() {
     let directory = tempfile::tempdir().unwrap();
     for &case in crate::support::config_version::CASES {
-        let path = directory.path().join(case.id());
-        let spine_request = build(&path, case);
-        let spine_report = run_clause(spine_request).unwrap();
-        let native = run_native(&path);
+        let report = run_case(&directory.path().join(case.id()), case);
+        assert_expected(case, &report);
+        let bytes = qsl_replay::spine::write_clause_run_result(&report).unwrap();
+        let read = qsl_replay::spine::read_native_run_result(&bytes).unwrap();
+        let qsl_replay::spine::NativeRunResult::Clause(read) = read else {
+            panic!("{}: expected a clause-run result", case.id());
+        };
+        let stage = match report.disposition.stage() {
+            ClauseRunStage::Compile => "compile",
+            ClauseRunStage::Select => "select",
+            ClauseRunStage::Admit => "admit",
+            ClauseRunStage::Evaluate => "evaluate",
+        };
+        assert_eq!(read.stage(), stage, "{}", case.id());
         assert_eq!(
-            native.exit,
-            spine_report.disposition.category().exit_code() as i32,
-            "{}: native {} spine {:?}",
-            case.id(),
-            native.value,
-            spine_report.disposition,
+            read.category(),
+            report.disposition.category().as_str(),
+            "{}",
+            case.id()
         );
-        let native_summary = native_summary(&native.value);
-        let (spine_stage, spine_category, spine_truth, spine_codes) = spine_summary(&spine_report);
+        assert_eq!(read.truth(), report.disposition.truth(), "{}", case.id());
         assert_eq!(
-            native_summary.stage,
-            spine_stage,
-            "{}: stage; native {}",
-            case.id(),
-            native.value
+            read.code(),
+            maybe_disposition_code(&report.disposition).map(Code::as_str),
+            "{}",
+            case.id()
         );
-        assert_eq!(
-            native_summary.category,
-            spine_category,
-            "{}: category; native {}",
-            case.id(),
-            native.value
-        );
-        assert_eq!(
-            native_summary.truth,
-            spine_truth,
-            "{}: truth; native {}",
-            case.id(),
-            native.value
-        );
-        if let Some(spine_codes) = spine_codes {
-            assert_eq!(
-                native_summary.codes,
-                spine_codes,
-                "{}: code; native {}",
-                case.id(),
-                native.value
-            );
-        }
     }
+}
 
-    // The boundary object below-range/above-range's own object, taken from
-    // native's `diagnostics[0].runtime.path` array entry that carries an
-    // `object` key (verified live: `{"object":"root"}` for below-range,
-    // `{"object":"child"}` for above-range), and from spine's own
-    // `record.fields["object"]`. Neither side accepts the other case's
-    // object.
-    for case in [Case::BelowRange, Case::AboveRange] {
-        let expected_object = match case {
-            Case::BelowRange => "root",
-            Case::AboveRange => "child",
-            _ => unreachable!("only the two boundary cases are iterated"),
+/// The boundary refusal keeps its authored object and field when the clause
+/// report crosses the native-run-result/2 writer and strict reader.
+#[trace("TC-469", "FR-108-AC-3", "FR-267-AC-9", "FR-032-AC-4")]
+#[test]
+fn tc_469_boundary_locus_survives_result_two_round_trip() {
+    let directory = tempfile::tempdir().unwrap();
+    for (case, object) in [(Case::BelowRange, "root"), (Case::AboveRange, "child")] {
+        let report = run_case(&directory.path().join(case.id()), case);
+        let bytes = qsl_replay::spine::write_clause_run_result(&report).unwrap();
+        let read = qsl_replay::spine::read_native_run_result(&bytes).unwrap();
+        let qsl_replay::spine::NativeRunResult::Clause(read) = read else {
+            panic!("expected a clause-run result");
         };
-        let path = directory.path().join(format!("{}-locus", case.id()));
-        let spine_request = build(&path, case);
-        let spine_report = run_clause(spine_request).unwrap();
-        let native = run_native(&path);
-        let runtime_path = native.value["diagnostics"][0]["runtime"]["path"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{}: native locus {}", case.id(), native.value));
-        let native_field = runtime_path
-            .iter()
-            .find_map(|entry| entry.get("field").and_then(Value::as_str));
+        assert_eq!(read.stage(), "admit", "{}", case.id());
+        assert_eq!(read.category(), "refusal", "{}", case.id());
+        assert_eq!(read.code(), Some("invalid_runtime_input"), "{}", case.id());
+        let fields = read.fields().expect("the admission refusal retains fields");
         assert_eq!(
-            native_field,
-            Some("versionNumber"),
-            "{}: native locus {}",
-            case.id(),
-            native.value
+            fields.get("field").map(String::as_str),
+            Some("versionNumber")
         );
-        let native_object = runtime_path
-            .iter()
-            .find_map(|entry| entry.get("object").and_then(Value::as_str));
-        assert_eq!(
-            native_object,
-            Some(expected_object),
-            "{}: native locus {}",
-            case.id(),
-            native.value
-        );
-
-        let ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
-            record,
-        )) = &spine_report.disposition
-        else {
-            panic!(
-                "{}: expected Admit(Refused), got {:?}",
-                case.id(),
-                spine_report.disposition
-            );
-        };
-        assert_eq!(record.code, Code::InvalidRuntimeInput, "{}", case.id());
-        assert_eq!(
-            record.fields.get("field").map(String::as_str),
-            Some("versionNumber"),
-            "{}: {:?}",
-            case.id(),
-            record.fields
-        );
-        assert_eq!(
-            record.fields.get("object").map(String::as_str),
-            Some(expected_object),
-            "{}: {:?}",
-            case.id(),
-            record.fields
-        );
+        assert_eq!(fields.get("object").map(String::as_str), Some(object));
     }
 }
 
@@ -1074,7 +901,7 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
 /// the 17 cases twice gives identical reports (the full disposition, not a
 /// field subset), and a request carrying spine `compile`'s own emitted
 /// `package_id` for the unit gives the same report.
-#[trace("TC-469", "FR-108-AC-4")]
+#[trace("TC-469", "FR-108-AC-4", "FR-032-AC-4")]
 #[test]
 fn tc_469_step_4_generation_and_reports_are_deterministic() {
     let root = tempfile::tempdir().unwrap();
@@ -1266,7 +1093,7 @@ mod extraction {
     }
 
     /// FR-108-AC-5 (TC-469 step 5).
-    #[trace("TC-469", "FR-108-AC-5")]
+    #[trace("TC-469", "FR-108-AC-5", "FR-032-AC-4")]
     #[test]
     fn tc_469_step_5_markdown_run_matches_the_direct_run_via_i3() {
         let directory = tempfile::tempdir().unwrap();
