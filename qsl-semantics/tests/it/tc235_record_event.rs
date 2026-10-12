@@ -823,7 +823,6 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
 /// currency fields.
-#[ignore = "expected red until PR #765 runtime vectors land"]
 #[test]
 fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let document = mutate_k2(|document| {
@@ -856,7 +855,6 @@ fn tc235_m02_record_value_field_and_clause_bind_to_order() {
 /// TC-235 M13 preserves all six Money-valued access paths used by the runtime
 /// vector: two direct fields, a bounded sequence, a present optional, and an
 /// invocation parameter, plus the Money invariant itself.
-#[ignore = "expected red until PR #765 runtime vectors land"]
 #[test]
 fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
     let document = mutate_k2(|document| {
