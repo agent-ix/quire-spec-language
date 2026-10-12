@@ -232,7 +232,6 @@ fn function<'a>(graph: &'a CheckedGraph, name: &str) -> qsl_semantics::check::Ch
 
 #[trace("TC-790", "FR-300-AC-1")]
 #[test]
-#[ignore = "UNPROVEN: native S1/S2 Population, lookup and member-call producers are unavailable; reserved to #669/#675"]
 fn five_source_model_forms_have_the_declared_nodes_and_types() {
     let (attribute, view) = graph(
         "function F using v(r: M::A): Boolean pure { deref(r).flag }",
@@ -299,11 +298,13 @@ fn five_source_model_forms_have_the_declared_nodes_and_types() {
 
 #[trace("TC-790", "FR-300-AC-2")]
 #[test]
-#[ignore = "UNPROVEN: native S1/S2 Population, lookup and member-call producers are unavailable; reserved to #669/#675"]
 fn five_negative_source_units_refuse_at_s3_with_owned_raw_catalog_pairs_and_loci() {
     for (body, raw_code, raw_cause, authored) in [
         ("function F using v(r: M::A): Boolean pure { deref(r).missing }", "ill_typed", "type-mismatch", "missing"),
-        ("function F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure { allInstances<M::Missing>(p) }", "missing_declaration", "missing-name", "allInstances"),
+        // The undeclared target remains covered by
+        // `tc790_all_instances_missing_target_type_refuses_during_assembly` at S2;
+        // this row is TC-790's distinct admitted non-population S3 control.
+        ("function F using v(r: M::A): Set<M::A>[0,3] pure { allInstances<M::A>(r) }", "ill_typed", "operator-ineligible", "r"),
         ("function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }", "ill_typed", "type-mismatch", "r"),
         ("invariant F using v on M::A at current { reaches(self,self,missing) }", "missing_declaration", "missing-name", "missing"),
         ("pre F using v on M::A::ready { self.missing() }", "missing_declaration", "missing-name", "missing"),
@@ -444,7 +445,7 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
 /// during assembly, before the StateModel S3 check.
 #[trace("TC-790", "FR-091-AC-8")]
 #[test]
-fn all_instances_missing_target_type_refuses_during_assembly() {
+fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
@@ -514,7 +515,6 @@ fn objects(
 
 #[trace("TC-792", "FR-301-AC-1")]
 #[test]
-#[ignore = "UNPROVEN: native S1/S2 Population and lookup producers are unavailable; TC792 spine population binding is also unavailable"]
 fn source_lookup_function_carries_model_refusal_and_present_control_completes() {
     let (graph, view) = graph("function F using v(p: Population<M::A>[3], r: M::A): M::A pure { lookup<M::A>(p,r) absent refused }", true);
     let (objects, present, absent) = objects(&graph, &view);
@@ -581,7 +581,6 @@ fn source_lookup_function_carries_model_refusal_and_present_control_completes() 
 
 #[trace("TC-792", "FR-301-AC-2")]
 #[test]
-#[ignore = "UNPROVEN: native S1/S2 member-call producer is unavailable; reserved to #669/#675"]
 fn source_state_clause_retains_false_selected_precondition_as_model_undefined() {
     for guard in [false, true] {
         let (graph, view) = graph("pre F using v on M::A::ready { self.ready() }", guard);
