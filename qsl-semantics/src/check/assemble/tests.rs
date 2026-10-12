@@ -12,7 +12,10 @@ use quire_exact::{
     Presence, RoundingMode, ValueType,
 };
 
-use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
+use super::{
+    admit_types_with, model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault,
+    Unmapped,
+};
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -24,8 +27,11 @@ use crate::model::domain_package::{
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
+use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::{FieldDeclaration, StorageRequest, StorageUnit};
+use quire_semantic_value::declaration::{
+    EnvironmentFailure, FieldDeclaration, StorageRequest, StorageUnit, TypeEnvironmentLimits,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -559,14 +565,26 @@ fn each_assembler_cause_has_its_catalog_code() {
 #[trace("FR-082-AC-10")]
 #[test]
 fn assembler_allocation_cause_preserves_native_request_unit() {
-    for (request, unit_name) in [
+    for (request, expected_unit) in [
         (StorageRequest::new(6, StorageUnit::Bytes), "bytes"),
         (
             StorageRequest::new(3, StorageUnit::AdditionalElements),
             "additional-elements",
         ),
     ] {
-        let cause = super::storage_allocation(request);
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| Err(EnvironmentFailure::Allocation(request)),
+        )
+        .expect_err("injected registry allocation failure must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("registry allocation failure must produce one assembly error")
+        };
+        let cause = &error.cause;
         assert_eq!(
             cause.catalog_code().to_string(),
             "resource_exhausted/allocation-failed"
@@ -577,7 +595,7 @@ fn assembler_allocation_cause_preserves_native_request_unit() {
         );
         let fields = BTreeMap::from([
             ("requested", request.amount().to_string()),
-            ("unit", unit_name.to_owned()),
+            ("unit", expected_unit.to_owned()),
         ]);
         assert_eq!(cause.catalog_fields(), Some(fields));
     }
@@ -595,7 +613,19 @@ fn assembler_capacity_cause_preserves_native_request_unit() {
             "additional-elements:4",
         ),
     ] {
-        let cause = super::storage_capacity(request);
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| Err(EnvironmentFailure::Capacity(request)),
+        )
+        .expect_err("injected reservation overflow must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("reservation overflow must produce one assembly error")
+        };
+        let cause = &error.cause;
         assert_eq!(
             cause.catalog_code().to_string(),
             "resource_exhausted/reservation-size-overflow"
@@ -1194,7 +1224,7 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
 }
 
 /// Native `String` is a distinct checked leaf, not profile-bounded `Text`.
-#[trace("TC-992", "FR-056-AC-23")]
+#[trace("TC-897", "FR-056-AC-11")]
 #[test]
 fn native_string_field_assembles_as_a_distinct_kernel_type() {
     let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);

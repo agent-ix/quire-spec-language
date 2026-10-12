@@ -1332,20 +1332,48 @@ fn refuse<T>(errors: Vec<AssemblyError>) -> Result<T, AssemblyRefusal> {
 /// not reported. Each round sets aside at least one declaration, so this
 /// ends.
 fn admit_types(
-    mut declarations: Vec<CompositeDeclaration>,
+    declarations: Vec<CompositeDeclaration>,
     object_types: &[ObjectTypeDeclaration],
     spans: &BTreeMap<String, Span>,
     environment: TypeEnvironmentLimits,
     cancel: &Cancel,
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
+    admit_types_with(
+        declarations,
+        object_types,
+        spans,
+        environment,
+        cancel,
+        |declarations, object_types, environment, cancel| {
+            TypeEnvironment::bounded_with_cancel(
+                declarations.iter().cloned(),
+                object_types.iter().cloned(),
+                environment,
+                cancel,
+            )
+        },
+    )
+}
+
+/// The admission loop with its registry constructor injected. Production
+/// supplies the shared kernel constructor above; tests inject exact upstream
+/// failures so the complete production failure mapping stays exercised.
+fn admit_types_with(
+    mut declarations: Vec<CompositeDeclaration>,
+    object_types: &[ObjectTypeDeclaration],
+    spans: &BTreeMap<String, Span>,
+    environment: TypeEnvironmentLimits,
+    cancel: &Cancel,
+    mut construct: impl FnMut(
+        &[CompositeDeclaration],
+        &[ObjectTypeDeclaration],
+        TypeEnvironmentLimits,
+        &Cancel,
+    ) -> Result<TypeEnvironment, EnvironmentFailure>,
+) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
     loop {
-        match TypeEnvironment::bounded_with_cancel(
-            declarations.clone(),
-            object_types.iter().cloned(),
-            environment,
-            cancel,
-        ) {
+        match construct(&declarations, object_types, environment, cancel) {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
             Err(EnvironmentFailure::Limit(limit)) => {
@@ -1380,17 +1408,21 @@ fn admit_types(
                 }
             }
             Err(EnvironmentFailure::Allocation(request)) => {
-                // Keep the upstream amount and unit; AdditionalElements is
-                // not bytes.
                 errors.push(AssemblyError {
-                    cause: storage_allocation(request),
+                    cause: AssemblyCause::StorageAllocation {
+                        requested: request.amount(),
+                        unit: request.unit(),
+                    },
                     span: Span { start: 0, end: 0 },
                 });
                 return refuse(errors);
             }
             Err(EnvironmentFailure::Capacity(request)) => {
                 errors.push(AssemblyError {
-                    cause: storage_capacity(request),
+                    cause: AssemblyCause::StorageCapacity {
+                        requested: request.amount(),
+                        unit: request.unit(),
+                    },
                     span: Span { start: 0, end: 0 },
                 });
                 return refuse(errors);
@@ -2214,20 +2246,6 @@ fn protocol_attempts(
         Ok(resolved)
     } else {
         refuse(errors)
-    }
-}
-
-fn storage_allocation(request: StorageRequest) -> AssemblyCause {
-    AssemblyCause::StorageAllocation {
-        requested: request.amount(),
-        unit: request.unit(),
-    }
-}
-
-fn storage_capacity(request: StorageRequest) -> AssemblyCause {
-    AssemblyCause::StorageCapacity {
-        requested: request.amount(),
-        unit: request.unit(),
     }
 }
 
