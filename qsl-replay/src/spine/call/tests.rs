@@ -1839,6 +1839,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     for reason in [
         UndefinedReason::PreconditionFalse,
         UndefinedReason::AbsentKey,
+        UndefinedReason::IncompleteClosure,
     ] {
         let undefined = FamilyResult::Undefined(Box::new(StubUndefined(reason)));
         match convert(FamilyOutcome::FamilyEvaluated(undefined)).unwrap() {

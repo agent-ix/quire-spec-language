@@ -187,6 +187,15 @@ impl From<ModelQueryHalt> for Halt {
                     key: identity_string(&key),
                 }),
             )),
+            ModelQueryHalt::IncompleteClosure {
+                queried_type,
+                uncovered_subtypes,
+            } => Self::Family(FamilyResult::Undefined(Box::new(
+                StateModelUndefined::IncompleteClosure {
+                    queried_type,
+                    uncovered_subtypes,
+                },
+            ))),
         }
     }
 }

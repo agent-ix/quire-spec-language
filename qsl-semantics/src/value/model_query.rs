@@ -107,6 +107,14 @@ pub enum ModelQueryHalt {
         /// `r`'s object identity bytes, exactly as supplied.
         key: Vec<u8>,
     },
+    /// S6a could not establish the queried type's complete subtype closure;
+    /// this is an evaluation-time undefined result, not an admission refusal.
+    IncompleteClosure {
+        /// The queried effective type's canonical node name.
+        queried_type: String,
+        /// Canonically ordered subtype node names absent from the declaration.
+        uncovered_subtypes: Vec<String>,
+    },
 }
 
 impl From<Incomplete> for ModelQueryHalt {
@@ -202,23 +210,14 @@ pub fn evaluate_all_instances(
         AllInstancesOutcome::Refused(refusal) => Err(ModelQueryHalt::Refused(Box::new(refusal))),
         AllInstancesOutcome::Incomplete(incomplete) => Err(incomplete.into()),
         AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
-            Err(ModelQueryHalt::Refused(Box::new(ModelRefusal {
-                code: Code::IncompletePopulation,
-                cause: ModelRefusalCause::UnclosedSubtypes {
-                    selection: binding.model_identity().to_owned(),
-                    type_name: incomplete.missing_types.first().cloned(),
-                },
-                detail: format!(
-                    "allInstances<{}> cannot establish subtype closure; missing {}",
-                    incomplete.queried_type.node,
-                    incomplete
-                        .missing_types
-                        .iter()
-                        .map(|missing| missing.node.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-            })))
+            Err(ModelQueryHalt::IncompleteClosure {
+                queried_type: incomplete.queried_type.node,
+                uncovered_subtypes: incomplete
+                    .missing_types
+                    .into_iter()
+                    .map(|missing| missing.node)
+                    .collect(),
+            })
         }
     }
 }
