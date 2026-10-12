@@ -410,7 +410,7 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
         ),
         (
             // FR-151-AC-2: a dispatched operation absent from the model.
-            "pre F using v on M::A::missing { self.missing() }",
+            "pre F using v on M::A::ready { self.missing() }",
             "missing",
             CheckCause::MissingName("missing".to_owned()),
             ("missing_declaration", "missing-name"),
