@@ -18,8 +18,8 @@ use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedExpression, PackageD
 use qsl_semantics::family::{FamilyKind, FamilyOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
-    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Outcome, Presence,
-    ScalarLimits, UniverseId, Value, ValueType,
+    EffectiveId, FieldValue, IllTypedCause, Integer, Meter, ObjectId, ObjectReference, Outcome,
+    Presence, ScalarLimits, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
@@ -151,7 +151,7 @@ fn assert_missing_field_at_check(package: &CheckedPackage, static_type: &str, fi
         panic!("StateModel ownership for missing {field}: {cause:?}");
     };
     assert_eq!(owner.family(), FamilyKind::StateModel);
-    assert_eq!(owner.cause, CheckCause::MissingName(field.to_owned()));
+    assert_eq!(owner.cause, CheckCause::IllTyped(IllTypedCause::TypeMismatch));
 }
 
 /// `A.x` is inherited by `B`: `deref(r).x` resolves for `r: Reference<B>`

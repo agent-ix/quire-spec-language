@@ -302,7 +302,7 @@ fn five_source_model_forms_have_the_declared_nodes_and_types() {
 #[ignore = "UNPROVEN: native S1/S2 Population, lookup and member-call producers are unavailable; reserved to #669/#675"]
 fn five_negative_source_units_refuse_at_s3_with_owned_raw_catalog_pairs_and_loci() {
     for (body, raw_code, raw_cause, authored) in [
-        ("function F using v(r: M::A): Boolean pure { deref(r).missing }", "missing_declaration", "missing-name", "missing"),
+        ("function F using v(r: M::A): Boolean pure { deref(r).missing }", "ill_typed", "type-mismatch", "missing"),
         ("function F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure { allInstances<M::Missing>(p) }", "missing_declaration", "missing-name", "allInstances"),
         ("function F using v(p: Population<M::A>[3], r: M::C): M::A pure { lookup<M::A>(p,r) absent refused }", "ill_typed", "type-mismatch", "r"),
         ("invariant F using v on M::A at current { reaches(self,self,flag) }", "ill_typed", "operator-ineligible", "reaches"),
@@ -369,10 +369,12 @@ fn available_source_attribute_and_reaches_have_declared_nodes_and_types() {
 fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loci() {
     for (body, authored, expected_cause, expected_code) in [
         (
+            // FR-056-AC-9 preserves an ill_typed check refusal for a field
+            // absent from the effective static type (deref(g).nope).
             "function F using v(r: M::A): Boolean pure { deref(r).missing }",
             "missing",
-            CheckCause::MissingName("missing".to_owned()),
-            ("missing_declaration", "missing-name"),
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+            ("ill_typed", "type-mismatch"),
         ),
         (
             // FR-104-AC-4: `flag` is a declared Boolean field, so it is

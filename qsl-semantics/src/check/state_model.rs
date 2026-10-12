@@ -154,7 +154,7 @@ impl FamilyContract for StateModelFamily {
                 }
                 Form::Attribute { reference, value_type, field, operand_location, derefed } => {
                     let ValueType::Reference(object) = value_type else { return Err(mismatch(operand_location)); };
-                    let attribute = scope.types().attribute(*object, field).ok_or_else(|| missing(field))?;
+                    let attribute = scope.types().attribute(*object, field).ok_or_else(|| mismatch(location))?;
                     let declared = attribute.field();
                     let optional = declared.presence() == Presence::Optional;
                     let value_type = if optional { ValueType::option(declared.value_type().clone()) } else { declared.value_type().clone() };
