@@ -4955,6 +4955,15 @@ mod tests {
         )
     }
 
+    fn integer_bounds(record: &ScalarTypeRecord) -> (i128, i128) {
+        match &record.domain {
+            ScalarValueDomain::Integer { lower, upper } => (*lower, *upper),
+            ScalarValueDomain::Native(native) => {
+                panic!("expected integer scalar domain, got {native:?}")
+            }
+        }
+    }
+
     /// FR-056's `value-type/v1` scalar reader admits a bound
     /// integer value type, reading its `min`/`max` constraints structurally
     /// into a [`ScalarTypeRecord`] -- never by parsing a rendered
@@ -5001,14 +5010,14 @@ mod tests {
                 {"keyword": "max", "operands": {"value": upper}},
             ]}))
             .unwrap_or_else(|refusal| panic!("{upper}: {refusal:?}"));
-            assert_eq!(record.upper, expected, "{upper}");
+            assert_eq!(integer_bounds(&record).1, expected, "{upper}");
         }
         let record = read_version_number(serde_json::json!({"constraints": [
             {"keyword": "min", "operands": {"value": "-170141183460469231731687303715884105728"}},
             {"keyword": "max", "operands": {"value": "0"}},
         ]}))
         .expect("i128::MIN reads");
-        assert_eq!(record.lower, i128::MIN);
+        assert_eq!(integer_bounds(&record).0, i128::MIN);
     }
 
     /// Local FR-056 integer intake, with FCD FR-144's effective-range rules,
@@ -5023,8 +5032,8 @@ mod tests {
             "constraints": []
         }))
         .expect("an unbounded integer uses the safe effective range");
-        assert_eq!(unbounded.lower, -9_007_199_254_740_991);
-        assert_eq!(unbounded.upper, 9_007_199_254_740_991);
+        assert_eq!(integer_bounds(&unbounded).0, -9_007_199_254_740_991);
+        assert_eq!(integer_bounds(&unbounded).1, 9_007_199_254_740_991);
 
         let explicit_wide = read_version_number(serde_json::json!({
             "constraints": [
@@ -5033,8 +5042,8 @@ mod tests {
             ]
         }))
         .expect("explicit bounds replace the safe defaults");
-        assert_eq!(explicit_wide.lower, -9_007_199_254_740_992);
-        assert_eq!(explicit_wide.upper, 9_007_199_254_740_992);
+        assert_eq!(integer_bounds(&explicit_wide).0, -9_007_199_254_740_992);
+        assert_eq!(integer_bounds(&explicit_wide).1, 9_007_199_254_740_992);
 
         let narrowed = read_version_number(serde_json::json!({
             "constraints": [
@@ -5043,8 +5052,8 @@ mod tests {
             ]
         }))
         .expect("exclusive integer bounds read");
-        assert_eq!(narrowed.lower, 0);
-        assert_eq!(narrowed.upper, 99);
+        assert_eq!(integer_bounds(&narrowed).0, 0);
+        assert_eq!(integer_bounds(&narrowed).1, 99);
     }
 
     /// Competing inclusive/exclusive bounds tighten each side independent of
@@ -5069,7 +5078,7 @@ mod tests {
                 }
                 let record = read_version_number(serde_json::json!({"constraints": ordered}))
                     .expect("mixed bounds intersect without last-wins behavior");
-                assert_eq!((record.lower, record.upper), expected, "reverse={reverse}");
+                assert_eq!(integer_bounds(&record), expected, "reverse={reverse}");
             }
         }
         for (keyword, value, expected) in [
@@ -5088,7 +5097,7 @@ mod tests {
                 {"keyword": keyword, "operands": {"value": value}},
             ]}))
             .expect("one explicit wide side replaces only its own default");
-            assert_eq!((record.lower, record.upper), expected, "{keyword}");
+            assert_eq!(integer_bounds(&record), expected, "{keyword}");
         }
     }
 
@@ -5113,7 +5122,7 @@ mod tests {
                 {"keyword": keyword, "operands": {"value": value.to_string()}},
             ]}))
             .expect("an exclusive endpoint with a representable neighbor admits");
-            assert_eq!((record.lower, record.upper), expected, "{keyword}");
+            assert_eq!(integer_bounds(&record), expected, "{keyword}");
         }
         for (keyword, value, reason) in [
             (

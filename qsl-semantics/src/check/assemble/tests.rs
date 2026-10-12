@@ -16,7 +16,7 @@ use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, Topology
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ScalarTypeRecord,
-    ValueTypeRef,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
