@@ -45,7 +45,11 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
 ## Outputs
 
 - For each operation member: an `OperationMemberRecord` whose `effect` holds
-  the `DeclarationKey`s its frame names, in each member's declared order.
+  the `DeclarationKey`s its frame names, in each member's declared order. In
+  the compiled unit's selected model view, the assembler SHALL set its
+  `has_body` value true exactly when one retained unit `OperationBodyForm`
+  (FR-102) resolves to that operation's `DeclarationKey`, and false when no
+  such declaration exists.
 - In the assembled `PackageDeclarations`: each object type `M::T` with its
   operations, each operation with its name, its parameters (name and value
   type, in declared order), its result value type or none, and its effect.
@@ -84,6 +88,14 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
   The operation is visible on a subtype through FR-081's effective view, as a
   field is, and keeps its declaring type as its owner (FR-105 anchors it
   there).
+- The S3 assembler SHALL preserve each resolved unit `operation-body`
+  expression and its source provenance, and each unit `pre` and `post`
+  `StateClauseForm` as a contract clause. It SHALL associate the body and
+  clauses with the resolved operation's `DeclarationKey` and keep them
+  available to checking and dispatch linking. It SHALL bind the body's
+  receiver-less parameter names positionally to the operation's parameters in
+  signature order, as required by the QSpec Complete-V1 grammar, and type its
+  body against the operation's declared result.
 - The assembler SHALL declare each admitted record value type beside object
   types and operations, with its effective fields, invariant clauses and
   supertypes, and SHALL allow object and record fields to use that type by
@@ -95,8 +107,14 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
 - The assembler SHALL still refuse systems parts, ports and allocations as
   `UnsupportedModelMember`.
 - Intake SHALL still shape-check the operation's `pre` and `post` expression
-  texts in the domain package and SHALL NOT keep them. State clauses in the
-  `1-draft` unit are the clauses this lane checks and runs.
+  texts in the domain package and SHALL NOT keep or use them as unit clauses
+  or operation bodies. This discard rule applies only to those domain-package
+  texts. The separately authored `operation-body` declaration in the
+  `1-draft` unit supplies the candidate body; that unit's `pre` and `post`
+  `StateClauseForm`s supply operation contract clauses. S2 retains their
+  expression trees and source provenance under FR-102, and the S3 assembler
+  associates them with the resolved operation identity. An operation with no
+  matching unit body has `has_body = false` and is not a dispatch candidate.
 
 ## Acceptance Criteria
 

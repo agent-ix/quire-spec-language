@@ -53,6 +53,20 @@ which calls `model::dispatch::link_dispatch` (ADR-016 SC-3). The checked
 package SHALL carry each linked table, and S6a SHALL select a call's target
 only from the table its checked node names.
 
+The source-to-intake join SHALL use the resolved operation's
+`DeclarationKey` in the selected model's effective view. S3 SHALL resolve
+each retained `OperationBodyForm` target and each unit `pre`/`post`
+`StateClauseForm` through FR-104, preserving the resolved declaring
+operation identity, and SHALL key the body's expression and clauses by that
+same key. For each operation requested by a dispatched call, the checker
+SHALL supply `checked_dispatch_operation` the admitted operation and the
+body, signature and precondition data keyed by that `DeclarationKey`. It
+SHALL NOT join by the source-local body label, display spelling, declaration
+order or domain-package `pre`/`post` text. A body declaration with no
+matching operation, or multiple body declarations resolving to the same
+operation identity, SHALL refuse at S3 without a checked package or partial
+dispatch table.
+
 ### A failed link refuses the compile
 
 If FR-083 linking reports a no-applicable or a multiple-undominated failure
@@ -82,6 +96,7 @@ caller's value, with the published default of
 | FR-302-AC-4 | A unit with dispatched calls on two operations, each with one failing subtype, refuses once and names both failures. | Test (TC-794) |
 | FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
 | FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
+| FR-302-AC-7 | Given `operation-body` declarations for `A.size` and `B.size`, retained expressions and unit pre/post clauses join to admitted operations by resolved `DeclarationKey` even when body labels and declaration order differ; `has_body` is true exactly for operations with a resolved body. A called operation with no body is not a candidate and its failed family refuses under FR-151 with no checked package or partial table. | Test |
 
 ## Dependencies
 
