@@ -1492,8 +1492,7 @@ pub(super) fn admit_state_machine_context_values<'t>(
 
     let object = ObjectId::new(invocation.identity.clone()).map_err(|_| {
         refuse(
-            admission_record(Code::InvalidRuntimeInput, "invalid-value")
-                .with("field", "identity"),
+            admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "identity"),
         )
     })?;
     let reference = ObjectReference::new(
@@ -1501,24 +1500,16 @@ pub(super) fn admit_state_machine_context_values<'t>(
         effective_type,
         object,
     );
-    let mut values = admit_population_values(
-        views,
-        types,
-        &ordinary,
-        range,
-        ancestor_steps,
-    )?;
-    values.out_of_range.extend(
-        breaches
-            .into_iter()
-            .map(|(field, breach)| OutOfRange {
-                object: reference.clone(),
-                field,
-                index: breach.index,
-                range: breach.range,
-                observed: breach.observed,
-            }),
-    );
+    let mut values = admit_population_values(views, types, &ordinary, range, ancestor_steps)?;
+    values
+        .out_of_range
+        .extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
+            object: reference.clone(),
+            field,
+            index: breach.index,
+            range: breach.range,
+            observed: breach.observed,
+        }));
     values.objects.push((reference.clone(), attributes));
     Ok((values, reference))
 }

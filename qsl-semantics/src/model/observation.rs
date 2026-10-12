@@ -1721,8 +1721,8 @@ fn admit_invocation_documents(
         )
     };
     let pre_self_population = (!state_machine).then_some(self_object.population.as_str());
-    let post_self_population = (!state_machine && post_self)
-        .then_some(self_object.population.as_str());
+    let post_self_population =
+        (!state_machine && post_self).then_some(self_object.population.as_str());
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,
