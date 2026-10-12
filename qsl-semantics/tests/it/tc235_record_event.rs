@@ -172,7 +172,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
             .as_array_mut()
             .unwrap()
             .push(field("Order", "history", &id("Money")));
-        let mut requote = operation("Order", "requote");
+        let mut requote = super::operation("Order", "requote");
         requote["params"] = json!([{
             "identity": id("Order/requote/amount"),
             "typeRef": id("Money"),
