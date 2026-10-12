@@ -56,7 +56,11 @@ impl<'a> DomainType<'a> {
             | DeclarationKind::Connection
             | DeclarationKind::Relationship
             | DeclarationKind::Allocation
-            | DeclarationKind::Population => None,
+            | DeclarationKind::Population
+            | DeclarationKind::EventType
+            | DeclarationKind::StateMachine
+            | DeclarationKind::Process
+            | DeclarationKind::PersistenceInterface => None,
         }
     }
 
@@ -140,12 +144,16 @@ fn domain_leaf_type<'a>(
 ) -> Option<NativeType<'a>> {
     Some(match value_type {
         ValueTypeRef::Native(NativeValueType::Boolean) => NativeType::Boolean,
+        // The domain checker maps only Boolean here; other native leaves follow
+        // the existing unsupported-native path below.
         ValueTypeRef::Native(
             NativeValueType::Integer
             | NativeValueType::Rational
             | NativeValueType::Decimal
             | NativeValueType::Float32
             | NativeValueType::Float64
+            | NativeValueType::Uuid
+            | NativeValueType::String
             | NativeValueType::Text
             | NativeValueType::Timestamp,
         ) => return None,

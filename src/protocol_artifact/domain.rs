@@ -149,8 +149,12 @@ pub(super) fn exports<'a>(
                 continue;
             }
             DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::EventType(_)
+            | DomainPackageRecord::StateMachine(_)
+            | DomainPackageRecord::Process(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
+            | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Relationship(_)

@@ -289,6 +289,10 @@ impl Site {
             DeclarationKind::Allocation
             | DeclarationKind::Clause
             | DeclarationKind::Namespace
+            | DeclarationKind::EventType
+            | DeclarationKind::StateMachine
+            | DeclarationKind::Process
+            | DeclarationKind::PersistenceInterface
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Population => false,
