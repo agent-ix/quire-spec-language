@@ -33,7 +33,9 @@ report as FR-267's `native-run-result/2` clause-run document. Neither forms
 a `ClauseRunRequest` any other way.
 
 FR-100's clause runner is this requirement's reader plus `run_clause`
-(FR-109).
+(FR-109); every artifact names the change that lands it as "the change that
+lands FR-100's clause runner". That change is ADR-011 M-6c's deletion of
+native `run` (FR-026 to FR-032) and `native-run-result/1` (ADR-031 R-1).
 
 ## Inputs
 
@@ -75,6 +77,14 @@ package and dependency inputs.
 
 ## Behavior
 
+- The clause request reader SHALL retain the three existing selection
+  shapes and FR-109's Boolean `function` claim semantics. FR-100's shared
+  Value carriers are in-process carriers, not additional JSON argument
+  variants of this reader. A Reference-result function belongs to the
+  existing public Value `run` boundary; this reader SHALL NOT select it as
+  a Boolean claim, invent a Population wire payload, or form a default
+  model context to stand in for admission. The driver's TC-792 typed call
+  requires actual consumer integration with that reviewed Rust boundary.
 - The reader SHALL decode `clause` under FR-100's closed-envelope rules:
   unknown and duplicate members and positional record arrays refuse
   `invalid-request` at stage `request`, naming the member.
@@ -121,6 +131,9 @@ package and dependency inputs.
 | FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
 | FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `self` and `parameters` constructs `PreCall`; an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting a required member or adding a role-forbidden member refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
 
+The existing AC-1 through AC-5 test-case association remains TC-891;
+method-only Verification cells do not replace the existing trace tags.
+
 ## Dependencies
 
 - [FR-109](FR-109-run-a-state-clause-through-the-spine.md): `ClauseRunRequest`,
@@ -134,7 +147,19 @@ package and dependency inputs.
   clause-run document and the command-error envelope.
 - QSpec FR-301 (exit codes).
 
+## Status
+
+QSL-665's typed-call clarification is proposed; its consumer qualification
+is UNRUN. The accounting setting member is owned by QSL-656; this
+clarification does not duplicate that contract or define a compatibility
+member.
+
+Specified; not yet implemented -- TC-891 planned. Lands with the deletion of
+native `run` (ADR-031 R-1). That change also deletes the per-file `sha256:`
+digests the native-v1 request selections carry and their checks (FR-026,
+FR-027, FR-100): a request names its files, and the command reads their
+bytes as they are.
+
 ## References
 
-- Owning ticket: Linear QSL-389 (plan slice E19-CLI). TC-891 traces the
-  clause-run request acceptance criteria.
+- Owning ticket: Linear QSL-389 (plan slice E19-CLI).
