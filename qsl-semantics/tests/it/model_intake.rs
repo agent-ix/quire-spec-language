@@ -189,7 +189,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
         lifted, expected,
         "lift_document must produce the fixture's committed expected document"
     );
-    let actual_digest: [u8; 32] = Sha256::digest(&document).into();
+    let actual_digest = parse_document(&document).jcs_digest();
 
     let package = lifted;
     let identity = package["package"]["identity"]
@@ -894,7 +894,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     .to_string()
     .into_bytes();
 
-    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let digest = parse_document(&document).jcs_digest();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
     let offered = DomainPackageRef {
@@ -1269,6 +1269,8 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     let offered = DomainPackageRef {
         identity: qsl_semantics::model::intake::native::RESERVED_IDENTITY.to_owned(),
         version: "1".to_owned(),
+        // This deliberately unrelated token is never looked up: the reserved
+        // identity refuses before byte resolution.
         digest: Sha256::digest(b"irrelevant: refused before any byte lookup").into(),
     };
     let bytes_by_digest = BTreeMap::new();
@@ -1312,7 +1314,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     let document =
         quire_canonical::to_vec(&tree, quire_semantic_value::semantic_node::IDENTITY_LIMITS)
             .expect("a document of strings encodes");
-    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let digest = parse_document(&document).jcs_digest();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document);
 
@@ -1324,6 +1326,8 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     let second = DomainPackageRef {
         identity: "acme/orders".to_owned(),
         version: "2".to_owned(),
+        // This deliberately unrelated token is never looked up: duplicate
+        // identity refuses before the second selection's byte resolution.
         digest: Sha256::digest(b"second selection: refused before this is ever looked up").into(),
     };
 
@@ -1428,7 +1432,7 @@ fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
     .to_string()
     .into_bytes();
 
-    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let digest = parse_document(&document).jcs_digest();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
     let offered = DomainPackageRef {
