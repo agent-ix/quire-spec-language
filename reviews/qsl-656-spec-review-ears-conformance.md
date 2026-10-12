@@ -26,3 +26,7 @@ Reviewed the edited requirement statements for EARS grammar and semantic fit. Th
 ## Coverage
 
 `quire validate --scope . 'spec/**/*.md' --summary` scanned 1,568 documents; 1,560 were grammar-clean and it reported 14 grammar advisories across the repository. The edited requirement statements were manually checked against those diagnostics and the EARS patterns. The scan is advisory review input, not a PR gate; no tests/builds were run.
+
+## Exact-head delta check
+
+At d7c7ea72c7899a7d2ce973da0473034f4a79b033 against origin/main fe7d883ade8ed3d12c1152fa49dad8a48b325680, rechecked the edited FR-255 behavior and FR-312 input wording. `quire validate --scope . 'spec/**/*.md'` exited 0 and emitted no EARS warning for those edited statements; manual EARS-pattern review found no new grammar defect. This does not remove the separate FR-312/FR-100 contract-consistency finding recorded in the base and integrity analyses.

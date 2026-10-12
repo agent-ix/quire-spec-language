@@ -97,8 +97,10 @@ pub(super) struct ClauseRun {
     pub selection: ClauseRunSelection,
     #[serde(deserialize_with = "from_object")]
     pub observations: std::collections::BTreeMap<String, String>,
-    #[serde(default, deserialize_with = "work_units")]
-    pub work_units: Option<u64>,
+    /// FR-312: optional clause-run accounting limits, using FR-100's closed
+    /// counter object and defaults.
+    #[serde(default, deserialize_with = "from_object")]
+    pub accounting: Accounting,
     #[serde(default)]
     pub package_id: Option<String>,
     #[serde(default, deserialize_with = "from_object_opt")]
@@ -263,10 +265,6 @@ impl Accounting {
 /// deserializes `u64` directly, so serde calls it only for a present key and
 /// a present `null` fails `u64`'s own visitor rather than becoming absent.
 fn counter<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
-    u64::deserialize(decoder).map(Some)
-}
-
-fn work_units<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
     u64::deserialize(decoder).map(Some)
 }
 

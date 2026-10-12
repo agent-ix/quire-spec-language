@@ -61,8 +61,11 @@ place of `call`. `clause` is a closed object:
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
 - `package_id`: optional, the expected `package_id`, lowercase hex;
-- `accounting`: optional, FR-100's `accounting` object, the evaluation
-  budget;
+- `accounting`: optional, a closed object whose members are any subset of
+  the ten `quire.value.accounting/v1` counter names, each a JSON integer
+  from 0 to `u64::MAX`, with the same defaults as FR-100's
+  `call.accounting`; a counter supplied here overrides only that counter's
+  default. A direct `work_units` member of `clause` is not accepted;
 - `observation_limits`: optional, FR-106's `ObservationLimits` overrides.
 
 The request's `models` and `libraries` are FR-100's and give FR-109's
@@ -131,6 +134,7 @@ package and dependency inputs.
 | FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test |
 | FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
 | FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `self` and `parameters` constructs `PreCall`; an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting a required member or adding a role-forbidden member refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
+| FR-312-AC-6 | A clause request's `accounting` object accepts all ten counter names and passes their values unchanged to `ClauseRunRequest.accounting`; omitted `accounting` uses the FR-100 defaults. A direct `work_units` member of `clause` refuses `invalid-request` at stage `request`, exit 20, empty stdout. | Test (TC-891) |
 
 The existing AC-1 through AC-5 test-case association remains TC-891;
 method-only Verification cells do not replace the existing trace tags.

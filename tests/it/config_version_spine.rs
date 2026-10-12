@@ -509,6 +509,82 @@ fn clause_run_reader_keeps_parameter_beyond_128_levels() {
     assert_eq!(parameters.len(), 1);
 }
 
+/// FR-312-AC-6: the clause-run accounting object carries all ten counters;
+/// the legacy direct `work_units` member is not accepted.
+#[trace("TC-891", "FR-312-AC-6")]
+#[test]
+fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("accounting-object");
+    build(&path, Case::Healthy);
+
+    let defaults = current_clause_request(&path);
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&defaults).unwrap(),
+    )
+    .unwrap();
+    let decoded_defaults = quire_spec_language::command::read_clause_run_request(
+        &path.join("request.json"),
+    )
+    .expect("omitted accounting uses the published defaults");
+    assert_eq!(
+        decoded_defaults.accounting,
+        qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS)
+    );
+
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["accounting"] = json!({
+        "integer_bits":1,
+        "decimal_digits":2,
+        "scale_expansion":3,
+        "text_input_bytes":4,
+        "text_scalars":5,
+        "normalized_scalars":6,
+        "unit_edges":7,
+        "value_occurrences":8,
+        "work_units":9,
+        "result_units":10
+    });
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(
+        &path.join("request.json"),
+    )
+    .expect("the closed accounting counter object is accepted");
+    assert_eq!(
+        decoded.accounting,
+        quire_exact::ScalarLimits {
+            integer_bits: 1,
+            decimal_digits: 2,
+            scale_expansion: 3,
+            text_input_bytes: 4,
+            text_scalars: 5,
+            normalized_scalars: 6,
+            unit_edges: 7,
+            value_occurrences: 8,
+            work_units: 9,
+            result_units: 10,
+        }
+    );
+
+    let mut legacy = current_clause_request(&path);
+    legacy["request"]["clause"]["work_units"] = json!(0);
+    let output = run_clause_file(&path, &legacy);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["stage"], "request", "{failure}");
+    assert_eq!(failure["code"], "invalid-request", "{failure}");
+    assert!(
+        failure["message"].as_str().unwrap().contains("work_units"),
+        "{failure}"
+    );
+}
+
 /// FR-312: the function-argument adapter diagnoses an invalid deep form by
 /// member after parsing it, rather than refusing at a JSON stack limit.
 #[trace("TC-891", "FR-312-AC-5")]

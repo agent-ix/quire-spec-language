@@ -20,7 +20,7 @@ settles `Incomplete` naming its setting, that a replay request's
 request's `call.accounting` object reaches the call as its accounting
 limits.
 
-Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-13.
+Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-18.
 
 ## Test Procedure
 
@@ -41,7 +41,7 @@ Scope: FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100
    with `{"work_units": 7}`, with `{}`, and with no `accounting`, and read
    the accounting limits of the `Call` handed to `qsl_replay::spine::run`.
 
-Tag the tests `#[trace("TC-921", "FR-255-AC-7")]`, `#[trace("TC-921", "FR-255-AC-8")]`, `#[trace("TC-921", "FR-255-AC-9")]`, `#[trace("TC-921", "FR-255-AC-10")]`, `#[trace("TC-921", "FR-255-AC-11")]`, `#[trace("TC-921", "FR-100-AC-13")]`.
+Tag the tests `#[trace("TC-921", "FR-255-AC-7")]`, `#[trace("TC-921", "FR-255-AC-8")]`, `#[trace("TC-921", "FR-255-AC-9")]`, `#[trace("TC-921", "FR-255-AC-10")]`, `#[trace("TC-921", "FR-255-AC-11")]`, `#[trace("TC-921", "FR-100-AC-18")]`.
 
 ## Expected Results
 

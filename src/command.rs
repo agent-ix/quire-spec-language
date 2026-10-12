@@ -1199,10 +1199,10 @@ mod tests {
         );
     }
 
-    /// FR-100-AC-13: `call.accounting` reaches the call as its accounting
+    /// FR-100-AC-18: `call.accounting` reaches the call as its accounting
     /// limits, with omitted counters retaining their defaults.
     #[test]
-    #[trace("TC-921", "FR-100-AC-13")]
+    #[trace("TC-921", "FR-100-AC-18")]
     fn call_accounting_reaches_the_call_as_its_limits() {
         let limits = |text: &str| {
             let call: wire::Call = serde_json::from_str(text).expect("a call");

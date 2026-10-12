@@ -27,3 +27,17 @@ Checked completeness, cross-document consistency, atomicity and testability for 
 ## Coverage
 
 Reviewed changed requirement relationships, behavior clauses, acceptance criteria, test-case references and the changed table/data shape. The acceptance criteria remain concrete and observable. The finding is cross-artifact consistency, not a missing test assertion.
+
+## New findings (disposition pass 1)
+
+Reviewed exact frozen head d7c7ea72c7899a7d2ce973da0473034f4a79b033 against origin/main fe7d883ade8ed3d12c1152fa49dad8a48b325680. The prior FR-255/FR-003 formatter-table inconsistency is fixed. The PR's FR-312 edit creates an incomplete cross-requirement contract.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | high | FR-312 changes the clause request field to `accounting` and delegates its shape to FR-100, but FR-100's defined wire member is `call.work_units`; it does not define the clause member. The source still decodes `ClauseRun.work_units` and rejects unknown fields. A request conforming to the changed FR-312 wording cannot be decoded. Define and implement the clause accounting shape as part of the owning change, or keep FR-312 unchanged. | FR-312; FR-100; src/command/wire.rs:95-102 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d7c7ea72c7899a7d2ce973da0473034f4a79b033 |

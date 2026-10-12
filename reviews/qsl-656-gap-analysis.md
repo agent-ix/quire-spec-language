@@ -134,3 +134,19 @@ TC-914's scope, the `spec/tests.md` TC-914 row and the
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-003 | fixed | 0d81c68d7 |
+
+## New findings (disposition pass 7)
+
+Reviewed exact frozen head d7c7ea72c7899a7d2ce973da0473034f4a79b033 against origin/main fe7d883ade8ed3d12c1152fa49dad8a48b325680. `quoin matrix --repo . --json` timed out after 90 seconds without output; quire validation completed successfully. Manually inspected the new TC-921 row and trace tags against the requirement IDs and assertions.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | TC-921 and its implementation test tag FR-100-AC-13, but FR-100 explicitly says AC-13 remains reserved and contains no AC-13 row. The matrix binding therefore names no criterion, and the FR-100 accounting-object behavior has no owning acceptance criterion. Add the FR-100 accounting criterion before tagging TC-921, or remove the dangling reference and keep this test covered by FR-255 only. | spec/test-cases/TC-921-accounting-budgets-are-settable-by-counter-name.md:23,44; src/command.rs:1202; spec/functional/FR-100-run-a-named-function-through-the-spine.md:571 |
+| FND-005 | high | The implementation and edited TC-450/TC-451 tests replace `call.work_units` with `call.accounting`, but FR-100 still specifies `work_units` as the call member and AC-3/AC-6 use that shape. Tests tagged to those criteria now exercise a different request than the acceptance criteria; a documented work_units request is rejected by the strict decoder. Amend FR-100's input/refusal/behavior/ACs and their TC association to the new object shape, or preserve the documented member. | src/command/wire.rs:195-207; tests/it/spine_run.rs:765-800; spec/functional/FR-100-run-a-named-function-through-the-spine.md:233-236,424 |
+
+## Dispositions (round 7)
+
+No prior finding remained open or lacked an outcome at entry to this pass; FND-001 through FND-003 retain their fixed outcomes. FND-004 is newly recorded and awaits coder disposition.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |

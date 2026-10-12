@@ -132,6 +132,23 @@ reverted main's own changes. This was found by reading, with no build.
 | FND-008 | high | The FR-255-AC-7 test `a_reached_budget_set_by_operand_names_its_setting` calls `run(...)` with seven arguments. After #663, `spine::run` takes an eighth, `cancel: &Cancel`, and every other call in the same module passes `&Cancel::new()`. qsl-replay's test target does not compile. Fix: pass `&Cancel::new()`. | qsl-replay/src/outcome.rs:1194-1202; qsl-replay/src/spine/call.rs:339-348 |
 | FND-009 | medium | The rebase reverts main's FR-255 test changes in `limits.rs`. It re-adds the `(pending QSL-487)` row machinery (`PENDING`, `Row.pending`, the partition and the pending filter), which main deleted once QSL-487 landed. It also deletes main's `IntakeInputBytes` builder case (`mapped.set_bound(Setting::IntakeInputBytes, 35)` and the `model.intake` builder), so after FND-006, FR-255-AC-3's builder test no longer covers `intake.input_bytes`. Fix: take main's test bodies and re-apply only the accounting changes. | qsl-replay/src/limits.rs:236-246,419 |
 
+## New findings (disposition pass 7)
+
+Reviewed exact frozen head d7c7ea72c7899a7d2ce973da0473034f4a79b033 against origin/main fe7d883ade8ed3d12c1152fa49dad8a48b325680. Static Rust review found the public call wire conversion internally coherent, but the changed FR-312 contract is not implemented by its clause wire reader.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | high | The PR changes FR-312's clause request member from `work_units` to an `accounting` object, but `wire::ClauseRun` still has only `work_units: Option<u64>` and denies unknown fields. A valid clause request using the newly specified `accounting` member is rejected as invalid-request; the old `work_units` spelling still works. Either implement the clause wire/API change with tests or leave FR-312 unchanged in this PR. | src/command/wire.rs:95-102; spec/functional/FR-312-read-a-clause-run-request-and-run-it.md:64 |
+| FND-011 | high | The PR changes the closed FR-100 `Call` wire type to accept `accounting` and reject top-level `work_units`, while FR-100 Inputs and its refusal/behavior text still specify `call.work_units`. Thus requests conforming to the requirement are rejected and the undocumented replacement is accepted. Update FR-100 and its acceptance criteria/test case in this PR, or retain the specified wire shape. | src/command/wire.rs:195-207; spec/functional/FR-100-run-a-named-function-through-the-spine.md:233-236 |
+
+## Dispositions (round 7)
+
+Reviewed exact frozen head d7c7ea72c7899a7d2ce973da0473034f4a79b033. The current quire-driver main remains source-incompatible with the changed `parse_operands` return type. The plan's explicit sequencing decision accepts that downstream risk and tracks the consumer adaptation in IR-684; this is not a claim that the consumer now compiles.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | accepted-no-change | Explicit QSL-656 plan/PR decision: IR-684 is downstream, blocked by QSL-656, and does not block #665 merge; the mismatch remains until that adaptation lands |
+
 ## Dispositions (round 2)
 
 Round 2, reviewed at ab1e899e5462eafe9ed43597c1b642411b070173.

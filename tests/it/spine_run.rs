@@ -767,7 +767,7 @@ fn tc_451_step_5_function_shape_and_lookup_refusals() {
     assert_eq!(failure["details"]["function"], "corner");
 }
 
-/// FR-100-AC-6 (TC-451 step 7): `seven` with `accounting` `{"work_units": 0}` writes outcome
+/// FR-100-AC-6 (TC-451 step 7): `seven` with `call.accounting` `{"work_units": 0}` writes outcome
 /// `{"kind": "incomplete", "limit": "work_units"}`, exit 22.
 #[test]
 #[trace("TC-451", "FR-100-AC-6")]
@@ -794,7 +794,7 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
 /// FR-100-AC-3 (TC-450 step 4): an `accounting` member `work_units` of
 /// `18446744073709551616` (above `u64::MAX`), `-1`, `1.5` or `null`, an
 /// `accounting` member `depth`, a member named twice, an `accounting` of
-/// `5`, and a top-level `work_units` each refuse `invalid-request` at stage
+/// `5`, and the legacy `call.work_units` each refuse `invalid-request` at stage
 /// `request`, exit 20 (FND-009/FND-018: `null` is a present key, not an
 /// absent one, and admits no `u64`).
 #[test]

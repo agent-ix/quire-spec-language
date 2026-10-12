@@ -15,7 +15,7 @@ Verify FR-312: `read_clause_run_request` reads a `1-draft` request carrying
 `run_clause` and write a `native-run-result/2` document, and the reader
 refuses malformed requests and requests past the intake limit.
 
-Scope: FR-312-AC-1 to FR-312-AC-5.
+Scope: FR-312-AC-1 to FR-312-AC-6.
 
 ## Test Procedure
 
@@ -42,6 +42,9 @@ Scope: FR-312-AC-1 to FR-312-AC-5.
    invocation. Select a post snapshot directly, then a document with an
    unrecognized `format`, then a snapshot with an unrecognized `observation`
    role.
+6. Read a clause request with all ten `accounting` counters set to 1 through
+   10, one with `accounting` omitted, and one with a legacy direct
+   `work_units` member in `clause`.
 
 Tag the tests `#[trace("TC-891", "FR-312-AC-n")]`.
 
@@ -64,3 +67,6 @@ Tag the tests `#[trace("TC-891", "FR-312-AC-n")]`.
   stage `request`, naming that member; a selected post snapshot, unknown
   format or unknown observation role names `observation`. Each request
   refusal writes empty stdout and exits 20 before `run_clause`.
+- Step 6: all ten counter values reach `ClauseRunRequest.accounting`
+  unchanged; omission uses FR-100's defaults; the legacy `clause.work_units`
+  request refuses `invalid-request` at stage `request`, exit 20, empty stdout.
