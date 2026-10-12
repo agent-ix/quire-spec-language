@@ -348,6 +348,52 @@ fn lookup_key(
     }
 }
 
+/// V1-TYPE-021: the declared closed population admits finite object members
+/// even though none has a value-containment field. Without closure authority
+/// the same offered members cannot become a complete universe.
+#[test]
+#[trace("QSpec-V1-TYPE-021", "QSpec-FR-011-AC-3")]
+fn finite_object_population_requires_explicit_closure() {
+    let document = p1("test/orders");
+    assert!(document
+        .members
+        .iter()
+        .all(|member| member.field_values.is_empty()));
+    let closed = fixture_f1();
+    let view = view_of(&closed);
+    let binding = admitted_binding(&view, &document);
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let universe = view.object_universe().identity();
+    let expected: BTreeSet<_> = [
+        reference_key(&universe, &a, "a1"),
+        reference_key(&universe, &a, "a2"),
+        reference_key(&universe, &b, "b1"),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        binding.members().keys().cloned().collect::<BTreeSet<_>>(),
+        expected
+    );
+
+    let open = fixture_f1_with_extent(Extent::Open);
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    match admit_binding(
+        &view_of(&open),
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter,
+    ) {
+        AdmissionOutcome::UnknownClosure(refusal) => {
+            assert_eq!(refusal.code, Code::IncompletePopulation);
+        }
+        other => panic!("an open universe cannot be admitted as complete: {other:?}"),
+    }
+}
+
 /// TC-198 L01: closed all-instances over P1 returns every and only member of
 /// the selected typed population, once, in canonical reference-key order,
 /// including the subtype `B` population under `M::A` — and `b1`'s reference

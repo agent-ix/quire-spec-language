@@ -721,6 +721,10 @@ impl PackageDeclarations {
                 .state_clauses
                 .iter()
                 .any(|clause| clause.selection.identity == complete_identity);
+        // Model intake currently admits only `quire.model.complete/v1`.
+        // Carry that selection into S3 so the inherited-edge rule is
+        // confined to a package with an admitted model.
+        let complete_model = !self.models.is_empty();
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -732,7 +736,8 @@ impl PackageDeclarations {
         )
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
-        .with_complete_value(complete_value);
+        .with_complete_value(complete_value)
+        .with_complete_model(complete_model);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures

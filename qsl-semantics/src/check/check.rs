@@ -337,6 +337,9 @@ pub struct Scope {
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
+    /// Every admitted model currently uses `quire.model.complete/v1`; an
+    /// absent model keeps the historical exact-edge typing rule.
+    pub(crate) complete_model: bool,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
@@ -467,6 +470,7 @@ impl Scope {
             ieee_profile,
             integer_division: None,
             complete_value: false,
+            complete_model: false,
             dispatch_operations,
             index,
             imports: BTreeMap::new(),
@@ -489,6 +493,11 @@ impl Scope {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
+        self.complete_model = complete_model;
         self
     }
 
@@ -1761,10 +1770,10 @@ impl<'a> Typer<'a> {
     }
 
     /// `reaches(source, target, edge)` over the typed `source` and `target`
-    /// (FR-104): both `Reference<T>` of one object type `T`, and `edge` a
-    /// field of `T`'s effective attribute set typed `Reference<T>`,
-    /// `Option<Reference<T>>` or a sequence of `Reference<T>` (QSpec
-    /// `state-contract.md`, "Finite graph extension"). Anything else,
+    /// (FR-104): for a complete model, each endpoint conforms to the
+    /// inherited edge's declaring type `T`, and the edge targets
+    /// `Reference<T>`. An absent model retains exact `Reference<T>` endpoint
+    /// typing. Anything else,
     /// a set, bag or ordered set of references included, refuses
     /// `ill_typed`/`operator-ineligible` at the `reaches`.
     fn reaches(
@@ -1774,26 +1783,32 @@ impl<'a> Typer<'a> {
         edge: &str,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let (ValueType::Reference(object), ValueType::Reference(other)) =
+        let (ValueType::Reference(source_type), ValueType::Reference(target_type)) =
             (&source.value_type, &target.value_type)
         else {
             return Err(ineligible(location));
         };
-        if object != other {
-            return Err(ineligible(location));
-        }
-        let object = *object;
         let attribute = self
             .scope
             .types
-            .attribute(object, edge)
+            .attribute(*source_type, edge)
             .ok_or_else(|| ineligible(location))?;
+        let owner = attribute.owner();
+        let endpoints_admitted = if self.scope.complete_model {
+            self.scope.types.conforms(*source_type, owner)
+                && self.scope.types.conforms(*target_type, owner)
+        } else {
+            *source_type == owner && *target_type == owner
+        };
+        if !endpoints_admitted {
+            return Err(ineligible(location));
+        }
         let declared = attribute.field();
-        let names_object = |value_type: &ValueType| value_type == &ValueType::Reference(object);
+        let names_owner = |value_type: &ValueType| value_type == &ValueType::Reference(owner);
         let admitted = match (declared.presence(), declared.value_type()) {
-            (_, ValueType::Reference(_)) => names_object(declared.value_type()),
+            (_, ValueType::Reference(_)) => names_owner(declared.value_type()),
             (Presence::Required, ValueType::Collection(collection)) => {
-                collection.kind() == CollectionKind::Sequence && names_object(collection.element())
+                collection.kind() == CollectionKind::Sequence && names_owner(collection.element())
             }
             _ => false,
         };
