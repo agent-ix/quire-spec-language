@@ -66,6 +66,20 @@ order or domain-package `pre`/`post` text. A body declaration with no
 matching operation SHALL refuse under FR-104's missing-operation resolution
 rule at S3 without a checked package or partial dispatch table.
 
+Exactly one executable unit `operation-body` SHALL resolve to each
+`DeclarationKey`. If a second body form resolves to a key already targeted by
+another body form, S3 SHALL refuse the compile as
+`conflicting_declaration`/`duplicate-declaration`, naming both body
+declarations, and SHALL produce no checked package or partial dispatch table.
+This reuses the duplicate-declaration diagnostic for repeated same-name
+declarations in [FR-246](FR-246-check-task-sets-and-schedulability-claims.md)
+and the at-most-one declaration rule in
+[FR-211](FR-211-declare-a-protocol-s-intended-terminal-states-and-report-its-deadlocks.md);
+QSpec FR-429-AC-6 is the corresponding QSpec diagnostic precedent. QSpec
+FR-151 specifies that an `operation-body` supplies a body but does not specify
+body multiplicity; this QSL rule settles the QSL compile outcome pending a
+QSpec follow-up.
+
 ### A failed link refuses the compile
 
 If FR-083 linking reports a no-applicable or a multiple-undominated failure
@@ -95,7 +109,7 @@ caller's value, with the published default of
 | FR-302-AC-4 | A unit with dispatched calls on two operations, each with one failing subtype, refuses once and names both failures. | Test (TC-794) |
 | FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
 | FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
-| FR-302-AC-7 | Given `operation-body` declarations for `A.size` and `B.size`, retained expressions and unit pre/post clauses join to admitted operations by resolved `DeclarationKey` even when body labels and declaration order differ; `has_body` is true when an operation has a resolved body and false when it has none. A called operation with no body is not a candidate and its failed family refuses under FR-151 with no checked package or partial table. | Test (TC-986) |
+| FR-302-AC-7 | A single body for each of `A.size` and `B.size` joins with retained expressions and unit pre/post clauses to admitted operations by resolved `DeclarationKey`, independent of body labels and declaration order; `has_body` is true for those resolved operations and false for an operation without a body, whose called family is not applicable under FR-151. Two body forms resolving to the same `DeclarationKey` refuse as `conflicting_declaration`/`duplicate-declaration`, naming both forms and producing no checked package or partial table. TC-986 is the single-body control; TC-987 covers the duplicate. | Test |
 
 ## Dependencies
 

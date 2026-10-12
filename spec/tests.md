@@ -280,6 +280,7 @@ names different artifacts in each.
 | TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 |
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 |
 | TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7 | 🚧 |
+| TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |

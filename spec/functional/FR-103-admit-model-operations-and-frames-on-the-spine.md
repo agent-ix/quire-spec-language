@@ -95,7 +95,10 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
   available to checking and dispatch linking. It SHALL bind the body's
   receiver-less parameter names positionally to the operation's parameters in
   signature order, as required by the QSpec Complete-V1 grammar, and type its
-  body against the operation's declared result.
+  body against the operation's declared result. At most one unit
+  `operation-body` SHALL resolve to a given `DeclarationKey`; FR-302 defines
+  the duplicate refusal. This multiplicity rule applies to executable bodies,
+  not to the distinct unit `pre`/`post` `StateClauseForm`s.
 - The assembler SHALL declare each admitted record value type beside object
   types and operations, with its effective fields, invariant clauses and
   supertypes, and SHALL allow object and record fields to use that type by
