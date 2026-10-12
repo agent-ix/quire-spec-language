@@ -1937,7 +1937,10 @@ fn admit_pre_call(
     // Checks 6 to 8, with every declared population a reference parameter
     // names required alongside `self`'s.
     let state_machine = is_state_machine_context(context.context_view, context.context_name);
-    let receiver_identity = input.receiver_invocation.unwrap_or(&input.pre.identity);
+    let receiver_identity = input
+        .receiver_invocation
+        .cloned()
+        .unwrap_or_else(|| input.pre.identity.clone());
     let (values, receiver_pre) = if state_machine {
         let (values, reference) = document::admit_state_machine_context_values(
             context.views,
@@ -1946,7 +1949,7 @@ fn admit_pre_call(
             context.context_name,
             &snapshot.populations,
             &input.pre.identity,
-            receiver_identity,
+            &receiver_identity,
             PostStateRange::Refuse,
             context.ancestor_steps,
         )?;
@@ -2017,7 +2020,7 @@ fn admit_pre_call(
         }),
         post: None,
         self_object: self_reference,
-        receiver_invocation: state_machine.then(|| receiver_identity.clone()),
+        receiver_invocation: state_machine.then_some(receiver_identity),
         receiver_pre,
         receiver_post: None,
         parameters,
