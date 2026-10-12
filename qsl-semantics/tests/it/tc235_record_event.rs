@@ -510,16 +510,16 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
             "typeRef": id("Flags"),
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
         }]);
-        place["pre"] = json!([clause(
-            "OrderLifecycle/place",
-            "RequiresNotPlaced",
-            "not self.placed",
-        )]);
-        place["post"] = json!([clause(
-            "OrderLifecycle/place",
-            "PlacedAndNotCancelled",
-            "self.placed and not self.cancelled",
-        )]);
+        place["pre"] = json!([{
+            "language": "quire",
+            "text": "not self.placed",
+            "origin": origin("OrderLifecycle/place"),
+        }]);
+        place["post"] = json!([{
+            "language": "quire",
+            "text": "self.placed and not self.cancelled",
+            "origin": origin("OrderLifecycle/place"),
+        }]);
         place["frame"]["modifies"] = json!([id("OrderLifecycle/placed")]);
         type_named_mut(document, "OrderLifecycle")["operations"][0] = place;
     });
