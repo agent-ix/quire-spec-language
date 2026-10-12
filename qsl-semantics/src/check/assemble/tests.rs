@@ -1222,7 +1222,7 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
 }
 
 /// Native `String` is a distinct checked leaf, not profile-bounded `Text`.
-#[trace("TC-897", "FR-056-AC-11")]
+#[trace("FR-056-AC-11")]
 #[test]
 fn native_string_field_assembles_as_a_distinct_kernel_type() {
     let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
