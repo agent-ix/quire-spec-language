@@ -44,6 +44,12 @@ FAIL pending resolution of FND-001. No builds or tests were run as part of this 
 - TC-915 examined; its description explicitly says the recorder establishes routing only, while real Cargo/compiler and feature-sensitive CLI execution establish compilation and runtime behavior.
 - Binding checked: `deep_formatter_target_runs_each_full_size_case_and_is_in_ci` claims NFR-013-AC-1/AC-3; trace present. Existing formatter cases claim FR-003-AC-9; trace present.
 
+## Dispositions
+
+- FND-001 — fixed `44d0993591db98a64782e7029a8a49cb1fbf82fb`. The default- and all-feature test recipes and their independent expected Cargo argv vectors no longer contain the three appended `--skip` filters. The three full-size depth tests carry named `#[ignore]` reasons and are selected by `test-deep-format` using `--ignored --exact`; the target first asserts exactly one ignored match and rejects zero or duplicate matches, and `CI_CHECKS` includes the target. Independent disposition review at this exact head: PASS; no builds/tests were run in that review.
+
+Measurement clarification (QSL-720 per-unit record): case 3, `all_three_deep_source_generators_keep_format_identity`, took 726.22 s for three separate 100,000-level source shapes (sum, `if/else`, and `let`), each through the end-to-end authored-source/parse-check-format/identity assertion path; the sum case also runs the explicit 256 KiB-stack formatter control. The measurement does not isolate checker time, so it does not attribute 726 s solely to checker complexity. Case 12, `dependency_chain_and_order_variants_keep_format_identity`, took 342.01 s and includes the 1,000-library chain; it is not the declaration-volume case. The separate volume control is the 20,000-declaration lifecycle test, left in root IT.
+
 ## Verification notes
 
 Static checks confirm 100,000 levels remain in the three deep generators and the 100,000-term replay fixture; the 1,000-library chain remains unchanged; only the lifecycle declaration volume changes from 200,000 to 20,000. `test-deep-format` invokes the three retained large cases and appears in `CI_CHECKS`. Both root feature receipts skip those cases by their exact test names. The new 100,000-level sum control formats on a 256 KiB thread stack. No explicit fault-injection run was performed.
