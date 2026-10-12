@@ -221,7 +221,12 @@ pub struct FieldMemberRecord {
 pub enum ScalarValueDomain {
     /// A closed integer interval (FR-151's `model.Count`/`model.Small`
     /// fixtures).
-    Integer { lower: i128, upper: i128 },
+    Integer {
+        /// Inclusive lower bound.
+        lower: i128,
+        /// Inclusive upper bound.
+        upper: i128,
+    },
     /// An alias for a native value type.
     Native(NativeValueType),
 }
