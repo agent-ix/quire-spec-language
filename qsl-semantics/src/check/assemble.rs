@@ -72,7 +72,7 @@ use crate::value::environment_stage::stage_limit;
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
-    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageRequest, StorageUnit,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageUnit,
     TypeEnvironment, TypeEnvironmentLimits,
 };
 use quire_semantic_value::semantic_node::{IdentityRefusal, InvalidSemanticGraph};
