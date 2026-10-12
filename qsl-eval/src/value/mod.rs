@@ -17,7 +17,7 @@ mod expression;
 // impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::{
     evaluate_closed, input_refusal_code, CallFailure, CheckedPackageEvaluation, ClauseEvaluation,
-    Evaluation, FrameEvaluation, InvalidQualifiedName, ObservationIdentity, QualifiedName,
-    RuntimeValuePath, Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject,
-    WitnessClaim,
+    Evaluation, FrameEvaluation, InvalidQualifiedName, InvocationBinding, ObservationIdentity,
+    QualifiedName, RuntimeValuePath, Separation, SeparationStep, StopReport, ValuePathStep,
+    ValuePathSubject, WitnessClaim,
 };

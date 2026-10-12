@@ -209,6 +209,7 @@ pub(crate) fn k2() -> Value {
             json!({
                 "identityFields": [id("Fulfilment/correlation_id")],
                 "fields": [field("Fulfilment", "correlation_id", "ix://quire/native/UUID")],
+                "operations": [],
                 "steps": [step("receive_order", "event", vec![id("OrderPlaced")]),
                           step("reserve_stock", "command", vec![]),
                           step("await_shipment", "wait", vec![])],

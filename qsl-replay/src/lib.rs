@@ -158,7 +158,8 @@ pub use result::{
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
 pub use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 pub use scalar::{
     GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,

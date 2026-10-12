@@ -1412,6 +1412,20 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
+                let reference = if self.reads.is_some_and(|reads| {
+                    reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+                }) {
+                    self.trail
+                        .as_ref()
+                        .and_then(|trail| {
+                            (trail.receiver.as_ref() == Some(&reference))
+                                .then(|| trail.receiver_pre.clone())
+                                .flatten()
+                        })
+                        .unwrap_or(reference)
+                } else {
+                    reference
+                };
                 let objects = self.objects_for(node)?;
                 // A replay's references are unresolved: there is no object to
                 // read, so the read completes no value.
@@ -2265,7 +2279,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 (Some(observation), true) => observation.clone(),
                 _ => trail.observation.clone(),
             };
-            let provenance = Provenance::member(observation, object.clone(), member.to_owned());
+            let provenance = match trail.receiver_invocation.as_ref() {
+                Some(invocation)
+                    if trail.receiver.as_ref() == Some(object)
+                        || trail.receiver_pre.as_ref() == Some(object) =>
+                {
+                    Provenance::receiver_field(observation, invocation.clone(), member.to_owned())
+                }
+                _ => Provenance::member(observation, object.clone(), member.to_owned()),
+            };
             trail.record(value, provenance);
         }
     }
@@ -2533,6 +2555,149 @@ mod tests {
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+
+    #[trace("QSpec-TC-235", "QSpec-FR-208-AC-11", "QSpec-FR-207-AC-8")]
+    #[test]
+    fn context_pre_reads_remap_the_receiver_and_emit_invocation_field_paths() {
+        use super::super::s6a::separation::{
+            InvocationBinding, ObservationIdentity, RuntimeValuePath, ValuePathStep,
+            ValuePathSubject,
+        };
+        use quire_semantic_value::declaration::{
+            FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+        };
+        use std::collections::BTreeMap;
+        let context_type = quire_exact::EffectiveId::from_digest([12; 32]);
+        let collection_type =
+            quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let graph = PackageDeclarations {
+            types: TypeEnvironment::new(
+                [],
+                [ObjectTypeDeclaration::new(
+                    context_type,
+                    "Context",
+                    vec![FieldDeclaration::new(
+                        "items",
+                        ValueType::collection(collection_type.clone()),
+                        quire_exact::Presence::Required,
+                    )],
+                )],
+            )
+            .unwrap(),
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default())
+        .unwrap();
+        let package = qsl_package::CheckedPackage::link(graph);
+        let field = || Expression::field(Expression::deref(Expression::name("self")), "items");
+        let checked = package
+            .graph()
+            .check_clause_expression(
+                vec![("self".to_owned(), ValueType::Reference(context_type))],
+                &Expression::binary(qsl_forms::BinaryOperator::Equal, field(), field()),
+                None,
+                qsl_forms::ClauseKind::Postcondition,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let NodeKind::Equality(_, _, left, _) = checked.root().kind() else {
+            panic!("checked equality");
+        };
+        let reads = BTreeMap::from([(
+            checked.root().at(*left).location().clone(),
+            qsl_semantics::check::Observation::Pre,
+        )]);
+        let reference = |universe| {
+            ObjectReference::new(
+                quire_exact::UniverseId::from_digest([universe; 32]),
+                context_type,
+                quire_exact::ObjectId::new("i1").unwrap(),
+            )
+        };
+        let pre_receiver = reference(1);
+        let receiver = reference(2);
+        let pre_items = quire_exact::from_admitted(
+            collection_type.clone(),
+            vec![Value::Integer(Integer::from(0_i64))],
+        );
+        let post_items =
+            quire_exact::from_admitted(collection_type, vec![Value::Integer(Integer::from(1_i64))]);
+        let objects = |reference, items: Value| {
+            ObjectEnvironment::new(
+                ObjectClosure::new(
+                    package.graph().scope().types(),
+                    [(reference, vec![("items", FieldValue::Present(items))])],
+                    &[],
+                )
+                .unwrap(),
+            )
+        };
+        let pre = objects(pre_receiver.clone(), pre_items.clone());
+        let post = objects(receiver.clone(), post_items.clone());
+        let identity = |name: &str| ObservationIdentity {
+            authority: "test".to_owned(),
+            identity: name.to_owned(),
+            revision_namespace: "tc235".to_owned(),
+            revision: "1".to_owned(),
+        };
+        for context in [true, false] {
+            let mut trail = Trail::new(identity("q1"), Some(identity("p1")));
+            trail.receiver = Some(receiver.clone());
+            trail.receiver_pre = Some(pre_receiver.clone());
+            trail.receiver_invocation = context.then(|| identity("i1"));
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let (result, trail) = Machine::with_pre(
+                package.graph().scope(),
+                package.graph(),
+                &post,
+                Some(&pre),
+                Some(&reads),
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(
+                checked.root(),
+                checked.slots(),
+                vec![Value::Reference(receiver.clone())],
+            )
+            .unwrap();
+            assert!(matches!(
+                result.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+            ));
+            for (observation, object, value) in [
+                ("p1", &pre_receiver, &pre_items),
+                ("q1", &receiver, &post_items),
+            ] {
+                let subject = if context {
+                    ValuePathSubject::Invocation {
+                        invocation: identity("i1"),
+                        binding: InvocationBinding::Receiver,
+                    }
+                } else {
+                    ValuePathSubject::Object(object.clone())
+                };
+                let step = if context {
+                    ValuePathStep::Field("items".to_owned())
+                } else {
+                    ValuePathStep::Member("items".to_owned())
+                };
+                assert_eq!(
+                    trail.provenance(value).unwrap().path(0),
+                    RuntimeValuePath {
+                        observation: identity(observation),
+                        subject,
+                        steps: vec![step],
+                    }
+                );
+            }
+        }
+    }
 
     /// The shared minimal one-type (`model.A`), one-population
     /// (`model.pop.p1`) domain package [`population_binding`] and
