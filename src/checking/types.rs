@@ -650,6 +650,8 @@ impl<'a> Catalog<'a> {
     pub fn equality(&self, ty: &NativeType<'_>) -> bool {
         match ty {
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Enumeration { .. }
             | NativeType::Object { .. }
             | NativeType::Reference { .. } => true,
