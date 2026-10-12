@@ -71,10 +71,11 @@ population, snapshot or universe.
 Every refusal the hook raises SHALL carry `FamilyKind::StateModel`. Its
 catalog code SHALL render with the `state-model` family prefix (the
 `FamilyKind::StateModel` arm of `catalog_code()`), and its QSpec code and
-cause SHALL be the ones QSpec FR-151 and FR-153 fix for that question (for
-example `missing_declaration`/`missing-name` for an absent member, or
-`ill_typed`/`type-mismatch` for a `lookup` key whose static type does not
-conform).
+cause SHALL be the ones QSpec FR-151 and FR-153 fix for that question. An
+absent declaration or state-clause anchor uses `missing_declaration`/
+`missing-name`; a field absent from the effective static type of a
+dereferenced object uses `ill_typed`/`type-mismatch` (FR-056-AC-9), as does a
+`lookup` key whose static type does not conform.
 
 ### Seams
 

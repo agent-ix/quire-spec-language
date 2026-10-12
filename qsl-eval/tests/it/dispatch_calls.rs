@@ -32,7 +32,7 @@ use qsl_semantics::check::{
     DispatchOperation, DispatchTable, InvalidDispatchDeclaration, ModelClause, PackageDeclarations,
     StateClauseDeclaration,
 };
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
+use qsl_semantics::family::{FamilyKind, FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
@@ -70,6 +70,17 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     work_units: u64::MAX,
     result_units: u64::MAX,
 };
+
+fn assert_state_model_ill_typed(refusal: &CheckRefusal, expected: IllTypedCause, raw: &str) {
+    let CheckCause::StateModel(owner) = &refusal.cause else {
+        panic!("StateModel ownership: {refusal:?}");
+    };
+    assert_eq!(owner.family(), FamilyKind::StateModel);
+    assert_eq!(owner.cause, CheckCause::IllTyped(expected));
+    let code = owner.catalog_code().expect("StateModel catalog code");
+    assert_eq!((code.code(), code.cause()), ("ill_typed", raw));
+    assert_eq!(code.prefix(), Some("state-model"));
+}
 
 /// An object type's effective-declaration identity (ADR-013 O-05) for a
 /// hand-built fixture with no domain package behind it.
@@ -332,9 +343,10 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
             CheckingLimits::default(),
         )
         .expect_err("a function/operation body must refuse a dispatched call");
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    assert_state_model_ill_typed(
+        &refusal,
+        IllTypedCause::OperatorIneligible,
+        "operator-ineligible",
     );
 }
 
@@ -367,10 +379,14 @@ fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
     let refusals = package
         .check(CheckingLimits::default())
         .expect_err("a dispatch call inside an ordinary function body must be refused");
-    assert!(
-        refusals.iter().any(|refusal: &CheckRefusal| refusal.cause
-            == CheckCause::IllTyped(IllTypedCause::OperatorIneligible)),
-        "expected an IllTyped/OperatorIneligible refusal, got {refusals:?}"
+    let refusal = refusals
+        .iter()
+        .find(|refusal| matches!(&refusal.cause, CheckCause::StateModel(owner) if owner.cause == CheckCause::IllTyped(IllTypedCause::OperatorIneligible)))
+        .unwrap_or_else(|| panic!("expected a StateModel OperatorIneligible refusal, got {refusals:?}"));
+    assert_state_model_ill_typed(
+        refusal,
+        IllTypedCause::OperatorIneligible,
+        "operator-ineligible",
     );
 }
 
@@ -409,10 +425,7 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
             CheckingLimits::default(),
         )
         .expect_err("an unbounded Integer argument must not coerce into a dispatch operation's Int[..] parameter");
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
 }
 
 /// H1 (#204 round 1), FR-151 (`quire.model.dispatch.single/v1`): a dispatch
@@ -508,10 +521,7 @@ fn dispatch_argument_refuses_a_reference_downcast() {
             CheckingLimits::default(),
         )
         .expect_err("a supertype argument must never be admitted where a subtype is required");
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
 }
 
 /// H1 (#204 round 1), FR-151: an argument statically typed as a reference to
@@ -558,10 +568,7 @@ fn dispatch_argument_refuses_an_unrelated_reference_type() {
             CheckingLimits::default(),
         )
         .expect_err("an unrelated reference type must never be admitted");
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
 }
 
 /// D07: a synthesized dispatch candidate body is never

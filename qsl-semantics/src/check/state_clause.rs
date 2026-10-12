@@ -386,7 +386,7 @@ impl FamilyContract for ProtocolClauseFamily {
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> CheckOutcome<TypedStateClause, CheckRefusal> {
         let declarations = cx.declarations();
-        check_clause(form, declarations)
+        check_clause(form, declarations, &mut cx.reborrow(declarations.scope))
             .map(Staged::new)
             .map_err(StageFailure::Refused)
     }
@@ -402,6 +402,7 @@ impl FamilyContract for ProtocolClauseFamily {
 fn check_clause(
     form: &StateClauseDeclaration,
     input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
 ) -> Result<TypedStateClause, CheckRefusal> {
     let location = input.location;
     let mut nodes = input.nodes_used;
@@ -419,7 +420,8 @@ fn check_clause(
             == crate::value::DefinitionLock::pinned()
                 .entry(crate::value::CatalogRole::Root)
                 .identity,
-    );
+    )
+    .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, &parameters, location)?;
     typer.enter_state_clause(StateContext {
         kind: form.kind,

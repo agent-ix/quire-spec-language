@@ -162,6 +162,17 @@ impl<'a, D> CheckContext<'a, D> {
         self.declarations
     }
 
+    /// Reborrow the same mutable stage state under nested declarations.
+    pub(crate) fn reborrow<'b, E>(&'b mut self, declarations: &'b E) -> CheckContext<'b, E> {
+        CheckContext::new(
+            declarations,
+            self.limits,
+            self.meter,
+            self.diagnostics,
+            self.scopes,
+        )
+    }
+
     /// Read-only stage-entry limits.
     pub(crate) fn limits(&self) -> StageLimits {
         self.limits

@@ -15,7 +15,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, Evaluation};
 use qsl_forms::Expression;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations};
-use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::family::{FamilyKind, FamilyOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
     EffectiveId, FieldValue, IllTypedCause, Integer, Meter, ObjectId, ObjectReference, Outcome,
@@ -145,6 +145,18 @@ fn refused_at_check(package: &CheckedPackage, static_type: &str, field: &str) ->
     }
 }
 
+fn assert_missing_field_at_check(package: &CheckedPackage, static_type: &str, field: &str) {
+    let cause = refused_at_check(package, static_type, field);
+    let CheckCause::StateModel(owner) = cause else {
+        panic!("StateModel ownership for missing {field}: {cause:?}");
+    };
+    assert_eq!(owner.family(), FamilyKind::StateModel);
+    assert_eq!(
+        owner.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
 /// `A.x` is inherited by `B`: `deref(r).x` resolves for `r: Reference<B>`
 /// and reads the `B` object's inherited slot, beside its own `y`. `A`'s
 /// view does not see `B`'s own `y`.
@@ -172,10 +184,7 @@ fn deref_reads_an_inherited_field_through_the_subtype() {
         read(&package, &objects, "M::B", "y", &b1),
         Integer::from(8_i64)
     );
-    assert_eq!(
-        refused_at_check(&package, "M::A", "y"),
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_missing_field_at_check(&package, "M::A", "y");
 }
 
 /// FR-151 hide: `B.x` redefines `A.x`. An `A` object's `x` is `A.x`; a `B`
@@ -249,8 +258,5 @@ fn deref_through_a_renamed_redefinition_reads_the_new_name() {
         read(&package, &objects, "M::B", "y", &b1),
         Integer::from(4_i64)
     );
-    assert_eq!(
-        refused_at_check(&package, "M::B", "x"),
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_missing_field_at_check(&package, "M::B", "x");
 }

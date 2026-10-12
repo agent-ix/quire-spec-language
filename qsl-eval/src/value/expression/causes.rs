@@ -237,7 +237,9 @@ impl From<ModelRefusal> for ModelQueryRefusal {
 
 impl CatalogCoded for ModelQueryRefusal {
     fn catalog_code(&self) -> CatalogCode {
-        self.cause.catalog_code()
+        self.cause
+            .catalog_code()
+            .with_prefix(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
     }
 
     /// FR-096's key table rows for this cause (`absent-key` and
@@ -261,7 +263,7 @@ pub(crate) fn identity_string(identity: &[u8]) -> String {
 /// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
 /// (FR-090-AC-11, AC-12). ADR-012 assigns dispatch, dispatch preconditions
 /// and population lookup to `StateModel` (§1, §3, §4.3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) enum StateModelUndefined {
     /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
     /// selected method's effective precondition evaluated to `false`.
@@ -278,7 +280,20 @@ pub(crate) enum StateModelUndefined {
     },
 }
 
+impl std::fmt::Debug for StateModelUndefined {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StateModelUndefined")
+            .field("catalog_code", &self.catalog_code())
+            .field("record", &self.undefined_record())
+            .finish()
+    }
+}
+
 impl UndefinedCoded for StateModelUndefined {
+    fn catalog_prefix(&self) -> Option<&'static str> {
+        Some(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
+    }
     fn undefined_record(&self) -> UndefinedRecord {
         match self {
             Self::PreconditionFalse(failure) => UndefinedRecord {
@@ -442,6 +457,7 @@ mod tests {
         let expected = refusal.catalog_code();
         let carried = ModelQueryRefusal::from(refusal);
         assert_eq!(carried.catalog_code(), expected);
+        assert_eq!(carried.catalog_code().prefix(), Some("state-model"));
         assert_eq!(
             expected,
             CatalogCode::new("cardinality_out_of_bound", "above-maximum")
