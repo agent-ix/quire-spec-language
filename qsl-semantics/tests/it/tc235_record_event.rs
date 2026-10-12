@@ -246,7 +246,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [id("OrderLifecycle/placed")],
+                "identityFields": [],
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [],
                 "steps": [{
@@ -257,10 +257,18 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
                     "emits": [],
                     "origin": origin("ExpressFulfilment/expedite"),
                 }],
+                "populations": [{
+                    "identity": id("PF"),
+                    "displayName": id("PF"),
+                    "kind": {"module": BUSINESS, "name": "population"},
+                    "members": [id("Fulfilment")],
+                    "extent": "closed",
+                    "origin": origin("PF"),
+                }],
             }),
         ));
     });
-    let refusals = normalized_refusals(&wrong_meaning, 22);
+    let refusals = normalized_refusals(&wrong_meaning, 23);
     assert_eq!(refusals.len(), 1);
     assert_malformed_at(
         &refusals[0],
@@ -274,7 +282,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
             "ExpressFulfilment",
             "saga",
             json!({
-                "identityFields": [id("Fulfilment/correlation_id")],
+                "identityFields": [],
                 "supertypes": [id("Fulfilment")],
                 "operations": [],
                 "steps": [{
@@ -285,10 +293,18 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
                     "emits": [],
                     "origin": origin("ExpressFulfilment/expedite"),
                 }],
+                "populations": [{
+                    "identity": id("PF"),
+                    "displayName": id("PF"),
+                    "kind": {"module": BUSINESS, "name": "population"},
+                    "members": [id("Fulfilment")],
+                    "extent": "closed",
+                    "origin": origin("PF"),
+                }],
             }),
         ));
     });
-    let refusals = normalized_refusals(&cycle, 22);
+    let refusals = normalized_refusals(&cycle, 23);
     assert_eq!(refusals.len(), 2);
     assert!(
         refusals.iter().all(|refusal| {
@@ -405,14 +421,14 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
 
     let bad_target = mutate_k2(|document| {
         type_named_mut(document, "Fulfilment")["relationships"] =
-            json!([relationship("Fulfilment", "store", "MissingTarget")]);
+            json!([relationship("Fulfilment", "store", "OrderStore")]);
     });
-    let refusals = read_refusals(&bad_target);
+    let refusals = normalized_refusals(&bad_target, 22);
     assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::MissingDeclaration);
-    assert!(
-        refusals[0].detail.contains("MissingTarget"),
-        "{refusals:#?}"
+    assert_malformed_at(
+        &refusals[0],
+        &id("relationship/Fulfilment-store-OrderStore"),
+        "Relationship.target",
     );
 
     let bad_owner = mutate_k2(|document| {
