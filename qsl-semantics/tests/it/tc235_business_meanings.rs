@@ -174,7 +174,6 @@ fn k2() -> Value {
         ),
         {
             let mut instant = declaration("Instant", "value", json!({}));
-            instant["kind"] = json!("alias");
             instant["target"] = json!("ix://quire/native/Timestamp");
             instant
         },

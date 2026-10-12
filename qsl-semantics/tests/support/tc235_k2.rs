@@ -164,7 +164,6 @@ pub(crate) fn k2() -> Value {
         ),
         {
             let mut instant = declaration("Instant", "value", json!({}));
-            instant["kind"] = json!("alias");
             instant["target"] = json!("ix://quire/native/Timestamp");
             instant
         },
@@ -264,10 +263,13 @@ pub(crate) fn type_named_mut<'a>(document: &'a mut Value, node: &str) -> &'a mut
 }
 
 #[test]
-fn tc235_shared_k2_fixture_preserves_fcd_alias_and_digest_contract() {
+fn tc235_shared_k2_fixture_preserves_meaning_and_digest_contract() {
     let document = k2();
     assert_eq!(document["types"].as_array().unwrap().len(), 8);
-    assert_eq!(document["types"][1]["kind"], "alias");
+    assert_eq!(
+        document["types"][1]["kind"],
+        json!({"module": BUSINESS, "name": "value"})
+    );
     assert_eq!(
         document["types"][1]["target"],
         "ix://quire/native/Timestamp"
