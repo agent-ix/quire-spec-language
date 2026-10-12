@@ -72,7 +72,8 @@ use crate::value::environment_stage::stage_limit;
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
-    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageRequest, StorageUnit,
+    TypeEnvironment, TypeEnvironmentLimits,
 };
 use quire_semantic_value::semantic_node::{IdentityRefusal, InvalidSemanticGraph};
 
@@ -217,6 +218,22 @@ pub enum AssemblyCause {
     IdentityAllocation {
         /// The size in bytes of the reservation that failed.
         requested: usize,
+    },
+    /// A shared type-environment storage reservation failed. Preserve the
+    /// kernel's native unit: an element count is not a byte measurement.
+    StorageAllocation {
+        /// The amount passed to the kernel's reservation boundary.
+        requested: usize,
+        /// The unit passed to that boundary.
+        unit: StorageUnit,
+    },
+    /// The type registry could not compute or represent the requested
+    /// reservation size. Preserve the kernel's native unit and amount.
+    StorageCapacity {
+        /// The amount passed to the kernel's reservation boundary.
+        requested: usize,
+        /// The unit passed to that boundary.
+        unit: StorageUnit,
     },
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
@@ -379,7 +396,9 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => Code::RuntimeInvariant,
             },
             Self::TypeLimit(_) | Self::IdentityLimit(_) => Code::StageLimitExceeded,
-            Self::IdentityAllocation { .. } => Code::ResourceExhausted,
+            Self::IdentityAllocation { .. }
+            | Self::StorageAllocation { .. }
+            | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
         }
     }
@@ -450,10 +469,38 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => "established-invariant-broken",
             },
             Self::TypeLimit(limit) | Self::IdentityLimit(limit) => limit.kind().catalog_cause(),
-            Self::IdentityAllocation { .. } => "allocation-failed",
+            Self::IdentityAllocation { .. } | Self::StorageAllocation { .. } => "allocation-failed",
+            Self::StorageCapacity { .. } => "reservation-size-overflow",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
         };
         CatalogCode::new(self.code().as_str(), cause)
+    }
+
+    /// The exact native storage request, when this cause is a type-environment
+    /// allocator denial.
+    pub fn storage_request(&self) -> Option<(usize, StorageUnit)> {
+        match self {
+            Self::StorageAllocation { requested, unit }
+            | Self::StorageCapacity { requested, unit } => Some((*requested, *unit)),
+            _ => None,
+        }
+    }
+
+    /// The typed catalog payload for a registry allocation refusal.
+    pub fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        let (requested, unit) = match self {
+            Self::StorageAllocation { requested, unit }
+            | Self::StorageCapacity { requested, unit } => (requested, unit),
+            _ => return None,
+        };
+        let unit = match unit {
+            StorageUnit::Bytes => "bytes",
+            StorageUnit::AdditionalElements => "additional-elements",
+        };
+        Some(BTreeMap::from([
+            ("requested", requested.to_string()),
+            ("unit", unit.to_owned()),
+        ]))
     }
 }
 
@@ -1327,6 +1374,22 @@ fn admit_types(
                     return refuse(errors);
                 }
             }
+            Err(EnvironmentFailure::Allocation(request)) => {
+                // Keep the upstream amount and unit; AdditionalElements is
+                // not bytes.
+                errors.push(AssemblyError {
+                    cause: storage_allocation(request),
+                    span: Span { start: 0, end: 0 },
+                });
+                return refuse(errors);
+            }
+            Err(EnvironmentFailure::Capacity(request)) => {
+                errors.push(AssemblyError {
+                    cause: storage_capacity(request),
+                    span: Span { start: 0, end: 0 },
+                });
+                return refuse(errors);
+            }
         }
     }
 }
@@ -2146,6 +2209,20 @@ fn protocol_attempts(
         Ok(resolved)
     } else {
         refuse(errors)
+    }
+}
+
+fn storage_allocation(request: StorageRequest) -> AssemblyCause {
+    AssemblyCause::StorageAllocation {
+        requested: request.amount(),
+        unit: request.unit(),
+    }
+}
+
+fn storage_capacity(request: StorageRequest) -> AssemblyCause {
+    AssemblyCause::StorageCapacity {
+        requested: request.amount(),
+        unit: request.unit(),
     }
 }
 

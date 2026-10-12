@@ -25,7 +25,7 @@ use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::FieldDeclaration;
+use quire_semantic_value::declaration::{FieldDeclaration, StorageRequest, StorageUnit};
 use quire_semantic_value::location::{Location, Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -551,6 +551,66 @@ fn each_assembler_cause_has_its_catalog_code() {
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
+    }
+}
+
+/// FR-082-AC-10: assembler allocation refusals preserve the kernel's exact
+/// request amount and unit, including element counts that are not bytes.
+#[trace("FR-082-AC-10")]
+#[test]
+fn assembler_allocation_cause_preserves_native_request_unit() {
+    for (request, unit_name) in [
+        (StorageRequest::new(6, StorageUnit::Bytes), "bytes"),
+        (
+            StorageRequest::new(3, StorageUnit::AdditionalElements),
+            "additional-elements",
+        ),
+    ] {
+        let cause = super::storage_allocation(request);
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/allocation-failed"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        let fields = BTreeMap::from([
+            ("requested", request.amount().to_string()),
+            ("unit", unit_name.to_owned()),
+        ]);
+        assert_eq!(cause.catalog_fields(), Some(fields));
+    }
+}
+
+/// FR-082-AC-11: reservation size overflow is distinct from allocation
+/// denial and preserves the kernel's exact request amount and unit.
+#[trace("FR-082-AC-11")]
+#[test]
+fn assembler_capacity_cause_preserves_native_request_unit() {
+    for (request, unit_name) in [
+        (StorageRequest::new(9, StorageUnit::Bytes), "bytes"),
+        (
+            StorageRequest::new(4, StorageUnit::AdditionalElements),
+            "additional-elements",
+        ),
+    ] {
+        let cause = super::storage_capacity(request);
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/reservation-size-overflow"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        assert_eq!(
+            cause.catalog_fields(),
+            Some(BTreeMap::from([
+                ("requested", request.amount().to_string()),
+                ("unit", unit_name.to_owned()),
+            ]))
+        );
     }
 }
 

@@ -851,6 +851,12 @@ impl std::fmt::Display for CatalogCode {
 pub const ALLOCATION_FAILED: CatalogCode =
     CatalogCode::new("resource_exhausted", "allocation-failed");
 
+/// FR-082-AC-11: the shared type registry could not represent or compute the
+/// requested reservation size. The payload carries the original amount and
+/// unit, distinct from a denied allocator request.
+pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
+    CatalogCode::new("resource_exhausted", "reservation-size-overflow");
+
 /// ADR-013 T-4: a broken runtime, evaluator or mapping invariant, raised
 /// from a compiler stage, the I2 reader, `replay` or `route` (and, for
 /// evaluation, `CheckedPackage::call`). Names the stage and the violated
