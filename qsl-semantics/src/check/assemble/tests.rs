@@ -17,7 +17,9 @@ use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    NativeValueType, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, ValueTypeRef,
+    NativeValueType, OperationEffect, OperationMemberRecord, ProcessRecord, ProcessStepKind,
+    ProcessStepRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
+    StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
@@ -73,14 +75,62 @@ fn errors(declarations: &str) -> (String, Vec<AssemblyError>) {
 
 #[test]
 fn a_state_machine_meaning_is_emitted_as_an_object_type() {
+    let machine = DeclarationKey::fixture("model.OrderLifecycle");
+    let draft = DeclarationKey::fixture("model.OrderLifecycle/Draft");
+    let placed = DeclarationKey::fixture("model.OrderLifecycle/Placed");
+    let advance = DeclarationKey::fixture("model.OrderLifecycle/advance");
     let package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.tc235-state-machine-assembly"),
-        vec![DomainPackageRecord::StateMachine(StateMachineRecord {
-            key: DeclarationKey::fixture("model.OrderLifecycle"),
-            supertypes: Vec::new(),
-            states: Vec::new(),
-            transitions: Vec::new(),
-        })],
+        vec![
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: machine.clone(),
+                supertypes: Vec::new(),
+                states: vec![
+                    StateMachineStateRecord {
+                        key: draft.clone(),
+                        name: "Draft".to_owned(),
+                    },
+                    StateMachineStateRecord {
+                        key: placed.clone(),
+                        name: "Placed".to_owned(),
+                    },
+                ],
+                transitions: vec![StateMachineTransitionRecord {
+                    key: DeclarationKey::fixture("model.OrderLifecycle/place_order"),
+                    from: draft,
+                    to: placed,
+                    trigger: advance.clone(),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: serde_json::Value::Null,
+                }],
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("model.OrderLifecycle/status"),
+                owner: machine.clone(),
+                value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: false,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+            }),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: advance,
+                owner: machine,
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                own_postcondition_clauses: Vec::new(),
+                has_body: true,
+                redefines: None,
+            }),
+        ],
     );
     let NormalizeOutcome::Completed(view) =
         normalize(&package, ModelNormalizationLimits::default())
@@ -97,6 +147,27 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         .expect("state-machine meaning is supported by the object-type seam");
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].name(), "M::OrderLifecycle");
+    assert_eq!(
+        declarations[0]
+            .attributes()
+            .iter()
+            .map(FieldDeclaration::name)
+            .collect::<Vec<_>>(),
+        ["status"]
+    );
+    let identity = selected
+        .view
+        .type_identities()
+        .get(&DeclarationKey::fixture("model.OrderLifecycle"))
+        .expect("normalization indexed the state-machine identity");
+    assert_eq!(
+        operations
+            .declared_by(*identity)
+            .iter()
+            .map(|operation| operation.name())
+            .collect::<Vec<_>>(),
+        ["advance"]
+    );
 }
 
 /// The span of the last occurrence of `needle` in `text`.
