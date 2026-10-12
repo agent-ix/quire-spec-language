@@ -880,7 +880,12 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
         let mut requote = super::operation("Order", "requote");
         requote["params"] = json!([{
             "identity": id("Order/requote/amount"),
+            "name": "amount",
+            "origin": origin("Order/requote/amount"),
             "typeRef": id("Money"),
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
             "multiplicity": {
                 "lower": 1,
                 "upper": 1,
@@ -888,6 +893,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
                 "unique": true,
             },
         }]);
+        order["operations"] = json!([]);
         order["operations"].as_array_mut().unwrap().push(requote);
     });
 
@@ -952,7 +958,12 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
         let mut requote = super::operation("Order", "requote");
         requote["params"] = json!([{
             "identity": id("Order/requote/amount"),
+            "name": "amount",
+            "origin": origin("Order/requote/amount"),
             "typeRef": id("Money"),
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
             "multiplicity": {
                 "lower": 1,
                 "upper": 1,
@@ -960,6 +971,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
                 "unique": true,
             },
         }]);
+        order["operations"] = json!([]);
         order["operations"].as_array_mut().unwrap().push(requote);
         let mut discount = field("Order", "discount", &id("Money"));
         discount["presence"] = json!("optional");
