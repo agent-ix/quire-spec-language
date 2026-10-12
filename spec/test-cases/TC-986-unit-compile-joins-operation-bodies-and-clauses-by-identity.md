@@ -44,7 +44,8 @@ not a dispatch candidate. Scope: FR-302-AC-7.
    retained source provenance identifies that unit declaration. Reversing
    body declaration order or changing the local labels leaves those
    associations unchanged. The retained unit pre/post expressions are `true`;
-   the domain-package `false` texts do not supply them. The invariant evaluates
+   the domain-package `false` texts are kept as each operation's own
+   `requires`/`ensures` (FR-103) and do not supply them. The invariant evaluates
    true for an object whose most-specific type is `B`.
 2. The linked table contains the candidates whose resolved operations have
    bodies and selects by the receiver's most-specific type.
