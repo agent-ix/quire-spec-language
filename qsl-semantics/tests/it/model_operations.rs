@@ -1654,7 +1654,6 @@ fn process_model_members_assemble_as_an_identified_run_type() {
     let workflow_step = format!("{workflow}/begin");
     let process = format!("ix://{PACKAGE_IDENTITY}/Fulfilment");
     let correlation = format!("{process}/correlation_id");
-    let active = format!("{process}/active");
     let restart = format!("{process}/restart");
     let step = format!("{process}/receive");
     let document = wire_envelope(
@@ -1699,22 +1698,13 @@ fn process_model_members_assemble_as_an_identified_run_type() {
                 json!({
                 "identityFields": [correlation],
                 "supertypes": [workflow],
-                "fields": [
-                    wire_field(
-                        &correlation,
-                        "correlation_id",
-                        "ix://quire/native/UUID",
-                        "required",
-                        1,
-                    ),
-                    wire_field(
-                        &active,
-                        "active",
-                        "ix://quire/native/Boolean",
-                        "required",
-                        1,
-                    ),
-                ],
+                "fields": [wire_field(
+                    &correlation,
+                    "correlation_id",
+                    "ix://quire/native/Boolean",
+                    "required",
+                    1,
+                )],
                 "operations": [{
                     "identity": restart,
                     "name": "restart",
@@ -1791,20 +1781,13 @@ fn process_model_members_assemble_as_an_identified_run_type() {
         .expect("Fulfilment is projected as an identified run type");
     assert_eq!(declared.name(), "Config::Fulfilment");
     assert_eq!(declared.supertypes(), &[workflow_effective]);
-    assert!(
-        declared
-            .attributes()
-            .iter()
-            .all(|field| field.name() != "correlation_id"),
-        "a process UUID identity field stays admitted domain data until FR-322 can project its type",
-    );
-    let active = declared
+    let correlation = declared
         .attributes()
         .iter()
-        .find(|field| field.name() == "active")
-        .expect("a representable process field is projected");
-    assert_eq!(active.value_type(), &ValueType::Boolean);
-    assert_eq!(active.presence(), Presence::Required);
+        .find(|field| field.name() == "correlation_id")
+        .expect("the supported process identity field is projected");
+    assert_eq!(correlation.value_type(), &ValueType::Boolean);
+    assert_eq!(correlation.presence(), Presence::Required);
 
     let operation = declarations
         .operations
