@@ -2125,21 +2125,30 @@ pub enum AllInstancesOutcome {
     Refused(ModelRefusal),
     /// A `ScalarLimitsV1` counter was exhausted; no collection.
     Incomplete(ScalarIncomplete),
-    /// The binding is object-closed, but its declared member types omit one
-    /// or more effective subtypes of the queried type; no collection exists.
+    /// The binding is object-closed, but its declared member types do not
+    /// cover the full effective subtype closure of the queried type; no
+    /// collection exists.
     IncompleteSubtypeClosure(SubtypeClosureIncomplete),
 }
 
-/// Finds object types in the retained descendant relation that the admitted
-/// population declaration does not cover.
+/// Finds types in the queried closure that no declared member type covers.
+/// The catalog's retained descendant sets are inclusive and were derived
+/// during normalization, so this is set work only: it performs no conformance
+/// walk or catalog rebuild at query time.
 fn missing_declared_subtypes(
-    descendants: &BTreeSet<DeclarationKey>,
+    type_catalog: &TypeCatalog,
+    queried_descendants: &BTreeSet<DeclarationKey>,
     declared_member_types: &BTreeSet<DeclarationKey>,
 ) -> Vec<DeclarationKey> {
-    descendants
-        .difference(declared_member_types)
-        .cloned()
-        .collect()
+    let mut covered = BTreeSet::new();
+    for declared_type in declared_member_types {
+        covered.insert(declared_type.clone());
+        if let Some(descendants) = type_catalog.descendants_of(declared_type) {
+            covered.extend(descendants.iter().cloned());
+        }
+    }
+
+    queried_descendants.difference(&covered).cloned().collect()
 }
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
@@ -2170,7 +2179,11 @@ pub fn all_instances(
             detail: format!("{} is not a model object type", t.node),
         });
     };
-    let missing_types = missing_declared_subtypes(descendants, &binding.declared_member_types);
+    let missing_types = missing_declared_subtypes(
+        &binding.type_catalog,
+        descendants,
+        &binding.declared_member_types,
+    );
     if !missing_types.is_empty() {
         return AllInstancesOutcome::IncompleteSubtypeClosure(SubtypeClosureIncomplete {
             queried_type: t.clone(),
@@ -2436,24 +2449,6 @@ mod tests {
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
     use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
-
-    #[test]
-    fn subtype_coverage_uses_retained_descendants_without_catalog_or_index_walks() {
-        let descendants = BTreeSet::from([
-            DeclarationKey::fixture("model.A"),
-            DeclarationKey::fixture("model.B"),
-            DeclarationKey::fixture("model.C"),
-        ]);
-        let declared = BTreeSet::from([DeclarationKey::fixture("model.A")]);
-
-        assert_eq!(
-            missing_declared_subtypes(&descendants, &declared),
-            [
-                DeclarationKey::fixture("model.B"),
-                DeclarationKey::fixture("model.C"),
-            ]
-        );
-    }
 
     /// A production `AdmissionMeter` and `AdmissionCharge`
     /// have no drop glue, so the meter holds no per-charge state however many

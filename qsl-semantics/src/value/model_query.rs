@@ -112,7 +112,7 @@ pub enum ModelQueryHalt {
     IncompleteClosure {
         /// The queried effective type's canonical node name.
         queried_type: String,
-        /// Canonically ordered subtype node names absent from the declaration.
+        /// Canonically ordered subtype node names not covered by the declaration.
         uncovered_subtypes: Vec<String>,
     },
 }

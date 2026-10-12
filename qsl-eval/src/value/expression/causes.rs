@@ -279,7 +279,8 @@ pub(crate) enum StateModelUndefined {
         key: String,
     },
     /// FR-090-AC-21: an `allInstances<T>` query cannot produce a complete
-    /// result because the admitted population declaration omits subtypes.
+    /// result because the admitted population declaration does not cover its
+    /// complete subtype closure.
     IncompleteClosure {
         /// The queried effective type's canonical node name.
         queried_type: String,

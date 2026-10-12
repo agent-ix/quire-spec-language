@@ -3003,6 +3003,7 @@ mod tests {
         })
     }
 
+    #[trace("TC-227", "FR-084-AC-2")]
     #[test]
     fn normalized_type_catalog_retains_descendants_from_type_paths() {
         let package = DomainPackage::new(

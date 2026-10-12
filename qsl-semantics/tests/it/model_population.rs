@@ -525,9 +525,9 @@ fn l01_all_instances_selects_subtype_population_once() {
 }
 
 /// FR-084-AC-2 / TC-227: object closure can hold while the declared member
-/// types omit a proper subtype. Such a query must not publish the members it
-/// happened to gather; complete coverage remains deterministic under member
-/// order changes.
+/// types omit the queried type itself. Such a query must not publish the
+/// members it happened to gather; complete coverage remains deterministic
+/// under member order changes.
 #[test]
 #[trace("TC-227", "FR-084-AC-2")]
 fn all_instances_requires_declared_subtype_closure() {
@@ -536,7 +536,7 @@ fn all_instances_requires_declared_subtype_closure() {
         vec![
             object_type("model.A", vec![]),
             object_type("model.B", vec!["model.A"]),
-            population_record("model.pop", &["model.A"], Extent::Closed),
+            population_record("model.pop", &["model.B"], Extent::Closed),
             population_record(
                 "model.pop.complete",
                 &["model.A", "model.B"],
@@ -547,7 +547,7 @@ fn all_instances_requires_declared_subtype_closure() {
     let view = view_of(&domain_package);
     let document = PopulationDocument {
         model_identity: "test/orders".to_owned(),
-        members: vec![member("a2", "model.A"), member("a1", "model.A")],
+        members: vec![member("b1", "model.B")],
     };
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
@@ -569,7 +569,7 @@ fn all_instances_requires_declared_subtype_closure() {
             assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
             assert_eq!(
                 incomplete.missing_types,
-                [DeclarationKey::fixture("model.B")]
+                [DeclarationKey::fixture("model.A")]
             );
         }
         other => {
@@ -617,6 +617,141 @@ fn all_instances_requires_declared_subtype_closure() {
     assert_eq!(first_set, second_set);
     let canonical: Vec<_> = first_set.members().iter().collect();
     assert!(canonical.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+/// Runs one admitted `allInstances` query over a small explicitly declared
+/// type tree. The population's declared types describe coverage; the member
+/// rows independently provide a nonempty result when the queried closure is
+/// covered.
+fn all_instances_for_declared_type_tree(
+    types: &[(&str, &[&str])],
+    declared: &[&str],
+    queried: &str,
+    members: Vec<PopulationMember>,
+) -> AllInstancesOutcome {
+    let mut records: Vec<_> = types
+        .iter()
+        .map(|(identity, supertypes)| object_type(identity, supertypes.to_vec()))
+        .collect();
+    records.push(population_record("model.pop", declared, Extent::Closed));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("tc-227"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members,
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    all_instances(
+        &binding,
+        &DeclarationKey::fixture(queried),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    )
+}
+
+/// FR-153 coverage is conformance-based: a declared parent covers its
+/// queried child, while the result still selects members by their actual
+/// most-specific type.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_parent_covers_queried_child() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.A", &[]), ("model.B", &["model.A"])],
+        &["model.A"],
+        "model.B",
+        vec![member("b1", "model.B")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared parent covers its queried child, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.B"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "b1");
+}
+
+/// A declared grandparent covers the queried type and every retained
+/// descendant beneath it.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_grandparent_covers_query_descendants() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.G", &[]),
+            ("model.P", &["model.G"]),
+            ("model.T", &["model.P"]),
+            ("model.C", &["model.T"]),
+        ],
+        &["model.G"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared grandparent covers the query closure, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "c1");
+}
+
+/// Declaring the queried type covers its child even when that child is not
+/// separately listed in the population declaration.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_query_type_covers_undeclared_child() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[]), ("model.C", &["model.T"])],
+        &["model.T"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("the declared query type covers its child, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "c1");
+}
+
+/// A declared child covers only itself, not its parent or a sibling child;
+/// the incomplete outcome names exactly the uncovered types.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_child_does_not_cover_parent_or_sibling() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.T", &[]),
+            ("model.C1", &["model.T"]),
+            ("model.C2", &["model.T"]),
+        ],
+        &["model.C1"],
+        "model.T",
+        vec![member("c1", "model.C1")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("declaring only one child leaves the query closure incomplete, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.T"));
+    assert_eq!(
+        incomplete.missing_types,
+        [
+            DeclarationKey::fixture("model.C2"),
+            DeclarationKey::fixture("model.T"),
+        ]
+    );
 }
 
 /// TC-198 L01's boundary: with `work_units: 4`, `allInstances<M::A>(p)`
