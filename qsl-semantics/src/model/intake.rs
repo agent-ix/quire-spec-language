@@ -1433,8 +1433,13 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
                 artifact,
                 span,
                 format!(
-                    "agent-ix-semantic-ir refused this document at {} ({}): {}",
-                    located.pointer, located.code, located.message
+                    "agent-ix-semantic-ir refused this document at {} ({}) ({}): {}",
+                    semantic_member_path(&located.pointer)
+                        .as_deref()
+                        .unwrap_or("the source member"),
+                    located.pointer,
+                    located.code,
+                    located.message
                 ),
             ))
         })
@@ -1476,6 +1481,7 @@ fn missing_reader_reference(
     let owner = declared_node_for_pointer(document, pointer)?;
     let node = owner.get("identity")?.as_str()?;
     let origin = owner.get("origin")?.clone();
+    let source_member = semantic_member_path(&located.pointer)?;
     Some(ModelRefusal {
         code: Code::MissingDeclaration,
         cause: ModelRefusalCause::IntakeMissingDeclaration {
@@ -1484,8 +1490,36 @@ fn missing_reader_reference(
             origin,
             path: pointer.parse().ok()?,
         },
-        detail: format!("{pointer}: {reference:?} names no declaration of this domain package"),
+        detail: format!(
+            "{source_member} ({pointer}): {reference:?} names no declaration of this domain package"
+        ),
     })
+}
+
+/// Keep the source document's canonical member path in the diagnostic while
+/// retaining the reader's raw JSON pointer as evidence of where it refused.
+fn semantic_member_path(pointer: &str) -> Option<String> {
+    let pointer = pointer.strip_prefix("/ir").unwrap_or(pointer);
+    let mut parts = pointer.trim_start_matches('/').split('/');
+    match parts.next()? {
+        "types" => {
+            let _index = parts.next()?;
+            let member = parts.collect::<Vec<_>>();
+            if member.is_empty() {
+                return Some("TypeDefinition".to_owned());
+            }
+            let member = member.join(".");
+            let member = member.replace("identity_fields", "identityFields");
+            Some(format!("TypeDefinition.{member}"))
+        }
+        "constructs" => Some("constructs[].meaning".to_owned()),
+        "populations" => {
+            let _index = parts.next()?;
+            let member = parts.collect::<Vec<_>>().join(".");
+            Some(format!("PopulationDefinition.{member}"))
+        }
+        _ => None,
+    }
 }
 
 fn declared_node_for_pointer<'a>(
@@ -3230,7 +3264,9 @@ fn read_type_node(
             return Err(unsupported_at(type_value, at, other));
         }
         other => {
-            return Err(ctx.malformed(format!("kind: resolves to {other:?}, outside FR-208")));
+            return Err(ctx.malformed(format!(
+                "kind: resolves to {other:?}, outside FR-208 at constructs[].meaning"
+            )));
         }
     }
     Ok(records)
