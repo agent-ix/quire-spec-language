@@ -21,6 +21,17 @@ pub struct ObservationIdentity {
     pub revision: String,
 }
 
+/// One binding of a declared invocation that can root a runtime value path.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum InvocationBinding {
+    /// A named parameter binding, preserving its exact declared spelling.
+    Parameter(String),
+    /// The invocation's result binding.
+    Result,
+    /// The receiver binding `self`, for a context with no object identity.
+    Receiver,
+}
+
 /// QSpec FR-207's root subject, for the subjects a state clause's domain
 /// collection can have.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,6 +39,14 @@ pub enum ValuePathSubject {
     /// A declared object identity (QSpec FR-204): a collection stored in a
     /// member of that object.
     Object(ObjectReference),
+    /// A binding of one declared invocation. The receiver form is used for
+    /// state-machine contexts, which have no declared object identity.
+    Invocation {
+        /// The invocation document's authority-qualified identity.
+        invocation: ObservationIdentity,
+        /// The binding within that invocation.
+        binding: InvocationBinding,
+    },
     /// A built collection: the occurrence key of the expression that builds
     /// the collection inside the evaluated claim (QSpec FR-207-AC-9).
     Built(OccurrenceKey),
