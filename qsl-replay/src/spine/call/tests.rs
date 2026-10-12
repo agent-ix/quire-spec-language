@@ -53,7 +53,6 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
 
 struct LookupDriverFixture {
     source: String,
-    bytes: Vec<u8>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
@@ -104,11 +103,7 @@ fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
         functions
     );
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    LookupDriverFixture {
-        source,
-        bytes,
-        packages,
-    }
+    LookupDriverFixture { source, packages }
 }
 
 fn lookup_driver_context(
@@ -161,20 +156,22 @@ fn lookup_driver_context(
     let (type_key, type_identity) = view
         .type_identities()
         .iter()
-        .find(|(key, _)| key.node == "Gadget")
+        .find(|(key, _)| key.node.rsplit('/').next() == Some("Gadget"))
         .map(|(key, identity)| (key.clone(), *identity))
         .expect("Gadget is declared");
-    let population_key =
-        view.domain_package()
-            .records
-            .iter()
-            .find_map(|record| match record {
-                qsl_semantics::model::domain_package::DomainPackageRecord::Population(
-                    population,
-                ) if population.key.node == "Fleet" => Some(population.key.clone()),
-                _ => None,
-            })
-            .expect("Fleet is declared");
+    let population_key = view
+        .domain_package()
+        .records
+        .iter()
+        .find_map(|record| match record {
+            qsl_semantics::model::domain_package::DomainPackageRecord::Population(population)
+                if population.key.node.rsplit('/').next() == Some("Fleet") =>
+            {
+                Some(population.key.clone())
+            }
+            _ => None,
+        })
+        .expect("Fleet is declared");
     let document = PopulationDocument {
         model_identity: view.model_selection().identity.clone(),
         members: vec![PopulationMember {
