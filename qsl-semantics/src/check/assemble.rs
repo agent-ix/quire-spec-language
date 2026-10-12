@@ -710,7 +710,11 @@ fn model_object_types(
             DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
-            DomainPackageRecord::ObjectType(_)
+            // Record and event declarations are emitted as composites below;
+            // their effective fields are collected from the normalized view.
+            DomainPackageRecord::RecordValueType(_)
+            | DomainPackageRecord::EventType(_)
+            | DomainPackageRecord::ObjectType(_)
             | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
