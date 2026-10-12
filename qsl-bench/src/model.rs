@@ -532,9 +532,7 @@ mod tests {
             ));
         }
         assert!(refusals[0].detail.contains("SCHEMA_VIOLATION"));
-        assert!(refusals[0]
-            .detail
-            .contains("/ir/types/0/fields/0/presence"));
+        assert!(refusals[0].detail.contains("/ir/types/0/fields/0/presence"));
         assert!(refusals[0]
             .detail
             .contains("presence is a closed enumeration"));
