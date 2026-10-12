@@ -91,37 +91,27 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
             "cancelled",
             "ix://quire/native/Boolean",
         ));
-    lifecycle["clauses"] = serde_json::json!([crate::tc235_k2::clause(
-        "OrderLifecycle",
-        "Consistent",
-        "not (self.placed and self.cancelled)",
-    )]);
+    lifecycle["clauses"] = serde_json::json!([
+        crate::tc235_k2::clause(
+            "OrderLifecycle",
+            "Consistent",
+            "not (self.placed and self.cancelled)",
+        ),
+        crate::tc235_k2::clause("OrderLifecycle/place", "PlaceRequires", requires),
+        crate::tc235_k2::clause(
+            "OrderLifecycle/place",
+            "PlaceEnsures",
+            "self.placed and not self.cancelled",
+        ),
+    ]);
     let place = lifecycle["operations"]
         .as_array_mut()
         .unwrap()
         .iter_mut()
         .find(|operation| operation["identity"] == crate::tc235_k2::id("OrderLifecycle/place"))
         .expect("K2 OrderLifecycle/place operation");
-    let mut requires = crate::tc235_k2::clause(
-        "OrderLifecycle/place",
-        "PlaceRequires",
-        requires,
-    );
-    requires
-        .as_object_mut()
-        .expect("operation pre clause")
-        .remove("clauseId");
-    place["pre"] = serde_json::json!([requires]);
-    let mut ensures = crate::tc235_k2::clause(
-        "OrderLifecycle/place",
-        "PlaceEnsures",
-        "self.placed and not self.cancelled",
-    );
-    ensures
-        .as_object_mut()
-        .expect("operation post clause")
-        .remove("clauseId");
-    place["post"] = serde_json::json!([ensures]);
+    place["pre"] = serde_json::json!(["PlaceRequires"]);
+    place["post"] = serde_json::json!(["PlaceEnsures"]);
     place["frame"]["modifies"] = serde_json::json!([crate::tc235_k2::id("OrderLifecycle/placed")]);
     let digest = crate::tc235_k2::jcs_digest(&document["types"]);
     document["source"]["digest"] = serde_json::json!(digest);
