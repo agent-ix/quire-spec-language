@@ -64,11 +64,12 @@ pub struct RecordValueTypeRecord {
     pub key: DeclarationKey,
 }
 
-/// QSL's own closed native value-type vocabulary (shared-grammar.md's
-/// `type-ref` production): the unparameterized value-type keywords a
-/// `typeRef` may name directly, under `ix://quire/native/<Name>`, without
-/// naming a node of any package. `Boolean`, `Integer`, `Float32` and
-/// `Float64` take no parameters. `Integer`'s own optional inline bound
+/// QSL's own closed native value-type vocabulary: the unparameterized
+/// value-type keywords a `typeRef` may name directly, under
+/// `ix://quire/native/<Name>`, without naming a node of any package. It
+/// includes shared-grammar.md's keywords plus `Timestamp`, required by
+/// FR-056-AC-17/19. `Boolean`, `Integer`, `Float32`, `Float64` and
+/// `Timestamp` take no parameters. `Integer`'s own optional inline bound
 /// (`Int[lo,hi]`) is a constraint fact about the field, not a distinct
 /// value-type reference. `Rational`, `Decimal` and `Text` are parameterized
 /// in the grammar (`Rational[lo,hi;dmin,dmax]`, `Decimal[lo,hi;dmin,dmax]`,
@@ -90,6 +91,8 @@ pub enum NativeValueType {
     Float64,
     /// `Text`.
     Text,
+    /// `Timestamp`.
+    Timestamp,
 }
 
 impl NativeValueType {
@@ -103,6 +106,7 @@ impl NativeValueType {
             Self::Float32 => "Float32",
             Self::Float64 => "Float64",
             Self::Text => "Text",
+            Self::Timestamp => "Timestamp",
         }
     }
 
@@ -111,16 +115,16 @@ impl NativeValueType {
     /// `profile`) that `agent-ix-semantic-ir`'s own constraint vocabulary
     /// (`constraint_schema`'s closed `keyword` set: `min`, `max`,
     /// `exclusiveMin`, `exclusiveMax`, `minLength`, `maxLength`, `pattern`,
-    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for at
-    /// all -- so a `typeRef` naming this native type can never resolve, no
+    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for these
+    /// parameter sets, so `Rational`, `Decimal` and `Text` cannot resolve no
     /// matter what a producer's own document supplies. `Rational`/`Decimal`
     /// also require `lo`/`hi`, which the vocabulary's `min`/`max` do carry;
     /// only the decimal-scale bound is unexpressable. `Boolean`, `Integer`,
-    /// `Float32` and `Float64` take no required parameter, so this is empty
-    /// for them.
+    /// `Float32`, `Float64` and `Timestamp` take no required parameter, so this
+    /// is empty for them.
     pub fn unsupported_parameters(&self) -> &'static [&'static str] {
         match self {
-            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 => &[],
+            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 | Self::Timestamp => &[],
             Self::Rational | Self::Decimal => &["dmin", "dmax"],
             Self::Text => &["profile"],
         }
@@ -140,6 +144,7 @@ impl std::str::FromStr for NativeValueType {
             "Float32" => Ok(Self::Float32),
             "Float64" => Ok(Self::Float64),
             "Text" => Ok(Self::Text),
+            "Timestamp" => Ok(Self::Timestamp),
             _ => Err(()),
         }
     }
@@ -211,19 +216,29 @@ pub struct FieldMemberRecord {
     pub redefines: Option<DeclarationKey>,
 }
 
-/// A scalar type export bound to a closed `Int[lower,upper]` domain
-/// (FR-151's `model.Count`/`model.Small` fixtures). QSL V1 does not carry the
-/// FR-149 equality-conversion table; this is the narrow slice this rung
-/// needs to decide value-type conformance and FR-146 interval containment
-/// for a scalar redefinition, not a general scalar type system.
+/// The value domain carried by a scalar type declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScalarValueDomain {
+    /// A closed integer interval (FR-151's `model.Count`/`model.Small`
+    /// fixtures).
+    Integer {
+        /// Inclusive lower bound.
+        lower: i128,
+        /// Inclusive upper bound.
+        upper: i128,
+    },
+    /// An alias for a native value type.
+    Native(NativeValueType),
+}
+
+/// A scalar type export. Integer bounds support FR-146 interval containment;
+/// native aliases preserve the target's distinct value-type identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
-    /// Inclusive lower bound.
-    pub lower: i128,
-    /// Inclusive upper bound.
-    pub upper: i128,
+    /// This type's value domain.
+    pub domain: ScalarValueDomain,
 }
 
 /// One operation parameter: `{key, value_type, multiplicity}`.

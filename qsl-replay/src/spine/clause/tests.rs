@@ -138,6 +138,7 @@ fn domain_document() -> Vec<u8> {
     let population = population_identity();
     let envelope = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
@@ -1533,6 +1534,7 @@ fn config_version_domain_document_with_operations(
     operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",

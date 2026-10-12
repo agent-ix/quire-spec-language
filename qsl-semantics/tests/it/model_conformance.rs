@@ -16,7 +16,7 @@ use qsl_semantics::model::conformance::{
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, PostconditionClause, ScalarTypeRecord, ValueTypeRef,
+    OperationResult, PostconditionClause, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
 };
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
@@ -100,8 +100,7 @@ fn field_member_with_presence(
 fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
-        lower,
-        upper,
+        domain: ScalarValueDomain::Integer { lower, upper },
     })
 }
 
@@ -1664,8 +1663,10 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
             scalar_type("model.Count", 0, 9),
             DomainPackageRecord::ScalarType(ScalarTypeRecord {
                 key: redefining_value_type.clone(),
-                lower: -3,
-                upper: 3,
+                domain: ScalarValueDomain::Integer {
+                    lower: -3,
+                    upper: 3,
+                },
             }),
             field_member("model.A.x", "model.A", "model.Count", mult(1, Some(1))),
             DomainPackageRecord::FieldMember(FieldMemberRecord {

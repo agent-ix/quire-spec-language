@@ -12,12 +12,14 @@
 //! intake parses package bytes. [`read_records`] is the per-node reader:
 //! it dispatches every `types[]`/`populations[]` entry purely by the
 //! `meaning` its `kind` resolves to in the document's own `constructs[]`
-//! table (FR-208), never by `kind.name`/`kind.module` directly.
+//! table (FR-208), never by `kind.name`/`kind.module` directly; the exact
+//! native Timestamp alias is the one value-type exception.
 //!
 //! **This reader binds only what QSpec admits and refuses everything else.**
 //! It never invents a value and never drops data. Two shapes FCD emits
-//! today are still FCD gaps: bare-string core kinds (`"scalar"`/`"alias"`/...)
-//! declared directly in `types[]`, and FCD's own identity form
+//! today are still FCD gaps: bare-string core kinds other than the native
+//! Timestamp alias (`"scalar"`/`"record"`/...) declared directly in
+//! `types[]`, and FCD's own identity form
 //! (`ix://<pkg>/type/<id>`, `ix://<pkg>/field/<Owner>-<name>`) rather than
 //! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`). This reader refuses both
 //! rather than working around them. A type's inline `relationships[]`
@@ -50,7 +52,8 @@ use crate::model::domain_package::{
     EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord,
     OperationEffect, OperationMemberRecord, OperationParameterRecord, OperationResult,
     OriginalDeclaration, PopulationRecord, PortDirection, RecordValueTypeRecord,
-    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -1368,7 +1371,7 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// just its first defect -- rather than being read as a default or having
 /// every diagnostic but the first silently dropped (PR #200 review R2-2).
 ///
-/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`, FCD PR #200)
+/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`)
 /// resolves `ix://quire/native/<Name>` at the validator layer
 /// (`crates/semantic-ir/src/rules.rs`), against FCD's own closed
 /// native-scalar set (`UUID`, `Boolean`, `Integer`, `Decimal`, `String`,
@@ -2374,8 +2377,7 @@ fn read_value_type(
     }
     Ok(ScalarTypeRecord {
         key: declaration_key(package, node),
-        lower,
-        upper,
+        domain: ScalarValueDomain::Integer { lower, upper },
     })
 }
 
@@ -2773,17 +2775,28 @@ fn read_type_node(
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
+    if type_value.get("kind").and_then(Value::as_str) == Some("alias")
+        && type_value.get("target").and_then(Value::as_str) == Some("ix://quire/native/Timestamp")
+    {
+        if !ctx.array_field("fields")?.is_empty()
+            || !ctx.array_field("operations")?.is_empty()
+            || !ctx.array_field("relationships")?.is_empty()
+            || !ctx.array_field("supertypes")?.is_empty()
+            || !ctx.array_field("constraints")?.is_empty()
+        {
+            return Err(ctx.malformed(
+                "a native Timestamp alias declares no fields, operations, relationships, supertypes, or constraints",
+            ));
+        }
+        return Ok(vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key,
+            domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+        })]);
+    }
     if !type_value.get("kind").is_some_and(Value::is_object) {
-        // A bare-string kind (`"scalar"`, `"alias"`, `"record"`, ...) is a
-        // core kind FCD's own schema admits, but QSpec's declaration-kinds
-        // table has no row for a package declaring one of these directly in
-        // `types[]` -- every declared type resolves via a `constructs[]`
-        // entry to a real FR-208 meaning instead. A field's own `typeRef`
-        // never names a node like this one anyway: [`read_value_type_ref`]
-        // resolves a native value type through the dedicated
-        // `ix://quire/native/<Name>` form, not through a bare-string-kind
-        // `types[]` declaration, so this node being refused as a top-level
-        // declaration never stops a field resolving its own type reference.
+        // Other bare-string core kinds remain outside this reader's declared
+        // FR-208 meanings. The Timestamp alias above is the explicit native
+        // value-type exception required by FR-056-AC-17.
         return Err(ctx.malformed("kind: a bare-string core kind is not a declared FR-208 meaning"));
     }
     let (module, name) = ctx.kind_key()?;
@@ -3075,17 +3088,39 @@ pub fn read_domain_package(
             let ctx = NodeCtx::new(node, &at);
             let result = (|| {
                 let identity = ctx.str_field("identity")?;
-                let kind = ctx.kind_key()?;
-                let meaning = meanings
-                    .get(&(kind.0.to_owned(), kind.1.to_owned()))
-                    .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?;
+                let meaning = match node.get("kind") {
+                    Some(kind) if kind.is_object() => {
+                        let kind = ctx.kind_key()?;
+                        Some(
+                            meanings
+                                .get(&(kind.0.to_owned(), kind.1.to_owned()))
+                                .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?
+                                .clone(),
+                        )
+                    }
+                    Some(kind)
+                        if kind.as_str() == Some("alias")
+                            && node.get("target").and_then(Value::as_str)
+                                == Some("ix://quire/native/Timestamp") =>
+                    {
+                        // This one FCD core alias has a reader admission but
+                        // no FR-208 construct meaning. `read_records` already
+                        // validates its exact native Timestamp shape.
+                        None
+                    }
+                    _ => {
+                        return Err(ctx.malformed(
+                            "kind: a bare-string core kind is not a declared FR-208 meaning",
+                        ));
+                    }
+                };
                 let origin = node
                     .get("origin")
                     .ok_or_else(|| ctx.malformed("origin: missing"))?;
                 originals.insert(
                     declaration_key(&selection.identity, identity),
                     OriginalDeclaration {
-                        meaning: Some(meaning.clone()),
+                        meaning,
                         origin: origin.clone(),
                         member_name: None,
                     },
@@ -3618,6 +3653,7 @@ mod tests {
     fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
         serde_json::json!({
             "contractVersion": "2.0.0",
+            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
             "source": {
                 "identity": format!("ix://{package_identity}/spec"),
                 "version": "1.0.0",
@@ -3729,6 +3765,90 @@ mod tests {
                           FR-208 meaning"
                     .to_owned(),
             }]
+        );
+    }
+
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn admits_the_native_timestamp_alias_and_keeps_other_aliases_refused() {
+        let alias = || {
+            wire_type(
+                "ix://acme/orders/Instant",
+                serde_json::json!("alias"),
+                serde_json::json!({"target": "ix://quire/native/Timestamp"}),
+            )
+        };
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([alias()]),
+        )
+        .to_string();
+        assert_eq!(
+            read_records("acme/orders", &parse_document(document.as_bytes()))
+                .expect("FCD admits the native Timestamp alias"),
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/Instant"),
+                domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+            })]
+        );
+
+        let mut unsupported_alias = alias();
+        unsupported_alias["target"] = serde_json::json!("ix://quire/native/Integer");
+        let unsupported = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([unsupported_alias]),
+        )
+        .to_string();
+        let refusals = read_records("acme/orders", &parse_document(unsupported.as_bytes()))
+            .expect_err("this reader admits only the native Timestamp alias");
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    }
+
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn reads_native_timestamp_alias_through_domain_package_intake() {
+        let alias = wire_type(
+            "ix://acme/orders/Instant",
+            serde_json::json!("alias"),
+            serde_json::json!({"target": "ix://quire/native/Timestamp"}),
+        );
+        let bytes = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([alias]),
+        )
+        .to_string()
+        .into_bytes();
+        let document = PackageDocument::parse(&bytes, IntakeLimits::default())
+            .expect("the current FCD reader admits the Timestamp alias");
+        let package = read_domain_package(
+            DomainPackageRef {
+                identity: "acme/orders".to_owned(),
+                version: "1.0.0".to_owned(),
+                digest: [0; 32],
+            },
+            &document,
+        )
+        .expect("the QSL domain-package reader admits the native Timestamp alias");
+        let instant = declaration_key("acme/orders", "ix://acme/orders/Instant");
+        assert_eq!(
+            package.records,
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: instant.clone(),
+                domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+            })]
+        );
+        let original = package
+            .original(&instant)
+            .expect("the alias origin is retained");
+        assert_eq!(original.meaning, None);
+        assert_eq!(original.member_name, None);
+        assert_eq!(
+            original.origin["generated"]["generatorIdentity"],
+            "ix://acme/orders/Instant"
         );
     }
 
@@ -4116,6 +4236,17 @@ mod tests {
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn resolves_timestamp_as_a_distinct_native_type_ref() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/instant"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Timestamp")
+            .expect("Timestamp is a native value type");
+        assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Timestamp));
+        assert_eq!(value_type.to_string(), "ix://quire/native/Timestamp");
+    }
+
     /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
     /// `resolves_a_known_native_type_ref`'s own doc comment (no local
     /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
@@ -4144,20 +4275,14 @@ mod tests {
         );
     }
 
-    /// R5 (the PR owner's ruling, authorized by the repo owner): QSpec's
-    /// `type-ref` production (`shared-grammar.md:285-296`) is
-    /// `{Boolean, Integer, Rational, Decimal, Float32, Float64, Text}`, and
-    /// that is the closed set [`NativeValueType`] declares -- FCD's own
-    /// native-scalar set is wider (adds `UUID`, `String`, `Timestamp`,
-    /// `Duration`, `Bytes`, `JsonObject`), and QSL does not widen its own
-    /// vocabulary, add a mapping, or otherwise translate a name outside its
-    /// grammar. `ix://quire/native/UUID` -- the exact typeRef FCD #199's new
-    /// golden gives `Pump.id`/`Sys.id`/`Tank.id` -- is this ruling's
-    /// concrete case: it refuses today, and it keeps refusing after the FCD
-    /// pin bumps (FCD's own validator resolving the prefix, F7's fix to
-    /// `validate_with_semantic_ir`'s doc comment, does not change what this
-    /// reader itself accepts). PLAT-836 (filed separately, lands after FCD
-    /// #200) narrows FCD's own emission so `UUID` stops being a native
+    /// The native vocabulary includes the types selected by QSL's grammar and
+    /// the `Timestamp` required by FR-056-AC-17/19. FCD also emits `UUID`,
+    /// `String`, `Duration`, `Bytes` and `JsonObject`; QSL does not infer
+    /// additional native types from FCD's wider reader contract.
+    /// `ix://quire/native/UUID` -- the typeRef FCD emits for fields such as
+    /// `Pump.id`, `Sys.id` and `Tank.id` -- remains outside this vocabulary
+    /// and refuses here, even though FCD's validator recognizes it. PLAT-836
+    /// narrows FCD's own emission so `UUID` stops being a native
     /// reference there at all -- a field like `Pump.id` becomes a reference
     /// to a model-declared type instead, at which point this exact refusal
     /// stops occurring, but as a consequence of what the *document* emits,
@@ -4170,14 +4295,11 @@ mod tests {
     /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
     /// subject.
     #[test]
-    fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
+    fn refuses_uuid_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
         let refusal = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
-            .expect_err(
-                "R5: FCD's native-scalar set is wider than QSpec's type-ref; QSL does not widen \
-                 to match it, so ix://quire/native/UUID refuses",
-            );
+            .expect_err("QSL's native value-type vocabulary does not include UUID");
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -4730,6 +4852,7 @@ mod tests {
             "fields": [
                 money_field("amount_minor", "ix://quire/native/Integer"),
                 money_field("paid", "ix://quire/native/Boolean"),
+                money_field("created_at", "ix://quire/native/Timestamp"),
             ],
         });
         if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
@@ -4766,7 +4889,7 @@ mod tests {
     fn reads_a_record_value_type_and_its_fields() {
         let key = |node: &str| declaration_key("acme/orders", node);
         let records = read_money(serde_json::json!({})).expect("Money reads");
-        assert_eq!(records.len(), 3);
+        assert_eq!(records.len(), 4);
         assert_eq!(
             records[0],
             DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
@@ -4776,6 +4899,7 @@ mod tests {
         for (record, (name, native)) in records[1..].iter().zip([
             ("amount_minor", NativeValueType::Integer),
             ("paid", NativeValueType::Boolean),
+            ("created_at", NativeValueType::Timestamp),
         ]) {
             let DomainPackageRecord::FieldMember(field) = record else {
                 panic!("a field member follows its record value type")
@@ -4899,6 +5023,15 @@ mod tests {
         )
     }
 
+    fn integer_bounds(record: &ScalarTypeRecord) -> (i128, i128) {
+        match &record.domain {
+            ScalarValueDomain::Integer { lower, upper } => (*lower, *upper),
+            ScalarValueDomain::Native(native) => {
+                panic!("expected integer scalar domain, got {native:?}")
+            }
+        }
+    }
+
     /// FR-056's `value-type/v1` scalar reader admits a bound
     /// integer value type, reading its `min`/`max` constraints structurally
     /// into a [`ScalarTypeRecord`] -- never by parsing a rendered
@@ -4911,8 +5044,10 @@ mod tests {
             record,
             ScalarTypeRecord {
                 key: declaration_key("acme/orders", "ix://acme/orders/VersionNumber"),
-                lower: 0,
-                upper: 1000,
+                domain: ScalarValueDomain::Integer {
+                    lower: 0,
+                    upper: 1000,
+                },
             }
         );
     }
@@ -4943,14 +5078,14 @@ mod tests {
                 {"keyword": "max", "operands": {"value": upper}},
             ]}))
             .unwrap_or_else(|refusal| panic!("{upper}: {refusal:?}"));
-            assert_eq!(record.upper, expected, "{upper}");
+            assert_eq!(integer_bounds(&record).1, expected, "{upper}");
         }
         let record = read_version_number(serde_json::json!({"constraints": [
             {"keyword": "min", "operands": {"value": "-170141183460469231731687303715884105728"}},
             {"keyword": "max", "operands": {"value": "0"}},
         ]}))
         .expect("i128::MIN reads");
-        assert_eq!(record.lower, i128::MIN);
+        assert_eq!(integer_bounds(&record).0, i128::MIN);
     }
 
     /// Local FR-056 integer intake, with FCD FR-144's effective-range rules,
@@ -4965,8 +5100,8 @@ mod tests {
             "constraints": []
         }))
         .expect("an unbounded integer uses the safe effective range");
-        assert_eq!(unbounded.lower, -9_007_199_254_740_991);
-        assert_eq!(unbounded.upper, 9_007_199_254_740_991);
+        assert_eq!(integer_bounds(&unbounded).0, -9_007_199_254_740_991);
+        assert_eq!(integer_bounds(&unbounded).1, 9_007_199_254_740_991);
 
         let explicit_wide = read_version_number(serde_json::json!({
             "constraints": [
@@ -4975,8 +5110,8 @@ mod tests {
             ]
         }))
         .expect("explicit bounds replace the safe defaults");
-        assert_eq!(explicit_wide.lower, -9_007_199_254_740_992);
-        assert_eq!(explicit_wide.upper, 9_007_199_254_740_992);
+        assert_eq!(integer_bounds(&explicit_wide).0, -9_007_199_254_740_992);
+        assert_eq!(integer_bounds(&explicit_wide).1, 9_007_199_254_740_992);
 
         let narrowed = read_version_number(serde_json::json!({
             "constraints": [
@@ -4985,8 +5120,8 @@ mod tests {
             ]
         }))
         .expect("exclusive integer bounds read");
-        assert_eq!(narrowed.lower, 0);
-        assert_eq!(narrowed.upper, 99);
+        assert_eq!(integer_bounds(&narrowed).0, 0);
+        assert_eq!(integer_bounds(&narrowed).1, 99);
     }
 
     /// Competing inclusive/exclusive bounds tighten each side independent of
@@ -5011,7 +5146,7 @@ mod tests {
                 }
                 let record = read_version_number(serde_json::json!({"constraints": ordered}))
                     .expect("mixed bounds intersect without last-wins behavior");
-                assert_eq!((record.lower, record.upper), expected, "reverse={reverse}");
+                assert_eq!(integer_bounds(&record), expected, "reverse={reverse}");
             }
         }
         for (keyword, value, expected) in [
@@ -5030,7 +5165,7 @@ mod tests {
                 {"keyword": keyword, "operands": {"value": value}},
             ]}))
             .expect("one explicit wide side replaces only its own default");
-            assert_eq!((record.lower, record.upper), expected, "{keyword}");
+            assert_eq!(integer_bounds(&record), expected, "{keyword}");
         }
     }
 
@@ -5055,7 +5190,7 @@ mod tests {
                 {"keyword": keyword, "operands": {"value": value.to_string()}},
             ]}))
             .expect("an exclusive endpoint with a representable neighbor admits");
-            assert_eq!((record.lower, record.upper), expected, "{keyword}");
+            assert_eq!(integer_bounds(&record), expected, "{keyword}");
         }
         for (keyword, value, reason) in [
             (
@@ -5302,8 +5437,10 @@ mod tests {
             records,
             vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
                 key: declaration_key("acme/orders", "ix://acme/orders/VersionNumber"),
-                lower: 0,
-                upper: 1000,
+                domain: ScalarValueDomain::Integer {
+                    lower: 0,
+                    upper: 1000,
+                },
             })]
         );
     }
@@ -5379,8 +5516,7 @@ mod tests {
                 records,
                 vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
                     key: declaration_key("acme/orders", "ix://acme/orders/Wide"),
-                    lower: 0,
-                    upper,
+                    domain: ScalarValueDomain::Integer { lower: 0, upper },
                 })],
                 "{max_json}"
             );
@@ -6322,10 +6458,10 @@ mod tests {
     /// Was `read_records`'s re-parse `expect("validate_with_semantic_ir
     /// already confirmed these bytes parse as JSON ...")`. The two parsers
     /// disagreed on a number serde_json cannot represent: the validator's
-    /// reader accepted `1e400`, and the re-parse panicked on it. Intake now
-    /// reads once, through the shared reader, which refuses the number with
-    /// its pointer and lexeme; intake refuses it `noncanonical_wire`, not as
-    /// a malformed document.
+    /// former reader accepted `1e400`, and the re-parse panicked on it. The
+    /// current FCD reader rejects its non-finite binary64 value; QSL still
+    /// refuses it at its own boundary with `noncanonical_wire`, pointer and
+    /// lexeme.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_number_serde_json_cannot_represent_at_the_one_parse() {
@@ -6339,8 +6475,8 @@ mod tests {
             "the out-of-range number is in the document"
         );
         assert!(
-            agent_ix_semantic_ir::json::parse(&text).is_ok(),
-            "the validator's own reader accepts it, which is what made the re-parse panic"
+            agent_ix_semantic_ir::json::parse(&text).is_err(),
+            "FCD refuses a number outside the finite binary64 domain"
         );
         let refusal =
             PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())

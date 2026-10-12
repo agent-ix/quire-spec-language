@@ -144,7 +144,8 @@ fn domain_leaf_type<'a>(
             | NativeValueType::Decimal
             | NativeValueType::Float32
             | NativeValueType::Float64
-            | NativeValueType::Text,
+            | NativeValueType::Text
+            | NativeValueType::Timestamp,
         ) => return None,
         ValueTypeRef::Package(key) => {
             NativeType::Domain(DomainType::new(package, package.declaration_by_key(key)?)?)
