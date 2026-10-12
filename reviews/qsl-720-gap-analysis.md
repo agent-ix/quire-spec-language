@@ -1,26 +1,23 @@
 ---
 id: SR-7819
-title: "Scoped gap/oracle review of QSL-720 formatter CI change"
+title: "Gap analysis — QSL-720 formatter/CI changes"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@3db652c6edefe9b9f01519525243a67e94a377f6; Makefile, tests/it/formatter_identity.rs, xtask/src/ci_feature_lane_tests.rs; NFR-013-AC-1..3, FR-003-AC-9, TC-915"
+scope: "agent-ix/quire-spec-language@e64eeb642b6d8fc1b5fcbda18ea8f6533ce10762; Makefile, tests/it/formatter_identity.rs, xtask/src/ci_feature_lane_tests.rs, xtask/src/ci_feature_lane_tests/cargo_double.rs, reviews/qsl-720-code-review.md, reviews/qsl-720-gap-analysis.md; NFR-013-AC-1..3, FR-003-AC-9, TC-915"
 review_set: subset
 relationships:
-  - target: ix://agent-ix/quire-spec-language/NFR-013
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-003
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/TC-915
-    type: reviews
+  - { target: "ix://agent-ix/quire-spec-language/NFR-013", type: reviews }
+  - { target: "ix://agent-ix/quire-spec-language/FR-003", type: reviews }
+  - { target: "ix://agent-ix/quire-spec-language/TC-915", type: reviews }
 ---
 
 ## Summary
 
-Performed a manual, change-scoped acceptance-criteria-to-test/code and oracle review. The formatter size controls and gate routing are present, but the feature-lane argument preservation oracle was updated to accept commands that contradict NFR-013-AC-3. The repository-wide computed matrix was attempted with `quire matrix --scope . --format json`, produced no result after more than two minutes, and was stopped; repository-wide matrix/reverse-gap conclusions are therefore not assessed.
+At the exact reviewed head, the change-scoped spec/test/oracle review found the prior NFR-013-AC-3 gap fixed and no new changed-scope gap. The repository-wide computed matrix and reverse-gap audit remain incomplete because `quoin matrix --repo . --json` produced no output for more than two minutes and was stopped.
 
 ## Verdict
 
-CONDITIONAL — scoped review found the NFR-013-AC-3 mismatch below; the full repository gap-analysis was not completed.
+**CONDITIONAL** — no changed-scope gap remains, but repository-wide matrix and reverse-gap conclusions are unavailable.
 
 ## Findings
 
@@ -28,15 +25,19 @@ CONDITIONAL — scoped review found the NFR-013-AC-3 mismatch below; the full re
 | --- | --- | --- | --- | --- |
 | FND-001 | high | The modified expected-argv oracle encodes the new `--skip` options as correct, so it cannot detect that the implementation violates NFR-013-AC-3's unchanged-vector contract. Preserve the requirement's vectors or update the owning contract and its evidence before treating the oracle as authoritative. | xtask/src/ci_feature_lane_tests.rs:28-39,108-114; NFR-013-AC-3 | wrong-requirement |
 
-## Coverage
-
-- Examined: NFR-013-AC-1/2/3, FR-003-AC-9, TC-915, the three changed paths, the exact-name skip wiring, and the independent expected-argv oracle.
-- Manual trace check: the new Make routing test carries trace tags for NFR-013-AC-1/AC-3; the changed formatter tests retain FR-003-AC-9 tags. The three deep/large test cases are explicitly invoked by `test-deep-format`, and that target is included in `CI_CHECKS`.
-- Oracle limitation: the expected arrays were changed in lockstep with the Makefile and therefore encode, rather than challenge, the new skip-argument behavior against the unchanged NFR.
-- Matrix: attempted but unavailable within the review window (no stdout after >2 minutes); no repo-wide matrix or reverse-gap claim is made.
-- Plan completion: not assessed.
-
 ## Dispositions
 
-- FND-001 — fixed `44d0993591db98a64782e7029a8a49cb1fbf82fb`. `xtask/src/ci_feature_lane_tests.rs` restores the unchanged feature-lane argv expectations and drives the actual Make recipes through a Cargo double. Its deep-target assertion checks both the exact `--ignored --exact` listing/execution calls and that zero or multiple ignored matches fail. `test-deep-format` remains in `CI_CHECKS`. Independent disposition review at this exact head: PASS; no builds/tests were run in that review.
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44d0993591db98a64782e7029a8a49cb1fbf82fb |
 
+Round 3, exact-head recheck: `xtask/src/ci_feature_lane_tests.rs` now records the actual Make recipes against the unchanged complete argv oracle; the prior erroneous `--skip` expectations are absent. The test for `test-deep-format` verifies the exact ignored-test listing and invocation, checks target membership in `CI_CHECKS`, and rejects zero or duplicate selected tests. Rechecked the finding against the complete PR diff at the SHA in `scope`; no new changed-scope finding was identified. The repository-wide Quoin matrix attempt had no output after more than two minutes and was interrupted, so this is not a completed full-repository gap audit.
+
+## Coverage
+
+- Change-scoped examined criteria: NFR-013-AC-1, AC-2, AC-3; FR-003-AC-9; TC-915.
+- Reviewed paths: `Makefile`, `tests/it/formatter_identity.rs`, `xtask/src/ci_feature_lane_tests.rs`, `xtask/src/ci_feature_lane_tests/cargo_double.rs`, and the two changed review artifacts.
+- Manual trace check: the added Make-routing test binds NFR-013-AC-1/AC-3; formatter identity cases retain FR-003-AC-9 tags. The named deep target selects the three ignored cases and is present in `CI_CHECKS`.
+- Matrix reconciliation: `quoin matrix --repo . --json` attempted; no output after more than two minutes, then interrupted. No repo-wide counts or reverse-gap claim is made.
+- Plan completion: not assessed.
+- No build/test gate was run or inferred; GitHub CLA checks are not code qualification evidence.

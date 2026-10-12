@@ -338,8 +338,15 @@ fn deep_formatter_target_runs_each_full_size_case_and_is_in_ci() {
                 expected(
                     "target/test-deep-format",
                     &[&[
-                        "test", "--locked", "--test", "it", case, "--", "--ignored",
-                        "--exact", "--list",
+                        "test",
+                        "--locked",
+                        "--test",
+                        "it",
+                        case,
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "--list",
                     ]],
                 ),
                 expected(
@@ -384,8 +391,7 @@ fn deep_formatter_target_runs_each_full_size_case_and_is_in_ci() {
             "the deep target must reject {count} selected tests"
         );
         assert!(
-            String::from_utf8_lossy(&output.stderr)
-                .contains(&format!("found {count}")),
+            String::from_utf8_lossy(&output.stderr).contains(&format!("found {count}")),
             "the failure reports the selected count"
         );
     }
