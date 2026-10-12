@@ -355,7 +355,7 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
     assert!(refusals[0].detail.contains(&id("ExpressFulfilment")));
     assert!(refusals[0].detail.contains(&id("Fulfilment")));
- }
+}
 
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
 /// their authored relationship, the clause and populations stay typed, and
