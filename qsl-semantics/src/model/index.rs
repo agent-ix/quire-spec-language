@@ -194,6 +194,15 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::RecordValueType(record) => std::iter::once(&record.key)
             .chain(&record.supertypes)
             .collect(),
+        DomainPackageRecord::Process(process) => std::iter::once(&process.key)
+            .chain(&process.identity_fields)
+            .chain(&process.supertypes)
+            .chain(process.steps.iter().flat_map(|step| {
+                std::iter::once(&step.key)
+                    .chain(&step.consumes)
+                    .chain(&step.emits)
+            }))
+            .collect(),
         DomainPackageRecord::Clause(clause) => vec![&clause.key, &clause.owner],
         DomainPackageRecord::Namespace(namespace) => std::iter::once(&namespace.key)
             .chain(&namespace.members)
@@ -397,6 +406,11 @@ impl RecordIndex {
                 DomainPackageRecord::RecordValueType(record) => {
                     index.flags[own.0].record_value_type = true;
                     index.generals[own.0].extend(record.supertypes.iter().map(at));
+                }
+                DomainPackageRecord::Process(process) => {
+                    index.flags[own.0].object_type = true;
+                    index.flags[own.0].non_root |= !process.supertypes.is_empty();
+                    index.generals[own.0].extend(process.supertypes.iter().map(at));
                 }
                 DomainPackageRecord::Clause(clause) => {
                     let owner = at(&clause.owner);

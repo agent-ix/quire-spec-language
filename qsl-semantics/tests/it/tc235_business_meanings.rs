@@ -577,6 +577,68 @@ fn record_value_subtype_preserves_effective_fields_support() {
     assert!(view.object_universe_of(&taxed_key).is_none());
 }
 
+/// M07: processes retain their run identity and ordered event steps, while
+/// ordinary operations and invariants use the object-type member readers.
+#[test]
+fn tc235_m07_process_binder() {
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["identityFields"] = json!([]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"] = json!([]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "identity": id("Fulfilment/reserve_stock"),
+            "name": "reserve_stock",
+            "stepKind": "command",
+            "consumes": [],
+            "emits": [],
+            "origin": origin("Fulfilment/reserve_stock"),
+        }));
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"][0]["consumes"] = json!([id("Money")]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("Order")]);
+    assert_malformed_refusal(&document, "Fulfilment");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["steps"][1]["emits"] = json!([id("StockReserved")]);
+    assert_missing_refusal(&document, "StockReserved");
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["operations"]
+        .as_array_mut()
+        .unwrap()
+        .push(operation("Fulfilment", "restart"));
+    let package = read_k2(&document).expect("process operation admission");
+    assert!(package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::OperationMember(operation)
+            if operation.key.node == id("Fulfilment/restart"))
+    }));
+
+    let mut document = k2();
+    type_named_mut(&mut document, "Fulfilment")["clauses"] = json!([clause(
+        "Fulfilment",
+        "Bounded",
+        "self.correlation_id = self.correlation_id"
+    )]);
+    let package = read_k2(&document).expect("process invariant admission");
+    assert!(package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::Clause(clause)
+            if clause.key.node == id("Fulfilment/Bounded"))
+    }));
+}
+
 /// M08: persistence interfaces bind their object targets and operation
 /// signatures, while storage contracts and clauses remain outside this
 /// structural binder.

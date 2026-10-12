@@ -1784,7 +1784,7 @@ impl<'a> NodeCtx<'a> {
     /// entirely (every array member the readers below touch is optional at
     /// the wire level, e.g. a business type's `fields`/`operations`, a
     /// field's `subsets`).
-    fn array_field(&self, field: &'static str) -> Result<&'a [Value], ModelRefusal> {
+    pub(super) fn array_field(&self, field: &'static str) -> Result<&'a [Value], ModelRefusal> {
         match self.value.get(field) {
             None => Ok(&[]),
             Some(array) => array
@@ -2266,7 +2266,7 @@ fn read_field_member(
 /// per declared field/operation and one [`RelationshipRecord`] per declared
 /// inline relationship, appending all of them to `records` in the type's
 /// own field-then-operation-then-relationship order.
-fn read_object_type(
+pub(super) fn read_object_type(
     package: &str,
     type_value: &Value,
     node: &str,
@@ -2425,7 +2425,7 @@ pub(super) fn read_record_value_type(
 }
 
 /// Read real clause members without interpreting expression text or languages.
-fn read_clauses(
+pub(super) fn read_clauses(
     package: &str,
     owner: &str,
     ctx: &NodeCtx<'_>,
@@ -3191,6 +3191,7 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
         DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
         DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::Process(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)

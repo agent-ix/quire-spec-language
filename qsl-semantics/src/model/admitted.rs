@@ -38,6 +38,8 @@ pub enum DeclarationKind {
     ValueType,
     /// A record value type: named fields and no identity (FR-208).
     RecordValueType,
+    /// A process type with an object universe (FR-208).
+    Process,
     /// An authored clause member.
     Clause,
     /// An original namespace.
@@ -177,6 +179,7 @@ impl AdmittedPackage {
                 }
                 DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::Process(_)
                 | DomainPackageRecord::Namespace(_)
                 | DomainPackageRecord::PersistenceInterface(_)
                 | DomainPackageRecord::ScalarType(_)
@@ -306,6 +309,7 @@ impl AdmittedPackage {
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
+            DomainPackageRecord::Process(_) => DeclarationKind::Process,
             DomainPackageRecord::Clause(_) => DeclarationKind::Clause,
             DomainPackageRecord::Namespace(_) => DeclarationKind::Namespace,
             DomainPackageRecord::PersistenceInterface(_) => DeclarationKind::PersistenceInterface,
