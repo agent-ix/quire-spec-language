@@ -1160,6 +1160,14 @@ mod tests {
             !edges.is_empty(),
             "fixture sanity: check must import something real"
         );
+        let flat_value_edges: Vec<_> = edges
+            .iter()
+            .filter(|edge| edge.module.starts_with("value::") && !edge.submodule_qualified)
+            .collect();
+        assert!(
+            flat_value_edges.is_empty(),
+            "check modules must name each value submodule directly instead of using the value aggregate: {flat_value_edges:?}"
+        );
         for edge in &edges {
             assert!(!edge.is_violation(), "layer violation found: {edge:?}");
         }
