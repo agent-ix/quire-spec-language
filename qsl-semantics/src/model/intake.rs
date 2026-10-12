@@ -3191,6 +3191,7 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
         DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
         DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)

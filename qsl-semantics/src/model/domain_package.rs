@@ -69,6 +69,22 @@ pub struct RecordValueTypeRecord {
     pub supertypes: Vec<DeclarationKey>,
 }
 
+/// An event type (FR-208): an identity-free type whose occurrence field
+/// resolves to native Timestamp. Event subtypes retain the occurrence field
+/// and other effective members through their authored `supertypes`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// Authored identity fields, retained so normalization can refuse them
+    /// at the business-meaning boundary rather than erasing the input.
+    pub identity_fields: Vec<DeclarationKey>,
+    /// The authored occurrence field's original declaration key.
+    pub occurrence_field: Option<DeclarationKey>,
+    /// Declared event-type ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+}
+
 /// An authored clause member. Its language and text are retained verbatim;
 /// retaining a clause does not parse or evaluate it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -575,6 +591,8 @@ pub enum DomainPackageRecord {
     FieldMember(FieldMemberRecord),
     /// A record value type (FR-208).
     RecordValueType(RecordValueTypeRecord),
+    /// An event type (FR-208).
+    EventType(EventTypeRecord),
     /// An authored clause member (FR-208).
     Clause(ClauseRecord),
     /// An original namespace with no effective type (FR-208).
@@ -605,6 +623,7 @@ impl DomainPackageRecord {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
+            Self::EventType(record) => &record.key,
             Self::Clause(record) => &record.key,
             Self::Namespace(record) => &record.key,
             Self::PersistenceInterface(record) => &record.key,

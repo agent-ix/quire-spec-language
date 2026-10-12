@@ -209,7 +209,8 @@ use crate::model::accounting::{
 };
 use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, NativeValueType, PopulationRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::index::{DeclIdx, ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
@@ -1155,6 +1156,129 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             });
         }
     }
+
+    let mut event_types: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| {
+            if let DomainPackageRecord::EventType(event) = record {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect();
+    event_types.sort_by(|left, right| left.key.cmp(&right.key));
+    for event in event_types {
+        let malformed = |path: &str, reason: &str| ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                node: event.key.node.clone(),
+                artifact: None,
+                span: None,
+            },
+            detail: format!("{}: {path}: {reason}", event.key.node),
+        };
+        if !event.identity_fields.is_empty() {
+            refusals.push(malformed(
+                "TypeDefinition.identityFields",
+                "an event type has no identity fields",
+            ));
+            continue;
+        }
+        let mut operations: Vec<_> = domain_package
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation) if operation.owner == event.key => {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .collect();
+        operations.sort_by(|left, right| left.key.cmp(&right.key));
+        if let Some(operation) = operations.first() {
+            refusals.push(ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: operation.key.node.clone(),
+                    what: format!("{}:operations", crate::model::intake::meaning::EVENT_TYPE),
+                },
+                detail: format!(
+                    "{}: TypeDefinition.operations[0]: an event type declares no operations",
+                    operation.key.node
+                ),
+            });
+            continue;
+        }
+        let field = event.occurrence_field.as_ref().and_then(|key| {
+            domain_package.records.iter().find_map(|record| {
+                if let DomainPackageRecord::FieldMember(field) = record {
+                    if &field.key == key {
+                        return Some(field);
+                    }
+                }
+                None
+            })
+        });
+        let timestamp = field.is_some_and(|field| match &field.value_type {
+            ValueTypeRef::Native(NativeValueType::Timestamp) => true,
+            ValueTypeRef::Package(key) => domain_package.records.iter().any(|record| {
+                matches!(record,
+                DomainPackageRecord::ScalarType(scalar) if &scalar.key == key
+                    && scalar.domain == ScalarValueDomain::Native(NativeValueType::Timestamp))
+            }),
+            _ => false,
+        });
+        if !timestamp {
+            refusals.push(malformed(
+                "TypeDefinition.occurrenceField",
+                "the occurrence field must resolve to native Timestamp",
+            ));
+        }
+        for (position, general) in event.supertypes.iter().enumerate() {
+            let ancestor = domain_package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::EventType(ancestor) if ancestor.key == *general => {
+                        Some(ancestor)
+                    }
+                    _ => None,
+                });
+            let Some(ancestor) = ancestor else {
+                // AC-17 reports the invalid event meaning at the occurrence binding
+                // before reporting the offending supertype reference.
+                refusals.push(malformed(
+                    "TypeDefinition.occurrenceField",
+                    "event occurrence inheritance requires event-type supertypes",
+                ));
+                refusals.push(malformed(
+                    &format!("TypeDefinition.supertypes[{position}]"),
+                    "an event type generalizes only an event type",
+                ));
+                continue;
+            };
+            if let (Some(child), Some(parent)) =
+                (&event.occurrence_field, &ancestor.occurrence_field)
+            {
+                if child != parent {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: event.key.clone(),
+                            member: parent.clone(),
+                            redefiners: vec![child.clone()],
+                        },
+                        detail: format!(
+                            "{}.occurrenceField conflicts with inherited {}.occurrenceField",
+                            event.key.node, ancestor.key.node
+                        ),
+                    });
+                }
+            }
+        }
+    }
     refusals
 }
 
@@ -1218,7 +1342,10 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::FieldMember(member) => {
-            if !index.is_object_type(&member.owner) && !index.is_record_value_type(&member.owner) {
+            if !index.is_object_type(&member.owner)
+                && !index.is_record_value_type(&member.owner)
+                && !index.is_event_type(&member.owner)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -1226,7 +1353,7 @@ fn check_node<'a>(
                         owner: member.owner.clone(),
                     },
                     detail: format!(
-                        "field member {} names owner {}, which is not a declared object type or record value type",
+                        "field member {} names owner {}, which is not a declared object, record value, or event type",
                         member.key.node, member.owner.node
                     ),
                 });
@@ -1279,8 +1406,28 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::EventType(event) => {
+            for general in &event.supertypes {
+                if !index.is_event_type(general) {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: event.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "event type {} names no event ancestor {}",
+                            event.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
         DomainPackageRecord::Clause(clause) => {
-            if !index.is_record_value_type(&clause.owner) && !index.is_namespace(&clause.owner) {
+            if !index.is_record_value_type(&clause.owner)
+                && !index.is_event_type(&clause.owner)
+                && !index.is_namespace(&clause.owner)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {

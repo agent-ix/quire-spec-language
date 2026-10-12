@@ -73,6 +73,7 @@ struct DeclFlags {
     non_root: bool,
     scalar_type: bool,
     record_value_type: bool,
+    event_type: bool,
     namespace: bool,
     field_member: bool,
     operation_member: bool,
@@ -192,6 +193,11 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .chain(&operation.redefines)
             .collect(),
         DomainPackageRecord::RecordValueType(record) => std::iter::once(&record.key)
+            .chain(&record.supertypes)
+            .collect(),
+        DomainPackageRecord::EventType(record) => std::iter::once(&record.key)
+            .chain(&record.identity_fields)
+            .chain(record.occurrence_field.iter())
             .chain(&record.supertypes)
             .collect(),
         DomainPackageRecord::Clause(clause) => vec![&clause.key, &clause.owner],
@@ -398,6 +404,10 @@ impl RecordIndex {
                     index.flags[own.0].record_value_type = true;
                     index.generals[own.0].extend(record.supertypes.iter().map(at));
                 }
+                DomainPackageRecord::EventType(event) => {
+                    index.flags[own.0].event_type = true;
+                    index.generals[own.0].extend(event.supertypes.iter().map(at));
+                }
                 DomainPackageRecord::Clause(clause) => {
                     let owner = at(&clause.owner);
                     index.member_owner.insert(own, owner);
@@ -494,6 +504,11 @@ impl RecordIndex {
         self.flags(key).record_value_type
     }
 
+    /// Whether some `EventType` record declares `key`.
+    pub(crate) fn is_event_type(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).event_type
+    }
+
     /// Whether some `FieldMember` record declares `key`.
     pub(crate) fn is_field_member(&self, key: &DeclarationKey) -> bool {
         self.flags(key).field_member
@@ -523,7 +538,7 @@ impl RecordIndex {
         self.keys
             .iter()
             .zip(&self.flags)
-            .filter(|(_, flags)| flags.object_type || flags.record_value_type)
+            .filter(|(_, flags)| flags.object_type || flags.record_value_type || flags.event_type)
             .map(|(key, _)| key)
     }
 
