@@ -417,7 +417,7 @@ pub fn resolve_root_field_redefinition(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use qsl_semantics::model::accounting::ChargePoint;
+    use qsl_semantics::model::accounting::LimitKind;
     use qsl_semantics::model::normalize::normalize_with_meter;
 
     #[test]
@@ -506,13 +506,14 @@ mod tests {
             .expect("intake retains typed reader refusals until normalization charges records");
         let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
         assert_eq!(
-            meter
-                .admitted_charges()
-                .iter()
-                .filter(|charge| **charge == ChargePoint::NormalizeRecord)
-                .count(),
+            meter.admission_count(),
             3,
-            "the type, field, and population are charged before refusals",
+            "only the type, field, and population charges precede refusal",
+        );
+        assert_eq!(
+            meter.consumed(LimitKind::DeclarationRecords),
+            3,
+            "all three source records are charged before refusal",
         );
         let NormalizeOutcome::Refused(refusals) = outcome else {
             panic!("normalization reports the retained reader refusal");
