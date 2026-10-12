@@ -1,9 +1,9 @@
 ---
 id: SR-7816
-title: QSL-710 checked request implementation code and Rust review
+title: QSL-710 checked request implementation final code and Rust review
 type: SpecReview
 analysis: code-review
-scope: agent-ix/quire-spec-language@1c61829dfc531958dc95e8c688bd940179ce59d3
+scope: agent-ix/quire-spec-language@93ea9efce64e925f22e5a9609da75cc179fa40c3
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
@@ -16,20 +16,34 @@ relationships:
 
 ## Summary
 
-Ticket QSL-710, PR 741. Reviewed the changed request, claims and test files, the claims occurrence-keying implementation, existing hand-built occurrence fixtures, FR-062 AC13, FR-075 AC15/16 and TC-160 step 12. Rust review is included. The producer/accessor path preserves canonical occurrence identity and fails closed when a narrowed claim has zero or multiple direct narrow matches.
+Final static code and Rust review of the QSL request-payload slice in PR 741. Each requirement occurrence retains the canonical occurrence key of its direct narrow, and the request item exposes it through `conversion_context() -> Option<&OccurrenceKey>`. RR-16 preserves distinct contexts for occurrences sharing one scalar application node.
 
-## Initial finding
+## Verdict
 
-Round 1 found that TC-160 step 12 lacked zero-match, two-match and nested inner-versus-outer controls. Round 2 found the first nested test supplied its own predicate, bypassing the production operation/operand matcher. Both findings are resolved by commit `bacf88df38a94cce0fc015bea041652e51889985`: the nested fixture adds an enclosing narrow occurrence to the checked graph, calls production `key_claims`, and asserts the independently identified direct occurrence. Mutating production matching to accept the outer narrow makes the test fail closed.
+**SR-7816: PASS at `93ea9efce64e925f22e5a9609da75cc179fa40c3`.** FND-001 is fixed. No open code-review findings or new rebase findings remain. This is a static review; runtime qualification is separate and no builds or tests were run by this reviewer.
+
+SR-7817 FND-001 remains **deferred to the separate driver implementation slice**: production driver forwarding of occurrence context and explicit lowering roots is outside this payload PR. SR-7817 FND-002 is fixed. This review does not assert full QSL-710 completion.
 
 ## Findings
 
+The table records the original finding; its current status is fixed as stated in Dispositions.
+
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | TC-160 nested direct-versus-outer narrow selection needed a production-path control; fixed by the checked-graph `key_claims` fixture at `bacf88df38a94cce0fc015bea041652e51889985`. | TC-160; FR-062-AC-13 |
+| FND-001 | medium | TC-160 step 12 requires zero/two matching narrow refusal and nested inner-versus-outer identity controls. The only new test is the ordinary RR-16 positive plus Own case. Existing hand-built key_claims fixtures all use SiteBound::Own; changing the new exact-one selection back to first-match would survive these controls. Add narrowed-site fixtures with independently fixed expected keys, asserting typed UnkeyableRequirements for zero/two candidates and the inner key for nesting. | qsl-semantics/src/check/claims/tests.rs; qsl-semantics/src/check/claims.rs; TC-160 |
 
-## Final disposition
+## Dispositions
 
-**PASS for the QSL payload code and Rust review.** No new findings. The item-level `None` assertion and FR-075-AC-15 trace were added in `c3f770f234e8388b973f8661290d952b6119e5b5`.
+| FND | Outcome | Evidence |
+| --- | --- | --- |
+| FND-001 | fixed | Zero/two-match tests call production `key_claims` and assert `KeyFault::UnkeyableRequirements`. The final nested fixture inserts an outer narrow referring to the direct narrow, co-locates its occurrence with the scalar site, calls production `key_claims`, and asserts the independently identified direct occurrence. Production owns the operation/Reference predicate; no test-written predicate replaces it. |
 
-Runtime qualification remains a separate gate. The driver’s use of the occurrence context and independent lowering roots remains explicitly deferred to the separate driver implementation slice; this review does not claim full QSL-710 completion.
+The first fix round added zero/two controls but its nested selector test bypassed production operand matching. The second round replaced that test with the graph/occurrence fixture described above, resolving the finding. The final rebase preserves that implementation and all controls.
+
+## Coverage
+
+Reviewed `qsl-route/src/request.rs`, `qsl-semantics/src/check/claims.rs`, `qsl-semantics/src/check/claims/tests.rs`, `qsl-semantics/src/check/lowering.rs`, and `tests/it/request_builder.rs`; assessed FR-062 AC13, FR-075 AC15 and TC-160 step 12. FR-075 AC16 remains the separately owned driver obligation.
+
+The narrowed selector requires exactly one direct match, verifies the operation identity and sole Reference operand, and excludes an outer narrow that references the inner node. Own-result records and items retain `None`. The request RR-16 control carries the FR-075 AC15 trace and verifies occurrence-specific contexts without introducing extra items.
+
+For the rebase onto main `362a7b3398a79e86a1fe0af22960afc93f120363`, all seven source/test commits are patch-equivalent and all five implementation/test files are byte-identical to the previously reviewed source. Nearby incoming checker changes concern complete-model `reaches` endpoint typing and a rational-division fixture; they do not change scalar claim collection or context propagation. The remaining PR additions are the archived review documents.
