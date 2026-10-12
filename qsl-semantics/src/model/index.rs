@@ -1002,15 +1002,44 @@ mod tests {
         );
     }
 
-    /// [`RecordIndex::conforms`] answers from the ancestry exactly
-    /// as the per-call walk did, for every ordered pair of keys (declared,
-    /// referenced and unknown) and every `ancestor_steps` ceiling from 0 to
-    /// past each walk's length, over a chain, a diamond, a cycle, a
-    /// self-loop, a repeated supertype, a dangling supertype and a type
-    /// declared twice.
+    /// Native UUID and String leaves retain separate identity and conformance.
     ///
-    /// Mutation used: comparing the found ordinal with `<` instead of `<=`
-    /// fails the chain's exact-ceiling cases.
+    /// Mutation used: treating all native leaves as one identity makes the
+    /// mixed UUID/String conformance assertion fail.
+    #[test]
+    fn native_uuid_and_string_types_are_distinct_identity_leaves() {
+        use super::super::domain_package::{NativeValueType, ValueTypeRef};
+
+        let uuid = ValueTypeRef::Native(NativeValueType::Uuid);
+        let string = ValueTypeRef::Native(NativeValueType::String);
+        assert_eq!(uuid, ValueTypeRef::Native(NativeValueType::Uuid));
+        assert_eq!(string, ValueTypeRef::Native(NativeValueType::String));
+        assert_ne!(uuid, string);
+        assert_eq!(uuid.to_string(), "ix://quire/native/UUID");
+        assert_eq!(string.to_string(), "ix://quire/native/String");
+
+        let package = DomainPackage::new(DomainPackageRef::fixture("native-leaves"), Vec::new());
+        let index = RecordIndex::build(&package);
+        for native in [&uuid, &string] {
+            assert!(index
+                .value_type_conforms(
+                    native,
+                    native,
+                    0,
+                    qsl_foundation::Setting::ModelAncestorSteps
+                )
+                .expect("native conformance is not fallible"));
+        }
+        assert!(!index
+            .value_type_conforms(
+                &uuid,
+                &string,
+                0,
+                qsl_foundation::Setting::ModelAncestorSteps
+            )
+            .expect("native conformance is not fallible"));
+    }
+
     #[test]
     #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-151-AC-5")]
     fn conforms_matches_the_bounded_walk_everywhere() {
