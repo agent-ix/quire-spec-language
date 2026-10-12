@@ -683,7 +683,7 @@ pub enum NodeKind {
         /// The source operator.
         operator: IntegerDivisionOperator,
         /// The package's admitted law, absent only for `mod`.
-        selection: Option<crate::value::AdmittedIntegerDivision>,
+        selection: Option<crate::value::definition::AdmittedIntegerDivision>,
         /// The dividend.
         left: NodeId,
         /// The divisor.
