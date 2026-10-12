@@ -1716,6 +1716,13 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
     refusals
 }
 
+fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> bool {
+    package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::ObjectType(object)
+            if &object.key == key && object.interface_features.is_none())
+    })
+}
+
 /// Every FR-154 per-node check for one already-key-validated node, in
 /// FR-154's own table order, the object id check first
 /// (`model-complete.md`:81). Returns every failing check for this node, in
@@ -1877,9 +1884,21 @@ fn check_node<'a>(
         }
         DomainPackageRecord::Process(_) => {}
         DomainPackageRecord::Clause(clause) => {
-            let container_meaning = if index.is_namespace(&clause.owner) {
+            let operation_owner = domain_package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::OperationMember(operation)
+                        if operation.key == clause.owner =>
+                    {
+                        Some(&operation.owner)
+                    }
+                    _ => None,
+                });
+            let contract_owner = operation_owner.unwrap_or(&clause.owner);
+            let container_meaning = if index.is_namespace(contract_owner) {
                 Some(crate::model::intake::meaning::NAMESPACE)
-            } else if index.is_persistence_interface(&clause.owner) {
+            } else if index.is_persistence_interface(contract_owner) {
                 Some(crate::model::intake::meaning::PERSISTENCE_INTERFACE)
             } else {
                 None
@@ -1900,7 +1919,14 @@ fn check_node<'a>(
                 && !index.is_event_type(&clause.owner)
                 && !index.is_state_machine(&clause.owner)
                 && container_meaning.is_none()
-                && !index.is_operation_member(&clause.owner)
+                && !operation_owner.is_some_and(|owner| {
+                    is_ordinary_object_type(domain_package, owner)
+                        || index.is_state_machine(owner)
+                        || domain_package.records.iter().any(|record| {
+                            matches!(record,
+                            DomainPackageRecord::Process(process) if &process.key == owner)
+                        })
+                })
                 && !domain_package.records.iter().any(|record| match record {
                     DomainPackageRecord::ObjectType(object) => {
                         object.key == clause.owner && object.interface_features.is_none()
@@ -1978,7 +2004,7 @@ fn check_node<'a>(
             // here; only a package value type is checked.
             for parameter in &op.parameters {
                 if let Some(value_type) = parameter.value_type.as_package() {
-                    if !index.is_object_type(value_type)
+                    if !is_ordinary_object_type(domain_package, value_type)
                         && !index.is_scalar_type(value_type)
                         && !index.is_record_value_type(value_type)
                     {
@@ -1999,7 +2025,7 @@ fn check_node<'a>(
             }
             if let Some(result) = &op.result {
                 if let Some(value_type) = result.value_type.as_package() {
-                    if !index.is_object_type(value_type)
+                    if !is_ordinary_object_type(domain_package, value_type)
                         && !index.is_scalar_type(value_type)
                         && !index.is_record_value_type(value_type)
                     {
@@ -4186,6 +4212,37 @@ mod tests {
             normalize(&valid, ModelNormalizationLimits::UNLIMITED),
             NormalizeOutcome::Completed(_)
         ));
+
+        for language in ["quire", "ocl"] {
+            let clause_key = DeclarationKey::fixture("model.Store.get/Contract");
+            let mut records = valid.records.clone();
+            records.push(DomainPackageRecord::Clause(ClauseRecord {
+                key: clause_key.clone(),
+                owner: DeclarationKey::fixture("model.Store.get"),
+                language: language.to_owned(),
+                text: "true".to_owned(),
+            }));
+            let outcome = normalize(&package(records), ModelNormalizationLimits::UNLIMITED);
+            if language == "quire" {
+                let NormalizeOutcome::Refused(refusals) = outcome else {
+                    panic!("a persistence operation declares no quire contract");
+                };
+                assert!(refusals.iter().any(|refusal| {
+                    refusal.code == Code::UnsupportedConstruct && matches!(&refusal.cause,
+                        ModelRefusalCause::UnsupportedDeclarationForm { node, what }
+                        if node == &clause_key.node && what == &format!("{}:clauses", crate::model::intake::meaning::PERSISTENCE_INTERFACE))
+                }));
+            } else {
+                let NormalizeOutcome::Completed(view) = outcome else {
+                    panic!("a foreign-language clause is retained: {outcome:?}");
+                };
+                assert!(view
+                    .domain_package()
+                    .records
+                    .iter()
+                    .any(|record| record.key() == &clause_key));
+            }
+        }
 
         let unknown_owner = package(vec![operation(DeclarationKey::fixture("model.Missing"))]);
         let NormalizeOutcome::Refused(refusals) =

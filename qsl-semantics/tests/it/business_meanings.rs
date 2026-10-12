@@ -635,6 +635,83 @@ fn business_type_invariant_owner_matrix_is_admitted() {
     }
 }
 
+/// Signature types exclude business containers, event values, state machines and process runs.
+#[trace("FR-103-AC-6", "QSpec-TC-235")]
+#[test]
+fn operation_signature_type_meaning_matrix() {
+    use qsl_foundation::Code;
+    use qsl_semantics::model::domain_package::{
+        Multiplicity, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+        OperationResult, ValueTypeRef,
+    };
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    let p = "test/orders";
+    let base = read_authored(&k2());
+    for (name, allowed) in [
+        ("Order", true),
+        ("Money", true),
+        ("Instant", true),
+        ("OrderPlaced", false),
+        ("OrderLifecycle", false),
+        ("Fulfilment", false),
+        ("OrderStore", false),
+        ("OrderManagement", false),
+    ] {
+        let operation_key = key(p, "Order/change");
+        let parameter_key = key(p, "Order/change/value");
+        let value_type = ValueTypeRef::Package(key(p, name));
+        let multiplicity = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        let mut records = base.records.clone();
+        records.push(DomainPackageRecord::OperationMember(
+            OperationMemberRecord {
+                key: operation_key.clone(),
+                owner: key(p, "Order"),
+                parameters: vec![OperationParameterRecord {
+                    key: parameter_key.clone(),
+                    value_type: value_type.clone(),
+                    multiplicity: multiplicity.clone(),
+                }],
+                result: Some(OperationResult {
+                    value_type: value_type.clone(),
+                    multiplicity,
+                }),
+                effect: OperationEffect::default(),
+                own_postcondition_clauses: Vec::new(),
+                has_body: false,
+                redefines: None,
+            },
+        ));
+        let package = DomainPackage::new(base.model_selection.clone(), records);
+        let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+        if allowed {
+            let NormalizeOutcome::Completed(view) = outcome else {
+                panic!("declared signature type {name} must admit: {outcome:?}");
+            };
+            assert!(view
+                .domain_package()
+                .records
+                .iter()
+                .any(|record| record.key() == &operation_key));
+        } else {
+            let NormalizeOutcome::Refused(refusals) = outcome else {
+                panic!("signature type {name} must refuse");
+            };
+            for parameter in [Some(parameter_key.clone()), None] {
+                assert!(refusals.iter().any(|refusal| {
+                    refusal.code == Code::DanglingReference && matches!(&refusal.cause,
+                        ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type }
+                        if operation == &operation_key && actual_parameter == &parameter && actual_type == &value_type)
+                }));
+            }
+        }
+    }
+}
+
 /// A record may specialize its own meaning and inherit every ancestor field.
 /// Trace: QSpec-FR-208-AC-12
 #[trace("QSpec-TC-235")]
