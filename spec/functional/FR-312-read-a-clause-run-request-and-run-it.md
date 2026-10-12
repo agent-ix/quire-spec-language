@@ -44,9 +44,15 @@ envelope, source selections and intake limits) that carries `clause` in
 place of `call`. `clause` is a closed object:
 
 - `selection`: exactly one of
-  - `{"clause": {"name": N, "observation": O}}`, FR-106's
+  - `{"clause": {"name": N, "observation": O, ...}}`, FR-106's
     `ClauseSelection`, where `O` names the snapshot or invocation the clause
-    reads by its key in `observations`;
+    reads by its key in `observations`. The permitted member sets are exactly
+    `{name, observation, self, anchor}` for a current snapshot,
+    `{name, observation, self, parameters}` for a pre snapshot, and
+    `{name, observation}` for an invocation. `self` is FR-106's `ObjectRef`,
+    `anchor` is FR-106's `{kind, name}`, and `parameters` is FR-106's
+    parameter map (including `{}` when empty). An invocation document
+    carries its own `self` and call context;
   - `{"frame": {"operation": Op, "invocation": K}}`, FR-115's frame
     selection;
   - `{"function": {"name": N, "arguments": A, "snapshot": K}}`, FR-109's
@@ -55,8 +61,7 @@ place of `call`. `clause` is a closed object:
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
 - `package_id`: optional, the expected `package_id`, lowercase hex;
-- `accounting`: optional, FR-100's `accounting` object, the evaluation
-  budget;
+- `work_units`: optional, FR-100's evaluation budget;
 - `observation_limits`: optional, FR-106's `ObservationLimits` overrides.
 
 The request's `models` and `libraries` are FR-100's and give FR-109's
@@ -91,6 +96,18 @@ package and dependency inputs.
 - If a selection names an observation key `observations` does not hold,
   then the reader SHALL refuse `invalid-request` at stage `request`, naming
   the key.
+- For a clause selection, the reader SHALL inspect the named document's
+  format and observation role. From a current snapshot it SHALL construct
+  FR-106 `Current` with the request's `self` and `anchor`; FR-106 checks the
+  anchor against the snapshot. From a pre snapshot it SHALL construct
+  `PreCall` with the request's `self` and `parameters`. From an invocation
+  it SHALL construct `Invocation` using the document reference; FR-106 reads
+  `self` and parameters from that invocation. A directly selected post
+  snapshot, an unrecognized document format or observation role, a missing
+  required member, or a member outside that role's permitted set SHALL
+  refuse `invalid-request` at stage `request`, naming `observation` for an
+  unsupported document or role and the member for a member defect, before
+  `run_clause`.
 - The reader SHALL read each observation file once, under FR-100's
   `dependent_bytes` limit and relative to the request file's directory.
 - The reader SHALL pass every byte it read into the `ClauseRunRequest`;
@@ -132,9 +149,9 @@ method-only Verification cells do not replace the existing trace tags.
 ## Status
 
 QSL-665's typed-call clarification is proposed; its consumer qualification
-is UNRUN. QSL-656 owns the reviewed `clause.accounting` object, its defaults
-and closed decoding; this clarification does not duplicate that contract or
-define a compatibility member.
+is UNRUN. The accounting setting member is owned by QSL-656; this
+clarification does not duplicate that contract or define a compatibility
+member.
 
 Specified; not yet implemented -- TC-891 planned. Lands with the deletion of
 native `run` (ADR-031 R-1). That change also deletes the per-file `sha256:`
