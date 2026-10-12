@@ -215,6 +215,7 @@ fn validate(
                 | Value::Decimal(_)
                 | Value::Float(_)
                 | Value::Quantity(_)
+                | Value::String(_)
                 | Value::Text(_)
                 | Value::Enum(_)
                 | Value::Population(_)

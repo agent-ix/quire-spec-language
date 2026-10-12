@@ -1140,6 +1140,8 @@ impl<'w> LeafWalk<'w> {
         match value_type {
             // Rule 1.
             ValueType::Text(text) => self.append(Leaf::Text(text.profile()), location)?,
+            // Native String is not profile-bounded Text and adds no Text leaf.
+            ValueType::String => {}
             // Rule 2.
             ValueType::Option(payload) => queued.push(LeafVisit::Type {
                 segment: Some(WalkSegment::Inner),
@@ -1255,6 +1257,7 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
+                    | ValueType::String
                     | ValueType::Enum(_)
                     | ValueType::Reference(_)
                     | ValueType::Population(_) => {}
@@ -1911,7 +1914,7 @@ impl<'a> Lowering<'a> {
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
-            ValueType::Uuid | ValueType::Timestamp => Err(refuse(
+            ValueType::String | ValueType::Uuid | ValueType::Timestamp => Err(refuse(
                 location,
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
             )),
@@ -3917,6 +3920,7 @@ impl<'a> Lowering<'a> {
             Value::Uuid(_) | Value::Timestamp(_) => {
                 return Err(fault(node.location(), KeyFault::UnbuiltLiteral))
             }
+            Value::String(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
         };
         let semantic_type = self.type_node(node.value_type(), node.location())?;
         self.value_node(
@@ -4008,7 +4012,10 @@ impl<'a> Lowering<'a> {
             }
             // FR-153: a population is never an equality operand; the
             // checker refuses one before lowering.
-            ValueType::Population(_) | ValueType::Uuid | ValueType::Timestamp => {
+            ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::String
+            | ValueType::Timestamp => {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),

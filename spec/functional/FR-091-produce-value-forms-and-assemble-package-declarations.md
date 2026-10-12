@@ -770,6 +770,8 @@ code or code/cause:
 | dimension or unit cycle | `invalid_package`/`definition-cycle` |
 | zero denominator | `undefined_expression`/`unproved-nonzero` |
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
+| type-environment allocator denial | `resource_exhausted`/`allocation-failed` |
+| type-environment reservation size arithmetic or representation overflow | `resource_exhausted`/`reservation-size-overflow` |
 | unit-graph topology | `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12) |
 | unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
 | ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
@@ -901,6 +903,12 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   dependencies and to FR-151 dispatch cycles, and has no row for a type
   alias. The one-sentence catalog extension is proposed to
   `ix://agent-ix/quire-specification`.
+- QSpec's `quire.native.diagnostics/v1` catalog defines both
+  `resource_exhausted` storage causes: `allocation-failed` with `requested`
+  and `reservation-size-overflow` with `upstream` (QSpec PR #236, merged main
+  `1498c1e95eb3e0bbc8cf8c6bd9df2704b691c083`; the capacity cause was added by
+  QSpec PR #234). QSL preserves the upstream `StorageRequest` amount and unit
+  in each single payload field, rendered as `<unit>:<amount>`.
 - **Downstream:** the ADR-011 §5 stage driver calls S1, S2, the assembler
   and `check` in that order.
 
