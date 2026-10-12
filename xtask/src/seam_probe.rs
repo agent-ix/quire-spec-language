@@ -586,9 +586,9 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     ))
 }
 
-/// FR-300: qualify the individual production StateModel arms alongside
-/// rustc's function-level exhaustiveness evidence. E0004 alone cannot
-/// distinguish two missing variants in the same function.
+/// FR-300: qualify the production StateModel S1/S3 arms and inspect S2's
+/// actual forms dispatch table alongside rustc's function-level evidence.
+/// E0004 alone cannot distinguish two missing variants in one function.
 pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
     let sites = [
         (
@@ -598,14 +598,6 @@ pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
             "catalog_code_prefix",
             "Self",
             vec!["StateModel"],
-        ),
-        (
-            "S2 hook",
-            "qsl-semantics/src/check/check/typing.rs",
-            "Typer",
-            "infer_form",
-            "ExprNode",
-            vec!["Field", "AllInstances", "Lookup", "Reaches", "Dispatch"],
         ),
         (
             "S3 hook",
@@ -663,7 +655,79 @@ pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
             expected_but_missing: format!("{missing:?}"),
         });
     }
+    report.push(forms_s2_report(workspace_root)?);
     Ok(format!("{}\n", report.join("\n")))
+}
+
+/// Inspect the S2 dispatch table itself. An S3 typing arm cannot establish
+/// that a family has an S2 producer. Keep a known Value entry as a control so
+/// a missing or renamed production table cannot silently report absence.
+fn forms_s2_report(workspace_root: &Path) -> Result<String> {
+    const FILE: &str = "qsl-forms/src/dispatch.rs";
+    let path = workspace_root.join(FILE);
+    let source = fs::read_to_string(&path).map_err(|source| Error::SeamProbeReadSource {
+        path: path.clone(),
+        source,
+    })?;
+    let parsed = syn::parse_file(&source).map_err(|error| Error::SeamProbeMismatch {
+        unexpected_but_present: format!("{}: {error}", path.display()),
+        expected_but_missing: "valid production Rust syntax".to_owned(),
+    })?;
+    let dispatch = parsed.items.iter().find_map(|item| match item {
+        syn::Item::Fn(function) if function.sig.ident == "dispatch" => Some(function),
+        _ => None,
+    });
+    let arms = dispatch
+        .and_then(|function| {
+            function
+                .block
+                .stmts
+                .iter()
+                .find_map(|statement| match statement {
+                    syn::Stmt::Expr(syn::Expr::Match(expression), _) => Some(&expression.arms),
+                    _ => None,
+                })
+        })
+        .ok_or_else(|| Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!("{FILE}::dispatch match kind"),
+        })?;
+    fn production(arm: &syn::Arm) -> Option<&syn::Path> {
+        let syn::Expr::Call(call) = &*arm.body else {
+            return None;
+        };
+        let syn::Expr::Path(function) = &*call.func else {
+            return None;
+        };
+        Some(&function.path)
+    }
+    let is_call = |path: &syn::Path, module: &str, function: &str| {
+        path.segments.len() == 2
+            && path.segments[0].ident == module
+            && path.segments[1].ident == function
+    };
+    let value_present = arms.iter().any(|arm| {
+        matches!(&arm.pat, syn::Pat::Path(pattern) if pattern.path.segments.last().is_some_and(|segment| segment.ident == "Function"))
+            && production(arm).is_some_and(|path| is_call(path, "value", "function"))
+    });
+    if !value_present || arms.iter().any(|arm| matches!(arm.pat, syn::Pat::Wild(_))) {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!("{FILE}::dispatch Value producer (LeadingTokenKind::Function => value::function) without wildcard"),
+        });
+    }
+    let state_model_present = arms.iter().any(|arm| {
+        production(arm)
+            .is_some_and(|path| path.segments.len() == 2 && path.segments[0].ident == "state_model")
+    });
+    Ok(format!(
+        "StateModel S2 {}: {FILE}::dispatch (Value producer present)",
+        if state_model_present {
+            "PRESENT"
+        } else {
+            "ABSENT"
+        }
+    ))
 }
 
 struct ModelArms<'a> {
@@ -677,17 +741,22 @@ mod state_model_tests {
     use super::*;
     use ix_trace_rs::trace;
 
-    #[trace("TC-791", "FR-300-AC-3")]
+    #[trace("TC-791")]
     #[test]
     fn state_model_arm_report_reads_the_production_matches() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let report = state_model_arm_report(root).unwrap();
-        for stage in ["S1 prefix", "S2 hook", "S3 hook"] {
+        for stage in ["S1 prefix", "S3 hook"] {
             assert!(
                 report.contains(&format!("StateModel {stage} arm")),
                 "{report}"
             );
         }
+        assert!(
+            report.contains("StateModel S2 ABSENT: qsl-forms/src/dispatch.rs::dispatch"),
+            "{report}"
+        );
+        assert!(!report.contains("StateModel S2 hook arm"), "{report}");
     }
 
     #[derive(Default)]
@@ -721,14 +790,14 @@ mod state_model_tests {
             + position.column
     }
 
-    #[trace("TC-791", "FR-300-AC-3")]
+    #[trace("TC-791")]
     #[test]
     fn deleting_the_actual_s3_lookup_arm_names_it_as_missing() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let scratch = tempfile::tempdir().unwrap();
         for file in [
             "qsl-semantics/src/family/mod.rs",
-            "qsl-semantics/src/check/check/typing.rs",
+            "qsl-forms/src/dispatch.rs",
             "qsl-semantics/src/check/state_model.rs",
         ] {
             let destination = scratch.path().join(file);
@@ -759,6 +828,40 @@ mod state_model_tests {
             "{message}"
         );
         eprintln!("{message}");
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn renaming_the_actual_s2_value_producer_is_rejected() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch.path().join("qsl-forms/src/dispatch.rs");
+        let source = fs::read_to_string(&file).unwrap();
+        let changed = source.replace(
+            "LeadingTokenKind::Function => value::function(construct)",
+            "LeadingTokenKind::Function => value::alias(construct)",
+        );
+        assert_ne!(changed, source, "the real S2 Value producer was found");
+        fs::write(file, changed).unwrap();
+        let error = state_model_arm_report(scratch.path())
+            .expect_err("the actual S2 Value producer must be verified");
+        let message = error.to_string();
+        assert!(message.contains("expected-but-missing"), "{message}");
+        assert!(
+            message.contains("qsl-forms/src/dispatch.rs::dispatch")
+                && message.contains("Value producer"),
+            "{message}"
+        );
     }
 }
 

@@ -11,7 +11,7 @@ use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingStage, MeasureObligation,
     Obligation, PackageDeclarations, ProvedInterval, StageLimitCause,
 };
-use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::family::{FamilyKind, FamilyOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::EffectiveId;
@@ -1044,9 +1044,14 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     ))
     .unwrap();
     assert_eq!(dereference.dereferences("f").unwrap().len(), 1);
+    let dereference_refusal =
+        refusal(package(field(Expression::deref(name("ro")), "n")).map(|_| unreachable!()));
+    let CheckCause::StateModel(owner) = &dereference_refusal.cause else {
+        panic!("StateModel ownership: {dereference_refusal:?}");
+    };
+    assert_eq!(owner.family(), FamilyKind::StateModel);
     assert_eq!(
-        refusal(package(field(Expression::deref(name("ro")), "n")).map(|_| { unreachable!() }))
-            .cause,
+        owner.cause,
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
 
