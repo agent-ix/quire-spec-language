@@ -4,7 +4,7 @@ use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord};
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_exact::{
     BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
@@ -49,6 +49,336 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
+}
+
+struct LookupDriverFixture {
+    source: String,
+    bytes: Vec<u8>,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+}
+
+fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
+    let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../../../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .expect("the lookup driver model fixture is JSON");
+    document["constructs"]
+        .as_array_mut()
+        .expect("the model fixture has constructs")
+        .push(serde_json::json!({
+            "kind": {"module": "acme/orders", "name": "population"},
+            "moduleVersion": "1.0.0",
+            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "construct": {
+                "identity": "none",
+                "shape": "record",
+                "members": {},
+                "meaning": "quire.meaning.model.population/v1"
+            }
+        }));
+    document["populations"] = serde_json::json!([{
+        "identity": "ix://acme/orders/Fleet",
+        "displayName": "Fleet",
+        "kind": {"module": "acme/orders", "name": "population"},
+        "members": ["ix://acme/orders/Gadget"],
+        "extent": "closed",
+        "origin": {"generated": {
+            "generatorIdentity": "ix://acme/orders/Fleet",
+            "generatorVersion": "1.0.0",
+            "inputIdentities": ["ix://acme/orders/Fleet"]
+        }}
+    }]);
+    let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
+    let digest = qsl_semantics::model::intake::PackageDocument::parse(
+        &bytes,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("the lookup driver model admits")
+    .jcs_digest();
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         {}\n",
+        hex(&digest),
+        functions
+    );
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    LookupDriverFixture {
+        source,
+        bytes,
+        packages,
+    }
+}
+
+fn lookup_driver_context(
+    fixture: &LookupDriverFixture,
+) -> (
+    qsl_semantics::model::object_environment::ObjectEnvironment,
+    quire_exact::PopulationId,
+    quire_exact::ObjectReference,
+    quire_exact::ObjectReference,
+) {
+    use qsl_semantic_value::object_closure::ObjectClosure;
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
+        PopulationDocument, PopulationMember,
+    };
+
+    let cancel = Cancel::new();
+    let source_identity = source();
+    let parsed = crate::spine::parse(
+        &crate::spine::ParseRequest {
+            source: &source_identity,
+            path: "tc-792-lookup.native",
+            bytes: fixture.source.as_bytes(),
+        },
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .expect("the lookup driver source parses")
+    .into_value();
+    let models = crate::spine::select(
+        &parsed,
+        &fixture.packages,
+        SpineLimits::default().model,
+        &cancel,
+    )
+    .expect("the lookup driver model selects")
+    .into_value();
+    let checked = crate::spine::check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &crate::spine::LockEvidence::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .expect("the lookup driver source checks")
+    .into_value();
+    let view = &models.models()[0].view;
+    let (type_key, type_identity) = view
+        .type_identities()
+        .iter()
+        .find(|(key, _)| key.node == "Gadget")
+        .map(|(key, identity)| (key.clone(), *identity))
+        .expect("Gadget is declared");
+    let population_key =
+        view.domain_package()
+            .records
+            .iter()
+            .find_map(|record| match record {
+                qsl_semantics::model::domain_package::DomainPackageRecord::Population(
+                    population,
+                ) if population.key.node == "Fleet" => Some(population.key.clone()),
+                _ => None,
+            })
+            .expect("Fleet is declared");
+    let document = PopulationDocument {
+        model_identity: view.model_selection().identity.clone(),
+        members: vec![PopulationMember {
+            object: "g1".to_owned(),
+            type_identity: type_key.clone(),
+            field_values: Vec::new(),
+        }],
+    };
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let AdmissionOutcome::Admitted(binding) = admit_binding(
+        view,
+        &document,
+        &population_key,
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut meter,
+    ) else {
+        panic!("the lookup driver population admits");
+    };
+    let universe = view
+        .object_universe_of(&type_key)
+        .expect("Gadget has a universe")
+        .identity();
+    let present = quire_exact::ObjectReference::new(
+        universe,
+        type_identity,
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    let absent = quire_exact::ObjectReference::new(
+        universe,
+        type_identity,
+        quire_exact::ObjectId::new("missing").unwrap(),
+    );
+    let world = ObjectClosure::new(
+        checked.package().graph().scope().types(),
+        [(present.clone(), Vec::new())],
+        &[],
+    )
+    .expect("the lookup driver object closure admits");
+    let population_id = binding.population_id();
+    let objects = qsl_semantics::model::object_environment::ObjectEnvironment::new(world)
+        .with_population(binding)
+        .expect("the lookup driver population binds");
+    (objects, population_id, present, absent)
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
+fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
+    let (objects, population, present, absent) = lookup_driver_context(&fixture);
+    let invoke = |reference| {
+        run(
+            source(),
+            "tc-792-lookup.native",
+            fixture.source.as_bytes(),
+            &fixture.packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &Call {
+                function: "query".to_owned(),
+                arguments: vec![
+                    CallArgument {
+                        parameter: "p".to_owned(),
+                        value: Value::Population(population),
+                    },
+                    CallArgument {
+                        parameter: "r".to_owned(),
+                        value: Value::Reference(reference),
+                    },
+                ],
+                accounting: default_accounting(1_000_000),
+            },
+            &objects,
+            &Cancel::new(),
+        )
+        .map(|(_, outcome)| outcome)
+    };
+    let present_outcome = invoke(present.clone()).expect("present lookup runs");
+    assert!(matches!(
+        present_outcome,
+        CallOutcome::Completed(CallValue::Reference(reference)) if reference == present
+    ));
+    let absent_outcome = invoke(absent).expect("absent lookup returns a refusal outcome");
+    assert!(matches!(
+        absent_outcome,
+        CallOutcome::Refused(CallRefusal::Record { code, .. })
+            if code.code() == "invalid_runtime_input" && code.cause() == "absent-key"
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
+    let fixture = lookup_driver_fixture(
+        "function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }",
+    );
+    let (objects, population, _, present) = lookup_driver_context(&fixture);
+    let foreign_universe = quire_exact::ObjectReference::new(
+        UniverseId::from_digest([0xa5; 32]),
+        present.object_type(),
+        present.object().clone(),
+    );
+    let refusal = run(
+        source(),
+        "tc-792-lookup.native",
+        fixture.source.as_bytes(),
+        &fixture.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Call {
+            function: "unused".to_owned(),
+            arguments: vec![
+                CallArgument {
+                    parameter: "p".to_owned(),
+                    value: Value::Population(population),
+                },
+                CallArgument {
+                    parameter: "r".to_owned(),
+                    value: Value::Reference(foreign_universe),
+                },
+            ],
+            accounting: default_accounting(1_000_000),
+        },
+        &objects,
+        &Cancel::new(),
+    )
+    .expect_err("unused reference parameters still undergo admission");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::Admission { position: 1, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignUniverse { .. })
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
+    let (objects, _, _, _) = lookup_driver_context(&fixture);
+    let refusal = run(
+        source(),
+        "tc-792-lookup.native",
+        fixture.source.as_bytes(),
+        &fixture.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Call {
+            function: "query".to_owned(),
+            arguments: vec![CallArgument {
+                parameter: "p".to_owned(),
+                value: Value::Boolean(true),
+            }],
+            accounting: default_accounting(1_000_000),
+        },
+        &objects,
+        &Cancel::new(),
+    )
+    .expect_err("unbound r precedes p's wrong value kind");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::UnboundParameter { parameter } if parameter == "r"
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
+    let (objects, population, _, _) = lookup_driver_context(&fixture);
+    let cancel = Cancel::new();
+    cancel.cancel(quire_exact::CancelCause::Requested);
+    let refusal = run(
+        source(),
+        "tc-792-lookup.native",
+        fixture.source.as_bytes(),
+        &fixture.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Call {
+            function: "query".to_owned(),
+            arguments: vec![
+                CallArgument {
+                    parameter: "p".to_owned(),
+                    value: Value::Population(population),
+                },
+                CallArgument {
+                    parameter: "r".to_owned(),
+                    value: Value::Boolean(true),
+                },
+            ],
+            accounting: default_accounting(1_000_000),
+        },
+        &objects,
+        &cancel,
+    )
+    .expect_err("a cancelled driver has no lookup result");
+    assert!(matches!(*refusal, RunRefusal::Cancelled(_)));
 }
 
 fn arg(parameter: &str, value: i64) -> CallArgument {
