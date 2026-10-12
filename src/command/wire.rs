@@ -266,6 +266,10 @@ fn counter<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, 
     u64::deserialize(decoder).map(Some)
 }
 
+fn work_units<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
+    u64::deserialize(decoder).map(Some)
+}
+
 /// One `{parameter, value}` argument of a [`Call`] (FR-100): `value` is a
 /// JSON integer in the signed 64-bit range, read as `i64` so an out-of-range
 /// or non-integer JSON value refuses at decode (`invalid-request`), never
