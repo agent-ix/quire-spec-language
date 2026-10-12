@@ -151,7 +151,10 @@ fn assert_missing_field_at_check(package: &CheckedPackage, static_type: &str, fi
         panic!("StateModel ownership for missing {field}: {cause:?}");
     };
     assert_eq!(owner.family(), FamilyKind::StateModel);
-    assert_eq!(owner.cause, CheckCause::IllTyped(IllTypedCause::TypeMismatch));
+    assert_eq!(
+        owner.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
 }
 
 /// `A.x` is inherited by `B`: `deref(r).x` resolves for `r: Reference<B>`
