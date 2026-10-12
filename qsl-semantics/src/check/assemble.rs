@@ -674,6 +674,7 @@ fn model_object_types(
             }
             DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::EventType(_)
+            | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::Clause(_)
             | DomainPackageRecord::Namespace(_)
             | DomainPackageRecord::PersistenceInterface(_)

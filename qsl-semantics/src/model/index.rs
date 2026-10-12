@@ -74,6 +74,7 @@ struct DeclFlags {
     scalar_type: bool,
     record_value_type: bool,
     event_type: bool,
+    state_machine: bool,
     namespace: bool,
     field_member: bool,
     operation_member: bool,
@@ -199,6 +200,20 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .chain(&record.identity_fields)
             .chain(record.occurrence_field.iter())
             .chain(&record.supertypes)
+            .collect(),
+        DomainPackageRecord::StateMachine(record) => std::iter::once(&record.key)
+            .chain(&record.supertypes)
+            .chain(record.states.iter().map(|state| &state.key))
+            .chain(record.transitions.iter().flat_map(|transition| {
+                [
+                    &transition.key,
+                    &transition.from,
+                    &transition.to,
+                    &transition.trigger,
+                ]
+                .into_iter()
+                .chain(&transition.emits)
+            }))
             .collect(),
         DomainPackageRecord::Clause(clause) => vec![&clause.key, &clause.owner],
         DomainPackageRecord::Namespace(namespace) => std::iter::once(&namespace.key)
@@ -408,6 +423,10 @@ impl RecordIndex {
                     index.flags[own.0].event_type = true;
                     index.generals[own.0].extend(event.supertypes.iter().map(at));
                 }
+                DomainPackageRecord::StateMachine(machine) => {
+                    index.flags[own.0].state_machine = true;
+                    index.generals[own.0].extend(machine.supertypes.iter().map(at));
+                }
                 DomainPackageRecord::Clause(clause) => {
                     let owner = at(&clause.owner);
                     index.member_owner.insert(own, owner);
@@ -509,6 +528,11 @@ impl RecordIndex {
         self.flags(key).event_type
     }
 
+    /// Whether `key` is an FR-208 state-machine type.
+    pub(crate) fn is_state_machine(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).state_machine
+    }
+
     /// Whether some `FieldMember` record declares `key`.
     pub(crate) fn is_field_member(&self, key: &DeclarationKey) -> bool {
         self.flags(key).field_member
@@ -538,7 +562,12 @@ impl RecordIndex {
         self.keys
             .iter()
             .zip(&self.flags)
-            .filter(|(_, flags)| flags.object_type || flags.record_value_type || flags.event_type)
+            .filter(|(_, flags)| {
+                flags.object_type
+                    || flags.record_value_type
+                    || flags.event_type
+                    || flags.state_machine
+            })
             .map(|(key, _)| key)
     }
 

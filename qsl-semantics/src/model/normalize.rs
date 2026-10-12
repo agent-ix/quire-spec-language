@@ -218,7 +218,7 @@ use crate::model::key::{
     EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRefWire,
     RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, JsonPointer};
 use quire_exact::{length_amount, Cancel};
 use serde::Serialize;
 
@@ -1279,6 +1279,300 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             }
         }
     }
+
+    let mut machines: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::StateMachine(machine) => Some(machine),
+            _ => None,
+        })
+        .collect();
+    machines.sort_by(|left, right| left.key.cmp(&right.key));
+    for machine in machines {
+        let malformed = |path: &str, reason: &str| ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                node: machine.key.node.clone(),
+                artifact: None,
+                span: None,
+            },
+            detail: format!("{}: {path}: {reason}", machine.key.node),
+        };
+        let mut operations: Vec<_> = domain_package
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation)
+                    if operation.owner == machine.key =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .collect();
+        operations.sort_by(|left, right| left.key.cmp(&right.key));
+        if operations.is_empty() {
+            refusals.push(malformed(
+                "TypeDefinition.operations",
+                "a state machine declares at least one operation",
+            ));
+        }
+        if machine.states.is_empty() {
+            refusals.push(malformed(
+                "TypeDefinition.states",
+                "a state machine declares at least one state",
+            ));
+        }
+        if machine.transitions.is_empty() {
+            refusals.push(malformed(
+                "TypeDefinition.transitions",
+                "a state machine declares at least one transition",
+            ));
+        }
+
+        let mut state_names = HashMap::<&str, &DeclarationKey>::new();
+        for (position, state) in machine.states.iter().enumerate() {
+            if let Some(previous) = state_names.insert(&state.name, &state.key) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: machine.key.clone(),
+                        member: previous.clone(),
+                        redefiners: vec![state.key.clone()],
+                    },
+                    detail: format!(
+                        "{}: TypeDefinition.states[{position}] conflicts with {}",
+                        machine.key.node, previous.node
+                    ),
+                });
+            }
+        }
+        let has_state = |key: &DeclarationKey| machine.states.iter().any(|state| &state.key == key);
+        let has_operation =
+            |key: &DeclarationKey| operations.iter().any(|operation| &operation.key == key);
+        let has_event = |key: &DeclarationKey| {
+            domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::EventType(event) if &event.key == key)
+            })
+        };
+        let missing = |transition: &crate::model::domain_package::StateMachineTransitionRecord,
+                       field: &str,
+                       reference: &DeclarationKey| {
+            let path: JsonPointer = format!("{}/{field}", transition.path)
+                .parse()
+                .expect("reader builds a JSON pointer for each transition");
+            ModelRefusal {
+                code: Code::MissingDeclaration,
+                cause: ModelRefusalCause::IntakeMissingDeclaration {
+                    node: machine.key.node.clone(),
+                    reference: reference.node.clone(),
+                    origin: transition.origin.clone(),
+                    path,
+                },
+                detail: format!(
+                    "{}: TypeDefinition.transitions.{field}: absent {}",
+                    machine.key.node, reference.node
+                ),
+            }
+        };
+        let mut transition_shapes =
+            HashMap::<(&DeclarationKey, &DeclarationKey, &DeclarationKey), &DeclarationKey>::new();
+        for (position, transition) in machine.transitions.iter().enumerate() {
+            for (member, reference, valid) in [
+                ("from", &transition.from, has_state(&transition.from)),
+                ("to", &transition.to, has_state(&transition.to)),
+                (
+                    "trigger",
+                    &transition.trigger,
+                    has_operation(&transition.trigger),
+                ),
+            ] {
+                if !valid {
+                    refusals.push(missing(transition, member, reference));
+                }
+            }
+            for (emit_position, emitted) in transition.emits.iter().enumerate() {
+                if !has_event(emitted) {
+                    let path: JsonPointer = format!("{}/emits/{emit_position}", transition.path)
+                        .parse()
+                        .expect("reader builds a JSON pointer for each emitted type");
+                    refusals.push(ModelRefusal {
+                        code: Code::MissingDeclaration,
+                        cause: ModelRefusalCause::IntakeMissingDeclaration {
+                            node: machine.key.node.clone(),
+                            reference: emitted.node.clone(),
+                            origin: transition.origin.clone(),
+                            path,
+                        },
+                        detail: format!(
+                            "{}: TypeDefinition.transitions[{position}].emits[{emit_position}]: absent {}",
+                            machine.key.node, emitted.node
+                        ),
+                    });
+                }
+            }
+            if let Some(guard) = &transition.guard {
+                let clause_key = DeclarationKey {
+                    package: machine.key.package.clone(),
+                    node: format!("{}/{guard}", machine.key.node),
+                };
+                let clause = domain_package
+                    .records
+                    .iter()
+                    .find_map(|record| match record {
+                        DomainPackageRecord::Clause(clause) if clause.key == clause_key => {
+                            Some(clause)
+                        }
+                        _ => None,
+                    });
+                let Some(clause) = clause else {
+                    refusals.push(missing(transition, "guard", &clause_key));
+                    continue;
+                };
+                if clause.language != "quire"
+                    || !domain_package.records.iter().any(|record| {
+                        matches!(record,
+                            DomainPackageRecord::StateMachine(owner)
+                                if owner.transitions.iter().any(|candidate| candidate.guard.as_deref() == Some(guard)))
+                    })
+                {
+                    refusals.push(malformed(
+                        &format!("TypeDefinition.transitions[{position}].guard"),
+                        "guard must name a quire clause used by a transition",
+                    ));
+                }
+            }
+            if let Some(previous) = transition_shapes.insert(
+                (&transition.from, &transition.to, &transition.trigger),
+                &transition.key,
+            ) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: machine.key.clone(),
+                        member: previous.clone(),
+                        redefiners: vec![transition.key.clone()],
+                    },
+                    detail: format!(
+                        "{}: TypeDefinition.transitions[{position}] conflicts with {}",
+                        machine.key.node, previous.node
+                    ),
+                });
+            }
+        }
+        for (position, general) in machine.supertypes.iter().enumerate() {
+            let parent = domain_package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::StateMachine(parent) if &parent.key == general => {
+                        Some(parent)
+                    }
+                    _ => None,
+                });
+            let Some(parent) = parent else {
+                if domain_package
+                    .records
+                    .iter()
+                    .any(|record| record.key() == general)
+                {
+                    refusals.push(malformed(
+                        &format!("TypeDefinition.supertypes[{position}]"),
+                        "a state machine generalizes only a state machine",
+                    ));
+                } else {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: machine.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "{}: TypeDefinition.supertypes[{position}]: absent {}",
+                            machine.key.node, general.node
+                        ),
+                    });
+                }
+                continue;
+            };
+            for (position, state) in machine.states.iter().enumerate() {
+                if let Some(inherited) = parent.states.iter().find(|other| other.name == state.name)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: machine.key.clone(),
+                            member: inherited.key.clone(),
+                            redefiners: vec![state.key.clone()],
+                        },
+                        detail: format!(
+                            "{}.states[{position}] conflicts with {}.states",
+                            machine.key.node, parent.key.node
+                        ),
+                    });
+                }
+            }
+            for (position, transition) in machine.transitions.iter().enumerate() {
+                let inherited_state = parent
+                    .states
+                    .iter()
+                    .find(|state| state.key == transition.to);
+                let child_state = machine
+                    .states
+                    .iter()
+                    .any(|state| state.key == transition.to);
+                if inherited_state.is_none() && child_state {
+                    continue;
+                }
+                if inherited_state.is_none() {
+                    // A child transition may target a child state; an
+                    // ancestor transition may never target a subtype-only state.
+                    continue;
+                }
+                if let Some(inherited) = parent.transitions.iter().find(|other| {
+                    other.from == transition.from
+                        && other.to == transition.to
+                        && other.trigger == transition.trigger
+                }) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: machine.key.clone(),
+                            member: inherited.key.clone(),
+                            redefiners: vec![transition.key.clone()],
+                        },
+                        detail: format!(
+                            "{}.transitions[{position}] conflicts with {}.transitions",
+                            machine.key.node, parent.key.node
+                        ),
+                    });
+                }
+            }
+            for (position, transition) in parent.transitions.iter().enumerate() {
+                let absent_from_parent =
+                    !parent.states.iter().any(|state| state.key == transition.to);
+                let introduced_by_child = machine
+                    .states
+                    .iter()
+                    .any(|state| state.key == transition.to);
+                if absent_from_parent && introduced_by_child {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                            node: parent.key.node.clone(),
+                            artifact: None,
+                            span: None,
+                        },
+                        detail: format!(
+                            "{}: TypeDefinition.transitions[{position}].to: ancestor transition cannot target subtype-only state {}",
+                            parent.key.node, transition.to.node
+                        ),
+                    });
+                }
+            }
+        }
+    }
     refusals
 }
 
@@ -1345,6 +1639,7 @@ fn check_node<'a>(
             if !index.is_object_type(&member.owner)
                 && !index.is_record_value_type(&member.owner)
                 && !index.is_event_type(&member.owner)
+                && !index.is_state_machine(&member.owner)
             {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
@@ -1353,7 +1648,7 @@ fn check_node<'a>(
                         owner: member.owner.clone(),
                     },
                     detail: format!(
-                        "field member {} names owner {}, which is not a declared object, record value, or event type",
+                        "field member {} names owner {}, which is not a declared object, record value, event, or state-machine type",
                         member.key.node, member.owner.node
                     ),
                 });
@@ -1423,9 +1718,27 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::StateMachine(machine) => {
+            for general in &machine.supertypes {
+                if !index.is_state_machine(general) {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: machine.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "state machine {} names no state-machine ancestor {}",
+                            machine.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
         DomainPackageRecord::Clause(clause) => {
             if !index.is_record_value_type(&clause.owner)
                 && !index.is_event_type(&clause.owner)
+                && !index.is_state_machine(&clause.owner)
                 && !index.is_namespace(&clause.owner)
             {
                 refusals.push(ModelRefusal {
@@ -1474,7 +1787,7 @@ fn check_node<'a>(
         DomainPackageRecord::PersistenceInterface(_) => {}
         DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
-            if !index.is_object_type(&op.owner) {
+            if !index.is_object_type(&op.owner) && !index.is_state_machine(&op.owner) {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
