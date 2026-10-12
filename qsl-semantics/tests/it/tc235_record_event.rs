@@ -121,6 +121,85 @@ fn m10_refusal_mismatches(
     mismatches
 }
 
+/// TC-235 M16's semantic-model half: the process field, invariant, operation
+/// parameter/effect, and population membership survive real intake and
+/// normalization. Runtime truth for the two runs and operation outcomes are
+/// asserted by the evaluator/replay layer.
+#[test]
+fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
+    let document = mutate_k2(|document| {
+        let process = type_named_mut(document, "Fulfilment");
+        process["fields"].as_array_mut().unwrap().push(field(
+            "Fulfilment",
+            "attempts",
+            "ix://quire/native/Integer",
+        ));
+        process["clauses"] = json!([clause(
+            "Fulfilment",
+            "NonNegativeAttempts",
+            "self.attempts >= 0",
+        )]);
+        let mut restart = operation("Fulfilment", "restart");
+        restart["pre"] = json!([clause(
+            "Fulfilment/restart",
+            "BelowLimit",
+            "self.attempts < 3",
+        )]);
+        restart["post"] = json!([clause(
+            "Fulfilment/restart",
+            "Incremented",
+            "self.attempts = pre(self.attempts) + 1",
+        )]);
+        restart["frame"]["modifies"] = json!([id("Fulfilment/attempts")]);
+        process["operations"].as_array_mut().unwrap().push(restart);
+        document["populations"] = json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
+    });
+
+    let package = read_k2(&document).expect("M16 fixture passes the reader");
+    let view = record_charges(&package, 25);
+    assert_eq!(
+        field_for(&package, "Fulfilment/attempts").value_type,
+        ValueTypeRef::Native(qsl_semantics::model::domain_package::NativeValueType::Integer),
+    );
+    let invariant = clause_for(&package, "Fulfilment/NonNegativeAttempts");
+    assert_eq!(invariant.owner, key("Fulfilment"));
+    assert_eq!(invariant.text, "self.attempts >= 0");
+
+    let restart = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.key == key("Fulfilment/restart") =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .expect("restart is an admitted operation member");
+    assert_eq!(restart.owner, key("Fulfilment"));
+    assert_eq!(restart.effect.modifies, [key("Fulfilment/attempts")]);
+
+    let population = package.records.iter().find_map(|record| match record {
+        DomainPackageRecord::Population(population) if population.key == key("PF") => {
+            Some(population)
+        }
+        _ => None,
+    });
+    assert_eq!(
+        population.expect("PF is retained").member_types,
+        [key("Fulfilment")]
+    );
+    assert!(view.type_identities().contains_key(&key("Fulfilment")));
+}
+
 /// TC-235 M02 adds a record-valued field and an object invariant that compares
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
