@@ -1703,8 +1703,13 @@ fn missing_reader_reference(
     let process_step_reference = pointer.contains("/steps/")
         && matches!(transition_member, "consumes" | "emits")
         && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
+    // FR-208-AC-4: an occurrence field naming no field is a missing name,
+    // carried at the event type's own `occurrenceField` pointer.
+    let occurrence_reference = member == "occurrenceField"
+        && located.code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF;
     if !transition_reference
         && !process_step_reference
+        && !occurrence_reference
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
     {
@@ -1714,7 +1719,7 @@ fn missing_reader_reference(
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     // A malformed native or foreign identity is not a missing declaration
     // of this selected package.
-    if !transition_reference {
+    if !transition_reference && !occurrence_reference {
         type_identity_segment(package, reference)?;
     }
     if process_step_reference {

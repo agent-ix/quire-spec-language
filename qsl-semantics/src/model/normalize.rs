@@ -1189,11 +1189,14 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             .collect();
         operations.sort_by(|left, right| left.key.cmp(&right.key));
         if let Some(operation) = operations.first() {
+            // TC-235 M04 / FR-208-AC-4: malformed-declaration naming the
+            // operation node, not the event type.
             refusals.push(ModelRefusal {
-                code: Code::UnsupportedConstruct,
-                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
                     node: operation.key.node.clone(),
-                    what: format!("{}:operations", crate::model::intake::meaning::EVENT_TYPE),
+                    artifact: None,
+                    span: None,
                 },
                 detail: format!(
                     "{}: TypeDefinition.operations[0]: an event type declares no operations",
