@@ -1127,11 +1127,12 @@ fn the_assembler_declares_variant_types_in_the_type_environment() {
     }
 }
 
-/// FR-302: an `operation-body` whose target names a variant type refuses
-/// `unsupported_construct`/`declaration-form`, as a clause naming it does.
+/// FR-302, FR-360 item 1: an `operation-body` whose target names a variant
+/// type no longer refuses as a declaration form; a variant type is no object
+/// type, so the target resolves to none, as a clause context naming it does.
 #[trace("TC-997", "FR-056-AC-27")]
 #[test]
-fn an_operation_body_targeting_a_variant_type_refuses_as_a_declaration_form() {
+fn an_operation_body_targeting_a_variant_type_names_no_object_type() {
     let bytes = serde_json::to_vec(&tiers(&["Gold", "Standard"])).unwrap();
     let refusal =
         admit_and_assemble_with_body(&bytes, "body b using v on Config::Tier::size() { 1 }")
@@ -1139,7 +1140,7 @@ fn an_operation_body_targeting_a_variant_type_refuses_as_a_declaration_form() {
     assert_eq!(refusal.errors.len(), 1, "{refusal:?}");
     assert_eq!(
         refusal.errors[0].cause,
-        AssemblyCause::UnsupportedVariantType {
+        AssemblyCause::UnresolvedTypeName {
             name: "Config::Tier".to_owned()
         }
     );

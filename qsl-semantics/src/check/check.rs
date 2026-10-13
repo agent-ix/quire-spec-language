@@ -59,7 +59,7 @@ use super::refusal::{
 };
 use crate::model::operation::OperationTable;
 use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
-use crate::value::enumeration::{mint_variant_id, variant_type_members, AdmittedEnumDeclaration};
+use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
     FieldInitializer, FunctionDeclaration,
@@ -82,7 +82,7 @@ use quire_semantic_value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
     FieldDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
+use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
@@ -145,6 +145,23 @@ impl ResolvedSignatures {
             .next()
             .map(|(index, _)| *index)
     }
+}
+
+/// The runtime members of a model variant type whose checked node is
+/// `declaration`, for `cases` in ascending UTF-8 byte order of their names
+/// (QSpec FR-144's key order for an unordered enumeration). Each member is
+/// keyed by [`mint_variant_id`] over the declaration and its case. `None`
+/// when a case name is not an identifier, which the shared
+/// [`EnumDeclaration`] does not hold.
+fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<EnumValue>> {
+    let runtime = EnumDeclaration::new(declaration, false, cases.to_vec()).ok()?;
+    cases
+        .iter()
+        .map(|case| {
+            let member = NodeKey::from_digest(*mint_variant_id(declaration, case).as_bytes());
+            runtime.member(case, member).ok()
+        })
+        .collect()
 }
 
 /// A model variant type in the type environment (FR-056 "Variant types",

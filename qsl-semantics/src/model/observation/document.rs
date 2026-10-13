@@ -881,7 +881,7 @@ pub(super) struct References<'a> {
     record_keys: Option<BTreeMap<String, quire_exact::NodeKey>>,
     /// Each selected variant type by its IR node identity, built on first
     /// use.
-    variant_types: Option<BTreeMap<String, VariantAdmission>>,
+    variants: Option<BTreeMap<String, VariantAdmission>>,
 }
 
 /// What admitting a `variant` value against one variant type reads
@@ -928,7 +928,7 @@ impl<'a> References<'a> {
             completeness,
             unresolved: Vec::new(),
             record_keys: None,
-            variant_types: None,
+            variants: None,
         }
     }
 
@@ -939,7 +939,7 @@ impl<'a> References<'a> {
     /// a unit's literal builds (FR-360 item 11).
     fn variant_type(&mut self, identity: &str) -> Option<&VariantAdmission> {
         let views = self.views;
-        self.variant_types
+        self.variants
             .get_or_insert_with(|| {
                 let unbounded = qsl_foundation::IdentityLimits {
                     input_bytes: u64::MAX,

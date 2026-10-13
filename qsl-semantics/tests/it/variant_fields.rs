@@ -1051,3 +1051,185 @@ fn the_emitter_refuses_a_variant_typed_parameter_at_its_type_node() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(refusals[0].cause, mismatch(), "{refusals:?}");
 }
+
+// ---------------------------------------------------------------------------
+// TC-1010: an operation parameter and result holding a variant value
+// ---------------------------------------------------------------------------
+
+use qsl_semantics::model::observation::{
+    admit_observations, AdmittedObservations, ClauseFacts, ClauseSelection, ClauseSelectionInput,
+    OperationFacts, Provisions, SelectedObject,
+};
+
+fn identity_json(reference: &DocumentRef) -> serde_json::Value {
+    json!({
+        "authority": reference.authority, "identity": reference.identity,
+        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    })
+}
+
+impl Replay {
+    /// The facts of a clause over `Account.promote(t: Tier): Tier`.
+    fn promote_facts(&self, kind: qsl_forms::StateClauseKind) -> ClauseFacts {
+        let account = self
+            .declarations
+            .types
+            .object_types()
+            .find(|declared| declared.name() == "Config::Account")
+            .expect("Account is declared")
+            .key();
+        let declaration = self
+            .declarations
+            .operations
+            .declared_by(account)
+            .iter()
+            .find(|operation| operation.name() == "promote")
+            .expect("promote is declared")
+            .clone();
+        ClauseFacts {
+            identity: quire_exact::NodeKey::from_digest([7; 32]),
+            kind,
+            context: account,
+            operation: Some(OperationFacts {
+                declaring: account,
+                declaration,
+            }),
+        }
+    }
+
+    fn snapshot(&self, label: &str, observation: &str) -> (DocumentRef, Vec<u8>) {
+        let reference = DocumentRef {
+            authority: "test".to_owned(),
+            identity: label.to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+            digest: [0; 32],
+        };
+        let bytes = serde_json::to_vec(&json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": identity_json(&reference),
+            "observation": observation,
+            "model": self.model,
+            "populations": [{
+                "population": id("accounts"), "complete": true,
+                "objects": [{"key": "a1", "type": id("Account"), "fields": {
+                    "account_id": {"integer": "1"},
+                    "tier": variant_json("Tier", "Gold"),
+                    "backup": {"absent": {}},
+                    "history": {"sequence": []},
+                }}],
+            }],
+        }))
+        .expect("the snapshot serializes");
+        (document_ref(label, &bytes), bytes)
+    }
+
+    /// `promote` admitted over an invocation whose parameter `t` and result
+    /// are the given values.
+    fn invoke(
+        &self,
+        parameter: serde_json::Value,
+        result: serde_json::Value,
+    ) -> Result<AdmittedObservations, AdmissionFailure> {
+        let (pre, pre_bytes) = self.snapshot("pre", "pre");
+        let (post, post_bytes) = self.snapshot("post", "post");
+        let invocation_identity = DocumentRef {
+            authority: "test".to_owned(),
+            identity: "call".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+            digest: [0; 32],
+        };
+        let reference = |document: &DocumentRef| {
+            json!({
+                "identity": identity_json(document),
+                "digest": format!(
+                    "sha256-jcs:{}",
+                    qsl_semantics::model::key::hex(&document.digest)
+                ),
+            })
+        };
+        let invocation_bytes = serde_json::to_vec(&json!({
+            "format": "quire.state.invocation/v1",
+            "identity": identity_json(&invocation_identity),
+            "model": self.model,
+            "context": id("Account"),
+            "operation": "promote",
+            "self": {"population": id("accounts"), "key": "a1"},
+            "pre": reference(&pre),
+            "post": reference(&post),
+            "parameters": {"t": parameter},
+            "result": result,
+            "created": [],
+            "deleted": [],
+        }))
+        .expect("the invocation serializes");
+        let invocation = document_ref("call", &invocation_bytes);
+        let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
+        let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+        admit_observations(
+            self.graph.model_selections(),
+            self.graph.scope().types(),
+            &self.promote_facts(qsl_forms::StateClauseKind::Postcondition),
+            &self.packages,
+            ModelNormalizationLimits::default(),
+            &Provisions {
+                snapshots: &snapshots,
+                invocations: &invocations,
+            },
+            &ClauseSelection {
+                name: "Promoted".to_owned(),
+                input: ClauseSelectionInput::Invocation { invocation },
+            },
+            ObservationLimits::default(),
+        )
+    }
+}
+
+/// TC-1010 step 1 (FR-360-AC-9): an operation parameter and result holding
+/// the variant form are admitted and equal the case the literal has.
+#[trace("TC-1010", "FR-360-AC-9")]
+#[test]
+fn a_variant_form_is_admitted_as_an_operation_parameter_and_result() {
+    let replay = replay();
+    let admitted = replay
+        .invoke(
+            variant_json("Tier", "Gold"),
+            variant_json("Tier", "Standard"),
+        )
+        .unwrap_or_else(|failure| panic!("the invocation admits: {failure:?}"));
+    let [(name, parameter)] = &admitted.parameters[..] else {
+        panic!("one parameter");
+    };
+    assert_eq!(name, "t");
+    assert!(same_value(parameter, &replay.case("Tier", "Gold")));
+    let result = admitted.result.as_ref().expect("a result");
+    assert!(same_value(result, &replay.case("Tier", "Standard")));
+}
+
+/// TC-1010 step 3 (FR-360-AC-10): a malformed variant form at the parameter
+/// or the result refuses `invalid_runtime_input`.
+#[trace("TC-1010", "FR-360-AC-10")]
+#[test]
+fn a_malformed_variant_form_as_a_parameter_or_result_refuses() {
+    let replay = replay();
+    let gold = variant_json("Tier", "Gold");
+    for (parameter, result, cause) in [
+        (
+            json!({"variant": {"type": id("Level"), "case": "Gold"}}),
+            gold.clone(),
+            "wrong-value-kind",
+        ),
+        (
+            gold.clone(),
+            json!({"variant": {"type": id("Tier"), "case": "Silver"}}),
+            "invalid-value",
+        ),
+    ] {
+        let Err(AdmissionFailure::Refused(record)) = replay.invoke(parameter, result) else {
+            panic!("a refusal expected for {cause}");
+        };
+        assert_eq!(record.code, qsl_foundation::Code::InvalidRuntimeInput);
+        assert_eq!(record.cause, cause);
+    }
+}

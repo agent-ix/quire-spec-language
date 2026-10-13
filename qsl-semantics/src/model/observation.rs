@@ -549,7 +549,7 @@ enum RawNode {
     /// members when present, and whether the payload holds any other member
     /// (FR-360 item 9 judges those defects in its own order).
     Variant {
-        type_identity: Option<String>,
+        identity: Option<String>,
         case: Option<String>,
         extra_member: bool,
     },
@@ -581,7 +581,7 @@ pub enum RawForm<'v> {
 /// holds (FR-360 item 9).
 #[derive(Clone, Copy, Debug)]
 pub struct RawVariant<'v> {
-    type_identity: Option<&'v str>,
+    identity: Option<&'v str>,
     case: Option<&'v str>,
     extra_member: bool,
 }
@@ -591,7 +591,7 @@ impl<'v> RawVariant<'v> {
     /// payload has one.
     #[must_use]
     pub fn type_identity(self) -> Option<&'v str> {
-        self.type_identity
+        self.identity
     }
 
     /// The `case` member: the exact declared case name, if the payload has
@@ -740,7 +740,7 @@ impl SnapshotValue {
     #[must_use]
     pub fn variant(type_identity: impl Into<String>, case: impl Into<String>) -> Self {
         Self::single(RawNode::Variant {
-            type_identity: Some(type_identity.into()),
+            identity: Some(type_identity.into()),
             case: Some(case.into()),
             extra_member: false,
         })
@@ -756,7 +756,7 @@ impl SnapshotValue {
         extra_member: bool,
     ) -> Self {
         Self::single(RawNode::Variant {
-            type_identity,
+            identity: type_identity,
             case,
             extra_member,
         })
@@ -788,11 +788,11 @@ impl SnapshotValue {
                 fields,
             }),
             RawNode::Variant {
-                type_identity,
+                identity,
                 case,
                 extra_member,
             } => RawForm::Variant(RawVariant {
-                type_identity: type_identity.as_deref(),
+                identity: identity.as_deref(),
                 case: case.as_deref(),
                 extra_member: *extra_member,
             }),
