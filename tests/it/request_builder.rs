@@ -17,8 +17,10 @@ use qsl_route::request::{
 use qsl_route::{
     BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
 };
-use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
-use quire_exact::{Integer, IntegerInterval, ValueType};
+use qsl_semantics::check::{
+    ApplicationTerm, BodyTerm, Capability, CheckedGraph, LeafTerm, MemberTerm, PackageDeclarations,
+};
+use quire_exact::{Integer, IntegerInterval, NodeKey, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -36,6 +38,9 @@ const GUARDED: &str =
 
 /// TC-984's unguarded record.
 const UNGUARDED: &str = "function g using v(x: Int[0, 9]): Integer pure { x + 1 }";
+
+/// QSL-710's `inc` example: the `+` is narrowed to the declared result.
+const INC: &str = "function inc using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }";
 
 /// FR-062's RR-16.
 const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
@@ -290,6 +295,42 @@ fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
     assert_eq!(first.conversion_context(), contexts[0].as_ref());
     assert_eq!(second.conversion_context(), contexts[1].as_ref());
     assert_ne!(contexts[0], contexts[1]);
+}
+
+/// FR-062-AC-13: the `inc` example's request item carries the enclosing
+/// narrow's identity as its typed conversion context: a node other than the
+/// add, whose operation is the narrow and whose only operand is the add.
+#[trace("TC-449", "FR-075-AC-8", "FR-062-AC-13")]
+#[test]
+fn tc_449_inc_item_carries_its_enclosing_narrow_as_conversion_context() {
+    let package = package(INC);
+    let records = package.graph().requirements();
+    let (registry, _) = registry(Capability::ValueValidity);
+    let items = items_from_requirements(records, &registry, None);
+    let [item] = items.as_slice() else {
+        panic!("one item for the add: {items:#?}");
+    };
+    let context = item
+        .conversion_context()
+        .expect("the narrowed add carries a conversion context");
+    assert_ne!(context.node(), item.node());
+    let graph = package.graph().semantic_graph();
+    let narrow = graph
+        .node(NodeKey::from_digest(*context.node().as_bytes()))
+        .expect("the context names a graph node");
+    let BodyTerm::Application(ApplicationTerm {
+        operation,
+        arguments,
+        ..
+    }) = narrow.body()
+    else {
+        panic!("the context is an application: {narrow:#?}");
+    };
+    assert_eq!(operation.identity(), "quire.op.numeric.narrow");
+    let [MemberTerm::Leaf(LeafTerm::Reference { target })] = arguments.as_slice() else {
+        panic!("the narrow has the add as its one operand: {arguments:#?}");
+    };
+    assert_eq!(*target.0.as_bytes(), *item.node().as_bytes());
 }
 
 /// TC-984 / FR-075-AC-9: each request item preserves its record's canonical
