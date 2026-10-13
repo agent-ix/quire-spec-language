@@ -1800,6 +1800,7 @@ fn missing_reader_reference(
                 reference: reference.to_owned(),
                 origin: step.get("origin").cloned().unwrap_or(Value::Null),
                 path: pointer.parse().ok()?,
+                member: MemberPath::type_definition(),
             },
             detail: format!(
                 "{} ({pointer}) on {step_identity}: {reference:?} names no event type of this domain package",
@@ -1843,6 +1844,7 @@ fn missing_reader_reference(
             reference: reference.clone(),
             origin,
             path: pointer.parse().ok()?,
+            member: MemberPath::type_definition(),
         },
         detail: format!(
             "{source_member} ({pointer}) on {node}: {reference:?} names no declaration of this domain package"

@@ -1426,6 +1426,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     reference: reference.node.clone(),
                     origin: transition.origin.clone(),
                     path,
+                    member: MemberPath::type_definition(),
                 },
                 detail: format!(
                     "{}: TypeDefinition.transitions.{field}: absent {}",
@@ -1500,6 +1501,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                                 reference: emitted.node.clone(),
                                 origin: transition.origin.clone(),
                                 path,
+                                member: MemberPath::type_definition(),
                             },
                             detail: format!(
                                 "{}: {member_path}: absent {}",

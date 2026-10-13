@@ -654,6 +654,7 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
             reference: "ix://test/origins/Missing".into(),
             origin: relationship_origin,
             path: "/types/0/relationships/0/targetEnd/type".parse().unwrap(),
+            member: "TypeDefinition.relationships[0].targetEnd.type".parse().unwrap(),
         }
     );
 }
@@ -686,6 +687,7 @@ fn missing_field_type_ref_retains_the_field_identity_origin_and_pointer() {
             reference: "ix://test/origins/Missing".into(),
             origin: field_origin,
             path: "/types/0/fields/0/typeRef".parse().unwrap(),
+            member: "TypeDefinition.fields[0].typeRef".parse().unwrap(),
         }
     );
 

@@ -55,10 +55,11 @@ fn seen(refusal: &ModelRefusal) -> Seen {
             node,
             reference,
             path,
+            member,
             ..
         } => (
             node.clone(),
-            None,
+            Some(member.clone()),
             Some(reference.clone()),
             Some(path.as_str().to_owned()),
         ),
@@ -107,12 +108,12 @@ fn conflicting(node: &str, path: &str) -> Seen {
     }
 }
 
-fn missing(node: &str, absent: &str, pointer: &str) -> Seen {
+fn missing(node: &str, absent: &str, pointer: &str, member_path: &str) -> Seen {
     Seen {
         code: Code::MissingDeclaration,
         cause: "missing-name",
         node: node.to_owned(),
-        member: None,
+        member: Some(member(member_path)),
         other: Some(absent.to_owned()),
         pointer: Some(pointer.to_owned()),
     }
@@ -280,6 +281,7 @@ fn tc235_m07_every_process_refusal_names_its_typed_member_path() {
             &fulfilment,
             &id("StockReserved"),
             &format!("/types/{at}/steps/1/emits/0"),
+            "TypeDefinition.steps[1].emits[0]",
         )],
     );
 }

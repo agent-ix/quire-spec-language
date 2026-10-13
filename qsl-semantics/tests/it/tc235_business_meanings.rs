@@ -649,6 +649,7 @@ fn assert_missing_refusal(
     document: &Value,
     node: &str,
     path: &str,
+    member_path: &str,
     reference: &str,
     charges: usize,
 ) {
@@ -660,6 +661,7 @@ fn assert_missing_refusal(
         node: actual,
         reference: absent,
         path: actual_path,
+        member: actual_member,
         ..
     } = &refusals[0].cause
     else {
@@ -668,6 +670,7 @@ fn assert_missing_refusal(
     assert_eq!(actual, &id(node));
     assert_eq!(absent, &id(reference));
     assert_eq!(actual_path.as_str(), path);
+    assert_eq!(actual_member, &member(member_path));
 }
 
 fn assert_process_duplicate_step_refusal(document: &Value) {
@@ -1613,6 +1616,7 @@ fn tc235_m08_persistence_interface_binder() {
         &document,
         "OrderStore",
         "/types/6/persists/0",
+        "TypeDefinition.persists[0]",
         "Invoice",
         21,
     );
@@ -1748,6 +1752,7 @@ fn tc235_m09_namespace_binder() {
         &document,
         "OrderManagement",
         "/types/7/members/3",
+        "TypeDefinition.members[3]",
         "Ghost",
         21,
     );
@@ -1911,6 +1916,7 @@ fn tc235_m04_event_type_refusal_vectors() {
             reference: id("OrderPlaced/at"),
             origin: origin("OrderPlaced"),
             path: "/types/3/occurrenceField".parse().unwrap(),
+            member: member("TypeDefinition.occurrenceField"),
         }
     );
 

@@ -36,18 +36,25 @@ fn lifecycle_transition(
 
 /// A typed `missing_declaration`/`missing-name` naming the state machine
 /// `OrderLifecycle` itself (not a transition node), at reader pointer `path`.
-fn assert_missing_name(refusal: &ModelRefusal, path: &str, reference: Option<&str>) {
+fn assert_missing_name(
+    refusal: &ModelRefusal,
+    path: &str,
+    member_path: &str,
+    reference: Option<&str>,
+) {
     assert_eq!(refusal.code, Code::MissingDeclaration);
     assert_eq!(refusal.cause.as_str(), "missing-name");
     let ModelRefusalCause::IntakeMissingDeclaration {
         node,
         reference: absent,
         path: actual,
+        member: actual_member,
         ..
     } = &refusal.cause
     else {
         panic!("expected intake missing-name, got {refusal:?}");
     };
+    assert_eq!(actual_member, &member(member_path));
     assert_eq!(node, &id("OrderLifecycle"));
     assert_eq!(actual.as_str(), path);
     if let Some(reference) = reference {
@@ -100,7 +107,8 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
         });
         let refusals = normalized_refusals(&document, 21);
         assert_eq!(refusals.len(), 1, "M05 {member}: {refusals:?}");
-        assert_missing_name(&refusals[0], path, Some(reference));
+        let member_path = format!("TypeDefinition.transitions[0].{member}");
+        assert_missing_name(&refusals[0], path, &member_path, Some(reference));
     }
 
     let wrong_emitted_kind = mutate_k2(|document| {
@@ -124,6 +132,7 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
     assert_missing_name(
         &refusals[0],
         "/types/4/transitions/0/emits/0",
+        "TypeDefinition.transitions[0].emits[0]",
         Some("OrderShipped"),
     );
 
@@ -162,6 +171,7 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
         assert_missing_name(
             refusal,
             &format!("/types/4/transitions/{position}/trigger"),
+            &format!("TypeDefinition.transitions[{position}].trigger"),
             Some(&format!("OrderLifecycle/{reference}")),
         );
     }
@@ -172,10 +182,15 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     let refusals = normalized_refusals(&empty_states, 21);
     assert_eq!(refusals.len(), 7);
     assert_malformed_at(&refusals[0], &id("OrderLifecycle"), "TypeDefinition.states");
-    for (refusal, path) in refusals.iter().skip(1).zip((0..3).flat_map(|position| {
-        ["from", "to"].map(|member| format!("/types/4/transitions/{position}/{member}"))
+    for (refusal, (path, member_path)) in refusals.iter().skip(1).zip((0..3).flat_map(|position| {
+        ["from", "to"].map(|member| {
+            (
+                format!("/types/4/transitions/{position}/{member}"),
+                format!("TypeDefinition.transitions[{position}].{member}"),
+            )
+        })
     })) {
-        assert_missing_name(refusal, &path, None);
+        assert_missing_name(refusal, &path, &member_path, None);
     }
 
     let empty_transitions = mutate_k2(|document| {
