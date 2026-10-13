@@ -675,7 +675,7 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
 /// FCD's upstream fix), but this fixture simply was not authored to
 /// exercise that path -- native-typeRef resolution is covered separately by
 /// direct unit tests of `read_value_type_ref` and, end to end, by
-/// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`.
+/// `reading_fcd_199s_golden_shape_reads_all_12_types`.
 /// It admits through `agent-ix-semantic-ir`'s own validator (M5) --
 /// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
 /// member that validator's schema layer requires beyond the shape
@@ -1192,7 +1192,7 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
                 read_records(package_identity, &parsed).expect_err("a composite cycle refuses");
             let closing = format!("ix://{package_identity}/relationship/C{}-has-C0", count - 1);
             let names_it = refusals.iter().any(|refusal| {
-                refusal.detail.contains("COMPOSITE_CYCLE")
+                refusal.code == qsl_foundation::diagnostic::Code::InvalidModelBinding
                     && matches!(
                         &refusal.cause,
                         qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {

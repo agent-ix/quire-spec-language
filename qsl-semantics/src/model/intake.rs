@@ -1896,29 +1896,41 @@ fn declared_node_for_pointer<'a>(
         .get(collection)?
         .as_array()?
         .get(position.parse::<usize>().ok()?)?;
-    match segments.next()? {
-        "transitions" => {
-            let transition_index = segments.next()?.parse::<usize>().ok()?;
-            declaration
-                .get("transitions")?
-                .as_array()?
-                .get(transition_index)
+    // The deepest object on the pointer path that carries its own
+    // `identity` is the reader diagnostic's IR node (FR-056): a field,
+    // operation, parameter, relationship, transition or step, and the
+    // owning declaration only when no member on the path has one. A pointer
+    // that ends at a whole collection names no single node.
+    let mut remaining = segments.peekable();
+    remaining.peek()?;
+    let mut current = declaration;
+    let mut node = declaration;
+    for segment in remaining {
+        let next = match current {
+            Value::Array(items) => segment
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| items.get(index)),
+            Value::Object(fields) => fields.get(segment),
+            _ => None,
+        };
+        let Some(next) = next else {
+            return Some(node);
+        };
+        current = next;
+        // A constraint, origin or extension is described by its declaration,
+        // not a declaration itself.
+        if matches!(segment, "constraints" | "origin" | "extensions" | "roles") {
+            return Some(node);
         }
-        "steps" => {
-            let step_index = segments.next()?.parse::<usize>().ok()?;
-            declaration.get("steps")?.as_array()?.get(step_index)
+        if current.get("identity").is_some_and(Value::is_string) {
+            node = current;
         }
-        // FR-056-AC-5 / FR-260-AC-3: a relationship member is its own
-        // declaration, with its own identity and origin.
-        "relationships" => {
-            let relationship_index = segments.next()?.parse::<usize>().ok()?;
-            declaration
-                .get("relationships")?
-                .as_array()?
-                .get(relationship_index)
-        }
-        _ => Some(declaration),
     }
+    if current.is_array() {
+        return None;
+    }
+    Some(node)
 }
 
 /// FR-208 Generalization / AC-12: the schema gate still refuses the document,
@@ -3855,6 +3867,17 @@ pub fn read_domain_package(
         .filter_map(refusal_node)
         .map(str::to_owned)
         .collect();
+    let unsupported_form_nodes: std::collections::BTreeSet<String> = intake_refusals
+        .iter()
+        .filter(|refusal| {
+            matches!(
+                refusal.cause,
+                ModelRefusalCause::UnsupportedDeclarationForm { .. }
+            )
+        })
+        .filter_map(refusal_node)
+        .map(str::to_owned)
+        .collect();
     let (records, reader_refusals) = read_nodes_partial(
         &selection.identity,
         &document.tree,
@@ -3867,7 +3890,16 @@ pub fn read_domain_package(
             ModelRefusalCause::UnknownMember { record, .. } => Some(record.node.as_str()),
             _ => refusal_node(&refusal),
         };
-        if reader_node.is_some_and(|node| semantic_refused_nodes.contains(node)) {
+        // An unsupported declaration form (FR-103-AC-3) is a distinct refusal
+        // the IR validator cannot express, so an IR refusal of another
+        // family at the same node does not subsume it.
+        let distinct_family = matches!(
+            refusal.cause,
+            ModelRefusalCause::UnsupportedDeclarationForm { .. }
+        ) && reader_node
+            .is_some_and(|node| !unsupported_form_nodes.contains(node));
+        if !distinct_family && reader_node.is_some_and(|node| semantic_refused_nodes.contains(node))
+        {
             continue;
         }
         intake_refusals.push(refusal);
@@ -6922,8 +6954,8 @@ mod tests {
     /// reader ever sees a document, so this exact branch is unreachable
     /// through `read_records` today -- exercised here by calling
     /// `read_endpoint` directly, bypassing that schema gate, the same way
-    /// `refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836` calls
-    /// `read_value_type_ref` directly. Before this test, an unrecognized
+    /// `resolves_a_known_native_type_ref` calls `read_value_type_ref`
+    /// directly. Before this test, an unrecognized
     /// value here panicked (`agent-ix-semantic-ir guarantees direction is
     /// in/out/inout when present, got {other:?}`) rather than refusing, so
     /// a future FCD pin widening this enum would abort the process instead
@@ -8444,5 +8476,53 @@ mod tests {
                 ("z".to_owned(), number("0")),
             ]))
         );
+    }
+
+    /// FR-056: a reader diagnostic is retained with its IR node. The node is
+    /// the deepest object on the pointer path that has an identity.
+    #[test]
+    fn a_member_pointer_resolves_to_the_member_not_the_owning_type() {
+        let document = parse_document(
+            serde_json::json!({
+                "types": [{
+                    "identity": "ix://acme/orders/T",
+                    "fields": [{"identity": "ix://acme/orders/T/f"}],
+                    "operations": [{
+                        "identity": "ix://acme/orders/T/op",
+                        "params": [{"identity": "ix://acme/orders/T/op/p"}],
+                    }],
+                    "relationships": [{"identity": "ix://acme/orders/relationship/T-r-T"}],
+                }],
+            })
+            .to_string()
+            .as_bytes(),
+        );
+        let resolve = |pointer: &str| {
+            declared_node_for_pointer(&document, pointer)
+                .and_then(|node| node.get("identity"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        assert_eq!(
+            resolve("/types/0/fields/0/typeRef").as_deref(),
+            Some("ix://acme/orders/T/f")
+        );
+        assert_eq!(
+            resolve("/types/0/operations/0").as_deref(),
+            Some("ix://acme/orders/T/op")
+        );
+        assert_eq!(
+            resolve("/types/0/operations/0/params/0").as_deref(),
+            Some("ix://acme/orders/T/op/p")
+        );
+        assert_eq!(
+            resolve("/types/0/relationships/0/targetEnd/type").as_deref(),
+            Some("ix://acme/orders/relationship/T-r-T")
+        );
+        assert_eq!(
+            resolve("/types/0/supertypes/0").as_deref(),
+            Some("ix://acme/orders/T")
+        );
+        assert_eq!(resolve("/types/0/relationships"), None);
     }
 }
