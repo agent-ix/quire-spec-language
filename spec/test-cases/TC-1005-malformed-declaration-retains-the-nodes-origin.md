@@ -23,5 +23,5 @@ Verify that each normalization `malformed-declaration` carries the source artifa
 
 - Each refusal of step 2 is `invalid_model_binding`/`malformed-declaration` at the refused node (the operation, not the event type, for an operation an event type declares) with the typed member path, the source artifact and the source line and column of that node.
 - Step 3 refuses the wrong-meaning member `invalid_model_binding`/`malformed-declaration` at the population node, path `PopulationDefinition.members[1]`, with the population's artifact and position, and the empty member `missing_declaration`.
-- Step 4 leaves the artifact and span absent.
+- Step 4 leaves the artifact and span absent. So do the refusals that name no declaration: an empty model selection, an empty declaration key and the package document at node `$`.
 - Assertions compare typed code, cause, node, member path, artifact and position, never detail text.

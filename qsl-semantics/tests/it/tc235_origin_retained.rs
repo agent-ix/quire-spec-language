@@ -212,12 +212,75 @@ fn a_state_machine_missing_required_members_keeps_its_origin() {
         type_named_mut(document, "OrderLifecycle")["operations"] = json!([]);
     });
     let found = refused(&document);
+    assert_eq!(summary(&found), without_operations_summary(), "{found:?}");
     assert_retains_origin(
         &found[0],
         &lines,
         "OrderLifecycle",
         "TypeDefinition.operations",
     );
+
+    // Another node's reader refusal beside the refused machine is reported
+    // exactly once, as it is without the machine's own refusal.
+    let (document, lines) = sourced(|document| {
+        type_named_mut(document, "OrderLifecycle")["operations"] = json!([]);
+        type_named_mut(document, "Order")["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(field("Order", "ghost", &id("Nope")));
+    });
+    let found = refused(&document);
+    // Refusals sort by node: the ghost field's, then the machine's.
+    let mut expected = vec![(
+        "missing_declaration".to_owned(),
+        "missing-name".to_owned(),
+        id("Order/ghost"),
+    )];
+    expected.extend(without_operations_summary());
+    assert_eq!(summary(&found), expected, "{found:?}");
+    assert_retains_origin(
+        &found[1],
+        &lines,
+        "OrderLifecycle",
+        "TypeDefinition.operations",
+    );
+}
+
+/// Code, cause tag and node of each refusal, in report order.
+fn summary(found: &[ModelRefusal]) -> Vec<(String, String, String)> {
+    found
+        .iter()
+        .map(|refusal| {
+            let node = match &refusal.cause {
+                ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                | ModelRefusalCause::IntakeMissingDeclaration { node, .. } => node.clone(),
+                other => panic!("no node on {other:?}"),
+            };
+            (
+                refusal.code.as_str().to_owned(),
+                refusal.cause.as_str().to_owned(),
+                node,
+            )
+        })
+        .collect()
+}
+
+/// An `OrderLifecycle` with no operations: its own refusal, then one
+/// dangling trigger per transition that named an operation.
+fn without_operations_summary() -> Vec<(String, String, String)> {
+    let mut list = vec![(
+        "invalid_model_binding".to_owned(),
+        "malformed-declaration".to_owned(),
+        id("OrderLifecycle"),
+    )];
+    list.extend((0..3).map(|_| {
+        (
+            "missing_declaration".to_owned(),
+            "missing-name".to_owned(),
+            id("OrderLifecycle"),
+        )
+    }));
+    list
 }
 
 /// A process subtype of a state machine that supplies no identity fields:
@@ -401,4 +464,30 @@ fn a_population_member_of_another_meaning_refuses_malformed_with_origin() {
     let found = refused(&document);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::MissingDeclaration);
+}
+
+/// TC-235 M10 run 10 as the row is written: K2 plus population `PA` (closed)
+/// with member types `[OrderManagement]` refuses after 22 charges,
+/// `malformed-declaration` naming `PA` at `PopulationDefinition.members[0]`.
+#[trace("QSpec-TC-235", "TC-1005", "FR-056-AC-33")]
+#[test]
+fn tc235_m10_run_10_population_of_a_namespace_refuses_at_members_zero() {
+    let (document, lines) = sourced(|document| {
+        document["populations"] = json!([{
+            "identity": id("PA"),
+            "displayName": id("PA"),
+            "kind": {"module": BUSINESS, "name": "population"},
+            "members": [id("OrderManagement")],
+            "extent": "closed",
+            "origin": origin("PA"),
+        }]);
+    });
+    let package = read_k2(&document).expect("K2 plus PA reads");
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    assert_record_charge_count(&meter, 22);
+    let NormalizeOutcome::Refused(found) = outcome else {
+        panic!("run 10 must refuse, got {outcome:?}");
+    };
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_retains_origin(&found[0], &lines, "PA", "PopulationDefinition.members[0]");
 }

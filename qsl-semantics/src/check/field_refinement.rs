@@ -399,3 +399,56 @@ pub fn check_field_refinement_obligation(
         }])),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::domain_package::{
+        DomainPackageRecord, DomainPackageRef, OriginalDeclaration, ScalarTypeRecord,
+        ScalarValueDomain,
+    };
+
+    /// A scalar whose declared domain has lower > upper (a package the reader
+    /// would refuse, so the domain is set after reading) refuses at the
+    /// scalar type, keeping the origin the package retains for it.
+    #[test]
+    fn a_malformed_scalar_domain_refuses_at_the_scalar_with_its_origin() {
+        let scalar = DeclarationKey::fixture("model.Count");
+        let mut package = DomainPackage::new(
+            DomainPackageRef::fixture("origin"),
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: scalar.clone(),
+                domain: ScalarValueDomain::Integer { lower: 9, upper: 0 },
+            })],
+        );
+        package.originals.insert(
+            scalar.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: serde_json::json!({"source": {
+                    "sourceIdentity": "ix://test/orders/spec",
+                    "path": "spec.qspec",
+                    "startLine": 4,
+                    "startColumn": 2,
+                }}),
+                member_name: None,
+            },
+        );
+        let refusal = field_domain_type(&package, Some((&scalar, (9, 0))))
+            .expect_err("lower greater than upper refuses");
+        let ModelRefusalCause::IntakeMalformedDeclaration {
+            node,
+            artifact,
+            span,
+            member,
+        } = &refusal.cause
+        else {
+            panic!("expected a malformed declaration: {refusal:?}");
+        };
+        assert_eq!(node, &scalar.node);
+        assert_eq!(member, &MemberPath::type_definition().name("constraints"));
+        assert_eq!(artifact.as_deref(), Some("ix://test/orders/spec"));
+        let span = span.expect("the retained position");
+        assert_eq!((span.start.line, span.start.column), (4, 2));
+    }
+}
