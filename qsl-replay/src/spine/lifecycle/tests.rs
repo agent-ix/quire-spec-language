@@ -1732,6 +1732,53 @@ fn an_internal_invariant_failure_is_a_fault() {
     assert!(refusal_or_fault(failure).is_err());
 }
 
+/// TC-796 step 4 (FR-303-AC-4), at the spine: a checker refusal that names
+/// a node rebound from declaration `d1` to `d2` leaves the front end as
+/// `runtime_invariant`/`established-invariant-broken` in category internal
+/// failure, and no refusal or checked package is returned for the unit.
+#[trace("TC-796", "FR-303-AC-4")]
+#[test]
+fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
+    use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
+    use qsl_semantics::model::key::DeclarationKey;
+    let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+    let (d1, d2) = (
+        DeclarationKey::fixture("ix://test/orders/Invoice"),
+        DeclarationKey::fixture("ix://test/orders/Order"),
+    );
+    let refusal = Box::new(CompileRefusal::Check {
+        refusals: vec![CheckRefusal {
+            location: quire_semantic_value::location::Location::root(
+                quire_semantic_value::location::Origin::Expression,
+            ),
+            cause: CheckCause::InternalFault(Box::new(KeyFault::CorrespondenceConflict(Box::new(
+                CorrespondenceConflict::NodeRebound {
+                    node,
+                    recorded: d1,
+                    offered: d2,
+                },
+            )))),
+        }],
+        region: None,
+    });
+    let failure = failure_of(refusal, &|_| None);
+    let fault = refusal_or_fault(failure)
+        .expect_err("a rebound node is a fault: the unit yields no refusal and no package");
+    assert_eq!(fault.stage(), "S3");
+    assert_eq!(fault.invariant(), "model-correspondence-one-to-one");
+    assert_eq!(
+        fault.catalog_code(),
+        qsl_foundation::diagnostic::CatalogCode::new(
+            "runtime_invariant",
+            "established-invariant-broken"
+        )
+    );
+    assert_eq!(
+        fault.category(),
+        qsl_foundation::diagnostic::Category::InternalFailure
+    );
+}
+
 /// FR-278: a library is compiled independently of whoever imports it. One
 /// library imported by two units that pass different lock evidence is the
 /// same package, whose `package_id` the import digest names; and a library
