@@ -20,8 +20,7 @@ relationships:
 
 ## Description
 
-When S2 builds the form of a protocol declaration under
-`quire.protocol.complete/v1`, it SHALL accept every surface form of QSpec's
+When S2 builds the form of a protocol declaration, it SHALL accept every surface form of QSpec's
 shared grammar "Complete temporal, choreography and analysis forms" that
 the protocol system runs, and SHALL build one typed form for each, holding
 every member the production writes with its span (ADR-012 §1, §3;

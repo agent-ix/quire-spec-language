@@ -10,16 +10,16 @@ relationships:
 
 ## Description
 
-Verify that the `dispatch-call` and `lookup` expression families refuse `unsupported_construct` without the model profile. Scope: FR-361-AC-2.
+Verify that the `dispatch-call` and `lookup` expression families refuse `unsupported_construct` without the model profile and are admitted with it. Scope: FR-361-AC-2.
 
 ## Test Procedure
 
-1. Compile a unit with the header profile `quire.value.complete/v1` whose function body calls `x.op(1)`.
-2. Compile a unit with the same header whose function body is `lookup<T>(p, r) absent undefined`.
-3. Compile both units with the header profile `quire.model.complete/v1`.
+1. Unit A: a `model` declaration with object type `A` and operation `A.add(amount: Integer): Integer`, and a function whose body calls `a.add(1)` on a parameter `a: M::A`. Compile it with the header profile `quire.value.complete/v1`.
+2. Unit B: a `model` declaration with object type `A`, a population binding `p` of type `Population<M::A>` and a function whose body is `lookup<M::A>(p, r) absent undefined`. Compile it with the header profile `quire.value.complete/v1`.
+3. Compile units A and B with the header profile `quire.model.complete/v1`.
 
 ## Expected Results
 
-1. Refused `unsupported_construct`/`expression-form` at the call's span, family `dispatch-call`.
-2. Refused `unsupported_construct`/`expression-form` at the lookup's span, family `lookup`.
-3. Neither unit gives this refusal.
+1. One refusal, `unsupported_construct`/`expression-form` at the call's span, family `dispatch-call`; no package.
+2. One refusal, `unsupported_construct`/`expression-form` at the lookup's span, family `lookup`; no package.
+3. Both compile: the call resolves to `A.add` and the lookup reads `p`.
