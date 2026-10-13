@@ -413,6 +413,20 @@ clause that names the variant type, never to the variant type's declaration:
 intake admits and exports the declaration under "Variant types" whether or not
 any clause names it.
 
+The compiler SHALL key each `relationship` export by its owner's declaration
+identity and declared `name`, with its `sourceSpan` as the export locus.
+
+If a relationship member has no declared name or no source span, then the
+compiler SHALL refuse it with `invalid_model_binding`/`malformed-declaration`.
+
+When a construct's meaning id is one of the five `quire.meaning.systems.*`
+values, the compiler SHALL bind the IR node to its FR-152 kind (Interface, Part,
+Port, Connection or Allocation) and SHALL apply FR-152's kind mapping,
+connection and allocation rules to it.
+
+When an IR node binds as a Port, the compiler SHALL retain its owning part,
+direction, interface type and typed multiplicity.
+
 #### Variant types
 
 A variant type is a closed set of named cases (FR-208). In Semantic IR it is a
@@ -475,13 +489,17 @@ validity rule.
 
 Two cases of one variant type with equal names share one export key. When they
 also share one case node identity, the lift (filament-core-data FR-095:
-DUPLICATE_IDENTITY, UNSLUGGABLE_NAME for names that slug alike) or the reader
-(`duplicate_identities`, semantic-ir `rules.rs:1133`) refuses first, and
+DUPLICATE_IDENTITY, and UNSLUGGABLE_NAME for names that slug alike) or the
+reader (`duplicate_identities`, semantic-ir `rules.rs:1133`) refuses first, and
 FR-056's reader-first rule retains that diagnostic with no declaration. When
 the reader admits the bytes, because the two cases carry distinct identities,
 intake SHALL refuse the second case with
-`invalid_model_binding`/`conflicting-binding` (QSpec FR-154: two nodes share one
-identity), naming the type node and the path `TypeDefinition.variants[i]`.
+`invalid_model_binding`/`conflicting-binding`, naming the type node and the
+path `TypeDefinition.variants[i]`: the cases share one `variant` export key
+(owner identity and name), the same collision FR-154 refuses for two nodes
+that share one identity. If a case's identity is not the minted
+`variant/<Name>-<value>` of its owner and name, then intake SHALL refuse the
+case with `invalid_model_binding`/`malformed-declaration`.
 
 If a member's `typeRef` names a declaration bound to
 `quire.meaning.model.variant-type/v1`, then intake SHALL refuse the member with

@@ -31,3 +31,10 @@ Findings: one medium (TC id collision with open draft PR 708), one low (tests.md
 | FR-056-AC-26 | examined | A variant type with two cases named `Gold` refuses `invalid_model_binding`/`malformed-declaration` on the second ... | Test (TC-990) |
 | FR-056-AC-27 | examined | A clause naming `Tier` refuses `unsupported_construct`/`declaration-form` at the clause, while the package ... admitted ... | Test (TC-991) |
 | spec/tests.md rows TC-988..TC-991 | examined | TC-988 ... FR-056-AC-24; TC-989 ... FR-056-AC-25; TC-990 ... FR-056-AC-26; TC-991 ... FR-056-AC-27 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dcfafda2f |
+| FND-002 | fixed | dcfafda2f |

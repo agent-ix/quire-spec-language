@@ -30,3 +30,16 @@ Findings: one medium, one low.
 | TC-989 | examined | Step 1 refuses `unsupported_construct`/`declaration-form` at `Gold`, naming the case and `payloadType` |
 | TC-990 | examined | Step 1 refuses the second `Gold` ... naming the name, owner and both spans |
 | TC-991 | examined | Step 3 refuses the member `unsupported_construct`/`declaration-form` naming the `typeRef` |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | TC-996 step 4 expects the lift to raise "`UNSLUGGABLE_NAME` or `DUPLICATE_IDENTITY`" for slug-alike rows. filament-core-data FR-095's collision case (b) fixes `UNSLUGGABLE_NAME` at the later row for names whose slugs coincide. An either-or oracle passes on the wrong code. Expect `UNSLUGGABLE_NAME` exactly. | spec/test-cases/TC-996-refuse-malformed-and-duplicate-variant-cases.md:28 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dcfafda2f |
+| FND-002 | fixed | dcfafda2f |

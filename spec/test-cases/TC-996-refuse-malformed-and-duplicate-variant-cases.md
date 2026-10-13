@@ -20,13 +20,13 @@ Every step offers hand-authored Semantic IR bytes unless stated.
 2. `Tier` with one case whose `origin` is a generated origin with no source span.
 3. A construct with meaning `quire.meaning.model.variant-type/v1` and shape `record`.
 4. `Tier` with two cases named `Gold` and one identity `variant/Tier-Gold`. Then lift a bundle whose enumeration rows slug alike (`Snap Shot`, `Snap_Shot`).
-5. `Tier` with two cases named `Gold` carrying distinct identities, which the reader admits.
+5. `Tier` with two cases named `Gold` carrying distinct identities, which the reader admits. Then one case whose identity is not `variant/Tier-<name>`.
 6. `Tier` with a case that has no `name`.
 
 ## Expected Results
 
 - Steps 1 to 3 refuse `invalid_model_binding`/`malformed-declaration` at node `ix://<package identity>/Tier` with paths `TypeDefinition.variants`, `TypeDefinition.variants[0].origin` and `TypeDefinition.kind` respectively.
-- Step 4 is refused before intake: the reader's duplicate-identity diagnostic is retained with no declaration, and the lift raises `UNSLUGGABLE_NAME` or `DUPLICATE_IDENTITY` for the slug-alike rows.
-- Step 5 refuses `invalid_model_binding`/`conflicting-binding` at node `ix://<package identity>/Tier`, path `TypeDefinition.variants[1]`.
+- Step 4 is refused before intake: the reader's duplicate-identity diagnostic is retained with no declaration, and the lift raises `UNSLUGGABLE_NAME` for the slug-alike rows (FR-095 collision case (b)).
+- Step 5 refuses `invalid_model_binding`/`conflicting-binding` at node `ix://<package identity>/Tier`, path `TypeDefinition.variants[1]`. The mis-minted identity refuses `invalid_model_binding`/`malformed-declaration`.
 - Step 6 is refused by the reader's schema, diagnostic retained, no declaration.
 - Assertions compare typed code, cause, node identity and path.

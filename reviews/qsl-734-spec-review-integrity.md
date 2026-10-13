@@ -40,3 +40,19 @@ Findings: one high, three medium. The duplicate-case cause contradicts FR-154. T
 | QSpec FR-208:43 | context_only | Normalization admits it as an effective type; a clause naming it is `unsupported_construct`/`declaration-form` (FR-150). |
 | QSpec FR-141 enum identity | context_only | `members` is the declaration-ordered list of semantic case names (sorted by case name for an unordered enum) |
 | QSL TC-145 | context_only | one `enum` with its `variant` records |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | The fix commit deletes four normative statements outside this PR's scope that sat after the variant-type paragraph on the base: "The compiler SHALL key each `relationship` export by its owner's declaration identity and declared `name`...", "If a relationship member has no declared name or no source span, then the compiler SHALL refuse it ... `malformed-declaration`", "When a construct's meaning id is one of the five `quire.meaning.systems.*` values, the compiler SHALL bind the IR node to its FR-152 kind ...", and "When an IR node binds as a Port, the compiler SHALL retain its owning part, direction, interface type and typed multiplicity." FR-056-AC-8 (Port retention) and the new text's "as FR-056 keys a `relationship`" (line 433) and "as for a relationship member" (line 467) now refer to deleted rules. Restore all four. | spec/functional/FR-056-admit-domain-package-model-declarations.md:base 413-425 (deleted); 433; 467 |
+| FND-006 | low | For two cases with distinct identities, the conflicting-binding refusal cites "QSpec FR-154: two nodes share one identity". These nodes do not share an identity. They share a case name, so they share a `variant` export key. Cite the shared export key, or state the analogy, rather than a rule whose premise does not hold. It is also unstated whether a case identity that is not FR-154's minted `variant/<Name>-<value>` is itself malformed. | spec/functional/FR-056-admit-domain-package-model-declarations.md:476-484 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dcfafda2f |
+| FND-002 | fixed | dcfafda2f |
+| FND-003 | fixed | dcfafda2f |
+| FND-004 | deferred | The QSpec FR-154 rows are cross-repo owner work. FR-056 now labels these as QSL rules ("QSpec follow-up: add rows to FR-154"), but no STD ticket exists for that follow-up yet. The lead should file one and cite it. |

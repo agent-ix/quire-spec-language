@@ -30,3 +30,11 @@ Findings: one medium, two low.
 | FR-056-AC-25 | examined | A variant type with a case carrying `payloadType` refuses `unsupported_construct`/`declaration-form` at that case |
 | FR-056-AC-26 | examined | A variant type with no case, and a case with no name or no span, each refuse `invalid_model_binding`/`malformed-declaration` |
 | FR-056 reader-first rule | context_only | If `agent-ix-semantic-ir` refuses the selected bytes, then the compiler SHALL end intake with no declaration and SHALL retain every reader diagnostic |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dcfafda2f |
+| FND-002 | fixed | dcfafda2f |
+| FND-003 | fixed | dcfafda2f |

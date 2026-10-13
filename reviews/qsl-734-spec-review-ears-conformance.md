@@ -30,3 +30,9 @@ One low finding.
 | FR-056 duplicate/empty refusal | examined | If two cases of one variant type have the same `name`, then intake SHALL refuse the second |
 | FR-056 member typeRef refusal | examined | If a member's `typeRef` names a declaration bound to `quire.meaning.model.variant-type/v1`, then intake SHALL refuse the member |
 | FR-056 clause refusal | examined | If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`, then the compiler SHALL refuse the clause |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dcfafda2f |
