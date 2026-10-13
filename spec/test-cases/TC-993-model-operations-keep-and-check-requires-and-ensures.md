@@ -39,6 +39,6 @@ run 6. Scope: FR-103-AC-7 and FR-103-AC-8.
    holds no `requires` clause.
 3. The compile succeeds.
 4. The compile refuses with one refusal, `wrong_snapshot`/`forbidden-pre-read`,
-   naming `ix://test/orders/OrderLifecycle/place` at `Operation.pre`, and
+   naming `ix://test/orders/OrderLifecycle/place` at `Operation.pre[0]`, and
    produces no checked package.
 5. The compile succeeds: an `ensures` clause may read `pre(e)`.
