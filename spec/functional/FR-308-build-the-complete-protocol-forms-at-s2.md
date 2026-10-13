@@ -82,7 +82,7 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 - S2 builds each complete form whether or not the unit selects
   `quire.protocol.complete/v1`. QSpec's facet rule (an unselected facet gives
   `unsupported_construct`) applies to it, but QSL has no header layer for that
-  profile, so the gate is not enforced (FR-361 item 6a).
+  profile, so the gate is not enforced (FR-361 item 8).
 
 ## Acceptance Criteria
 

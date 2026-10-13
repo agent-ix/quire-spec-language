@@ -48,3 +48,11 @@ Ticket: QSL-750. PR #813 (base impl/business-model-meanings) adds FR-361 and TC-
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | FR-361's code slice needs FR-110's layer selection. Items 2 and 4 and AC-8 require E3 to resolve `quire.model.complete/v1` as a layer, compute its `requires` closure and emit the closure's lock rows. FR-110 says "Layer selection (AC-7, AC-8) and AC-1's layer-closure lock rows are not yet implemented". The code agrees: `resolve_profiles` in qsl-semantics/src/check/profile.rs accepts only the `root` row. That work is QSL-515 (HL2, FR-110 AC-1/7/8), which is in Backlog under the Layer 4 milestone. QSL-750 is in the Layer 2 milestone, and Linear has no blocks or blocked-by edge between them. The planner's note that "layer selection for all five is implemented" does not match the spec text or the code. FR-361 should say whether QSL-750 builds the model-layer subset itself or depends on QSL-515, and Linear should carry the matching edge. | spec/functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md:196-200 |
+
+## Dispositions
+
+Round 1, reviewed at 485c2fad7374250b5ceb6a95cf7a4c8c4031ba9b.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e01e00c9f |

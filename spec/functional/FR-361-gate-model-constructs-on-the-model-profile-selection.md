@@ -106,7 +106,7 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 ### Model construct families
 
 5. QSL SHALL treat these as the model constructs, each with its refusal
-   cause. QSpec's shared grammar names the first, fourth and fifth rows, and
+   cause. QSpec's shared grammar names the first, third and fourth rows, and
    QSpec FR-450-AC-3 names the second.
 
    | Family | Construct | Cause |
@@ -132,16 +132,15 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
    `Population<T>` type, `allInstances`, field or relationship navigation, the
    `hyper`, `relation` and state-graph clauses, or the state-clause family.
    For `Population<T>`, `allInstances` and navigation this is QSL's reading:
-   QSpec's model-forms paragraph names navigation, covers those forms as "the
-   model forms above" and says a package that does not select
-   `quire.model.complete/v1` receives `unsupported_construct` for "each of
-   these forms". A QSpec clarification of which of those forms the sentence
-   gates is requested; until it arrives QSL gates exactly the families of
+   QSpec's shared grammar closes its model-forms paragraph with a refusal
+   rule that can be read to cover those forms along with navigation, and
+   leaves open which of them it covers. A QSpec clarification of that is
+   requested; until it arrives QSL gates exactly the families of
    item 5. FR-110's layer rule still refuses a form outside a selected
    layer's admitted-form set (for example `reaches`, which state core
    refuses).
 8. **Protocol, memory and temporal forms are not gated by this requirement.**
-   QSpec's shared grammar ("Complete-V1 facet grammar") names
+   QSpec's shared grammar (its facet grammar section) names
    `quire.protocol.complete/v1` as the facet of the protocol forms, including
    the memory clause, memory order and fence (QSpec ADR-006 makes it the one
    protocol admission profile), and `quire.temporal.complete/v1` as the
@@ -233,7 +232,7 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
   refusal this requirement places at S3. FR-308 and FR-309 name the protocol
   facet, which this requirement does not gate. FR-056 states the `model`
   declaration and domain-package intake, FR-103 the model operations.
-- QSpec ADR-006, shared grammar ("Complete-V1 facet grammar" and the model forms
+- QSpec ADR-006, shared grammar (its facet grammar and model forms
   sections), `model-complete.md`, `complete-model-lock.json`,
   `native-diagnostics.md` (the `unsupported_construct` causes), FR-001,
   FR-271, FR-272, FR-450-AC-3 and FR-453.

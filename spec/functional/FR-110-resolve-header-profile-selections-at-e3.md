@@ -141,6 +141,8 @@ section "Header-selectable layers" cites): `quire.state.core/v1`,
   form outside that set, S3 SHALL refuse it with
   `unsupported_construct`/`expression-form` at the expression's span,
   naming the selected layer. S3 never admits a form under a wider layer.
+  FR-361 item 12 governs a form of the model families that a unit not
+  selecting the model profile writes: it receives FR-361's refusal alone.
 
 ### Model selections
 
