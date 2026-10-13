@@ -300,7 +300,7 @@ fn find_component<'a>(
 /// FR-208-AC-9: a relationship end naming a record value type refuses
 /// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
 /// the end names a declared type of the wrong meaning.
-#[trace("QSpec-TC-197")]
+#[trace("QSpec-TC-197", "TC-997", "FR-056-AC-32")]
 #[test]
 fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     let domain_package = fixture_y(|records| {
@@ -325,13 +325,68 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     let refusals: Vec<_> = classification
         .refusals
         .iter()
-        .filter(|refusal| refusal.detail.contains("model.Sys.owes"))
+        .filter(|refusal| {
+            matches!(&refusal.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == "model.Sys.owes")
+        })
         .collect();
     assert_eq!(refusals.len(), 1, "{:?}", classification.refusals);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause, ModelRefusalCause::MalformedDeclaration);
-    assert!(refusals[0].detail.contains("target end"));
-    assert!(refusals[0].detail.contains("model.Money"));
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.Sys.owes".to_owned(),
+            artifact: None,
+            span: None,
+            member: "Relationship.target".parse().unwrap(),
+        }
+    );
+}
+
+/// FR-208-AC-9: a relationship source end naming a record value type refuses
+/// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
+/// the end names a declared type of the wrong meaning.
+#[trace("QSpec-TC-197", "TC-997", "FR-056-AC-32")]
+#[test]
+fn a_relationship_source_end_naming_a_record_value_type_refuses_malformed() {
+    let domain_package = fixture_y(|records| {
+        records.push(DomainPackageRecord::RecordValueType(
+            qsl_semantics::model::domain_package::RecordValueTypeRecord {
+                key: DeclarationKey::fixture("model.Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            },
+        ));
+        records.push(relationship(
+            "model.Sys.owes",
+            "model.Money",
+            one(),
+            "model.Sys",
+            one(),
+            RelationshipDirection::SourceToTarget,
+        ));
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify completes");
+    let refusals: Vec<_> = classification
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            matches!(&refusal.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == "model.Sys.owes")
+        })
+        .collect();
+    assert_eq!(refusals.len(), 1, "{:?}", classification.refusals);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.Sys.owes".to_owned(),
+            artifact: None,
+            span: None,
+            member: "Relationship.source".parse().unwrap(),
+        }
+    );
 }
 
 #[trace("TC-235", "FR-086-AC-3")]

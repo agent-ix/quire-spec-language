@@ -528,6 +528,28 @@ placeholder: QSL-738 owns fields typed by a variant type and replaces it. As
 with every declaration refusal, it leaves the package unadmitted; the variant
 type's declaration is not refused because it is a variant type.
 
+An operation parameter or result whose `typeRef` is refused as a signature value
+type SHALL refuse at the operation node, never without a node. This covers every
+cause: a `typeRef` naming a variant type, or any other meaning a signature may
+not name (an event, state machine, process, persistence interface, namespace or
+interface-featured object type), refuses `invalid_model_binding`/`malformed-declaration`;
+a `typeRef` naming no declared type, in a package that reaches normalization
+without the reader, refuses `dangling_reference`/`unknown-value-type`. Each
+retains the operation's node identity, its FCD origin (source artifact and
+position, when the node has a source origin) and the typed member path
+`Operation.params[i].typeRef` for the parameter at zero-based position `i`, or
+`Operation.returns.typeRef` for the result. The refusal of a variant type is a
+placeholder that QSL-738 replaces, as for fields; the refusal of the other
+meanings is permanent.
+
+The same rule holds for the other `malformed-declaration` refusals the compiler
+raises at normalization on a node it holds: a relationship end naming a record
+value type refuses at the relationship node, path `Relationship.source` or
+`Relationship.target`; a namespace member that is itself a namespace refuses at
+the namespace node, path `TypeDefinition.members[i]`; a population member type
+that is a record value type refuses at the population node, path
+`PopulationDefinition.members[i]`.
+
 ##### Effective identity of a variant type
 
 QSpec FR-208 says normalization admits a variant type as an effective type.
@@ -764,6 +786,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-29 | The TC-994 package normalizes to an effective view with one effective type for `Tier` and one for `Level` (owner null, `original` its declaration key, one `qualify` fact `[declaration]`), and one effective member per case (owner the variant type's effective identity, `original` the case node's key such as `.../variant/Tier-Gold`, one `qualify` fact). `type_identities` lists the two variant types and nothing else. `Tier`'s `Gold`, `Level`'s `Gold` and `Tier`'s `gold` have three distinct effective identities, and listing the cases `Standard` then `Gold` changes no effective identity, entry or position. | Test (TC-1003) |
 | FR-056-AC-30 | Two cases named `Gold` with distinct identities leave no effective view and refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`, even beside a valid variant type. Two cases that share one identity (`Gold` and a `Silver` carrying `.../variant/Tier-Gold`), listed in either order, refuse once at the reader, `invalid_model_binding`/`malformed-declaration` at path `TypeDefinition.variants[1].identity`, located at the second listed case's span (`Silver` for `[Gold, Silver]`, the correctly minted `Gold` for `[Silver, Gold]`), with the reader's `DUPLICATE_IDENTITY` diagnostic. | Test (TC-1003) |
 | FR-056-AC-31 | The unit assembled over the TC-994 package declares `Config::Tier` with cases `Gold`, `Standard` and `Config::Level` with case `Gold` in the type environment, ascending by effective identity; each declaration's key is the effective identity the view gives the type, and each case's key is the view's effective identity for the case node. A unit that names no variant type assembles, and one that names one still refuses `unsupported_construct`/`declaration-form`. | Test (TC-1004) |
+| FR-056-AC-32 | An operation parameter whose `typeRef` names `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` for the parameter at position `i` (position 1 for the second parameter), retaining the operation's artifact and source position; its result refuses at the same node, path `Operation.returns.typeRef`. A parameter or result naming an event type, state machine, process, persistence interface, namespace or interface-featured object type retains the same node and path under `malformed-declaration`; one naming an undeclared type, in a package built without the reader, does so under `dangling_reference`/`unknown-value-type`. A relationship end, namespace member or population member type naming the wrong meaning refuses at its own node with the paths `Relationship.source`/`Relationship.target`, `TypeDefinition.members[i]` and `PopulationDefinition.members[i]`. | Test (TC-997) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17

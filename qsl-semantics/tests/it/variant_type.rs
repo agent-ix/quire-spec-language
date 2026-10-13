@@ -16,7 +16,7 @@ use qsl_semantics::check::AssemblyCause;
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
 use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, EnumRecord, VariantRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, EnumRecord, ValueTypeRef, VariantRecord,
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
 use qsl_semantics::model::key::{
@@ -625,10 +625,23 @@ fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
     assert_malformed(&found[0], "Account/tier", "Field.typeRef");
 }
 
+/// The origin the signature refusals retain: the operation's own FCD
+/// `origin.source` (the `operation` helper writes `spec`, line 1, column 1).
+fn assert_operation_origin(refusal: &ModelRefusal) {
+    let ModelRefusalCause::IntakeMalformedDeclaration { artifact, span, .. } = &refusal.cause
+    else {
+        panic!("expected a malformed declaration: {refusal:?}");
+    };
+    assert_eq!(artifact.as_deref(), Some(id("spec").as_str()));
+    let span = span.expect("the operation's source position is retained");
+    assert_eq!((span.start.line, span.start.column), (1, 1));
+}
+
 /// FR-056 "Variant types": a signature typeRef naming a variant type is a
 /// reference to a node of a meaning it may not name, `malformed-declaration`
-/// (parameter and result alike).
-#[trace("TC-997", "FR-056-AC-28")]
+/// at the operation node, parameter and result alike, keeping the operation's
+/// origin.
+#[trace("TC-997", "FR-056-AC-32")]
 #[test]
 fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
     let tier = variant_type(
@@ -645,10 +658,92 @@ fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
     let document: Value = serde_json::from_slice(&bytes).unwrap();
     let found = refusals(&document);
     assert_eq!(found.len(), 2, "parameter and result: {found:?}");
-    for refusal in &found {
-        assert_eq!(refusal.code, Code::InvalidModelBinding);
-        assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+    let operation = "ConfigVersion/setTier";
+    assert_malformed(&found[0], operation, "Operation.params[0].typeRef");
+    assert_malformed(&found[1], operation, "Operation.returns.typeRef");
+    found.iter().for_each(assert_operation_origin);
+}
+
+/// FR-056 "Variant types": the parameter position is the declared position,
+/// not a constant. Only the second parameter (and the result) name `Tier`.
+#[trace("TC-997", "FR-056-AC-32")]
+#[test]
+fn a_later_parameter_naming_a_variant_type_keeps_its_own_position() {
+    let tier = variant_type(
+        "Tier",
+        vec![case("Tier", "Gold", 10), case("Tier", "Standard", 11)],
+    );
+    let setter = operation(
+        "setTier",
+        json!([
+            operation_parameter("setTier", "n", "ix://quire/native/Integer"),
+            operation_parameter("setTier", "t", &id("Tier")),
+            operation_parameter("setTier", "m", "ix://quire/native/Integer"),
+        ]),
+        Some(&id("Tier")),
+        empty_frame(),
+    );
+    let bytes = config_version_document(setter, vec![variant_construct()], vec![tier], json!([]));
+    let document: Value = serde_json::from_slice(&bytes).unwrap();
+    let found = refusals(&document);
+    assert_eq!(found.len(), 2, "parameter and result: {found:?}");
+    let operation = "ConfigVersion/setTier";
+    assert_malformed(&found[0], operation, "Operation.params[1].typeRef");
+    assert_malformed(&found[1], operation, "Operation.returns.typeRef");
+}
+
+/// FR-056 "Variant types": an undeclared signature type keeps the operation
+/// node, the typed path and the operation's reader origin. The reader refuses
+/// an absent type itself, so the reference is broken after the read.
+#[trace("TC-997", "FR-056-AC-32")]
+#[test]
+fn an_undeclared_signature_type_keeps_the_operations_origin() {
+    let setter = operation(
+        "setCount",
+        json!([
+            operation_parameter("setCount", "n", "ix://quire/native/Integer"),
+            operation_parameter("setCount", "m", "ix://quire/native/Integer"),
+        ]),
+        Some("ix://quire/native/Integer"),
+        empty_frame(),
+    );
+    let bytes = config_version_document(setter, vec![], vec![], json!([]));
+    let document: Value = serde_json::from_slice(&bytes).unwrap();
+    let mut package = read(&document).expect("the document reads");
+    let missing = ValueTypeRef::Package(key("Missing"));
+    for record in &mut package.records {
+        if let DomainPackageRecord::OperationMember(op) = record {
+            if op.key == key("ConfigVersion/setCount") {
+                op.parameters[1].value_type = missing.clone();
+                op.result.as_mut().expect("a result").value_type = missing.clone();
+            }
+        }
     }
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    let NormalizeOutcome::Refused(found) = outcome else {
+        panic!("the undeclared type must refuse: {outcome:?}");
+    };
+    assert_eq!(found.len(), 2, "{found:?}");
+    let mut members = Vec::new();
+    for refusal in found.iter() {
+        assert_eq!(refusal.code, Code::DanglingReference);
+        let ModelRefusalCause::UnknownValueType {
+            operation, site, ..
+        } = &refusal.cause
+        else {
+            panic!("expected unknown-value-type: {refusal:?}");
+        };
+        assert_eq!(operation, &key("ConfigVersion/setCount"));
+        assert_eq!(site.artifact.as_deref(), Some(id("spec").as_str()));
+        let span = site.span.expect("the operation's source position");
+        assert_eq!((span.start.line, span.start.column), (1, 1));
+        members.push(site.member.to_string());
+    }
+    members.sort();
+    assert_eq!(
+        members,
+        ["Operation.params[1].typeRef", "Operation.returns.typeRef"]
+    );
 }
 
 /// FR-154: every failing check of one node is reported. A type with two
