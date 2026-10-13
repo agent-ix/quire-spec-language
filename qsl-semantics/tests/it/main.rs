@@ -13,6 +13,7 @@
 mod business_meanings;
 mod child_composite;
 mod complete_value_lock;
+mod dispatch_linking;
 mod field_presence;
 mod identity_golden_vectors;
 mod ieee_profiles;

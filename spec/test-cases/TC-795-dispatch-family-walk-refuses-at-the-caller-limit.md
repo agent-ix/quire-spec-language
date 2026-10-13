@@ -22,10 +22,6 @@ Verify the `family_steps` limit at compile. Scope: FR-302-AC-5.
 
 1. The compile succeeds.
 2. Refused at S3 with `resource_exhausted`/`insufficient-next-charge`, naming
-   the setting `model.family_steps`, the limit 2
-   and the limits field that raises it; no checked package.
-
-Until unit compile links dispatch (it does not yet reach the checked dispatch
-bridge), the bridge's own test backs the charge record: it drives the
-family walk over a built chain and asserts the code, cause and record of
-step 2. The unit-level steps become the test once compile links dispatch.
+   the setting `model.family_steps`, the limit 2, the actual count 3 and the
+   retained charge (`consumed` 2, `next_charge` 1, `charge_point`
+   `model.family-edge`); no checked package.

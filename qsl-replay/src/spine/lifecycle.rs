@@ -920,11 +920,29 @@ impl<'a> Resolution<'a> {
             })
         })?;
         declarations.lock_evidence = frame.lock.clone();
+        // FR-302: link the dispatch table of each family a dispatched call's
+        // member name may name, under the caller's model normalization
+        // limits, before `check` types the calls against them. A family
+        // that did not link is reported if the check cannot resolve a call
+        // for want of it.
+        let pending = charged(cancel, &mut self.work.s3, || {
+            declarations.link_dispatch(limits.model)
+        })
+        .map_err(|refusals| {
+            let regions = declarations.regions();
+            Box::new(CompileRefusal::Check {
+                region: refusals
+                    .first()
+                    .and_then(|refusal| regions.refusal_region(refusal)),
+                refusals,
+            })
+        })?;
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
             declarations.check_with_cancel(limits.checking, cancel)
         })
         .map_err(|refusals| {
+            let refusals = pending.report(refusals);
             Box::new(CompileRefusal::Check {
                 region: refusals
                     .first()

@@ -281,9 +281,9 @@ names different artifacts in each.
 | TC-790 | Each model form types through StateModel and refuses with a StateModel cause | Integration | P1 | FR-300-AC-1, FR-300-AC-2 | 🚧 |
 | TC-791 | The seam probe reports the StateModel arms at S1, S2 and S3 | Integration | P1 | FR-300-AC-3 | 🚧 |
 | TC-792 | StateModel causes raised under Value and ProtocolClause evaluation render with the state-model prefix | Integration | P1 | FR-301-AC-1, FR-301-AC-2 | 🚧 |
-| TC-793 | Unit compile carries one linked dispatch table per called operation, named by each call | Integration | P1 | FR-302-AC-1 | 🚧 |
+| TC-793 | Unit compile carries one linked dispatch table per called operation, named by each call | Integration | P1 | FR-302-AC-1 | ✅ |
 | TC-794 | Unit compile refuses ambiguous and inapplicable dispatch with no checked package | Integration | P1 | FR-302-AC-2, FR-302-AC-3, FR-302-AC-4 | 🚧 |
-| TC-795 | Unit compile refuses a dispatch family past the caller's family_steps limit | Integration | P1 | FR-302-AC-5 | 🚧 |
+| TC-795 | Unit compile refuses a dispatch family past the caller's family_steps limit | Integration | P1 | FR-302-AC-5 | ✅ |
 | TC-796 | The model correspondence faults on a second, different entry in either direction | Integration | P1 | FR-303-AC-1, FR-303-AC-2, FR-303-AC-3, FR-303-AC-4 | ✅ |
 | TC-797 | An abstraction relation checks into one binding per key, total or partial | Unit | P1 | FR-304-AC-1, FR-304-AC-2 | 🚧 |
 | TC-798 | An abstraction binding whose model key resolves to nothing refuses missing-name | Unit | P1 | FR-304-AC-3 | 🚧 |
@@ -299,13 +299,15 @@ names different artifacts in each.
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 |
 | TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7, FR-103-AC-9 | 🚧 |
 | TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
-| TC-1011 | Unit compile checks a body's arity and type against its operation | Integration | P1 | FR-302-AC-8 | 🚧 |
+| TC-1011 | Unit compile checks a body's arity and type against its operation | Integration | P1 | FR-302-AC-8 | ✅ |
 | TC-1012 | An operation body refuses without the model profile and compiles with it | Integration | P1 | FR-361-AC-1 | 🚧 |
 | TC-1013 | A dispatched call and a lookup refuse without the model profile | Integration | P1 | FR-361-AC-2 | 🚧 |
 | TC-1014 | An abstraction declaration refuses without the model profile | Integration | P1 | FR-361-AC-3 | 🚧 |
 | TC-1015 | Forms this requirement does not gate raise no model-gate refusal | Integration | P1 | FR-361-AC-4 | 🚧 |
 | TC-1016 | State clauses against a model alias are admitted under every other layer | Integration | P1 | FR-361-AC-5 | 🚧 |
 | TC-1017 | The model profile is selected by the header only | Integration | P1 | FR-361-AC-6, FR-361-AC-7, FR-361-AC-8, FR-361-AC-9, FR-361-AC-10, FR-361-AC-11, FR-361-AC-12 | 🚧 |
+| TC-1018 | A function synthesized for dispatch is located at the unit declarations it came from | Integration | P1 | FR-096-AC-20 | ✅ |
+| TC-1019 | A family is called by the call that reaches it, and a body does not dispatch | Integration | P1 | FR-302-AC-9 | ✅ |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |

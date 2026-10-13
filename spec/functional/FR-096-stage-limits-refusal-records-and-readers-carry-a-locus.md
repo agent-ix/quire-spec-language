@@ -111,6 +111,15 @@ declaration the assembler built from the unit, it SHALL resolve to a
 A declaration as a whole SHALL be located at its form's span (FR-091-AC-1),
 mapped the same way.
 
+A function the unit compile synthesizes for FR-151 dispatch (FR-302) from the
+unit's own declarations SHALL be located at them. The body function of an
+operation carries the spans of the `operation-body` it was built from, so a
+position in it resolves as in any body. A precondition function (an
+operation's unit `pre` clause or clauses, or the disjunction with a redefined
+operation's) has no tree of spans of its own shape, so every position in it
+resolves to the form span of the first unit `pre` clause of its operation.
+Each such function has one `generated` occurrence, at its own body.
+
 A location SHALL resolve to no region in exactly four cases. In the first
 three, the tree holding the position was not read from the unit, so no
 region of the unit names it; in the fourth, the position was read from the
@@ -118,8 +127,10 @@ unit, but its span does not map to a single region of the document it is
 embedded in:
 
 1. A position in a function that the `model` bridge synthesized for FR-151
-   dispatch (a function not callable by name). It is built from a
-   domain-package declaration.
+   dispatch (a function not callable by name) from a domain-package
+   declaration, when the bridge's caller supplied no unit declaration for it.
+   The unit compile supplies one (FR-302), so none of its functions is in
+   this case.
 2. A position with `Origin::Expression`. This is a standalone expression
    handed to `check`, a tree `check` builds itself (the FR-094
    field-refinement guards), or a position `check` names for a table the
@@ -395,6 +406,7 @@ name.
 | FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test |
 | FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test |
 | FR-096-AC-19 | For each typed kernel CheckedInvariantCause, a received CheckedInvariant at S6a returns an InternalFault with stage `S6a`, invariant `checked-program-invariant` and the identical typed cause payload as accessible provenance through public call, public evaluate and replay fault mappings; kernel code and cause accessors remain absent. | Test |
+| FR-096-AC-20 | A unit compiled with `body sizeA ... { 11 }`, `body sizeB ... { 22 }` and `pre preA`, `pre preB` on `A.size` and `B.size` (`B` redefining `A`), and a `pre` clause calling `size`: the body function of `A.size` resolves to the text `11` and that of `B.size` to `22`; the precondition function of `A.size` and of `B.size`, and the disjunction `B.size` takes with `A.size`, resolve to the text of `preA`, `preB` and `preB`; each of the five functions has one `generated` occurrence resolving to the same region as its body; and `compile_package` emits the unit. | Test (TC-1018) |
 
 The fourth
 no-region case (a span the map splits) is backed directly against the
