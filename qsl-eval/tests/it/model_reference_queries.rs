@@ -1119,7 +1119,12 @@ fn equal(left: Expression, right: Expression) -> Expression {
 /// identity, and a matching label from another universe cannot name a
 /// member of the selected population.
 #[test]
-#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-1", "QSpec-FR-009-AC-3")]
+#[trace(
+    "QSpec-V1-TYPE-022",
+    "QSpec-FR-009-AC-1",
+    "QSpec-FR-009-AC-3",
+    "QSpec-V1-EXPR-017"
+)]
 fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1178,7 +1183,7 @@ fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
 /// V1-TYPE-022: a surviving object keeps its identity when the same
 /// population is read through pre and post observations.
 #[test]
-#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-2")]
+#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-2", "QSpec-V1-EXPR-017")]
 fn a_surviving_object_compares_equal_across_pre_and_post() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2069,7 +2074,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
 /// `[a1, a2, b1]` to `[a1, b1]`, so the assertion below on the pre-anchored
 /// result went red as expected; reverted.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7", "QSpec-V1-EXPR-020")]
 fn l07_pre_all_instances_reads_the_invocation_pre_population() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2117,7 +2122,7 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
 /// `a2` over the post population, and `pre(lookup<M::A>(p, r2) absent
 /// empty)` is present, `a2` keeping its pre most-specific type `M::A`.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7", "QSpec-V1-EXPR-020")]
 fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2181,7 +2186,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
 /// population (3 members, matching `pre_count`), so the `NotEqual` assertion
 /// below went red as expected (`false`, not `true`); reverted.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7", "QSpec-V1-EXPR-020")]
 fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2237,7 +2242,7 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
 /// guard). This test went red as expected (a checked expression instead of
 /// a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_a_let_bound_query_result_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2278,7 +2283,7 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
 /// eligible_read` guard). This test went red as expected (a checked
 /// expression instead of a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_a_let_bound_population_alias_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2319,7 +2324,7 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
 /// checked, evaluated `Completed(Integer(3))`, the pre population's size,
 /// instead of a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2367,7 +2372,7 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
 /// went red as expected (a checked, evaluated `Completed(Integer(3))`
 /// instead of a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2409,7 +2414,7 @@ fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
 /// red as expected (a checked, evaluated `Completed(Integer(3))` instead of
 /// a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2455,7 +2460,7 @@ fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
 /// case. This test went red as expected (a checked, evaluated
 /// `Completed(Integer(3))` instead of a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2506,7 +2511,7 @@ fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
 /// went red as expected (a checked, evaluated `Completed(Integer(3))`
 /// instead of a refusal); reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3", "QSpec-V1-EXPR-021")]
 fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2557,7 +2562,7 @@ fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
 /// written directly inside `pre(...)` then also reads 2, so the comparison
 /// becomes `2 != 2`, `false`. This test went red as expected; reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-2")]
+#[trace("QSpec-FR-042-AC-2", "QSpec-V1-EXPR-021", "QSpec-FR-012-AC-4")]
 fn pre_of_a_captured_post_reference_retains_its_post_observation() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2658,7 +2663,7 @@ fn pre_of_an_integer_literal_is_refused() {
 /// test went red as expected (a checked expression instead of a refusal);
 /// reverted.
 #[test]
-#[trace("QSpec-FR-042-AC-4")]
+#[trace("QSpec-FR-042-AC-4", "QSpec-V1-EXPR-019", "QSpec-FR-012-AC-8")]
 fn pre_refuses_outside_a_postcondition_context() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2677,7 +2682,12 @@ fn pre_refuses_outside_a_postcondition_context() {
 /// `contains_pre_eligible_read` always treats as eligible) and evaluates to
 /// exactly the same result as the single `pre(e)`.
 #[test]
-#[trace("QSpec-FR-042-AC-2", "QSpec-TC-198", "QSpec-FR-153-AC-7")]
+#[trace(
+    "QSpec-FR-042-AC-2",
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-7",
+    "QSpec-V1-EXPR-020"
+)]
 fn nested_pre_is_idempotent() {
     let scenario = l07_scenario();
     let package = package(&scenario);

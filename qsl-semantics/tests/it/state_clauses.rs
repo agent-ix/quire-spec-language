@@ -118,7 +118,7 @@ const VERSION_UNCHANGED: &str = "post VersionUnchanged using v on \
 /// postcondition each check, typing `self`, `self.versionNumber` and
 /// `self.parent`, with `ParentOrder`'s reads all `current` and
 /// `VersionUnchanged`'s left read `post` and right `pre`.
-#[trace("TC-459", "FR-104-AC-1")]
+#[trace("TC-459", "FR-104-AC-1", "QSpec-V1-EXPR-018", "QSpec-V1-EXPR-020")]
 #[test]
 fn the_configversion_state_clauses_check() {
     let document = config_version_document(
@@ -294,7 +294,7 @@ fn a_complete_function_does_not_enable_integer_operators_in_a_state_only_clause(
 /// TC-459 step 2 / FR-104-AC-2: `post R using v on
 /// Config::ConfigVersion::attemptUpdate { result }` checks with
 /// `result: Boolean`.
-#[trace("TC-459", "FR-104-AC-2")]
+#[trace("TC-459", "FR-104-AC-2", "QSpec-V1-EXPR-020")]
 #[test]
 fn a_postcondition_reads_result_typed_as_the_operations_result() {
     let document = config_version_document(
@@ -311,7 +311,13 @@ fn a_postcondition_reads_result_typed_as_the_operations_result() {
 
 /// TC-459 step 3 / FR-104-AC-2: `result` in an invariant, and in a `pre`
 /// clause of `attemptUpdate`, each refuse `wrong_snapshot`/`wrong-anchor`.
-#[trace("TC-459", "FR-104-AC-2")]
+#[trace(
+    "TC-459",
+    "FR-104-AC-2",
+    "QSpec-V1-EXPR-018",
+    "QSpec-V1-EXPR-020",
+    "QSpec-FR-012-AC-3"
+)]
 #[test]
 fn result_outside_a_postcondition_refuses_wrong_anchor() {
     let document = config_version_document(
@@ -366,7 +372,7 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
 
 /// TC-459 step 4 / FR-104-AC-7, over a package whose `attemptUpdate` frame
 /// also modifies `parent`.
-#[trace("TC-459", "FR-104-AC-7")]
+#[trace("TC-459", "FR-104-AC-7", "QSpec-V1-EXPR-021")]
 #[test]
 fn postconditions_of_an_operation_that_modifies_parent() {
     let document = config_version_document(
@@ -716,6 +722,47 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
         }),
         "the reaches call is the whole function body"
     );
+}
+
+/// QSpec FR-012-AC-8: `pre(..)` in an invariant, and in a precondition,
+/// each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre` node when
+/// the clause is checked (linking), and none completes a Boolean. The
+/// postcondition form of the same body checks, so the refusal is the
+/// clause kind's, not the body's.
+///
+/// Mutation used (derived by reading, not executed): widening the
+/// `Expression::Pre` kind test in `state_clause.rs` (the clause kind as the
+/// typer reads it) to also accept `Invariant` or `Precondition` makes the
+/// matching case check instead of refuse, so this test goes red.
+#[trace("QSpec-V1-EXPR-018", "QSpec-V1-EXPR-019", "QSpec-FR-012-AC-8")]
+#[test]
+fn pre_in_an_invariant_or_a_precondition_refuses_forbidden_pre_read_at_the_pre() {
+    let document = config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let cases = [
+        "invariant I using v on Config::ConfigVersion at current { \
+            pre(self.versionNumber) = 1 }\n",
+        "pre P using v on Config::ConfigVersion::attemptUpdate { \
+            pre(self.versionNumber) = 1 }\n",
+    ];
+    for body in cases {
+        let refusals = check_refusals(&document, body).expect_err("pre refuses outside a post");
+        assert_eq!(refusals.len(), 1, "{body}");
+        assert_eq!(
+            refusals[0].cause,
+            CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+            "{body}"
+        );
+        // `= 1`'s left child (index 0) is the `pre`.
+        assert_eq!(refusals[0].location.path(), vec![0], "{body}");
+    }
+    let post = "post P using v on Config::ConfigVersion::attemptUpdate { \
+        pre(self.versionNumber) = 1 }\n";
+    check(&document, post).expect("the same body checks as a postcondition");
 }
 
 /// TC-461 / FR-104-AC-5, AC-6: one `operation-contract` requirement per
@@ -1454,10 +1501,58 @@ fn assert_frame_refused(
     }
 }
 
+/// An invocation whose `pre` and `post` references do not
+/// select the pre and post observations of one invocation -- `pre` naming
+/// the post-role snapshot, and `post` naming the pre-role snapshot -- is
+/// refused `wrong_snapshot`/`wrong-observation` at admission, before any
+/// clause value exists. This does not cover QSpec FR-012-AC-1 (observations of different
+/// invocation identities): the wire has no field binding a snapshot
+/// to the invocation that names it, so two snapshots of the right roles taken
+/// from different invocations cannot be told apart.
+///
+/// Mutation used (derived by reading, not executed): deleting the check-3
+/// role comparison in `admit_invocation_documents` admits both swapped
+/// invocations, so each `expect_err` below goes red.
+#[trace("QSpec-V1-EXPR-020")]
+#[test]
+fn an_invocation_naming_the_wrong_observation_roles_refuses_wrong_observation() {
+    let pre = [("child", 2, None)];
+    let post = [("child", 3, None)];
+    let swap = |bytes: Vec<u8>| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        let object = value.as_object_mut().expect("an invocation object");
+        let pre_ref = object.remove("pre").expect("pre");
+        let post_ref = object.remove("post").expect("post");
+        object.insert("pre".to_owned(), post_ref);
+        object.insert("post".to_owned(), pre_ref);
+        value.to_string().into_bytes()
+    };
+    let post_as_pre = |bytes: Vec<u8>| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        let object = value.as_object_mut().expect("an invocation object");
+        let pre_ref = object.get("pre").cloned().expect("pre");
+        object.insert("post".to_owned(), pre_ref);
+        value.to_string().into_bytes()
+    };
+    let swapped =
+        run_frame_clause_editing("AttemptUpdatePost", &pre, &post, "child", &[], &[], swap);
+    assert_frame_refused(swapped, "wrong_snapshot", "wrong-observation", None);
+    let doubled = run_frame_clause_editing(
+        "AttemptUpdatePost",
+        &pre,
+        &post,
+        "child",
+        &[],
+        &[],
+        post_as_pre,
+    );
+    assert_frame_refused(doubled, "wrong_snapshot", "wrong-observation", None);
+}
+
 /// TC-464 (precondition over an invocation): `root`'s `versionNumber`
 /// changes from 1 to 2; a precondition admits the pre side alone, with no
 /// post observation.
-#[trace("TC-464", "FR-106-AC-9")]
+#[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019")]
 #[test]
 fn attempt_update_precondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
@@ -1470,7 +1565,7 @@ fn attempt_update_precondition_admits_an_authorized_change() {
 
 /// TC-464 (FR-106 check 11, postcondition): the same authorized change,
 /// admitted for `AttemptUpdatePost` over the same pre/post snapshots.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-020")]
 #[test]
 fn attempt_update_postcondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
@@ -1483,7 +1578,7 @@ fn attempt_update_postcondition_admits_an_authorized_change() {
 
 /// FR-106 check 11.1: the post snapshot's `child`, absent from pre, is not
 /// granted by `attemptUpdate`'s (empty) `creates` -- refuses naming `child`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022")]
 #[test]
 fn attempt_update_refuses_an_unauthorized_create() {
     let pre = [("root", 1, None)];
@@ -1499,7 +1594,7 @@ fn attempt_update_refuses_an_unauthorized_create() {
 
 /// FR-106 check 11.2: the pre snapshot's `child`, absent from post, is not
 /// granted by `attemptUpdate`'s (empty) `deletes` -- refuses naming `child`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022")]
 #[test]
 fn attempt_update_refuses_an_unauthorized_delete() {
     let pre = [("root", 1, None), ("child", 1, Some("root"))];
@@ -1515,7 +1610,7 @@ fn attempt_update_refuses_an_unauthorized_delete() {
 
 /// FR-106 check 11.3: `root`'s `parent` changes, a field outside
 /// `attemptUpdate`'s `modifies [versionNumber]` -- refuses naming `root`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn attempt_update_refuses_a_change_outside_modifies() {
     let pre = [("root", 1, None), ("child", 1, None)];
@@ -1532,7 +1627,7 @@ fn attempt_update_refuses_a_change_outside_modifies() {
 /// FR-106 check 11.4: nothing is actually created between pre and post, but
 /// the invocation declares `created: [child]` -- refuses
 /// `population_delta_mismatch`/`delta-disagreement`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-2")]
 #[test]
 fn attempt_update_refuses_a_declared_delta_mismatch() {
     let pre = [("root", 1, None)];
@@ -1558,7 +1653,7 @@ fn attempt_update_refuses_a_declared_delta_mismatch() {
 /// `root.parent` absent, `child.versionNumber` 2, `child.parent` present
 /// naming `root`, `self` is `child`, and the snapshot's identity and digest
 /// are retained.
-#[trace("TC-464", "FR-106-AC-1")]
+#[trace("TC-464", "FR-106-AC-1", "QSpec-V1-EXPR-018")]
 #[test]
 fn tc464_step1_healthy_parent_admits_one_current_observation() {
     let document = tc465_document();
@@ -1681,7 +1776,7 @@ fn tc464_step2_a_reserialized_snapshot_gives_the_same_digest_and_an_equal_value(
 /// `VersionUnchanged`, with distinct pre and post observations, `self`
 /// `child` in both, `result` true, no parameters, and empty created and
 /// deleted.
-#[trace("TC-464", "FR-106-AC-2")]
+#[trace("TC-464", "FR-106-AC-2", "QSpec-V1-EXPR-020")]
 #[test]
 fn tc464_step3_changed_version_invocation_admits_a_full_observation_set() {
     let document = tc465_document();
@@ -1901,7 +1996,7 @@ const TC464_CONFIG_HISTORY: &str = "ix://example/config-version/config_history";
 /// a} }` for `ReachesTarget` admits one pre observation, `self` `a`, the
 /// parameter `target` naming `a`, and no post observation, result or delta
 /// (no frame check runs: there is no post state to compare).
-#[trace("TC-464", "FR-106-AC-8")]
+#[trace("TC-464", "FR-106-AC-8", "QSpec-V1-EXPR-019")]
 #[test]
 fn tc464_step5_a_pre_call_admits_one_pre_observation() {
     let document = tc465_document();
@@ -1930,7 +2025,7 @@ fn tc464_step5_a_pre_call_admits_one_pre_observation() {
 
 /// Step 5 (FR-106-AC-8): the same selection for `VersionUnchanged`, a
 /// postcondition, refuses `wrong_snapshot`/`wrong-observation`.
-#[trace("TC-464", "FR-106-AC-8")]
+#[trace("TC-464", "FR-106-AC-8", "QSpec-V1-EXPR-019")]
 #[test]
 fn tc464_step5_a_pre_call_for_a_postcondition_refuses_wrong_observation() {
     let document = tc465_document();
@@ -1945,7 +2040,7 @@ fn tc464_step5_a_pre_call_for_a_postcondition_refuses_wrong_observation() {
 
 /// Step 5 (FR-106-AC-8): a pre-call snapshot that says `post` refuses
 /// `wrong_snapshot`/`wrong-observation`.
-#[trace("TC-464", "FR-106-AC-8")]
+#[trace("TC-464", "FR-106-AC-8", "QSpec-V1-EXPR-019")]
 #[test]
 fn tc464_step5_a_pre_call_snapshot_saying_post_refuses_wrong_observation() {
     let document = tc465_document();
@@ -2308,7 +2403,7 @@ fn tc464_step5_an_incomplete_pre_call_snapshot_is_incomplete() {
 /// authorizes a write to `Tag::versionNumber` -- a same-named field of an
 /// unrelated type, present as a surviving object across the same
 /// invocation's pre and post.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-5")]
 #[test]
 fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
     let document = tc465_document_with_tag_type_sharing_a_field_name();
@@ -2353,7 +2448,7 @@ fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
 /// `ConfigVersion`; the post snapshot adds `s1` of type `Sub` (a subtype
 /// of `ConfigVersion`, a member of `config_history`), declared in
 /// `created`. This admits, with `s1` created as a `Sub`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-6")]
 #[test]
 fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
     let document = tc465_creates_subtype_document();
@@ -2388,7 +2483,7 @@ fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
 /// `ConfigVersion::versionNumber`; `attemptUpdate` modifies only
 /// `versionNumber`. A surviving `Sub` object whose `version` changes is
 /// covered by that grant, so this admits.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-5")]
 #[test]
 fn a_write_to_a_field_that_redefines_a_modifies_grant_admits() {
     let document = tc465_document_with_sub_redefining_version_number();
@@ -3423,7 +3518,7 @@ fn tc465_row8_blank_authority_refuses_blank_label() {
 
 /// Row 10 (check 2): `Current` selecting `VersionUnchanged` (a
 /// postcondition).
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "FR-106-AC-3", "QSpec-V1-EXPR-018")]
 #[test]
 fn tc465_row10_current_selecting_a_postcondition_refuses_wrong_observation() {
     let document = tc465_document();
@@ -3473,7 +3568,7 @@ fn tc465_row11_wrong_observation_role_refuses_wrong_observation() {
 }
 
 /// Row 12 (check 3): the selection's anchor `{handler, other}`.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "FR-106-AC-3", "QSpec-V1-EXPR-018")]
 #[test]
 fn tc465_row12_anchor_mismatch_refuses_wrong_anchor() {
     let document = tc465_document();
@@ -4102,7 +4197,7 @@ fn a_dangling_reference_into_an_incomplete_population_still_admits() {
 /// Row 26 (check 11.3): with `attemptUpdate` modifying `[versionNumber]`
 /// only, post sets `child.parent` absent -- refuses naming `child` and
 /// `parent`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn tc465_row26_forbidden_parent_change_refuses_unauthorized_change() {
     let document = tc465_document_with(attempt_update_modifies_version_number());
@@ -4131,7 +4226,7 @@ fn tc465_row26_forbidden_parent_change_refuses_unauthorized_change() {
 /// Row 27 (check 11.3): `attemptUpdate` modifying `[parent]` only, over
 /// the changed-version invocation (post `child.versionNumber` 3) --
 /// refuses naming `child` and `versionNumber`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn tc465_row27_change_outside_a_narrower_modifies_refuses_unauthorized_change() {
     let document = tc465_document_with_frame_modifies_parent_only();
@@ -4149,7 +4244,7 @@ fn tc465_row27_change_outside_a_narrower_modifies_refuses_unauthorized_change() 
 
 /// Row 28 (check 11.4): invocation `created: [{config_history, child}]`
 /// with nothing actually created.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-2")]
 #[test]
 fn tc465_row28_undeclared_creation_refuses_delta_disagreement() {
     let document = tc465_document();

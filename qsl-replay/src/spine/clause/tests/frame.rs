@@ -137,7 +137,7 @@ fn admit_record(report: &super::super::ClauseRunReport) -> &AdmissionRecord {
 /// TC-514 step 1 (FR-115-AC-1): changed-version, whose post changes only
 /// `child.versionNumber`, reports `evaluate`, `success`, `truth: true`,
 /// exit 0.
-#[trace("TC-514", "FR-115-AC-1")]
+#[trace("TC-514", "FR-115-AC-1", "QSpec-V1-EXPR-022")]
 #[test]
 fn a_frame_respecting_invocation_succeeds() {
     let input = changed_version();
@@ -180,7 +180,7 @@ fn a_frame_respecting_invocation_succeeds() {
 /// `child.parent` absent) is a violation with a witness naming `child`,
 /// `parent` and the frame's `modifies`, cause
 /// `frame_violation`/`unauthorized-change` -- never a refusal.
-#[trace("TC-514", "FR-115-AC-2")]
+#[trace("TC-514", "FR-115-AC-2", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn a_change_outside_the_frame_is_a_violation_with_its_witness() {
     let input = frame_input(
@@ -436,7 +436,7 @@ fn native_result_two_refuses_broken_frame_witness_members() {
 /// TC-514 step 2 (FR-115-AC-2): a post that adds `c2` to `config_history`
 /// is a violation whose witness names the creation of `c2` against the
 /// frame's empty `creates`.
-#[trace("TC-514", "FR-115-AC-2")]
+#[trace("TC-514", "FR-115-AC-2", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn a_creation_outside_the_frame_is_a_violation_naming_it() {
     let report = run(frame_input(
@@ -471,7 +471,7 @@ fn a_creation_outside_the_frame_is_a_violation_naming_it() {
 /// type"): a post that drops `c2` from `config_history` is a violation
 /// whose witness names the deletion of `c2` against the frame's empty
 /// `deletes`.
-#[trace("TC-514", "FR-115-AC-2")]
+#[trace("TC-514", "FR-115-AC-2", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn a_deletion_outside_the_frame_is_a_violation_naming_it() {
     let report = run(frame_input(
@@ -507,7 +507,7 @@ fn a_deletion_outside_the_frame_is_a_violation_naming_it() {
 /// invocation's `self`, admits and is a violation naming the deletion of
 /// `child` against the frame's empty `deletes`, never a `wrong-role-mapping`
 /// refusal over `self`'s absence from post.
-#[trace("TC-514", "FR-115-AC-2")]
+#[trace("TC-514", "FR-115-AC-2", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn a_deletion_of_self_outside_the_frame_is_a_violation_naming_it() {
     let report = run(frame_input(
@@ -533,7 +533,7 @@ fn a_deletion_of_self_outside_the_frame_is_a_violation_naming_it() {
 /// TC-514 step 2 (FR-115-AC-2): changed-version declaring `created:
 /// [child]` disagrees with the computed empty delta: `evaluate`, `refusal`,
 /// `population_delta_mismatch`/`delta-disagreement`, exit 20.
-#[trace("TC-514", "FR-115-AC-2")]
+#[trace("TC-514", "FR-115-AC-2", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-2")]
 #[test]
 fn a_disagreeing_declared_delta_refuses_at_evaluate() {
     let report = run(frame_input(
@@ -682,7 +682,13 @@ fn an_unknown_or_unnamed_operation_refuses_at_select() {
 /// TC-514 step 4 (FR-115-AC-4): changed-version with its pre snapshot
 /// removed from the provision reports `admit`, `incomplete`,
 /// `unavailable_observation`, never a violation.
-#[trace("TC-514", "FR-115-AC-4")]
+#[trace(
+    "TC-514",
+    "FR-115-AC-4",
+    "QSpec-V1-EXPR-022",
+    "QSpec-FR-013-AC-4",
+    "QSpec-FR-012-AC-2"
+)]
 #[test]
 fn an_absent_pre_snapshot_is_incomplete_not_a_violation() {
     let mut input = changed_version();
