@@ -36,3 +36,4 @@ mod record_value;
 pub mod refusal;
 mod state_machine;
 pub mod systems;
+mod variant_type;

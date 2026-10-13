@@ -73,7 +73,7 @@ fn parse_document(bytes: &[u8]) -> PackageDocument {
 /// `manifest_path` for that package -- the same shell-out-and-parse pattern
 /// `tools/arch-lint/metadata.rs` already uses. Memoized: every test below that needs it calls this, and
 /// `cargo metadata` is not free.
-fn fcd_fixtures_dir() -> &'static Path {
+pub(super) fn fcd_fixtures_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let output = Command::new(env!("CARGO"))
@@ -1183,6 +1183,7 @@ fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
                         node,
                         artifact: Some(artifact),
                         span: Some(span),
+                        ..
                     } if *node == widget
                         && artifact == "ix://acme/orders/spec"
                         && (span.start.line, span.start.column) == (3, 5)
@@ -1586,4 +1587,54 @@ fn lift_document_blocks_on_a_duplicate_identity() {
         }
         other => panic!("expected LiftFailure::Blocked, got {other:?}"),
     }
+}
+
+/// A bare-string core kind refuses at the member `kind` of the declaration,
+/// through the package read as well as the record read.
+#[test]
+fn a_bare_string_kind_refuses_at_the_kind_member_through_the_package_read() {
+    let package_identity = "test/bare";
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([]),
+        serde_json::json!([wire_type(
+            "ix://test/bare/Count",
+            serde_json::json!("scalar"),
+            serde_json::json!({"scalar": "integer"}),
+        )]),
+    );
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let parsed = parse_document(&bytes);
+    let selection = DomainPackageRef {
+        identity: package_identity.into(),
+        version: "1.0.0".into(),
+        digest: parsed.jcs_digest(),
+    };
+    let refusals = match read_domain_package(selection, &parsed) {
+        Ok(package) => match qsl_semantics::model::normalize::normalize(
+            &package,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        ) {
+            qsl_semantics::model::normalize::NormalizeOutcome::Refused(refusals) => {
+                refusals.iter().cloned().collect()
+            }
+            other => panic!("the bare-string kind must refuse, got {other:?}"),
+        },
+        Err(refusals) => refusals,
+    };
+    let members: Vec<String> = refusals
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                node,
+                member,
+                ..
+            } if node == "ix://test/bare/Count" => Some(member.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        members.iter().any(|member| member == "TypeDefinition.kind"),
+        "{members:?}"
+    );
 }

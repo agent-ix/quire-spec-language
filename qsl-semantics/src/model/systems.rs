@@ -222,6 +222,7 @@ pub fn classify(
                 record_value_types.insert(record.key.clone());
             }
             DomainPackageRecord::EventType(_) => {}
+            DomainPackageRecord::Enum(_) | DomainPackageRecord::Variant(_) => {}
             DomainPackageRecord::StateMachine(_) => {}
             DomainPackageRecord::Process(_) => {}
             DomainPackageRecord::FieldMember(_)

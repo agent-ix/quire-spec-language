@@ -43,6 +43,260 @@ pub enum OfferedSelection {
     Population(DeclarationKey),
 }
 
+/// The declaration kind a [`MemberPath`] is rooted at, as QSpec's
+/// `model-complete.md` names members (`TypeDefinition.supertypes[0]`,
+/// `Operation.pre`, `constructs[].meaning`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemberRoot {
+    /// The package document itself (`$`).
+    Package,
+    /// A `TypeDefinition` declaration.
+    TypeDefinition,
+    /// A `PopulationDefinition` declaration.
+    PopulationDefinition,
+    /// An `Operation` member.
+    Operation,
+    /// A `Relationship` member.
+    Relationship,
+    /// The package's `constructs[]` array.
+    Constructs,
+    /// One case of a variant type.
+    Variant,
+    /// A field member.
+    Field,
+}
+
+/// One step below a [`MemberPath`]'s root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MemberSegment {
+    /// A named member (`supertypes`, `occurrenceField`).
+    Name(String),
+    /// A zero-based array position (`[0]`).
+    Index(usize),
+}
+
+/// The member of a declaration a refusal is about, as the spec writes it:
+/// `TypeDefinition.transitions[0].emits[0]`. FR-208 and the TC-235 rows name
+/// this path in a malformed, missing or unsupported refusal, so the cause
+/// carries it as a value rather than only in `detail`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberPath {
+    root: MemberRoot,
+    segments: Vec<MemberSegment>,
+}
+
+impl MemberPath {
+    /// The root itself, with no member below it.
+    #[must_use]
+    pub const fn new(root: MemberRoot) -> Self {
+        Self {
+            root,
+            segments: Vec::new(),
+        }
+    }
+
+    /// A path rooted at `TypeDefinition`.
+    #[must_use]
+    pub const fn type_definition() -> Self {
+        Self::new(MemberRoot::TypeDefinition)
+    }
+
+    /// This path extended by the named member `name`.
+    #[must_use]
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.segments.push(MemberSegment::Name(name.into()));
+        self
+    }
+
+    /// This path extended by array position `index`.
+    #[must_use]
+    pub fn index(mut self, index: usize) -> Self {
+        self.segments.push(MemberSegment::Index(index));
+        self
+    }
+
+    /// The path's root.
+    #[must_use]
+    pub const fn root(&self) -> MemberRoot {
+        self.root
+    }
+
+    /// The path's segments below the root.
+    #[must_use]
+    pub fn segments(&self) -> &[MemberSegment] {
+        &self.segments
+    }
+
+    /// The TC-235 spelling of an operation's contract: a type's
+    /// `operations[m].pre[k]` or `.post[k]` member is `Operation.pre[k]` /
+    /// `Operation.post[k]` (M08 run 6 spells `Operation.pre`). Any other path
+    /// is returned unchanged.
+    #[must_use]
+    #[qsl_attrs::string_edge]
+    pub fn operation_contract(self) -> Self {
+        match self.segments.as_slice() {
+            [MemberSegment::Name(operations), MemberSegment::Index(_), MemberSegment::Name(contract), ..]
+                if self.root == MemberRoot::TypeDefinition
+                    && operations == "operations"
+                    && (contract == "pre" || contract == "post") =>
+            {
+                Self {
+                    root: MemberRoot::Operation,
+                    segments: self.segments[2..].to_vec(),
+                }
+            }
+            _ => self,
+        }
+    }
+
+    /// This path extended by the dotted relative path `relative`
+    /// (`kind.module`, `steps[1].emits`). Text that is not such a path
+    /// becomes one named segment, so the result always names something.
+    #[must_use]
+    pub fn child(mut self, relative: &str) -> Self {
+        match segments(&format!(".{relative}")) {
+            Some(more) => self.segments.extend(more),
+            None => self.segments.push(MemberSegment::Name(relative.to_owned())),
+        }
+        self
+    }
+
+    /// The member path of the node the reader locates at `location`, the
+    /// reader's own dotted document location (`$.types[3].fields[0]`): the
+    /// `types[n]`, `populations[n]` or `constructs[n]` prefix becomes the
+    /// root, and the rest the segments.
+    #[must_use]
+    #[qsl_attrs::string_edge]
+    pub fn from_document_location(location: &str) -> Self {
+        let rest = location.strip_prefix('$').unwrap_or(location);
+        let Some(mut tokens) = segments(rest) else {
+            // The reader builds every location itself; an unparseable one is
+            // kept whole rather than dropped.
+            return Self::new(MemberRoot::Package).name(location);
+        };
+        let root = match tokens.as_slice() {
+            [MemberSegment::Name(name), MemberSegment::Index(_), ..] => match name.as_str() {
+                "types" => Some(MemberRoot::TypeDefinition),
+                "populations" => Some(MemberRoot::PopulationDefinition),
+                "constructs" => Some(MemberRoot::Constructs),
+                _ => None,
+            },
+            _ => None,
+        };
+        let located = match root {
+            Some(root) => Self {
+                root,
+                segments: tokens.split_off(2),
+            },
+            None => Self {
+                root: MemberRoot::Package,
+                segments: tokens,
+            },
+        };
+        located.operation_contract()
+    }
+}
+
+/// Splits `.name` and `[n]` steps exactly as [`MemberPath`]'s `Display`
+/// prints them: a name is non-empty and holds none of `.`, `[`, `]`, and an
+/// index is decimal digits. Anything else is `None`.
+fn segments(mut rest: &str) -> Option<Vec<MemberSegment>> {
+    let mut tokens = Vec::new();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix('[') {
+            let (digits, tail) = after.split_once(']')?;
+            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            tokens.push(MemberSegment::Index(digits.parse().ok()?));
+            rest = tail;
+        } else {
+            let body = rest.strip_prefix('.')?;
+            let end = body.find(['.', '[', ']']).unwrap_or(body.len());
+            if end == 0 {
+                return None;
+            }
+            tokens.push(MemberSegment::Name(body[..end].to_owned()));
+            rest = &body[end..];
+        }
+    }
+    Some(tokens)
+}
+
+/// Text that is not a member path as [`MemberPath`]'s `Display` prints one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParseMemberPathError;
+
+impl std::fmt::Display for ParseMemberPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("not a member path: it starts with $, TypeDefinition, PopulationDefinition, Operation, Relationship or constructs[], then .name and [n] steps")
+    }
+}
+
+impl std::error::Error for ParseMemberPathError {}
+
+/// Parses the spec's spelling, the inverse of [`MemberPath`]'s `Display`:
+/// `TypeDefinition.transitions[0].emits[0]`, `constructs[].meaning`.
+impl std::str::FromStr for MemberPath {
+    type Err = ParseMemberPathError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        for (spelling, root) in [
+            ("$", MemberRoot::Package),
+            ("TypeDefinition", MemberRoot::TypeDefinition),
+            ("PopulationDefinition", MemberRoot::PopulationDefinition),
+            ("Operation", MemberRoot::Operation),
+            ("Relationship", MemberRoot::Relationship),
+            ("Variant", MemberRoot::Variant),
+            ("Field", MemberRoot::Field),
+            ("constructs[]", MemberRoot::Constructs),
+        ] {
+            if let Some(rest) = text.strip_prefix(spelling) {
+                if rest.is_empty() || rest.starts_with(['.', '[']) {
+                    return Ok(Self {
+                        root,
+                        segments: segments(rest).ok_or(ParseMemberPathError)?,
+                    });
+                }
+            }
+        }
+        Err(ParseMemberPathError)
+    }
+}
+
+impl std::fmt::Display for MemberPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self.root {
+            MemberRoot::Package => "$",
+            MemberRoot::TypeDefinition => "TypeDefinition",
+            MemberRoot::PopulationDefinition => "PopulationDefinition",
+            MemberRoot::Operation => "Operation",
+            MemberRoot::Relationship => "Relationship",
+            MemberRoot::Variant => "Variant",
+            MemberRoot::Field => "Field",
+            MemberRoot::Constructs => "constructs[]",
+        })?;
+        for segment in &self.segments {
+            match segment {
+                MemberSegment::Name(name) => write!(f, ".{name}")?,
+                MemberSegment::Index(index) => write!(f, "[{index}]")?,
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A [`MemberPath`] read on a named type: the spec's
+/// `ExpressLifecycle.states[1]` is `owner` `ExpressLifecycle` and member
+/// `TypeDefinition.states[1]`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedMemberPath {
+    /// The type whose member this is.
+    pub owner: DeclarationKey,
+    /// The member, rooted at that type's declaration.
+    pub member: MemberPath,
+}
+
 /// The closed FR-150/151/152/153/272 cause of a
 /// [`crate::model::normalize::ModelRefusal`] (#141 F9a): each variant is one
 /// condition a caller must distinguish, checked by the compiler rather than
@@ -166,6 +420,10 @@ pub enum ModelRefusalCause {
         member: DeclarationKey,
         /// The undominated redefining members, in domain package order.
         redefiners: Vec<DeclarationKey>,
+        /// The member paths the TC-235 rows name for the conflict, the
+        /// redefining side first (`ExpressLifecycle.states[1]`, then
+        /// `OrderLifecycle.states[1]`). Empty where no row names one.
+        paths: Vec<OwnedMemberPath>,
     },
     /// A required item does not supply the producer capability its
     /// interface revision requires.
@@ -352,8 +610,14 @@ pub enum ModelRefusalCause {
     /// silently let the later record replace or shadow the earlier one in
     /// every by-key index this module builds.
     ConflictingBinding {
-        /// The key more than one record declares.
+        /// What repeats. A package-level duplicate carries the key more
+        /// than one record declares; a duplicate state or transition
+        /// carries the repeated member's own key (TC-235 M06); a duplicate
+        /// process step carries the process (TC-235 M07 run 3).
         key: DeclarationKey,
+        /// The member the duplicate sits at (`TypeDefinition.states[3]`),
+        /// or `None` for a declaration key declared twice at package level.
+        member: Option<MemberPath>,
     },
     /// A systems relationship names an endpoint absent from the domain package.
     UnknownRelationship {
@@ -477,6 +741,9 @@ pub enum ModelRefusalCause {
         /// and its byte offset is `0` -- a placeholder QSL does not treat
         /// as meaningful. `None` under the same conditions as `artifact`.
         span: Option<LocatedSpan>,
+        /// The member the node is malformed at, as FR-208 and the TC-235 rows
+        /// name it (`TypeDefinition.occurrenceField`).
+        member: MemberPath,
     },
     /// An original model reference names no declaration in the selected
     /// package. The path and FCD origin belong to the referring node.
@@ -503,6 +770,9 @@ pub enum ModelRefusalCause {
         /// (e.g. `quire.meaning.model.record-value-type/v1`) or a short
         /// label naming the unread member (e.g. `"operation.frame"`).
         what: String,
+        /// The member the unsupported capability sits at
+        /// (`TypeDefinition.supertypes`).
+        member: MemberPath,
     },
     /// FR-103 (QSpec `model-complete.md`'s Frames row): an operation's
     /// `modifies`, `creates` or `deletes` entry names no declaration of
@@ -1249,6 +1519,7 @@ pub mod fixtures {
             type_: key("p"),
             member: key("p"),
             redefiners: vec![key("p")],
+            paths: Vec::new(),
         },
         UnsuppliedProducerRecord => ModelRefusalCause::UnsuppliedProducerRecord,
         AncestorSteps => ModelRefusalCause::ancestor_steps(
@@ -1319,7 +1590,10 @@ pub mod fixtures {
             key: Vec::new()
         },
         WrongExport => ModelRefusalCause::WrongExport,
-        ConflictingBinding => ModelRefusalCause::ConflictingBinding { key: key("p") },
+        ConflictingBinding => ModelRefusalCause::ConflictingBinding {
+            key: key("p"),
+            member: None,
+        },
         UnknownRelationship => ModelRefusalCause::UnknownRelationship {
             relationship: key("p"),
         },
@@ -1368,10 +1642,12 @@ pub mod fixtures {
                     column: 1,
                 },
             }),
+            member: super::MemberPath::type_definition(),
         },
         UnsupportedDeclarationForm => ModelRefusalCause::UnsupportedDeclarationForm {
             node: String::new(),
             what: String::new(),
+            member: super::MemberPath::type_definition(),
         },
         IntakeMissingDeclaration => ModelRefusalCause::IntakeMissingDeclaration {
             node: String::new(), reference: String::new(), origin: super::JsonValue::default(), path: qsl_foundation::diagnostic::JsonPointer::root(),
@@ -1534,6 +1810,51 @@ pub(crate) mod tests {
     use super::ModelRefusalCause;
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::CatalogCode;
+
+    /// The spec's spelling parses to the typed path and prints back, and the
+    /// reader's document location maps onto the same path.
+    #[test]
+    fn member_path_spelling_round_trips_and_maps_from_document_locations() {
+        for spelling in [
+            "TypeDefinition.transitions[0].emits[0]",
+            "TypeDefinition.supertypes",
+            "constructs[].meaning",
+            "Operation.pre",
+            "Relationship.target",
+            "$.populations",
+        ] {
+            let parsed: super::MemberPath = spelling.parse().expect("well-formed");
+            assert_eq!(parsed.to_string(), spelling);
+        }
+        for malformed in [
+            "Types.x",
+            "TypeDefinition.a[x]",
+            "TypeDefinition.a[",
+            "TypeDefinition.a[]",
+            "TypeDefinition.",
+            "TypeDefinition..a",
+            "TypeDefinition.a]",
+            "TypeDefinitionX",
+            "TypeDefinition[0].a.",
+        ] {
+            assert!(
+                malformed.parse::<super::MemberPath>().is_err(),
+                "{malformed}"
+            );
+        }
+        assert_eq!(
+            super::MemberPath::from_document_location("$.types[3].fields[0]"),
+            "TypeDefinition.fields[0]".parse().unwrap()
+        );
+        assert_eq!(
+            super::MemberPath::from_document_location("$.types[3].operations[1].pre[0]"),
+            "Operation.pre[0]".parse().unwrap()
+        );
+        assert_eq!(
+            super::MemberPath::from_document_location("$.constructs[2]"),
+            "constructs[]".parse().unwrap()
+        );
+    }
 
     /// #141 review finding 1, #163 re-review fix 4: the wire spellings had
     /// no test naming every variant's exact tag. This match has no

@@ -15,7 +15,7 @@ use qsl_semantics::model::intake::{
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
-    normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+    normalize_with_meter, MemberPath, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -583,32 +583,57 @@ fn assert_normalized_malformed_refusal(document: &Value, declaration: &str) {
     }
 }
 
-/// One typed `invalid_model_binding`/`malformed-declaration` naming `node`.
-/// The member path has no typed field on this cause (queued: "Typed member-path
-/// field on intake refusal causes"), so only node, code and cause are asserted.
-fn assert_malformed_refusal(document: &Value, node: &str, charges: usize) {
-    let refusals = normalized_refusals(document, charges);
-    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
-    let ModelRefusalCause::IntakeMalformedDeclaration { node: actual, .. } = &refusals[0].cause
-    else {
-        panic!("expected intake malformed-declaration, got {refusals:?}");
-    };
-    assert_eq!(actual, &id(node));
+/// The typed member path for the spec's spelling of it.
+fn member(path: &str) -> MemberPath {
+    path.parse().expect("the row's member path is well-formed")
 }
 
-/// One typed `unsupported_construct`/`declaration-form` naming `node`.
-fn assert_unsupported_refusal(document: &Value, node: &str, charges: usize) {
+/// The typed member paths of a `derivation-conflict`: each `(type, path)`
+/// is the spec's `<type>.<member>`, the redefining side first.
+fn assert_derivation_paths(refusal: &ModelRefusal, expected: &[(&str, &str)]) {
+    let ModelRefusalCause::DerivationConflict { paths, .. } = &refusal.cause else {
+        panic!("expected derivation-conflict, got {refusal:?}");
+    };
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(owner, path)| (id(owner), member(path)))
+        .collect();
+    let actual: Vec<_> = paths
+        .iter()
+        .map(|path| (path.owner.node.clone(), path.member.clone()))
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+/// One typed `invalid_model_binding`/`malformed-declaration` naming `node`
+/// at member path `path`.
+fn assert_malformed_refusal(document: &Value, node: &str, path: &str, charges: usize) {
     let refusals = normalized_refusals(document, charges);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
-    assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-    assert_eq!(refusals[0].cause.as_str(), "declaration-form");
-    let ModelRefusalCause::UnsupportedDeclarationForm { node: actual, .. } = &refusals[0].cause
+    assert_malformed_at(&refusals[0], &id(node), path);
+}
+
+/// One typed `unsupported_construct`/`declaration-form` naming `node` at
+/// member path `path`.
+fn assert_unsupported_refusal(document: &Value, node: &str, path: &str, charges: usize) {
+    let refusals = normalized_refusals(document, charges);
+    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
+    assert_unsupported_at(&refusals[0], &id(node), path);
+}
+
+fn assert_unsupported_at(refusal: &ModelRefusal, node: &str, path: &str) {
+    assert_eq!(refusal.code, Code::UnsupportedConstruct);
+    assert_eq!(refusal.cause.as_str(), "declaration-form");
+    let ModelRefusalCause::UnsupportedDeclarationForm {
+        node: actual,
+        member: actual_member,
+        ..
+    } = &refusal.cause
     else {
-        panic!("expected declaration-form, got {refusals:?}");
+        panic!("expected declaration-form, got {refusal:?}");
     };
-    assert_eq!(actual, &id(node));
+    assert_eq!(actual, node);
+    assert_eq!(actual_member, &member(path));
 }
 
 /// One typed `missing_declaration`/`missing-name` on `node` whose reader
@@ -646,18 +671,18 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
         "one process duplicate refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::ConflictingBinding { key } = &refusals[0].cause else {
+    let ModelRefusalCause::ConflictingBinding {
+        key,
+        member: actual,
+    } = &refusals[0].cause
+    else {
         panic!(
             "expected conflicting process step, got {:?}",
             refusals[0].cause
         );
     };
-    assert_eq!(key.node, id("Fulfilment/reserve_stock"));
-    assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
-    assert!(
-        refusals[0].detail.contains("/types/5/steps/3/identity"),
-        "duplicate step pointer missing: {refusals:?}"
-    );
+    assert_eq!(key.node, id("Fulfilment"));
+    assert_eq!(actual.as_ref(), Some(&member("TypeDefinition.steps[3]")));
 }
 
 fn assert_process_non_event_refusal(document: &Value) {
@@ -668,16 +693,10 @@ fn assert_process_non_event_refusal(document: &Value) {
         "one process non-event refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
-        panic!(
-            "expected malformed process event binding, got {:?}",
-            refusals[0].cause
-        );
-    };
-    assert_eq!(node, &id("Fulfilment/reserve_stock"));
-    assert!(
-        refusals[0].detail.contains("steps[1].emits[0]"),
-        "reader locus missing from refusal: {refusals:?}"
+    assert_malformed_at(
+        &refusals[0],
+        &id("Fulfilment"),
+        "TypeDefinition.steps[1].emits[0]",
     );
 }
 
@@ -700,10 +719,6 @@ fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
     assert_eq!(node, &id("Fulfilment"));
     assert_eq!(actual, &id(reference));
     assert_eq!(path.as_str(), "/types/5/steps/1/emits/0");
-    assert!(
-        refusals[0].detail.contains("steps[1].emits[0]"),
-        "{refusals:?}"
-    );
 }
 
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
@@ -863,11 +878,7 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     };
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
-        panic!("M03 run 1 cause differs: {:?}", refusals[0].cause);
-    };
-    assert_eq!(node, &id("Money"));
-    assert!(refusals[0].detail.contains("identityFields"));
+    assert_malformed_at(&refusals[0], &id("Money"), "TypeDefinition.identityFields");
 
     let operation_document = mutate_k2(|document| {
         type_named_mut(document, "Money")["operations"] = json!([operation("Money", "add")]);
@@ -880,15 +891,15 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     };
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-    let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause else {
-        panic!(
-            "M03 run 2 must be declaration-form, got {:?}",
-            refusals[0].cause
-        );
+    assert_unsupported_at(
+        &refusals[0],
+        &id("Money/add"),
+        "TypeDefinition.operations[0]",
+    );
+    let ModelRefusalCause::UnsupportedDeclarationForm { what, .. } = &refusals[0].cause else {
+        panic!("M03 run 2 must be declaration-form");
     };
-    assert_eq!(node, &id("Money/add"));
     assert_eq!(what, &format!("{}:operations", meaning::RECORD_VALUE_TYPE));
-    assert!(refusals[0].detail.contains("operations[0]"));
 
     let invariant_document = mutate_k2(|document| {
         type_named_mut(document, "Money")["clauses"] =
@@ -1360,19 +1371,24 @@ fn tc235_m08_persistence_interface_binder() {
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["fields"] =
         json!([field("OrderStore", "cache", &id("Order"))]);
-    assert_malformed_refusal(&document, "OrderStore/cache", 22);
+    assert_malformed_refusal(
+        &document,
+        "OrderStore/cache",
+        "TypeDefinition.fields[0]",
+        22,
+    );
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["operations"] = json!([]);
-    assert_malformed_refusal(&document, "OrderStore", 19);
+    assert_malformed_refusal(&document, "OrderStore", "TypeDefinition.operations", 19);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([]);
-    assert_malformed_refusal(&document, "OrderStore", 21);
+    assert_malformed_refusal(&document, "OrderStore", "TypeDefinition.persists", 21);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Money")]);
-    assert_malformed_refusal(&document, "OrderStore", 21);
+    assert_malformed_refusal(&document, "OrderStore", "TypeDefinition.persists[0]", 21);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Invoice")]);
@@ -1390,12 +1406,30 @@ fn tc235_m08_persistence_interface_binder() {
         "text": "true",
         "origin": origin("OrderStore/save"),
     }]);
-    assert_unsupported_refusal(&document, "OrderStore/save", 21);
+    assert_unsupported_refusal(&document, "OrderStore/save", "Operation.pre", 21);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["clauses"] =
         json!([clause("OrderStore", "Healthy", "true")]);
-    assert_unsupported_refusal(&document, "OrderStore/Healthy", 22);
+    assert_unsupported_refusal(
+        &document,
+        "OrderStore/Healthy",
+        "TypeDefinition.clauses[0]",
+        22,
+    );
+
+    // A refused clause names its own position, not the first.
+    let mut document = k2();
+    let mut foreign = clause("OrderStore", "Foreign", "true");
+    foreign["language"] = json!("ocl");
+    type_named_mut(&mut document, "OrderStore")["clauses"] =
+        json!([foreign, clause("OrderStore", "Healthy", "true")]);
+    assert_unsupported_refusal(
+        &document,
+        "OrderStore/Healthy",
+        "TypeDefinition.clauses[1]",
+        23,
+    );
 }
 
 /// M09: namespaces preserve their ordered payload, never become effective
@@ -1446,12 +1480,22 @@ fn tc235_m09_namespace_binder() {
 
     type_named_mut(&mut document, "OrderManagement")["fields"] =
         json!([field("OrderManagement", "name", "ix://quire/native/String")]);
-    assert_malformed_refusal(&document, "OrderManagement/name", 22);
+    assert_malformed_refusal(
+        &document,
+        "OrderManagement/name",
+        "TypeDefinition.fields[0]",
+        22,
+    );
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["operations"] =
         json!([operation("OrderManagement", "close")]);
-    assert_malformed_refusal(&document, "OrderManagement/close", 22);
+    assert_malformed_refusal(
+        &document,
+        "OrderManagement/close",
+        "TypeDefinition.operations[0]",
+        22,
+    );
 
     let mut document = k2();
     document["types"].as_array_mut().unwrap().push(declaration(
@@ -1462,7 +1506,12 @@ fn tc235_m09_namespace_binder() {
             "vocabulary": [{"term": "Bill", "doc": "Bill an order", "origin": origin("Billing")}],
         }),
     ));
-    assert_malformed_refusal(&document, "OrderManagement", 22);
+    assert_malformed_refusal(
+        &document,
+        "OrderManagement",
+        "TypeDefinition.members[0]",
+        22,
+    );
 
     let mut document = k2();
     document["types"].as_array_mut().unwrap().push(declaration(
@@ -1473,7 +1522,7 @@ fn tc235_m09_namespace_binder() {
             "vocabulary": [{"term": "Scope", "doc": "An outer scope", "origin": origin("Outer")}],
         }),
     ));
-    assert_malformed_refusal(&document, "Outer", 22);
+    assert_malformed_refusal(&document, "Outer", "TypeDefinition.members[0]", 22);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["members"] =
@@ -1489,7 +1538,12 @@ fn tc235_m09_namespace_binder() {
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["clauses"] =
         json!([clause("OrderManagement", "Scoped", "true")]);
-    assert_unsupported_refusal(&document, "OrderManagement/Scoped", 22);
+    assert_unsupported_refusal(
+        &document,
+        "OrderManagement/Scoped",
+        "TypeDefinition.clauses[0]",
+        22,
+    );
 }
 
 /// A foreign-package or native identity in `persists` or `members` is not a
@@ -1527,19 +1581,19 @@ fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRe
 fn assert_malformed_at(refusal: &ModelRefusal, node: &str, path: &str) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert_eq!(refusal.cause.as_str(), "malformed-declaration");
-    let ModelRefusalCause::IntakeMalformedDeclaration { node: actual, .. } = &refusal.cause else {
+    let ModelRefusalCause::IntakeMalformedDeclaration {
+        node: actual,
+        member: actual_member,
+        ..
+    } = &refusal.cause
+    else {
         panic!(
             "expected the typed intake malformed-declaration, got {:?}",
             refusal.cause
         );
     };
     assert_eq!(actual, node);
-    assert!(
-        refusal.detail.contains(path),
-        "{}: {}",
-        refusal.detail,
-        path
-    );
+    assert_eq!(actual_member, &member(path));
 }
 
 /// M04: event-type identity, occurrence field, operation, and Timestamp rules.
@@ -1701,10 +1755,13 @@ fn tc235_m18_event_type_specialization_vectors() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0]
-        .detail
-        .contains("ExpressOrderPlaced.occurrenceField"));
-    assert!(refusals[0].detail.contains("OrderPlaced.occurrenceField"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressOrderPlaced", "TypeDefinition.occurrenceField"),
+            ("OrderPlaced", "TypeDefinition.occurrenceField"),
+        ],
+    );
 
     let wrong_general_document = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(

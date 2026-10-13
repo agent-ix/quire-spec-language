@@ -13,10 +13,10 @@ use crate::model::domain_package::{
     DomainPackageRecord, ProcessRecord, ProcessStepKind, ProcessStepRecord,
 };
 use crate::model::intake::{
-    meaning, member_identity_name, read_clauses, read_object_type, NodeCtx,
+    malformed_on, meaning, member_identity_name, read_clauses, read_object_type, NodeCtx,
 };
 use crate::model::key::DeclarationKey;
-use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{MemberPath, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 
 use super::meaning_dispatch::MeaningBindingContext;
@@ -51,7 +51,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
 
     let steps = ctx.array_field("steps")?;
     if steps.is_empty() {
-        return Err(ctx.malformed("steps: a process has one or more steps"));
+        return Err(ctx.malformed_in("steps", "a process has one or more steps"));
     }
     let mut names = HashSet::new();
     let mut step_records = Vec::with_capacity(steps.len());
@@ -61,8 +61,10 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
         let identity = step_ctx.str_field("identity")?;
         let name = step_ctx.str_field("name")?;
         if member_identity_name(context.node, identity) != Some(name) {
-            return Err(step_ctx
-                .malformed("identity/name: step identity is not the declared process member"));
+            return Err(step_ctx.malformed_member(
+                MemberPath::from_document_location(&step_at).name("identity"),
+                "identity/name: step identity is not the declared process member",
+            ));
         }
         let step_key = DeclarationKey {
             package: context.package.to_owned(),
@@ -71,7 +73,14 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
         if !names.insert(name.to_owned()) {
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::ConflictingBinding { key: step_key },
+                cause: ModelRefusalCause::ConflictingBinding {
+                    // TC-235 M07 run 3 names the process, not the step.
+                    key: DeclarationKey {
+                        package: context.package.to_owned(),
+                        node: context.node.to_owned(),
+                    },
+                    member: Some(MemberPath::from_document_location(&step_at)),
+                },
                 detail: format!("{step_at}: duplicate process step"),
             });
         }
@@ -81,7 +90,9 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
             "decision" => ProcessStepKind::Decision,
             "compensation" => ProcessStepKind::Compensation,
             "wait" => ProcessStepKind::Wait,
-            other => return Err(step_ctx.malformed(format!("stepKind: unknown value {other:?}"))),
+            other => {
+                return Err(step_ctx.malformed_in("stepKind", format!("unknown value {other:?}")))
+            }
         };
         let consumes = read_step_events(
             context.package,
@@ -160,7 +171,13 @@ fn read_step_events(
     for (position, value) in values.iter().enumerate() {
         let at = format!("{step_at}.{field}[{position}]");
         let event = value.as_str().ok_or_else(|| {
-            NodeCtx::new(value, at.clone()).malformed("event reference: not a string")
+            malformed_on(
+                process,
+                value,
+                &at,
+                MemberPath::from_document_location(&at),
+                "event reference: not a string",
+            )
         })?;
         let key = DeclarationKey {
             package: package.to_owned(),
@@ -169,9 +186,13 @@ fn read_step_events(
         match type_meanings.get(event) {
             Some(&meaning::EVENT_TYPE) => result.push(key),
             Some(_) => {
-                return Err(NodeCtx::new(step, at).malformed(format!(
-                    "{field}: event reference names a non-event type in process {process}"
-                )))
+                return Err(malformed_on(
+                    process,
+                    step,
+                    &at,
+                    MemberPath::from_document_location(&at),
+                    format!("{field}: event reference names a non-event type in process {process}"),
+                ))
             }
             None => {
                 let path = reader_pointer(step_at, field, position);

@@ -684,6 +684,8 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     });
     let refusals = normalized_refusals(&bad_target, 22);
     assert_eq!(refusals.len(), 1);
+    // QSpec row M21 run 3 spells this node `Fulfilment/store`; the FR-154-AC-9
+    // relationship key is asserted instead (see run 4 below).
     assert_malformed_at(
         &refusals[0],
         &id("relationship/Fulfilment-store-OrderStore"),
@@ -696,11 +698,82 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     });
     let refusals = normalized_refusals(&bad_owner, 22);
     assert_eq!(refusals.len(), 1);
+    // QSpec M10 runs 7-8 spell their relationship nodes the same way
+    // (`Order/scope`, `OrderLifecycle/next`); the divergence is carried by
+    // QSpec PR #240, which this test code does not wait on.
+    // QSpec M21 runs 3-4 spell these nodes `Fulfilment/store` and
+    // `Money/owner`; FR-154-AC-9 gives a relationship the identity
+    // `<package>/relationship/<Name>-<verb>-<TargetName>`, so the FR-154 key is
+    // asserted (the rows diverge from FR-154 and need a QSpec fix).
     assert_malformed_at(
         &refusals[0],
-        &id("Money"),
+        &id("relationship/Money-owner-Order"),
         "TypeDefinition.relationships[0]",
     );
+
+    // Each refused relationship names its own position in the owner's array.
+    let two_bad = mutate_k2(|document| {
+        type_named_mut(document, "Money")["relationships"] = json!([
+            relationship("Money", "owner", "Order"),
+            relationship("Money", "payer", "Order"),
+        ]);
+    });
+    let refusals = normalized_refusals(&two_bad, 23);
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    for (name, position) in [("Money-owner-Order", 0), ("Money-payer-Order", 1)] {
+        let refusal = refusals
+            .iter()
+            .find(|refusal| refusal.detail.contains(name))
+            .expect("one refusal per relationship");
+        assert_malformed_at(
+            refusal,
+            &id(&format!("relationship/{name}")),
+            &format!("TypeDefinition.relationships[{position}]"),
+        );
+    }
+}
+
+/// A record value type's or event type's operations are each refused at their
+/// own position in the declaration's `operations` array, not at `[0]`.
+#[test]
+fn tc235_operation_refusals_name_the_declared_position() {
+    let record_document = mutate_k2(|document| {
+        type_named_mut(document, "Money")["operations"] =
+            json!([operation("Money", "zeta"), operation("Money", "alpha")]);
+    });
+    let refusals = normalized_refusals(&record_document, 23);
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    for (name, position) in [("zeta", 0), ("alpha", 1)] {
+        let refusal = refusals
+            .iter()
+            .find(|refusal| refusal.detail.contains(&id(&format!("Money/{name}"))))
+            .expect("one refusal per operation");
+        assert_unsupported_at(
+            refusal,
+            &id(&format!("Money/{name}")),
+            &format!("TypeDefinition.operations[{position}]"),
+        );
+    }
+
+    let event_document = mutate_k2(|document| {
+        type_named_mut(document, "OrderPlaced")["operations"] = json!([
+            operation("OrderPlaced", "zeta"),
+            operation("OrderPlaced", "alpha")
+        ]);
+    });
+    let refusals = normalized_refusals(&event_document, 23);
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    for (name, position) in [("zeta", 0), ("alpha", 1)] {
+        let refusal = refusals
+            .iter()
+            .find(|refusal| refusal.detail.contains(&id(&format!("OrderPlaced/{name}"))))
+            .expect("one refusal per operation");
+        assert_malformed_at(
+            refusal,
+            &id(&format!("OrderPlaced/{name}")),
+            &format!("TypeDefinition.operations[{position}]"),
+        );
+    }
 }
 
 /// TC-235 M22's assembly half: the invocation parameter is a declared record
