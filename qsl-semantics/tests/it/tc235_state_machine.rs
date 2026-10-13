@@ -128,7 +128,7 @@ fn tc235_m05_state_machine_transition_reference_vectors() {
     assert_eq!(refusals.len(), 1);
     assert_malformed_at(
         &refusals[0],
-        &id("OrderLifecycle/transition0"),
+        &id("OrderLifecycle"),
         "TypeDefinition.transitions[0].guard",
     );
 }
@@ -617,7 +617,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
 /// M19 run 6 (FR-208-AC-12): a subtype transition whose guard names an
 /// ancestor's invariant that no ancestor transition names would remove that
 /// invariant from the subtype.
-#[trace("QSpec-TC-235", "FR-208-AC-12")]
+#[trace("QSpec-TC-235", "QSpec-FR-208-AC-12")]
 #[test]
 fn tc235_m19_run6_a_subtype_guard_naming_an_ancestor_invariant_is_malformed() {
     let document = mutate_k2(|document| {
@@ -717,4 +717,39 @@ fn tc235_a_grandparent_state_redeclaration_is_a_derivation_conflict() {
         "OrderLifecycle/Placed",
         "UrgentLifecycle/Placed",
     );
+}
+
+/// FR-208: a trigger or guard naming an operation or clause that only an
+/// object type declares names nothing of any state machine, so it is a
+/// missing name, not a phase-3 malformed declaration.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_a_reference_to_an_object_types_member_is_a_missing_name() {
+    for member in ["trigger", "guard"] {
+        let document = mutate_k2(|document| {
+            let order = type_named_mut(document, "Order");
+            for (collection, entry) in [
+                ("clauses", clause("Order", "OnlyOnOrder", "true")),
+                ("operations", operation("Order", "only_on_order")),
+            ] {
+                order
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(collection)
+                    .or_insert_with(|| json!([]))
+                    .as_array_mut()
+                    .unwrap()
+                    .push(entry);
+            }
+            let transition = &mut type_named_mut(document, "OrderLifecycle")["transitions"][0];
+            match member {
+                "trigger" => transition["trigger"] = json!(id("Order/only_on_order")),
+                _ => transition["guard"] = json!("OnlyOnOrder"),
+            }
+        });
+        let refusals = normalized_refusals(&document, 23);
+        assert_eq!(refusals.len(), 1, "{member}: {refusals:?}");
+        assert_eq!(refusals[0].code, Code::MissingDeclaration, "{member}");
+        assert_eq!(refusals[0].cause.as_str(), "missing-name", "{member}");
+    }
 }

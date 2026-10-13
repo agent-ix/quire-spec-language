@@ -1368,6 +1368,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 matches!(record, DomainPackageRecord::EventType(event) if &event.key == key)
             })
         };
+        // FR-208: only a state machine's own operations and clauses make a
+        // reference "declared elsewhere"; any other owner leaves it missing.
+        let owned_by_a_machine = |owner: &DeclarationKey| {
+            domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::StateMachine(other) if &other.key == owner)
+            })
+        };
         let missing = |transition: &crate::model::domain_package::StateMachineTransitionRecord,
                        field: &str,
                        reference: &DeclarationKey| {
@@ -1411,7 +1418,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         other.states.iter().any(|state| &state.key == reference)
                     }
                     DomainPackageRecord::OperationMember(operation) if member == "trigger" => {
-                        &operation.key == reference
+                        &operation.key == reference && owned_by_a_machine(&operation.owner)
                     }
                     _ => false,
                 });
@@ -1478,8 +1485,9 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 let Some(clause) = clause else {
                     let names_other_clause = domain_package.records.iter().any(|record| {
                         matches!(record, DomainPackageRecord::Clause(other)
-                            if other.key.node.strip_prefix(&format!("{}/", other.owner.node))
-                                == Some(guard.as_str()))
+                            if owned_by_a_machine(&other.owner)
+                                && other.key.node.strip_prefix(&format!("{}/", other.owner.node))
+                                    == Some(guard.as_str()))
                     });
                     if names_other_clause {
                         refusals.push(malformed(
@@ -1497,18 +1505,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 };
                 let path = format!("TypeDefinition.transitions[{position}].guard");
                 if clause.language != "quire" {
-                    refusals.push(ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                            node: transition.key.node.clone(),
-                            artifact: None,
-                            span: None,
-                        },
-                        detail: format!(
-                            "{}: {path}: guard must name a quire clause used by a transition",
-                            transition.key.node
-                        ),
-                    });
+                    refusals.push(malformed(
+                        &path,
+                        "guard must name a quire clause used by a transition",
+                    ));
                 } else if !machine_chain.iter().any(|owner_key| {
                     *owner_key == clause.owner
                         && domain_package.records.iter().any(|record| {

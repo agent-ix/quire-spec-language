@@ -32,3 +32,21 @@ FAIL. The trigger widening and the inherited index are correct, and each is red-
 | FND-003 | medium | The inherited index exists only in `detail` prose. M19 runs 2 and 3 are asserted with `detail.contains("OrderLifecycle.states[1]")` and similar checks. The typed `DerivationConflict { type_, member, redefiners }` is never asserted. The row's "naming `ix://test/orders/ExpressLifecycle`" (`type_`) and the inherited member key (`member` = `OrderLifecycle/Placed` or `OrderLifecycle/transition0`) are therefore unchecked. Assert the typed fields. If the row's member paths must be data, they need a typed path on the cause. | qsl-semantics/src/model/normalize.rs:1546-1557; qsl-semantics/tests/it/tc235_state_machine.rs:412-446 |
 | FND-004 | medium | The derivation-conflict loop compares only against direct supertypes (`machine.supertypes` → `parent`). A state or transition that redeclares a grandparent's is not refused. FR-208 refuses one "declared by two distinct owners reaching the subtype". `has_state` and `has_operation` already walk the full `machine_chain`. | qsl-semantics/src/model/normalize.rs:1504-1597 |
 | FND-005 | low | No FCD-validated document can now reach normalize's "ancestor transition cannot target subtype-only state" block, or its `from`/`to` `has_state` missing-name path, because intake refuses first. The block duplicates the new intake rule with a different detail. It should become the single phase-3 home (see FND-001) or be deleted. | qsl-semantics/src/model/normalize.rs:1598-1619 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The "declared elsewhere" test is broader than FR-208. FR-208 sends to intake `missing-name` a trigger or guard "that names no state, operation or clause of any state machine of the package". Here the intake filter (`declared_by_a_type` over every type) and normalize (any `OperationMember`, any `Clause`) also count object types, processes and persistence interfaces. So a guard whose clause id matches only an object type's clause, or a trigger naming an object type's operation, is refused `malformed-declaration` instead of `missing-name`. Nothing goes unrefused. Fix: restrict both checks to state-machine owners, or get a spec ruling that the general References rule ("names a node of the wrong meaning") governs. | qsl-semantics/src/model/intake.rs:1819-1860; qsl-semantics/src/model/normalize.rs:1409-1418,1479-1490 |
+| FND-007 | low | Guard refusals name different nodes. A non-`quire` guard names the transition node (`OrderLifecycle/transition0`). A missing guard and an ancestor-invariant guard (M19 run 6) name the machine. FR-208 says transitions "are data of that declaration, not members", which points to the machine for all three. The M05 run 6 row names only a member path, so both rows are met, but the two refusals are inconsistent with each other. | qsl-semantics/src/model/normalize.rs:1499-1510 |
+| FND-008 | medium | The new run 6 test is tagged `#[trace("QSpec-TC-235", "FR-208-AC-12")]`. The bare `FR-208-AC-12` resolves to QSL's own FR-208 (spawn and retire replicated role instances), not QSpec FR-208-AC-12, so the test is bound to the wrong requirement. SR-7856 FND-004 found the same defect for FR-322. | qsl-semantics/tests/it/tc235_state_machine.rs:620 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d92fa4df8 |
+| FND-002 | fixed | d92fa4df8 |
+| FND-003 | fixed | d92fa4df8 (typed `type_`/`member`/`redefiners` now asserted. The member path stays detail prose until QSL-736, whose PR #796 does not yet cover `DerivationConflict`) |
+| FND-004 | fixed | d92fa4df8 |
+| FND-005 | fixed | d92fa4df8 |

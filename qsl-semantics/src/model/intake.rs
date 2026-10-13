@@ -1839,6 +1839,9 @@ fn transition_names_another_machines_member(
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
+            // FR-208: only a state machine's own members count; a machine
+            // declares `transitions`, an object type does not.
+            .filter(|declaration| declaration.get("transitions").is_some_and(Value::is_array))
             .filter_map(|declaration| declaration.get(collection)?.as_array())
             .flatten()
             .any(|entry| entry.get(field).and_then(Value::as_str) == Some(reference))
