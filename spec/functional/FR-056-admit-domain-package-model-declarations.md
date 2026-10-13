@@ -528,6 +528,28 @@ placeholder: QSL-738 owns fields typed by a variant type and replaces it. As
 with every declaration refusal, it leaves the package unadmitted; the variant
 type's declaration is not refused because it is a variant type.
 
+An operation parameter or result whose `typeRef` is refused as a signature value
+type SHALL refuse at the operation node, never without a node. This covers every
+cause: a `typeRef` naming a variant type, or any other meaning a signature may
+not name (an event, state machine, process, persistence interface, namespace or
+interface-featured object type), refuses `invalid_model_binding`/`malformed-declaration`;
+a `typeRef` naming no declared type, in a package that reaches normalization
+without the reader, refuses `dangling_reference`/`unknown-value-type`. Each
+retains the operation's node identity, its FCD origin (source artifact and
+position, when the node has a source origin) and the typed member path
+`Operation.params[i].typeRef` for the parameter at zero-based position `i`, or
+`Operation.returns.typeRef` for the result. The refusal of a variant type is a
+placeholder that QSL-738 replaces, as for fields; the refusal of the other
+meanings is permanent.
+
+The same rule holds for the other `malformed-declaration` refusals the compiler
+raises at normalization on a node it holds: a relationship end naming a record
+value type refuses at the relationship node, path `Relationship.source` or
+`Relationship.target`; a namespace member that is itself a namespace refuses at
+the namespace node, path `TypeDefinition.members[i]`; a population member type
+that is a record value type refuses at the population node, path
+`PopulationDefinition.members[i]`.
+
 ##### Effective identity of a variant type
 
 QSpec FR-208 says normalization admits a variant type as an effective type.
@@ -565,28 +587,6 @@ view's type identities; it needs no further record or identity. QSL-738 owns
 that typing and replaces the placeholder refusal above. This section adds no
 refusal of its own: every refusal of a variant type is typed under "Variant
 types" above, with its cause and `MemberPath`.
-
-An operation parameter or result whose `typeRef` is refused as a signature value
-type SHALL refuse at the operation node, never without a node. This covers every
-cause: a `typeRef` naming a variant type, or any other meaning a signature may
-not name (an event, state machine, process, persistence interface, namespace or
-interface-featured object type), refuses `invalid_model_binding`/`malformed-declaration`;
-a `typeRef` naming no declared type, in a package that reaches normalization
-without the reader, refuses `dangling_reference`/`unknown-value-type`. Each
-retains the operation's node identity, its FCD origin (source artifact and
-position, when the node has a source origin) and the typed member path
-`Operation.params[i].typeRef` for the parameter at zero-based position `i`, or
-`Operation.returns.typeRef` for the result. The refusal of a variant type is a
-placeholder that QSL-738 replaces, as for fields; the refusal of the other
-meanings is permanent.
-
-The same rule holds for the other `malformed-declaration` refusals the compiler
-raises at normalization on a node it holds: a relationship end naming a record
-value type refuses at the relationship node, path `Relationship.source` or
-`Relationship.target`; a namespace member that is itself a namespace refuses at
-the namespace node, path `TypeDefinition.members[i]`; a population member type
-that is a record value type refuses at the population node, path
-`PopulationDefinition.members[i]`.
 
 ### Declarations
 
