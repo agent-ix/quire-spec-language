@@ -658,6 +658,49 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
     );
 }
 
+/// FR-056-AC-5: a reference to a node absent from the package refuses
+/// `missing_declaration`/`missing-name`, retained at the referring field with
+/// that field's identity, origin and pointer. A field with no origin is not a
+/// missing name: the semantic-IR schema requires every member's origin, and
+/// FR-056-AC-5 refuses a member missing its source
+/// `invalid_model_binding`/`malformed-declaration`, so that case never reaches
+/// the missing-name path and needs no origin fallback.
+#[trace("TC-145", "FR-056-AC-5")]
+#[test]
+fn missing_field_type_ref_retains_the_field_identity_origin_and_pointer() {
+    let field = "ix://test/origins/A/id";
+    let (mut missing, _, _) = original_document();
+    missing["types"][0]["fields"][0]["typeRef"] = "ix://test/origins/Missing".into();
+    let field_origin = missing["types"][0]["fields"][0]["origin"].clone();
+
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals = read_records("test/origins", &parsed)
+        .expect_err("an absent field type admits no declarations");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code, qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    assert_eq!(
+        refusals[0].cause,
+        qsl_semantics::model::normalize::ModelRefusalCause::IntakeMissingDeclaration {
+            node: field.into(),
+            reference: "ix://test/origins/Missing".into(),
+            origin: field_origin,
+            path: "/types/0/fields/0/typeRef".parse().unwrap(),
+        }
+    );
+
+    missing["types"][0]["fields"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("origin");
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals =
+        read_records("test/origins", &parsed).expect_err("a field with no origin refuses");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+}
+
 /// (b): a hand-written Semantic IR 2.0.0 document using QSpec's own identity
 /// form throughout -- `ix://<package identity>/<artifact id>` for every
 /// type-definition node, never FCD's own `ix://<pkg>/type/<id>` form (FCD

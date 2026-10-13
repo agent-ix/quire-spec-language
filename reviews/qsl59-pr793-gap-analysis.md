@@ -31,3 +31,33 @@ Changes requested: two medium findings and one low finding.
 | FND-001 | medium | `a_record_value_type_beside_an_admitted_operation_assembles` is the only test traced to FR-103-AC-4 / TC-458 step 4. It asserts only that a standalone `Note` record type assembles. It adds no `address: Address` field to `ConfigVersion` and no `modifies ConfigVersion/address` entry. It checks no `deref(a).address.street` read and no record_value_type emission, and does not assert that no `Reference<Address>` is emitted. The matrix therefore reports AC-4 covered while three of its four clauses are untested. Add the step 4 field, frame entry, checked read and emission assertions. | qsl-semantics/tests/it/model_operations.rs:2370-2399; spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md:54-57 |
 | FND-002 | medium | No test pins the locus of a reader diagnostic raised at a field, operation or operation-parameter pointer. Only relationship pointers (TC-145 step 5, TC-731) are covered, so the misattribution in SR-7861 FND-001 went undetected. Add tests asserting that a diagnostic at `/types/N/fields/M/...` and at `/types/N/operations/M/params/K` names that member's identity and origin. | qsl-semantics/src/model/intake.rs:1857-1922 |
 | FND-003 | low | TC-731's test identifies the composite-cycle diagnostic by `refusal.detail.contains("COMPOSITE_CYCLE")`, matching message text. TC-145 says "Assertions compare typed refusal codes and loci, never message text". Match the typed diagnostic code if the refusal carries it, or record the reader code in the cause. | qsl-semantics/tests/it/model_intake.rs:1194-1203 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The generic walk changes the `missing_declaration`/`missing-name` refusal for a field whose `typeRef` names an absent declaration (TC-145 step 5, first half). `missing_reader_reference` now takes the field as `node` and requires the field's `origin` (`owner.get("origin")?`), where before it took the owning type. No end-to-end test pins this refusal: the resolver unit test asserts identity only, and only the relationship half of step 5 has an intake test. If a field lacks `origin`, the refusal silently becomes a generic `malformed-declaration`. Add an intake test that points a field's `typeRef` at an absent id and asserts `IntakeMissingDeclaration` with the field's identity, the reference, the field's origin and the pointer. | qsl-semantics/src/model/intake.rs:1764-1799; spec/test-cases/TC-145-admit-ir-2-domain-package.md:72-74 |
+
+## Dispositions
+
+Round 1, reviewed at `0a634f55d0954004c174e94fbdf674f98818b575`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | The emission clause of FR-103-AC-4 (checked-package typing of `address` by the self-typed `model`/`record_value_type` node) needs `record_value_type` node keying, which open PR #789 (QSL-723) adds in `record_form`. The assertion goes into #789. Everything else in the finding is fixed in 0a634f55d. |
+| FND-002 | fixed | 0a634f55d0954004c174e94fbdf674f98818b575 |
+| FND-003 | fixed | 0a634f55d0954004c174e94fbdf674f98818b575 |
+
+FND-001: the test now declares `Address { street: VersionNumber }`, adds
+`ConfigVersion.address: Address` and a `modifies ConfigVersion/address` frame
+entry, and checks the clause `self.address.street >= 0`. It asserts that the
+assembled `address` attribute is `ValueType::Composite`, not a `Reference`, and
+that `Config::Address` is declared.
+
+FND-002: the resolver unit test pins field, operation, parameter and
+relationship pointers. The Decimal test pins the parameter end to end.
+
+FND-003: the TC-731 test now asserts `Code::InvalidModelBinding` and the
+closing relationship node, with no message-text match. A typed reader code on
+the cause would extend the same cause struct that QSL-736 (typed member path)
+changes.
