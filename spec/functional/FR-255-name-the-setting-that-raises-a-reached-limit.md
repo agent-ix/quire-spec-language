@@ -139,8 +139,9 @@ rule and a row in this table.
    `setting`, `bound` and `actual`; a denied charge there also retains
    `stage`, `accounting_contract`, `consumed`, `next_charge` and
    `charge_point`. Follow-up (QSL-745), where the code does not yet carry
-   this: (a) replay `select` reports a model-normalization ceiling as
-   `stage_limit_exceeded` (FR-277-AC-1); (b) the `model.*` and S6a family
+   this: (a) replay `select` reports a model-normalization ceiling and the
+   `intake.input_bytes` limit as `stage_limit_exceeded` (FR-277-AC-1;
+   FR-260-AC-4 and the table above give intake `resource_exhausted`); (b) the `model.*` and S6a family
    refusals on the compile and evaluation paths carry no `setting`, `bound`
    or `actual`; (c) the QSpec catalog does not list `ancestor-steps` or
    `family-steps` as causes of `resource_exhausted` (FR-150-AC-11 describes

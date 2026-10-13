@@ -79,6 +79,9 @@ Reviewed at `08dcb08376af112b261ef7196049eeef6cd5d1e2`. The PR now states `stage
 | FND-009 | fixed | 5ff49edaf955fbb44b7508f2527b35d7ae4a0264: `dependency.*` and `identity.input_bytes` are in the stage-limits row. |
 | FND-010 | fixed | 5ff49edaf955fbb44b7508f2527b35d7ae4a0264: FR-255-AC-1 now reads "returns the code Behavior 1's table gives for the limit's carrying type ... and `kind` for `stage_limit_exceeded`". |
 | FND-011 | fixed | 5ff49edaf955fbb44b7508f2527b35d7ae4a0264: "L57" is gone. The row names the causes: `ancestor-steps` or `family-steps` for a walk ceiling, `insufficient-next-charge` for a denied charge. |
+| FND-012 | fixed | 8cdf7abd4900f9ea06b8a2a04df31bc35e12db02: FR-255 Behavior 1 now claims `kind`, `bound`, `actual` and `setting` only for `stage_limit_exceeded`, and the field set for observation admission's re-run walk. The compile and S6a gap is listed as follow-up (b) (QSL-745). AC-1 is narrowed to match. |
+| FND-013 | deferred | QSL-745 (c): FR-255 Behavior 1 now says "the QSpec catalog does not list `ancestor-steps` or `family-steps` as causes of `resource_exhausted` (FR-150-AC-11 describes the shape as an incomplete record)". The PR body lists the same, and QSL-745 (c) asks for a planner ruling on the form before a QSpec PR. |
+| FND-014 | fixed | 8cdf7abd4900f9ea06b8a2a04df31bc35e12db02: ADR-012 §15.6 gains "admission (FR-106) \| a re-run `model.*` walk past its `ModelNormalizationLimitsV1` ceiling \| incomplete \| `resource_exhausted`", and FR-106 gains the matching bullet. |
 
 ## New findings (disposition pass 2)
 
