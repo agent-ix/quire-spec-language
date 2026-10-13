@@ -53,3 +53,22 @@ Known gaps the brief named:
 - (7) spec/tests.md markers: no change is warranted. None of TC-1006..TC-1010 is fully covered, and TC-994..TC-997 from the merged QSL-734 are still 🚧 too. The computed matrix is the coverage authority, so flipping a hand-kept marker adds nothing.
 
 Bindings checked: the TC-997 tests keep FR-056-AC-27, AC-28 and AC-32. `a_later_parameter_naming_a_forbidden_meaning_keeps_its_own_position` keeps the remaining refusal path and position at params[1] with a state machine, so FR-056-AC-32's "position 1 for the second parameter" is still pinned after the variant case moved to admission.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The evidence test `the_text_none_and_case_spellings_have_no_form_to_check` passes on any parse or build failure and asserts no cause. Its `case` spelling, `case Config::Tier::Gold { Gold: true }`, is not the grammar's form (`case <ident> when <block> <control>`, grammar.rs:1196-1204), so that row fails for syntax and proves nothing about a missing form. The source also selects no model. The claim itself is true by inspection: the grammar parses `none` and text literals, but `ExprNode` has no form for them or for `case`. Fix: use the grammar's spellings with the model selected, and assert the specific S1 or S2 refusal (code and cause) that each spelling gets. | qsl-semantics/tests/it/variant_fields.rs:1288-1316 |
+| FND-007 | low | The digest check compares two hand-written JSON values, which JCS canonicalization always makes equal. It never hashes the encoder's output, so the encoder could reorder or drop members and still pass. The typed decode-encode-decode check on `history` is real. Fix: hash `encoded.to_json()` against the admitted input document's value for the same field. | qsl-semantics/tests/it/variant_fields.rs:1401-1409 |
+
+## Dispositions
+
+Round 1, reviewed at 101dbdf0809546eae22d2047c429a58f805ff612.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | rejected | The finding assumed `check_expression` reaches a Text literal, `none` and `case`. It does not: the qsl-forms `ExprNode` has no Text, None or Case variant (syntax.rs:488-700), so no checker row can exist at this ref. The real defects are new FND-006 (weak evidence test) and SR-9022 FND-007 (spec still requires check-stage refusals). |
+| FND-002 | deferred | The `Option` and `Set` equality tests were added in 101dbdf08: `an_option_of_a_case_compares_by_case` (both none, none/Gold, Gold/none, Gold/Gold, Gold/Standard) and `a_set_of_cases_compares_by_case_whatever_its_build_order`. The misnamed test was renamed to `a_sequence_of_cases_compares_by_case_in_supply_order`. Tuple-position equality needs a unit that declares a tuple naming the variant type, and the interim emitter refuses that declaration. `a_tuple_naming_a_variant_type_is_held_back_by_the_emitter` pins the interim. Deferred to QSL-752. |
+| FND-003 | deferred | To QSL-752 (Linear edge: QSL-738 blocked-by QSL-752); QSL-738 stays open. Remaining: AC-4 (`f(t: Config::Tier)` and a call to it, a literal at an `Account.tier` slot and in an `Option` literal, a clause naming the type, and a variant type with a `Gold Plus` case); AC-7 tuple position; AC-8 check-and-run, emission and `Verified` read-back; AC-9 replay through a run; AC-11 counterexample witness encode and the digest round trip of an encoded run result. The item 10 encoder has landed (FR-360-AC-11 partly covered). |
+| FND-004 | fixed | 101dbdf08 |
+| FND-005 | fixed | 101dbdf08 |

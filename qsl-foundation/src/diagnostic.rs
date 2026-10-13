@@ -949,7 +949,7 @@ impl InternalFault {
 /// `incomplete` row names (FR-106, ADR-012's admission table) and
 /// [`Code::is_incomplete`] agrees with.
 /// `resource_exhausted` is the caller work-budget code (the catalog's
-/// `insufficient-next-charge`; a semantic maximum is not a work budget). It
+/// `insufficient-next-charge`; a maximum fixed by the language is not a work budget). It
 /// is a refusal here, when a refusal record carries it (ADR-013's read-only
 /// ceiling row). When a denied charge stops a run instead, the outcome is
 /// incomplete and still carries `resource_exhausted` (ADR-014 B-2; FR-101's

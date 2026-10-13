@@ -183,7 +183,7 @@ entry failed ([FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-l
 reported as `stage_limit_exceeded`/`node-count-exceeded`, including when
 each declaration alone is within the budget. The `CheckingLimits` ceilings
 are stage limits, not a caller work budget: the `quire.native.diagnostics/v1` `stage_limit_exceeded` row covers a family `check`
-and compiler stages S1 to S4, and says that a semantic maximum is not a
+and compiler stages S1 to S4, and says that a maximum fixed by the language is not a
 caller work budget, which `resource_exhausted` is.
 
 ### Packaging is all-or-nothing

@@ -1284,35 +1284,90 @@ fn a_malformed_variant_form_as_a_parameter_or_result_refuses() {
     }
 }
 
-/// FR-360-AC-5: the Text literal, `none` and `case` rows of the criterion have
-/// no source form at this ref. The expression forms of `qsl-forms` hold no
-/// text literal, no `none` and no `case`, and each spelling is refused before
-/// a checked graph exists, so no checker row can be written for them.
+/// A unit selecting the FR-360 package as `Config` whose function `f` has the
+/// body `body`, parsed by S1.
+fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
+    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let packages = package_input([bytes.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one model package");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         function f using v(t: Config::Tier): Boolean pure {{ {body} }}\n",
+        package = fixture::PACKAGE,
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+        "variant-fields.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the source");
+    (source, parsed)
+}
+
+/// FR-360-AC-5: a Text literal and `none` at a variant slot are admitted by S1
+/// and refused by S2 as `unsupported_construct`, cause `UnrepresentedConstruct`
+/// of the `Primary` production, at the literal's span: `qsl-forms` has no
+/// expression form for either, so no checker row exists for them.
 #[trace("TC-1007", "FR-360-AC-5")]
 #[test]
-fn the_text_none_and_case_spellings_have_no_form_to_check() {
-    for body in [
-        "Config::Tier::Gold = \"Gold\"",
-        "Config::Tier::Gold = none",
-        "case Config::Tier::Gold { Gold: true }",
-    ] {
-        let source = format!(
-            "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
-             function f using v(): Boolean pure {{ {body} }}\n"
-        );
-        let parsed = qsl_cst::parse(
-            SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
-            "variant-fields.native",
-            source.as_bytes(),
-            qsl_cst::Limits::default(),
-        )
-        .expect("S1 reads the source");
+fn a_text_literal_and_none_are_refused_by_s2_as_unrepresented() {
+    for literal in ["\"Gold\"", "none"] {
+        let (source, parsed) = parsed_with_body(&format!("t = {literal}"));
         assert!(
-            !parsed.is_admissible() || build_unit(&parsed).is_err(),
-            "{body} builds a unit"
+            parsed.is_admissible(),
+            "{literal}: {:?}",
+            parsed.diagnostics()
+        );
+        let refusal = build_unit(&parsed).expect_err("S2 refuses the literal");
+        assert!(
+            matches!(
+                refusal.cause,
+                qsl_forms::FormsCause::UnrepresentedConstruct {
+                    production: qsl_cst::Production::Primary
+                }
+            ),
+            "{literal}: {refusal:?}"
+        );
+        assert_eq!(
+            refusal.catalog_code(),
+            qsl_foundation::Code::UnsupportedConstruct
+        );
+        let start = source.find(&format!("t = {literal}")).expect("in source") + "t = ".len();
+        let span = refusal.span.expect("the refusal names the literal");
+        assert_eq!(
+            (span.start, span.end),
+            (start, start + literal.len()),
+            "{literal}"
         );
     }
+}
+
+/// FR-360-AC-5: a `case` is a control form of the grammar
+/// (`case <ident> when <block> <control>`), not an expression. In expression
+/// position S1 refuses it as `invalid_syntax`, cause `UnexpectedToken`, at the
+/// `case` token, so no scrutinee check exists at this ref.
+#[trace("TC-1007", "FR-360-AC-5")]
+#[test]
+fn a_case_in_expression_position_is_refused_by_s1_as_unexpected() {
+    let (source, parsed) = parsed_with_body("case t when { true } true");
+    assert!(!parsed.is_admissible());
+    let [diagnostic] = parsed.diagnostics() else {
+        panic!("one diagnostic: {:?}", parsed.diagnostics());
+    };
+    assert_eq!(diagnostic.code, qsl_foundation::Code::InvalidSyntax);
+    assert_eq!(
+        diagnostic.cause,
+        qsl_foundation::diagnostic::Cause::UnexpectedToken
+    );
+    let at = source.find("case t when").expect("in source");
+    let region = diagnostic.region.as_ref().expect("a region");
+    assert_eq!((region.start, region.end), (at, at + "case".len()));
 }
 
 // ---------------------------------------------------------------------------
@@ -1331,6 +1386,7 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     let replay = replay();
     let encoder = ValueEncoder::over(
         replay.graph.model_selections(),
+        replay.graph.scope().types(),
         &replay.packages,
         ModelNormalizationLimits::default(),
     )
@@ -1399,12 +1455,52 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     }
 
     // Member order of the written document changes neither the typed value nor
-    // the digest: the reordered spelling and the encoding are one document.
-    let reordered = serde_json::to_vec(&standard).unwrap();
-    let written = serde_json::to_vec(&variant_json("Tier", "Standard")).unwrap();
+    // the digest: the encoder's output and the input spelled with its members
+    // in the other order are one document.
+    let input_order = serde_json::to_vec(&json!({"sequence": [
+        {"variant": {"case": "Gold", "type": id("Tier")}},
+        {"variant": {"case": "Standard", "type": id("Tier")}},
+    ]}))
+    .unwrap();
+    let encoded_bytes = serde_json::to_vec(&written_history).unwrap();
+    assert_ne!(input_order, encoded_bytes, "the spellings differ");
     assert_eq!(
-        document_ref("a", &reordered).digest,
-        document_ref("a", &written).digest
+        document_ref("a", &input_order).digest,
+        document_ref("a", &encoded_bytes).digest
+    );
+
+    // A record holding a variant encodes as its form, fields by name.
+    let settings_type = replay
+        .declarations
+        .types
+        .composites()
+        .find(|declared| declared.name() == "Config::Settings")
+        .expect("Settings is declared")
+        .key();
+    let settings = replay
+        .graph
+        .scope()
+        .types()
+        .record(
+            settings_type,
+            vec![
+                ("tier", FieldValue::Present(replay.case("Tier", "Standard"))),
+                (
+                    "size",
+                    FieldValue::Present(Datum::Integer(quire_exact::Integer::from(3_i64))),
+                ),
+            ],
+        )
+        .expect("Settings constructs");
+    assert_eq!(
+        encoder
+            .encode(&settings)
+            .expect("a record encodes")
+            .to_json(),
+        json!({"record": {"type": id("Settings"), "fields": {
+            "size": {"integer": "3"},
+            "tier": variant_json("Tier", "Standard"),
+        }}})
     );
 
     // A value of no variant type does not encode.

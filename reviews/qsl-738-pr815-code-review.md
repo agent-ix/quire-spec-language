@@ -56,3 +56,20 @@ Gates, from /home/peter/dev/worktrees/logs/qsl738c-*:
 - bddce5479 changes only that import line in a test file, and clippy3.log shows `CLIPPY EXIT 0` after it. Running the test steps on 8aeeb13da and clippy on the head is sound, because the one later change is a test-only import.
 - No `cargo fmt --check` log was found among the qsl738c logs. Treat fmt as unverified.
 - The base has since advanced to a76965a76 (#811 code, #813 spec), so the merge-time gate must run on the updated base.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The new `ValueEncoder::encode` writes Boolean, Integer, variant, `Option` and `Sequence` values only. For a record (`Composite`), `Set`, `Bag`, `OrderedSet`, Text or Reference it returns `None`. A `Settings` value whose `tier` is a variant therefore cannot be encoded, even though item 9 admits a variant inside a record field. The encoder also has no production caller; it is public API that only tests exercise. It is the only writer of the FR-106 value form, so there is no duplicate implementation. `to_json` builds the arena children first and writes `type` and `case` exactly, and the sequence order is deterministic. Fix: add the record arm (`RawNode::Record` with the declaration identity) and the unordered collections in key order, or document in the doc comment that the encoder covers only these forms. | qsl-semantics/src/model/observation/encode.rs:58-102 |
+
+## Dispositions
+
+Round 1, reviewed at 101dbdf0809546eae22d2047c429a58f805ff612.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 101dbdf08 |
+| FND-002 | fixed | 101dbdf08 |
+| FND-003 | fixed | 101dbdf08 |
+| FND-004 | fixed | 101dbdf08 |

@@ -6,7 +6,8 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{CollectionKind, EnumMember, Value, VariantId};
+use quire_exact::{CollectionKind, EnumMember, FieldValue, NodeKey, Value, VariantId};
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 use super::{
     fault, model_views, AdmissionFailure, ModelNormalizationLimits, RawNode, SnapshotValue,
@@ -17,6 +18,8 @@ use crate::model::domain_package::DomainPackageRef;
 /// the IR node identity of its variant type and its exact case name.
 pub struct ValueEncoder {
     variants: BTreeMap<VariantId, (String, String)>,
+    records: BTreeMap<NodeKey, String>,
+    types: TypeEnvironment,
 }
 
 impl ValueEncoder {
@@ -30,6 +33,7 @@ impl ValueEncoder {
     /// [`super::admit_current_snapshot`].
     pub fn over(
         model_selections: &[DomainPackageRef],
+        types: &TypeEnvironment,
         packages: &BTreeMap<[u8; 32], Vec<u8>>,
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
@@ -38,7 +42,18 @@ impl ValueEncoder {
             input_bytes: u64::MAX,
         };
         let mut variants = BTreeMap::new();
+        let mut records = BTreeMap::new();
         for view in &views {
+            for record in &view.view.domain_package().records {
+                if let crate::model::domain_package::DomainPackageRecord::RecordValueType(
+                    declared,
+                ) = record
+                {
+                    if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+                        records.insert(key, declared.key.node.clone());
+                    }
+                }
+            }
             let declared = crate::check::variant_type_declarations(&view.view, "", unbounded)
                 .map_err(|_| fault("variant-type-declaration"))?;
             for (key, declaration) in declared {
@@ -47,20 +62,30 @@ impl ValueEncoder {
                 }
             }
         }
-        Ok(Self { variants })
+        Ok(Self {
+            variants,
+            records,
+            types: types.clone(),
+        })
     }
 
     /// `value` as a value form, or `None` when it holds a form this encoder
-    /// does not write: an enum member of no variant type, or a collection that
-    /// is not a `Sequence`. A Boolean, an integer, an `Option` and a
-    /// `Sequence` of them encode as their forms. The walk keeps its own heap
+    /// does not write: an enum member of no variant type, a record of no
+    /// selected record value type, or any of Text, a reference, a `Set`, a
+    /// `Bag` and an `OrderedSet`. Admission reads only `Sequence` collections
+    /// (the others refuse `unsupported-feature`), and a reference needs the
+    /// population only a snapshot knows, so the encoder writes exactly the
+    /// forms admission reads back from a value: a Boolean, an integer, a
+    /// variant, a record, an `Option` and a `Sequence` of them. The walk keeps its own heap
     /// stack, so a value of any depth encodes in constant native stack.
     #[must_use]
     pub fn encode(&self, value: &Value) -> Option<SnapshotValue> {
         enum Work<'v> {
             Read(&'v Value),
             Present,
+            Absent,
             Sequence(usize),
+            Record(String, Vec<String>),
         }
         let mut work = vec![Work::Read(value)];
         let mut done: Vec<SnapshotValue> = Vec::new();
@@ -69,6 +94,14 @@ impl ValueEncoder {
                 Work::Present => {
                     let inner = done.pop()?;
                     done.push(SnapshotValue::present(inner));
+                }
+                Work::Absent => done.push(SnapshotValue::absent()),
+                Work::Record(type_identity, names) => {
+                    let values = done.split_off(done.len().checked_sub(names.len())?);
+                    done.push(SnapshotValue::record(
+                        type_identity,
+                        names.into_iter().zip(values).collect(),
+                    ));
                 }
                 Work::Sequence(len) => {
                     let items = done.split_off(done.len().checked_sub(len)?);
@@ -94,6 +127,27 @@ impl ValueEncoder {
                     work.push(Work::Sequence(elements.len()));
                     // Pushed last-first, so the first element is written first.
                     work.extend(elements.iter().rev().map(Work::Read));
+                }
+                Work::Read(Value::Composite(composite)) => {
+                    let type_identity = self.records.get(&composite.declaration())?;
+                    let CompositeShape::Record(declared) =
+                        self.types.composite(composite.declaration())?.shape()
+                    else {
+                        return None;
+                    };
+                    let names: Vec<String> = declared
+                        .iter()
+                        .map(|field| field.name().to_owned())
+                        .collect();
+                    work.push(Work::Record(type_identity.clone(), names));
+                    // Pushed last-first, so the first field is written first.
+                    for slot in composite.slots().iter().rev() {
+                        work.push(match slot {
+                            FieldValue::Present(held) => Work::Read(held),
+                            FieldValue::Absent => Work::Absent,
+                            FieldValue::Null => return None,
+                        });
+                    }
                 }
                 Work::Read(_) => return None,
             }

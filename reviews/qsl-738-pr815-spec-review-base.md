@@ -46,3 +46,23 @@ Citation check, row by row. These read as claimed:
 FR-144's enumeration key row (case-name UTF-8 bytes for a `variant_type` node) is already cited in item 7's prose, which is enough. The mis-mapping is FND-002. The public-repo rule holds: the edit names `agent-ix/quire-specification` and row ids only. It quotes no QSpec text and has no local path, branch or commit.
 
 Item 7's Set order (ascending UTF-8 bytes of case names) matches QSpec FR-144 and FR-141-AC-8. The code decides it once, at intake (`cases.sort_by` on `&str`), and both later consumers depend on that one order (SR-9020 FND-003). The new spec text adds no ticket id; the existing ones are FND-004.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | FR-360-AC-5, items 4 to 6, and TC-1007 step 3 still require check-stage `ill_typed`/`type-mismatch` refusals for a Text literal, `none`, and a `case` expression at a variant slot. At this ref none of the three has a form (qsl-forms `ExprNode`), so none ever reaches the checker: each is refused before check, at S1 or S2. The spec states an outcome the code cannot produce, and the trace tags claim it. Fix: state the actual refusal (stage, code and cause) for these spellings at this ref, or move the three rows to the requirement that adds the forms. Then key the evidence test (SR-9021 FND-006) to that statement. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:274 |
+| FND-008 | low | AC-8 keeps the old end condition, "once cross-repo requirement 1 holds". Requirement 1 is now a citation of merged QSpec rows, so the condition is already met. Item 12 was fixed to "until the IR reader admits a `model`/`variant_type` node and the runtime enumeration holds any non-empty case name", and AC-8 was not. Fix: reuse item 12's condition in AC-8. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:277 |
+
+## Dispositions
+
+Round 1, reviewed at 101dbdf0809546eae22d2047c429a58f805ff612.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 101dbdf08 |
+| FND-002 | fixed | 101dbdf08 |
+| FND-003 | fixed | 101dbdf08 |
+| FND-004 | fixed | 101dbdf08 |
+| FND-005 | fixed | 101dbdf08 |
+| FND-006 | fixed | 101dbdf08 |
