@@ -438,11 +438,16 @@ impl<'a> Converter<'a> {
                 // own `declaration` names, and its fields read by name against
                 // that declaration's fields, not the slot's. It is then
                 // admitted at the slot by conformance.
-                let key = NodeKey::from_digest(*declaration.as_bytes());
+                // The wire digest is resolved by lookup against the already
+                // checked composites (FR-087-AC-6), never minted into a key.
+                let record = types
+                    .composites()
+                    .find(|candidate| candidate.key().as_bytes() == declaration.as_bytes())
+                    .ok_or_else(refuse)?;
+                let key = record.key();
                 if !types.composite_conforms(key, *slot_key) {
                     return Err(refuse());
                 }
-                let record = types.composite(key).ok_or_else(refuse)?;
                 let CompositeShape::Record(declared_fields) = record.shape() else {
                     return Err(refuse());
                 };

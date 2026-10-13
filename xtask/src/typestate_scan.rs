@@ -1331,6 +1331,69 @@ mod tests {
                 && function.return_map_keys.contains("QualifiedName")));
     }
 
+    /// The one model struct allowed a bare string type field: the raw view of
+    /// a snapshot document's `record` member, which holds the wire `type`
+    /// string until a checked declaration resolves it by lookup.
+    const RAW_WIRE_TYPE_FIELD: (&str, &str, &str) = (
+        "qsl-semantics/src/model/observation.rs",
+        "RawRecord",
+        "type_identity",
+    );
+
+    /// Every `file: Struct.field` whose name contains `type` and whose type
+    /// is a bare `NodeKey`, `String` or `str`, except [`RAW_WIRE_TYPE_FIELD`].
+    fn bare_type_fields<'s>(structs: impl Iterator<Item = &'s Struct>) -> Vec<String> {
+        let mut found = Vec::new();
+        for item in structs {
+            for field in &item.fields {
+                let Some(name) = field.name.as_deref() else {
+                    continue;
+                };
+                if !name.contains("type")
+                    || (item.file.as_str(), item.name.as_str(), name) == RAW_WIRE_TYPE_FIELD
+                {
+                    continue;
+                }
+                for bare in ["NodeKey", "String", "str"] {
+                    if field.type_names.contains(bare) {
+                        found.push(format!("{}: {}.{name} is a bare {bare}", item.file, item.name));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// TC-260 step 4: the scan still rejects a bare-string or bare-`NodeKey`
+    /// type field, and the raw-wire allowance covers only `RawRecord`'s
+    /// `type_identity` in `observation.rs`.
+    #[trace("TC-260", "FR-088-AC-8")]
+    #[test]
+    fn tc_260_scan_rejects_bare_type_fields_beyond_the_raw_wire_allowance() {
+        let items = scan_tree(&[
+            (
+                "src/lib.rs",
+                "pub struct Bad { field_type: String, other_type: NodeKey }\n\
+                 pub struct RawRecord<'v> { type_identity: &'v str }\n",
+            ),
+        ]);
+        let found = bare_type_fields(items.structs.iter());
+        assert_eq!(found.len(), 3, "{found:?}");
+        let root = tempfile::tempdir().expect("a temp dir");
+        let dir = root.path().join("qsl-semantics/src/model");
+        std::fs::create_dir_all(&dir).expect("dirs");
+        std::fs::write(
+            dir.join("observation.rs"),
+            "pub struct RawRecord<'v> { type_identity: &'v str }\n\
+             pub struct Other { type_identity: String }\n",
+        )
+        .expect("write");
+        let allowed = scan(root.path(), &["qsl-semantics/src"]).expect("scan runs");
+        let found = bare_type_fields(allowed.structs.iter());
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("Other.type_identity"), "{found:?}");
+    }
+
     /// FR-088-AC-8 (TC-260, partial: steps 1 and 2, and step 3 for fields
     /// whose name says they hold a type): `ValueTypeRef` is defined once in
     /// the QSL crates, as exactly `{Native(NativeValueType),
@@ -1370,23 +1433,8 @@ mod tests {
                 .iter()
                 .filter(|item| item.file.starts_with("qsl-semantics/src/model/"))
         };
-        for item in model_structs() {
-            for field in &item.fields {
-                let Some(name) = field.name.as_deref() else {
-                    continue;
-                };
-                if !name.contains("type") {
-                    continue;
-                }
-                for bare in ["NodeKey", "String", "str"] {
-                    assert!(
-                        !field.type_names.contains(bare),
-                        "{}.{name} is a bare {bare}",
-                        item.name
-                    );
-                }
-            }
-        }
+        let bare = bare_type_fields(model_structs());
+        assert!(bare.is_empty(), "{bare:?}");
         for record in [
             "FieldMemberRecord",
             "OperationParameterRecord",

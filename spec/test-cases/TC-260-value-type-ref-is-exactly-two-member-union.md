@@ -28,6 +28,10 @@ this union. Scope: FR-088-AC-8.
    that record a field's type for a domain-model declaration) and confirm
    each one is typed as `ValueTypeRef`, never as a bare `NodeKey` or a raw
    `String`/`&str` naming a type.
+   The one allowed exception is `RawRecord.type_identity` in
+   `observation.rs`: the raw view of a snapshot document's `record` member,
+   which holds the wire `type` string until a checked declaration resolves
+   it by lookup. A bare type field anywhere else, or under another name, fails.
 4. Adverse test: attempt to represent a package-declared field type using
    a bare `NodeKey` directly (bypassing `ValueTypeRef::Package`) and
    confirm no code path in the crate accepts this form as a model field
