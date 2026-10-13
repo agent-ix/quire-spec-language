@@ -1383,6 +1383,11 @@ fn admit_value<'a: 'w, 'w>(
                 )));
             }
             Admit::Sequence { collection, count } => {
+                if collection.bound().is_some_and(|bound| {
+                    bound.violation(quire_exact::length_amount(count)).is_some()
+                }) {
+                    return Err(refuse_at("invalid-value", &path));
+                }
                 let Some(start) = done.len().checked_sub(count) else {
                     return Err(refuse_at("wrong-value-kind", &path));
                 };

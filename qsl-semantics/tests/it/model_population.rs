@@ -4099,8 +4099,8 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
             object_type("model.D", vec![]),
             object_type("model.E", vec!["model.C", "model.D"]),
             object_type("model.X", vec![]),
-            population_record("model.pop.p1", &["model.B"], Extent::Closed),
-            population_record("model.pop.p2", &["model.E"], Extent::Closed),
+            population_record("model.pop.p1", &["model.A", "model.B"], Extent::Closed),
+            population_record("model.pop.p2", &["model.C", "model.E"], Extent::Closed),
             population_record("model.pop.p3", &["model.X"], Extent::Closed),
         ],
     );
