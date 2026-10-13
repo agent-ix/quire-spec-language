@@ -52,10 +52,10 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
    defines.
 4. **Observation counts.** The observation document reader SHALL bound a
    document by `observation.objects` and `observation.values`, each charged
-   as the reader's tree is walked over an explicit heap stack.
-   `observation.values` is an accounting counter, so a value past its bound
-   is refused as FR-106 states, `resource_exhausted`/`insufficient-next-charge`;
-   `observation.objects` is a stage limit.
+   as the reader's tree is walked over an explicit heap stack. Each has a
+   row in FR-255's setting table, so a count past its bound refuses
+   `stage_limit_exceeded`/`node-count-exceeded` naming the setting, as FR-106
+   states.
 
 ## Acceptance Criteria
 
@@ -63,7 +63,7 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
 | --- | --- | --- |
 | FR-261-AC-1 | On a thread with a 512 KiB stack, the library package identity read of a canonical preimage object whose members are valid except that `edition` holds an array nested 100,000 deep refuses with `PreimageDefect::MemberType("edition")`, not `PreimageDefect::NotObject`. Bytes that are not JSON refuse with the malformed-input defect carrying the byte offset of the first malformed byte, distinct from the not-an-object defect, which a top-level array gives. | Test (TC-733) |
 | FR-261-AC-2 | On a thread with a 512 KiB stack, observation digest admission over a snapshot document holding a field value nested 100,000 deep, within `observation.input_bytes`, reads the document's digest and proceeds to FR-106's later checks; the same document with a digest that differs from the selection refuses `stale_dependency`/`content-mismatch`. | Test (TC-733) |
-| FR-261-AC-3 | On a thread with a 512 KiB stack, the observation document reader reads a snapshot whose population's field holds a value nested 100,000 levels deep, counts it as `observation.values` and judges it on its content. With `observation.input_bytes` and `observation.values` raised to fit, it refuses `invalid_runtime_input`/`wrong-value-kind` at that field, because the field's declared type does not admit that value. With `observation.values` at 50,000, which the nested value alone crosses, it refuses `resource_exhausted`/`insufficient-next-charge` naming `observation.values`, bound 50,000, prior count 50,000 and the count reached, 50,001. | Test (TC-733) |
+| FR-261-AC-3 | On a thread with a 512 KiB stack, the observation document reader reads a snapshot whose population's field holds a value nested 100,000 levels deep, counts it as `observation.values` and judges it on its content. With `observation.input_bytes` and `observation.values` raised to fit, it refuses `invalid_runtime_input`/`wrong-value-kind` at that field, because the field's declared type does not admit that value. With `observation.values` at 50,000, which the nested value alone crosses, it refuses `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, bound 50,000 and the count reached, 50,001. | Test (TC-733) |
 
 ## Dependencies
 

@@ -41,6 +41,5 @@ Tag the tests `#[trace("TC-733", "FR-261-AC-1")]`, `#[trace("TC-733", "FR-261-AC
 - Step 2: the digest is read and admission proceeds to FR-106's later
   checks; under the other digest, `stale_dependency`/`content-mismatch`.
 - Step 3: refused `invalid_runtime_input`/`wrong-value-kind` at the field;
-  then refused `resource_exhausted`/`insufficient-next-charge` naming
-  `observation.values`, bound 50,000, prior count 50,000 and the count
-  reached, 50,001.
+  then refused `stage_limit_exceeded`/`node-count-exceeded` naming
+  `observation.values`, bound 50,000 and the count reached, 50,001.

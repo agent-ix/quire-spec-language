@@ -12,7 +12,7 @@ use quire_exact::{
 use qsl_foundation::diagnostic::Code;
 
 use super::helpers::{admission_record, object_reference};
-use super::tree::{Json, Object};
+use super::tree::{read_raw_value, Json, Object};
 use super::{
     check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
     AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PathStep,
@@ -626,15 +626,7 @@ fn read_populations(
                 .ok_or_else(|| wrong_kind("fields"))?;
             let mut fields = Vec::new();
             for (name, value) in field_items.iter() {
-                let raw = meter
-                    .read_value(
-                        value,
-                        &[
-                            ("population", &population),
-                            ("object", &key),
-                            ("field", name),
-                        ],
-                    )?
+                let raw = read_raw_value(value, &mut || meter.value())?
                     .ok_or_else(|| wrong_kind(name))?;
                 fields.push((name.to_owned(), raw));
             }
@@ -684,9 +676,7 @@ fn read_invocation_call(
         .ok_or_else(|| wrong_kind("parameters"))?;
     let mut parameters = Vec::new();
     for (name, value) in parameter_items.iter() {
-        let raw = meter
-            .read_value(value, &[("field", name)])?
-            .ok_or_else(|| wrong_kind(name))?;
+        let raw = read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind(name))?;
         parameters.push((name.to_owned(), raw));
     }
     Ok(InvocationCall {
@@ -714,9 +704,7 @@ fn read_invocation_body(
     let result = match object.member("result") {
         Some(value) if value.is_null() => ResultValue::Null,
         Some(value) => ResultValue::Value(
-            meter
-                .read_value(value, &[("field", "result")])?
-                .ok_or_else(|| wrong_kind("result"))?,
+            read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind("result"))?,
         ),
         None => return Err(missing_member("result")),
     };
@@ -2210,7 +2198,6 @@ pub(super) fn admit_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::observation::tree::read_raw_value;
     use ix_trace_rs::trace;
 
     /// The value form `text` spells, read as the admission reads it.

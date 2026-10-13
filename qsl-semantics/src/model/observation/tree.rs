@@ -12,7 +12,7 @@
 
 use quire_canonical::{Node, NodeRef};
 
-use super::{PathStep, RawNode, SelectedObject, SnapshotValue};
+use super::{RawNode, SelectedObject, SnapshotValue};
 
 /// One value of a document read by `quire-canonical`.
 #[derive(Clone, Copy, Debug)]
@@ -116,13 +116,12 @@ type Charge<'c, E> = &'c mut dyn FnMut() -> Result<(), E>;
 ///
 /// # Errors
 ///
-/// Whatever `charge` returns, with the typed path of the value that was not
-/// admitted, from `json` down to it (FR-207; empty for `json` itself).
+/// Whatever `charge` returns.
 #[qsl_attrs::string_edge]
 pub(super) fn read_raw_value<E>(
     json: Json<'_>,
     charge: Charge<'_, E>,
-) -> Result<Option<SnapshotValue>, (E, Vec<PathStep>)> {
+) -> Result<Option<SnapshotValue>, E> {
     /// A form whose payload is still being read.
     enum Open {
         /// `{"present": <value>}`, waiting for its payload.
@@ -137,18 +136,6 @@ pub(super) fn read_raw_value<E>(
             names: Vec<String>,
             items: Vec<usize>,
         },
-    }
-    /// The typed path to the payload the open forms are waiting for.
-    fn path_to_next(open: &[Open]) -> Vec<PathStep> {
-        open.iter()
-            .filter_map(|form| match form {
-                Open::Present => Some(PathStep::OptionValue),
-                Open::Sequence { items, .. } => Some(PathStep::Index(items.len())),
-                Open::Record { names, items, .. } => names
-                    .get(items.len())
-                    .map(|name| PathStep::Field(name.clone())),
-            })
-            .collect()
     }
     // The arena every form is pushed into, as each completes.
     let mut nodes: Vec<RawNode> = Vec::new();
@@ -207,9 +194,7 @@ pub(super) fn read_raw_value<E>(
         let Some(next) = pending.pop() else {
             return Ok(None);
         };
-        if let Err(cause) = charge() {
-            return Err((cause, path_to_next(&open)));
-        }
+        charge()?;
         let Some(object) = next.as_object() else {
             return Ok(None);
         };

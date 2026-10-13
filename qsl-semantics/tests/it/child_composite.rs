@@ -893,73 +893,29 @@ fn a_recursive_record_nested_far_beyond_256_levels_admits() {
     }
 }
 
-/// The number of value forms in `text` before `marker`, counted from the
-/// wire: each `{"<tag>":` opens one form (FR-106's seven tags).
-fn forms_before(text: &str, marker: &str) -> u64 {
-    let prefix = &text[..text.find(marker).expect("the marker is in the text")];
-    [
-        "boolean",
-        "integer",
-        "absent",
-        "present",
-        "reference",
-        "sequence",
-        "record",
-    ]
-    .iter()
-    .map(|tag| prefix.matches(&format!("{{\"{tag}\":")).count() as u64)
-    .sum()
-}
-
-/// The typed path of the `index`th value form of `node_chain`'s text, from
-/// the `chain` field: the `present` wrapper itself is 0, then each `Node`
-/// record, its `level` and its `next` wrapper in turn.
-fn chain_path(index: u64) -> Vec<PathStep> {
-    if index == 0 {
-        return vec![];
-    }
-    let (depth, form) = ((index - 1) / 3, (index - 1) % 3);
-    let mut path = vec![PathStep::OptionValue];
-    for _ in 0..depth {
-        path.extend([field_step("next"), PathStep::OptionValue]);
-    }
-    match form {
-        0 => {}
-        1 => path.push(field_step("level")),
-        _ => path.push(field_step("next")),
-    }
-    path
-}
-
 /// The record of a values-per-document refusal, asserting its typed
-/// fields: `resource_exhausted`/`insufficient-next-charge` retaining the
-/// stage, accounting contract, effective limit, prior usage and work item
-/// (never `stage_limit_exceeded`).
-fn assert_values_exhausted(failure: AdmissionFailure, limit: u64) -> AdmissionRecord {
+/// fields: `stage_limit_exceeded`/`node-count-exceeded` naming
+/// `observation.values`, the bound and the count the refused value would
+/// have reached (FR-255).
+fn assert_values_limit(failure: AdmissionFailure, limit: u64) -> AdmissionRecord {
     let AdmissionFailure::Refused(record) = failure else {
         panic!("a refusal, not {failure:?}");
     };
-    assert_eq!(record.code.as_str(), "resource_exhausted");
-    assert_eq!(record.cause, "insufficient-next-charge");
+    assert_eq!(record.code.as_str(), "stage_limit_exceeded");
+    assert_eq!(record.cause, "node-count-exceeded");
     let field = |name: &str| record.fields.get(name).map(String::as_str);
     assert_eq!(field("setting"), Some("observation.values"));
-    assert_eq!(field("stage"), Some("observation admission"));
-    assert_eq!(
-        field("accounting_contract"),
-        Some("quire.value.accounting/v1")
-    );
-    assert_eq!(field("work_item"), Some("value"));
+    assert_eq!(field("kind"), Some("node-count-exceeded"));
     assert_eq!(field("bound"), Some(limit.to_string().as_str()));
-    assert_eq!(field("prior"), Some(limit.to_string().as_str()));
     assert_eq!(field("actual"), Some((limit + 1).to_string().as_str()));
     record
 }
 
 /// FR-106-AC-16: at the exact values-per-document bound a document admits;
 /// one below it, the last value refuses, before it is admitted.
-#[trace("FR-106-AC-16", "FR-359-AC-9", "TC-1002")]
+#[trace("FR-106-AC-16")]
 #[test]
-fn the_exact_values_bound_admits_and_one_below_refuses_resource_exhausted() {
+fn the_exact_values_bound_admits_and_one_below_refuses_stage_limit_exceeded() {
     let rewrite = |text: String| text.replacen("\"CHAIN\"", &node_chain(20), 1);
     let used = admit_order_usage(chain_fields(), ObservationLimits::default(), rewrite)
         .expect("a 20-deep chain admits under the default bound")
@@ -971,37 +927,25 @@ fn the_exact_values_bound_admits_and_one_below_refuses_resource_exhausted() {
     let Err(failure) = admit_order_text(chain_fields(), below, rewrite) else {
         panic!("one value past the bound refuses");
     };
-    assert_values_exhausted(failure, used - 1);
+    assert_values_limit(failure, used - 1);
 }
 
 /// FR-106-AC-16: a chain past the values-per-document bound refuses
-/// `resource_exhausted`/`insufficient-next-charge` with the bound, the prior
-/// count and the next value's typed path (FR-207), and a defect at the
-/// bottom of a chain names its whole typed path: a field, an option-value
-/// step, a field, and so on.
-#[trace("FR-106-AC-16", "FR-359-AC-9", "TC-1002")]
+/// `stage_limit_exceeded` naming `observation.values`, the bound and the
+/// count reached, and a defect at the bottom of a chain names its whole
+/// typed path: a field, an option-value step, a field, and so on.
+#[trace("FR-106-AC-16")]
 #[test]
 fn a_deep_chain_is_bounded_by_the_value_limit_and_names_its_path() {
     let limit = 100;
     let limits = ObservationLimits::default().with_values_per_document(limit);
     let chain = node_chain(300);
-    // The forms the document holds before the chain's own `present` wrapper.
-    let before = forms_before(
-        &serde_json::to_string(&Value::Object(chain_fields())).expect("the fields serialize"),
-        r#"{"present":"CHAIN"}"#,
-    );
     let Err(failure) = admit_order_text(chain_fields(), limits, |text| {
         text.replacen("\"CHAIN\"", &chain, 1)
     }) else {
         panic!("a chain past the value bound refuses");
     };
-    let record = assert_values_exhausted(failure, limit);
-    // The refused value is the (limit + 1)th form of the document.
-    assert_eq!(
-        record.fields.get("field").map(String::as_str),
-        Some("chain")
-    );
-    assert_eq!(record.path, chain_path(limit - before));
+    assert_values_limit(failure, limit);
     // A defect two levels down: Order.chain -> Node.next -> Node.level.
     let bad = json!({"record": {"type": fixture::id("Node"), "fields": {
         "level": {"integer": "0"},

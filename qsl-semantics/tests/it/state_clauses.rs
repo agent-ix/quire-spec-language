@@ -2767,6 +2767,26 @@ fn run_tc465_invocation(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_invocation_limited(
+        document,
+        mutate_pre,
+        mutate_post,
+        mutate_invocation,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+/// [`run_tc465_invocation`] under the given observation limits.
+fn run_tc465_invocation_limited(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
     let mut pre_value = tc465_pre_snapshot(&pre_label, &model_digest_hex);
@@ -2800,12 +2820,13 @@ fn run_tc465_invocation(
     snapshots.insert(post.digest, post_bytes);
     let mut invocations = BTreeMap::new();
     invocations.insert(invocation.digest, invocation_bytes);
-    run_tc465(
+    run_tc465_with_limits(
         document,
         "VersionUnchanged",
         qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
         snapshots,
         invocations,
+        limits,
     )
 }
 
@@ -2896,6 +2917,26 @@ fn run_tc465_probe_with(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_probe_limited(
+        document,
+        clause,
+        mutate_pre,
+        mutate_invocation,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+/// [`run_tc465_probe_with`] under the given observation limits.
+fn run_tc465_probe_limited(
+    document: &[u8],
+    clause: &str,
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
     let mut pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
@@ -2929,12 +2970,13 @@ fn run_tc465_probe_with(
     snapshots.insert(post.digest, post_bytes);
     let mut invocations = BTreeMap::new();
     invocations.insert(invocation.digest, invocation_bytes);
-    run_tc465(
+    run_tc465_with_limits(
         document,
         clause,
         qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
         snapshots,
         invocations,
+        limits,
     )
 }
 
@@ -3062,8 +3104,7 @@ fn objects_per_document_limit_refuses_naming_observation_objects() {
 
 /// FR-261 B4, FR-255, FR-106-AC-16: `values_per_document` counts every value
 /// form of the document as the reader walks it: a ceiling of 0 refuses at the
-/// first, `resource_exhausted`/`insufficient-next-charge` naming
-/// `observation.values`.
+/// first, `stage_limit_exceeded` naming `observation.values`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[trace("TC-720", "FR-255-AC-1")]
 #[test]
@@ -3072,14 +3113,68 @@ fn values_per_document_limit_refuses_naming_observation_values() {
     let limits =
         qsl_semantics::model::observation::ObservationLimits::default().with_values_per_document(0);
     let result = run_tc465_current_with_limits(&document, |_| {}, limits);
-    let record = assert_tc465_refused(result, "resource_exhausted", "insufficient-next-charge");
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.values")
     );
     assert_eq!(record.fields.get("bound").map(String::as_str), Some("0"));
-    assert_eq!(record.fields.get("prior").map(String::as_str), Some("0"));
+    assert_eq!(
+        record.fields.get("kind").map(String::as_str),
+        Some("node-count-exceeded")
+    );
     assert_eq!(record.fields.get("actual").map(String::as_str), Some("1"));
+}
+
+/// A `sequence` value form of `count` integers: `count + 1` value forms.
+fn tc465_long_sequence(count: usize) -> serde_json::Value {
+    json!({"sequence": vec![json!({"integer": "1"}); count]})
+}
+
+/// FR-106-AC-16: the invocation's `parameters` count against
+/// `observation.values` too. At a bound of 20, a 30-element sequence at
+/// `target` is refused at the 21st form, naming the setting, bound and count.
+#[trace("TC-465", "FR-106-AC-16")]
+#[test]
+fn an_invocation_parameter_past_the_values_bound_refuses_stage_limit_exceeded() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_values_per_document(20);
+    let result = run_tc465_probe_limited(
+        &document,
+        "ReachesTarget",
+        |_| {},
+        |value| value["parameters"]["target"] = tc465_long_sequence(30),
+        limits,
+    );
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("setting"), Some("observation.values"));
+    assert_eq!(field("kind"), Some("node-count-exceeded"));
+    assert_eq!(field("bound"), Some("20"));
+    assert_eq!(field("actual"), Some("21"));
+}
+
+/// FR-106-AC-16: the invocation's `result` counts against
+/// `observation.values`: refused at the 21st form under a bound of 20.
+#[trace("TC-465", "FR-106-AC-16")]
+#[test]
+fn an_invocation_result_past_the_values_bound_refuses_stage_limit_exceeded() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_values_per_document(20);
+    let result = run_tc465_invocation_limited(
+        &document,
+        |_| {},
+        |_| {},
+        |value| value["result"] = tc465_long_sequence(30),
+        limits,
+    );
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("setting"), Some("observation.values"));
+    assert_eq!(field("bound"), Some("20"));
+    assert_eq!(field("actual"), Some("21"));
 }
 
 /// `run_tc465_current_with_limits` over snapshot text built by `build`
@@ -3166,9 +3261,8 @@ fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
 /// `observation.values` as it is walked and judged on its content. With the
 /// limits raised the field's declared type refuses it as `wrong-value-kind`
 /// at that field. With `observation.values` at 50,000, which the nested
-/// value alone crosses, it refuses `resource_exhausted`/
-/// `insufficient-next-charge` naming `observation.values`, bound 50,000, the
-/// prior count 50,000 and the count reached, 50,001.
+/// value alone crosses, it refuses `stage_limit_exceeded` naming
+/// `observation.values`, bound 50,000 and the count reached, 50,001.
 #[trace("TC-733", "FR-261-AC-3")]
 #[test]
 fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
@@ -3181,17 +3275,13 @@ fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
     };
     // A bound of 50,000 is crossed by the nested value alone, at count 50,001.
     let refused = counted(raised.with_values_per_document(50_000));
-    let record = assert_tc465_refused(refused, "resource_exhausted", "insufficient-next-charge");
+    let record = assert_tc465_refused(refused, "stage_limit_exceeded", "node-count-exceeded");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.values")
     );
     assert_eq!(
         record.fields.get("bound").map(String::as_str),
-        Some("50000")
-    );
-    assert_eq!(
-        record.fields.get("prior").map(String::as_str),
         Some("50000")
     );
     assert_eq!(
