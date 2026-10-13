@@ -24,6 +24,13 @@ use std::collections::{BTreeMap, BTreeSet};
 mod tc235_k2;
 use tc235_k2::*;
 
+fn package_key(node: &str) -> DeclarationKey {
+    DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(node),
+    }
+}
+
 fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("K2 serializes");
     let offered = package_input([bytes.as_slice()]);
@@ -749,6 +756,13 @@ fn record_charges(
 /// exactly 21 `normalize.record` charges. Instant uses FCD's native Timestamp
 /// alias form, Money uses the canonical native Integer name, and the state
 /// transition guard names the declared clauseId.
+///
+/// Mutation used (derived by reading `normalize` in `model/normalize.rs`,
+/// not executed): shortening the `0..declared_record_count` charge loop by one
+/// flips the `normalize.record` count assertion from 21 to 20. Dropping the
+/// `intake` reader for any one meaning removes that record, which flips the
+/// `package.records.len() == 21` assertion and the matching payload
+/// assertion (states, transitions, steps, `persists`, namespace members).
 #[test]
 fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let document = k2();
@@ -770,6 +784,195 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let package = read_domain_package(selection, &admitted)
         .expect("TC-235 K2 must reach the semantic model reader");
     assert_eq!(package.records.len(), 21, "K2's declared source count");
+    let record = |node: &str| {
+        package
+            .records
+            .iter()
+            .find(|record| record.key() == &package_key(node))
+            .unwrap_or_else(|| panic!("M01 retains source record {node}"))
+    };
+
+    let DomainPackageRecord::RecordValueType(money) = record("Money") else {
+        panic!("M01 Money has record-value-type meaning");
+    };
+    assert!(money.identity_fields.is_empty());
+
+    let DomainPackageRecord::EventType(event) = record("OrderPlaced") else {
+        panic!("M01 OrderPlaced has event-type meaning");
+    };
+    assert_eq!(
+        event.occurrence_field,
+        Some(package_key("OrderPlaced/occurred_at"))
+    );
+    let DomainPackageRecord::FieldMember(occurrence) = record("OrderPlaced/occurred_at") else {
+        panic!("M01 event occurrence remains an authored field");
+    };
+    assert_eq!(occurrence.value_type.to_string(), id("Instant"));
+    let DomainPackageRecord::ScalarType(instant) = record("Instant") else {
+        panic!("M01 Instant remains a scalar alias");
+    };
+    assert_eq!(
+        instant.domain,
+        qsl_semantics::model::domain_package::ScalarValueDomain::Native(
+            qsl_semantics::model::domain_package::NativeValueType::Timestamp,
+        ),
+    );
+
+    let DomainPackageRecord::StateMachine(machine) = record("OrderLifecycle") else {
+        panic!("M01 OrderLifecycle has state-machine meaning");
+    };
+    assert_eq!(
+        machine
+            .states
+            .iter()
+            .map(|state| state.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Draft", "Placed", "Cancelled"],
+    );
+    assert_eq!(
+        machine
+            .transitions
+            .iter()
+            .map(|transition| transition.key.node.as_str())
+            .collect::<Vec<_>>(),
+        [
+            id("OrderLifecycle/transition0"),
+            id("OrderLifecycle/transition1"),
+            id("OrderLifecycle/transition2")
+        ],
+    );
+    assert_eq!(
+        machine.transitions[0].from,
+        package_key("OrderLifecycle/Draft")
+    );
+    assert_eq!(
+        machine.transitions[0].to,
+        package_key("OrderLifecycle/Placed")
+    );
+    assert_eq!(
+        machine.transitions[0].trigger,
+        package_key("OrderLifecycle/place")
+    );
+    assert_eq!(
+        machine.transitions[0].guard.as_deref(),
+        Some("NotYetPlaced")
+    );
+    assert_eq!(machine.transitions[0].emits, [package_key("OrderPlaced")]);
+    for (index, from, to) in [(1, "Draft", "Cancelled"), (2, "Placed", "Cancelled")] {
+        let transition = &machine.transitions[index];
+        assert_eq!(
+            transition.from,
+            package_key(&format!("OrderLifecycle/{from}"))
+        );
+        assert_eq!(transition.to, package_key(&format!("OrderLifecycle/{to}")));
+        assert_eq!(transition.trigger, package_key("OrderLifecycle/cancel"));
+        assert!(transition.emits.is_empty());
+        assert_eq!(transition.guard, None);
+    }
+    // A machine's invariants are its owned `quire` clauses that no
+    // transition names as a guard; `NotYetPlaced` is the guard of `[0]`, so
+    // K2's `OrderLifecycle` has none.
+    let guards: Vec<_> = machine
+        .transitions
+        .iter()
+        .filter_map(|transition| transition.guard.as_deref())
+        .map(|guard| id(&format!("OrderLifecycle/{guard}")))
+        .collect();
+    let invariants: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Clause(clause)
+                if clause.owner == machine.key
+                    && clause.language == "quire"
+                    && !guards.contains(&clause.key.node) =>
+            {
+                Some(clause.key.node.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(guards, [id("OrderLifecycle/NotYetPlaced")]);
+    assert!(invariants.is_empty(), "NotYetPlaced is no invariant");
+    assert!(machine
+        .transitions
+        .iter()
+        .all(|transition| transition.path.starts_with("/types/")));
+
+    let DomainPackageRecord::Process(process) = record("Fulfilment") else {
+        panic!("M01 Fulfilment has process meaning");
+    };
+    assert_eq!(
+        process.identity_fields,
+        [package_key("Fulfilment/correlation_id")]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        ["receive_order", "reserve_stock", "await_shipment"],
+    );
+    assert_eq!(process.steps[0].consumes, [package_key("OrderPlaced")]);
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.step_kind)
+            .collect::<Vec<_>>(),
+        [
+            qsl_semantics::model::domain_package::ProcessStepKind::Event,
+            qsl_semantics::model::domain_package::ProcessStepKind::Command,
+            qsl_semantics::model::domain_package::ProcessStepKind::Wait,
+        ],
+    );
+    assert!(process.steps.iter().all(|step| step.emits.is_empty()));
+
+    let DomainPackageRecord::PersistenceInterface(storage) = record("OrderStore") else {
+        panic!("M01 OrderStore has persistence-interface meaning");
+    };
+    assert_eq!(storage.persists, [package_key("Order")]);
+    let operations = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.owner == package_key("OrderStore") =>
+            {
+                Some(operation.key.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        operations,
+        [
+            package_key("OrderStore/get"),
+            package_key("OrderStore/save")
+        ]
+    );
+
+    let DomainPackageRecord::Namespace(namespace) = record("OrderManagement") else {
+        panic!("M01 OrderManagement has namespace meaning");
+    };
+    assert_eq!(
+        namespace.members,
+        [
+            package_key("Order"),
+            package_key("Money"),
+            package_key("OrderPlaced")
+        ],
+    );
+    assert_eq!(
+        namespace
+            .vocabulary
+            .iter()
+            .map(|term| term.term.as_str())
+            .collect::<Vec<_>>(),
+        ["Place"],
+    );
+
     let mut keys: Vec<DeclarationKey> = package
         .records
         .iter()
@@ -831,6 +1034,12 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
             package: PACKAGE.to_owned(),
             node: id("Money"),
         }));
+    assert!(view
+        .type_identities()
+        .contains_key(&package_key("OrderPlaced")));
+    assert!(view
+        .type_identities()
+        .contains_key(&package_key("OrderLifecycle")));
     let process = qsl_semantics::model::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Fulfilment"),
@@ -865,6 +1074,15 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
 
 /// M03: record-value meanings reject identity and operations, while retaining
 /// both native `quire` invariants and foreign-language clauses as originals.
+///
+/// Mutation used (derived by reading `model/normalize.rs` and, for run 3 and
+/// run 4, `read_clauses` in `model/intake.rs`; not executed), one per run: run
+/// 1, removing the `identity_fields` refusal for a record value type flips `NormalizeOutcome::Refused` to `Completed`, failing the
+/// `let ... else` before the code/locus asserts; run 2, skipping the
+/// `declared_operations` refusal loop does the same for the 22-charge
+/// operation run; run 3, dropping the clause record from `read_clauses` fails
+/// the `package.original(&invariant_key).is_some()` assertion; run 4,
+/// rewriting the clause language fails `assert_eq!(foreign.language, "ocl")`.
 #[test]
 fn tc235_m03_record_shape_and_clause_meanings() {
     let identity_document = mutate_k2(|document| {
@@ -1596,6 +1814,21 @@ fn assert_malformed_at(refusal: &ModelRefusal, node: &str, path: &str) {
 }
 
 /// M04: event-type identity, occurrence field, operation, and Timestamp rules.
+///
+/// Run 3 (`missing_declaration`/`missing-name`) asserts the typed
+/// `IntakeMissingDeclaration` cause: referring node, absent node, origin and
+/// the reader's document pointer. That cause carries no member-path field, so
+/// `TypeDefinition.occurrenceField` is not asserted as a string there; the
+/// pointer `/types/3/occurrenceField` is the typed locus the engine reports.
+///
+/// Mutation used (derived by reading `model/normalize.rs`, not executed), one
+/// per run: run 1, removing the event `identity_fields` refusal leaves no
+/// refusal, so the `Refused` let-else inside `normalized_refusals` panics
+/// before `refusals.len() == 1`; run 2 and run 5, removing the `timestamp` check
+/// flips the occurrence-field refusal to admission; run 3, removing the
+/// reader's missing-name mapping in `intake.rs` flips the code to
+/// `InvalidModelBinding`; run 4, removing the `declared_operations` loop
+/// for events flips the 22-charge refusal to admission.
 #[test]
 fn tc235_m04_event_type_refusal_vectors() {
     let identity_document = mutate_k2(|document| {
@@ -1667,6 +1900,15 @@ fn tc235_m04_event_type_refusal_vectors() {
 
 /// M18: event subtypes preserve the inherited occurrence field and reject a
 /// conflicting occurrence field or an ancestor of another business meaning.
+///
+/// Mutation used (derived by reading `model/normalize.rs`, not executed): run
+/// 2, removing the `child != parent` `DerivationConflict` branch leaves no
+/// refusal, so the `Refused` let-else inside `normalized_refusals` panics; run 3, removing the non-event-ancestor
+/// branch leaves no refusal, so the `Refused` let-else inside
+/// `normalized_refusals` panics before the two ordered `assert_malformed_at`
+/// loci. Run 1 asserts the
+/// inherited effective members, so dropping event supertype assembly fails
+/// the `effective_members` equality.
 #[test]
 fn tc235_m18_event_type_specialization_vectors() {
     let positive_document = mutate_k2(|document| {
