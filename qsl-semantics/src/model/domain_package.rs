@@ -561,6 +561,9 @@ pub struct OperationMemberRecord {
     /// states them (see [`PostconditionClause`]).
     pub own_postcondition_clauses: Vec<PostconditionClause>,
     /// Whether an `operation-body` declaration supplies this member's body.
+    /// A domain package never does: the assembler sets it on the compiled
+    /// unit's selected view from the unit's `operation-body` declarations
+    /// (`EffectiveView::with_operation_bodies`), and intake leaves it false.
     /// FR-151's dispatch family (`crate::model::dispatch`) is the original
     /// declaration together with every redefining operation reaching a
     /// subtype; only family members with a body are dispatch candidates. A

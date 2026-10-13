@@ -7,7 +7,7 @@
 use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, AnchorSite, BinderForm, BinderKind, BuiltinType, DeclarationForm, ExprNode,
-    ExprRef, ExpressionSpans, FormsCause, ParsedUnit, ProtocolConstructKind,
+    ExprRef, ExpressionSpans, FormsCause, OperationBodyForm, ParsedUnit, ProtocolConstructKind,
     ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopedAnchorForm, SpanId,
     StateClauseForm, StateClauseKind, TypeFormHead,
 };
@@ -107,7 +107,23 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
+        | DeclarationForm::OperationBody(_)
         | DeclarationForm::Protocol(_) => panic!("a state clause form, not {form:?}"),
+    }
+}
+
+fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
+    match form {
+        DeclarationForm::OperationBody(body) => body,
+        DeclarationForm::Function(_)
+        | DeclarationForm::Alias(_)
+        | DeclarationForm::Record(_)
+        | DeclarationForm::Tuple(_)
+        | DeclarationForm::Enum(_)
+        | DeclarationForm::Dimension(_)
+        | DeclarationForm::Unit(_)
+        | DeclarationForm::StateClause(_)
+        | DeclarationForm::Protocol(_) => panic!("an operation body form, not {form:?}"),
     }
 }
 
@@ -121,6 +137,7 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
+        | DeclarationForm::OperationBody(_)
         | DeclarationForm::StateClause(_) => panic!("a protocol form, not {form:?}"),
     }
 }
@@ -1163,4 +1180,72 @@ fn a_100000_deep_repeat_chain_builds_its_anchors_on_a_small_stack() {
             2 * depth + 1,
         );
     });
+}
+
+/// FR-102 "Outputs": a `body` declaration builds one `OperationBodyForm`
+/// that keeps the label, the `using` alias, every target segment, every
+/// positional parameter name and the body expression, each with its own
+/// source span, and resolves none of them. The label is local and is not the
+/// operation's identity.
+#[trace("TC-457", "FR-102-AC-7")]
+#[test]
+fn a_body_builds_one_operation_body_form_with_every_part_spelled_and_spanned() {
+    let (text, unit) =
+        build("body forB using v on Config::ConfigVersion::resize(amount, extra) { amount + 22 }");
+    let [parsed] = unit.forms() else {
+        panic!("one declaration builds one form");
+    };
+    let form = operation_body(parsed.form());
+    let slice = |span: Span| &text[span.start..span.end];
+    assert_eq!(form.label.name, "forB");
+    assert_eq!(slice(form.label.span), "forB");
+    assert_eq!(form.profile.alias, "v");
+    assert_eq!(slice(form.profile.span), "v");
+    let segments: Vec<&str> = form.target.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(segments, ["Config", "ConfigVersion", "resize"]);
+    for segment in &form.target {
+        assert_eq!(slice(segment.span), segment.name);
+    }
+    assert_eq!(
+        slice(form.target_span),
+        "Config::ConfigVersion::resize",
+        "the target span covers the whole name"
+    );
+    let parameters: Vec<&str> = form.parameters.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(parameters, ["amount", "extra"]);
+    for parameter in &form.parameters {
+        assert_eq!(slice(parameter.span), parameter.name);
+    }
+    let body_span = form
+        .spans
+        .body
+        .span(form.spans.body.root())
+        .expect("the body has a root span");
+    assert_eq!(slice(body_span), "amount + 22");
+    assert_eq!(slice(form.spans.declaration), slice(parsed.span()));
+    assert_eq!(form.spans.measure, None);
+}
+
+/// FR-102 "Behavior": a `body` with no parameters and a reserved operation
+/// member name (`size`) builds, and two bodies keep their own labels in
+/// source order.
+#[trace("TC-457", "FR-102-AC-7")]
+#[test]
+fn a_parameterless_body_builds_and_bodies_keep_source_order() {
+    let (_, unit) = build(
+        "body forB using v on Config::ConfigVersion::size() { 22 }\n\
+         body forA using v on Config::ConfigVersion::size() { 11 }",
+    );
+    let labels: Vec<&str> = unit
+        .forms()
+        .iter()
+        .map(|form| operation_body(form.form()).label.name.as_str())
+        .collect();
+    assert_eq!(labels, ["forB", "forA"]);
+    for form in unit.forms() {
+        let body = operation_body(form.form());
+        assert!(body.parameters.is_empty());
+        let target: Vec<&str> = body.target.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(target, ["Config", "ConfigVersion", "size"]);
+    }
 }

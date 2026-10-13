@@ -59,6 +59,7 @@ reused; prose may change without changing classification.
 | ill_typed | Native contextual types, nominal identities, units or operator eligibility disagree, or a scalar context is ambiguous. |
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
 | resource_exhausted | A source, syntax, formatter, map, linking, checking/proof, package or runtime construction/validation ceiling prevented completion. |
+| conflicting_declaration | Two declarations that must be unique resolve to one identity: two unit `operation-body` declarations resolving to one operation (FR-302), cause `duplicate-declaration`. |
 | ambiguous_dispatch | FR-151 dispatch linking found no, or several undominated, applicable candidates for a closed subtype. |
 | noncanonical_wire | A document is not in its canonical form: a domain package or observation document carries a number with no exact RFC 8785 spelling (FR-056, FR-106), cause `inexact-integer` or `inexact-number` with the number's `document_pointer`; or a checked-package/v2 wire's bytes are not RFC 8785 bytes (FR-322's I2 reader), with neither cause nor pointer. QSpec FR-271's `## Values` row catalogs the code, and FR-272's `noncanonical_wire` row its causes and `document_pointer` (quire-specification#180). |
 

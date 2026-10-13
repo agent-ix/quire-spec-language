@@ -548,6 +548,11 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::AmbiguousOperation { context, operation } => {
             format!("`{context}` inherits more than one operation `{operation}`")
         }
+        AssemblyCause::DuplicateOperationBody { operation, bodies } => format!(
+            "{} operation-body declarations resolve to the operation `{}`",
+            bodies.len(),
+            operation.node
+        ),
         AssemblyCause::AmbiguousPopulation {
             context,
             populations,

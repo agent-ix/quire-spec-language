@@ -125,6 +125,9 @@ pub enum Code {
     AmbiguousDeclaration,
     /// A required formal or lexical declaration is absent.
     MissingDeclaration,
+    /// Two declarations that must be unique resolve to one identity (FR-302:
+    /// two unit `operation-body` declarations resolving to one operation).
+    ConflictingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
     /// Native runtime artifact structure or selected runtime data is invalid.
@@ -211,6 +214,7 @@ impl Code {
             Self::StaleDependency => "stale_dependency",
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
+            Self::ConflictingDeclaration => "conflicting_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
             Self::InvalidRuntimeInput => "invalid_runtime_input",
             Self::WrongSnapshot => "wrong_snapshot",
@@ -266,6 +270,7 @@ impl Code {
             Self::StaleDependency,
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
+            Self::ConflictingDeclaration,
             Self::InvalidModelBinding,
             Self::InvalidRuntimeInput,
             Self::WrongSnapshot,
@@ -931,6 +936,9 @@ impl InternalFault {
 
 /// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
 /// causes" table with its ADR-013 O-16 category, in the catalog's row order.
+/// One row has no catalog row yet: `conflicting_declaration`, which QSpec
+/// FR-151 requires but QSpec's native-diagnostics catalog (FR-271, FR-272)
+/// does not list.
 ///
 /// This is the refusal-record map: the category a code has when a refusal
 /// record carries it (O-17: each cause type has a fixed category). Every
@@ -956,7 +964,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -966,6 +974,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("unknown_required_feature", Category::Refusal),
     ("missing_import", Category::Refusal),
     ("missing_declaration", Category::Refusal),
+    ("conflicting_declaration", Category::Refusal),
     ("stale_dependency", Category::Refusal),
     ("source_digest_mismatch", Category::Refusal),
     ("ambiguous_declaration", Category::Refusal),

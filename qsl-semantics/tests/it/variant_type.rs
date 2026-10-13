@@ -1078,3 +1078,21 @@ fn the_assembler_declares_variant_types_in_the_type_environment() {
         assert_eq!(scope.variant_type(declared.key()), Some(declared));
     }
 }
+
+/// FR-302: an `operation-body` whose target names a variant type refuses
+/// `unsupported_construct`/`declaration-form`, as a clause naming it does.
+#[trace("TC-997", "FR-056-AC-27")]
+#[test]
+fn an_operation_body_targeting_a_variant_type_refuses_as_a_declaration_form() {
+    let bytes = serde_json::to_vec(&tiers(&["Gold", "Standard"])).unwrap();
+    let refusal =
+        admit_and_assemble_with_body(&bytes, "body b using v on Config::Tier::size() { 1 }")
+            .expect_err("a body targeting the variant type refuses");
+    assert_eq!(refusal.errors.len(), 1, "{refusal:?}");
+    assert_eq!(
+        refusal.errors[0].cause,
+        AssemblyCause::UnsupportedVariantType {
+            name: "Config::Tier".to_owned()
+        }
+    );
+}
