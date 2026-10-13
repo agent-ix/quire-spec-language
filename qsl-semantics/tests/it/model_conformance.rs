@@ -1679,6 +1679,11 @@ fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
     ));
     match normalize(&ancestor_chain_package(BOUND + 1), limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
+            let cause = qsl_semantics::check::CheckCause::ModelIncomplete(incomplete);
+            assert_eq!(
+                (cause.code(), cause.cause()),
+                (Code::ResourceExhausted, Some("insufficient-next-charge"))
+            );
             assert_eq!(
                 incomplete,
                 qsl_semantics::model::accounting::Incomplete {

@@ -2232,3 +2232,58 @@ fn a_child_of_a_refused_composite_parent_is_a_consequence() {
     };
     assert_eq!(invalid.declaration, "Parent");
 }
+
+/// Relaxing a widened redefinition retypes only the field that redefines the
+/// widened member (or a member it redefines), never a sibling field of the
+/// same type that redefines something else.
+#[test]
+fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
+    use quire_semantic_value::declaration::{FieldDeclaration, FieldRef, ObjectTypeDeclaration};
+    let id = |byte: u8| EffectiveId::from_digest([byte; 32]);
+    let (a, b) = (id(1), id(2));
+    let int = |upper: i64| {
+        ValueType::Int(
+            IntegerInterval::new(
+                quire_exact::Integer::from(0i64),
+                quire_exact::Integer::from(upper),
+            )
+            .expect("interval"),
+        )
+    };
+    let parent = ObjectTypeDeclaration::new(
+        a,
+        "M::A",
+        vec![
+            FieldDeclaration::new("x", int(5), Presence::Required),
+            FieldDeclaration::new("y", int(9), Presence::Required),
+        ],
+    );
+    let child = ObjectTypeDeclaration::new(
+        b,
+        "M::B",
+        vec![
+            FieldDeclaration::new("x", int(7), Presence::Required)
+                .with_redefines(FieldRef::new(a, "x")),
+            FieldDeclaration::new("y", int(3), Presence::Required)
+                .with_redefines(FieldRef::new(a, "y")),
+        ],
+    )
+    .with_supertypes(vec![a]);
+    let mut types = vec![parent, child];
+    assert!(super::relax_widening(
+        &mut types,
+        "M::B",
+        &FieldRef::new(a, "x")
+    ));
+    let fields = types[1].attributes();
+    assert_eq!(
+        fields[0].value_type(),
+        &int(5),
+        "the widened field is relaxed"
+    );
+    assert_eq!(
+        fields[1].value_type(),
+        &int(3),
+        "the sibling keeps its own type"
+    );
+}

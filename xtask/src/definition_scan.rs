@@ -489,18 +489,17 @@ mod tests {
     #[test]
     fn m2_items_moved_to_check_and_are_absent_from_model() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
-        for name in ["checked_dispatch_operation"] {
-            let locations = definitions.items.get(name).cloned().unwrap_or_default();
-            assert_eq!(locations.len(), 1, "{name}: {locations:?}");
-            assert!(
-                locations[0].file.starts_with("qsl-semantics/src/check/"),
-                "{name} must now live in qsl-semantics/src/check/: {locations:?}"
-            );
-            assert!(
-                !locations[0].file.starts_with("qsl-semantics/src/model/"),
-                "{name}: {locations:?}"
-            );
-        }
+        let name = "checked_dispatch_operation";
+        let locations = definitions.items.get(name).cloned().unwrap_or_default();
+        assert_eq!(locations.len(), 1, "{name}: {locations:?}");
+        assert!(
+            locations[0].file.starts_with("qsl-semantics/src/check/"),
+            "{name} must now live in qsl-semantics/src/check/: {locations:?}"
+        );
+        assert!(
+            !locations[0].file.starts_with("qsl-semantics/src/model/"),
+            "{name}: {locations:?}"
+        );
     }
 
     /// TC-173 step 2: the loss records `ValueLoss` and `LocatedLoss` are

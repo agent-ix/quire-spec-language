@@ -65,8 +65,10 @@ fn field_with_presence(
     let path = format!("{owner}/{name}");
     let mut value = json!({"identity": identity(&path), "name": name, "typeRef": identity(ty),
         "presence": presence, "nullable": false, "defaultKind": "none", "origin": origin(&path),
-        "multiplicity": {"lower": lower, "upper": upper.map_or(Value::Null, |n| json!(n)),
-            "ordered": false, "unique": true}});
+        "multiplicity": {"lower": lower, "ordered": false, "unique": true}});
+    if let Some(upper) = upper {
+        value["multiplicity"]["upper"] = json!(upper);
+    }
     if let Some(parent) = parent {
         value["redefines"] = json!(identity(parent));
     }
@@ -313,6 +315,10 @@ fn assert_complete_at_total_and_exact_denial_one_less(
     let n = complete.n;
     let short = run(document, body, Some(total - 1));
     let refusals = short.outcome.expect_err("the final charge does not fit");
+    assert_eq!(
+        (refusals[0].cause.code(), refusals[0].cause.cause()),
+        (Code::ResourceExhausted, Some("insufficient-next-charge"))
+    );
     assert_eq!(
         denial(&refusals),
         Incomplete {
@@ -993,7 +999,7 @@ fn c01_r03_and_r08a_report_every_failure_in_member_axis_order() {
 /// T7: a source refusal wins over the conformance stage, which then charges
 /// nothing: the run admitted with exactly the model work admission used
 /// still reports the source refusal.
-#[trace("QSpec-FR-151-AC-14", "QSpec-TC-196")]
+#[trace("QSpec-FR-151-AC-14", "FR-082-AC-17", "QSpec-TC-196")]
 #[test]
 fn c02_unresolved_clause_name_precedes_conformance() {
     let bytes = six_failures(false);
@@ -1098,7 +1104,12 @@ fn stage_total(document: &[u8], body: &str) -> u64 {
 
 /// T8: the operation vectors' totals on the carried meter, and the exact
 /// denial one unit short.
-#[trace("QSpec-FR-150-AC-10", "QSpec-FR-151-AC-11", "QSpec-TC-196")]
+#[trace(
+    "QSpec-FR-150-AC-10",
+    "QSpec-FR-151-AC-11",
+    "FR-082-AC-17",
+    "QSpec-TC-196"
+)]
 #[test]
 fn r02_r03_r04_r09_totals_on_the_carried_meter() {
     for (row, total) in [(2, 10), (3, 8), (4, 8), (9, 10)] {
@@ -1305,7 +1316,7 @@ fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
 
 /// T10: two selections report in selection byte order whatever the alias or
 /// source order, with identical totals.
-#[trace("QSpec-FR-151-AC-12", "FR-082-AC-8", "QSpec-TC-196")]
+#[trace("QSpec-FR-151-AC-12", "FR-082-AC-17", "QSpec-TC-196")]
 #[test]
 fn c06_two_selections_canonical_order() {
     let mut totals = None;
@@ -1356,7 +1367,7 @@ fn c06_two_selections_canonical_order() {
 
 /// T11: a denial in the second selection withholds the first selection's
 /// completed failures and does not reset the carried meter.
-#[trace("QSpec-FR-151-AC-15", "FR-082-AC-8", "QSpec-TC-196")]
+#[trace("QSpec-FR-151-AC-15", "FR-082-AC-17", "QSpec-TC-196")]
 #[test]
 fn c07_second_selection_denial_withholds_first_failures() {
     let (unit, packages) = two_model_unit(true);
@@ -1633,7 +1644,12 @@ fn diamond(c_maximum: i64, reverse: bool) -> Vec<u8> {
 /// judged against the member of each: the direct supertype the lineage came
 /// down is the first edge the staged admission selects the parent by, and both
 /// verdicts appear, identically whatever the document's node order.
-#[trace("QSpec-FR-151-AC-12", "QSpec-FR-110-AC-5", "QSpec-TC-196")]
+#[trace(
+    "QSpec-FR-151-AC-12",
+    "QSpec-FR-110-AC-5",
+    "FR-082-AC-17",
+    "QSpec-TC-196"
+)]
 #[test]
 fn diamond_redefinition_walks_every_lineage_and_reports_each_verdict() {
     for reverse in [false, true] {
@@ -1694,5 +1710,209 @@ fn staged_admission_spends_the_work_of_strict_admission() {
             Some(declarations.types.spent())
         );
         assert!(declarations.types.spent() > 0);
+    }
+}
+
+// ------------------------------------------------------------------ R05 fields
+
+fn multiplicity_chain(rows: &[(u64, Option<u64>)]) -> Vec<u8> {
+    document(|_| {
+        let names = ["A", "B", "C"];
+        let mut types = Vec::new();
+        for (index, (lower, upper)) in rows.iter().enumerate() {
+            let owner = names[index];
+            let parent = (index > 0).then(|| format!("{}/n", names[index - 1]));
+            let parents: Vec<&str> = if index > 0 {
+                vec![names[index - 1]]
+            } else {
+                vec![]
+            };
+            types.push(object(
+                owner,
+                &parents,
+                vec![field_with_presence(
+                    owner,
+                    "n",
+                    "A",
+                    *lower,
+                    *upper,
+                    "optional",
+                    parent.as_deref(),
+                )],
+                vec![],
+            ));
+        }
+        types
+    })
+}
+
+/// R05: a field redefinition whose multiplicity stays within its target's
+/// bounds admits, for bounded, unbounded and chained targets, whatever the
+/// order of the document's nodes.
+#[trace("QSpec-FR-151-AC-2", "FR-082-AC-4", "QSpec-TC-196")]
+#[test]
+fn r05_field_multiplicity_within_the_target_admits() {
+    for rows in [
+        vec![(0, Some(5)), (1, Some(3))],
+        vec![(0, None), (0, Some(5))],
+        vec![(0, None), (0, Some(9)), (1, Some(3))],
+        vec![(0, Some(5)), (0, Some(5))],
+    ] {
+        assert_eq!(check(&multiplicity_chain(&rows), NOOP), Ok(()), "{rows:?}");
+    }
+}
+
+/// Only collection cardinality is narrowed away: a redefinition that also
+/// widens the element, the presence or the referenced type still refuses.
+#[trace("QSpec-FR-151-AC-2", "FR-082-AC-4", "QSpec-TC-196")]
+#[test]
+fn r05_field_multiplicity_narrowing_does_not_hide_other_widenings() {
+    let widened_element = document(|template| {
+        vec![
+            scalar(template, "DA", 5),
+            scalar(template, "DB", 9),
+            object(
+                "A",
+                &[],
+                vec![field_with_presence(
+                    "A",
+                    "n",
+                    "DA",
+                    0,
+                    Some(5),
+                    "optional",
+                    None,
+                )],
+                vec![],
+            ),
+            object(
+                "B",
+                &["A"],
+                vec![field_with_presence(
+                    "B",
+                    "n",
+                    "DB",
+                    1,
+                    Some(3),
+                    "optional",
+                    Some("A/n"),
+                )],
+                vec![],
+            ),
+        ]
+    });
+    let widened_presence = document(|_| {
+        vec![
+            object(
+                "A",
+                &[],
+                vec![field_with_presence(
+                    "A",
+                    "n",
+                    "A",
+                    0,
+                    Some(5),
+                    "required",
+                    None,
+                )],
+                vec![],
+            ),
+            object(
+                "B",
+                &["A"],
+                vec![field_with_presence(
+                    "B",
+                    "n",
+                    "A",
+                    1,
+                    Some(3),
+                    "optional",
+                    Some("A/n"),
+                )],
+                vec![],
+            ),
+        ]
+    });
+    let widened_reference = document(|_| {
+        vec![
+            object(
+                "A",
+                &[],
+                vec![field_with_presence(
+                    "A",
+                    "n",
+                    "B",
+                    0,
+                    Some(5),
+                    "optional",
+                    None,
+                )],
+                vec![],
+            ),
+            object(
+                "B",
+                &["A"],
+                vec![field_with_presence(
+                    "B",
+                    "n",
+                    "A",
+                    1,
+                    Some(3),
+                    "optional",
+                    Some("A/n"),
+                )],
+                vec![],
+            ),
+        ]
+    });
+    for (name, bytes, cause) in [
+        ("element", widened_element, "variance-result"),
+        ("presence", widened_presence, "type-mismatch"),
+        ("reference", widened_reference, "variance-result"),
+    ] {
+        let outcome = check(&bytes, NOOP);
+        assert_eq!(outcome, Err(vec![(Code::IllTyped, Some(cause))]), "{name}");
+    }
+}
+
+/// AC-8, second sentence: both fields required [0,1], or both optional [1,1],
+/// written with no fact, admit and engage no obligation.
+#[trace("FR-082-AC-8", "QSpec-TC-196")]
+#[test]
+fn equal_presence_and_equal_multiplicity_engage_no_refinement_obligation() {
+    for (lower, upper, presence) in [(0, 1, "required"), (1, 1, "optional")] {
+        let bytes = document(|_| {
+            vec![
+                object(
+                    "A",
+                    &[],
+                    vec![field_with_presence(
+                        "A",
+                        "f",
+                        "A",
+                        lower,
+                        Some(upper),
+                        presence,
+                        None,
+                    )],
+                    vec![writer("A", &["A/f"], None)],
+                ),
+                object(
+                    "B",
+                    &["A"],
+                    vec![field_with_presence(
+                        "B",
+                        "g",
+                        "A",
+                        lower,
+                        Some(upper),
+                        presence,
+                        Some("A/f"),
+                    )],
+                    vec![writer("B", &["A/f"], Some("A/set"))],
+                ),
+            ]
+        });
+        assert_eq!(check(&bytes, NOOP), Ok(()), "{presence} [{lower},{upper}]");
     }
 }

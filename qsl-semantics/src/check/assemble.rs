@@ -1698,6 +1698,7 @@ fn admit_types(
             // declaration it is and the staged admission below keeps the
             // redefinition for the stage and for `complete`.
             let mut typed = object_types.to_vec();
+            declare_cardinality_narrowing(&mut typed);
             let mut rounds = typed.iter().map(|ty| ty.attributes().len()).sum::<usize>() + 1;
             let types = loop {
                 match TypeEnvironment::bounded_with_cancel(
@@ -1719,12 +1720,14 @@ fn admit_types(
                     other => break other?,
                 }
             };
+            let mut staged = object_types.to_vec();
+            declare_cardinality_narrowing(&mut staged);
             let pending = if object_types.is_empty() {
                 None
             } else {
                 Some(TypeEnvironment::stage_model_with_cancel(
                     declarations.iter().cloned(),
-                    object_types.iter().cloned(),
+                    staged,
                     environment,
                     cancel,
                 )?)
@@ -1758,11 +1761,13 @@ pub(crate) fn environment_cause(failure: EnvironmentFailure) -> AssemblyCause {
     }
 }
 
-/// Gives the redefining fields of the object type `declaration` the type and
-/// presence of `widened`, the member a redefinition of theirs widens, so the clause
-/// typer reads an environment the redefinition does not widen. The staged
-/// admission keeps the declared types; the conformance stage judges them.
-/// Returns whether any field changed.
+/// Gives the fields of the object type `declaration` that redefine `widened`,
+/// or a member `widened` itself redefines, the type and presence of
+/// `widened`, so the clause typer reads an environment the redefinition does
+/// not widen. A field is matched by the key of the member it redefines, so a
+/// sibling field that redefines something else is untouched. The
+/// staged admission keeps the declared types; the conformance stage judges
+/// them. Returns whether any field changed.
 fn relax_widening(
     object_types: &mut [ObjectTypeDeclaration],
     declaration: &str,
@@ -1780,6 +1785,20 @@ fn relax_widening(
     else {
         return false;
     };
+    let mut chain = vec![widened.clone()];
+    while let Some(next) = chain
+        .last()
+        .and_then(|link| {
+            object_types
+                .iter()
+                .find(|ty| ty.key() == link.owner)
+                .and_then(|ty| ty.attributes().iter().find(|f| f.name() == link.name))
+        })
+        .and_then(|field| field.redefines().cloned())
+        .filter(|next| !chain.contains(next))
+    {
+        chain.push(next);
+    }
     let mut changed = false;
     for object_type in object_types
         .iter_mut()
@@ -1789,13 +1808,13 @@ fn relax_widening(
             .attributes()
             .iter()
             .map(|field| {
-                if let Some(target) = field
-                    .redefines()
-                    .filter(|_| field.value_type() != &value_type || field.presence() != presence)
-                {
+                if let Some(link) = field.redefines().filter(|link| {
+                    chain.contains(link)
+                        && (field.value_type() != &value_type || field.presence() != presence)
+                }) {
                     changed = true;
                     FieldDeclaration::new(field.name(), value_type.clone(), presence)
-                        .with_redefines(target.clone())
+                        .with_redefines(link.clone())
                 } else {
                     field.clone()
                 }
@@ -1806,6 +1825,76 @@ fn relax_widening(
                 .with_supertypes(object_type.supertypes().to_vec());
     }
     changed
+}
+
+/// Whether `child` differs from `target` only in collection cardinality: the
+/// same element type and, when both are collections, the same collection kind.
+fn differs_only_in_cardinality(child: &ValueType, target: &ValueType) -> bool {
+    if child == target {
+        return false;
+    }
+    let (child_element, child_kind) = match child {
+        ValueType::Collection(collection) => (collection.element(), Some(collection.kind())),
+        other => (other, None),
+    };
+    let (target_element, target_kind) = match target {
+        ValueType::Collection(collection) => (collection.element(), Some(collection.kind())),
+        other => (other, None),
+    };
+    child_element == target_element
+        && (child_kind.is_none() || target_kind.is_none() || child_kind == target_kind)
+}
+
+/// Declares each field whose redefinition only narrows collection
+/// cardinality with its target's collection type, for the type admission
+/// alone. A bounded collection type has exactly one cardinality, and the
+/// kernel's narrowing check accepts only equal collections, so the
+/// narrowing itself is judged by the conformance stage from the child's own
+/// declared multiplicity, which the domain package keeps. An element,
+/// presence or reference widening stays declared and still refuses. The
+/// target is matched by the key of the redefined member.
+fn declare_cardinality_narrowing(object_types: &mut [ObjectTypeDeclaration]) {
+    for _ in 0..=object_types.len() {
+        let mut changed = false;
+        for index in 0..object_types.len() {
+            let mut attributes = Vec::with_capacity(object_types[index].attributes().len());
+            let mut touched = false;
+            for field in object_types[index].attributes() {
+                let target = field.redefines().and_then(|target| {
+                    object_types
+                        .iter()
+                        .find(|ty| ty.key() == target.owner)
+                        .and_then(|ty| ty.attributes().iter().find(|f| f.name() == target.name))
+                });
+                match target {
+                    Some(target)
+                        if differs_only_in_cardinality(field.value_type(), target.value_type()) =>
+                    {
+                        touched = true;
+                        let mut retargeted = FieldDeclaration::new(
+                            field.name(),
+                            target.value_type().clone(),
+                            field.presence(),
+                        );
+                        if let Some(link) = field.redefines() {
+                            retargeted = retargeted.with_redefines(link.clone());
+                        }
+                        attributes.push(retargeted);
+                    }
+                    _ => attributes.push(field.clone()),
+                }
+            }
+            if touched {
+                changed = true;
+                let ty = &object_types[index];
+                object_types[index] = ObjectTypeDeclaration::new(ty.key(), ty.name(), attributes)
+                    .with_supertypes(ty.supertypes().to_vec());
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
 }
 
 /// The admission loop with its registry constructor injected. Production

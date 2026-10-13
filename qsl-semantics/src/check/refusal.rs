@@ -976,9 +976,9 @@ impl CheckCause {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
-            Self::ModelIncomplete(incomplete) => {
-                Some(incomplete.limit_kind.setting().kind().catalog_cause())
-            }
+            // The model ceilings are the caller's budget (FR-255), so a denied
+            // charge is an insufficient next charge, never a stage limit.
+            Self::ModelIncomplete(_) => Some("insufficient-next-charge"),
             Self::TypeAdmission { cause, .. } => Some(cause),
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
