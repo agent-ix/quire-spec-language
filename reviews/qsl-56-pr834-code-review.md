@@ -36,3 +36,10 @@ FAIL. There are two high findings. A valid field multiplicity narrowing is still
 - medium, recorded: the full clippy run (cl1, 13:43) predates bd0e216, which changed only test and xtask files. Those files were compiled under g2, g4 and g5.
 - low, recorded: `members_by_owner` and `declarations` in model/index.rs are now dead.
 - low, recorded: the replay `limit_of` no longer projects `ModelIncomplete`, so a conformance-stage denial reaches the caller as `Refused(Check)`, not `Limit`. That is consistent with the caller-budget rows once FND-002 gives it the right cause.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6d4e7b12c: `declare_cardinality_narrowing` matches the target by key and gives both the typing environment and the staged environment the target's collection type, and only when the element type and kind are equal. The child's declared multiplicity stays in the domain package, so a bound widening (for example {0,9} under {0,5}) is still refused on the stage's multiplicity axis. Element, presence and reference widenings stay declared. `relax_widening` now follows the redefines chain by key, and a sibling field is left alone. Recorded (medium, non-blocking): a [1,1] child under a collection target is typed as the target's collection in clauses. Before this PR such a model was refused outright. |
+| FND-002 | fixed | 6d4e7b12c: `ModelIncomplete` gives `insufficient-next-charge`, asserted in T8 and in the ancestor-step test. |

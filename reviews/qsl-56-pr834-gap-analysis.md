@@ -29,3 +29,11 @@ FAIL. TC-196 R05's field rows are not tested, and testing them would fail (FND-0
 | FND-001 | high | `c03_r05_multiplicity_narrowing_reaches_its_fr151_cause` replaces TC-196 R05, which is a field row, with a parameter row. Parameters are contravariant, so a narrower parameter is R03's refusal, not R05's. Nothing exercises R05's admitted field vectors through check. Those vectors are refused at `complete()` (SR-9088 FND-001), so the failing test shape is `check(&document(A/n:A {0,5}; B/n:A {1,3} redefines A/n), NOOP) == Ok(())` and the same for A/n {0,unbounded} with B/n {0,5}. The FCD validator accepts both, because it only checks that a redefinition's bounds lie within the target's. | qsl-semantics/tests/it/model_conformance_boundary.rs:1157 |
 | FND-002 | medium | FR-082-AC-17 has no test that traces it. The tests that exercise it are C02, C06 and C07, T8 and the diamond test. They carry other tags, and C06 and C07 are tagged FR-082-AC-8 (field presence), which they do not exercise. | qsl-semantics/tests/it/model_conformance_boundary.rs:1308, qsl-semantics/tests/it/model_conformance_boundary.rs:1359, qsl-semantics/tests/it/model_conformance_boundary.rs:1636 |
 | FND-003 | medium | AC-8's second sentence has no remaining test since `field_presence.rs` was deleted: both fields required [0,1], or both optional [1,1], written with no fact, admit and engage no obligation. The remaining AC-8 tags cover only the refuse and discharge half. | qsl-semantics/tests/it/field_presence.rs (deleted) |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6d4e7b12c: `r05_field_multiplicity_within_the_target_admits` covers {0,5}/{1,3}, {0,unbounded}/{0,5}, a three-link chain and equal bounds. `r05_field_multiplicity_narrowing_does_not_hide_other_widenings` checks that element, reference and presence widenings still refuse. |
+| FND-002 | fixed | 6d4e7b12c: C02, T8, C06, C07 and the diamond test now trace FR-082-AC-17, and C06 and C07 no longer claim AC-8. |
+| FND-003 | fixed | 6d4e7b12c: `equal_presence_and_equal_multiplicity_engage_no_refinement_obligation` restores AC-8's admit and no-obligation controls. |
