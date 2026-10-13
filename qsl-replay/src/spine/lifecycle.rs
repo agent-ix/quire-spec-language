@@ -20,8 +20,10 @@
 //! the stage types do not carry.
 //!
 //! A stage refusal is the refusing stage's [`CompileRefusal`], boxed. A
-//! reached limit is [`StageFailure::Limit`] naming its setting
-//! (FR-255), and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
+//! reached stage limit is [`StageFailure::Limit`] naming its setting
+//! (FR-255), a reached ceiling of the caller's budget (model normalization,
+//! intake) is that stage's `resource_exhausted` refusal (FR-255 Behavior 1),
+//! and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
 //! output carries the work each stage did ([`Staged::work`], FR-275-AC-5). The
 //! composition `parse`, `select`, `check`, `package` over a source returns
 //! the same bytes, stage and cause code the CLI's `compile` writes for it.
@@ -203,22 +205,11 @@ fn limit_of(
             );
             Some(at(limit, diagnostic.region.as_ref()))
         }
-        CompileRefusal::Intake { refusal, region } => {
-            let incomplete = match &refusal.cause {
-                UnitIntakeCause::Limit(incomplete) => incomplete,
-                // The two edge ceilings refuse as model causes; the
-                // counter is the edge count the denied charge would have
-                // reached, the first value past the bound.
-                UnitIntakeCause::Refused(refusals) => {
-                    let limit = refusals
-                        .iter()
-                        .find_map(|refusal| refusal.cause.limit_exceeded())?;
-                    return Some(at(limit, region.as_ref()));
-                }
-                _ => return None,
-            };
-            Some(at(incomplete.limit_exceeded(), region.as_ref()))
-        }
+        // A `ModelNormalizationLimitsV1` ceiling and the intake byte limit
+        // are the caller's budgets wherever they are read, so intake keeps
+        // them as its `resource_exhausted` refusal (ADR-014 section 1,
+        // FR-255 Behavior 1), not a stage limit.
+        CompileRefusal::Intake { .. } => None,
         CompileRefusal::Check { refusals, region } => {
             if let Some((bound, required)) =
                 refusals.iter().find_map(|refusal| match refusal.cause {

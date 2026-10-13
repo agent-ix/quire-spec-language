@@ -343,7 +343,7 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 | Solver or tool absence at the probe | the routed backend's probe (ADR-012 §7.4) | QSpec FR-331 result `unsupported`, `UnavailabilityCause::SolverAbsent` | `unsupported_projection`/`tool-unavailable`; unsupported |
 | Tool changed after a passing probe | the run | QSpec FR-331 result `failed` | `unsupported_projection`/`tool-unavailable`; internal failure |
 | Bound exhaustion, S6a charge | S6a meter | `Outcome::Incomplete` | `resource_exhausted`/`insufficient-next-charge`; incomplete |
-| Bound exhaustion, read-only B-2 ceiling | S3 model normalization and S6a population admission | `Refused` with the `ancestor-steps` cause (FR-082) | `resource_exhausted`; refusal |
+| Bound exhaustion, read-only B-2 ceiling | S3 model normalization and S6a population admission | `Refused` with the `insufficient-next-charge` cause (FR-082) | `resource_exhausted`; refusal |
 | Bound exhaustion, finite exploration | `qsl_eval::simulation::explore` | `Outcome::Bounded{stats, frontier, limit}`, `limit` `max_states` or `max_transitions` | incomplete; never success, never violation |
 | Completed search horizon, finite exploration | `qsl_eval::simulation::explore` | `Outcome::BoundReached{stats, depth, frontier}` (FR-101; ADR-018 §1: `max_depth` is the search horizon, not a limit) | inconclusive; never success, never violation |
 | Bound exhaustion, backend | backend | `IncompleteCause::ResourceExhausted` | QSpec FR-331 `incomplete`; incomplete |

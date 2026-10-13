@@ -1572,11 +1572,10 @@ pub(super) fn admit_population_values<'t>(
                     }
                     Ok(false) => {}
                     Err(refusal) => {
-                        return Err(match refusal.cause.limit_exceeded() {
-                            Some(limit) => super::caller_budget_refusal(
-                                &limit,
+                        return Err(match refusal.cause.denial() {
+                            Some(denial) => super::caller_budget_refusal(
+                                &denial,
                                 refusal.cause.catalog_code().cause(),
-                                &[],
                             ),
                             None => fault("conformance-walk-refused"),
                         });

@@ -83,9 +83,10 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 - QSpec requires an `operation-body` to refuse `unsupported_construct` unless
   the package selects `quire.model.complete/v1`. QSL does not enforce that
   yet, because it has no model-profile selection: `resolve_profiles` accepts
-  only `quire.value.complete/v1`, and FR-304-AC-8 and FR-308 state the same
-  rule without code behind it. The follow-up is model-profile selection and
-  gating.
+  only `quire.value.complete/v1`, and FR-304-AC-8 states the same rule for the
+  abstraction form without code behind it. FR-361 states the gate. Delete
+  this sentence when FR-110 layer selection is built and FR-361's gate is
+  implemented.
 - An `operation-body` supplies an operation candidate's body under QSpec
   FR-151. It is distinct from `StateClauseForm`: it supplies one operation
   body, while a unit `pre` or `post` `StateClauseForm` supplies a contract

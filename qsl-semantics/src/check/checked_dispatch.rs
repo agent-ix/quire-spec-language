@@ -1304,16 +1304,39 @@ mod tests {
         limit: u64,
     ) {
         match refusal {
-            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => assert_eq!(
-                model_refusal.cause,
-                ModelRefusalCause::family_steps(original.clone(), limit)
-            ),
+            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => {
+                assert_eq!(
+                    model_refusal.cause,
+                    ModelRefusalCause::family_steps(original.clone(), limit)
+                );
+                // FR-302-AC-5 and QSpec FR-150-AC-11: the S3 refusal is a
+                // denied one-edge charge, `resource_exhausted`/
+                // `insufficient-next-charge`, with the charge record.
+                let code = model_refusal.catalog_code();
+                assert_eq!(code.code(), "resource_exhausted");
+                assert_eq!(code.cause(), "insufficient-next-charge");
+                let fields = model_refusal
+                    .cause
+                    .catalog_fields()
+                    .expect("a denied charge carries its record");
+                let field = |name: &str| fields[name].clone();
+                assert_eq!(field("setting"), "model.family_steps");
+                assert_eq!(field("limit"), limit.to_string());
+                assert_eq!(field("actual"), (limit + 1).to_string());
+                assert_eq!(field("limit_kind"), "family_steps");
+                assert_eq!(field("consumed"), limit.to_string());
+                assert_eq!(field("next_charge"), "1");
+                assert_eq!(field("charge_point"), "model.family-edge");
+                assert_eq!(field("stage"), "model-normalization");
+                assert_eq!(field("accounting_contract"), "ModelNormalizationLimitsV1");
+            }
             other => panic!("expected FamilyStepsExceeded, got {other:?}"),
         }
     }
 
     /// `ancestor_closure` admits a chain of exactly `family_steps` edges with
     /// its full closure, and refuses one edge more instead of truncating.
+    #[trace("TC-795", "FR-302-AC-5")]
     #[test]
     fn ancestor_closure_admits_the_bound_and_refuses_one_past_it() {
         let (keys, redefinitions) = chain("at", FAMILY_STEPS);
