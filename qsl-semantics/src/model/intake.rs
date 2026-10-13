@@ -2672,7 +2672,12 @@ pub(super) fn read_operation_member(
         // A domain package supplies no body. The assembler sets this from the
         // unit's `operation-body` declarations (FR-103, FR-302).
         has_body: false,
-        redefines: None,
+        // `model-complete.md`:162: the inline `redefines` property names the
+        // operation this one redefines; dispatch linking walks it to build
+        // the redefinition family.
+        redefines: ctx
+            .opt_str_field("redefines")
+            .map(|target| declaration_key(package, target)),
     })
 }
 

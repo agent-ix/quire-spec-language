@@ -2434,29 +2434,33 @@ impl PackageDeclarations {
                     return refuse(errors);
                 }
             };
-        // FR-103: the view of each selected model a body resolved into, with
-        // `has_body` set from those bodies. A model no body names has no
-        // entry: its view is the one intake admitted, whose `has_body` is
-        // false throughout, and nothing is cloned or re-indexed for it. This
-        // is the one place the flag is held; `AdmittedModel` records keep the
-        // intake value and no reader takes the flag from them.
+        // FR-103, FR-302: the view of each selected model, with `has_body`
+        // set from the bodies that resolved into it. A model no body names
+        // keeps the view intake admitted, whose `has_body` is false
+        // throughout, moved rather than cloned or re-indexed. This is the one
+        // place the flag is held; `AdmittedModel` records keep the intake
+        // value and no reader takes the flag from them. Dispatch linking
+        // reads a called operation's family from these views.
         let mut selected_views = BTreeMap::new();
-        for selection in &selections.models {
-            let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
-                continue;
-            };
-            let bodies: BTreeSet<DeclarationKey> = operation_bodies
+        for model in models {
+            if !selections
+                .models
                 .iter()
-                .filter(|body| body.model == selection.alias)
-                .map(|body| body.key.clone())
-                .collect();
-            if bodies.is_empty() {
+                .any(|selection| selection.alias == model.alias)
+            {
                 continue;
             }
-            selected_views.insert(
-                selection.alias.clone(),
-                model.view.with_operation_bodies(&bodies),
-            );
+            let bodies: BTreeSet<DeclarationKey> = operation_bodies
+                .iter()
+                .filter(|body| body.model == model.alias)
+                .map(|body| body.key.clone())
+                .collect();
+            let view = if bodies.is_empty() {
+                model.view
+            } else {
+                model.view.with_operation_bodies(&bodies)
+            };
+            selected_views.insert(model.alias, view);
         }
 
         let mut package = PackageDeclarations::new(source, limits.identity);

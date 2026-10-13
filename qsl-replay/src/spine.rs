@@ -255,6 +255,16 @@ impl CompileRefusal {
                 refusal.cause.denial().map(|denial| denial.catalog_fields())
             }
             Self::Dependency { refusal, .. } => refusal.fields(),
+            // FR-302: a family that stopped on a caller-budget ceiling
+            // reports its retained charge.
+            Self::Check { refusals, .. } => {
+                refusals.iter().find_map(|refusal| match &refusal.cause {
+                    CheckCause::DispatchLink(cause) => {
+                        cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                    }
+                    _ => None,
+                })
+            }
             _ => None,
         }
     }
