@@ -1996,21 +1996,13 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// `.check()` succeeds and whose evaluator runs `self.size()` for an `A`
 /// receiver through the real bridge-built table.
 ///
-/// This does not also evaluate a `B` receiver through the *same* checked
-/// call site: [`quire_exact::ValueType::admits`] requires a
-/// `Value::Reference`'s own `object_type()` to exactly equal a checked
-/// parameter's declared `Reference<T>`, with no subtype allowance, so no
-/// top-level parameter binding can carry a `B` instance where the checked
-/// declaration says `Reference<A>` — the same boundary
-/// `qsl-eval/tests/it/model_reference_queries.rs` documents as "the `TypeEnvironment`
-/// island" for `allInstances`/`lookup`. Resolving a dispatch call's receiver
-/// against its instance's most-specific type end to end needs that same
-/// identity bridge (`crate::value::model_query`) or an equivalent, which is
-/// FR-152/FR-153/#131 territory, not this bridge's. The `d06_*`/`d08_*` tests
-/// above already prove `dispatch.select`'s own per-subtype table lookup
-/// (`DispatchTable::linked_for`) works once a receiver's most-specific type
-/// is in hand; this test proves the *bridge* assembles a real multi-candidate
-/// table and functions array correctly (`value_occurrences == 2`, below).
+/// This test evaluates an `A` receiver only; it proves the *bridge* assembles
+/// a real multi-candidate table and functions array correctly
+/// (`value_occurrences == 2`, below). A `B` receiver does bind at the
+/// `Reference<A>` call site -- argument admission is
+/// `TypeEnvironment::admits`, which accepts a reference whose type conforms --
+/// and `dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argument`
+/// evaluates one through this same bridge.
 #[trace("QSpec-TC-196")]
 #[test]
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
@@ -2736,4 +2728,283 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         }
         other => panic!("expected NotAQuery, got {other:?}"),
     }
+}
+
+/// `Money <- TaxedMoney` and the unrelated `Fee`, as the composite
+/// declarations a `model.A`/`model.B` bridge package carries beside its object
+/// types. `TaxedMoney` declares `tax` BEFORE `amount`, so `amount` is field 0
+/// of `Money` and field 1 of `TaxedMoney`: a positional read of the child
+/// through the parent-typed parameter would return `tax`.
+fn money_family() -> (
+    [quire_exact::NodeKey; 3],
+    [quire_semantic_value::declaration::CompositeDeclaration; 3],
+) {
+    use quire_exact::{NodeKey, Presence};
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+    let field = |name: &str| FieldDeclaration::new(name, ValueType::Integer, Presence::Required);
+    let record = |key, name: &str, fields: Vec<FieldDeclaration>| {
+        CompositeDeclaration::new(key, name, CompositeShape::Record(fields))
+    };
+    (
+        [money, taxed, fee],
+        [
+            record(money, "Money", vec![field("amount")]),
+            record(taxed, "TaxedMoney", vec![field("tax"), field("amount")])
+                .with_supertypes(vec![money]),
+            record(fee, "Fee", vec![field("amount")]),
+        ],
+    )
+}
+
+/// The `model.A`/`model.B` bridge fixture whose `size` takes `m: Money`:
+/// `A.size` returns `m.amount` under the own precondition `m.amount == 3`
+/// (which does not imply B's);
+/// `B.size`, which redeclares it, returns `m.amount + 100` under the own
+/// precondition `m.amount >= 5`, so its effective guard is `B OR A`. Rooted at
+/// `B` when `root_at_b` (one candidate), else at `A` (both candidates).
+struct MoneyBridge {
+    package: CheckedPackage,
+    a_type: EffectiveId,
+    b_type: EffectiveId,
+    keys: [quire_exact::NodeKey; 3],
+    types: TypeEnvironment,
+}
+
+fn money_bridge(root_at_b: bool) -> MoneyBridge {
+    let domain_package = bridge_bundle();
+    let view = bridge_view(&domain_package);
+    let a_type = view_type(&view, "model.A");
+    let b_type = view_type(&view, "model.B");
+    let (keys, composites) = money_family();
+    let amount = || Expression::field(Expression::name("m".to_owned()), "amount");
+    let compare = |operator: BinaryOperator, bound: i64| {
+        Expression::binary(
+            operator,
+            amount(),
+            Expression::integer(Integer::from(bound)),
+        )
+    };
+    let a = DeclarationKey::fixture("model.A.size");
+    let b = DeclarationKey::fixture("model.B.size");
+    let mut clauses = OperationClauses::default();
+    clauses.member.insert(a.clone(), "size".to_owned());
+    clauses.member.insert(b.clone(), "size".to_owned());
+    for operation in [&a, &b] {
+        clauses.parameters.insert(
+            operation.clone(),
+            vec![
+                ("self".to_owned(), ValueType::Reference(a_type)),
+                ("m".to_owned(), ValueType::Composite(keys[0])),
+            ],
+        );
+        clauses.result.insert(operation.clone(), ValueType::Integer);
+    }
+    clauses.own_body.insert(a.clone(), amount());
+    clauses.own_body.insert(
+        b.clone(),
+        Expression::binary(
+            BinaryOperator::Add,
+            amount(),
+            Expression::integer(Integer::from(100_i64)),
+        ),
+    );
+    clauses
+        .own_precondition
+        .insert(a.clone(), compare(BinaryOperator::Equal, 3));
+    clauses
+        .own_precondition
+        .insert(b.clone(), compare(BinaryOperator::GreaterOrEqual, 5));
+    let root = DispatchRoot {
+        key: if root_at_b { b } else { a },
+        closure: GeneralizationClosure::Closed,
+    };
+    let mut meter =
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let mut declarations = checked_dispatch_operation(
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        &mut meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("expected a linked dispatch family, got {refusal:?}"));
+    let types = TypeEnvironment::new(
+        composites,
+        [
+            ObjectTypeDeclaration::new(a_type, "A", vec![]),
+            ObjectTypeDeclaration::new(b_type, "B", vec![]).with_supertypes(vec![a_type]),
+        ],
+    )
+    .unwrap();
+    declarations.types = types.clone();
+    let package = CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    MoneyBridge {
+        package,
+        a_type,
+        b_type,
+        keys,
+        types,
+    }
+}
+
+/// Runs `self.size(m)` over a [`money_bridge`]. The call site is typed
+/// `Reference<B>` when `root_at_b`, else `Reference<A>`; the runtime receiver
+/// is a `B` when `receiver_is_b`, else an `A`. `argument` names the argument
+/// record's declaration and its fields in declared order.
+fn run_money_call(
+    root_at_b: bool,
+    receiver_is_b: bool,
+    argument: impl Fn(&[quire_exact::NodeKey; 3]) -> (quire_exact::NodeKey, Vec<(&'static str, i64)>),
+) -> Result<Evaluation, CheckRefusal> {
+    let bridge = money_bridge(root_at_b);
+    let site_type = if root_at_b {
+        bridge.b_type
+    } else {
+        bridge.a_type
+    };
+    let runtime_type = if receiver_is_b {
+        bridge.b_type
+    } else {
+        bridge.a_type
+    };
+    let (declaration, fields) = argument(&bridge.keys);
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("m".to_owned())],
+    );
+    let checked = bridge.package.graph().check_clause_expression(
+        vec![
+            ("self".to_owned(), ValueType::Reference(site_type)),
+            ("m".to_owned(), ValueType::Composite(declaration)),
+        ],
+        &call,
+        None,
+        ClauseKind::Invariant,
+        CheckMode::Kernel,
+        CheckingLimits::default(),
+    )?;
+    let value = bridge
+        .types
+        .record(
+            declaration,
+            fields
+                .into_iter()
+                .map(|(name, amount)| {
+                    (
+                        name,
+                        quire_exact::FieldValue::Present(Value::Integer(Integer::from(amount))),
+                    )
+                })
+                .collect(),
+        )
+        .unwrap();
+    let receiver = receiver_reference(runtime_type, "r1");
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(&bridge.types, [(receiver.clone(), vec![])], &[]).unwrap(),
+    );
+    Ok(bridge
+        .package
+        .evaluate(
+            &checked,
+            vec![Value::Reference(receiver), value],
+            &objects,
+            &mut Meter::new(SCALAR_UNLIMITED),
+        )
+        .unwrap())
+}
+
+fn completed_integer(evaluation: Evaluation) -> Integer {
+    match evaluated(evaluation) {
+        Outcome::Completed(Value::Integer(found)) => found,
+        other => panic!("expected a completed Integer, got {other:?}"),
+    }
+}
+
+/// A `TaxedMoney` (`tax` declared first) holding `amount`.
+fn taxed_money(
+    amount: i64,
+) -> impl Fn(&[quire_exact::NodeKey; 3]) -> (quire_exact::NodeKey, Vec<(&'static str, i64)>) {
+    move |keys| (keys[1], vec![("tax", 2), ("amount", amount)])
+}
+
+/// FR-359-AC-8 (TC-1001 step 2), run level, B-rooted: `B` redeclares `size`
+/// with its own body and guard; a `TaxedMoney` at the `Money` parameter runs
+/// `B`'s body over the child's `amount` (read by name, `tax` sits at the
+/// position `amount` has in `Money`), the guard decides over the child, a
+/// plain `Money` runs the same way, and a `Fee` is refused `type-mismatch`.
+/// `B.size` is this table's only candidate.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn a_redeclared_subtype_body_runs_with_a_child_argument() {
+    assert_eq!(
+        completed_integer(run_money_call(true, true, taxed_money(5)).unwrap()),
+        Integer::from(105_i64)
+    );
+    assert_eq!(
+        completed_integer(run_money_call(true, true, taxed_money(40)).unwrap()),
+        Integer::from(140_i64)
+    );
+    let record = undefined_record(run_money_call(true, true, taxed_money(4)).unwrap());
+    assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
+    assert_eq!(record.fields["selected"], "model.B.size");
+    let parent = run_money_call(true, true, |keys| (keys[0], vec![("amount", 7)])).unwrap();
+    assert_eq!(completed_integer(parent), Integer::from(107_i64));
+    let refusal = run_money_call(true, true, |keys| (keys[2], vec![("amount", 7)]))
+        .expect_err("a Fee at a Money parameter is refused");
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+}
+
+/// FR-359-AC-8 (TC-1001 step 2), run level, the FR-151 dispatch case: the call
+/// site is typed `Reference<A>` (the family has candidates `A.size` and
+/// `B.size`), the runtime receiver is a `B`, and `dispatch.select` picks
+/// `B.size` with the effective guard `B OR A` over a `TaxedMoney` argument:
+/// B's body runs when either guard holds over the child's `amount` (5 by B's
+/// own, 3 by A's alone), and
+/// `PreconditionFalse` names `model.B.size` when neither does.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argument() {
+    // B's own guard (>= 5) holds, A's (== 3) does not.
+    assert_eq!(
+        completed_integer(run_money_call(false, true, taxed_money(5)).unwrap()),
+        Integer::from(105_i64)
+    );
+    // Only A's guard holds (3 < 5): the OR admits it, B's body runs.
+    assert_eq!(
+        completed_integer(run_money_call(false, true, taxed_money(3)).unwrap()),
+        Integer::from(103_i64)
+    );
+    let record = undefined_record(run_money_call(false, true, taxed_money(4)).unwrap());
+    assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
+    assert_eq!(record.fields["selected"], "model.B.size");
+    let refusal = run_money_call(false, true, |keys| (keys[2], vec![("amount", 9)]))
+        .expect_err("a Fee at a Money parameter is refused");
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+}
+
+/// FR-359-AC-8 (TC-1001 step 2), run level: through the same `Reference<A>`
+/// call site an `A` receiver selects `A.size`, whose own guard (== 3)
+/// decides over the child, and A's body reads the child's `amount` by name.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn dispatch_selects_the_ancestor_body_for_an_ancestor_receiver_over_a_child_argument() {
+    assert_eq!(
+        completed_integer(run_money_call(false, false, taxed_money(3)).unwrap()),
+        Integer::from(3_i64)
+    );
+    assert_eq!(
+        completed_integer(
+            run_money_call(false, false, |keys| (keys[0], vec![("amount", 3)])).unwrap()
+        ),
+        Integer::from(3_i64)
+    );
+    // 9 satisfies B's guard but A's is the one in force for an A receiver.
+    let record = undefined_record(run_money_call(false, false, taxed_money(9)).unwrap());
+    assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
+    assert_eq!(record.fields["selected"], "model.A.size");
 }
