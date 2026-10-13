@@ -25,12 +25,11 @@ use std::cell::Cell;
 use qsl_package::CheckedPackage;
 use quire_canonical::{FixedShape, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{
-    admit_text, form_collection, from_admitted_slots, CardinalityBound, CollectionKind,
-    CollectionType, Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue,
-    FloatType, IeeeValue, IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference,
-    OptionValue, Outcome, Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits,
-    TextPayload, TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType,
-    VariantId,
+    admit_text, form, from_admitted_slots, CardinalityBound, CollectionKind, CollectionType,
+    Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue, FloatType, IeeeValue,
+    IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OptionValue, Outcome,
+    Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits, TextPayload,
+    TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType, VariantId,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde::{Deserialize, Serialize};
@@ -104,6 +103,113 @@ mod tests {
             Value::Option(option) => assert_eq!(option.payload_type(), &ValueType::String),
             other => panic!("decoded String type leaf in {other:?}"),
         }
+    }
+
+    /// `Money <- TaxedMoney`, each with an `amount` and the child's `tax`, and
+    /// a `Pair` of two `Money`, in a checked package.
+    fn money_package() -> (CheckedPackage, [quire_exact::NodeKey; 3]) {
+        use quire_semantic_value::declaration::FieldDeclaration;
+        let [money, taxed, pair] =
+            [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+        let field =
+            |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
+        let types = TypeEnvironment::new(
+            [
+                CompositeDeclaration::new(
+                    money,
+                    "Money",
+                    CompositeShape::Record(vec![field("amount", ValueType::Integer)]),
+                ),
+                CompositeDeclaration::new(
+                    taxed,
+                    "TaxedMoney",
+                    CompositeShape::Record(vec![
+                        field("amount", ValueType::Integer),
+                        field("tax", ValueType::Integer),
+                    ]),
+                )
+                .with_supertypes(vec![money]),
+                CompositeDeclaration::new(
+                    pair,
+                    "Pair",
+                    CompositeShape::Record(vec![
+                        field("first", ValueType::Composite(money)),
+                        field("second", ValueType::Composite(money)),
+                    ]),
+                ),
+            ],
+            [],
+        )
+        .expect("the records admit");
+        let package = CheckedPackage::link(
+            qsl_semantics::check::PackageDeclarations {
+                types,
+                ..qsl_semantics::check::PackageDeclarations::new(
+                    qsl_semantics::check::fixture_source(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
+            }
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect("the package checks"),
+        );
+        (package, [money, taxed, pair])
+    }
+
+    /// FR-359-AC-9 (TC-1002): a deciding element holding a child record at
+    /// an ancestor-typed record field, `Option` payload or collection element
+    /// decodes to the same typed value, keeping its own declaration, and
+    /// encodes to the same bytes. An unrelated record at the slot refuses.
+    #[trace("FR-359-AC-9", "TC-1002")]
+    #[test]
+    fn a_child_record_at_an_ancestor_slot_round_trips() {
+        let (package, [money, taxed, pair]) = money_package();
+        let types = package.graph().scope().types();
+        let int = |value: i64| Value::Integer(Integer::from(value));
+        let plain = types
+            .record(money, vec![("amount", FieldValue::Present(int(1)))])
+            .unwrap();
+        let child = types
+            .record(
+                taxed,
+                vec![
+                    ("amount", FieldValue::Present(int(1))),
+                    ("tax", FieldValue::Present(int(2))),
+                ],
+            )
+            .unwrap();
+        let holder = types
+            .record(
+                pair,
+                vec![
+                    ("first", FieldValue::Present(child.clone())),
+                    ("second", FieldValue::Present(plain.clone())),
+                ],
+            )
+            .unwrap();
+        let option = OptionValue::from_admitted(ValueType::Composite(money), Some(child.clone()));
+        let collection = quire_exact::from_admitted(
+            CollectionType::new(
+                CollectionKind::Sequence,
+                ValueType::Composite(money),
+                Some(CardinalityBound::new(0, 4).unwrap()),
+            ),
+            vec![child.clone(), plain],
+        );
+        for value in [holder, option, collection] {
+            let encoded = encode_element(&value).unwrap();
+            let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
+            let decoded = decode_element(document.root(), Keys::new(&package)).unwrap();
+            assert_eq!(format!("{decoded:?}"), format!("{value:?}"));
+            let again = encode_element(&decoded).unwrap();
+            assert_eq!(
+                again.get(),
+                encoded.get(),
+                "a decode then an encode is stable"
+            );
+        }
+        // The child's own declaration is what the document names.
+        let encoded = encode_element(&child).unwrap();
+        assert!(encoded.get().contains(&hex(taxed.as_bytes())));
     }
 
     #[trace("TC-992", "FR-056-AC-23")]
@@ -1365,8 +1471,15 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
                 let payload_type = types.pop().ok_or_else(underflow)?;
                 values.push(match payload {
                     None => OptionValue::none(payload_type),
-                    Some(payload) => OptionValue::present(payload_type, payload)
-                        .map_err(|_| CauseCodecError::Value("payload"))?,
+                    // FR-359 item 5: admitted by conformance under the
+                    // package's environment, so a child of the payload's
+                    // record keeps its own declaration.
+                    Some(payload) => {
+                        if !keys.types().admits(&payload_type, &payload) {
+                            return Err(CauseCodecError::Value("payload"));
+                        }
+                        OptionValue::from_admitted(payload_type, Some(payload))
+                    }
                 });
             }
             Decode::CompositeValue { declaration, slots } => {
@@ -1393,10 +1506,17 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
                 let elements =
                     values.split_off(values.len().checked_sub(count).ok_or_else(underflow)?);
                 let mut meter = Meter::new(READER_LIMITS);
-                // Forming checks each element's type and the bound; a
-                // collapsed duplicate means the document listed one twice.
-                match form_collection(&collection_type, elements, &mut meter) {
-                    Ok(Outcome::Completed(Value::Collection(formed)))
+                // Each element is admitted by conformance (FR-359 item 5);
+                // forming checks the bound, and a collapsed duplicate means
+                // the document listed one twice.
+                if !elements
+                    .iter()
+                    .all(|element| keys.types().admits(collection_type.element(), element))
+                {
+                    return Err(CauseCodecError::Value("elements"));
+                }
+                match form(&collection_type, elements, &mut meter) {
+                    Outcome::Completed(Value::Collection(formed))
                         if formed.elements().len() == count =>
                     {
                         values.push(Value::Collection(formed));

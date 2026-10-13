@@ -1993,6 +1993,17 @@ impl<'a> Lowering<'a> {
         // model-owned node, never a `composite_type`.
         if let Some(model_record) = self.model_record_declaration(declaration, location)? {
             let key = self.model_node(&model_record, location)?;
+            // The record has no checked occurrence of its own: root it at the
+            // `model` declaration that selects it, as a relationship is.
+            let alias = self
+                .scope
+                .types()
+                .composite(declaration)
+                .and_then(|composite| composite.name().split_once("::"))
+                .map(|(alias, _)| alias.to_owned());
+            if let Some(alias) = alias {
+                self.record(key, OccurrenceRole::Generated, type_declaration(&alias));
+            }
             self.composites.insert(declaration, key);
             return Ok(OpenComposite::Built(key));
         }

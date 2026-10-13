@@ -19,10 +19,10 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::NominalNode;
 use qsl_semantics::value::enumeration::mint_variant_id;
 use quire_exact::{
-    admit_text, form_collection, from_admitted_slots, ChargePoint, CollectionKind, CollectionType,
-    Decimal, EnumMember, FieldValue, IeeeValue, IeeeWidth, Incomplete, Integer, LimitKind, Meter,
-    NodeKey, ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational,
-    ScalarLimits, TextPayload, UniverseId, Value, ValueType,
+    admit_text, form, from_admitted_slots, ChargePoint, CollectionKind, CollectionType, Decimal,
+    EnumMember, FieldValue, IeeeValue, IeeeWidth, Incomplete, Integer, LimitKind, Meter, NodeKey,
+    ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits,
+    TextPayload, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
@@ -224,8 +224,16 @@ impl<'a> Converter<'a> {
                     };
                     values.push(match payload {
                         None => OptionValue::none(payload_type.clone()),
-                        Some(payload) => OptionValue::present(payload_type.clone(), payload)
-                            .map_err(|_| wrong_kind(parameter))?,
+                        // FR-359 item 5: the payload is admitted by conformance
+                        // under the environment, so a child of the payload's
+                        // record keeps its own type. `OptionValue::present`
+                        // is the exact test.
+                        Some(payload) => {
+                            if !self.types.admits(payload_type, &payload) {
+                                return Err(wrong_kind(parameter));
+                            }
+                            OptionValue::from_admitted(payload_type.clone(), Some(payload))
+                        }
                     });
                 }
                 Step::Composite { key, slots } => {
@@ -256,11 +264,19 @@ impl<'a> Converter<'a> {
                         .ok_or_else(|| invariant("converted-elements"))?;
                     let elements = values.split_off(start);
                     let mut meter = Meter::new(UNLIMITED);
-                    // Forming checks each element's type and the declared
-                    // cardinality, and collapses a duplicate the kernel's
-                    // equality relates, which a set or ordered set refuses.
-                    match form_collection(declared, elements, &mut meter) {
-                        Ok(Outcome::Completed(Value::Collection(formed))) => {
+                    // Each element is admitted by conformance under the
+                    // environment (FR-359 item 5), then formed: forming
+                    // checks the declared cardinality and collapses a
+                    // duplicate the kernel's equality relates, which a set or
+                    // ordered set refuses.
+                    if !elements
+                        .iter()
+                        .all(|element| self.types.admits(declared.element(), element))
+                    {
+                        return Err(wrong_kind(parameter));
+                    }
+                    match form(declared, elements, &mut meter) {
+                        Outcome::Completed(Value::Collection(formed)) => {
                             let unique = matches!(
                                 declared.kind(),
                                 CollectionKind::Set | CollectionKind::OrderedSet
@@ -411,19 +427,26 @@ impl<'a> Converter<'a> {
                 }
             }
             (
-                ValueType::Composite(key),
+                ValueType::Composite(slot_key),
                 WitnessValue::Record {
                     declaration,
                     fields,
                 },
             ) => {
                 let types: &'a TypeEnvironment = self.types;
-                let record = types.composite(*key).ok_or_else(refuse)?;
+                // FR-359 item 7: the record is decoded by the declaration its
+                // own `declaration` names, and its fields read by name against
+                // that declaration's fields, not the slot's. It is then
+                // admitted at the slot by conformance.
+                let key = NodeKey::from_digest(*declaration.as_bytes());
+                if !types.composite_conforms(key, *slot_key) {
+                    return Err(refuse());
+                }
+                let record = types.composite(key).ok_or_else(refuse)?;
                 let CompositeShape::Record(declared_fields) = record.shape() else {
                     return Err(refuse());
                 };
-                if declaration.as_bytes() != key.as_bytes() || fields.len() != declared_fields.len()
-                {
+                if fields.len() != declared_fields.len() {
                     return Err(refuse());
                 }
                 let mut slots = Vec::with_capacity(fields.len());
@@ -446,7 +469,7 @@ impl<'a> Converter<'a> {
                         WitnessSlot::Absent | WitnessSlot::Null => return Err(refuse()),
                     }
                 }
-                pending.push(Step::Composite { key: *key, slots });
+                pending.push(Step::Composite { key, slots });
                 pending.extend(present.into_iter().rev());
             }
             (
