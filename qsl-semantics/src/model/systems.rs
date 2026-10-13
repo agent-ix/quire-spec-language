@@ -207,6 +207,11 @@ pub fn classify(
     let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
     let mut record_value_types: HashSet<DeclarationKey> = HashSet::new();
 
+    let declared: HashSet<&DeclarationKey> = domain_package
+        .records
+        .iter()
+        .map(DomainPackageRecord::key)
+        .collect();
     for record in &domain_package.records {
         match record {
             DomainPackageRecord::Component(component) => components.push(component),
@@ -264,6 +269,10 @@ pub fn classify(
                 Kind::None
             }
             Some(_) => match component_kinds.get(&endpoint.owning_component) {
+                None if declared.contains(&endpoint.owning_component) => {
+                    refusals.push(wrong_export(Kind::Part, Kind::None, &endpoint.key.node));
+                    Kind::None
+                }
                 None => {
                     refusals.push(dangling(
                         ModelRefusalCause::UnknownComponent {
@@ -324,6 +333,14 @@ pub fn classify(
                 (&relationship.target, "target"),
             ] {
                 match endpoint_kinds.get(&end.type_identity) {
+                    None if declared.contains(&end.type_identity) => {
+                        refusals.push(wrong_export(
+                            Kind::Port,
+                            Kind::None,
+                            &format!("{} end of {}", label, relationship.key.node),
+                        ));
+                        ends_ok = false;
+                    }
                     None => {
                         refusals.push(dangling(
                             ModelRefusalCause::UnknownEndpoint {
