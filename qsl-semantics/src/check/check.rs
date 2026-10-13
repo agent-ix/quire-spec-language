@@ -146,6 +146,71 @@ impl ResolvedSignatures {
     }
 }
 
+/// A model variant type in the type environment (FR-056 "Variant types",
+/// FR-081): the effective type the normalized view gives a
+/// `quire.meaning.model.variant-type/v1` declaration, named `M::<artifact
+/// id>`, with its cases. Unlike an [`EnumBinding`] it is not a source
+/// declaration: no source name resolves to it, because FR-150 refuses source
+/// that names a variant type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantTypeDeclaration {
+    key: EffectiveId,
+    name: String,
+    cases: Vec<VariantCaseDeclaration>,
+}
+
+impl VariantTypeDeclaration {
+    /// The variant type `name` with effective identity `key`; `cases` are
+    /// kept in ascending UTF-8 byte order of their names.
+    pub(crate) fn new(
+        key: EffectiveId,
+        name: String,
+        mut cases: Vec<VariantCaseDeclaration>,
+    ) -> Self {
+        cases.sort_by(|left, right| left.name.cmp(&right.name));
+        Self { key, name, cases }
+    }
+
+    /// The variant type's effective identity.
+    pub fn key(&self) -> EffectiveId {
+        self.key
+    }
+
+    /// The qualified name `M::<artifact id>`.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The cases, ascending by the UTF-8 bytes of their names.
+    pub fn cases(&self) -> &[VariantCaseDeclaration] {
+        &self.cases
+    }
+}
+
+/// One case of a [`VariantTypeDeclaration`]: an effective member of the
+/// variant type, keyed by its own effective identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantCaseDeclaration {
+    key: EffectiveId,
+    name: String,
+}
+
+impl VariantCaseDeclaration {
+    pub(crate) fn new(key: EffectiveId, name: String) -> Self {
+        Self { key, name }
+    }
+
+    /// The case's effective identity.
+    pub fn key(&self) -> EffectiveId {
+        self.key
+    }
+
+    /// The case name, compared as exact UTF-8 bytes.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// The closed declarations of one package that expressions resolve against.
 #[derive(Clone, Debug)]
 pub struct PackageDeclarations {
@@ -168,6 +233,8 @@ pub struct PackageDeclarations {
     pub operations: OperationTable,
     /// Enum declarations.
     pub enums: Vec<EnumBinding>,
+    /// The admitted models' variant types, ascending by effective identity.
+    pub variant_types: Vec<VariantTypeDeclaration>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
     /// The unit's own `profile p = ...;` and `model M = ...;` selection
@@ -280,6 +347,7 @@ impl PackageDeclarations {
             model_records: ModelRecords::default(),
             operations: OperationTable::default(),
             enums: Vec::new(),
+            variant_types: Vec::new(),
             aliases: Vec::new(),
             alias_names: std::collections::BTreeMap::new(),
             native_names: std::collections::BTreeSet::new(),
@@ -404,6 +472,9 @@ pub struct Scope {
     model_records: ModelRecords,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
+    /// The admitted models' variant types, as the assembler ordered them.
+    /// Looked up by identity only: no source name resolves to one.
+    variant_types: Vec<VariantTypeDeclaration>,
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
@@ -539,6 +610,7 @@ impl Scope {
             types,
             model_records: ModelRecords::default(),
             enums,
+            variant_types: Vec::new(),
             operations,
             ieee_profile,
             integer_division: None,
@@ -573,6 +645,12 @@ impl Scope {
     /// ancestors name.
     pub(crate) fn with_model_records(mut self, model_records: ModelRecords) -> Self {
         self.model_records = model_records;
+        self
+    }
+
+    /// This scope with the admitted models' variant types.
+    pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
+        self.variant_types = variant_types;
         self
     }
 
@@ -620,6 +698,18 @@ impl Scope {
                 let binding = self.enums.get(binding)?;
                 Some((binding, binding.members.get(member)?))
             })
+    }
+
+    /// The admitted models' variant types, ascending by effective identity.
+    pub fn variant_types(&self) -> &[VariantTypeDeclaration] {
+        &self.variant_types
+    }
+
+    /// The variant type whose effective identity is `key`.
+    pub fn variant_type(&self, key: EffectiveId) -> Option<&VariantTypeDeclaration> {
+        self.variant_types
+            .iter()
+            .find(|declared| declared.key() == key)
     }
 
     /// The package's admitted enum declarations, in declaration order.

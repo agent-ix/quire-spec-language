@@ -1254,7 +1254,10 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
     domain_package.records.push(DomainPackageRecord::Population(
         qsl_semantics::model::domain_package::PopulationRecord {
             key: DeclarationKey::fixture("model.pop.p1"),
-            member_types: vec![DeclarationKey::fixture("model.Money")],
+            member_types: vec![
+                DeclarationKey::fixture("ix://test/orders/A"),
+                DeclarationKey::fixture("model.Money"),
+            ],
             extent: qsl_semantics::model::domain_package::Extent::Closed,
         },
     ));
@@ -1264,14 +1267,19 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
         panic!("the package refuses")
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
+    // The refusal sits at the population node, at the member type's own
+    // position (here the second), not at a constant slot.
     assert_eq!(
-        refusals[0],
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-            cause: ModelRefusalCause::MalformedDeclaration,
-            detail: "population model.pop.p1 names member type model.Money, \
-                     a record value type, not an object type"
-                .to_owned(),
+        refusals[0].code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.pop.p1".to_owned(),
+            artifact: None,
+            span: None,
+            member: "PopulationDefinition.members[1]".parse().unwrap(),
         }
     );
 }

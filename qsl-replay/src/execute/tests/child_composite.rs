@@ -236,3 +236,13 @@ fn a_child_record_is_admitted_as_a_payload_and_as_an_element() {
         assert!(bad.is_err(), "{kind:?}: an unrelated record is refused");
     }
 }
+
+/// A record whose `declaration` digest names no checked composite refuses
+/// `WrongValueKind` naming the parameter: the digest is looked up, never
+/// minted into a key.
+#[trace("FR-359-AC-9", "TC-1002")]
+#[test]
+fn a_record_naming_an_unknown_declaration_refuses_wrong_value_kind() {
+    let unknown = witness("NoSuchRecord", &[("amount_minor", 1)]);
+    assert_eq!(converted(unknown, composite("Money")).err(), Some(0));
+}

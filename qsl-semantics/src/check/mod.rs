@@ -178,6 +178,7 @@ pub use assemble::{
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
+    VariantCaseDeclaration, VariantTypeDeclaration,
 };
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
@@ -741,6 +742,7 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
+        .with_variant_types(self.variant_types)
         .with_model_records(self.model_records)
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)

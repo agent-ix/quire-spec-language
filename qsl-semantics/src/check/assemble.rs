@@ -42,7 +42,10 @@ use quire_exact::{
     IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
 
-use super::check::{EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature};
+use super::check::{
+    EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantCaseDeclaration,
+    VariantTypeDeclaration,
+};
 use super::lowering::{record_node_key, strongly_connected, AdmittedModel, RecordKeyError};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_clause::OperationClauseDeclaration;
@@ -668,6 +671,7 @@ impl TypeNames for Names {
 struct ModelTypes {
     objects: Vec<ObjectTypeDeclaration>,
     composites: Vec<CompositeDeclaration>,
+    variant_types: Vec<VariantTypeDeclaration>,
     model_records: ModelRecords,
 }
 
@@ -789,9 +793,9 @@ fn model_object_types(
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
             // Record and event declarations are emitted as composites below;
             // their effective fields are collected from the normalized view.
-            // A variant type's `enum` and `variant` exports are admitted
-            // (FR-056 "Variant types") but not assembled into the type
-            // environment: source naming one refuses before this point
+            // A variant type and its cases are collected from the normalized
+            // view below (FR-056 "Effective identity of a variant type");
+            // source naming one still refuses before this point
             // (`AssemblyCause::UnsupportedVariantType`).
             DomainPackageRecord::Enum(_)
             | DomainPackageRecord::Variant(_)
@@ -930,6 +934,42 @@ fn model_object_types(
             .with_supertypes(composite_supertypes),
         );
     }
+    // Each variant type is declared by its effective identity with the
+    // effective identity of every case, read from the normalized view
+    // (FR-056 "Effective identity of a variant type"). Nothing binds a
+    // source name to it.
+    let mut variant_types = Vec::new();
+    for record in &package.records {
+        let DomainPackageRecord::Enum(variant_type) = record else {
+            continue;
+        };
+        let Some(identity) = identities.get(&variant_type.key) else {
+            errors.push(broken(&variant_type.key.node));
+            continue;
+        };
+        let mut cases = Vec::with_capacity(variant_type.members.len());
+        for entry in
+            model.view.declarations().iter().filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(*identity)
+            })
+        {
+            match records.get(&entry.preimage.original) {
+                Some(DomainPackageRecord::Variant(case)) => cases.push(
+                    VariantCaseDeclaration::new(entry.effective_id, case.case.clone()),
+                ),
+                Some(_) | None => errors.push(broken(&entry.preimage.original.node)),
+            }
+        }
+        if cases.len() != variant_type.members.len() {
+            errors.push(broken(&variant_type.key.node));
+            continue;
+        }
+        variant_types.push(VariantTypeDeclaration::new(
+            *identity,
+            format!("{alias}::{}", variant_type.name),
+            cases,
+        ));
+    }
     let mut model_records = record_renames(model, &records, &meaning_handles);
     for (key, handle) in &meaning_handles {
         if matches!(records.get(key), Some(DomainPackageRecord::EventType(_))) {
@@ -940,6 +980,7 @@ fn model_object_types(
         Ok(ModelTypes {
             objects: declarations,
             composites,
+            variant_types,
             model_records,
         })
     } else {
@@ -1736,6 +1777,7 @@ impl PackageDeclarations {
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
         let mut model_composites = Vec::new();
+        let mut model_variant_types = Vec::new();
         let mut model_records = ModelRecords::default();
         let mut admitted_variant_types = Vec::new();
         let mut operations = OperationTable::default();
@@ -1772,6 +1814,7 @@ impl PackageDeclarations {
                     }
                     object_types.extend(types.objects);
                     model_composites.extend(types.composites);
+                    model_variant_types.extend(types.variant_types);
                     model_records.extend(types.model_records);
                     match operation_clause_declarations(&selection.alias, model, &operations) {
                         Ok(resolved) => operation_clauses.extend(resolved),
@@ -2281,6 +2324,8 @@ impl PackageDeclarations {
             package.resolved_signatures.insert(index, signature);
         }
         package.enums = enums;
+        model_variant_types.sort_by_key(VariantTypeDeclaration::key);
+        package.variant_types = model_variant_types;
         if let Some(quantities) = quantities {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
