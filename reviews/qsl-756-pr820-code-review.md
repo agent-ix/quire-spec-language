@@ -55,3 +55,13 @@ findings and two low findings.
 | FND-003 | medium | Same public-repo rule, wider than the touched hunks. About 135 lines in `qsl-semantics/src` cite private QSpec definition files by path and line, many with verbatim quotations, and `normalize.rs` and `intake.rs` carry most of them. This predates the PR. It is listed because the PR edits both files, and a found leak is not an out-of-scope note. It needs its own sweep, which the lead should raise with the owner, because the text is already in public history. | qsl-semantics/src/model/normalize.rs; qsl-semantics/src/model/intake.rs |
 | FND-004 | low | Once rebased on the current base, which now includes #817 and merges cleanly, the M17 doc comment in `tc235_record_event.rs` describes a "deviation" from the TC row that no longer exists. Its mutation note also names `cycle_refusals.len() == 2`, which this PR replaces with `assert_specialization_cycle_refusals`. Rewrite the comment on rebase, and do not describe the upstream row's content in it. | qsl-semantics/tests/it/tc235_record_event.rs:1123-1140 (base after #817) |
 | FND-005 | low | `cycle: cycle.clone()` in the record path clones only because `listing` still borrows `cycle`. Build the `detail` string first and then move `cycle` into the cause. | qsl-semantics/src/model/intake.rs:2110-2121 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e6c8822b2441bd96beeb6c2bb87066fd776109c8: the record DFS is removed. Intake now drops `SUPERTYPE_CYCLE` diagnostics for record-value, event and state-machine types, and normalization reports them through `specialization_cycle_refusals`. A record on two cycles gives A,B `[A, B]` then A,C `[A, C]`, and `B -> D -> C -> B` lists `[B, D, C]`, refused at B, C, D. The tests use exact list equality; they failed before the fix and pass after. |
+| FND-002 | deferred | Owner order for this round: no review of private-QSpec citations. The finding stays recorded. |
+| FND-003 | deferred | Owner order for this round: no review of private-QSpec citations. This predates the PR and needs its own sweep ticket. |
+| FND-004 | fixed | e6c8822b2441bd96beeb6c2bb87066fd776109c8: the stale "Deviation" text and the `cycle_refusals.len() == 2` mutation note are gone from the M17 doc comment. |
+| FND-005 | fixed | e6c8822b2441bd96beeb6c2bb87066fd776109c8: the record-path code that held the clone is deleted. |

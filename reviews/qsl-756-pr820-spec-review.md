@@ -45,3 +45,11 @@ public-repo wording finding and one low EARS finding.
 | FND-001 | medium | FR-082-AC-15 cannot tell path order from key order. Its 3-cycle `B -> C -> D -> B` has path order equal to sorted order, and its 2-cycles are trivially sorted. An implementation that lists the keys sorted, or orders a cycle's refusals by path order instead of declaration key, satisfies every vector, though the paragraph requires path order for the listing and key order for the refusals. Replace or add a vector whose path order is not sorted, for example `B -> D -> C -> B`: refusals at `B`, `C`, `D`, each listing `[B, D, C]`. Mirror it in TC-1020. | spec/functional/FR-082-resolve-conformance-subsetting-and-redefinition.md:309; spec/test-cases/TC-1020-a-specialization-cycle-is-refused-once-per-declaration-and-cycle.md:19-27 |
 | FND-002 | medium | Public-repo rule. The paragraph's opening sentence (line 108) matches a private QSpec definition's sentence word for word, and the rest follows that source clause by clause. QSL needs to state this rule, but in its own words: rewrite the paragraph in QSL terms, citing QSpec by id only if at all. | spec/functional/FR-082-resolve-conformance-subsetting-and-redefinition.md:108-117 |
 | FND-003 | low | The new paragraph is normative but has no SHALL. Every rule in it is phrased as a fact ("A declaration is refused once per cycle..."). Phrase it as a requirement on the model checker, for example "the model checker SHALL refuse each declaration once per cycle it lies on", so the EARS reading is unambiguous. | spec/functional/FR-082-resolve-conformance-subsetting-and-redefinition.md:108-117 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | accepted-no-change | Owner order: medium and low findings are recorded but not re-reviewed this round. FR-082-AC-15 and TC-1020 are unchanged. The non-sorted cycle is now pinned by tests at e6c8822b2 (`a_cycle_lists_path_order_and_refuses_in_declaration_key_order`), so the behaviour cannot regress unnoticed. |
+| FND-002 | deferred | Owner order for this round: no review of private-QSpec text. The finding stays recorded. |
+| FND-003 | accepted-no-change | Owner order: low findings are recorded but not re-reviewed this round. |
