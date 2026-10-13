@@ -91,7 +91,7 @@ element, tuple position or record field whose declared type is a variant type.
    byte for byte (`gold` is another case). The checker SHALL give a case literal
    the static type `Alias::Tier` and the value of that case. No other literal has
    a variant type: a Text literal, an Integer literal or a bare `Gold` at a
-   variant slot is not a variant value. Three refusals apply, each at the name:
+   variant slot is not a variant value. Four refusals apply, each at the name:
    - a variant type name that resolves to no variant type of the alias (in a
      type position or as the qualifier of a case) SHALL refuse
      `missing_declaration`/`missing-name`, as FR-056-AC-9 refuses
@@ -99,6 +99,9 @@ element, tuple position or record field whose declared type is a variant type.
    - a case the resolved variant type does not declare SHALL refuse
      `ill_typed`/`type-mismatch`, naming the type and the case, as FR-317-AC-2
      refuses an undeclared union member;
+   - a clause context or an operation-body target that names a variant type
+     names no object type and SHALL refuse `missing_declaration`/`missing-name`
+     at the name;
    - the name of a case that is not a source identifier SHALL be unwritable:
      FR-056 admits any case name of at least one character (`Gold Plus`, `2x`),
      the variant type and its other cases stay admitted and writable, and the
@@ -113,10 +116,18 @@ element, tuple position or record field whose declared type is a variant type.
    element of a collection, and a conditional whose branches both have the same
    variant type. The checker SHALL admit no conversion into or out of a variant
    type: no Text, Integer or ordinal conversion of a case, and no construction of
-   a case from a name computed at runtime. A `case` expression whose scrutinee
-   has a variant type SHALL refuse `ill_typed`/`type-mismatch` at the scrutinee
-   (ADR-012 §16.2 admits `case` over a declared union only, and §16.5 gives a
-   scrutinee that is not a union this refusal).
+   a case from a name computed at runtime. Where the language has a Text literal, a
+   `none` or a `case` expression, the checker SHALL refuse a Text literal or a
+   `none` at a variant slot `ill_typed`/`type-mismatch` at the expression, and a
+   `case` expression whose scrutinee has a variant type `ill_typed`/`type-mismatch`
+   at the scrutinee (ADR-012 §16.2 admits `case` over a declared union only, and
+   §16.5 gives a scrutinee that is not a union this refusal). QSL's expression
+   forms hold none of the three today. A Text literal or `none` in an
+   expression is read by S1 and refused by S2 as `unsupported_construct`, cause
+   `UnrepresentedConstruct` of the `Primary` production, at the literal. A `case` is a
+   control form of the grammar and in expression position S1 refuses it as
+   `invalid_syntax`, cause `UnexpectedToken`, at the `case` token. Neither reaches
+   the checker.
 6. **Check typing is nominal and invariant.** A value of variant type `V` SHALL
    conform to a slot whose declared type is exactly `V` and to no other. A
    variant type has no supertype, so FR-359's ancestor rule never applies to it
@@ -127,7 +138,7 @@ element, tuple position or record field whose declared type is a variant type.
    naming the expected and actual types. A collection or `Option` of a variant
    type is not covariant (FR-359 item 5). A `none` at a slot whose type is `V`
    rather than `Option<V>` SHALL refuse the same way.
-7. **Equality is by case.** For two operands whose static type is `V`, `==`
+7. **Equality is by case.** For two operands whose static type is `V`, `=`
    SHALL be true exactly when both are the same case of `V` and `!=` SHALL be its
    negation, decided by the case's identity (item 11), never by name text,
    position or rank. The result SHALL be a Boolean and never a checked-invariant
@@ -202,45 +213,37 @@ element, tuple position or record field whose declared type is a variant type.
     not as a unit-owned `scalar_type`/`enum` node. A case literal SHALL lower to
     the `value`/`enum_value` node whose `semantic_type` is that node and whose
     case is the literal's case. A read of a variant-typed field SHALL lower to
-    the field projection FR-093 gives every field, typed by that node. `==` and
+    the field projection FR-093 gives every field, typed by that node. `=` and
     `!=` SHALL lower to the enumeration equality application FR-093 gives an enum
     comparison. A call passing a variant value takes it by `ref` with no
-    conversion node, and the package reads back `Verified` once cross-repo
-    requirement 1 holds. Until QSL-748 requirement 1 holds, QSL's emitter SHALL
-    refuse a variant-typed field, parameter or result at emission with
-    `ill_typed`/`type-mismatch` at the member's, parameter's or result's type
-    node, the code and cause the lowering gives a type with no enum binding. The
-    emitter SHALL NOT rely on the IR reader's own read-back refusal (QSpec
-    FR-322 step 4, `operator-ineligible` at the application). This obligation ends
-    when cross-repo requirement 1 holds, and emission then succeeds as above.
-    The interim obligation fires during check, so the code slice for
-    FR-360-AC-4 to FR-360-AC-11 depends on QSL-748 requirement 1: check, run and
-    replay of a unit holding a variant-typed member are not deliverable before
-    it. This requirement states the target state, and no stand-in lowering node
-    stands in for requirement 1.
+    conversion node, and the package reads back `Verified`. Until the IR reader
+    admits a `model`/`variant_type` node and the runtime enumeration holds any
+    non-empty case name, QSL's emitter SHALL refuse a variant-typed field,
+    parameter or result at emission with `ill_typed`/`type-mismatch` at the
+    member's, parameter's or result's type node, the code and cause the lowering
+    gives a type with no enum binding. The emitter SHALL NOT rely on the IR
+    reader's own read-back refusal (QSpec FR-322 step 4,
+    `operator-ineligible` at the application). This obligation ends when that
+    reader and enumeration support exists, and emission then succeeds as above.
+    The interim obligation fires during check, so check, run and replay of a
+    unit that names a variant type in a function, clause or call are not
+    deliverable before it. This requirement states the target state, and no
+    stand-in lowering node stands in for the reader.
 
 ## Cross-repo requirements
 
 Each owner adds its own specification. QSL does not wait on them to state its
-own behaviour above.
+own behaviour above. The rows below are in `agent-ix/quire-specification`; this
+requirement cites them by id.
 
-1. **QSpec FR-322:** a `model`/`variant_type` semantic form with a
-   `ModelOwner`, family `enum` for equality and no ordering; a step 2 row naming
-   `quire.meaning.model.variant-type/v1`; and a step 4 element-type row that
-   gives a member whose `typeRef` names a variant type that node as its type
-   (today a `typeRef` outside the step 4 table gives the member no type). A
-   unit-owned `enum` node would key the type by the selecting unit's alias.
-   **QSpec FR-141:** a declaration identity for an enum member whose
-   `semantic_type` is a `model`/`variant_type` node, which FR-141 defines today
-   only over a `scalar_type`/`enum` node's preimage.
-2. **QSpec FR-208 and FR-208-AC-15:** the refusal of a variant `typeRef` and of
-   a clause naming a variant type is lifted by this requirement. The case,
-   payload, shape, identity and duplicate-case refusals stay.
-3. **QSpec shared grammar and name resolution:** the qualified name
-   `Alias::Tier::Gold` already parses. QSpec states how a model alias, a variant
-   type name and a case name resolve (item 4), as FR-317 states `q::m`.
+1. **Model-owned variant type node and member identity:** QSpec FR-322-AC-71
+   and QSpec FR-141-AC-7 and FR-141-AC-8.
+2. **Admission of a variant `typeRef` and of a clause naming the type:** QSpec
+   FR-208-AC-15 and QSpec FR-208-AC-16.
+3. **Naming and typing of a variant type and its cases in source:** QSpec
+   FR-208-AC-17.
 
-QSL-748 owns and tracks cross-repo requirements 1 to 3.
+The cross-repo test cases are QSpec TC-939 to TC-942.
 
 ## Inputs
 
@@ -274,12 +277,12 @@ QSL-748 owns and tracks cross-repo requirements 1 to 3.
 | --- | --- | --- |
 | FR-360-AC-1 | An admitted package with variant type `Tier` (cases `Gold`, `Standard`), object `Account` with field `tier: Tier`, record value type `Settings` with field `tier: Tier`, a state machine with a context field `tier: Tier` and a process with a field `tier: Tier` is admitted with no refusal. Each field has one `field` export keyed as any other field and no `reference` export; `Settings`' `record` export lists `tier`; `Tier`'s `enum` and `variant` exports equal those of the same package with no field naming it. A field `Event.tier` of an event type whose occurrence field is `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the event type node, path `TypeDefinition.occurrenceField`, while a non-occurrence `Event.tier` is admitted. | Test (TC-1006) |
 | FR-360-AC-2 | The unit assembled over that package gives `Account.tier` the type `Config::Tier`, an `optional` field `Option<Config::Tier>`, and an ordered non-unique `[0, 3]` field `Sequence<Config::Tier>[0, 3]`, never `Reference<Config::Tier>`; an operation parameter or result naming `Tier` has the same type. The type environment holds, for `Config::Tier` and each case, the effective identity of the view and the checked node key together, and a unit that selects the same package as `Cfg` assigns the same keys of both kinds. | Test (TC-1006) |
-| FR-360-AC-3 | A variant `typeRef` whose variant type has no case refuses once, `invalid_model_binding`/`malformed-declaration` at the variant type, path `TypeDefinition.variants`, and the field naming it raises no refusal of its own. A field whose `typeRef` names an event type, state machine, process, persistence interface or namespace keeps its refusal `invalid_model_binding`/`malformed-declaration` at the field, path `Field.typeRef`. | Test (TC-1006) |
+| FR-360-AC-3 | A variant `typeRef` whose variant type has no case refuses once, `invalid_model_binding`/`malformed-declaration` at the variant type, path `TypeDefinition.variants`, and the field naming it raises no refusal of its own. | Test (TC-1006) |
 | FR-360-AC-4 | With `Config::Tier::Gold` in a function `f(t: Config::Tier): Config::Tier { t }`, a field read `a.tier`, a `let` binding, an `Option` `value`, a collection element and `if c then Config::Tier::Gold else a.tier` each check as type `Config::Tier`; `Config::Tier::Gold` at an `Account.tier` slot, passed to `f` and in an `Option<Config::Tier>` literal checks. A clause may name `Config::Tier` in a type position and `Config::Tier::Gold` as a literal with no `unsupported_construct` refusal. A variant type with a case named `Gold Plus` is admitted; `Config::Tier::Gold` beside it still checks, and the spelling `Config::Tier::Gold Plus` does not parse as a case literal. | Test (TC-1007) |
-| FR-360-AC-5 | Each of the following refuses at the expression naming the expected and actual types. `ill_typed`/`type-mismatch`: `Config::Level::Gold` at a `Config::Tier` slot; the Text literal `"Gold"` and the Integer literal `0` at a `Config::Tier` slot; a bare `Gold`; `none` at a `Config::Tier` slot; a `Config::Tier` at a `Config::Level` parameter; a `Sequence<Config::Tier>` at a `Sequence<Config::Level>` and at `Option<Config::Tier>`; `Config::Tier::Silver` (undeclared case) and `Config::Tier::gold` (letter-case variant); a `case` expression over a `Config::Tier`, at the scrutinee. `missing_declaration`/`missing-name` at the name: `Config::Nope::Gold` and `Config::Nope` in a type position. `ill_typed`/`operator-ineligible`: `Config::Tier::Gold < Config::Tier::Standard`, `<=`, `>` and `>=`. | Test (TC-1007) |
-| FR-360-AC-6 | Over `Config::Tier`, `==` is true for `Gold == Gold` and false for `Gold == Standard`, `!=` the negation, in either operand order, with no checked-invariant refusal. `Config::Level::Gold == Config::Tier::Gold` refuses `ill_typed`/`type-mismatch` at check and never evaluates. A case read from a field equals the same case written as a literal. | Test (TC-1008) |
+| FR-360-AC-5 | Each of the following refuses at the expression naming the expected and actual types. `ill_typed`/`type-mismatch`: `Config::Level::Gold` at a `Config::Tier` slot; the Integer literal `0` at a `Config::Tier` slot; a bare `Gold`; a `Config::Tier` at a `Config::Level` parameter; a `Sequence<Config::Tier>` at a `Sequence<Config::Level>` and at `Option<Config::Tier>`; `Config::Tier::Silver` (undeclared case) and `Config::Tier::gold` (letter-case variant). The Text literal `"Gold"` and `none` are refused by S2 as `unsupported_construct` (cause `UnrepresentedConstruct`, production `Primary`) at the literal, and a `case` in expression position by S1 as `invalid_syntax` (cause `UnexpectedToken`) at the `case` token (item 5). `missing_declaration`/`missing-name` at the name: `Config::Nope::Gold` and `Config::Nope` in a type position. `ill_typed`/`operator-ineligible`: `Config::Tier::Gold < Config::Tier::Standard`, `<=`, `>` and `>=`. | Test (TC-1007) |
+| FR-360-AC-6 | Over `Config::Tier`, `=` is true for `Gold = Gold` and false for `Gold = Standard`, `!=` the negation, in either operand order, with no checked-invariant refusal. `Config::Level::Gold = Config::Tier::Gold` refuses `ill_typed`/`type-mismatch` at check and never evaluates. A case read from a field equals the same case written as a literal. | Test (TC-1008) |
 | FR-360-AC-7 | Equality reaches a variant value inside other values by the same rule: two `Settings` records equal exactly when `tier` is the same case (and their other fields are equal), two `Option<Config::Tier>` equal exactly when both are `none` or both hold the same case, and two `Sequence<Config::Tier>`, `Set<Config::Tier>` and a tuple position likewise. A `Set<Config::Tier>` built from `Gold, Gold, Standard` has two elements and one built from `Standard, Gold` has the same two, each in the order `Gold`, `Standard` (ascending UTF-8 bytes of the case names); a `Set<Config::Tier>` over a `Tier` with cases `Standard`, `Gold`, `Bronze` orders `Bronze`, `Gold`, `Standard`, and the reverse order fails. | Test (TC-1008) |
-| FR-360-AC-8 | An operation parameter of type `Tier` is admitted at intake, its call with `Config::Tier::Gold` checks and runs, and a call with a `Config::Level` value refuses `ill_typed`/`type-mismatch` naming the parameter; an operation result of type `Tier` is admitted and its value compares by case. The checked package emits `Config::Tier` as a `model`/`variant_type` node, the case literal as an `enum_value` of it and the argument by `ref` with no conversion node, and reads back `Verified` once cross-repo requirement 1 holds. Before then, QSL's emitter refuses a variant-typed field, parameter or result at its type node with `ill_typed`/`type-mismatch` (item 12). A parameter or result naming an interface-featured object type keeps `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` or `Operation.returns.typeRef`. | Test (TC-1009) |
+| FR-360-AC-8 | An operation parameter of type `Tier` is admitted at intake, its call with `Config::Tier::Gold` checks and runs, and a call with a `Config::Level` value refuses `ill_typed`/`type-mismatch` naming the parameter; an operation result of type `Tier` is admitted and its value compares by case. The checked package emits `Config::Tier` as a `model`/`variant_type` node, the case literal as an `enum_value` of it and the argument by `ref` with no conversion node, and reads back `Verified`. Until the IR reader admits a `model`/`variant_type` node and the runtime enumeration holds any non-empty case name, QSL's emitter refuses a variant-typed field, parameter or result at its type node with `ill_typed`/`type-mismatch` (item 12). A parameter or result naming an interface-featured object type keeps `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` or `Operation.returns.typeRef`. | Test (TC-1009) |
 | FR-360-AC-9 | A replay snapshot whose `Account.tier` holds `{"variant":{"type":"ix://<package identity>/Tier","case":"Gold"}}` admits, and so does the same value as the payload of `{"present": ...}` and as an element of `{"sequence": [...]}` at a `Sequence<Config::Tier>` slot, and as an operation parameter and result. The admitted value equals the literal `Config::Tier::Gold`. | Test (TC-1010) |
 | FR-360-AC-10 | Each of these refuses `invalid_runtime_input` at the nested value path: a payload missing `case` (`missing-member`) or `type` (`missing-member`); an extra payload member (`unknown-member`); a `type` naming `Level`, a record, an object or no declaration, a `{"string":"Gold"}` or `{"integer":"0"}` at the slot, a payload that is not an object, and `{"absent":{}}` at a required variant field (`wrong-value-kind`); `"case":"Silver"` and `"case":"gold"` (`invalid-value`). The order of item 9 decides a value with several defects: `{"variant":{"type":"<Level>"}}` is `missing-member` (the missing `case`), not `wrong-value-kind`; `{"variant":{"type":"<Tier>","case":"Silver","x":1}}` is `unknown-member`, not `invalid-value`; `{"variant":{"type":"<Level>","case":"Silver"}}` is `wrong-value-kind`. | Test (TC-1010) |
 | FR-360-AC-11 | A decode followed by an encode returns the same typed observation and digest with the object members in either order; the encoded value names its own variant type and case. A counterexample witness holding a `Config::Tier` parameter encodes it as the enum shape with the type's checked node id and the case name and decodes to the same value. Two units that select the package as `Config` and as `Cfg` assign equal keys of both kinds, and a case built in one equals the same case built in the other. | Test (TC-1010) |

@@ -88,11 +88,12 @@ over its concrete descendants.
 
 ### Family enumeration is bounded
 
-The model checker SHALL charge every `redefines` edge it follows, in the
+The model checker SHALL charge each distinct `redefines` edge once, however many
+walks follow it, in the
 redefinition-family walk and in the effective-precondition walk up each linked
 candidate's `redefines` chain, against the caller's `family_steps` work limit
 in `ModelNormalizationLimitsV1`, before following the edge. `family_steps` is
-an edge count over all those walks together, never a chain depth, so a family
+a count of distinct edges over all those walks together, never a chain depth, so a family
 of any depth links once the limit fits the edges its walks follow. Each walk
 runs over an explicit stack, not native recursion. The limit has a published
 default of 16777216 edges (NFR-012), the order of the S3 work default

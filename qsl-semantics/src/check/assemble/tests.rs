@@ -1175,7 +1175,13 @@ fn model_field_of(
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
     let meaning_handles = BTreeMap::new();
-    model_field(&field, &records, &identities, &meaning_handles)
+    model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
 }
 
 fn mult(lower: u64, upper: Option<u64>, ordered: bool, unique: bool) -> Multiplicity {
@@ -1220,8 +1226,14 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
     let meaning_handles = BTreeMap::new();
 
-    let declaration = model_field(&field, &records, &identities, &meaning_handles)
-        .expect("native Timestamp is supported by the shared value kernel");
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native Timestamp is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::Timestamp);
 }
@@ -1236,8 +1248,14 @@ fn native_string_field_assembles_as_a_distinct_kernel_type() {
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
     let meaning_handles = BTreeMap::new();
 
-    let declaration = model_field(&field, &records, &identities, &meaning_handles)
-        .expect("native String is supported by the shared value kernel");
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native String is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::String);
     assert_ne!(

@@ -80,20 +80,38 @@ impl EnumDeclaration {
     }
 }
 
-/// Every enum declaration of `package`'s checked graph.
+/// Every enum declaration of `package`: the enum declaration nodes of its
+/// checked graph and the model variant types of its scope. A variant type is
+/// keyed by its checked node (FR-360 item 11), and its cases are in the
+/// ascending UTF-8 byte order of their names.
 pub(super) fn enum_declarations(package: &CheckedPackage) -> Vec<EnumDeclaration> {
-    package
+    let declared =
+        package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .filter_map(|node| match node.nominal() {
+                Some(NominalNode::EnumDeclaration(preimage)) => Some(EnumDeclaration {
+                    key: node.key(),
+                    members: preimage.members().to_vec(),
+                }),
+                _ => None,
+            });
+    let variant_types = package
         .graph()
-        .semantic_graph()
-        .nodes()
-        .filter_map(|node| match node.nominal() {
-            Some(NominalNode::EnumDeclaration(preimage)) => Some(EnumDeclaration {
-                key: node.key(),
-                members: preimage.members().to_vec(),
-            }),
-            _ => None,
-        })
-        .collect()
+        .scope()
+        .variant_types()
+        .iter()
+        .filter(|variant_type| variant_type.shape().is_some())
+        .map(|variant_type| EnumDeclaration {
+            key: variant_type.node(),
+            members: variant_type
+                .cases()
+                .iter()
+                .map(|case| case.name().to_owned())
+                .collect(),
+        });
+    declared.chain(variant_types).collect()
 }
 
 /// The declaration whose members are exactly `shape`'s variants.
