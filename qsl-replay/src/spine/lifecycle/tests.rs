@@ -678,9 +678,10 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     assert_eq!(
         refusal.fields(),
         Some(BTreeMap::from([
-            ("setting", "intake.input_bytes".to_owned()),
+            ("kind", "input-bytes-exceeded".to_owned()),
             ("bound", (size - 1).to_string()),
             ("actual", size.to_string()),
+            ("setting", "intake.input_bytes".to_owned()),
         ]))
     );
 }
@@ -1094,15 +1095,10 @@ fn assert_field(
     assert_field_with(field, kind, high, |value| value, run)
 }
 
-/// [`assert_field`] for a field whose configured bound is `bound(value)`
-/// rather than the value itself.
-fn assert_field_with(
-    field: Setting,
-    kind: FoundationKind,
-    high: u64,
-    bound: impl Fn(u64) -> u64,
-    run: impl Fn(u64) -> Reached,
-) -> u64 {
+/// The smallest value of `field` at which `run` produces its output, found
+/// by bisection from `high`. Every run below it stops at `field` (a stage
+/// limit or a caller-budget refusal naming that setting).
+fn smallest_admitted(field: Setting, high: u64, run: &impl Fn(u64) -> Reached) -> u64 {
     assert!(
         matches!(run(high), Reached::Output),
         "`{field:?}` at {high} does not admit the input"
@@ -1116,11 +1112,26 @@ fn assert_field_with(
                 assert_eq!(limit.setting(), field, "limit at {middle}");
                 low = middle + 1;
             }
-            Reached::Budget { .. } => panic!("`{field:?}` is a stage limit, not a budget"),
+            Reached::Budget { fields, .. } => {
+                assert_eq!(fields["setting"], field.name(), "limit at {middle}");
+                low = middle + 1;
+            }
         }
     }
-    let counter = low;
-    assert!(counter > 0, "`{field:?}` is not reached by the input");
+    assert!(low > 0, "`{field:?}` is not reached by the input");
+    low
+}
+
+/// [`assert_field`] for a field whose configured bound is `bound(value)`
+/// rather than the value itself.
+fn assert_field_with(
+    field: Setting,
+    kind: FoundationKind,
+    high: u64,
+    bound: impl Fn(u64) -> u64,
+    run: impl Fn(u64) -> Reached,
+) -> u64 {
+    let counter = smallest_admitted(field, high, &run);
     match run(counter - 1) {
         Reached::Limit(limit) => {
             assert_eq!(limit.setting(), field);
@@ -1139,32 +1150,15 @@ fn assert_field_with(
 
 /// [`assert_field`] for a field of the caller's budget (ADR-014 section 1,
 /// FR-255 Behavior 1): one below the counter the input reaches, `run`
-/// refuses `resource_exhausted` with `cause`, and the typed `setting`,
-/// `bound` and `actual` of `field`; at the counter it succeeds.
+/// refuses `resource_exhausted` with `cause`, `setting` of `field`, the
+/// effective `limit` and an `actual` past it; at the counter it succeeds.
 fn assert_budget_field(
     field: Setting,
     cause: &str,
     high: u64,
     run: impl Fn(u64) -> Reached,
 ) -> u64 {
-    assert!(
-        matches!(run(high), Reached::Output),
-        "`{field:?}` at {high} does not admit the input"
-    );
-    let (mut low, mut top) = (0_u64, high);
-    while low < top {
-        let middle = low + (top - low) / 2;
-        match run(middle) {
-            Reached::Output => top = middle,
-            Reached::Budget { fields, .. } => {
-                assert_eq!(fields["setting"], field.name(), "limit at {middle}");
-                low = middle + 1;
-            }
-            Reached::Limit(_) => panic!("`{field:?}` is a budget, not a stage limit"),
-        }
-    }
-    let counter = low;
-    assert!(counter > 0, "`{field:?}` is not reached by the input");
+    let counter = smallest_admitted(field, high, &run);
     match run(counter - 1) {
         Reached::Budget {
             cause: seen,
@@ -1172,7 +1166,7 @@ fn assert_budget_field(
         } => {
             assert_eq!(seen, Some(cause), "`{field:?}`");
             assert_eq!(fields["setting"], field.name());
-            assert_eq!(fields["bound"], (counter - 1).to_string(), "`{field:?}`");
+            assert_eq!(fields["limit"], (counter - 1).to_string(), "`{field:?}`");
             let actual: u128 = fields["actual"].parse().expect("a count");
             assert!(actual > u128::from(counter - 1), "`{field:?}`");
         }
@@ -1289,7 +1283,7 @@ fn select_names_the_model_limit_field_it_reached() {
     );
     assert_budget_field(
         Setting::ModelAncestorSteps,
-        "ancestor-steps",
+        "insufficient-next-charge",
         10_000,
         run(|limits, value| limits.ancestor_steps = value),
     );
@@ -1305,6 +1299,60 @@ fn select_names_the_model_limit_field_it_reached() {
         100_000,
         run(|limits, value| limits.work_units = value),
     );
+    // `model.dispatch_candidates` and `model.family_steps` are charged only
+    // where a dispatch family is linked (FR-302, TC-795), at `check`, and the
+    // model fixture declares no dispatched operation, so no `select` run
+    // reaches them; TC-795 and the dispatch tests in `qsl-semantics` drive them.
+}
+
+/// FR-255 Behavior 1 (QSL-745): a denied normalization charge through
+/// `select` retains the stage, accounting contract, prior usage, denied
+/// amount and charge point beside the setting, effective limit and actual.
+#[trace("TC-758", "FR-255-AC-1")]
+#[test]
+fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let parsed = parse(
+        &request(MODEL_FIXTURE.as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the model fixture parses")
+    .into_value();
+    let limits = ModelNormalizationLimits {
+        work_units: 1,
+        ..ModelNormalizationLimits::default()
+    };
+    let Err(StageFailure::Refused(refusal)) = select(&parsed, &packages, limits, &Cancel::new())
+    else {
+        panic!("one work unit cannot normalize the model");
+    };
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(refusal.cause(), Some("insufficient-next-charge"));
+    let fields = refusal.fields().expect("a denied charge carries fields");
+    let keys: Vec<_> = fields.keys().copied().collect();
+    assert_eq!(
+        keys,
+        [
+            "accounting_contract",
+            "actual",
+            "charge_point",
+            "consumed",
+            "limit",
+            "next_charge",
+            "setting",
+            "stage"
+        ]
+    );
+    assert_eq!(fields["setting"], "model.work_units");
+    assert_eq!(fields["limit"], "1");
+    assert_eq!(fields["stage"], "model-normalization");
+    assert_eq!(fields["accounting_contract"], "ModelNormalizationLimitsV1");
+    let consumed: u64 = fields["consumed"].parse().expect("a count");
+    let next_charge: u64 = fields["next_charge"].parse().expect("a count");
+    assert!(next_charge > 0);
+    assert_eq!(fields["actual"], (consumed + next_charge).to_string());
+    assert!(fields["charge_point"].starts_with("normalize."));
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.

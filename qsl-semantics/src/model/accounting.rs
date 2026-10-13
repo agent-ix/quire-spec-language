@@ -388,6 +388,24 @@ impl Incomplete {
     }
 }
 
+impl Incomplete {
+    /// This stop as the caller-budget denial FR-255 Behavior 1 describes
+    /// (`resource_exhausted`/`insufficient-next-charge`): the counter's
+    /// setting, effective limit, prior usage, the denied amount and the
+    /// charge point.
+    pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
+        qsl_foundation::diagnostic::BudgetDenial::charge(
+            self.limit_kind.setting(),
+            self.limit,
+            self.consumed,
+            self.next_charge,
+            "model-normalization",
+            "ModelNormalizationLimitsV1",
+            self.charge_point.as_str(),
+        )
+    }
+}
+
 /// One exact `{ counter: amount }` charge vector: `work_units` plus at most
 /// one sized counter, since no model charge point sizes more than one.
 /// Fixed-size, so building and admitting a charge allocates nothing.

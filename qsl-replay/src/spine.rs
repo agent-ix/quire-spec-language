@@ -250,7 +250,9 @@ impl CompileRefusal {
     pub fn fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
         match self {
             Self::Limit(limit) => limit.catalog_fields(),
-            Self::Intake { refusal, .. } => refusal.cause.limit_fields(),
+            Self::Intake { refusal, .. } => {
+                refusal.cause.denial().map(|denial| denial.catalog_fields())
+            }
             Self::Dependency { refusal, .. } => refusal.fields(),
             _ => None,
         }

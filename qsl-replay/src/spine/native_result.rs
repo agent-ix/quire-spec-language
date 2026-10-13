@@ -4,8 +4,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::Locus;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::Locus;
 use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord};
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;

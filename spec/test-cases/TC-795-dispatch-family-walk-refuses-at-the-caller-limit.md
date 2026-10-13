@@ -21,6 +21,6 @@ Verify the `family_steps` limit at compile. Scope: FR-302-AC-5.
 ## Expected Results
 
 1. The compile succeeds.
-2. Refused at S3 with the resource-exhaustion cause `family-steps`, naming
-   `family_steps`, the value 2
+2. Refused at S3 with `resource_exhausted`/`insufficient-next-charge`, naming
+   the setting `model.family_steps`, the limit 2
    and the limits field that raises it; no checked package.

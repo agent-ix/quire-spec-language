@@ -36,7 +36,8 @@ structured fields the catalog requires.
 The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
 
 The key table has no row for the other `ModelQueryRefusal` causes
-(including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
+(including `type-mismatch`; the walk ceilings and the intake byte limit have
+the rows below) or for `qsl-route`'s `BoundRefusal`; they build
 no record.
 
 ## Inputs
@@ -229,6 +230,8 @@ names the catalog payload item beside it (`quire.native.diagnostics/v1`):
 | `ProtocolClauseSnapshot` | `wrong_snapshot` / `forbidden-pre-read` | `read`: the exact prohibited read |
 | `ModelQueryRefusal` | `invalid_runtime_input` / `absent-key` | `binding`: the population binding; `key`: the requested key |
 | `ModelQueryRefusal` | `foreign_reference` / `foreign-universe` | `required`: the required object universe (the binding's), as lowercase hex; `supplied`: the supplied object universe, as lowercase hex |
+| `ModelQueryRefusal` | `resource_exhausted` / `insufficient-next-charge` (a model walk ceiling, `ancestor_steps` or `family_steps`) | `setting`: the setting that raises the limit; `limit`: the effective limit; `actual`: the limit plus the denied edge; `stage`, `accounting_contract`: the budget's owner; `consumed`: the prior usage; `next_charge`: the denied amount (1); `charge_point`: the point that asked |
+| `ModelQueryRefusal` | `resource_exhausted` / `intake-limit-exceeded` | `kind`: the exceeded limit kind's cause tag; `bound`: the configured bound; `actual`: the document's length; `setting`: `intake.input_bytes` |
 | `LimitExceeded` | `stage_limit_exceeded` / the kind's cause | `kind`: the exceeded limit kind's cause tag; `bound`: the configured bound; `actual`: the actual counter |
 | `BoundExceeded` (`replay`) | `stage_limit_exceeded` / `input-bytes-exceeded` | `kind`, `bound`, `actual`, as for `LimitExceeded` |
 | kernel `Refusal::CardinalityOutOfBound` | `cardinality_out_of_bound` / `below-minimum` or `above-maximum` | `collection`: the collection kind; `bound`: the inclusive bound `[minimum, maximum]`; `count`: the formed count |

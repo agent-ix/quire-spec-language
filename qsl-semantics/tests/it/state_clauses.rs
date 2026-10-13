@@ -4260,8 +4260,9 @@ fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping
 /// of their own. An object whose type sits 70 edges below its population's
 /// member type is admitted under the default `model.ancestor_steps` (a fixed
 /// 64 refused it as `wrong-role-mapping`), and under `ancestor_steps` 60 the
-/// same document stops with `resource_exhausted`/`ancestor-steps` naming
-/// `model.ancestor_steps` and its bound, never `wrong-role-mapping`: a
+/// same document stops with `resource_exhausted`/`insufficient-next-charge`
+/// (the walk is a one-edge charge past the limit, QSpec FR-150-AC-11) naming
+/// `model.ancestor_steps` and its limit, never `wrong-role-mapping`: a
 /// `ModelNormalizationLimitsV1` ceiling is a caller budget wherever it is
 /// read (ADR-014 section 1), so admission re-emits the compile path's code.
 #[trace("TC-465", "FR-106-AC-3")]
@@ -4310,14 +4311,21 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
         ancestor_steps: 60,
         ..qsl_semantics::model::accounting::ModelNormalizationLimits::default()
     };
-    let record = assert_tc465_refused(run(tight), "resource_exhausted", "ancestor-steps");
+    let record = assert_tc465_refused(run(tight), "resource_exhausted", "insufficient-next-charge");
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("setting"), Some("model.ancestor_steps"));
+    assert_eq!(field("limit"), Some("60"));
+    assert_eq!(field("actual"), Some("61"));
+    assert_eq!(field("stage"), Some("model-normalization"));
     assert_eq!(
-        record.fields.get("setting").map(String::as_str),
-        Some("model.ancestor_steps")
+        field("accounting_contract"),
+        Some("ModelNormalizationLimitsV1")
     );
-    assert_eq!(record.fields.get("bound").map(String::as_str), Some("60"));
-    assert_eq!(record.fields.get("actual").map(String::as_str), Some("61"));
+    assert_eq!(field("consumed"), Some("60"));
+    assert_eq!(field("next_charge"), Some("1"));
+    assert_eq!(field("charge_point"), Some("model.ancestor-edge"));
     assert!(!record.fields.contains_key("kind"));
+    assert!(!record.fields.contains_key("bound"));
     // A tight work budget is a denied charge: `insufficient-next-charge`.
     let starved = qsl_semantics::model::accounting::ModelNormalizationLimits {
         work_units: 1,
@@ -4332,7 +4340,7 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
         record.fields.get("setting").map(String::as_str),
         Some("model.work_units")
     );
-    assert_eq!(record.fields.get("bound").map(String::as_str), Some("1"));
+    assert_eq!(record.fields.get("limit").map(String::as_str), Some("1"));
     let field = |name: &str| record.fields.get(name).map(String::as_str);
     assert_eq!(field("stage"), Some("model-normalization"));
     assert_eq!(

@@ -100,7 +100,10 @@ default of 16777216 edges (NFR-012), the order of the S3 work default
 used as given. If a charge is denied, the model checker SHALL
 stop with the `Incomplete` outcome naming `family_steps`, its configured
 value and the count the denied charge would have reached (ADR-030 D-1), and
-SHALL NOT report a linked table or an ambiguity result for that family.
+SHALL NOT report a linked table or an ambiguity result for that family. The
+denied charge refuses `resource_exhausted`/`insufficient-next-charge`
+carrying `setting`, `limit` (the effective limit), `actual`, `stage`, `accounting_contract`, `consumed`, `next_charge` and `charge_point`; its `charge_point` is `model.family-edge`. The
+catalog has no `family-steps` cause.
 
 ## Acceptance Criteria
 
