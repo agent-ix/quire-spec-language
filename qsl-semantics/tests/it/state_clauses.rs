@@ -1396,6 +1396,38 @@ fn run_frame_clause_limited(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_frame_clause_with(
+        clause_name,
+        pre_objects,
+        post_objects,
+        self_key,
+        created,
+        deleted,
+        edit_invocation,
+        |bytes| bytes,
+        |bytes| bytes,
+        limits,
+    )
+}
+
+/// [`run_frame_clause_limited`], with the pre and post snapshots' bytes
+/// passed through `edit_pre` and `edit_post` before they are digested.
+#[allow(clippy::too_many_arguments)]
+fn run_frame_clause_with(
+    clause_name: &str,
+    pre_objects: &[(&str, i64, Option<&str>)],
+    post_objects: &[(&str, i64, Option<&str>)],
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+    edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let document = frame_test_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -1411,13 +1443,23 @@ fn run_frame_clause_limited(
     let clause = graph.state_clause(clause_name).expect("clause is declared");
 
     let pre = frame_label("pre-snap");
-    let pre_bytes = frame_snapshot_bytes(&pre, &model_digest, "pre", pre_objects);
+    let pre_bytes = edit_pre(frame_snapshot_bytes(
+        &pre,
+        &model_digest,
+        "pre",
+        pre_objects,
+    ));
     let pre = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&pre_bytes),
         ..pre
     };
     let post = frame_label("post-snap");
-    let post_bytes = frame_snapshot_bytes(&post, &model_digest, "post", post_objects);
+    let post_bytes = edit_post(frame_snapshot_bytes(
+        &post,
+        &model_digest,
+        "post",
+        post_objects,
+    ));
     let post = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&post_bytes),
         ..post
@@ -1505,10 +1547,8 @@ fn assert_frame_refused(
 /// select the pre and post observations of one invocation -- `pre` naming
 /// the post-role snapshot, and `post` naming the pre-role snapshot -- is
 /// refused `wrong_snapshot`/`wrong-observation` at admission, before any
-/// clause value exists. This does not cover QSpec FR-012-AC-1 (observations of different
-/// invocation identities): the wire has no field binding a snapshot
-/// to the invocation that names it, so two snapshots of the right roles taken
-/// from different invocations cannot be told apart.
+/// clause value exists. The identity half of QSpec FR-012-AC-1 is
+/// [`a_snapshot_naming_another_invocation_refuses_wrong_invocation`].
 ///
 /// Mutation used (derived by reading, not executed): deleting the check-3
 /// role comparison in `admit_invocation_documents` admits both swapped
@@ -1547,6 +1587,107 @@ fn an_invocation_naming_the_wrong_observation_roles_refuses_wrong_observation() 
         post_as_pre,
     );
     assert_frame_refused(doubled, "wrong_snapshot", "wrong-observation", None);
+}
+
+/// Sets a snapshot's `invocation` member to the labels of the invocation
+/// whose identity is `identity` (the labels `frame_label` gives it).
+fn name_invocation(identity: &str) -> impl FnOnce(Vec<u8>) -> Vec<u8> {
+    let named = frame_identity_json(&frame_label(identity));
+    move |bytes| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        value
+            .as_object_mut()
+            .expect("a snapshot object")
+            .insert("invocation".to_owned(), named);
+        value.to_string().into_bytes()
+    }
+}
+
+fn run_bound_frame_clause(
+    clause_name: &str,
+    edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_frame_clause_with(
+        clause_name,
+        &[("child", 2, None)],
+        &[("child", 3, None)],
+        "child",
+        &[],
+        &[],
+        |bytes| bytes,
+        edit_pre,
+        edit_post,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+fn assert_wrong_invocation(
+    result: Result<
+        qsl_semantics::model::observation::AdmittedObservations,
+        qsl_semantics::model::observation::AdmissionFailure,
+    >,
+    snapshot: &str,
+    named: &str,
+) {
+    match result {
+        Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.code.as_str(), "wrong_snapshot");
+            assert_eq!(record.cause, "wrong-invocation");
+            let field = |name: &str| record.fields.get(name).map(String::as_str);
+            assert_eq!(field("document"), Some(snapshot));
+            assert_eq!(field("field"), Some("invocation"));
+            assert_eq!(field("required"), Some("invocation"));
+            assert_eq!(field("actual"), Some(named));
+        }
+        other => panic!("expected Err(Refused(wrong_snapshot/wrong-invocation)), got {other:?}"),
+    }
+}
+
+/// QSpec FR-012-AC-1: a snapshot that names an invocation other than the
+/// selected one is refused `wrong_snapshot`/`wrong-invocation`, located at
+/// that snapshot, whichever of `pre` and `post` names it, for a
+/// postcondition and for a precondition over the same invocation.
+#[trace("QSpec-FR-012-AC-1", "QSpec-V1-EXPR-020")]
+#[test]
+fn a_snapshot_naming_another_invocation_refuses_wrong_invocation() {
+    let post = run_bound_frame_clause(
+        "AttemptUpdatePost",
+        |bytes| bytes,
+        name_invocation("other-invocation"),
+    );
+    assert_wrong_invocation(post, "post-snap", "other-invocation");
+    let pre = run_bound_frame_clause(
+        "AttemptUpdatePost",
+        name_invocation("other-invocation"),
+        |bytes| bytes,
+    );
+    assert_wrong_invocation(pre, "pre-snap", "other-invocation");
+    let precondition = run_bound_frame_clause(
+        "AttemptUpdatePre",
+        name_invocation("other-invocation"),
+        |bytes| bytes,
+    );
+    assert_wrong_invocation(precondition, "pre-snap", "other-invocation");
+}
+
+/// Snapshots that name the selected invocation, and snapshots that name no
+/// invocation, admit.
+#[test]
+fn snapshots_naming_the_selected_invocation_or_none_admit() {
+    for clause in ["AttemptUpdatePost", "AttemptUpdatePre"] {
+        run_bound_frame_clause(
+            clause,
+            name_invocation("invocation"),
+            name_invocation("invocation"),
+        )
+        .expect("matching invocation admits");
+        run_bound_frame_clause(clause, |bytes| bytes, |bytes| bytes)
+            .expect("an unbound snapshot admits");
+    }
 }
 
 /// TC-464 (precondition over an invocation): `root`'s `versionNumber`

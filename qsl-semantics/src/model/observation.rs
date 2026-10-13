@@ -1567,6 +1567,7 @@ pub fn admit_observations(
                 PreCallInput {
                     call: None,
                     receiver_invocation: None,
+                    invocation: None,
                     invocation_usage: AdmissionUsage::default(),
                     pre: read,
                     self_object,
@@ -1891,8 +1892,18 @@ fn admit_invocation_documents(
     check_model(context_view, &pre_snapshot.model)?;
     check_model(context_view, &post_snapshot.model)?;
 
-    // Check 5: operation.
+    // Check 5: operation, then the invocation each snapshot names.
     check_operation(&invocation.call, context_name, operation)?;
+    document::check_snapshot_invocation(
+        pre_snapshot,
+        &documents.pre.identity,
+        &documents.invocation.identity,
+    )?;
+    document::check_snapshot_invocation(
+        post_snapshot,
+        &documents.post.identity,
+        &documents.invocation.identity,
+    )?;
 
     // Checks 6 to 8: pre's own check 6, then post's, then pre's check 7,
     // then post's, then pre's check 8, then post's -- never fully
@@ -2086,6 +2097,8 @@ fn check_operation(
 struct PreCallInput<'a> {
     call: Option<&'a document::InvocationCall>,
     receiver_invocation: Option<&'a DocumentRef>,
+    /// The selected invocation's own identity, when one is selected.
+    invocation: Option<&'a DocumentRef>,
     invocation_usage: AdmissionUsage,
     pre: document::ReadDocument,
     self_object: &'a SelectedObject,
@@ -2124,6 +2137,7 @@ fn admit_pre_call_invocation(
         PreCallInput {
             call: Some(call),
             receiver_invocation: Some(selected),
+            invocation: Some(&invocation_read.identity),
             invocation_usage: invocation_read.usage,
             pre: pre_read,
             self_object: &call.self_object,
@@ -2164,6 +2178,9 @@ fn admit_pre_call(
     // Check 5: operation.
     if let Some(call) = call {
         check_operation(call, context.context_name, context.operation)?;
+    }
+    if let Some(invocation) = input.invocation {
+        document::check_snapshot_invocation(snapshot, &input.pre.identity, invocation)?;
     }
 
     // Checks 6 to 8, with every declared population a reference parameter
