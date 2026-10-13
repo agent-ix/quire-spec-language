@@ -50,10 +50,11 @@ use serde_json::Value;
 use crate::model::domain_package::{
     AllocationRecord, ClauseRecord, ComponentRecord, DomainPackage, DomainPackageRecord,
     DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NamespaceRecord,
-    NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, OriginalDeclaration, PersistenceInterfaceRecord,
-    PopulationRecord, PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
+    NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationContractClause, OperationEffect,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, OriginalDeclaration,
+    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -2446,10 +2447,13 @@ pub(super) fn read_operation_member(
             })
         }
     };
-    // `pre` is shape-checked as an array here; its clauses are FR-146
-    // expressions, which `crate::model` does not parse (see
-    // `domain_package::PostconditionClause`), so nothing is kept from it.
-    ctx.array_field("pre")?;
+    // FR-103: `pre` and `post` are the operation's own `requires` and
+    // `ensures`. They are FR-146 expressions, which `crate::model` does not
+    // parse (see `domain_package::PostconditionClause`), so their text is
+    // kept verbatim with its source identity.
+    let key = declaration_key(package, node);
+    let requires = read_contract_clauses(&ctx, &key, "pre", at, true)?;
+    let ensures = read_contract_clauses(&ctx, &key, "post", at, false)?;
     // FR-103: `frame` (model-complete.md's Frames row). An absent frame, or
     // one whose three members are all absent or empty, reads as the empty
     // effect; a frame that declares anything is queued for
@@ -2473,7 +2477,7 @@ pub(super) fn read_operation_member(
         }
     }
     Ok(OperationMemberRecord {
-        key: declaration_key(package, node),
+        key,
         owner: declaration_key(package, owner_identity),
         parameters,
         result,
@@ -2483,10 +2487,43 @@ pub(super) fn read_operation_member(
         // FR-146's expression parser is out of scope for `crate::model`
         // (`domain_package::PostconditionClause`'s own module docs); this
         // reader states none rather than inventing one.
+        requires,
+        ensures,
         own_postcondition_clauses: Vec::new(),
         has_body: false,
         redefines: None,
     })
+}
+
+/// An operation's `member` list (`pre` or `post`) as kept contract clauses,
+/// in declared order. `required` is true for `pre`, which the reader has
+/// always required to be an array; an absent `post` is the empty list.
+fn read_contract_clauses(
+    ctx: &NodeCtx<'_>,
+    operation: &DeclarationKey,
+    member: &'static str,
+    at: &str,
+    required: bool,
+) -> Result<Vec<OperationContractClause>, ModelRefusal> {
+    if !required && ctx.value.get(member).is_none() {
+        return Ok(Vec::new());
+    }
+    ctx.array_field(member)?
+        .iter()
+        .enumerate()
+        .map(|(position, entry)| {
+            let entry_ctx = NodeCtx::new(entry, format!("{at}.{member}[{position}]"));
+            let (artifact, span) = node_span(entry);
+            Ok(OperationContractClause {
+                operation: operation.clone(),
+                position,
+                language: entry_ctx.str_field("language")?.to_owned(),
+                text: entry_ctx.str_field("text")?.to_owned(),
+                artifact,
+                span,
+            })
+        })
+        .collect()
 }
 
 /// Reads a persistence-interface declaration and its ordinary operation

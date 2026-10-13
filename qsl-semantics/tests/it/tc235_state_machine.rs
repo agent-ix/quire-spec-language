@@ -1,6 +1,7 @@
 //! TC-235 state-machine binder vectors (FR-208).
 
 use super::*;
+use ix_trace_rs::trace;
 
 fn lifecycle_state(owner: &str, name: &str) -> Value {
     let node = format!("{owner}/{name}");
@@ -267,24 +268,91 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     record_charges(&package, 21);
 }
 
-/// M06 run 7: `self.placed` is bound as the postcondition of `place`.
+/// M06 run 7 (FR-103-AC-7): `self.placed` is kept and bound as the
+/// postcondition of `place`, with its source identity.
+#[trace("FR-103-AC-7", "TC-993")]
 #[test]
-#[ignore = "QSL-726: intake keeps no operation pre/post clauses yet"]
 fn tc235_m06_run7_postcondition_is_bound_to_place() {
     let document = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["operations"][0]["post"] = json!([{
             "language": "quire",
             "text": "self.placed",
-            "origin": origin("OrderLifecycle/place"),
+            "origin": {"source": {
+                "sourceIdentity": "ix://test/orders/source",
+                "path": "orders.quire",
+                "startLine": 7,
+                "startColumn": 3,
+            }},
         }]);
     });
     let package = read_k2(&document).expect("operation postcondition is valid");
-    assert!(package.records.iter().any(|record| matches!(
-        record,
-        DomainPackageRecord::OperationMember(operation)
-            if operation.key.node == id("OrderLifecycle/place")
-                && !operation.own_postcondition_clauses.is_empty()
-    )));
+    let place = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.key.node == id("OrderLifecycle/place") =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .expect("K2 declares OrderLifecycle/place");
+    assert!(place.requires.is_empty());
+    assert_eq!(place.ensures.len(), 1);
+    let ensures = &place.ensures[0];
+    assert_eq!(ensures.operation, place.key);
+    assert_eq!(ensures.position, 0);
+    assert_eq!(ensures.language, "quire");
+    assert_eq!(ensures.text, "self.placed");
+    assert!(
+        ensures.artifact.is_some(),
+        "the clause keeps its artifact id"
+    );
+    assert!(ensures.span.is_some(), "the clause keeps its span");
+    record_charges(&package, 21);
+}
+
+/// FR-103-AC-7: `pre` entries are kept as `requires`, in declared order, and
+/// an operation that declares neither list keeps both empty.
+#[trace("FR-103-AC-7", "TC-993")]
+#[test]
+fn operation_pre_is_kept_as_requires_in_order() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["operations"][0]["pre"] = json!([
+            {"language": "quire", "text": "not self.placed", "origin": origin("OrderLifecycle/place")},
+            {"language": "other", "text": "anything", "origin": origin("OrderLifecycle/place")},
+        ]);
+    });
+    let package = read_k2(&document).expect("operation precondition is valid");
+    let place = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.key.node == id("OrderLifecycle/place") =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .expect("K2 declares OrderLifecycle/place");
+    let kept: Vec<_> = place
+        .requires
+        .iter()
+        .map(|clause| {
+            (
+                clause.position,
+                clause.language.as_str(),
+                clause.text.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        kept,
+        [(0, "quire", "not self.placed"), (1, "other", "anything")]
+    );
+    assert!(place.ensures.is_empty());
 }
 
 /// M11: only object/event/record/state-machine/process meanings admit
