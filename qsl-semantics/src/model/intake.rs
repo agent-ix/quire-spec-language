@@ -1392,6 +1392,7 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// `<Name>` outside [`NativeValueType`]'s own closed set (QSpec's
 /// `type-ref`, R5's ruling -- narrower than FCD's) as
 /// `malformed-declaration`, a later, separate refusal from this one.
+#[qsl_attrs::string_edge]
 fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<ModelRefusal>> {
     let verdict = agent_ix_semantic_ir::decide(&document.bundle);
     let mut namespace_forms = std::collections::BTreeSet::new();
@@ -1471,6 +1472,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     }
 }
 
+#[qsl_attrs::string_edge]
 fn process_subtype_identity_schema_diagnostic(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1590,6 +1592,7 @@ fn process_subtype_identity_schema_diagnostic(
     empty_identity || missing_identity
 }
 
+#[qsl_attrs::string_edge]
 fn process_subtype_generalization_schema_diagnostic(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1635,6 +1638,7 @@ fn process_subtype_generalization_schema_diagnostic(
 /// reader reports this as its package-wide `DUPLICATE_IDENTITY` schema
 /// diagnostic before QSL's process binder runs; retain the source pointer but
 /// classify the selected process member using QSL's typed refusal cause.
+#[qsl_attrs::string_edge]
 fn duplicate_process_step_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1822,6 +1826,7 @@ fn missing_reader_reference(
 /// Whether a validator diagnostic is a transition `from`/`to`/`trigger`/
 /// `guard` that names a state, operation or clause declared by some type of
 /// the document (FR-208: classified in phase 3, not at intake).
+#[qsl_attrs::string_edge]
 fn transition_names_another_machines_member(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1869,6 +1874,7 @@ fn transition_names_another_machines_member(
 }
 
 /// Whether any node of the document declares `identity`.
+#[qsl_attrs::string_edge]
 fn document_declares(value: &Value, identity: &str) -> bool {
     match value {
         Value::Object(object) => object.iter().any(|(key, child)| {
@@ -1882,6 +1888,7 @@ fn document_declares(value: &Value, identity: &str) -> bool {
 
 /// Keep the source document's canonical member path in the diagnostic while
 /// retaining the reader's raw JSON pointer as evidence of where it refused.
+#[qsl_attrs::string_edge]
 /// A pointer outside `types`/`populations`/`constructs` names its member
 /// under the package document (`$.package.identity`), never the bare root.
 fn semantic_member_path(pointer: &str) -> MemberPath {
@@ -1912,6 +1919,7 @@ fn semantic_member_path(pointer: &str) -> MemberPath {
     }
 }
 
+#[qsl_attrs::string_edge]
 fn declared_node_for_pointer<'a>(
     document: &'a PackageDocument,
     pointer: &str,
@@ -1994,6 +2002,7 @@ fn declared_node_for_pointer<'a>(
 /// FR-208 Generalization / AC-12: the schema gate still refuses the document,
 /// but its generic cross-reference diagnostic must retain the business rule's
 /// actual typed cause. Namespace supertype entries are not checked further.
+#[qsl_attrs::string_edge]
 fn business_generalization_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -2687,6 +2696,7 @@ fn read_contract_clauses(
 /// Reads a persistence-interface declaration and its ordinary operation
 /// members. The interface itself is original-only; its operations retain the
 /// normal operation records for signature checking.
+#[qsl_attrs::string_edge]
 pub(super) fn read_persistence_interface(
     package: &str,
     node: &str,
@@ -3113,6 +3123,7 @@ pub(super) fn read_clauses(
 }
 
 /// Namespace data is original-only: it never grants a type or frame role.
+#[qsl_attrs::string_edge]
 pub(super) fn read_namespace(
     package: &str,
     node: &str,
@@ -3990,7 +4001,7 @@ fn read_type_node(
             type_value,
             node,
             at,
-            type_meanings,
+            meanings_by_node: type_meanings,
             construct_shape: shapes
                 .get(&(module.to_owned(), name.to_owned()))
                 .map(String::as_str),
