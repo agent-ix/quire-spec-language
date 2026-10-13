@@ -48,11 +48,18 @@ ceiling therefore bounds the work done, not only the result:
   encoded or hashed.
 - An effective type's identity is hashed in phase 3, before its phase-5
   `normalize.hash`, because phase 4's charge order uses it. Its encoding
-  holds only that type's ancestor paths, whose total length the type's
-  `normalize.cycle-check` charges have already admitted as work.
-- Every fact derived along one ancestor path shares that path, so memory
-  grows with the number of facts plus the total ancestor-path length, and
-  the total path length is bounded by the work the cycle checks admitted.
+  holds its own key and one direct-supertype edge with that parent's identity
+  per parent, each edge already admitted by a `normalize.fact` and a
+  `normalize.cycle-check` charge. No encoding holds an ancestor path longer
+  than one edge, so hashed bytes grow with the type count plus the edge count
+  (about 834 bytes per type and 574 per edge, counting each preimage once on
+  its own and once inside the view), not with the number of ancestor paths.
+- A diamond lattice is walked and stored once per edge. The cycle check
+  charges one unit per direct edge for an acyclic package; a path-length
+  charge applies only to the walk that reports a specialization cycle.
+- Memory grows with the retained facts plus the closure the conformance
+  walks read; a chain's proper-ancestor closure is quadratic in its length,
+  so a representation holds it as compact indices, not as cloned keys.
 - `ancestor_steps` and `family_steps` are charged like every other ceiling:
   each `supertypes` or `redefines` edge a walk follows is charged before it
   is followed (FR-082, FR-083), and the first denied charge stops the walk
@@ -85,22 +92,29 @@ per-charge record, so its memory does not grow with the work it bounds.
   member is at least one entry of the package or population document it is
   read from.
 - **Derivation facts, 1600000.** Sixteen facts per record at the record
-  ceiling. An effective declaration's derivation holds one qualify fact and
-  one inherit fact per ancestor path, so this admits a package at the record
-  ceiling whose declarations average fifteen ancestor paths.
+  ceiling. An effective declaration's derivation holds one qualify fact, one
+  inherit fact per direct parent, and its phase-4 facts, so this admits a
+  package at the record ceiling whose declarations average fifteen direct
+  parents and phase-4 facts. It counts retained facts, never the path-form
+  facts of their expansion.
 - **Effective declarations and dispatch candidates, 1600000.** Every
   effective declaration carries at least one derivation fact, so this
   ceiling does not bind before the fact ceiling. A dispatch candidate pairs
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
 - **Hashed bytes, 268435456.** Sixteen times NFR-007's default package byte
-  ceiling. Each effective declaration's preimage is hashed once and again
+  ceiling. With about 834 bytes per effective type and 574 per direct edge,
+  it admits a single-inheritance chain up to the 100000 record ceiling
+  (99999 edges, 141432998 bytes) and about 454000 direct edges over 10001
+  types. A chain whose every type declares one field has (n+1)(n+2)/2
+  effective members and is refused at 547 edges on this ceiling and at 1786 on
+  the effective-declaration ceiling; those are member counts, which identity
+  chaining does not reduce. Each effective declaration's preimage is hashed once and again
   inside the view preimage, and the view holds those preimages, so this also
   bounds the view's retained size.
 - **Work, 16777216.** NFR-011's default work ceiling. Each record, fact,
-  declaration and hash charges one unit, and a cycle check charges its path
-  length. The work ceiling binds before the fact ceiling when ancestor paths
-  average more than about nine steps.
+  declaration, hash and direct-edge cycle check charges one unit. The work
+  ceiling does not bind before the fact ceiling for an acyclic package.
 - **Ancestor and family steps, 16777216 edges.** The work default above,
   NFR-011's S3 work default. Both count edges followed, a unit of work: a
   walk follows each edge of a type's closure at most once, so the default
@@ -118,11 +132,12 @@ TC-434 covers the defaults and the bound on work:
   records the defaults, or a caller's limits as given.
 - Every normalization fixture has the same outcome at the defaults as
   without a limit.
-- A package past `effective_declarations` or `derivation_facts` is refused
-  after work bounded by the limit, whatever the package's size, and a
-  diamond lattice's exponentially many ancestor paths are walked only as far
-  as `derivation_facts` admits.
-- Inherited facts share their type's ancestor paths at the defaults.
+- A package past `effective_declarations`, `derivation_facts` or
+  `hashed_bytes` is refused after work bounded by the limit, whatever the
+  package's size.
+- A 10000-edge single-inheritance chain completes at the defaults with 20001
+  retained facts (TC-1024), and a diamond ladder with exponentially many
+  paths completes at the defaults (TC-1023).
 - The first denied charge decides the outcome: a `declaration_records`
   charge denied before the walk exhausts `ancestor_steps` stops on
   `declaration_records`, and otherwise the walk stops `Incomplete` on

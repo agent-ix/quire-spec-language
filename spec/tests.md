@@ -115,6 +115,10 @@ names different artifacts in each.
 | TC-236 | Two declarations sharing a display title classify and resolve independently by key | Unit | P1 | FR-086-AC-4 | 🚧 |
 | TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | ✅ |
 | TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | ✅ |
+| TC-1021 | Model identity links expand to exact provenance | Integration | P1 | FR-081-AC-9 | 🚧 |
+| TC-1022 | Model identity chain is unique and binds ancestry | Integration | P1 | FR-081-AC-10 | 🚧 |
+| TC-1023 | Model identity cost is linear in types plus edges | Integration | P1 | FR-081-AC-11, NFR-012 | 🚧 |
+| TC-1024 | The full 10,000-edge model identity case | Integration | P1 | FR-081-AC-12, FR-081-AC-13, NFR-012 | 🚧 |
 | TC-239 | An arity mismatch refuses without checking per-parameter axes, while result and effect axes are still checked | Unit | P1 | FR-082-AC-5 | ✅ |
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 |
