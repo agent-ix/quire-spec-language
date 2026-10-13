@@ -43,6 +43,20 @@ pub enum OfferedSelection {
     Population(DeclarationKey),
 }
 
+/// Where an operation signature names a type: the member path of the
+/// `typeRef`, and the operation's source artifact and position (both `None`
+/// when the node has no source origin), as
+/// [`ModelRefusalCause::IntakeMalformedDeclaration`] carries them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignatureSite {
+    /// `Operation.params[i].typeRef` or `Operation.returns.typeRef`.
+    pub member: MemberPath,
+    /// The operation's source artifact.
+    pub artifact: Option<String>,
+    /// The operation's source position.
+    pub span: Option<LocatedSpan>,
+}
+
 /// The declaration kind a [`MemberPath`] is rooted at, as QSpec's
 /// `model-complete.md` names members (`TypeDefinition.supertypes[0]`,
 /// `Operation.pre`, `constructs[].meaning`).
@@ -389,15 +403,8 @@ pub enum ModelRefusalCause {
         parameter: Option<DeclarationKey>,
         /// The absent value type.
         value_type: ValueTypeRef,
-        /// The `typeRef` the operation names it at:
-        /// `Operation.params[i].typeRef` or `Operation.returns.typeRef`.
-        member: MemberPath,
-        /// The operation's source artifact, as
-        /// [`Self::IntakeMalformedDeclaration`]'s own field.
-        artifact: Option<String>,
-        /// The operation's source position, as
-        /// [`Self::IntakeMalformedDeclaration`]'s own field.
-        span: Option<LocatedSpan>,
+        /// Where the operation names it (boxed to keep the refusal small).
+        site: Box<SignatureSite>,
     },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
@@ -1511,9 +1518,13 @@ pub mod fixtures {
             operation: key("p"),
             parameter: Some(key("p")),
             value_type: ValueTypeRef::Package(key("p")),
-            member: crate::model::refusal::MemberPath::new(crate::model::refusal::MemberRoot::Operation),
-            artifact: None,
-            span: None,
+            site: Box::new(crate::model::refusal::SignatureSite {
+                member: crate::model::refusal::MemberPath::new(
+                    crate::model::refusal::MemberRoot::Operation,
+                ),
+                artifact: None,
+                span: None,
+            }),
         },
         UnknownFieldWrite => ModelRefusalCause::UnknownFieldWrite {
             operation: key("p"),

@@ -1939,9 +1939,11 @@ fn signature_type_refusal(
                 operation: operation.clone(),
                 parameter: parameter.map(|(_, key)| key.clone()),
                 value_type: value_type.clone(),
-                member,
-                artifact,
-                span,
+                site: Box::new(crate::model::refusal::SignatureSite {
+                    member,
+                    artifact,
+                    span,
+                }),
             },
             "is not a declared type",
         )

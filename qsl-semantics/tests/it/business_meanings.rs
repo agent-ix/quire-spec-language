@@ -718,13 +718,13 @@ fn operation_signature_type_meaning_matrix() {
                     ModelRefusalCause::UnknownValueType {
                         operation,
                         value_type: actual,
-                        member,
+                        site,
                         ..
                     } if name == "Missing" => {
                         assert_eq!(refusal.code, Code::DanglingReference);
                         assert_eq!(operation, &operation_key);
                         assert_eq!(actual, &value_type);
-                        member
+                        &site.member
                     }
                     other => panic!("unexpected cause for {name}: {other:?}"),
                 };
