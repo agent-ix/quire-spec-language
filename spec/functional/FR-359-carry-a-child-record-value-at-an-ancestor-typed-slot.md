@@ -121,14 +121,20 @@ ancestors, at any depth.
    re-reading such a value SHALL preserve the child's identity. A `Set<P>`,
    `Bag<P>` or `OrderedSet<P>` holding a `P` value and a child with the same
    shared fields holds two distinct elements, because they are unequal
-   (item 4). The canonical-key order between two values of **distinct
-   declarations** is the ascending byte order of their 32-byte declaration
+   (item 4). For `Set` and `Bag` only, the canonical-key order between two
+   values of **distinct declarations** is the ascending byte order of their 32-byte declaration
    keys, compared before any slot; values of one declaration continue by slots
    as FR-144 orders a record (lexicographic over fields in declaration order).
    Two values then have equal keys exactly when they have the same declaration
    and equal fields, which is when they are equal under item 4, as FR-144
    requires of equal keys and FR-149 of equality. The order is total and
-   unrelated to ancestry, which no collection order needs. It is a function of
+   unrelated to ancestry, which no collection order needs. An `OrderedSet` keeps
+   first-occurrence order and a `Sequence` keeps supply order; neither reads
+   the key. A record or tuple slot holding a child is built with the kernel's
+   `from_admitted_slots` and `retain_composite` after the caller admits it,
+   never with `evaluate_record` or `evaluate_tuple`, which stay exact. A union
+   payload follows the same rule once the kernel union carrier exists
+   (quire-exact draft PR #17). It is a function of
    content alone only because of item 9. A type is not covariant: an expression of type `Sequence<S>` or
    `Option<S>` SHALL be refused at a `Sequence<P>` or `Option<P>` slot, because
    a collection's type identity includes its element type (FR-334). A child is
@@ -187,14 +193,17 @@ QSL-737 enumerates all of these. Each owner adds its own specification.
    fault.
 3. **quire-exact, canonical key and collections:** `compare_keys` (`key.rs`)
    SHALL order two composites of distinct declarations by the byte order of
-   their declaration keys (item 5), so that set, bag and ordered-set
-   construction no longer refuses `CanonicalKeyUnavailable` for them. Collection
-   construction SHALL gain an environment-taking constructor that admits
-   conforming elements, orders them by the canonical key and charges them. No
-   new `Option` constructor is needed: `OptionValue::from_admitted` exists for
-   a caller that has admitted its payload, and QSL SHALL use it after
-   `TypeEnvironment::admits`; `OptionValue::present` stays the exact kernel
-   constructor.
+   their declaration keys (item 5), for `Set` and `Bag` only. Neither `form`
+   (today `ValueKindMismatch` at membership comparison) nor `form_grouped`
+   (`CanonicalKeyUnavailable`) then refuses conforming members. No new
+   collection constructor is added: the caller-admitted path is `form` and
+   `form_grouped` after the caller admits each occurrence with
+   `TypeEnvironment::admits` and charges `collection.element`, as the QSL
+   evaluator already does. `construct_collection`, `form_collection`,
+   `ValueType::admits`, `OptionValue::present`, `evaluate_record` and
+   `evaluate_tuple` stay exact. For an `Option` payload QSL SHALL use
+   `OptionValue::from_admitted` after the same admission. Specified in
+   quire-exact FR-376 to FR-378 (PR #38).
 4. **quire-contract-ir:** the IR reader's operation-call rule
    (`check_model_member`) SHALL accept an argument whose record type conforms to
    the parameter's declared record type, as QSpec FR-322 will state (5).
@@ -260,7 +269,7 @@ QSL-737 enumerates all of these. Each owner adds its own specification.
 | FR-359-AC-4 | For `a == b` and `a != b` with `a: Money` bound to a `TaxedMoney` value and `b: Money` bound to a `Money` value with the same `amount_minor` and `currency`, `==` is `false` and `!=` is `true`, in either operand order. With a grandchild `GiftTaxedMoney` of `TaxedMoney`, `GiftTaxedMoney` against `Money`, against `TaxedMoney` and against another `GiftTaxedMoney` of equal fields give `false`, `false` and `true`. No checked-invariant refusal is reported. Two `TaxedMoney` values with equal effective fields are equal, and unequal when only `tax_minor` differs. | Test (TC-999) |
 | FR-359-AC-5 | Equality reaches a child inside another value by the same rule: two `Pair { first: Money; second: Money }` whose `first` fields hold a `TaxedMoney` and a `Money` of equal shared fields are unequal, and equal when both hold equal `TaxedMoney` values; the same holds for two `Option<Money>`, two `Sequence<Money>`, two `Set<Money>`, a tuple position and a union payload. An `==` over two event-typed operands stays refused. The comparison of a child with a different most-specific type performs no text-leaf comparison. | Test (TC-999) |
 | FR-359-AC-6 | A record `Order { total: Money?; }` built with `total` holding a `TaxedMoney` checks, evaluates and is read back through `total`, `present(total)` and `value(total)` as the same `TaxedMoney` value, with its `tax_minor` and most-specific type intact. No `field-option-payload-rejected` fault is reported. A `Money` value at a `TaxedMoney?` field and a value of an unrelated record at a `Money?` field refuse `ill_typed`/`type-mismatch`. | Test (TC-1000) |
-| FR-359-AC-7 | `Sequence<Money>`, `Set<Money>`, `Bag<Money>` and `OrderedSet<Money>` literals holding a `TaxedMoney` element admit it and keep its identity through `contains`, iteration and `length`. A `Set<Money>` holding a `Money` and a `TaxedMoney` of equal shared fields has two elements, whose order is ascending by declaration key bytes, in either source order, and constructing it does not report `CanonicalKeyUnavailable`. A `Sequence<TaxedMoney>` expression at a `Sequence<Money>` parameter, and an `Option<TaxedMoney>` expression at an `Option<Money>` parameter, refuse `ill_typed`/`type-mismatch`. | Test (TC-1000) |
+| FR-359-AC-7 | `Sequence<Money>`, `Set<Money>`, `Bag<Money>` and `OrderedSet<Money>` literals holding a `TaxedMoney` element admit it and keep its identity through `contains`, iteration and `length`. A `Set<Money>` or `Bag<Money>` holding a `Money` and a `TaxedMoney` of equal shared fields has two elements, ordered ascending by declaration key bytes in either source order, and constructing it reports neither `ValueKindMismatch` nor `CanonicalKeyUnavailable`. An `OrderedSet<Money>` of the same two keeps first-occurrence order and a `Sequence<Money>` keeps supply order, in either source order. A `Sequence<TaxedMoney>` expression at a `Sequence<Money>` parameter, and an `Option<TaxedMoney>` expression at an `Option<Money>` parameter, refuse `ill_typed`/`type-mismatch`. | Test (TC-1000) |
 | FR-359-AC-8 | Model-operation arguments: an operation parameter `m: Money` called with a `TaxedMoney` argument checks, is emitted, reads back `Verified` through `emit_and_read_v2` and runs, including through an `Upcast` of the operation and a dispatch guard or body binding, and its result of declared type `Money` may be a `TaxedMoney`. A `Money` argument at a `TaxedMoney` parameter and an unrelated record at a `Money` parameter refuse `ill_typed`/`type-mismatch`, naming the parameter. A function argument behaves the same way. The read-back half depends on cross-repo requirement 4. | Test (TC-1001) |
 | FR-359-AC-9 | A replay snapshot whose `Order.total: Money` holds `{"record":{"type":".../TaxedMoney","fields":{...}}}` admits, and so does the same record as the payload of an `Order.discount: Money?` field and as an element of a `Sequence<Money>` field and parameter. A `GiftTaxedMoney` admits at a `Money` slot and at a `TaxedMoney` slot, and a `TaxedMoney` at a `GiftTaxedMoney` slot refuses `wrong-value-kind`. A decode followed by an encode returns the same typed observation and digest, with `type` still naming the value's own record. A `type` naming an unrelated record, a record that is only an ancestor of the slot's type, or an object refuses `invalid_runtime_input`/`wrong-value-kind` at the first path reached in field order (FR-106-AC-15). A `TaxedMoney` payload missing `tax_minor` refuses `missing-member`, though a `Money` payload without it admits. | Test (TC-1002) |
 | FR-359-AC-10 | For a `TaxedMoney` at a `Money` slot, no QSL check, evaluation or replay path reports `EqualityOperandSourceNotAdmitted`, `ValueKindMismatch`, `CanonicalKeyUnavailable` or `field-option-payload-rejected`. A hand-built checked package whose `Option<Money>` payload is an unrelated record still reports `field-option-payload-rejected`, and one whose field read names a field absent from the value's declaration reports `field-slot-unresolved`. | Test (TC-1002) |
