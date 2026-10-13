@@ -340,14 +340,18 @@ pub struct DispatchOperation {
 /// which declarations are event types, which FR-208 gives no equality.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModelRecords {
-    renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey, String), String>,
+    /// By the value's declaration and the declaration the read is typed at,
+    /// then the name there: a read looks a borrowed name up and allocates
+    /// nothing, and a package with no redefinition under another name
+    /// holds an empty map.
+    renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey), BTreeMap<String, String>>,
     events: BTreeSet<quire_exact::NodeKey>,
 }
 
 impl ModelRecords {
     /// Record that the record `value` keeps the field `name` of the record
     /// `read_at` under its own field `own`.
-    pub fn rename(
+    pub(crate) fn rename(
         &mut self,
         value: quire_exact::NodeKey,
         read_at: quire_exact::NodeKey,
@@ -355,17 +359,21 @@ impl ModelRecords {
         own: impl Into<String>,
     ) {
         self.renamed
-            .insert((value, read_at, name.into()), own.into());
+            .entry((value, read_at))
+            .or_default()
+            .insert(name.into(), own.into());
     }
 
     /// Record that `declaration` is an event type.
-    pub fn declare_event(&mut self, declaration: quire_exact::NodeKey) {
+    pub(crate) fn declare_event(&mut self, declaration: quire_exact::NodeKey) {
         self.events.insert(declaration);
     }
 
     /// Every entry of `other`.
     pub(crate) fn extend(&mut self, other: ModelRecords) {
-        self.renamed.extend(other.renamed);
+        for (key, names) in other.renamed {
+            self.renamed.entry(key).or_default().extend(names);
+        }
         self.events.extend(other.events);
     }
 
@@ -376,7 +384,8 @@ impl ModelRecords {
         field: &'f RecordField,
     ) -> &'f str {
         self.renamed
-            .get(&(declaration, field.declaration(), field.name().to_owned()))
+            .get(&(declaration, field.declaration()))
+            .and_then(|names| names.get(field.name()))
             .map_or(field.name(), String::as_str)
     }
 }

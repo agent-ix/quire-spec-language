@@ -335,10 +335,20 @@ pub(crate) fn document_with_event() -> Value {
             ],
         }),
     );
+    // A record holding an event directly, as an optional and in a sequence.
+    let dispatch = record(
+        "Dispatch",
+        &[],
+        vec![
+            plain("Dispatch", "event", &id("Shipped")),
+            optional("Dispatch", "maybe", &id("Shipped")),
+            many("Dispatch", "log", &id("Shipped"), true, false),
+        ],
+    );
     document["types"]
         .as_array_mut()
         .unwrap()
-        .extend([instant, event]);
+        .extend([instant, event, dispatch]);
     document["constructs"].as_array_mut().unwrap().extend([
         base::construct("value", base_meaning::VALUE_TYPE),
         base::construct("happened", base_meaning::EVENT_TYPE),

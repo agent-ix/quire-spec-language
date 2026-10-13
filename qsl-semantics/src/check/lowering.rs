@@ -1994,16 +1994,17 @@ impl<'a> Lowering<'a> {
         if let Some(model_record) = self.model_record_declaration(declaration, location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the
-            // `model` declaration that selects it, as a relationship is.
+            // `model` declaration that selects its package, as a relationship
+            // is. The selecting declaration is the model that holds the
+            // record, not a part of its display name.
             let alias = self
-                .scope
-                .types()
-                .composite(declaration)
-                .and_then(|composite| composite.name().split_once("::"))
-                .map(|(alias, _)| alias.to_owned());
-            if let Some(alias) = alias {
-                self.record(key, OccurrenceRole::Generated, type_declaration(&alias));
-            }
+                .models
+                .iter()
+                .find(|model| model.record(&model_record).is_some())
+                .and_then(|model| model.alias())
+                .ok_or_else(|| fault(location, KeyFault::UnknownDeclaration(model_record.clone())))?
+                .to_owned();
+            self.record(key, OccurrenceRole::Generated, type_declaration(&alias));
             self.composites.insert(declaration, key);
             return Ok(OpenComposite::Built(key));
         }

@@ -15,6 +15,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::location::Origin;
 use serde_json::Value;
 
 #[path = "../support/child_composite.rs"]
@@ -71,14 +72,20 @@ fn mismatch() -> CheckCause {
     CheckCause::IllTyped(IllTypedCause::TypeMismatch)
 }
 
-/// The one refusal of `declarations`, which must refuse as a type mismatch.
-fn refused_as_mismatch(declarations: &str) {
+/// The one refusal of `declarations`, which must be a type mismatch located
+/// in the body of `function` at child-index `path` from its root expression:
+/// the argument, record field or operand it names, not just any site.
+fn refused_at(declarations: &str, function: &str, path: &[usize]) {
     let refusals = check(declarations).expect_err("the unit does not check");
-    assert!(!refusals.is_empty());
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].cause, mismatch(), "{refusals:?}");
     assert!(
-        refusals.iter().all(|refusal| refusal.cause == mismatch()),
-        "{refusals:?}"
+        matches!(&refusals[0].location.origin,
+            Origin::Body { function: found, .. } if found == function),
+        "refused in the body of {function}: {:?}",
+        refusals[0].location
     );
+    assert_eq!(refusals[0].location.path(), path, "{declarations}");
 }
 
 /// FR-359-AC-1, FR-359-AC-8: a child, and a grandchild, is admitted at a
@@ -104,8 +111,10 @@ fn a_child_is_accepted_at_a_parent_typed_function_argument() {
 #[trace("FR-359-AC-1", "TC-998")]
 #[test]
 fn a_parent_typed_read_of_a_child_field_is_refused() {
-    refused_as_mismatch(
+    refused_at(
         "function promised using v(e: M::OrderPlaced): Integer pure { e.promised_by }",
+        "promised",
+        &[],
     );
 }
 
@@ -115,17 +124,37 @@ fn a_parent_typed_read_of_a_child_field_is_refused() {
 #[trace("FR-359-AC-8", "TC-1001")]
 #[test]
 fn a_parent_or_an_unrelated_record_is_refused_at_a_child_typed_argument() {
-    for refused in [
-        "function needs using v(m: M::TaxedMoney): Integer pure { 0 }\n\
-         function bad using v(m: M::Money): Integer pure { needs(m) }",
-        "function needs using v(m: M::Money): Integer pure { 0 }\n\
-         function bad using v(f: M::Fee): Integer pure { needs(f) }",
-        "function needs using v(m: M::GiftTaxedMoney): Integer pure { 0 }\n\
-         function bad using v(m: M::TaxedMoney): Integer pure { needs(m) }",
-        "function bad using v(m: M::Money): M::TaxedMoney pure { m }",
+    for (declarations, path) in [
+        (
+            "function needs using v(m: M::TaxedMoney): Integer pure { 0 }\n\
+             function bad using v(m: M::Money): Integer pure { needs(m) }",
+            &[0][..],
+        ),
+        (
+            "function needs using v(m: M::Money): Integer pure { 0 }\n\
+             function bad using v(f: M::Fee): Integer pure { needs(f) }",
+            &[0],
+        ),
+        (
+            "function needs using v(m: M::GiftTaxedMoney): Integer pure { 0 }\n\
+             function bad using v(m: M::TaxedMoney): Integer pure { needs(m) }",
+            &[0],
+        ),
+        // The refusal names the second parameter, not the first.
+        (
+            "function needs using v(a: M::Money, b: M::Money): Integer pure { 0 }\n\
+             function bad using v(m: M::TaxedMoney, f: M::Fee): Integer pure { needs(m, f) }",
+            &[1],
+        ),
     ] {
-        refused_as_mismatch(refused);
+        refused_at(declarations, "bad", path);
     }
+    // A result is refused at the body that produces it.
+    refused_at(
+        "function bad using v(m: M::Money): M::TaxedMoney pure { m }",
+        "bad",
+        &[],
+    );
 }
 
 /// FR-359-AC-7: a type is not covariant, so a collection or an optional of
@@ -133,13 +162,17 @@ fn a_parent_or_an_unrelated_record_is_refused_at_a_child_typed_argument() {
 #[trace("FR-359-AC-7", "TC-1000")]
 #[test]
 fn a_collection_or_option_of_the_child_is_refused_at_a_parent_slot() {
-    refused_as_mismatch(
+    refused_at(
         "function takes using v(s: Sequence<M::Money>[0, 4]): Integer pure { 0 }\n\
          function bad using v(s: Sequence<M::TaxedMoney>[0, 4]): Integer pure { takes(s) }",
+        "bad",
+        &[0],
     );
-    refused_as_mismatch(
+    refused_at(
         "function takes using v(o: Option<M::Money>): Integer pure { 0 }\n\
          function bad using v(o: Option<M::TaxedMoney>): Integer pure { takes(o) }",
+        "bad",
+        &[0],
     );
 }
 
@@ -153,11 +186,17 @@ fn equality_over_a_child_and_a_parent_static_type_stays_ill_typed() {
          function differ using v(a: M::Money, b: M::Money): Boolean pure { a != b }",
     )
     .expect("equality over parent-typed operands checks");
-    refused_as_mismatch(
+    // The equality expression is the body's root, whose children are the two
+    // operands: the refusal is at the comparison, in either operand order.
+    refused_at(
         "function mixed using v(c: M::TaxedMoney, b: M::Money): Boolean pure { c = b }",
+        "mixed",
+        &[],
     );
-    refused_as_mismatch(
+    refused_at(
         "function mixed using v(b: M::Money, c: M::TaxedMoney): Boolean pure { b = c }",
+        "mixed",
+        &[],
     );
 }
 
@@ -175,11 +214,21 @@ fn an_optional_field_admits_a_child_and_refuses_a_parent_or_a_stranger() {
          function unwrapTotal using v(i: M::Invoice, d: M::Money): M::Money pure { if present(i.total) then value(i.total) else d }",
     )
     .expect("a child checks at an optional field and reads back");
-    refused_as_mismatch(
+    refused_at(
         "function bad using v(m: M::Money): M::TaxedInvoice pure { M::TaxedInvoice { total: m } }",
+        "bad",
+        &[0],
     );
-    refused_as_mismatch(
+    refused_at(
         "function bad using v(f: M::Fee): M::Invoice pure { M::Invoice { total: f } }",
+        "bad",
+        &[0],
+    );
+    // The refusal names the field: `discount`, the record's second member.
+    refused_at(
+        "function bad using v(m: M::TaxedMoney, f: M::Fee): M::Invoice pure { M::Invoice { total: m, discount: f } }",
+        "bad",
+        &[1],
     );
 }
 
@@ -198,24 +247,57 @@ fn a_collection_literal_of_the_parent_admits_a_child_element() {
     .expect("a child checks as a collection element");
 }
 
-/// FR-359-AC-5: FR-208 gives an event type no equality, so `==` over event
-/// operands, and over a record holding one, is `ill_typed`/`operator-ineligible`
-/// whether or not the two have one type.
+/// The refusals of `declarations` over the event fixture package.
+fn refused_with_events(declarations: &str) -> Vec<CheckRefusal> {
+    assemble_document(&fixture::document_with_event(), "M", declarations)
+        .check(CheckingLimits::default())
+        .expect_err("an event has no equality")
+}
+
+/// FR-359-AC-5: FR-208 gives an event type no equality, so `=` and `!=` over
+/// event operands, and over a record holding one directly, as an optional or
+/// in a sequence, are `ill_typed`/`operator-ineligible` whether or not the
+/// two operands have one type. Each refusal is located in the comparing
+/// function's own body.
 #[trace("FR-359-AC-5", "TC-999")]
 #[test]
 fn equality_over_event_operands_stays_refused() {
-    let refusals = assemble_document(
-        &fixture::document_with_event(),
-        "M",
-        "function same using v(a: M::Shipped, b: M::Shipped): Boolean pure { a = b }",
-    )
-    .check(CheckingLimits::default())
-    .expect_err("an event has no equality");
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(
-        refusals[0].cause,
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
-    );
+    for (function, declaration) in [
+        (
+            "same",
+            "function same using v(a: M::Shipped, b: M::Shipped): Boolean pure { a = b }",
+        ),
+        (
+            "differ",
+            "function differ using v(a: M::Shipped, b: M::Shipped): Boolean pure { a != b }",
+        ),
+        (
+            "holding",
+            "function holding using v(a: M::Dispatch, b: M::Dispatch): Boolean pure { a = b }",
+        ),
+        (
+            "maybe",
+            "function maybe using v(a: Option<M::Shipped>, b: Option<M::Shipped>): Boolean pure { a = b }",
+        ),
+        (
+            "logs",
+            "function logs using v(a: Sequence<M::Shipped>[0, 2], b: Sequence<M::Shipped>[0, 2]): Boolean pure { a != b }",
+        ),
+    ] {
+        let refusals = refused_with_events(declaration);
+        assert_eq!(refusals.len(), 1, "{function}: {refusals:?}");
+        assert_eq!(
+            refusals[0].cause,
+            CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
+            "{function}"
+        );
+        assert!(
+            matches!(&refusals[0].location.origin,
+                Origin::Body { function: found, .. } if found == function),
+            "{function}: {:?}",
+            refusals[0].location
+        );
+    }
 }
 
 fn model_nodes(graph: &CheckedGraph) -> Vec<(NodeTag, &'static str, Value)> {

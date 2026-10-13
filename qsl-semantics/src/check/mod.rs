@@ -158,7 +158,6 @@ pub use node_key::{
 // `check_context` and the constant are test-support views of
 // `pub(crate)` items (`CheckContext::new`, `SCALAR_LIMITS_UNLIMITED`), so
 // the layer-5 evaluator's tests reach them without widening the items.
-pub use check::ModelRecords;
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
     admitted_source, check_context, declaration, declaration_signature, declarations_for,
@@ -175,7 +174,9 @@ pub use assemble::{
     DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
-pub use check::{DispatchOperation, EnumBinding, PackageDeclarations, ResolvedSignatures};
+pub use check::{
+    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
+};
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
