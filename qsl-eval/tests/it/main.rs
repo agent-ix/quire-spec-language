@@ -28,3 +28,4 @@ mod source_call;
 mod state_model_family;
 mod tc235_business_meaning_runtime;
 mod total_functions;
+mod variant_fields;

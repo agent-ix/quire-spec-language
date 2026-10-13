@@ -182,9 +182,9 @@ configured limit as bound, the actual count and the locus of the node whose
 entry failed ([FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)),
 reported as `stage_limit_exceeded`/`node-count-exceeded`, including when
 each declaration alone is within the budget. The `CheckingLimits` ceilings
-are stage limits, not a caller work budget: the `quire.native.diagnostics/v1` `stage_limit_exceeded` row covers a family `check`
-and compiler stages S1 to S4, and says that a semantic maximum is not a
-caller work budget, which `resource_exhausted` is.
+are caller-configured stage limits, distinct from the caller work-budget meter: the `quire.native.diagnostics/v1` `stage_limit_exceeded` row covers a family `check`
+and compiler stages S1 to S4, and the `resource_exhausted` row is the work-budget code, saying that a maximum fixed by the language is not a
+caller work budget.
 
 ### Packaging is all-or-nothing
 

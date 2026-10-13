@@ -1334,11 +1334,17 @@ mod tests {
     /// The raw wire views allowed a bare string type field, as (file, type,
     /// field). Each holds a snapshot document's `record` `type` string until a
     /// checked declaration resolves it by lookup; none is a model field type.
-    const RAW_WIRE_TYPE_FIELDS: [(&str, &str, &str); 3] = [
+    const RAW_WIRE_TYPE_FIELDS: [(&str, &str, &str); 4] = [
         // The public raw view of a `record` member.
         (
             "qsl-semantics/src/model/observation.rs",
             "RawRecord",
+            "type_identity",
+        ),
+        // The public raw view of a `variant` member.
+        (
+            "qsl-semantics/src/model/observation.rs",
+            "RawVariant",
             "type_identity",
         ),
         // The arena node that view reads.

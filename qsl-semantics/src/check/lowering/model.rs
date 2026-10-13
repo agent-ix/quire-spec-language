@@ -325,6 +325,32 @@ pub(crate) fn record_node_key(
         .map_err(RecordKeyError::Preimage)
 }
 
+/// The key of the model declaration node of the variant type `record`
+/// declares (QSpec FR-322 "Model-owned members" step 2), a function of the
+/// declaring package's identity and the type's node alone, so no alias a
+/// unit gives the model enters it (FR-360 item 11). `None` for a record that
+/// declares no variant type. The emitter does not yet add this node to a
+/// graph (FR-360 item 12), so [`record_form`] does not name it.
+pub(crate) fn variant_type_node_key(
+    record: &DomainPackageRecord,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<Option<NodeKey>, RecordKeyError> {
+    let DomainPackageRecord::Enum(variant_type) = record else {
+        return Ok(None);
+    };
+    let owner = ModelOwner::new(
+        variant_type.key.package.clone(),
+        variant_type.key.node.clone(),
+    )
+    .map_err(|_| RecordKeyError::EmptyOwner)?;
+    crate::check::node_key::node_key(
+        &model_node_content(owner, NodeTag::Model, "variant_type").input(),
+        identity,
+    )
+    .map(|keyed| Some(keyed.key))
+    .map_err(RecordKeyError::Preimage)
+}
+
 /// Why [`record_node_key`] has no key for a record it names.
 #[derive(Debug)]
 pub(crate) enum RecordKeyError {

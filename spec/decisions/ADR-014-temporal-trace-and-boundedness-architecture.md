@@ -79,7 +79,7 @@ relationships:
 - **QSpec, diagnostics** (`quire.native.diagnostics/v1`).
   `stage_limit_exceeded` covers the limits of S1 to S4, the I2 reader, a
   family `check`, `replay` and `route`. `resource_exhausted` is the caller's
-  work-budget meter, and "a semantic maximum is not a caller work budget".
+  work-budget meter, and "a maximum fixed by the language is not a caller work budget".
   There is no timeout, solver-absent or bound-exhausted code: those are QSpec
   FR-331 results.
 - **QSpec, kernel.** AD-016's Shared-type row lists the kernel types exactly,

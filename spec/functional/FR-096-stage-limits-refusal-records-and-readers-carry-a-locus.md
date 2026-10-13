@@ -181,7 +181,7 @@ meter wherever it is read and keeps `resource_exhausted`
 §1). The `quire.native.diagnostics/v1`
 `stage_limit_exceeded` row names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
-work-budget meter, adding that a semantic maximum is not a caller work
+work-budget meter, adding that a maximum fixed by the language is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (node count, declaration
 input bytes and work, NFR-011) are therefore stage
 limits. S1's syntax budgets (`SyntaxLimit`, FR-035) report

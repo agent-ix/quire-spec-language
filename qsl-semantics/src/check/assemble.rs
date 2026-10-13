@@ -38,15 +38,16 @@ use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
-    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
-    IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
+    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, EnumShape, IeeeWidth,
+    Integer, IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
 
 use super::check::{
-    EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantCaseDeclaration,
-    VariantTypeDeclaration,
+    EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
-use super::lowering::{record_node_key, strongly_connected, AdmittedModel, RecordKeyError};
+use super::lowering::{
+    record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, RecordKeyError,
+};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -331,8 +332,10 @@ pub enum AssemblyCause {
         /// The record's IR node identity.
         node: String,
     },
-    /// Source names a model variant type (FR-150: refused as an unsupported
-    /// declaration form; the variant type's own declaration is admitted).
+    /// Source names a model variant type with a case whose name is not a
+    /// source identifier. The shared enumeration declaration holds
+    /// identifiers only, so such a type has no runtime enumeration yet; the
+    /// type's own declaration stays admitted (FR-360 item 4).
     UnsupportedVariantType {
         /// The name as written, `M::T`.
         name: String,
@@ -681,6 +684,80 @@ impl TypeNames for Names {
     }
 }
 
+/// Why a variant type of a selected model could not be declared.
+pub(crate) enum VariantTypeFault {
+    /// A key the admitted view does not resolve: a broken invariant of I1,
+    /// carrying the node.
+    Broken(String),
+    /// The type's checked node key has no preimage.
+    Handle(super::node_key::NodeKeyRefusal),
+}
+
+/// Each variant type of `view`'s package, declared by its effective identity
+/// and its checked node key together, with the effective identity of every
+/// case (FR-056 "Effective identity of a variant type", FR-360 item 11), each
+/// with the declaration key it was read from. The one builder of the type
+/// environment and of replay admission, so both agree on every key and rank.
+/// `alias` names the type `alias::<artifact id>`.
+pub(crate) fn variant_type_declarations(
+    view: &crate::model::normalize::EffectiveView,
+    alias: &str,
+    identity_limits: IdentityLimits,
+) -> Result<Vec<(DeclarationKey, VariantTypeDeclaration)>, VariantTypeFault> {
+    let package = view.domain_package();
+    let identities = view.type_identities();
+    let by_key: BTreeMap<&DeclarationKey, &DomainPackageRecord> = package
+        .records
+        .iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let mut declared = Vec::new();
+    for record in &package.records {
+        let DomainPackageRecord::Enum(variant_type) = record else {
+            continue;
+        };
+        let broken = |node: &str| VariantTypeFault::Broken(node.to_owned());
+        let identity = identities
+            .get(&variant_type.key)
+            .ok_or_else(|| broken(&variant_type.key.node))?;
+        let node = match variant_type_node_key(record, identity_limits) {
+            Ok(Some(node)) => node,
+            Ok(None) | Err(RecordKeyError::EmptyOwner) => {
+                return Err(broken(&variant_type.key.node))
+            }
+            Err(RecordKeyError::Preimage(refusal)) => {
+                return Err(VariantTypeFault::Handle(refusal))
+            }
+        };
+        let mut cases = Vec::with_capacity(variant_type.members.len());
+        for entry in view
+            .declarations()
+            .iter()
+            .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(*identity))
+        {
+            match by_key.get(&entry.preimage.original).copied() {
+                Some(DomainPackageRecord::Variant(case)) => {
+                    cases.push((entry.effective_id, case.case.clone()))
+                }
+                Some(_) | None => return Err(broken(&entry.preimage.original.node)),
+            }
+        }
+        if cases.len() != variant_type.members.len() {
+            return Err(broken(&variant_type.key.node));
+        }
+        declared.push((
+            variant_type.key.clone(),
+            VariantTypeDeclaration::new(
+                *identity,
+                format!("{alias}::{}", variant_type.name),
+                node,
+                cases,
+            ),
+        ));
+    }
+    Ok(declared)
+}
+
 /// What a selected model declares in the type environment: its object types,
 /// its record value types and event types as composites, and where those keep
 /// the fields their ancestors name.
@@ -731,6 +808,24 @@ fn model_object_types(
         .map(|record| (record.key(), record))
         .collect();
     let mut errors = Vec::new();
+    let mut variant_types = Vec::new();
+    let mut variant_shapes = BTreeMap::<&DeclarationKey, EnumShape>::new();
+    match variant_type_declarations(&model.view, alias, identity_limits) {
+        Ok(declared) => {
+            for (key, declaration) in declared {
+                if let Some(shape) = declaration.shape() {
+                    if let Some((owned, _)) = records.get_key_value(&key) {
+                        variant_shapes.insert(owned, shape);
+                    }
+                }
+                variant_types.push(declaration);
+            }
+        }
+        Err(VariantTypeFault::Broken(node)) => errors.push(broken(&node)),
+        Err(VariantTypeFault::Handle(refusal)) => {
+            errors.push(error(AssemblyCause::handle(refusal)));
+        }
+    }
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
     let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
     let mut meaning_handles = BTreeMap::<DeclarationKey, NodeKey>::new();
@@ -769,7 +864,13 @@ fn model_object_types(
                 ) {
                     continue;
                 }
-                match model_field(field, &records, identities, &meaning_handles) {
+                match model_field(
+                    field,
+                    &records,
+                    identities,
+                    &meaning_handles,
+                    &variant_shapes,
+                ) {
                     Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
                     Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                     Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
@@ -783,7 +884,13 @@ fn model_object_types(
                 }
             }
             DomainPackageRecord::OperationMember(operation) => {
-                match model_operation(operation, &records, identities, &meaning_handles) {
+                match model_operation(
+                    operation,
+                    &records,
+                    identities,
+                    &meaning_handles,
+                    &variant_shapes,
+                ) {
                     Ok(declaration) => operations
                         .entry(&operation.owner)
                         .or_default()
@@ -910,7 +1017,13 @@ fn model_object_types(
             .collect();
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
         for field in effective_fields {
-            match model_field(field, &records, identities, &meaning_handles) {
+            match model_field(
+                field,
+                &records,
+                identities,
+                &meaning_handles,
+                &variant_shapes,
+            ) {
                 // A record's declaration holds its effective fields; the
                 // field a redefinition replaces is hidden in the view, so the
                 // declaration carries no `redefines` link of its own (the
@@ -949,42 +1062,6 @@ fn model_object_types(
             )
             .with_supertypes(composite_supertypes),
         );
-    }
-    // Each variant type is declared by its effective identity with the
-    // effective identity of every case, read from the normalized view
-    // (FR-056 "Effective identity of a variant type"). Nothing binds a
-    // source name to it.
-    let mut variant_types = Vec::new();
-    for record in &package.records {
-        let DomainPackageRecord::Enum(variant_type) = record else {
-            continue;
-        };
-        let Some(identity) = identities.get(&variant_type.key) else {
-            errors.push(broken(&variant_type.key.node));
-            continue;
-        };
-        let mut cases = Vec::with_capacity(variant_type.members.len());
-        for entry in
-            model.view.declarations().iter().filter(|entry| {
-                entry.visible && entry.preimage.owner_effective_type == Some(*identity)
-            })
-        {
-            match records.get(&entry.preimage.original) {
-                Some(DomainPackageRecord::Variant(case)) => cases.push(
-                    VariantCaseDeclaration::new(entry.effective_id, case.case.clone()),
-                ),
-                Some(_) | None => errors.push(broken(&entry.preimage.original.node)),
-            }
-        }
-        if cases.len() != variant_type.members.len() {
-            errors.push(broken(&variant_type.key.node));
-            continue;
-        }
-        variant_types.push(VariantTypeDeclaration::new(
-            *identity,
-            format!("{alias}::{}", variant_type.name),
-            cases,
-        ));
     }
     let mut model_records = record_renames(model, &records, &meaning_handles);
     for (key, handle) in &meaning_handles {
@@ -1140,6 +1217,7 @@ fn model_value_type(
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
+    variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
 ) -> Result<ValueType, Unmapped> {
     let element = match value_type {
         ValueTypeRef::Native(native) => match native {
@@ -1176,6 +1254,15 @@ fn model_value_type(
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
             },
+            // FR-360 item 3: a variant type is its enum type, never a
+            // `Reference`. One whose cases the runtime enumeration cannot
+            // hold has no shape and no type.
+            Some(DomainPackageRecord::Enum(_)) => ValueType::Enum(
+                variant_shapes
+                    .get(key)
+                    .ok_or(Unmapped::Unsupported)?
+                    .clone(),
+            ),
             Some(_) => return Err(Unmapped::Unsupported),
             None => return Err(Unmapped::Broken),
         },
@@ -1215,6 +1302,7 @@ fn model_field(
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
+    variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
 ) -> Result<FieldDeclaration, Unmapped> {
     let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
     let value_type = model_value_type(
@@ -1223,6 +1311,7 @@ fn model_field(
         records,
         identities,
         meaning_handles,
+        variant_shapes,
     )?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
@@ -1247,6 +1336,7 @@ fn model_operation(
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
+    variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
 ) -> Result<OperationDeclaration, Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
@@ -1260,6 +1350,7 @@ fn model_operation(
             records,
             identities,
             meaning_handles,
+            variant_shapes,
         )?;
         parameters.push((parameter_name.to_owned(), value_type));
     }
@@ -1273,6 +1364,7 @@ fn model_operation(
                 records,
                 identities,
                 meaning_handles,
+                variant_shapes,
             )
         })
         .transpose()?;
@@ -1795,7 +1887,7 @@ impl PackageDeclarations {
         let mut model_composites = Vec::new();
         let mut model_variant_types = Vec::new();
         let mut model_records = ModelRecords::default();
-        let mut admitted_variant_types = Vec::new();
+        let mut unshaped_variant_types = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
@@ -1809,14 +1901,6 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            admitted_variant_types.extend(model.view.domain_package().records.iter().filter_map(
-                |record| match record {
-                    DomainPackageRecord::Enum(variant_type) => {
-                        Some(format!("{}::{}", selection.alias, variant_type.name))
-                    }
-                    _ => None,
-                },
-            ));
             match model_object_types(
                 &selection.alias,
                 model,
@@ -1830,6 +1914,13 @@ impl PackageDeclarations {
                     }
                     object_types.extend(types.objects);
                     model_composites.extend(types.composites);
+                    unshaped_variant_types.extend(
+                        types
+                            .variant_types
+                            .iter()
+                            .filter(|declared| declared.shape().is_none())
+                            .map(|declared| declared.name().to_owned()),
+                    );
                     model_variant_types.extend(types.variant_types);
                     model_records.extend(types.model_records);
                     match operation_clause_declarations(&selection.alias, model, &operations) {
@@ -1848,10 +1939,18 @@ impl PackageDeclarations {
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
-        let variant_type_names: BTreeSet<String> = admitted_variant_types.into_iter().collect();
+        let variant_type_names: BTreeSet<String> = unshaped_variant_types.into_iter().collect();
+        // A model composite or a variant type with a runtime enumeration is a
+        // declared type name; `M::T` is no source declaration of the unit.
         let model_composite_names: BTreeSet<String> = model_composites
             .iter()
             .map(|declaration| declaration.name().to_owned())
+            .chain(
+                model_variant_types
+                    .iter()
+                    .filter(|declared| declared.shape().is_some())
+                    .map(|declared| declared.name().to_owned()),
+            )
             .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
@@ -2094,6 +2193,16 @@ impl PackageDeclarations {
                 .entry(name.clone())
                 .or_default()
                 .push(ValueType::Reference(*identity));
+        }
+        // FR-360 item 4: `M::T` names the variant type `T` as its enum type.
+        for declared in &model_variant_types {
+            if let Some(shape) = declared.shape() {
+                names
+                    .types
+                    .entry(declared.name().to_owned())
+                    .or_default()
+                    .push(ValueType::Enum(shape));
+            }
         }
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).

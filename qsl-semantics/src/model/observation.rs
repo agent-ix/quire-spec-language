@@ -545,6 +545,14 @@ enum RawNode {
         type_identity: String,
         fields: Vec<(String, usize)>,
     },
+    /// `{"variant": {"type": .., "case": ..}}` as read: each of the two
+    /// members when present, and whether the payload holds any other member
+    /// (FR-360 item 9 judges those defects in its own order).
+    Variant {
+        type_identity: Option<String>,
+        case: Option<String>,
+        extra_member: bool,
+    },
 }
 
 /// The form of one value of a [`SnapshotValue`], with nested values as
@@ -565,6 +573,39 @@ pub enum RawForm<'v> {
     Sequence(RawItems<'v>),
     /// `{"record": {"type": <declaration identity>, "fields": {..}}}`.
     Record(RawRecord<'v>),
+    /// `{"variant": {"type": <declaration identity>, "case": <case name>}}`.
+    Variant(RawVariant<'v>),
+}
+
+/// A `variant` value as read: the members of its payload, whichever it
+/// holds (FR-360 item 9).
+#[derive(Clone, Copy, Debug)]
+pub struct RawVariant<'v> {
+    type_identity: Option<&'v str>,
+    case: Option<&'v str>,
+    extra_member: bool,
+}
+
+impl<'v> RawVariant<'v> {
+    /// The `type` member: the IR node identity of the variant type, if the
+    /// payload has one.
+    #[must_use]
+    pub fn type_identity(self) -> Option<&'v str> {
+        self.type_identity
+    }
+
+    /// The `case` member: the exact declared case name, if the payload has
+    /// one.
+    #[must_use]
+    pub fn case(self) -> Option<&'v str> {
+        self.case
+    }
+
+    /// Whether the payload holds a member other than `type` and `case`.
+    #[must_use]
+    pub fn has_extra_member(self) -> bool {
+        self.extra_member
+    }
 }
 
 /// One value inside a [`SnapshotValue`].
@@ -695,6 +736,32 @@ impl SnapshotValue {
         Self { nodes, root: at }
     }
 
+    /// `{"variant": {"type": type_identity, "case": case}}`.
+    #[must_use]
+    pub fn variant(type_identity: impl Into<String>, case: impl Into<String>) -> Self {
+        Self::single(RawNode::Variant {
+            type_identity: Some(type_identity.into()),
+            case: Some(case.into()),
+            extra_member: false,
+        })
+    }
+
+    /// A `variant` value read from a payload that may lack `type` or `case`
+    /// or hold another member, which admission refuses in FR-360 item 9's
+    /// order.
+    #[must_use]
+    pub fn variant_payload(
+        type_identity: Option<String>,
+        case: Option<String>,
+        extra_member: bool,
+    ) -> Self {
+        Self::single(RawNode::Variant {
+            type_identity,
+            case,
+            extra_member,
+        })
+    }
+
     /// The root value's form.
     #[must_use]
     pub fn form(&self) -> RawForm<'_> {
@@ -719,6 +786,15 @@ impl SnapshotValue {
                 arena: self,
                 type_identity,
                 fields,
+            }),
+            RawNode::Variant {
+                type_identity,
+                case,
+                extra_member,
+            } => RawForm::Variant(RawVariant {
+                type_identity: type_identity.as_deref(),
+                case: case.as_deref(),
+                extra_member: *extra_member,
             }),
         }
     }
@@ -761,6 +837,10 @@ impl PartialEq for SnapshotValue {
                         work.push((left.form(), right.form()));
                     }
                 }
+                (RawForm::Variant(left), RawForm::Variant(right))
+                    if left.type_identity() == right.type_identity()
+                        && left.case() == right.case()
+                        && left.has_extra_member() == right.has_extra_member() => {}
                 _ => return false,
             }
         }
@@ -788,9 +868,11 @@ impl RawNode {
                     .map(|(name, index)| (name, index + offset))
                     .collect(),
             },
-            other @ (Self::Boolean(_) | Self::Integer(_) | Self::Absent | Self::Reference(_)) => {
-                other
-            }
+            other @ (Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Absent
+            | Self::Reference(_)
+            | Self::Variant { .. }) => other,
         }
     }
 }
@@ -1514,10 +1596,12 @@ pub fn admit_observations(
 // `admit_invariant`/`admit_operation` below.
 
 mod document;
+mod encode;
 mod frame;
 mod tree;
 
 use document::{read_document, DocumentKind};
+pub use encode::ValueEncoder;
 
 #[allow(clippy::too_many_arguments)]
 fn admit_invariant(

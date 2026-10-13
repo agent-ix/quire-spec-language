@@ -185,10 +185,11 @@ pub struct PopulationAdmissionLimits {
     /// Ceiling on the `supertypes` edges one member-type conformance walk
     /// follows, with the same meaning as
     /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`].
-    /// Not charged by admission itself; recorded on the admitted
-    /// [`PopulationBinding`], so the frame check and the
-    /// [`all_instances`]/[`lookup`] queries over that binding walk under the
-    /// same caller-configured bound. Reaching it refuses
+    /// Charged by every walk that follows `supertypes` edges: the coverage
+    /// walk of admission, subsetting applicability, the frame check, and the
+    /// member walk of [`all_instances`] and the key walk of [`lookup`]. It is
+    /// recorded on the admitted [`PopulationBinding`], so the later walks run
+    /// under the same caller-configured bound. Reaching it refuses
     /// `ModelRefusalCause::AncestorSteps` naming this bound.
     pub ancestor_steps: u64,
 }
