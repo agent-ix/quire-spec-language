@@ -253,14 +253,14 @@ fn an_operation_without_a_body_declaration_has_no_body() {
     assert_eq!(package.unit_clauses_for(&empty).len(), 1);
     assert_eq!(package.operation_bodies.len(), 1);
 
-    // No body declaration at all: no model has a rebuilt view, and the
-    // admitted view keeps the intake value, false throughout.
+    // No body declaration at all: the selected model holds the admitted
+    // view, whose `has_body` is false throughout.
     let none = assembled(
         &document,
         "function same using v(a: Boolean): Boolean pure { a }",
     );
     assert!(none.operation_bodies.is_empty());
-    assert!(none.selected_views.is_empty());
+    assert!(bodied(&none).is_empty());
 }
 
 /// FR-103: a body resolves through the target type's effective view, so a

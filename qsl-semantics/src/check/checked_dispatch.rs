@@ -22,18 +22,19 @@
 //! `Expression` and signature. `DomainPackage` carries no `Expression` payload —
 //! adding one would perturb the
 //! `model-effective-declaration.schema.json`/`model-complete.md`
-//! correspondence every other rung of this crate keys against — so this is where a real
-//! intake (`agent-ix/quire-specification#131`) will eventually plug in its
-//! own clause source in place of a test-built side table; nothing else here
-//! needs to change when it does.
+//! correspondence every other rung of this crate keys against — so the clause
+//! source is the unit's own: the production caller,
+//! [`PackageDeclarations::link_dispatch`], builds the side table from the
+//! unit's `operation-body` declarations and `pre` clauses (FR-302).
 //!
 //! Scope, kept to exactly what TC-196 D06-D08 need (re-read this note before
 //! extending it):
 //!
 //! - One dispatch-eligible operation at a time, mirroring `link_dispatch`'s
-//!   own per-operation signature. A package with several dispatch call sites
-//!   calls this once per distinct receiver-type/member pair and merges the
-//!   resulting `functions`/`dispatch_operations`/`dispatch_tables`.
+//!   own per-operation signature. A package with several dispatched calls
+//!   calls this once per distinct called family root and merges the
+//!   resulting `functions`/`dispatch_operations`/`dispatch_tables`
+//!   (`PackageDeclarations::link_dispatch`).
 //! - The receiver's admitted static types are derived from
 //!   `table.entries()` and the model's effective view, not supplied by the
 //!   caller: each subtype's [`DeclarationKey`] resolves to its
@@ -553,6 +554,19 @@ fn rename_parameters(
         return expression.clone();
     }
     substitute_names(expression, &rename)
+}
+
+/// `expression` with every free name in `rename`'s keys spelled as its value,
+/// under [`rename_parameters`]' capture-avoiding rule. A plain clone when
+/// `rename` is empty.
+pub(super) fn rename_names(
+    expression: &Expression,
+    rename: &BTreeMap<String, String>,
+) -> Expression {
+    if rename.is_empty() {
+        return expression.clone();
+    }
+    substitute_names(expression, rename)
 }
 
 /// The spelling [`Scope::bind`] gives the `suffix`-th alpha-name of a binder

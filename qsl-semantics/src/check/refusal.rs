@@ -635,11 +635,54 @@ pub enum CheckCause {
     /// `InvalidDispatchDeclaration` above: this would otherwise be
     /// `CheckCause`'s widest variant.
     ProtocolAnchor(Box<ProtocolAnchorCause>),
+    /// FR-302: a called operation's dispatch family did not link at S3.
+    /// Boxed for the same reason as `ProtocolAnchor` above.
+    DispatchLink(Box<DispatchLinkCause>),
     /// FR-062-AC-8/TC-161/FR-063: exists only so `--cfg seam_probe` makes
     /// `CheckCause::code`'s match below non-exhaustive. Never constructed
     /// outside the probe build.
     #[cfg(seam_probe)]
     __SeamProbe,
+}
+
+/// FR-302: why one called operation's dispatch family did not link. One
+/// value per failed family; a refusal that reports several failed families
+/// carries one of these for each.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DispatchLinkCause {
+    /// The called operation: the root of the family that failed.
+    pub operation: crate::model::key::DeclarationKey,
+    /// The refusal's code.
+    pub code: Code,
+    /// The refusal's catalog pair: `resource_exhausted`/
+    /// `insufficient-next-charge` for a ceiling, `ambiguous_dispatch`/
+    /// `no-applicable` or `multiple-undominated` for an ambiguous family.
+    pub catalog: qsl_foundation::diagnostic::CatalogCode,
+    /// The caller-budget ceiling the family stopped on, when it did: the
+    /// setting that raises it, the limit, the count the refused step would
+    /// have reached and the retained charge (FR-255 Behavior 1).
+    pub denial: Option<qsl_foundation::diagnostic::BudgetDenial>,
+    /// Every subtype that did not link, in enumeration order; empty unless
+    /// the family was ambiguous.
+    pub subtypes: Vec<DispatchSubtypeFailure>,
+}
+
+/// One subtype that did not link in an ambiguous family (FR-083): its
+/// FR-151 cause, the applicable candidates and the strict dominance pairs
+/// among them.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DispatchSubtypeFailure {
+    /// The subtype.
+    pub subtype: crate::model::key::DeclarationKey,
+    /// `no-applicable` or `multiple-undominated`.
+    pub cause: &'static str,
+    /// Every applicable candidate.
+    pub candidates: Vec<crate::model::key::DeclarationKey>,
+    /// Every `(dominant, dominated)` pair among them.
+    pub dominance_pairs: Vec<(
+        crate::model::key::DeclarationKey,
+        crate::model::key::DeclarationKey,
+    )>,
 }
 
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
@@ -841,6 +884,7 @@ impl CheckCause {
     pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
+            Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
                 self.cause()?,
@@ -886,6 +930,7 @@ impl CheckCause {
             Self::Identity(IdentityRefusal::Allocation { .. }) => Code::ResourceExhausted,
             Self::Identity(IdentityRefusal::NonCanonical) => Code::RuntimeInvariant,
             Self::ProtocolAnchor(cause) => cause.code(),
+            Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
             // same `--cfg seam_probe_downstream` build -- this arm exists
@@ -937,6 +982,7 @@ impl CheckCause {
                 None
             }
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
+            Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps
             // `cause()` compiling under `--cfg seam_probe`, so `code()`'s
