@@ -169,13 +169,15 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         view,
     };
     let mut operations = super::OperationTable::default();
-    let owner = super::SourceOwner::new("test", "unit").expect("fixture source owner");
-    let (declarations, composites) = super::model_object_types(
+    let super::ModelTypes {
+        objects: declarations,
+        composites,
+        ..
+    } = super::model_object_types(
         "M",
         &selected,
         selected.span,
         &mut operations,
-        &owner,
         IdentityLimits::default(),
     )
     .expect("state-machine meaning is supported by the object-type seam");

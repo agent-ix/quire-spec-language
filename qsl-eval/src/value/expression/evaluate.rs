@@ -50,7 +50,7 @@ use quire_exact::{
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, EqualityOperator, FieldRef,
+    operand_value, CompositeShape, EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -1361,9 +1361,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                     {
                         Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
                     }
-                    _ => Value::Boolean(outcome_into_stop(
-                        checked.evaluate(&left, &right, self.meter),
-                    )?),
+                    _ => Value::Boolean(outcome_into_stop(checked.evaluate(
+                        self.scope.types(),
+                        &left,
+                        &right,
+                        self.meter,
+                    ))?),
                 }
             }
             NodeKind::Not(_) => {
@@ -1374,17 +1377,31 @@ impl<'a, 'm> Machine<'a, 'm> {
                 ))?)
             }
             NodeKind::Field {
-                index, optional, ..
+                field, optional, ..
             } => {
                 let Value::Composite(composite) = self.pop()? else {
                     return Err(invariant("field-composite-value-expected"));
                 };
+                // FR-359 item 2: the slot is found in the value's own
+                // declaration by the field's identity. The value may be a
+                // child of the record the read is typed at, whose own fields
+                // are not a positional prefix of that record's.
+                let index = self
+                    .scope
+                    .record_slot(composite.declaration(), field)
+                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let slot = composite
                     .slots()
-                    .get(*index)
+                    .get(index)
                     .ok_or_else(|| invariant("field-slot-unresolved"))?;
-                let value = Self::project(slot, *optional, node.value_type(), false)?;
-                self.note_field(&composite, *index, &value);
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    *optional,
+                    node.value_type(),
+                    false,
+                )?;
+                self.note_field(&composite, index, &value);
                 value
             }
             NodeKind::Attribute {
@@ -1444,7 +1461,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 } else {
                     self.witnessed_reads.remove(node.location());
                 }
-                let value = Self::project(slot, *optional, node.value_type(), witnessed)?;
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    *optional,
+                    node.value_type(),
+                    witnessed,
+                )?;
                 self.note_member(node, &reference, &field.name, &value);
                 value
             }
@@ -1614,7 +1637,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
-                operand_value(operand, &value, &self.units, self.meter)?
+                operand_value(self.scope.types(), operand, &value, &self.units, self.meter)?
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {
@@ -1980,6 +2003,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// outside its declared range, which an optional slot's checked
     /// construction would refuse. Every other slot is checked as before.
     fn project(
+        types: &TypeEnvironment,
         slot: &FieldValue,
         optional: bool,
         value_type: &ValueType,
@@ -1990,9 +2014,18 @@ impl<'a, 'm> Machine<'a, 'm> {
             (FieldValue::Present(value), true, ValueType::Option(payload)) if witnessed => Ok(
                 OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
             ),
+            // FR-359 item 5: the payload is admitted by conformance under the
+            // type environment, so a child of the payload's record keeps its
+            // own identity in the `Option`. `OptionValue::present` is exact.
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                OptionValue::present((**payload).clone(), value.clone())
-                    .map_err(|_| invariant("field-option-payload-rejected"))
+                if types.admits(payload, value) {
+                    Ok(OptionValue::from_admitted(
+                        (**payload).clone(),
+                        Some(value.clone()),
+                    ))
+                } else {
+                    Err(invariant("field-option-payload-rejected"))
+                }
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
                 Ok(OptionValue::none((**payload).clone()))
@@ -3402,10 +3435,26 @@ mod tests {
         );
         let optional = ValueType::option(range);
         let outside = FieldValue::Present(Value::Integer(Integer::from(-1_i64)));
-        assert!(Machine::project(&outside, true, &optional, true).is_ok());
-        assert!(Machine::project(&outside, true, &optional, false).is_err());
+        assert!(
+            Machine::project(&TypeEnvironment::default(), &outside, true, &optional, true).is_ok()
+        );
+        assert!(Machine::project(
+            &TypeEnvironment::default(),
+            &outside,
+            true,
+            &optional,
+            false
+        )
+        .is_err());
         let wrong_kind = FieldValue::Present(Value::Boolean(true));
-        assert!(Machine::project(&wrong_kind, true, &optional, false).is_err());
+        assert!(Machine::project(
+            &TypeEnvironment::default(),
+            &wrong_kind,
+            true,
+            &optional,
+            false
+        )
+        .is_err());
     }
     /// FR-106 check 6.5: an equality compares an out-of-type integer by
     /// value only when the operand reads a witnessed slot. Two integers
