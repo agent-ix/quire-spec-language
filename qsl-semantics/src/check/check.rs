@@ -323,6 +323,10 @@ pub struct PackageDeclarations {
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
+    /// FR-103: each domain-package operation `requires`/`ensures` clause the
+    /// driver parsed, with its operation resolved, checked beside the state
+    /// clauses. Checking yields a refusal or nothing.
+    pub operation_clauses: Vec<super::OperationClauseDeclaration>,
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
     pub identity: qsl_foundation::IdentityLimits,
@@ -365,6 +369,7 @@ impl PackageDeclarations {
             state_clauses: Vec::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
+            operation_clauses: Vec::new(),
             identity,
         }
     }

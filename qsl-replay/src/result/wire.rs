@@ -23,7 +23,7 @@ use qsl_foundation::witness::{
 use qsl_package::CheckedPackage;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{Origin, Role, Value};
-use quire_semantic_value::location::{Location, Origin as Declaration};
+use quire_semantic_value::location::{Location, OperationClauseKind, Origin as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 
@@ -862,12 +862,58 @@ struct LocationWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 enum DeclarationWire {
-    Body { function: String, index: usize },
-    Measure { function: String, index: usize },
+    Body {
+        function: String,
+        index: usize,
+    },
+    Measure {
+        function: String,
+        index: usize,
+    },
     Expression,
-    TypeDeclaration { name: String },
-    StateClause { clause: String, index: usize },
-    ProtocolAttempt { protocol: usize, attempt: usize },
+    TypeDeclaration {
+        name: String,
+    },
+    StateClause {
+        clause: String,
+        index: usize,
+    },
+    ProtocolAttempt {
+        protocol: usize,
+        attempt: usize,
+    },
+    ModelOperationClause {
+        operation: String,
+        clause: OperationClauseWire,
+        position: usize,
+    },
+}
+
+/// Which list of a model operation a clause belongs to, as it is spelled on
+/// the wire.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum OperationClauseWire {
+    Requires,
+    Ensures,
+}
+
+impl From<OperationClauseKind> for OperationClauseWire {
+    fn from(kind: OperationClauseKind) -> Self {
+        match kind {
+            OperationClauseKind::Requires => Self::Requires,
+            OperationClauseKind::Ensures => Self::Ensures,
+        }
+    }
+}
+
+impl From<OperationClauseWire> for OperationClauseKind {
+    fn from(kind: OperationClauseWire) -> Self {
+        match kind {
+            OperationClauseWire::Requires => Self::Requires,
+            OperationClauseWire::Ensures => Self::Ensures,
+        }
+    }
 }
 
 impl LocationWire {
@@ -896,6 +942,15 @@ impl LocationWire {
                         attempt: *attempt,
                     }
                 }
+                Declaration::ModelOperationClause {
+                    operation,
+                    kind,
+                    position,
+                } => DeclarationWire::ModelOperationClause {
+                    operation: operation.clone(),
+                    clause: (*kind).into(),
+                    position: *position,
+                },
             },
             path: location.path(),
         }
@@ -916,6 +971,15 @@ impl LocationWire {
                 DeclarationWire::ProtocolAttempt { protocol, attempt } => {
                     Declaration::ProtocolAttempt { protocol, attempt }
                 }
+                DeclarationWire::ModelOperationClause {
+                    operation,
+                    clause,
+                    position,
+                } => Declaration::ModelOperationClause {
+                    operation,
+                    kind: clause.into(),
+                    position,
+                },
             },
             &self.path,
         )

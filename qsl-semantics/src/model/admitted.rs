@@ -647,6 +647,8 @@ mod tests {
                 owner: key("Order"),
                 parameters: Vec::new(),
                 result: None,
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 effect: OperationEffect::default(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: false,

@@ -57,6 +57,8 @@ pub fn m_actor_model() -> SelectedModel {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
@@ -69,6 +71,8 @@ pub fn m_actor_model() -> SelectedModel {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
@@ -84,6 +88,7 @@ pub fn m_actor_model() -> SelectedModel {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view,
+        operation_clauses: Vec::new(),
     }
 }
 

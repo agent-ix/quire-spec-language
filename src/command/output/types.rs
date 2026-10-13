@@ -257,12 +257,31 @@ pub(super) struct SpineLocation {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(super) enum SpineOrigin {
-    Body { function: String, index: usize },
-    Measure { function: String, index: usize },
+    Body {
+        function: String,
+        index: usize,
+    },
+    Measure {
+        function: String,
+        index: usize,
+    },
     Expression,
-    TypeDeclaration { name: String },
-    StateClause { clause: String, index: usize },
-    ProtocolAttempt { protocol: usize, attempt: usize },
+    TypeDeclaration {
+        name: String,
+    },
+    StateClause {
+        clause: String,
+        index: usize,
+    },
+    ProtocolAttempt {
+        protocol: usize,
+        attempt: usize,
+    },
+    ModelOperationClause {
+        operation: String,
+        clause: &'static str,
+        position: usize,
+    },
 }
 
 /// FR-100's `outcome` member. `Refused`'s members follow the refusal

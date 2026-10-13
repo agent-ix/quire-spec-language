@@ -27,6 +27,7 @@ use qsl_semantics::model::observation::{
     admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
     ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
 };
+use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
@@ -192,7 +193,16 @@ fn lifecycle_package(
         &packages,
         ModelNormalizationLimits::default(),
     )
-    .expect("M15 model selection admits");
+    .expect("M15 model selection admits")
+    .into_iter()
+    .map(|model| {
+        model
+            .with_parsed_operation_clauses(|text| {
+                qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+            })
+            .expect("M15 kept operation clauses parse")
+    })
+    .collect();
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         built,
@@ -1004,7 +1014,20 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert_eq!(record.cause, "duplicate-member");
     assert_eq!(record.fields["document"], "q1");
     assert_eq!(record.fields["path"], "/populations/0/objects/1");
+}
 
+/// M15 run 6 (FR-103-AC-8): a model operation `requires` that reads `pre(e)`
+/// refuses `wrong_snapshot`/`forbidden-pre-read`, naming the operation and
+/// located at its `Operation.pre` member, with no checked package.
+#[trace(
+    "QSpec-TC-235",
+    "QSpec-FR-208-AC-10",
+    "QSpec-FR-208-AC-11",
+    "FR-103-AC-8",
+    "TC-993"
+)]
+#[test]
+fn tc235_m15_run6_operation_requires_reading_pre_refuses() {
     let pre_read = lifecycle_document("pre(self.placed) = false");
     let refusals = lifecycle_package(
         &pre_read,
@@ -1014,16 +1037,100 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     )
     .expect_err("run 6 refuses the model operation pre-read");
     assert_eq!(refusals.len(), 1, "run 6 has one refusal: {refusals:?}");
+    let refusal = &refusals[0];
     assert_eq!(
-        refusals[0].cause.code(),
+        refusal.cause.code(),
         qsl_foundation::diagnostic::Code::WrongSnapshot
     );
+    assert!(matches!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    ));
+    assert_eq!(
+        refusal.operation_node(),
+        Some(crate::tc235_k2::id("OrderLifecycle/place").as_str())
+    );
+    assert_eq!(
+        refusal.operation_member(),
+        Some(MemberPath::new(MemberRoot::Operation).name("pre").index(0))
+    );
+}
+
+/// The M15 package with `place`'s kept clauses replaced by `requires` and
+/// `ensures`, each entry `(language, text)`.
+fn lifecycle_with_contract(
+    requires: &[(&str, &str)],
+    ensures: &[(&str, &str)],
+) -> serde_json::Value {
+    let mut document = lifecycle_document("not self.placed");
+    let place = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|ty| ty["identity"] == crate::tc235_k2::id("OrderLifecycle"))
+        .expect("K2 OrderLifecycle declaration")["operations"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|operation| operation["identity"] == crate::tc235_k2::id("OrderLifecycle/place"))
+        .expect("K2 OrderLifecycle/place operation");
+    let clauses = |entries: &[(&str, &str)]| {
+        serde_json::Value::Array(
+            entries
+                .iter()
+                .map(|(language, text)| {
+                    serde_json::json!({
+                        "language": language,
+                        "text": text,
+                        "origin": crate::tc235_k2::origin("OrderLifecycle/place"),
+                    })
+                })
+                .collect(),
+        )
+    };
+    place["pre"] = clauses(requires);
+    place["post"] = clauses(ensures);
+    document
+}
+
+const LIFECYCLE_UNIT_CLAUSES: &str =
+    "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }";
+
+/// FR-103-AC-8: a refusal in the second `requires` and in an `ensures` is
+/// located at that clause's own position in its own list.
+#[trace("FR-103-AC-8", "TC-993")]
+#[test]
+fn operation_clause_refusals_are_located_by_kind_and_position() {
+    let document = lifecycle_with_contract(
+        &[("quire", "not self.placed"), ("quire", "pre(self.placed)")],
+        &[("quire", "self.placed")],
+    );
+    let refusals = lifecycle_package(&document, LIFECYCLE_UNIT_CLAUSES)
+        .map(|_| ())
+        .expect_err("the second requires reads pre");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert!(matches!(
         refusals[0].cause,
         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
     ));
-    assert!(format!("{:?}", refusals[0]).contains(&crate::tc235_k2::id("OrderLifecycle/place")));
-    assert!(format!("{:?}", refusals[0]).contains("Operation.pre"));
+    assert_eq!(
+        refusals[0].operation_member(),
+        Some(MemberPath::new(MemberRoot::Operation).name("pre").index(1))
+    );
+
+    let document = lifecycle_with_contract(&[], &[("quire", "self.placed"), ("quire", "self")]);
+    let refusals = lifecycle_package(&document, LIFECYCLE_UNIT_CLAUSES)
+        .map(|_| ())
+        .expect_err("the second ensures is not Boolean");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0].operation_node(),
+        Some(crate::tc235_k2::id("OrderLifecycle/place").as_str())
+    );
+    assert_eq!(
+        refusals[0].operation_member(),
+        Some(MemberPath::new(MemberRoot::Operation).name("post").index(1))
+    );
 }
 
 #[trace("QSpec-TC-235")]

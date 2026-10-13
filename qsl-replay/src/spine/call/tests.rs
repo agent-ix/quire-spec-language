@@ -715,6 +715,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: selected_view,
+        operation_clauses: Vec::new(),
     };
     let refusal = admit_model_arguments(
         &[selected],
@@ -743,11 +744,13 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: selected_view.clone(),
+        operation_clauses: Vec::new(),
     };
     let foreign_model = SelectedModel {
         alias: "M2".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: foreign_view.clone(),
+        operation_clauses: Vec::new(),
     };
     let declared = selected_view.type_identities()[&selected_type];
     let supplied = foreign_view.type_identities()[&foreign_type];
@@ -788,11 +791,13 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
             alias: "M".to_owned(),
             span: qsl_foundation::Span { start: 0, end: 0 },
             view: selected_view.clone(),
+            operation_clauses: Vec::new(),
         },
         SelectedModel {
             alias: "M2".to_owned(),
             span: qsl_foundation::Span { start: 0, end: 0 },
             view: foreign_view.clone(),
+            operation_clauses: Vec::new(),
         },
     ];
     let foreign_reference = Value::Reference(quire_exact::ObjectReference::new(
@@ -916,6 +921,7 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view,
+        operation_clauses: Vec::new(),
     };
     let parameter = [("key".to_owned(), ValueType::Reference(target_id))];
     for reference in [target_ref, subtype_ref] {
