@@ -943,15 +943,10 @@ pub(super) fn admit_and_assemble_with_body(
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"))
-    .into_iter()
-    .map(|model| {
-        model
-            .with_parsed_operation_clauses(|text| {
-                qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
-            })
-            .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"))
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
-    .collect();
+    .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"));
     let raw = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
         "unit.native",
@@ -1365,7 +1360,7 @@ pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
 fn admit(
     document: &[u8],
 ) -> Result<
-    Vec<qsl_semantics::model::intake::SelectedModel>,
+    qsl_semantics::model::intake::SelectedModels,
     qsl_semantics::model::intake::UnitIntakeRefusal,
 > {
     let (unit, packages) = config_unit(document);

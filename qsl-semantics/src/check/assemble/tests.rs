@@ -60,7 +60,7 @@ fn assemble_as(
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
 }
@@ -137,7 +137,6 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                 effect: OperationEffect::default(),
                 requires: Vec::new(),
                 ensures: Vec::new(),
-                own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
             }),
@@ -583,7 +582,7 @@ fn assembler_allocation_cause_preserves_native_request_unit() {
             &BTreeMap::new(),
             TypeEnvironmentLimits::default(),
             &Cancel::new(),
-            |_, _, _, _| Err(EnvironmentFailure::Allocation(request)),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Allocation(request)) },
         )
         .expect_err("injected registry allocation failure must refuse admission");
         let [error] = refusal.errors.as_slice() else {
@@ -622,7 +621,7 @@ fn assembler_capacity_cause_preserves_native_request_unit() {
             &BTreeMap::new(),
             TypeEnvironmentLimits::default(),
             &Cancel::new(),
-            |_, _, _, _| Err(EnvironmentFailure::Capacity(request)),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Capacity(request)) },
         )
         .expect_err("injected reservation overflow must refuse admission");
         let [error] = refusal.errors.as_slice() else {
@@ -1915,7 +1914,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
             unit,
-            Vec::new(),
+            crate::model::intake::SelectedModels::default(),
             Vec::new(),
             crate::check::AssemblyLimits {
                 decimal_scale: 4,
@@ -2148,6 +2147,7 @@ fn admit_composites(
         TypeEnvironmentLimits::default(),
         &Cancel::new(),
     )
+    .map(|admitted| admitted.types)
 }
 
 /// QSL-732: a composite generalization cycle refuses with the typed cause,
@@ -2231,4 +2231,59 @@ fn a_child_of_a_refused_composite_parent_is_a_consequence() {
         panic!("expected the typed declaration refusal: {error:?}");
     };
     assert_eq!(invalid.declaration, "Parent");
+}
+
+/// Relaxing a widened redefinition retypes only the field that redefines the
+/// widened member (or a member it redefines), never a sibling field of the
+/// same type that redefines something else.
+#[test]
+fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
+    use quire_semantic_value::declaration::{FieldDeclaration, FieldRef, ObjectTypeDeclaration};
+    let id = |byte: u8| EffectiveId::from_digest([byte; 32]);
+    let (a, b) = (id(1), id(2));
+    let int = |upper: i64| {
+        ValueType::Int(
+            IntegerInterval::new(
+                quire_exact::Integer::from(0i64),
+                quire_exact::Integer::from(upper),
+            )
+            .expect("interval"),
+        )
+    };
+    let parent = ObjectTypeDeclaration::new(
+        a,
+        "M::A",
+        vec![
+            FieldDeclaration::new("x", int(5), Presence::Required),
+            FieldDeclaration::new("y", int(9), Presence::Required),
+        ],
+    );
+    let child = ObjectTypeDeclaration::new(
+        b,
+        "M::B",
+        vec![
+            FieldDeclaration::new("x", int(7), Presence::Required)
+                .with_redefines(FieldRef::new(a, "x")),
+            FieldDeclaration::new("y", int(3), Presence::Required)
+                .with_redefines(FieldRef::new(a, "y")),
+        ],
+    )
+    .with_supertypes(vec![a]);
+    let mut types = vec![parent, child];
+    assert!(super::relax_widening(
+        &mut types,
+        "M::B",
+        &FieldRef::new(a, "x")
+    ));
+    let fields = types[1].attributes();
+    assert_eq!(
+        fields[0].value_type(),
+        &int(5),
+        "the widened field is relaxed"
+    );
+    assert_eq!(
+        fields[1].value_type(),
+        &int(3),
+        "the sibling keeps its own type"
+    );
 }

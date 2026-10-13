@@ -60,7 +60,6 @@ fn operation(
         effect: OperationEffect::default(),
         requires: Vec::new(),
         ensures: Vec::new(),
-        own_postcondition_clauses: Vec::new(),
         has_body,
         redefines: redefines.map(DeclarationKey::fixture),
     })

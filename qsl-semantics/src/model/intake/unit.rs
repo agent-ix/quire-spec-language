@@ -17,11 +17,13 @@ use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
 
 use super::{admit_located, read_domain_package, PackageDocument};
-use crate::model::accounting::{Incomplete, ModelNormalizationLimits};
-use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, ParsedOperationClause};
+use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ParsedOperationClause,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
-use crate::model::normalize::{normalize_with_cancel, EffectiveView, NormalizeOutcome, Refusals};
+use crate::model::normalize::{normalize_on, EffectiveView, NormalizeOutcome, Refusals};
 use crate::model::refusal::{MemberPath, MemberRoot};
 use qsl_forms::Expression;
 use quire_semantic_value::location::OperationClauseKind;
@@ -40,6 +42,113 @@ pub struct SelectedModel {
     /// parsed by the compile driver (FR-103). I1 parses none, so admission
     /// leaves this empty.
     pub operation_clauses: Vec<ParsedOperationClause>,
+}
+
+/// One model-admission operation: the selected models of a unit and the one
+/// meter every selection was normalized on. Only admission constructs it,
+/// assembly consumes it and carries the meter into checking, so the
+/// conformance stage continues the work normalization counted.
+#[derive(Clone, Debug)]
+pub struct SelectedModels {
+    entries: Vec<SelectedModel>,
+    meter: Meter,
+}
+
+impl Default for SelectedModels {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            meter: Meter::new(ModelNormalizationLimits::default()),
+        }
+    }
+}
+
+impl std::ops::Deref for SelectedModels {
+    type Target = [SelectedModel];
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+/// Hand-built models whose admission is not under test carry no counted work.
+#[cfg(any(test, feature = "test-support"))]
+impl From<Vec<SelectedModel>> for SelectedModels {
+    fn from(entries: Vec<SelectedModel>) -> Self {
+        Self::fixture_entries(entries)
+    }
+}
+
+impl SelectedModels {
+    pub(crate) fn into_parts(self) -> (Vec<SelectedModel>, Meter) {
+        (self.entries, self.meter)
+    }
+
+    /// Each selected model parsed by `parse` (see
+    /// [`SelectedModel::with_parsed_operation_clauses`]); the meter is kept.
+    pub fn with_parsed_operation_clauses<E>(
+        self,
+        mut parse: impl FnMut(&str) -> Result<Expression, E>,
+    ) -> Result<Self, OperationClauseFailure<E>> {
+        let Self { entries, meter } = self;
+        let entries = entries
+            .into_iter()
+            .map(|entry| entry.with_parsed_operation_clauses(&mut parse))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { entries, meter })
+    }
+
+    /// The work the operation has consumed so far, for one limit kind.
+    pub fn consumed(&self, kind: crate::model::accounting::LimitKind) -> u64 {
+        self.meter.consumed(kind)
+    }
+
+    /// Models whose admission is not under test: no work is counted.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_entries(entries: Vec<SelectedModel>) -> Self {
+        Self {
+            entries,
+            meter: Meter::new(ModelNormalizationLimits::UNLIMITED),
+        }
+    }
+
+    /// One package admitted through the same normalization producer, on its
+    /// own meter under `limits`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(
+        alias: &str,
+        span: Span,
+        package: DomainPackage,
+        limits: ModelNormalizationLimits,
+    ) -> Result<Self, UnitIntakeRefusal> {
+        let mut meter = Meter::new(limits);
+        let view = match normalize_on(&package, &mut meter) {
+            NormalizeOutcome::Completed(view) => view,
+            NormalizeOutcome::Refused(refusals) => {
+                return Err(UnitIntakeRefusal {
+                    alias: alias.to_owned(),
+                    span,
+                    cause: UnitIntakeCause::Refused(refusals),
+                })
+            }
+            NormalizeOutcome::Incomplete(incomplete) => {
+                return Err(UnitIntakeRefusal {
+                    alias: alias.to_owned(),
+                    span,
+                    cause: UnitIntakeCause::Limit(incomplete),
+                })
+            }
+        };
+        Ok(Self {
+            entries: vec![SelectedModel {
+                alias: alias.to_owned(),
+                span,
+                view,
+                operation_clauses: Vec::new(),
+            }],
+            meter,
+        })
+    }
 }
 
 /// A kept clause the caller's parser refused: which clause, and the parser's
@@ -206,7 +315,7 @@ pub fn admit_unit(
     selections: &[ModelSelection],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
-) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
+) -> Result<SelectedModels, UnitIntakeRefusal> {
     admit_unit_with_cancel(selections, packages, limits, &Cancel::new())
 }
 
@@ -217,7 +326,7 @@ pub fn admit_unit_with_cancel(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
-) -> Result<Vec<SelectedModel>, UnitIntakeRefusal> {
+) -> Result<SelectedModels, UnitIntakeRefusal> {
     let refuse = |selection: &ModelSelection, cause| UnitIntakeRefusal {
         alias: selection.alias.clone(),
         span: selection.span,
@@ -237,6 +346,14 @@ pub fn admit_unit_with_cancel(
             },
         ));
     }
+    // Selections are admitted and normalized in the selection's canonical
+    // order (identity bytes, then digest), never in source or alias order.
+    offered.sort_by(|(_, left), (_, right)| {
+        left.identity
+            .as_bytes()
+            .cmp(right.identity.as_bytes())
+            .then_with(|| left.digest.cmp(&right.digest))
+    });
     let admitted = admit_located(
         &offered,
         |(_, offered_ref)| offered_ref,
@@ -250,29 +367,29 @@ pub fn admit_unit_with_cancel(
             UnitIntakeCause::Refused(Refusals::new(refusal, Vec::new())),
         )
     })?;
-    admitted
-        .into_iter()
-        .map(|((selection, _), package_ref, document)| {
-            let package = read_domain_package(package_ref, &document).map_err(|refusals| {
-                let cause = Refusals::try_from(refusals)
-                    .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);
-                refuse(selection, cause)
-            })?;
-            let view = match normalize_with_cancel(&package, limits, cancel) {
-                NormalizeOutcome::Completed(view) => view,
-                NormalizeOutcome::Refused(refusals) => {
-                    return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))
-                }
-                NormalizeOutcome::Incomplete(incomplete) => {
-                    return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
-                }
-            };
-            Ok(SelectedModel {
-                alias: selection.alias.clone(),
-                span: selection.span,
-                view,
-                operation_clauses: Vec::new(),
-            })
-        })
-        .collect()
+    let mut meter = Meter::new(limits).with_cancel(cancel.clone());
+    let mut entries = Vec::with_capacity(admitted.len());
+    for ((selection, _), package_ref, document) in admitted {
+        let package = read_domain_package(package_ref, &document).map_err(|refusals| {
+            let cause = Refusals::try_from(refusals)
+                .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);
+            refuse(selection, cause)
+        })?;
+        let view = match normalize_on(&package, &mut meter) {
+            NormalizeOutcome::Completed(view) => view,
+            NormalizeOutcome::Refused(refusals) => {
+                return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))
+            }
+            NormalizeOutcome::Incomplete(incomplete) => {
+                return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
+            }
+        };
+        entries.push(SelectedModel {
+            alias: selection.alias.clone(),
+            span: selection.span,
+            view,
+            operation_clauses: Vec::new(),
+        });
+    }
+    Ok(SelectedModels { entries, meter })
 }

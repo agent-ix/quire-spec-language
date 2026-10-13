@@ -307,7 +307,6 @@ fn normalization_owner_package() -> DomainPackage {
             effect: OperationEffect::default(),
             requires: Vec::new(),
             ensures: Vec::new(),
-            own_postcondition_clauses: Vec::new(),
             has_body: false,
             redefines: None,
         })
@@ -686,7 +685,6 @@ fn operation_signature_type_meaning_matrix() {
                 effect: OperationEffect::default(),
                 requires: Vec::new(),
                 ensures: Vec::new(),
-                own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
             },
@@ -1264,7 +1262,6 @@ fn inherited_business_members_derive_the_inherit_fact_only() {
             effect: OperationEffect::default(),
             requires: Vec::new(),
             ensures: Vec::new(),
-            own_postcondition_clauses: Vec::new(),
             has_body: false,
             redefines: None,
         },

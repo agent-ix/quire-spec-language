@@ -45,9 +45,8 @@
 //! module's own `checked_dispatch` submodule (a private module, not
 //! resolvable as an intra-doc link, matching this crate's own convention;
 //! see [`checked_dispatch_operation`] for its re-exported entry point), and
-//! `model::conformance::check_field_refinement_obligation` moved to this
-//! module's own `field_refinement` submodule (see
-//! [`check_field_refinement_obligation`]) -- `check` (layer-3-later)
+//! refinement consumes retained source facts inside this module's own
+//! private `field_refinement` submodule. `check` (layer-3-later)
 //! importing from `model` (layer-3-earlier) is the *forward* direction
 //! §6.1's order permits, not a reverse edge, so `model_check_edges`
 //! (`xtask`'s TC-176 scan) is empty from here on. `grep -rn "use crate::check"
@@ -81,6 +80,7 @@ mod facts;
 mod family;
 mod field_refinement;
 mod identity;
+mod model_conformance;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
 #[cfg(any(test, feature = "test-support"))]
@@ -184,11 +184,12 @@ pub use check::{
     DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
     VariantCaseDeclaration, VariantTypeDeclaration,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use checked_dispatch::checked_dispatch_selected_operation;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
 };
-pub use field_refinement::check_field_refinement_obligation;
 pub use operation_body::OperationBodyDeclaration;
 pub use operation_clause::OperationClauseDeclaration;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
@@ -210,11 +211,13 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // an enum-member literal the same way `identity::to_kernel_value_type`'s C-26
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
+pub use field_refinement::RefinementObligation;
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
     InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
+pub use model_conformance::ModelConformanceFailure;
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
@@ -643,6 +646,28 @@ fn resolve_signature(
     }
 }
 
+/// A refused or exhausted type admission as the check refusal that reports it.
+fn type_admission(failure: quire_semantic_value::declaration::EnvironmentFailure) -> CheckCause {
+    let cause = assemble::environment_cause(failure);
+    CheckCause::TypeAdmission {
+        code: cause.code(),
+        cause: cause.catalog_code().cause(),
+    }
+}
+
+/// A refused staged-admission read as a refusal: a ceiling or storage failure
+/// keeps its type-admission cause, anything else is a broken invariant.
+fn pending_refusal(failure: quire_semantic_value::declaration::PendingFieldFailure) -> CheckCause {
+    use quire_semantic_value::declaration::PendingFieldFailure;
+    match failure {
+        PendingFieldFailure::Limit(limit) => {
+            type_admission(quire_semantic_value::declaration::EnvironmentFailure::Limit(limit))
+        }
+        PendingFieldFailure::Storage(storage) => type_admission(storage),
+        other => CheckCause::InternalFault(Box::new(KeyFault::PendingField(format!("{other:?}")))),
+    }
+}
+
 impl PackageDeclarations {
     /// Check every function: duplicate names, declared types, typing, static
     /// definedness and termination, in that order. Every refusal is made
@@ -871,6 +896,10 @@ impl PackageDeclarations {
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
+        let model_inputs = self.model_inputs;
+        let mut pending_types = self
+            .pending_types
+            .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
         let object_nodes = object_types
@@ -1127,6 +1156,7 @@ impl PackageDeclarations {
                 location: &location,
                 nodes_used,
                 cancel: Some(cancel),
+                staged: pending_types.as_ref(),
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -1182,6 +1212,7 @@ impl PackageDeclarations {
                 location: &location,
                 nodes_used,
                 cancel: Some(cancel),
+                staged: None,
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -1203,6 +1234,58 @@ impl PackageDeclarations {
         }
         if !refusals.is_empty() {
             return Err(refusals);
+        }
+        if let Some((selected, mut model_meter)) = model_inputs {
+            match model_conformance::check(
+                &selected,
+                &mut model_meter,
+                &models,
+                &state_clause_forms,
+                &typed_clauses,
+                pending_types.as_mut().map(std::cell::RefCell::get_mut),
+            ) {
+                Ok(()) => {}
+                Err(model_conformance::StageDenial::Pending(failure)) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: pending_refusal(failure),
+                    }])
+                }
+                Err(model_conformance::StageDenial::MissingModel(identity)) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::MissingAdmittedModel(
+                            identity,
+                        ))),
+                    }])
+                }
+                Err(model_conformance::StageDenial::Incomplete(incomplete)) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::ModelIncomplete(incomplete),
+                    }])
+                }
+                Err(model_conformance::StageDenial::Refused(failures)) => {
+                    return Err(failures
+                        .into_iter()
+                        .map(|failure| CheckRefusal {
+                            location: root(Origin::Expression),
+                            cause: CheckCause::ModelConformance(Box::new(failure)),
+                        })
+                        .collect())
+                }
+            }
+        }
+        // FR-110: the staged type admission completes only after the
+        // conformance stage found every model redefinition conforming, and
+        // before dispatch linking or sealing.
+        if let Some(pending) = pending_types.take().map(std::cell::RefCell::into_inner) {
+            if let Err(failure) = pending.complete() {
+                return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: type_admission(failure),
+                }]);
+            }
         }
         // FR-113: each protocol declaration's scoped anchors, resolved
         // through its nested control scopes (`check::protocol_clause`), and

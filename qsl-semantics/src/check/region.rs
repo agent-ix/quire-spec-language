@@ -692,12 +692,14 @@ mod tests {
         let k = prefix.len();
         let map = embedding_map(&document_text, k, embedding_body());
         let document = map.original().reference().clone();
+        let embedding = Arc::new(map);
         let mut declarations = unit();
-        declarations.embedding = Some(Arc::new(map));
+        declarations.embedding = Some(Arc::clone(&embedding));
+        let mut for_check = unit();
+        for_check.embedding = Some(embedding);
         let standalone = unit();
         let regions = declarations.regions();
-        let checked = declarations
-            .clone()
+        let checked = for_check
             .check(CheckingLimits::default())
             .expect("the unit checks");
         let cases = [

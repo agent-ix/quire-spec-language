@@ -90,6 +90,7 @@ mod model;
 mod state;
 mod wire;
 
+pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, ForeignView, ModelClause};
 pub(crate) use state::{

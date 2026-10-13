@@ -291,9 +291,28 @@ impl VariantCaseDeclaration {
     }
 }
 
+/// The staged model type admission, held until the conformance stage has
+/// judged every redefinition.
+pub struct StagedTypes(pub quire_semantic_value::declaration::PendingTypeEnvironment);
+
+impl std::fmt::Debug for StagedTypes {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("StagedTypes")
+    }
+}
+
 /// The closed declarations of one package that expressions resolve against.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PackageDeclarations {
+    /// The staged model admission, completed once the conformance stage has
+    /// judged every model redefinition.
+    pub pending_types: Option<StagedTypes>,
+    /// The models and the meter their admission counted on, which the
+    /// conformance stage continues.
+    pub model_inputs: Option<(
+        Vec<crate::model::intake::SelectedModel>,
+        crate::model::accounting::Meter,
+    )>,
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
@@ -429,6 +448,30 @@ pub struct PackageDeclarations {
 }
 
 impl PackageDeclarations {
+    /// The work units the staged model type admission has spent so far
+    /// (structural admission plus its metered reads), when one is staged.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn staged_work_units(&self) -> Option<u64> {
+        self.pending_types.as_ref().map(|staged| staged.0.spent())
+    }
+
+    /// Test fixture declarations retaining the genuine admission operation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_with_selected_models(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        identity: qsl_foundation::IdentityLimits,
+        selected: crate::model::intake::SelectedModels,
+    ) -> Self {
+        let (entries, meter) = selected.into_parts();
+        let mut declarations = Self::new(source, identity);
+        declarations.models = entries
+            .iter()
+            .map(|entry| super::AdmittedModel::from_view(&entry.view))
+            .collect();
+        declarations.model_inputs = Some((entries, meter));
+        declarations
+    }
+
     /// A package declared by the source unit `source` names, with no
     /// declaration yet and no lock evidence, whose node identities encode
     /// under `identity`.
@@ -437,6 +480,8 @@ impl PackageDeclarations {
         identity: qsl_foundation::IdentityLimits,
     ) -> Self {
         Self {
+            model_inputs: None,
+            pending_types: None,
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
@@ -1146,6 +1191,8 @@ pub(crate) struct Typer<'a> {
 /// `result` are bound to.
 #[derive(Clone, Debug)]
 pub(crate) struct StateContext {
+    pub(crate) parent_projections:
+        BTreeMap<quire_semantic_value::declaration::FieldRef, (ValueType, Presence)>,
     /// The clause kind.
     pub(crate) kind: qsl_forms::StateClauseKind,
     /// The operation's name, for a `pre` or `post` clause.
@@ -2218,8 +2265,11 @@ impl<'a> Typer<'a> {
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
         let value_type = reference.value_type.clone();
+        let on_self = self.state.as_ref().is_some_and(
+            |state| matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot),
+        );
         let reference = self.push(reference);
-        self.model_node(
+        let mut attribute = self.model_node(
             super::state_model::Form::Attribute {
                 reference,
                 value_type,
@@ -2228,7 +2278,29 @@ impl<'a> Typer<'a> {
                 derefed,
             },
             location,
-        )
+        )?;
+        // A field the writing operation narrows reads through its
+        // immediate parent's declared type and presence.
+        if on_self {
+            if let NodeKind::Attribute {
+                field, optional, ..
+            } = &mut attribute.kind
+            {
+                let projected = self
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.parent_projections.get(&*field));
+                if let Some((declared, presence)) = projected {
+                    *optional = *presence == Presence::Optional;
+                    attribute.value_type = if *optional {
+                        ValueType::option(declared.clone())
+                    } else {
+                        declared.clone()
+                    };
+                }
+            }
+        }
+        Ok(attribute)
     }
 
     /// `self` (FR-104): in a state clause, the context object,

@@ -118,11 +118,13 @@ order, rotated to start at the least key.
 
 ### The refinement obligation admits no partial pass
 
-A narrowing field redefinition SHALL be admitted only when an established
-postcondition fact proves the narrowing; absent that fact, the model checker
-SHALL refuse it with an unproved-refinement cause naming the missing
-obligation kind. The model checker SHALL NOT admit a narrowing redefinition
-on the strength of its declared shape alone.
+A narrowing field redefinition written by an exposed operation SHALL be
+admitted only when an established postcondition fact of that operation proves
+the narrowing; absent that fact, the model checker SHALL refuse it with an
+unproved-refinement cause naming the missing obligation kind. The model
+checker SHALL NOT discharge that writer's obligation on the strength of the
+field's declared shape alone. When no exposed operation writes the field,
+no writer refinement obligation arises.
 
 The field-domain obligation is decided over exact integers. The redefined
 field's declared scalar bounds and a postcondition's comparison literal are
@@ -222,9 +224,17 @@ give the same verdict the model gives at evaluation:
   proper ancestor SHALL refuse with a redefinition-target cause. The
   exposed field SHALL narrow every field it stands for: required wherever
   one of them is, and admitting only values that field's type admits. A
-  reference field SHALL be redefined only with the identical reference
-  type, since evaluation matches a reference's object type exactly.
-  Otherwise the environment SHALL refuse as ill-typed.
+  reference field of type `Reference<T>` SHALL, under
+  `quire.model.complete/v1`, admit a redefining field of type `Reference<S>`
+  exactly when `S` conforms to `T` in the closed FR-151 effective view:
+  `S` is `T` or a proper subtype of `T`. This covariance SHALL preserve the
+  reference's qualified identity and SHALL NOT admit an implicit downcast.
+  Reverse or unrelated target types SHALL refuse `ill_typed`/`variance-result`.
+  Covariance SHALL NOT discharge a writer's refinement obligation: narrowing
+  an object-typed domain written by an exposed operation still requires an
+  established postcondition fact and SHALL refuse
+  `undefined_expression`/`unproved-refinement` with obligation `no-proof-form`
+  when no FR-146 fact form expresses that narrowing.
 - `deref(r).f` SHALL resolve `f` in `r`'s static type's flattened set, and
   SHALL read the one slot of the referenced object's own type that stands
   for that field.
@@ -307,6 +317,8 @@ be presented as canonical `IdentityRefusal::Allocation`.
 | FR-082-AC-12 | Denial after earlier descriptors or member links have been staged exposes no admitted prefix, index, key join, environment or checked package; evaluation invocation count and evaluation charge are both zero. Removing the denial and retrying identical declarations gives the same complete environment and member links as fresh admission. | Test |
 | FR-082-AC-13 | For the same valid declaration fixture with allocation enabled, exact N-1/N controls for `environment.work_units` and `environment.ancestor_steps` retain their original stage-limit kind, configured bound and actual denied counter, and admit at sufficient limits. Malformed input, cancellation, FR-259's 4096-byte canonical allocation control and released checked-invariant causes retain their existing classifications and payloads. Budget denial and capacity overflow do not stand in for AC-10's measured reservation failure. | Test |
 | FR-082-AC-15 | Types `A` (`supertypes: [B, C]`), `B` (`supertypes: [A]`) and `C` (`supertypes: [A]`) are refused as four `invalid_model_binding`/`specialization-cycle` refusals: `A` and `B` each listing `[A, B]`, then `A` and `C` each listing `[A, C]`, so `A` is refused once per cycle. Types `A` (`supertypes: [C]`), `B` (`supertypes: [C]`), `C` (`supertypes: [D]`) and `D` (`supertypes: [B]`) are refused as three refusals, at `B`, `C` and `D`, each listing `[B, C, D]`; `A` only leads into the cycle and is neither refused nor listed. Types `A` and `B` of two-node cycle `A -> B -> A` are refused at `A`, then at `B`, each listing `[A, B]`. | Test (TC-1020) |
+| FR-082-AC-16 | Under `quire.model.complete/v1`, given `S` a proper subtype of `T`, a field of type `Reference<T>` redefined by `Reference<S>` with identical multiplicity and presence and no outstanding writer refinement obligation passes the value-type axis and preserves qualified reference identity. A reverse or unrelated target type refuses `ill_typed`/`variance-result` and admits no implicit downcast. If an exposed operation writes the narrowed object-typed domain and no FR-146 fact form expresses the narrowing, the checker refuses `undefined_expression`/`unproved-refinement` with obligation `no-proof-form`. | Test |
+| FR-082-AC-17 | The model conformance stage runs inside the checker, after source resolution, structural assembly and clause checking and before dispatch linking, on the same meter that admitted the models. A source or clause refusal is reported without charging the stage; a stage ceiling that denies a charge reports an incomplete result naming the limit kind, the limit, the work consumed, the next charge and the `conformance.axis` charge point, and withholds failures found so far. A redefinition whose target is reached through several direct supertypes is judged along each of them, and one failing lineage refuses the axis. | Test |
 
 ## Dependencies
 

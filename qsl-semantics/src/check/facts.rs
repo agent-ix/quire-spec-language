@@ -437,6 +437,17 @@ impl<'a> Definedness<'a> {
         self.walk(root, Facts::default())
     }
 
+    /// Admit the body and retain its true-outcome closure on this same
+    /// definedness checker. Only an admitted body can produce this value.
+    pub(crate) fn check_and_retain(
+        &mut self,
+        root: CheckedNode<'_>,
+    ) -> Result<CheckedFacts, CheckRefusal> {
+        self.check(root)?;
+        let (when_true, _) = self.outcomes(root, &Rc::new(Facts::default()));
+        Ok(CheckedFacts { when_true })
+    }
+
     /// The stable path `node` reads under `facts`, if it reads one: the
     /// projection chain is followed to its root on a loop, then its steps
     /// are applied root first.
@@ -1306,12 +1317,9 @@ fn is_integer(node: CheckedNode<'_>) -> bool {
     matches!(node.value_type(), ValueType::Integer | ValueType::Int(_))
 }
 
-/// What a guard's true outcome establishes about a field, as
-/// [`established_field_fact`] reports it to `crate::model`'s FR-151
-/// refinement-obligation check. Both facts are carried together — a
-/// conjunction of clauses can establish presence and an interval at once —
-/// rather than an either/or shape that would force a caller folding several
-/// clauses into one guard to pick only one of them.
+/// What a genuinely checked clause establishes about one exact field.
+/// Presence and interval facts remain independent and can both contribute
+/// to the exposed writer's refinement obligations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Established {
     /// Whether `present(self.<field>)` held on the true outcome.
@@ -1321,35 +1329,66 @@ pub(crate) struct Established {
     pub(crate) interval: Option<ProvedInterval>,
 }
 
-/// Derives the facts `condition`'s true outcome establishes about
-/// `self.<field>` (`self` bound at `self_slot`, `field` projected at stable
-/// path step zero), by running the exact guard-fact propagation `walk`
-/// itself uses (`outcomes`), not a bespoke re-implementation. Both the
-/// presence and interval facts are read from the one resulting [`Facts`],
-/// so a caller that folds several clauses into one `condition` (an `AND`
-/// tree) gets everything that conjunction actually proves, not only
-/// whichever fact form happened to be checked first. The default
-/// (`Established::default()`, i.e. neither fact) when the true outcome is
-/// unreachable or proves nothing about that path.
-///
-/// `crate::model` has no FR-146 expression parser, so `condition` is not
-/// parsed from producer-supplied source; the caller
-/// (`crate::model::conformance`) builds the small typed guard tree the
-/// accepted `PostconditionClause` forms describe and hands it here, so what
-/// they actually prove is decided by this same arithmetic a real checked
-/// postcondition already runs, never restated from a clause's own literal.
-pub(crate) fn established_field_fact(condition: CheckedNode<'_>, self_slot: Slot) -> Established {
-    let checker = Definedness::new(self_slot + 1, &[], &[]);
-    let (when_true, _) = checker.outcomes(condition, &Rc::new(Facts::default()));
-    let Some(facts) = when_true else {
-        return Established::default();
-    };
-    let path = StablePath {
-        root: self_slot,
-        steps: vec![Step::Field(super::field_refinement::self_field())],
-    };
-    Established {
-        presence: facts.present.contains(&path),
-        interval: facts.intervals.get(&Subject::Value(path)).cloned(),
+/// The actual FR-146 closure of an admitted clause. Its constructor and
+/// underlying facts are private to the checker; callers can only query a
+/// model attribute at its exact root and observation.
+pub(crate) struct CheckedFacts {
+    when_true: Option<Rc<Facts>>,
+}
+
+impl std::fmt::Debug for CheckedFacts {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CheckedFacts")
+            .field("reachable", &self.when_true.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl CheckedFacts {
+    pub(crate) fn attribute(
+        &self,
+        root: Slot,
+        field: &FieldRef,
+        observation: Observation,
+    ) -> Established {
+        let Some(facts) = &self.when_true else {
+            return Established::default();
+        };
+        let path = StablePath {
+            root,
+            steps: vec![Step::Attribute(field.clone(), observation)],
+        };
+        let presence = facts.present.contains(&path);
+        let direct = facts.intervals.get(&Subject::Value(path.clone())).cloned();
+        let mut value_path = path;
+        value_path.steps.push(Step::Value);
+        Established {
+            presence,
+            interval: direct.or_else(|| facts.intervals.get(&Subject::Value(value_path)).cloned()),
+        }
+    }
+}
+
+impl Established {
+    /// Separate admitted postconditions are conjunctive. Presence and each
+    /// interval end are combined independently, so neither proof form
+    /// suppresses the other.
+    pub(crate) fn conjoin(&mut self, other: Self) {
+        self.presence |= other.presence;
+        match (&mut self.interval, other.interval) {
+            (None, interval) => self.interval = interval,
+            (Some(current), Some(next)) => {
+                current.lower = match (current.lower.take(), next.lower) {
+                    (Some(left), Some(right)) => Some(left.max(right)),
+                    (left, right) => left.or(right),
+                };
+                current.upper = match (current.upper.take(), next.upper) {
+                    (Some(left), Some(right)) => Some(left.min(right)),
+                    (left, right) => left.or(right),
+                };
+            }
+            (Some(_), None) => {}
+        }
     }
 }

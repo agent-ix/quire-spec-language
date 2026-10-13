@@ -517,6 +517,19 @@ pub enum CheckCause {
     ProfileProhibitedOperator(qsl_forms::BinaryOperator),
     /// FR-300: a nested model form retains StateModel ownership.
     StateModel(Box<super::state_model::StateModelRefusal>),
+    /// A completed model conformance stage retains every axis failure.
+    ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
+    /// An unfinished model stage exposes its exact five-field denial.
+    ModelIncomplete(crate::model::accounting::Incomplete),
+    /// Completing the staged type admission after a conformance stage that
+    /// found nothing refused, or reading it while pending, reached a type
+    /// environment refusal or ceiling.
+    TypeAdmission {
+        /// The stable code of the type admission's refusal or ceiling.
+        code: Code,
+        /// Its catalog cause.
+        cause: &'static str,
+    },
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
@@ -691,6 +704,11 @@ pub struct DispatchSubtypeFailure {
 /// broke it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
+    /// The private intake owner lost its corresponding assembled model.
+    MissingAdmittedModel(String),
+    /// A staged-admission read the conformance stage made for an admitted
+    /// member pair was refused, which the admitted records cannot cause.
+    PendingField(String),
     /// A `Reference<T>`'s `EffectiveId` is no `type_identities` value of an
     /// admitted domain package's effective view.
     UnknownEffectiveId(EffectiveId),
@@ -759,6 +777,8 @@ impl KeyFault {
     /// The violated invariant's stable identifier (ADR-013 T-4).
     pub fn invariant(&self) -> &'static str {
         match self {
+            Self::MissingAdmittedModel(_) => "intake-owner-has-assembled-model",
+            Self::PendingField(_) => "conformance-reads-admitted-member-pair",
             Self::UnknownEffectiveId(_) => "reference-target-admitted",
             Self::UnadmittedPackage(_) => "declaration-package-admitted",
             Self::EmptyNode(_) => "declaration-node-nonempty",
@@ -912,6 +932,9 @@ impl CheckCause {
         match self {
             Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::StateModel(cause) => cause.cause.code(),
+            Self::ModelConformance(failure) => failure.code,
+            Self::ModelIncomplete(_) => Code::ResourceExhausted,
+            Self::TypeAdmission { code, .. } => *code,
             Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
                 Code::IllTyped
             }
@@ -952,6 +975,11 @@ impl CheckCause {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
+            Self::ModelConformance(failure) => Some(failure.cause.as_str()),
+            // The model ceilings are the caller's budget (FR-255), so a denied
+            // charge is an insufficient next charge, never a stage limit.
+            Self::ModelIncomplete(_) => Some("insufficient-next-charge"),
+            Self::TypeAdmission { cause, .. } => Some(cause),
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),

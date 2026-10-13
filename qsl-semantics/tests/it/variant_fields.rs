@@ -701,8 +701,8 @@ fn replay_over(document: serde_json::Value) -> Replay {
         "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
     });
     let declarations = declarations_of(&document, "Config", "").0;
-    let graph = declarations
-        .clone()
+    let graph = declarations_of(&document, "Config", "")
+        .0
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Replay {

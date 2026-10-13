@@ -1012,27 +1012,22 @@ fn ancestor_paths(
             .expect("every Frame is seeded with root_key and only ever grows visited");
         let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
-        // Charge the edge before following it: each distinct edge of the
-        // closure costs one step, however many paths reach it.
+        // The owning cycle work admits first, so a simultaneous work denial
+        // wins; the edge ceiling adds no work and refunds none. Each distinct
+        // edge of the closure costs one step, however many paths reach it.
+        charges.cycle_check(frame.path.len().saturating_add(1))?;
         if followed.insert((specific_key.clone(), ancestor_key.clone()))
             && u64::try_from(followed.len()).unwrap_or(u64::MAX) > max_steps
         {
-            return Err(Denial::from(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::ancestor_steps(
-                    root_key.clone(),
-                    max_steps,
-                    qsl_foundation::Setting::ModelAncestorSteps,
-                ),
-                detail: format!(
-                    "ancestor walk from {} exceeded the ancestor_steps limit of {max_steps}",
-                    root_key.node
-                ),
+            return Err(Denial::Incomplete(Incomplete {
+                limit_kind: LimitKind::AncestorSteps,
+                limit: max_steps,
+                consumed: max_steps,
+                next_charge: 1,
+                charge_point: ChargePoint::ModelAncestorEdge,
             }));
         }
         let new_path = frame.path.extended(&ancestor_key);
-
-        charges.cycle_check(new_path.len())?;
         if frame.visited.contains(&ancestor_key) {
             // Every contributing declaration in the cycle itself, not the
             // whole path from the walk's root: `frame.visited` is that whole
@@ -2729,11 +2724,12 @@ fn build(
     let declared_record_count = domain_package
         .declared_record_count
         .unwrap_or(domain_package.records.len());
+    let retained_records = meter.consumed(LimitKind::DeclarationRecords);
     for position in 0..declared_record_count {
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
-        )?;
+        meter.charge(Charge::new(ChargePoint::NormalizeRecord).size(
+            LimitKind::DeclarationRecords,
+            retained_records.saturating_add(length_amount(position + 1)),
+        ))?;
     }
     if !domain_package.intake_refusals.is_empty() {
         let mut refusals = intake_state_machine_refusals(domain_package);
@@ -4120,10 +4116,14 @@ struct Charges<'m> {
 
 impl<'m> Charges<'m> {
     fn new(meter: &'m mut Meter) -> Self {
+        // A meter shared across selections already holds the earlier
+        // selections' facts and declarations.
+        let facts = meter.consumed(LimitKind::DerivationFacts);
+        let declarations = meter.consumed(LimitKind::EffectiveDeclarations);
         Self {
             meter,
-            facts: 0,
-            declarations: 0,
+            facts,
+            declarations,
         }
     }
 
@@ -4240,15 +4240,42 @@ fn normalize_body(
 
 /// The outcome of a normalization whose completed body is paired with the
 /// package `package` supplies, called only when normalization completed.
+fn completed_view(
+    (body, records): (ViewBody, RecordIndex),
+    package: Arc<DomainPackage>,
+) -> EffectiveView {
+    let type_fact_counts = body
+        .declarations
+        .iter()
+        .filter(|entry| entry.preimage.owner_effective_type.is_none())
+        .map(|entry| {
+            (
+                entry.preimage.original.clone(),
+                length_amount(entry.preimage.derivation.len()),
+            )
+        })
+        .collect();
+    EffectiveView {
+        index: Arc::new(ModelIndex::from_parts(package, records, type_fact_counts)),
+        body,
+    }
+}
+
+/// Normalize `domain_package` on the caller's `meter`, which keeps every
+/// charge it already holds: the one model-admission meter shared by all of a
+/// unit's selections.
+pub(crate) fn normalize_on(domain_package: &DomainPackage, meter: &mut Meter) -> NormalizeOutcome {
+    into_outcome(build(domain_package, meter), || {
+        Arc::new(domain_package.clone())
+    })
+}
+
 fn into_outcome(
     body: Result<(ViewBody, RecordIndex), Denial>,
     package: impl FnOnce() -> Arc<DomainPackage>,
 ) -> NormalizeOutcome {
     match body {
-        Ok((body, records)) => NormalizeOutcome::Completed(EffectiveView {
-            index: Arc::new(ModelIndex::from_parts(package(), records)),
-            body,
-        }),
+        Ok(body) => NormalizeOutcome::Completed(completed_view(body, package())),
         Err(Denial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
         // `Denial::Refused` already carries `Refusals` (L1
         // finding, PR #228 round 2 review): every raise site builds it
@@ -4654,7 +4681,6 @@ mod tests {
                 effect: OperationEffect::default(),
                 requires: Vec::new(),
                 ensures: Vec::new(),
-                own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
             }),
@@ -4791,7 +4817,6 @@ mod tests {
                     effect: OperationEffect::default(),
                     requires: Vec::new(),
                     ensures: Vec::new(),
-                    own_postcondition_clauses: Vec::new(),
                     has_body: false,
                     redefines: None,
                 }),
@@ -4835,7 +4860,6 @@ mod tests {
                 effect: OperationEffect::default(),
                 requires: Vec::new(),
                 ensures: Vec::new(),
-                own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
             })
@@ -5069,7 +5093,7 @@ mod tests {
     /// of a 10-deep chain's 11 records is incomplete on
     /// `declaration_records`, even though the walk would pass
     /// `ancestor_steps` 5. With records unlimited, the walk reaches that
-    /// ceiling and refuses `AncestorSteps`.
+    /// ceiling and stops at the ancestor-edge ceiling.
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn a_counted_limit_denied_first_wins_over_ancestor_steps() {
@@ -5092,14 +5116,19 @@ mod tests {
             ..short
         };
         match normalize(&chain, records_unlimited) {
-            NormalizeOutcome::Refused(refusals) => {
-                assert_eq!(refusals.len(), 1);
-                assert!(matches!(
-                    refusals[0].cause,
-                    ModelRefusalCause::AncestorSteps { limit: 5, .. }
-                ));
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(
+                    incomplete,
+                    Incomplete {
+                        limit_kind: LimitKind::AncestorSteps,
+                        limit: 5,
+                        consumed: 5,
+                        next_charge: 1,
+                        charge_point: ChargePoint::ModelAncestorEdge,
+                    }
+                );
             }
-            other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+            other => panic!("expected Incomplete(AncestorSteps), got {other:?}"),
         }
     }
 

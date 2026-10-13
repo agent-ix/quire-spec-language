@@ -16,7 +16,7 @@ use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use qsl_forms::Expression;
 use quire_canonical::FixedShape;
-use quire_exact::{OrderingOperator, Presence};
+use quire_exact::Presence;
 use quire_semantic_value::location::OperationClauseKind;
 
 /// A field or association-end multiplicity (FCD FR-113).
@@ -467,56 +467,6 @@ pub struct OperationEffect {
     pub deletes_arguments: Vec<String>,
 }
 
-/// One postcondition clause an operation's own postcondition declares about
-/// `self.<field>` — a single accepted FR-146 guard-fact form, exactly as
-/// FR-151's refinement obligation names it: `present(self.<field>)`, or one
-/// ordering between `self.<field>` and an integer literal.
-///
-/// FR-146's expression parser is out of scope for `crate::model`, which
-/// normalizes and checks a caller-constructed [`DomainPackage`] only and never
-/// parses producer-supplied expression text. A postcondition clause is
-/// therefore not parsed here: the caller states one accepted single-relation
-/// guard form directly, as this typed value. What that clause actually
-/// establishes is not caller-trusted, though: FR-151's refinement rule
-/// (`crate::check::check_field_refinement_obligation`, moved from
-/// `crate::model::conformance` by FR-074/ADR-011 §7.3 M-2) rebuilds
-/// the small synthetic guard tree the clause describes and runs it through
-/// `crate::value`'s own FR-146 fact-derivation primitive
-/// (`established_field_fact`) — the identical guard-fact propagation a real
-/// checked postcondition's `Definedness::walk` already uses — then decides
-/// discharge from what that derivation actually proves, never from the
-/// clause's own literal restated as already-true. A [`Comparison`] clause
-/// naming only a lower bound, for instance, does not by itself establish an
-/// upper bound the derivation did not also produce.
-///
-/// [`Comparison`]: Self::Comparison
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PostconditionClause {
-    /// `present(self.<field>)`.
-    Presence {
-        /// The field the postcondition establishes presence for.
-        field: DeclarationKey,
-    },
-    /// `self.<field> <operator> <literal>`, e.g. `self.cs <= 5`.
-    Comparison {
-        /// The field the postcondition relates to `literal`.
-        field: DeclarationKey,
-        /// The stated ordering between `self.<field>` and `literal`.
-        operator: OrderingOperator,
-        /// The integer literal `self.<field>` is compared against.
-        literal: i128,
-    },
-}
-
-impl PostconditionClause {
-    /// The field this clause is about.
-    pub fn field(&self) -> &DeclarationKey {
-        match self {
-            Self::Presence { field } | Self::Comparison { field, .. } => field,
-        }
-    }
-}
-
 /// One `requires` or `ensures` clause of a domain-package operation, kept
 /// verbatim with its source identity (FR-103). Keeping it does not parse it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -569,12 +519,8 @@ pub struct OperationMemberRecord {
     pub requires: Vec<OperationContractClause>,
     /// The domain package's `post` entries of this operation, kept as its
     /// `ensures` clauses in declared order (FR-103). Its postcondition text;
-    /// distinct from a unit `post` `StateClauseForm` and from
-    /// [`Self::own_postcondition_clauses`].
+    /// distinct from a unit `post` `StateClauseForm`.
     pub ensures: Vec<OperationContractClause>,
-    /// This operation's own postcondition clause(s), exactly as the caller
-    /// states them (see [`PostconditionClause`]).
-    pub own_postcondition_clauses: Vec<PostconditionClause>,
     /// Whether an `operation-body` declaration supplies this member's body.
     /// A domain package never does: the assembler sets it on the compiled
     /// unit's selected view from the unit's `operation-body` declarations
@@ -681,12 +627,8 @@ pub enum RelationshipDirection {
     Undirected,
 }
 
-/// FCD FR-115 relationship record: FR-152's Connection candidate, or (when
-/// both ends name object types) a navigation-only relationship with no
-/// kind. Never an Allocation: an allocation's wire shape names only a
-/// source and a target element and carries neither ends' multiplicity nor a
-/// direction (`model-complete.md`:335 — see [`AllocationRecord`]), so it is
-/// read as one, never folded into this shape with fabricated fields.
+/// A connection or navigation relationship, retaining its producer meaning.
+/// An allocation has its own source/target shape and is never folded here.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.

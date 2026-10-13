@@ -68,7 +68,7 @@ use quire_exact::Presence;
 mod unit;
 pub use unit::{
     admit_unit, admit_unit_with_cancel, package_input, OperationClauseFailure, SelectedModel,
-    UnitIntakeCause, UnitIntakeRefusal,
+    SelectedModels, UnitIntakeCause, UnitIntakeRefusal,
 };
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
@@ -2601,7 +2601,7 @@ pub(super) fn read_operation_member(
     };
     // FR-103: `pre` and `post` are the operation's own `requires` and
     // `ensures`. They are FR-146 expressions, which `crate::model` does not
-    // parse (see `domain_package::PostconditionClause`), so their text is
+    // parse so their text is
     // kept verbatim with its source identity.
     let key = declaration_key(package, node);
     let requires = read_contract_clauses(&ctx, &key, "pre", at, true)?;
@@ -2636,12 +2636,8 @@ pub(super) fn read_operation_member(
         // Resolved from `pending` by `resolve_pending_frames`, once every
         // node of the document is read; the empty effect until then.
         effect: OperationEffect::default(),
-        // FR-146's expression parser is out of scope for `crate::model`
-        // (`domain_package::PostconditionClause`'s own module docs); this
-        // reader states none rather than inventing one.
         requires,
         ensures,
-        own_postcondition_clauses: Vec::new(),
         // A domain package supplies no body. The assembler sets this from the
         // unit's `operation-body` declarations (FR-103, FR-302).
         has_body: false,

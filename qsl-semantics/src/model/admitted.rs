@@ -648,7 +648,6 @@ mod tests {
                 requires: Vec::new(),
                 ensures: Vec::new(),
                 effect: OperationEffect::default(),
-                own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
             }),

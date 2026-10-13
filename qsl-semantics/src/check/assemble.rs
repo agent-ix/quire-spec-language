@@ -68,7 +68,9 @@ use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
     ScalarValueDomain, ValueTypeRef,
 };
-use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
+use crate::model::intake::{
+    member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
 use crate::value::enumeration::{
@@ -1682,7 +1684,7 @@ fn admit_types(
     spans: &BTreeMap<String, Span>,
     environment: TypeEnvironmentLimits,
     cancel: &Cancel,
-) -> Result<TypeEnvironment, AssemblyRefusal> {
+) -> Result<AdmittedTypes, AssemblyRefusal> {
     admit_types_with(
         declarations,
         object_types,
@@ -1690,20 +1692,215 @@ fn admit_types(
         environment,
         cancel,
         |declarations, object_types, environment, cancel| {
-            TypeEnvironment::bounded_with_cancel(
-                declarations.iter().cloned(),
-                object_types.iter().cloned(),
-                environment,
-                cancel,
-            )
+            // The environment the clause typer reads. A redefinition the
+            // model's conformance stage must judge (a widened type) is not
+            // this admission's refusal, so the widening field is typed as the
+            // declaration it is and the staged admission below keeps the
+            // redefinition for the stage and for `complete`.
+            let mut typed = object_types.to_vec();
+            declare_cardinality_narrowing(&mut typed);
+            let mut rounds = typed.iter().map(|ty| ty.attributes().len()).sum::<usize>() + 1;
+            let types = loop {
+                match TypeEnvironment::bounded_with_cancel(
+                    declarations.iter().cloned(),
+                    typed.iter().cloned(),
+                    environment,
+                    cancel,
+                ) {
+                    Err(EnvironmentFailure::Refused(invalid)) => {
+                        let DeclarationCause::RedefinitionWidens(widened) = &invalid.cause else {
+                            return Err(EnvironmentFailure::Refused(invalid));
+                        };
+                        rounds -= 1;
+                        if rounds == 0 || !relax_widening(&mut typed, &invalid.declaration, widened)
+                        {
+                            return Err(EnvironmentFailure::Refused(invalid));
+                        }
+                    }
+                    other => break other?,
+                }
+            };
+            let mut staged = object_types.to_vec();
+            declare_cardinality_narrowing(&mut staged);
+            let pending = if object_types.is_empty() {
+                None
+            } else {
+                Some(TypeEnvironment::stage_model_with_cancel(
+                    declarations.iter().cloned(),
+                    staged,
+                    environment,
+                    cancel,
+                )?)
+            };
+            Ok(AdmittedTypes { types, pending })
         },
     )
+}
+
+/// The type environment the unit's clauses are typed against, with the staged
+/// model admission whose completion waits for the conformance stage.
+pub(crate) struct AdmittedTypes {
+    pub(crate) types: TypeEnvironment,
+    pub(crate) pending: Option<quire_semantic_value::declaration::PendingTypeEnvironment>,
+}
+
+/// `failure` as the assembly cause a refused or exhausted type admission
+/// reports.
+pub(crate) fn environment_cause(failure: EnvironmentFailure) -> AssemblyCause {
+    match failure {
+        EnvironmentFailure::Refused(invalid) => AssemblyCause::InvalidTypeDeclaration(invalid),
+        EnvironmentFailure::Limit(limit) => AssemblyCause::TypeLimit(stage_limit(limit)),
+        EnvironmentFailure::Allocation(request) => AssemblyCause::StorageAllocation {
+            requested: request.amount(),
+            unit: request.unit(),
+        },
+        EnvironmentFailure::Capacity(request) => AssemblyCause::StorageCapacity {
+            requested: request.amount(),
+            unit: request.unit(),
+        },
+    }
+}
+
+/// Gives the fields of the object type `declaration` that redefine `widened`,
+/// or a member `widened` itself redefines, the type and presence of
+/// `widened`, so the clause typer reads an environment the redefinition does
+/// not widen. A field is matched by the key of the member it redefines, so a
+/// sibling field that redefines something else is untouched. The
+/// staged admission keeps the declared types; the conformance stage judges
+/// them. Returns whether any field changed.
+fn relax_widening(
+    object_types: &mut [ObjectTypeDeclaration],
+    declaration: &str,
+    widened: &FieldRef,
+) -> bool {
+    let Some((value_type, presence)) = object_types
+        .iter()
+        .find(|ty| ty.key() == widened.owner)
+        .and_then(|ty| {
+            ty.attributes()
+                .iter()
+                .find(|field| field.name() == widened.name)
+        })
+        .map(|field| (field.value_type().clone(), field.presence()))
+    else {
+        return false;
+    };
+    let mut chain = vec![widened.clone()];
+    while let Some(next) = chain
+        .last()
+        .and_then(|link| {
+            object_types
+                .iter()
+                .find(|ty| ty.key() == link.owner)
+                .and_then(|ty| ty.attributes().iter().find(|f| f.name() == link.name))
+        })
+        .and_then(|field| field.redefines().cloned())
+        .filter(|next| !chain.contains(next))
+    {
+        chain.push(next);
+    }
+    let mut changed = false;
+    for object_type in object_types
+        .iter_mut()
+        .filter(|ty| ty.name() == declaration)
+    {
+        let attributes = object_type
+            .attributes()
+            .iter()
+            .map(|field| {
+                if let Some(link) = field.redefines().filter(|link| {
+                    chain.contains(link)
+                        && (field.value_type() != &value_type || field.presence() != presence)
+                }) {
+                    changed = true;
+                    FieldDeclaration::new(field.name(), value_type.clone(), presence)
+                        .with_redefines(link.clone())
+                } else {
+                    field.clone()
+                }
+            })
+            .collect();
+        *object_type =
+            ObjectTypeDeclaration::new(object_type.key(), object_type.name(), attributes)
+                .with_supertypes(object_type.supertypes().to_vec());
+    }
+    changed
+}
+
+/// Whether `child` differs from `target` only in collection cardinality: the
+/// same element type and, when both are collections, the same collection kind.
+fn differs_only_in_cardinality(child: &ValueType, target: &ValueType) -> bool {
+    if child == target {
+        return false;
+    }
+    let (child_element, child_kind) = match child {
+        ValueType::Collection(collection) => (collection.element(), Some(collection.kind())),
+        other => (other, None),
+    };
+    let (target_element, target_kind) = match target {
+        ValueType::Collection(collection) => (collection.element(), Some(collection.kind())),
+        other => (other, None),
+    };
+    child_element == target_element
+        && (child_kind.is_none() || target_kind.is_none() || child_kind == target_kind)
+}
+
+/// Declares each field whose redefinition only narrows collection
+/// cardinality with its target's collection type, for the type admission
+/// alone. A bounded collection type has exactly one cardinality, and the
+/// kernel's narrowing check accepts only equal collections, so the
+/// narrowing itself is judged by the conformance stage from the child's own
+/// declared multiplicity, which the domain package keeps. An element,
+/// presence or reference widening stays declared and still refuses. The
+/// target is matched by the key of the redefined member.
+fn declare_cardinality_narrowing(object_types: &mut [ObjectTypeDeclaration]) {
+    for _ in 0..=object_types.len() {
+        let mut changed = false;
+        for index in 0..object_types.len() {
+            let mut attributes = Vec::with_capacity(object_types[index].attributes().len());
+            let mut touched = false;
+            for field in object_types[index].attributes() {
+                let target = field.redefines().and_then(|target| {
+                    object_types
+                        .iter()
+                        .find(|ty| ty.key() == target.owner)
+                        .and_then(|ty| ty.attributes().iter().find(|f| f.name() == target.name))
+                });
+                match target {
+                    Some(target)
+                        if differs_only_in_cardinality(field.value_type(), target.value_type()) =>
+                    {
+                        touched = true;
+                        let mut retargeted = FieldDeclaration::new(
+                            field.name(),
+                            target.value_type().clone(),
+                            field.presence(),
+                        );
+                        if let Some(link) = field.redefines() {
+                            retargeted = retargeted.with_redefines(link.clone());
+                        }
+                        attributes.push(retargeted);
+                    }
+                    _ => attributes.push(field.clone()),
+                }
+            }
+            if touched {
+                changed = true;
+                let ty = &object_types[index];
+                object_types[index] = ObjectTypeDeclaration::new(ty.key(), ty.name(), attributes)
+                    .with_supertypes(ty.supertypes().to_vec());
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
 }
 
 /// The admission loop with its registry constructor injected. Production
 /// supplies the shared kernel constructor above; tests inject exact upstream
 /// failures so the complete production failure mapping stays exercised.
-fn admit_types_with(
+fn admit_types_with<T>(
     mut declarations: Vec<CompositeDeclaration>,
     object_types: &[ObjectTypeDeclaration],
     spans: &BTreeMap<String, Span>,
@@ -1714,8 +1911,8 @@ fn admit_types_with(
         &[ObjectTypeDeclaration],
         TypeEnvironmentLimits,
         &Cancel,
-    ) -> Result<TypeEnvironment, EnvironmentFailure>,
-) -> Result<TypeEnvironment, AssemblyRefusal> {
+    ) -> Result<T, EnvironmentFailure>,
+) -> Result<T, AssemblyRefusal> {
     let mut errors = Vec::new();
     let mut set_aside_keys = Vec::new();
     loop {
@@ -1818,7 +2015,7 @@ impl PackageDeclarations {
     pub fn assemble(
         source: RawSourceRef,
         unit: ParsedUnit,
-        models: Vec<SelectedModel>,
+        models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
     ) -> Result<Self, AssemblyRefusal> {
         Self::assemble_with_limits(source, unit, models, imports, AssemblyLimits::default())
@@ -1828,7 +2025,7 @@ impl PackageDeclarations {
     pub fn assemble_with_limits(
         source: RawSourceRef,
         unit: ParsedUnit,
-        models: Vec<SelectedModel>,
+        models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
     ) -> Result<Self, AssemblyRefusal> {
@@ -1843,7 +2040,7 @@ impl PackageDeclarations {
     pub fn assemble_with_cancel(
         source: RawSourceRef,
         unit: ParsedUnit,
-        models: Vec<SelectedModel>,
+        models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
         cancel: &Cancel,
@@ -1852,6 +2049,9 @@ impl PackageDeclarations {
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
         let owner = SourceOwner::from(&source);
+        // The models and the one meter their admission counted on; checking
+        // continues that meter into the conformance stage.
+        let (models, model_meter) = models.into().into_parts();
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
@@ -2347,7 +2547,7 @@ impl PackageDeclarations {
         // A refused object type is located at its `model` declaration.
         let mut type_spans = object_spans;
         type_spans.extend(declared_type_spans.clone());
-        let types = admit_types(
+        let AdmittedTypes { types, pending } = admit_types(
             declarations,
             &object_types,
             &type_spans,
@@ -2395,7 +2595,7 @@ impl PackageDeclarations {
         // value and no reader takes the flag from them. Dispatch linking
         // reads a called operation's family from these views.
         let mut selected_views = BTreeMap::new();
-        for model in models {
+        for model in &models {
             if !selections
                 .models
                 .iter()
@@ -2409,11 +2609,11 @@ impl PackageDeclarations {
                 .map(|body| body.key.clone())
                 .collect();
             let view = if bodies.is_empty() {
-                model.view
+                model.view.clone()
             } else {
-                model.view.with_operation_bodies(&bodies)
+                model.view.clone().with_operation_bodies(&bodies)
             };
-            selected_views.insert(model.alias, view);
+            selected_views.insert(model.alias.clone(), view);
         }
 
         let mut package = PackageDeclarations::new(source, limits.identity);
@@ -2421,6 +2621,8 @@ impl PackageDeclarations {
         package.operations = operations;
         package.operation_clauses = operation_clauses;
         package.models = admitted;
+        package.model_inputs = Some((models, model_meter));
+        package.pending_types = pending.map(super::check::StagedTypes);
         package.aliases = unit
             .aliases
             .iter()
