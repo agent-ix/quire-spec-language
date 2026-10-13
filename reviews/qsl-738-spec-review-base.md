@@ -106,3 +106,9 @@ Round 3, reviewed at 1adddcd460bf845a46eda48435fd9ec4989c3286.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-011 | high | The interim obligation contradicts item 12's own claim that 'Check, evaluation and replay (items 4 to 11) do not depend on emission'. The refusal it pins comes from FR-093 lowering (qsl-semantics/src/check/lowering.rs). That lowering runs inside `check` itself at S3 (qsl-semantics/src/check/mod.rs builds `Lowering::new` over every function body, and the CheckedPackage holds the resulting `semantic_graph`; ADR-012 lists `check::lowering` as an S3 stage). FR-100 run and FR-098 replay also compile through S1 to S4 before `CheckedPackage::call`. So a type-node refusal for a variant-typed field, parameter or result fails check, run and replay for every unit that holds one. Until QSL-748 requirement 1 holds, AC-4 to AC-11 cannot pass, and the 'not dependent' sentence is false. This needs a planner ruling, with one of three outcomes: (a) the code slice for AC-4 to AC-11 is blocked by QSL-748 requirement 1 (a Linear blocked-by edge) and the 'do not depend on emission' sentence is deleted; (b) the interim refusal moves to S4 package emission only, with check and S6a evaluation on the S3 checked package, and FR-360 states that FR-100 run and FR-098 replay of such a unit refuse until requirement 1 holds; or (c) another interim lowering, which would be a stand-in node and so needs the user's approval under the no-compatibility-layer rule. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:209-216; qsl-semantics/src/check/mod.rs:1297; spec/functional/FR-100-*.md:51 |
+
+Round 4, reviewed at 8f52c71676f49dacd1751d53315fed99c9d2578c.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-011 | fixed | 8f52c7167 |
