@@ -94,7 +94,7 @@ original inventory without acquiring an effective identity from this guarantee.
 
 For a selected `quire.model.complete/v2` package, the binder SHALL retain every
 logical derivation fact, input path and ordinal while representing consecutive
-shared prefixes through QSpec FR-150's canonical prefix-run index. It SHALL
+shared prefixes as a canonical prefix-run index (QSpec FR-150). It SHALL
 admit each declared input edge and canonical prefix link once, and shall reuse
 the indexed commitments when preparing the exact v2 identity preimages; it
 SHALL NOT expand and re-encode every ancestor path for every descendant
