@@ -26,3 +26,9 @@ Examined:
 ## Verdict
 
 **CONDITIONAL**: one low wording finding. No hash, digest, pin or tracking record was added. IDs and links are unchanged and valid. The FR-088 note gives the allowance as a scope statement next to the coverage notes that are already there, which is the right place for it. It states what the field is (a wire shape held until a checked declaration resolves it by lookup), and the code agrees (document.rs:1296). AC-8's text did not change and does not need to. The allowance does not weaken it, because the field is outside AC-8's subject. FR-087-AC-6 and FR-087-CON-3 back the TC-255 production fix exactly as quoted in the PR body. The enum-variant blind spot in the scan is recorded as a coverage finding in the gap analysis for this PR (SR-8716 FND-001), not repeated here.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2c067d235: TC-260 step 3 now says the three raw wire views "are outside this step" and that "A field type under another name is not covered". The FR-088 note says the same and names the enum-variant coverage. |

@@ -59,3 +59,11 @@ Gates, from the coder's logs (worktree `xtask-scans-fix`, now at ff905e16d):
 - fmt: the log is empty (clean).
 
 The tests ran on 73c1e2216. The final commit ff905e16d only reformats typestate_scan.rs, and the fmt run came after it.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2c067d235: `a_record_naming_an_unknown_declaration_refuses_wrong_value_kind` (child_composite.rs) sends `NoSuchRecord` at `Money` and asserts `Err(0)`. A fallback to the slot's declaration would admit it (`amount_minor` is Money's field), so the test would fail. It passes in the replay log. |
+| FND-002 | fixed | 2c067d235: `convert_arguments` builds `composites: HashMap<[u8; 32], &'a CompositeDeclaration>` once. `Converter::node` does `*self.composites.get(declaration.as_bytes()).ok_or_else(refuse)?`. Composites are keyed by `NodeKey`, so the byte keys are unique and the behaviour is unchanged. HashMap is only used for lookups, so iteration order does not matter. |
+| FND-003 | fixed | 2c067d235: the doc comment now reads "TC-260 step 3's scan, self-tested". |

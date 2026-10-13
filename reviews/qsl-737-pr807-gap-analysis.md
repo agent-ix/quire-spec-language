@@ -34,3 +34,10 @@ Reverse gap: none. Every changed production line belongs to FR-087-AC-6 or FR-35
 - Matrix source: `quire matrix --scope . --format json` at ff905e16d.
 - Semantic review: done by reading, for the four criteria above, as part of this reviewer pass. No fan-out.
 - Plan completion: not assessed
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2c067d235: `bare_type_fields` now walks both struct fields and enum variant fields under `model`. There are three (file, type, field) allowances: `RawRecord` and `RawNode` in observation.rs, and `Open` in observation/tree.rs. Each one is needed. The scanner visits items inside function bodies (typestate_scan.rs:408-410), and the coder's probe run without the `Open` allowance failed with exactly `observation/tree.rs: Open.type_identity is a bare String`. A grep of qsl-semantics/src/model finds no other `*type*` field typed as a bare str, String or NodeKey; the other hits are function parameters. The negative test now covers an enum variant holding a bare NodeKey or String, and the look-alikes `Other` and `OtherNode`. xtask: 182 passed. |
+| FND-002 | fixed | 2c067d235: `#[trace("TC-255", "FR-087-AC-6", "FR-087-CON-3")]` is now on `tc_255_no_node_key_is_minted_outside_check_or_from_a_wire_id`. |
