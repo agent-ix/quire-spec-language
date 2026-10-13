@@ -720,6 +720,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-359
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-360
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -1233,6 +1235,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-357](functional/FR-357-replay-scalar-parity-claims.md) | FR |
 | [FR-358](functional/FR-358-settle-a-composite-bounded-shadow-item.md) | FR |
 | [FR-359](functional/FR-359-carry-a-child-record-value-at-an-ancestor-typed-slot.md) | FR |
+| [FR-360](functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
