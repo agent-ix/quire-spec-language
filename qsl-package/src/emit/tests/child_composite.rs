@@ -120,3 +120,35 @@ fn a_child_record_argument_reads_back_verified() {
         other => panic!("expected Verified, got {other:?}"),
     }
 }
+
+/// FR-359-AC-8 over the operation path: a unit with a precondition and a
+/// postcondition over `Ledger.pay(m: Money): Money` and a function taking and
+/// returning the same record emits with nothing omitted and reads back
+/// `Verified`; the operation's parameter and result are the `Money` node, not
+/// a conversion of it.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn an_operation_over_a_record_parameter_emits_and_reads_back() {
+    let (emission, wire, read) = emit_unit(
+        "function keep using v(m: M::Money): M::Money pure { m }\n\
+         function passTaxed using v(m: M::TaxedMoney): M::Money pure { keep(m) }\n\
+         pre PayHolds using v on M::Ledger::pay { m.amount_minor > 0 }\n\
+         post PayReturns using v on M::Ledger::pay { result.amount_minor = m.amount_minor }",
+    );
+    assert!(
+        node_where(&wire, "model", "record_value_type")
+            .iter()
+            .any(|node| node["owner"]["node"] == fixture::id("Money")),
+        "the operation's Money is the model-owned record node"
+    );
+    assert!(
+        !wire.to_string().contains("convert"),
+        "no conversion node between an argument and its parameter"
+    );
+    match read {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+        }
+        other => panic!("expected Verified, got {other:?}"),
+    }
+}

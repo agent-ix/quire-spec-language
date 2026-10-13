@@ -2077,7 +2077,8 @@ pub(super) fn admit_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_form(references, raw.form(), value_type, None).map_err(refuse)?;
+            let value = admit_form(references, raw.form(), value_type, None)
+                .map_err(|record| refuse(record.with("field", "result")))?;
             references.check_closure(raw).map_err(refuse)?;
             Ok(Some(value))
         }

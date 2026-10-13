@@ -827,3 +827,298 @@ fn a_mixed_pair_with_equal_text_leaves_is_unequal() {
     let parent = ticket("Ticket", vec![]);
     assert!(!boolean(&package, "same", vec![child, parent]));
 }
+
+// ---------------------------------------------------------------------------
+// FR-359-AC-8 / TC-1001: a model operation's parameter and result
+// ---------------------------------------------------------------------------
+
+use qsl_semantics::model::observation::{
+    admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
+    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
+};
+use serde_json::json;
+
+const OPERATION_CLAUSES: &str = "\
+pre PayHolds using v on M::Ledger::pay { m.amount_minor > 0 }\n\
+post PayReturns using v on M::Ledger::pay { result.amount_minor = m.amount_minor }\n\
+pre PayTaxedHolds using v on M::Ledger::payTaxed { m.tax_minor >= 0 }\n";
+
+fn record_json(name: &str, fields: &[(&str, i64)]) -> serde_json::Value {
+    let fields: serde_json::Map<String, serde_json::Value> = fields
+        .iter()
+        .map(|(field, value)| ((*field).to_owned(), json!({"integer": value.to_string()})))
+        .collect();
+    json!({"record": {"type": fixture::id(name), "fields": fields}})
+}
+
+fn taxed_json(amount: i64) -> serde_json::Value {
+    record_json(
+        "TaxedMoney",
+        &[
+            ("amount_minor", amount),
+            ("currency", 978),
+            ("tax_minor", 20),
+        ],
+    )
+}
+
+fn money_json(amount: i64) -> serde_json::Value {
+    record_json("Money", &[("amount_minor", amount), ("currency", 978)])
+}
+
+fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
+    let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
+    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+        .expect("the document is canonical")
+        .as_bytes();
+    DocumentRef {
+        authority: "test".to_owned(),
+        identity: label.to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+        digest,
+    }
+}
+
+fn identity_json(reference: &DocumentRef) -> serde_json::Value {
+    json!({
+        "authority": reference.authority, "identity": reference.identity,
+        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    })
+}
+
+/// `clause` admitted over a `Ledger.<operation>` invocation whose parameter
+/// `m` and result are the given values (`None` result is `null`).
+fn admit_invocation(
+    package: &CheckedPackage,
+    clause: &str,
+    operation: &str,
+    parameter: serde_json::Value,
+    result: Option<serde_json::Value>,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let packages = package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one model package");
+    };
+    let model = json!({
+        "identity": fixture::PACKAGE, "version": "1",
+        "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
+    });
+    let snapshot = |label: &str, observation: &str| {
+        let identity = DocumentRef {
+            authority: "test".to_owned(),
+            identity: label.to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+            digest: [0; 32],
+        };
+        let bytes = serde_json::to_vec(&json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": identity_json(&identity),
+            "observation": observation,
+            "model": model,
+            "populations": [{
+                "population": fixture::id("ledgers"), "complete": true,
+                "objects": [{"key": "l1", "type": fixture::id("Ledger"),
+                             "fields": {"ledger_id": {"integer": "1"}}}],
+            }],
+        }))
+        .expect("the snapshot serializes");
+        (document_ref(label, &bytes), bytes)
+    };
+    let (pre, pre_bytes) = snapshot("pre", "pre");
+    let (post, post_bytes) = snapshot("post", "post");
+    let invocation_identity = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "call".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let reference = |document: &DocumentRef| {
+        json!({
+            "identity": identity_json(document),
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&document.digest)),
+        })
+    };
+    let invocation_bytes = serde_json::to_vec(&json!({
+        "format": "quire.state.invocation/v1",
+        "identity": identity_json(&invocation_identity),
+        "model": model,
+        "context": fixture::id("Ledger"),
+        "operation": operation,
+        "self": {"population": fixture::id("ledgers"), "key": "l1"},
+        "pre": reference(&pre),
+        "post": reference(&post),
+        "parameters": {"m": parameter},
+        "result": result,
+        "created": [],
+        "deleted": [],
+    }))
+    .expect("the invocation serializes");
+    let invocation = document_ref("call", &invocation_bytes);
+    let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
+    let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+    let checked = package.graph().state_clause(clause).expect("the clause");
+    let facts = ClauseFacts {
+        identity: checked.identity(),
+        kind: checked.kind(),
+        context: checked.context(),
+        operation: checked.operation().map(|operation| OperationFacts {
+            declaring: operation.declaring,
+            declaration: operation.declaration.clone(),
+        }),
+    };
+    admit_observations(
+        package.graph().model_selections(),
+        package.graph().scope().types(),
+        &facts,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Provisions {
+            snapshots: &snapshots,
+            invocations: &invocations,
+        },
+        &ClauseSelection {
+            name: clause.to_owned(),
+            input: ClauseSelectionInput::Invocation { invocation },
+        },
+        ObservationLimits::default(),
+    )
+}
+
+fn holds(package: &CheckedPackage, clause: &str, observations: &AdmittedObservations) -> bool {
+    let evaluated = package
+        .evaluate_clause(
+            &QualifiedName::unqualified(clause).unwrap(),
+            observations,
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("admitted observations evaluate");
+    match evaluated.evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => holds,
+        other => panic!("{clause} completes with a Boolean, not {other:?}"),
+    }
+}
+
+fn parameter_declaration(observations: &AdmittedObservations) -> NodeKey {
+    let [(name, value)] = &observations.parameters[..] else {
+        panic!("one parameter");
+    };
+    assert_eq!(name, "m");
+    declaration_of(value)
+}
+
+/// FR-359-AC-8, TC-1001 steps 1 and 3 over the operation path: a
+/// `Ledger.pay(m: Money): Money` invocation whose argument and result are a
+/// `TaxedMoney` is admitted with both keeping their own type, and the
+/// precondition and postcondition over `m` and `result` hold. The same
+/// argument at `payTaxed(m: TaxedMoney)` admits; a `Money` or an unrelated
+/// `Fee` there refuses `wrong-value-kind` naming parameter `m`.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn a_model_operation_takes_and_returns_a_child_record() {
+    let package = package(OPERATION_CLAUSES);
+    let key_of = |name: &str| declaration(&package, name);
+
+    let pre = admit_invocation(
+        &package,
+        "PayHolds",
+        "pay",
+        taxed_json(100),
+        Some(taxed_json(100)),
+    )
+    .expect("a TaxedMoney argument admits at pay(m: Money)");
+    assert_eq!(parameter_declaration(&pre), key_of("TaxedMoney"));
+    assert!(holds(&package, "PayHolds", &pre));
+
+    let post = admit_invocation(
+        &package,
+        "PayReturns",
+        "pay",
+        taxed_json(100),
+        Some(taxed_json(100)),
+    )
+    .expect("a TaxedMoney result admits at a Money result");
+    assert_eq!(parameter_declaration(&post), key_of("TaxedMoney"));
+    let result = post.result.as_ref().expect("the declared result");
+    assert_eq!(declaration_of(result), key_of("TaxedMoney"));
+    assert!(holds(&package, "PayReturns", &post));
+
+    // The child is also the parameter of a TaxedMoney-typed operation.
+    let taxed_only = admit_invocation(
+        &package,
+        "PayTaxedHolds",
+        "payTaxed",
+        taxed_json(7),
+        Some(money_json(7)),
+    )
+    .expect("a TaxedMoney admits at payTaxed(m: TaxedMoney)");
+    assert!(holds(&package, "PayTaxedHolds", &taxed_only));
+
+    for refused in [money_json(7), record_json("Fee", &[("fee_minor", 1)])] {
+        let Err(AdmissionFailure::Refused(record)) = admit_invocation(
+            &package,
+            "PayTaxedHolds",
+            "payTaxed",
+            refused,
+            Some(money_json(7)),
+        ) else {
+            panic!("a Money or a Fee at a TaxedMoney parameter refuses");
+        };
+        assert_eq!(record.cause, "wrong-value-kind");
+        assert_eq!(record.fields.get("field").map(String::as_str), Some("m"));
+    }
+}
+
+/// FR-106-AC-15: a record defect in a parameter or the result names the
+/// invocation binding as the root of its path: `m` or `result`, then the
+/// nested field.
+#[trace("FR-359-AC-8", "FR-106-AC-15", "TC-1001")]
+#[test]
+fn an_operation_record_defect_names_the_binding_and_the_nested_field() {
+    let package = package(OPERATION_CLAUSES);
+    let without_tax = record_json("TaxedMoney", &[("amount_minor", 1), ("currency", 978)]);
+    let refusal = |result: Result<AdmittedObservations, AdmissionFailure>| match result {
+        Err(AdmissionFailure::Refused(record)) => (
+            record.cause.to_owned(),
+            record.fields.get("field").cloned().unwrap_or_default(),
+            record.fields.get("path").cloned().unwrap_or_default(),
+        ),
+        other => panic!("a refusal, not {other:?}"),
+    };
+    let expected = |cause: &str, field: &str, path: &str| {
+        (cause.to_owned(), field.to_owned(), path.to_owned())
+    };
+    assert_eq!(
+        refusal(admit_invocation(
+            &package,
+            "PayTaxedHolds",
+            "payTaxed",
+            without_tax.clone(),
+            Some(money_json(1))
+        )),
+        expected("missing-member", "m", "tax_minor")
+    );
+    assert_eq!(
+        refusal(admit_invocation(
+            &package,
+            "PayReturns",
+            "pay",
+            money_json(1),
+            Some(without_tax)
+        )),
+        expected("missing-member", "result", "tax_minor")
+    );
+    assert_eq!(
+        refusal(admit_invocation(
+            &package,
+            "PayReturns",
+            "pay",
+            money_json(1),
+            Some(record_json("Fee", &[("fee_minor", 1)]))
+        )),
+        expected("wrong-value-kind", "result", "")
+    );
+}

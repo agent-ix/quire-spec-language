@@ -313,12 +313,12 @@ fn model_nodes(graph: &CheckedGraph) -> Vec<(NodeTag, &'static str, Value)> {
         .collect()
 }
 
-/// FR-359-AC-3: every record value type and event type is a model-owned
+/// FR-359-AC-3 (records): every record value type is a model-owned
 /// `record_value_type` or `event_type` node, none is a `composite_type`, and
 /// no node carries a `supertypes` member or a conversion.
 #[trace("FR-359-AC-3", "TC-998")]
 #[test]
-fn records_and_events_are_model_owned_nodes_without_supertypes() {
+fn records_are_model_owned_nodes_without_supertypes() {
     let graph = check(
         "function occurredAt using v(e: M::OrderPlaced): Integer pure { e.occurred_at }\n\
          function fromExpress using v(e: M::ExpressOrderPlaced): Integer pure { occurredAt(e) }\n\

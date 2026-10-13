@@ -476,6 +476,112 @@ fn dispatch_argument_admits_a_reference_upcast() {
     assert_eq!(*checked.value_type(), ValueType::Integer);
 }
 
+/// `Money <- TaxedMoney` and the unrelated `Fee`, declared beside the
+/// receiver object type, with the dispatch operation taking a `Money`.
+fn record_dispatch_package() -> (
+    qsl_semantics::check::PackageDeclarations,
+    [quire_exact::NodeKey; 3],
+) {
+    use quire_exact::{NodeKey, Presence};
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+    let record = |key, name: &str, supertypes: Vec<NodeKey>| {
+        CompositeDeclaration::new(
+            key,
+            name,
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "amount",
+                ValueType::Integer,
+                Presence::Required,
+            )]),
+        )
+        .with_supertypes(supertypes)
+    };
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.functions[0].parameters.push((
+        "arg".to_owned(),
+        crate::support::type_form::named_type_form("Money"),
+    ));
+    package.dispatch_operations[0].parameters = vec![ValueType::Composite(money)];
+    package.types = TypeEnvironment::new(
+        [
+            record(money, "Money", vec![]),
+            record(taxed, "TaxedMoney", vec![money]),
+            record(fee, "Fee", vec![]),
+        ],
+        [ObjectTypeDeclaration::new(
+            receiver_type,
+            "Receiver",
+            vec![],
+        )],
+    )
+    .unwrap();
+    (package, [money, taxed, fee])
+}
+
+/// FR-359-AC-8 (TC-1001 step 2): a dispatch call's argument admits a record
+/// whose type conforms to the declared parameter, as it admits a reference
+/// upcast, and the checked call node's static type is the operation's result;
+/// a parent at a child-typed parameter and an unrelated record refuse
+/// `ill_typed`/`type-mismatch`, in the dispatch call's own location.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn dispatch_argument_admits_a_conforming_record_and_refuses_the_rest() {
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
+    let (package, [money, taxed, fee]) = record_dispatch_package();
+    let checked_package = package.check(CheckingLimits::default()).unwrap();
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("arg".to_owned())],
+    );
+    let check = |argument: quire_exact::NodeKey| {
+        checked_package.check_clause_expression(
+            vec![
+                ("self".to_owned(), ValueType::Reference(receiver_type)),
+                ("arg".to_owned(), ValueType::Composite(argument)),
+            ],
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+    };
+    for admitted in [taxed, money] {
+        let checked = check(admitted).expect("a record conforming to Money is admitted");
+        assert_eq!(*checked.value_type(), ValueType::Integer);
+    }
+    let refusal = check(fee).expect_err("an unrelated record is refused");
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+    // A Money at a TaxedMoney-typed parameter is the downcast direction.
+    let (mut package, [_, taxed, _]) = record_dispatch_package();
+    package.functions[0].parameters.pop();
+    package.functions[0].parameters.push((
+        "arg".to_owned(),
+        crate::support::type_form::named_type_form("TaxedMoney"),
+    ));
+    package.dispatch_operations[0].parameters = vec![ValueType::Composite(taxed)];
+    let checked_package = package.check(CheckingLimits::default()).unwrap();
+    let refusal = checked_package
+        .check_clause_expression(
+            vec![
+                ("self".to_owned(), ValueType::Reference(receiver_type)),
+                ("arg".to_owned(), ValueType::Composite(money)),
+            ],
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect_err("a parent at a child-typed parameter is refused");
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+}
+
 /// H1 (#204 round 1), FR-151: the upcast admission is one-directional --
 /// passing an argument statically typed as a proper *supertype* of the
 /// declared parameter (the "downcast" direction) is refused

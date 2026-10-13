@@ -291,12 +291,10 @@ pub(crate) fn document() -> Value {
                     "fields": [plain("Ledger", "ledger_id", &native("Integer"))],
                 }),
             );
-            ledger["operations"] = json!([operation_with(
-                "Ledger",
-                "pay",
-                &[("m", money.clone())],
-                &money,
-            )]);
+            ledger["operations"] = json!([
+                operation_with("Ledger", "pay", &[("m", money.clone())], &money),
+                operation_with("Ledger", "payTaxed", &[("m", id("TaxedMoney"))], &money),
+            ]);
             ledger
         },
     ];
