@@ -929,6 +929,21 @@ impl<'a> Resolution<'a> {
             })
         })?;
         declarations.lock_evidence = frame.lock.clone();
+        // FR-302: link the dispatch table of each operation a dispatched
+        // call names, under the caller's model normalization limits, before
+        // `check` types the calls against them.
+        charged(cancel, &mut self.work.s3, || {
+            declarations.link_dispatch(limits.model)
+        })
+        .map_err(|refusals| {
+            let regions = declarations.regions();
+            Box::new(CompileRefusal::Check {
+                region: refusals
+                    .first()
+                    .and_then(|refusal| regions.refusal_region(refusal)),
+                refusals,
+            })
+        })?;
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
             declarations.check_with_cancel(limits.checking, cancel)

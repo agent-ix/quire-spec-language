@@ -289,6 +289,12 @@ pub struct PackageDeclarations {
     /// unit (the FR-091 assembler fills it). A declaration built by hand has
     /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-302: the span of the unit declaration each function
+    /// synthesized for dispatch without form spans of its own was derived
+    /// from, by index into [`Self::functions`]: every occurrence in such a
+    /// function resolves to that span. `link_dispatch` fills it for the
+    /// precondition functions it synthesizes from the unit's `pre` clauses.
+    pub synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
     /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
     /// The spans above are body offsets; with a map, each region resolves
     /// under the document's `RawSourceRef`, shifted by the body's offset in
@@ -331,10 +337,11 @@ pub struct PackageDeclarations {
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
     pub operation_bodies: Vec<super::OperationBodyDeclaration>,
-    /// FR-103: the effective view of each `model` declaration a unit
-    /// `operation-body` resolved into, with `has_body` set from those bodies,
-    /// by the declaration's alias. A model no body names has no entry and
-    /// keeps its admitted view, whose `has_body` is false.
+    /// FR-103, FR-302: the effective view of each selected `model`
+    /// declaration, by its alias, with `has_body` set from the unit's
+    /// `operation-body` declarations that resolved into it. A model no body
+    /// names holds its admitted view, whose `has_body` is false throughout.
+    /// Dispatch linking reads a called operation's family from these views.
     pub selected_views: BTreeMap<String, crate::model::normalize::EffectiveView>,
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
@@ -370,6 +377,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            synthesized_spans: BTreeMap::new(),
             embedding: None,
             units: quire_semantic_value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),

@@ -2728,18 +2728,23 @@ impl<'a> Lowering<'a> {
         let key = match function.clause {
             // FR-094: a clause function carries its declaration's
             // `ModelOwner`, no `declaration` and a trailing `clause`
-            // binding; it has no source `declaration` occurrence.
+            // binding; it has no source `declaration` occurrence. Its one
+            // occurrence is `generated`, at its own body, which FR-096
+            // resolves to the clause or body the function was built from
+            // (FR-302), so emission places it.
             Some(clause) => {
                 let (owner, clause) = self.clause_owner(clause, function.location)?;
                 members.push(clause);
-                self.insert_owned(
+                let key = self.insert_owned(
                     function.location,
                     NodeTag::Function,
                     semantic_form,
                     Some(result),
                     owner,
                     BodyTerm::aggregate(members),
-                )?
+                )?;
+                self.record(key, OccurrenceRole::Generated, function.location.clone());
+                key
             }
             None => {
                 let declaration = qualified_name(function.name, function.location)?;

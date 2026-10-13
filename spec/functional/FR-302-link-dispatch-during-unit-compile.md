@@ -51,7 +51,11 @@ For each distinct operation a dispatched call in the unit names, the checker
 SHALL link one dispatch table through `check::checked_dispatch_operation`,
 which calls `model::dispatch::link_dispatch` (ADR-016 SC-3). The checked
 package SHALL carry each linked table, and S6a SHALL select a call's target
-only from the table its checked node names.
+only from the table its checked node names. A called member name selects the
+family root of that name in each selected model: an operation that redefines
+none. A call whose receiver's static type is the root's declaring type or any
+type conforming to it, including a type that redefines the operation, names
+that root's table.
 
 The source-to-intake join SHALL use the resolved operation's
 `DeclarationKey` in the selected model's effective view. S3 SHALL resolve

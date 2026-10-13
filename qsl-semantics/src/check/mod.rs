@@ -75,6 +75,7 @@ mod capability;
 mod check;
 mod checked_dispatch;
 mod claims;
+mod dispatch_link;
 mod facts;
 mod family;
 mod field_refinement;
@@ -215,8 +216,9 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause,
-    ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    DispatchLinkCause, DispatchLinkLimit, DispatchSubtypeFailure, InvalidDispatchDeclaration,
+    KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause, ProvedInterval,
+    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
 
 /// A checked function.
@@ -362,6 +364,9 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-302: the declaration each function synthesized for
+    /// dispatch without form spans was derived from, by function index.
+    synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
     /// FR-096-AC-1: the embedding map the spans resolve through, if any.
     embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
@@ -849,6 +854,7 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let type_spans = self.declared_type_spans;
+        let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
             .functions
@@ -1758,6 +1764,7 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            synthesized_spans,
             embedding,
             model_selections,
             state_clauses,
