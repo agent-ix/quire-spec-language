@@ -508,20 +508,20 @@ fn a_model_record_key_is_its_model_node_key_whatever_the_alias() {
     assert_eq!(m, n, "the alias does not enter a declaration key");
 }
 
-/// FR-359-AC-1: a field typed UUID or Timestamp is read, and compared, at a
-/// parent-typed slot like any other. Lowering a UUID, Timestamp or String leaf
-/// now lowers (PR #789); the `=` the unit uses on them is still refused.
+/// FR-359-AC-1: a field typed UUID, Timestamp or String is read by projection
+/// through its record, and through a child at a parent-typed slot, like any
+/// other field.
 #[trace("FR-359-AC-1", "TC-998")]
 #[test]
-#[ignore = "String, UUID and Timestamp now lower, but `=` on them is refused ill_typed/operator-ineligible; equality on native scalars is not yet admitted"]
+#[ignore = "a function cannot return a native scalar: source type forms have no UUID, Timestamp or String name, so assembly refuses each result type with UnresolvedTypeName; `=` on them is refused ill_typed/operator-ineligible"]
 fn uuid_timestamp_and_string_fields_are_read_through_a_child() {
     assemble_document(
         &fixture::document_with_native_leaves(),
         "M",
-        "function token using v(c: M::Credential): Boolean pure { c.token = c.token }\n\
-         function issued using v(c: M::Credential): Boolean pure { c.issued = c.issued }\n\
-         function label using v(t: M::Ticket): Boolean pure { t.label = t.label }\n\
-         function viaChild using v(t: M::StampedTicket): Boolean pure { label(t) }",
+        "function token using v(c: M::Credential): UUID pure { c.token }\n\
+         function issued using v(c: M::Credential): Timestamp pure { c.issued }\n\
+         function label using v(t: M::Ticket): String pure { t.label }\n\
+         function viaChild using v(t: M::StampedTicket): String pure { label(t) }",
     )
     .check(CheckingLimits::default())
     .expect("native leaves check");
