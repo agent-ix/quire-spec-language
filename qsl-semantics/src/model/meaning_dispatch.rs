@@ -18,6 +18,8 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
     pub(super) node: &'a str,
     pub(super) at: &'a str,
     pub(super) type_meanings: &'a HashMap<&'m str, &'m str>,
+    /// The `shape` of the type's own construct, when it declares one.
+    pub(super) construct_shape: Option<&'a str>,
     pub(super) records: &'a mut Vec<DomainPackageRecord>,
     pub(super) pending: &'a mut Vec<PendingFrame>,
 }
@@ -36,6 +38,7 @@ pub(super) fn bind(
         meaning::PROCESS => super::process::bind(context),
         meaning::PERSISTENCE_INTERFACE => super::persistence_interface::bind(context),
         meaning::NAMESPACE => super::namespace::bind(context),
+        meaning::VARIANT_TYPE => super::variant_type::bind(context),
         _ => return None,
     })
 }

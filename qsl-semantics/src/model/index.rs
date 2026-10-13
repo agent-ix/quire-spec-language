@@ -74,6 +74,7 @@ struct DeclFlags {
     scalar_type: bool,
     record_value_type: bool,
     event_type: bool,
+    variant_type: bool,
     state_machine: bool,
     persistence_interface: bool,
     namespace: bool,
@@ -197,6 +198,8 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::RecordValueType(record) => std::iter::once(&record.key)
             .chain(&record.supertypes)
             .collect(),
+        DomainPackageRecord::Enum(record) => vec![&record.key],
+        DomainPackageRecord::Variant(record) => vec![&record.key, &record.owner],
         DomainPackageRecord::EventType(record) => std::iter::once(&record.key)
             .chain(&record.identity_fields)
             .chain(record.occurrence_field.iter())
@@ -471,6 +474,12 @@ impl RecordIndex {
                 | DomainPackageRecord::Relationship(_)
                 | DomainPackageRecord::Allocation(_)
                 | DomainPackageRecord::Population(_) => {}
+                DomainPackageRecord::Enum(_) => {
+                    index.flags[own.0].variant_type = true;
+                }
+                // A case carries no inheritance, field or operation
+                // structure for the index to hold.
+                DomainPackageRecord::Variant(_) => {}
             }
         }
         index.keys = keys;
@@ -543,6 +552,11 @@ impl RecordIndex {
     /// Whether some `EventType` record declares `key`.
     pub(crate) fn is_event_type(&self, key: &DeclarationKey) -> bool {
         self.flags(key).event_type
+    }
+
+    /// Whether some `Enum` record (a variant type) declares `key`.
+    pub(crate) fn is_variant_type(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).variant_type
     }
 
     /// Whether `key` is an FR-208 state-machine type.

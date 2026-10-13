@@ -1878,7 +1878,42 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::Enum(_) => {}
+        DomainPackageRecord::Variant(case) => {
+            if !index.is_variant_type(&case.owner) {
+                refusals.push(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: case.key.clone(),
+                        owner: case.owner.clone(),
+                    },
+                    detail: format!(
+                        "variant case {} names owner {}, which is not a declared variant type",
+                        case.key.node, case.owner.node
+                    ),
+                });
+            }
+        }
         DomainPackageRecord::FieldMember(member) => {
+            // FR-056 "Variant types": a field typed by a variant type is
+            // QSL-738's. Until it lands, the field refuses at its `typeRef`;
+            // the variant type's own declaration is admitted.
+            if let ValueTypeRef::Package(target) = &member.value_type {
+                if index.is_variant_type(target) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                            node: member.key.node.clone(),
+                            artifact: None,
+                            span: None,
+                        },
+                        detail: format!(
+                            "{}: Field.typeRef: {} is a variant type; fields typed by a variant type are not yet supported",
+                            member.key.node, target.node
+                        ),
+                    });
+                }
+            }
             if !index.is_object_type(&member.owner)
                 && !index.is_record_value_type(&member.owner)
                 && !index.is_event_type(&member.owner)

@@ -307,7 +307,9 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
             Some(_) => (NodeTag::Model, "systems_interface"),
         }),
         DomainPackageRecord::Relationship(_) => Some((NodeTag::Relation, "relationship")),
-        DomainPackageRecord::FieldMember(_)
+        DomainPackageRecord::Enum(_)
+        | DomainPackageRecord::Variant(_)
+        | DomainPackageRecord::FieldMember(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::PersistenceInterface(_)

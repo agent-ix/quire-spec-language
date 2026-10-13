@@ -36,6 +36,7 @@ mod state_clauses;
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
+mod variant_type;
 
 #[path = "../../../tests/support/admitted_charge.rs"]
 mod admitted_charge;

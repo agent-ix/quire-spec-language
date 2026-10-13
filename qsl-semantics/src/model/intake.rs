@@ -49,11 +49,12 @@ use serde_json::Value;
 
 use crate::model::domain_package::{
     AllocationRecord, ClauseRecord, ComponentRecord, DomainPackage, DomainPackageRecord,
-    DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NamespaceRecord,
-    NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, OriginalDeclaration, PersistenceInterfaceRecord,
-    PopulationRecord, PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
+    DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord, Multiplicity,
+    NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, OriginalDeclaration,
+    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -3585,6 +3586,131 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
     Ok(index)
 }
 
+/// Reads a `VARIANT_TYPE` type (FR-056 "Variant types") into one
+/// [`EnumRecord`] and one [`VariantRecord`] per case.
+///
+/// `shape` is the `shape` of the type's own construct. Checks run in this
+/// order and the first failure refuses: the construct shape, a non-empty
+/// `variants` list, two cases of one name, then each case in turn (its
+/// source span, its minted identity, its payload). Records are emitted in
+/// ascending case-name byte order, so the document's `variants` order
+/// changes no record.
+#[qsl_attrs::string_edge]
+pub(super) fn read_variant_type(
+    package: &str,
+    type_value: &Value,
+    node: &str,
+    at: &str,
+    shape: Option<&str>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), ModelRefusal> {
+    let ctx = NodeCtx::new(type_value, at);
+    if shape != Some("enumeration") {
+        return Err(ctx.malformed(
+            "kind: a variant type's construct has shape enumeration (path TypeDefinition.kind)",
+        ));
+    }
+    let variants = ctx.array_field("variants")?;
+    if variants.is_empty() {
+        return Err(ctx.malformed(
+            "variants: a variant type declares one or more cases (path TypeDefinition.variants)",
+        ));
+    }
+    let owner = declaration_key(package, node);
+    let artifact = type_identity_segment(package, node)
+        .ok_or_else(|| ctx.malformed("identity: has no artifact id"))?;
+    let mut cases = Vec::with_capacity(variants.len());
+    let mut first_of: HashMap<&str, (usize, Option<&str>)> = HashMap::new();
+    for (position, case) in variants.iter().enumerate() {
+        let case_at = format!("{at}.variants[{position}]");
+        let case_ctx = NodeCtx::new(case, case_at.clone());
+        let name = case_ctx.str_field("name")?;
+        let identity = case.get("identity").and_then(Value::as_str);
+        if let Some(&(first, first_identity)) = first_of.get(name) {
+            if identity == first_identity {
+                // One identity declared twice: the reader's own
+                // `duplicate_identities` diagnostic is retained for it
+                // (FR-056's reader-first rule), so no second case is read.
+                continue;
+            }
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding { key: owner },
+                detail: format!(
+                    "{case_at}: TypeDefinition.variants[{position}]: case {name:?} repeats \
+                     variants[{first}]; the cases share one variant export key"
+                ),
+            });
+        }
+        first_of.insert(name, (position, identity));
+        cases.push((position, name, case, case_ctx));
+    }
+    for (position, name, case, case_ctx) in &cases {
+        if node_span(case).1.is_none() {
+            return Err(ctx.malformed(format!(
+                "variants[{position}].origin: a variant case with no source span refuses \
+                 (path TypeDefinition.variants[{position}].origin)"
+            )));
+        }
+        let identity = case_ctx.str_field("identity")?;
+        let minted = agent_ix_extraction_frontend::slug(name)
+            .is_ok_and(|slug| identity == format!("ix://{package}/variant/{artifact}-{slug}"));
+        if !minted {
+            return Err(ctx.malformed(format!(
+                "variants[{position}].identity: {identity:?} is not the case's minted \
+                 variant/<Name>-<value> (path TypeDefinition.variants[{position}].identity)"
+            )));
+        }
+        if case.get("payloadType").is_some() {
+            return Err(unsupported_at(
+                case,
+                &case_ctx.at,
+                format!("{}:payloadType", meaning::VARIANT_TYPE),
+            ));
+        }
+    }
+    cases.sort_by(|left, right| left.1.cmp(right.1));
+    records.push(DomainPackageRecord::Enum(EnumRecord {
+        key: owner.clone(),
+        name: artifact.to_owned(),
+        members: cases
+            .iter()
+            .map(|(_, name, _, _)| (*name).to_owned())
+            .collect(),
+    }));
+    for (_, name, case, _) in &cases {
+        let identity = case.get("identity").and_then(Value::as_str).unwrap_or(node);
+        records.push(DomainPackageRecord::Variant(VariantRecord {
+            key: declaration_key(package, identity),
+            owner: owner.clone(),
+            case: (*name).to_owned(),
+        }));
+    }
+    Ok(())
+}
+
+/// The `shape` each `constructs[]` entry declares, by its `kind` key.
+fn shape_index(document: &Value) -> HashMap<(String, String), String> {
+    let entries = document
+        .get("constructs")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let kind = entry.get("kind")?;
+            let shape = entry.get("construct")?.get("shape")?.as_str()?;
+            Some((
+                (
+                    kind.get("module")?.as_str()?.to_owned(),
+                    kind.get("name")?.as_str()?.to_owned(),
+                ),
+                shape.to_owned(),
+            ))
+        })
+        .collect()
+}
+
 /// Reads one `types[]` entry, dispatching purely by the `meaning` its `kind`
 /// resolves to in the document's own `constructs[]` table (FR-208) -- never
 /// by `kind.name`/`kind.module` directly. Checks report in FR-154's own
@@ -3594,6 +3720,7 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,
+    shapes: &HashMap<(String, String), String>,
     type_meanings: &HashMap<&str, &str>,
     type_value: &Value,
     at: &str,
@@ -3648,6 +3775,9 @@ fn read_type_node(
             node,
             at,
             type_meanings,
+            construct_shape: shapes
+                .get(&(module.to_owned(), name.to_owned()))
+                .map(String::as_str),
             records: &mut records,
             pending,
         };
@@ -3692,7 +3822,7 @@ fn read_type_node(
             )?));
         }
         other if meaning::ALL.contains(&other) => {
-            // A real FR-208 meaning (e.g. VARIANT_TYPE) with no
+            // A real FR-208 meaning with no
             // QSL record shape yet, or a real meaning whose shape this
             // reader claims only part of (VALUE_TYPE's record-shaped form,
             // caught above before this match) -- refused as a
@@ -3728,7 +3858,9 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
         DomainPackageRecord::Process(_) => FrameEntryKind::Process,
         DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
-        DomainPackageRecord::RecordValueType(_)
+        DomainPackageRecord::Enum(_)
+        | DomainPackageRecord::Variant(_)
+        | DomainPackageRecord::RecordValueType(_)
         | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Clause(_)
@@ -4039,6 +4171,32 @@ pub fn read_domain_package(
                             member_name: None,
                         },
                     );
+                    for (case_position, case) in node
+                        .get("variants")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        let case_ctx =
+                            NodeCtx::new(case, format!("{at}.variants[{case_position}]"));
+                        let case_key =
+                            declaration_key(&selection.identity, case_ctx.str_field("identity")?);
+                        if !declared.contains(&case_key) {
+                            continue;
+                        }
+                        let origin = case
+                            .get("origin")
+                            .ok_or_else(|| case_ctx.malformed("origin: missing"))?;
+                        originals.insert(
+                            case_key,
+                            OriginalDeclaration {
+                                meaning: None,
+                                origin: origin.clone(),
+                                member_name: Some(case_ctx.str_field("name")?.to_owned()),
+                            },
+                        );
+                    }
                     for members in ["fields", "operations", "relationships", "clauses"] {
                         for (member_position, member) in node
                             .get(members)
@@ -4112,7 +4270,13 @@ fn source_record_count(document: &Value) -> usize {
     let populations = document.get("populations").and_then(Value::as_array);
     let mut count = types.map_or(0, Vec::len) + populations.map_or(0, Vec::len);
     for type_value in types.into_iter().flatten() {
-        for member in ["fields", "operations", "relationships", "clauses"] {
+        for member in [
+            "fields",
+            "operations",
+            "relationships",
+            "clauses",
+            "variants",
+        ] {
             count += type_value
                 .get(member)
                 .and_then(Value::as_array)
@@ -4147,6 +4311,7 @@ fn read_nodes_partial(
         Ok(meanings) => meanings,
         Err(refusal) => return (Vec::new(), vec![refusal]),
     };
+    let shapes = shape_index(document);
     // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
     // `expect_array` guarantees it is an array; `populations` is optional
     // but array-shaped when present.
@@ -4207,6 +4372,7 @@ fn read_nodes_partial(
                 match read_type_node(
                     package_identity,
                     &meanings,
+                    &shapes,
                     &type_meanings,
                     type_value,
                     &at,
@@ -5816,7 +5982,7 @@ mod tests {
         );
     }
 
-    /// A real FR-208 meaning (`VARIANT_TYPE`) FCD's own schema accepts
+    /// A real FR-208 meaning (`POPULATION`, which is read from `populations[]`, never from a `types[]` entry) FCD's own schema accepts
     /// generically -- any string in `kind`'s resolved `meaning` is
     /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
     /// yet, refuses as a known-but-unsupported declaration form rather than
@@ -5829,7 +5995,7 @@ mod tests {
             serde_json::json!([wire_construct(
                 "acme/orders",
                 "happened",
-                meaning::VARIANT_TYPE,
+                meaning::POPULATION,
                 serde_json::json!({}),
             )]),
             serde_json::json!([wire_type(
@@ -5850,11 +6016,11 @@ mod tests {
                 code: Code::UnsupportedConstruct,
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
                     node: "ix://acme/orders/OrderPlaced".to_owned(),
-                    what: meaning::VARIANT_TYPE.to_owned(),
+                    what: meaning::POPULATION.to_owned(),
                 },
                 detail: format!(
                     "$.types[0]: construct meaning/capability {:?} has no reader yet",
-                    meaning::VARIANT_TYPE
+                    meaning::POPULATION
                 ),
             }]
         );

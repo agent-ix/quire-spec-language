@@ -326,6 +326,12 @@ pub enum AssemblyCause {
         /// The record's IR node identity.
         node: String,
     },
+    /// Source names a model variant type (FR-150: refused as an unsupported
+    /// declaration form; the variant type's own declaration is admitted).
+    UnsupportedVariantType {
+        /// The name as written, `M::T`.
+        name: String,
+    },
     /// A `pre` or `post` state clause's operation names no operation of its
     /// context type's effective view (FR-104, FR-103).
     UnresolvedOperation {
@@ -361,6 +367,7 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
             | Self::UnresolvedOperation { .. } => Code::MissingDeclaration,
+            Self::UnsupportedVariantType { .. } => Code::UnsupportedConstruct,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
@@ -441,6 +448,7 @@ impl AssemblyCause {
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnsupportedVariantType { .. } => "declaration-form",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
@@ -766,7 +774,13 @@ fn model_object_types(
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
             // Record and event declarations are emitted as composites below;
             // their effective fields are collected from the normalized view.
-            DomainPackageRecord::RecordValueType(_)
+            // A variant type's `enum` and `variant` exports are admitted
+            // (FR-056 "Variant types") but not assembled into the type
+            // environment: source naming one refuses before this point
+            // (`AssemblyCause::UnsupportedVariantType`).
+            DomainPackageRecord::Enum(_)
+            | DomainPackageRecord::Variant(_)
+            | DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::EventType(_)
             | DomainPackageRecord::ObjectType(_)
             | DomainPackageRecord::StateMachine(_)
@@ -1184,6 +1198,7 @@ fn check_names(
     unit: &Unit,
     object_types: &BTreeMap<String, EffectiveId>,
     model_composites: &BTreeSet<String>,
+    variant_types: &BTreeSet<String>,
     imports: &BTreeMap<String, AdmittedImport>,
     form: &TypeForm,
     errors: &mut Vec<AssemblyError>,
@@ -1220,6 +1235,13 @@ fn check_names(
                 }
             }
             TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
+                // FR-150: a model variant type referenced by source.
+                None | Some(0) if variant_types.contains(name) => {
+                    errors.push(AssemblyError {
+                        cause: AssemblyCause::UnsupportedVariantType { name: name.clone() },
+                        span: form.span,
+                    });
+                }
                 None | Some(0)
                     if object_types.contains_key(name) || model_composites.contains(name) => {}
                 None | Some(0)
@@ -1530,6 +1552,7 @@ impl PackageDeclarations {
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
         let mut model_composites = Vec::new();
+        let mut admitted_variant_types = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         for selection in &selections.models {
@@ -1542,6 +1565,14 @@ impl PackageDeclarations {
                 });
                 continue;
             };
+            admitted_variant_types.extend(model.view.domain_package().records.iter().filter_map(
+                |record| match record {
+                    DomainPackageRecord::Enum(variant_type) => {
+                        Some(format!("{}::{}", selection.alias, variant_type.name))
+                    }
+                    _ => None,
+                },
+            ));
             match model_object_types(
                 &selection.alias,
                 model,
@@ -1565,6 +1596,7 @@ impl PackageDeclarations {
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
+        let variant_type_names: BTreeSet<String> = admitted_variant_types.into_iter().collect();
         let model_composite_names: BTreeSet<String> = model_composites
             .iter()
             .map(|declaration| declaration.name().to_owned())
@@ -1702,6 +1734,7 @@ impl PackageDeclarations {
                 &unit,
                 &object_names,
                 &model_composite_names,
+                &variant_type_names,
                 &qualified,
                 &alias.target,
                 &mut errors,
@@ -1715,6 +1748,7 @@ impl PackageDeclarations {
                             &unit,
                             &object_names,
                             &model_composite_names,
+                            &variant_type_names,
                             &qualified,
                             &field.type_form,
                             &mut errors,
@@ -1727,6 +1761,7 @@ impl PackageDeclarations {
                             &unit,
                             &object_names,
                             &model_composite_names,
+                            &variant_type_names,
                             &qualified,
                             element,
                             &mut errors,
@@ -1741,6 +1776,7 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
+                    &variant_type_names,
                     &qualified,
                     form,
                     &mut errors,
@@ -1751,6 +1787,7 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
+                    &variant_type_names,
                     &qualified,
                     &form,
                     &mut errors,
@@ -1763,6 +1800,7 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
+                    &variant_type_names,
                     &qualified,
                     &form,
                     &mut errors,
@@ -1995,6 +2033,7 @@ impl PackageDeclarations {
             unit.state_clauses,
             &selections.profiles,
             &object_names,
+            &variant_type_names,
             &types,
             &operations,
             &admitted,
@@ -2075,6 +2114,7 @@ fn state_clauses(
     forms: Vec<StateClauseForm>,
     profiles: &[qsl_foundation::selection::ProfileSelection],
     object_names: &BTreeMap<String, EffectiveId>,
+    variant_type_names: &BTreeSet<String>,
     types: &TypeEnvironment,
     operations: &OperationTable,
     models: &[AdmittedModel],
@@ -2097,12 +2137,17 @@ fn state_clauses(
         }
         let context = object_names.get(&form.context.name).copied();
         let Some(context) = context else {
-            errors.push(error(
+            // FR-150: a model variant type referenced by source.
+            let cause = if variant_type_names.contains(&form.context.name) {
+                AssemblyCause::UnsupportedVariantType {
+                    name: form.context.name.clone(),
+                }
+            } else {
                 AssemblyCause::UnresolvedTypeName {
                     name: form.context.name.clone(),
-                },
-                form.context.span,
-            ));
+                }
+            };
+            errors.push(error(cause, form.context.span));
             continue;
         };
         let operation = match &form.operation {

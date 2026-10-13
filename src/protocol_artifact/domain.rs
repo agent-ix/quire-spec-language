@@ -149,6 +149,8 @@ pub(super) fn exports<'a>(
                 continue;
             }
             DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::Enum(_)
+            | DomainPackageRecord::Variant(_)
             | DomainPackageRecord::EventType(_)
             | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::Process(_)
