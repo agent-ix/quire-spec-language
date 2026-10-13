@@ -492,9 +492,9 @@ fn systems_members_have_effective_owner_entries() {
 /// A subtype inherits every systems member from its composite ancestor. An
 /// inherited member carries one inherit fact per ancestor path and no qualify
 /// fact (TC-195 N01), even for the role-less connection whose owner holds two
-/// same-owner qualify facts. This also exercises the
-/// repeated same-owner path control: dropping the ancestor member grouping or
-/// retaining only one connection end makes this assertion fail.
+/// same-owner qualify facts. This also exercises the repeated same-owner
+/// path control: dropping the ancestor member grouping makes the inherit
+/// facts and the fact-boundary assertion below fail.
 #[trace("TC-213", "QSpec-TC-197", "QSpec-FR-150-AC-1")]
 #[test]
 fn systems_members_inherit_with_ordered_duplicate_end_facts() {

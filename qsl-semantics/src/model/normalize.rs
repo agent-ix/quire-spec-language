@@ -2824,18 +2824,16 @@ fn build(
                 // so memory grows with facts plus total path length, not
                 // facts times path length.
                 let key = (type_key.clone(), member.clone());
-                let entry = match member_preimages.entry(key) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        // TC-195 N01: an inherited member derives the inherit
-                        // fact only; no qualify fact precedes it.
-                        entry.insert(EffectiveDeclarationPreimage {
+                // TC-195 N01: an inherited member derives the inherit fact
+                // only; no qualify fact precedes it.
+                let entry =
+                    member_preimages
+                        .entry(key)
+                        .or_insert_with(|| EffectiveDeclarationPreimage {
                             owner_effective_type: Some(owner_effective_id),
                             original: member.clone(),
                             derivation: Vec::new(),
-                        })
-                    }
-                };
+                        });
                 charges.fact()?;
                 work_step();
                 let inputs = FactInputs::new(ancestor.path.clone(), vec![member.clone()]);
