@@ -3946,7 +3946,8 @@ impl<'a> Lowering<'a> {
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Reference(_)
-            | Value::Population(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
+            | Value::Population(_)
+            | Value::Union(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
             Value::Uuid(_) | Value::Timestamp(_) => {
                 return Err(fault(node.location(), KeyFault::UnbuiltLiteral))
             }

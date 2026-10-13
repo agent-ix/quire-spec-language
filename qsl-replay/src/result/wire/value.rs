@@ -941,6 +941,7 @@ impl ScalarWire {
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Population(_)
+            | Value::Union(_)
             | Value::Uuid(_)
             | Value::Timestamp(_) => return None,
         })
