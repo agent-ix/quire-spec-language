@@ -70,3 +70,24 @@ scope:
 | FND-004 | medium | Item 8, bullet 2, says the construction check of `OptionValue::present` and every collection constructor "SHALL admit a conforming payload or element when given the environment". That fixes a kernel mechanism, which contradicts open decision 3 ("the owners may pick otherwise"). quire-exact already exposes `OptionValue::from_admitted`, documented for "the caller checking admission (e.g. an upcast-aware lookup)", and `collection::from_admitted`. The Option half of the quire-exact rider is unnecessary: QSL can admit with `TypeEnvironment::admits` and call `from_admitted`. Only collections need kernel help, because `from_admitted` there requires caller-side ordering and charging. The bullet should state the outcome (no checked-invariant fault on a conforming payload or element), not the API. | FR-359 item 8; quire-exact src/value.rs:825-855; quire-exact src/collection.rs:246-261 |
 | FND-005 | medium | FR-359 item 2 says a checked `Field` read "SHALL NOT carry a position", and Dependencies says FR-093 "keep[s] its text". FR-093's lowering table still names the checked form `Field{index}`. The two requirements disagree on the checked node's shape, and the PR leaves the stale one unchanged. The FR-093 row should name the field identity in this PR. | FR-359 item 2; FR-359 Dependencies; spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:181 |
 | FND-006 | medium | FR-359-AC-1 expects `ill_typed`/`operator-ineligible` at check for a parent-typed read of `promised_by`. QSL check today refuses an undeclared record field with `type-mismatch` (`field()` returns `mismatch(location)`). No QSL FR found assigns `operator-ineligible` to a source `e.f` on a record; that code belongs to the IR reader's `record.project` rule (QSpec FR-322-AC-65). The AC changes an existing cause without saying so. It should either keep `type-mismatch` or state the change and its owner. | FR-359-AC-1; qsl-semantics/src/check/check.rs:1923-1938 |
+
+## New findings (disposition pass 1)
+
+Reviewed at d449b0273567cd13de537ad59bce73550045c37c.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | Item 3 and AC-3 ("so is a domain event type") would emit an event type as a `model`/`record_value_type` node with its `ModelOwner`. QSpec FR-322 "Model-owned members" step 2 lets a `model`/`record_value_type` node stand only for "a record value type of FR-208's `quire.meaning.model.record-value-type/v1`". The owner join refuses `missing_declaration`/`missing-selection` when the owner names no declaration of the node's kind, and FR-322 defines no event-type node form. A package carrying an event this way cannot read back `Verified`, which contradicts AC-3's own read-back clause. Cross-repo requirement 5 does not ask QSpec FR-322 to admit event types (a new form, or a widened `record_value_type`). AC-3 depends on that unlisted change. | FR-359 item 3; FR-359-AC-3; FR-359 cross-repo requirement 5; QSpec FR-322 "Model-owned members" step 2, FR-322-AC-65 |
+| FND-008 | medium | Cross-repo requirement 5 sends the distinct-declaration canonical-key order to QSpec FR-322, and the cross-declaration equality rule only to FR-208. In QSpec, the canonical keys are owned by FR-144 "Element admission and canonical keys". Its record row reads "lexicographic over fields in declaration order", and it requires that "two values have equal keys exactly when they are FR-149 equal". Composite `=` is FR-149's, and FR-143 owns record equality (FR-143-AC-5). The amendment request names the wrong owning requirement for the key order, and omits FR-144, FR-149 and FR-143. | FR-359 cross-repo requirement 5; FR-359 item 5; QSpec FR-144; QSpec FR-149; QSpec FR-143-AC-5 |
+| FND-009 | medium | Item 5 justifies the new order as "a function of content alone, since a declaration key is the content identity of the declaration ... it does not depend on source order, names". At evaluation, a model record's `CompositeValue` declaration key is not the IR node's key. It is the handle that `declared_type_handle(owner, "{alias}::{artifact}")` mints from the selecting unit's `SourceOwner` and the source-local alias. So the order between `Money` and `TaxedMoney` in a `Set<Money>` changes with the alias written in `model M = ...`. Item 3 changes only the emitted IR node. FR-359 should require that the evaluator's composite declaration key for a model record or event be its model-owned node key, which FR-322 step 2 keys from content only, so that the claim holds. | FR-359 item 5; FR-359 item 3; qsl-semantics/src/check/assemble.rs:699-716,887-893 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d449b0273 |
+| FND-002 | fixed | d449b0273 |
+| FND-003 | fixed | d449b0273 |
+| FND-004 | fixed | d449b0273 |
+| FND-005 | fixed | d449b0273 |
+| FND-006 | fixed | d449b0273 |

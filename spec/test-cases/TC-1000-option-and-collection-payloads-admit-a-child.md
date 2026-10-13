@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify that an `Option` payload and a collection element at a parent-typed slot admit a child and keep its identity. Scope: FR-359-AC-6, FR-359-AC-7.
+Verify that an `Option` payload and a collection element at a parent-typed slot admit a child and keep its identity. Scope: FR-359-AC-6, FR-359-AC-7, FR-359-AC-11.
 
 Catches an implementation that admits the child at the field but faults on projection with `field-option-payload-rejected`, one that retags the element, and one that adds type-level covariance.
 
@@ -21,6 +21,7 @@ Catches an implementation that admits the child at the field but faults on proje
 3. Build `Sequence<Money>`, `Set<Money>`, `Bag<Money>` and `OrderedSet<Money>` literals holding a `TaxedMoney`, and run `contains`, iteration and `length`.
 4. Build a `Set<Money>` from a `Money` and a `TaxedMoney` with equal shared fields, in both source orders.
 5. Pass a `Sequence<TaxedMoney>` expression to a `Sequence<Money>` parameter and an `Option<TaxedMoney>` expression to an `Option<Money>` parameter.
+6. Compile two units that select the same model, one as `model M = ...` and one as `model N = ...`, build the step 4 `Set<Money>` in each, and compare a `TaxedMoney` built in one with the same value built in the other.
 
 ## Expected Results
 
@@ -29,4 +30,5 @@ Catches an implementation that admits the child at the field but faults on proje
 - Step 3 admits each element and keeps its identity through every operation.
 - Step 4 holds two elements in each order, in the same order both times (ascending declaration key bytes), and reports no `CanonicalKeyUnavailable`.
 - Step 5 refuses `ill_typed`/`type-mismatch` at each argument.
+- Step 6 gives the same declaration keys, the same element order and equal values in both units.
 - Assertions compare typed values, causes and member paths, never message text.

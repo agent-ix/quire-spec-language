@@ -51,8 +51,9 @@ record value for this purpose (FR-208 gives it the same inheritance); an object
 is never one, and a `Reference<T>` keeps its own conformance rule (FR-100,
 FR-322 "Reference conformance").
 
-A **slot** is a field, parameter, result, `Option` payload or collection
-element whose declared type names a record value type `P`. A **child** is a
+A **slot** is a field, parameter, result, `Option` payload, collection element,
+tuple position or union member payload whose declared type names a record value
+type `P`. A **child** is a
 value whose most-specific record type `S` is `P` or has `P` among its
 ancestors, at any depth.
 
@@ -78,11 +79,12 @@ ancestors, at any depth.
    fields are ordered by their own keys and are not a positional prefix of the
    ancestor's, so a position computed from `P` names a different field in `S`.
    A tuple has no supertypes in source, so a tuple position stays a position.
-3. **Records and events are emitted as model-owned record nodes.** The checked
-   IR SHALL carry a domain package's record value type or event type as a
+3. **Records and events are emitted as model-owned nodes.** The checked IR
+   SHALL carry a domain package's record value type as a
    `model`/`record_value_type` node with its `ModelOwner` (FR-094, FR-103,
-   FR-322-AC-63), and SHALL NOT emit it as a `composite_type`/`record` node with
-   a source owner. Today QSL's `close_composite` emits it as the latter and
+   FR-322-AC-63), and its event type as a `model`/`event_type` node with its
+   `ModelOwner` (cross-repo requirement 7), and SHALL NOT emit either as a
+   `composite_type`/`record` node with a source owner. Today QSL's `close_composite` emits it as the latter and
    `record_form` maps both kinds to no node, so the checked package names no
    relation to the selection that declares `supertypes`; the emitter is
    changed by the slice that implements this requirement. With that node the
@@ -94,8 +96,11 @@ ancestors, at any depth.
    and the lowered call or record keeps its operand `ref`. The emitter SHALL
    NOT add a `supertypes` member, which would copy the selected document into
    the package, or a conversion node, which would contradict item 1.
-4. **Equality is decided by identity first.** For two operands whose static
-   type is the record type `P`, `==` SHALL be false and `!=` SHALL be true when
+4. **Equality is decided by identity first.** FR-208 gives an event type no
+   equality rule, so this item applies to record value types only; an event
+   value is read, stored, passed and encoded as the other items state, and
+   `==` over event types stays refused. For two operands whose static type is
+   the record value type `P`, `==` SHALL be false and `!=` SHALL be true when
    their most-specific declaration keys differ, at any depth of specialization.
    When the keys are equal the operands are equal exactly when every effective
    field is equal, each field under this same rule. The result is a Boolean,
@@ -110,7 +115,8 @@ ancestors, at any depth.
    `Child == Parent` over different static types stays `ill_typed`.
 5. **Payloads are admitted by conformance at every depth.** An `Option<P>`
    payload, a `Sequence<P>`, `Set<P>`, `Bag<P>` or `OrderedSet<P>` element, a
-   tuple position and a record field of type `P` SHALL admit a child.
+   tuple position, a union member payload and a record field of type `P` SHALL
+   admit a child.
    Constructing, projecting (`present`, `value`, field read), storing and
    re-reading such a value SHALL preserve the child's identity. A `Set<P>`,
    `Bag<P>` or `OrderedSet<P>` holding a `P` value and a child with the same
@@ -118,11 +124,12 @@ ancestors, at any depth.
    (item 4). The canonical-key order between two values of **distinct
    declarations** is the ascending byte order of their 32-byte declaration
    keys, compared before any slot; values of one declaration continue by slots
-   as they do now. That order is total and a function of content alone, since
-   a declaration key is the content identity of the declaration (FR-092, FR-094),
-   so it does not depend on source order, names or the order a package lists
-   its declarations; it is unrelated to ancestry, which no collection order
-   needs. A type is not covariant: an expression of type `Sequence<S>` or
+   as FR-144 orders a record (lexicographic over fields in declaration order).
+   Two values then have equal keys exactly when they have the same declaration
+   and equal fields, which is when they are equal under item 4, as FR-144
+   requires of equal keys and FR-149 of equality. The order is total and
+   unrelated to ancestry, which no collection order needs. It is a function of
+   content alone only because of item 9. A type is not covariant: an expression of type `Sequence<S>` or
    `Option<S>` SHALL be refused at a `Sequence<P>` or `Option<P>` slot, because
    a collection's type identity includes its element type (FR-334). A child is
    admitted into the slot as a value, as `sequence[child]` at `Sequence<P>`
@@ -153,6 +160,18 @@ ancestors, at any depth.
    environment-less predicate and SHALL NOT be called to admit a value into a
    slot that can hold a child. The mechanisms, one per owner, are the
    cross-repo requirements below.
+9. **A model record's runtime declaration key is its model node key.** The
+   declaration key under which a model record or event type is declared in the
+   type environment, and which identifies a value's most-specific type for
+   equality and for the item 5 order, SHALL be the model-owned node key of
+   FR-322 "Model-owned members" step 2, a function of the selected
+   document's identity and the node alone. It SHALL NOT be derived from the
+   selecting unit's source owner or from the alias a unit gives the model
+   (`model M = ...`); QSL's `declared_type_handle(owner, "{alias}::{artifact}")`
+   derivation does that today, so a `Set<Money>` would order differently under
+   two aliases and a value would not equal the same value built by a unit
+   using another alias. Two units selecting the same model under different
+   aliases SHALL therefore agree on every declaration key.
 
 ## Cross-repo requirements
 
@@ -179,12 +198,26 @@ QSL-737 enumerates all of these. Each owner adds its own specification.
 4. **quire-contract-ir:** the IR reader's operation-call rule
    (`check_model_member`) SHALL accept an argument whose record type conforms to
    the parameter's declared record type, as QSpec FR-322 will state (5).
-5. **QSpec:** FR-208 SHALL name `Option` payload, collection element and tuple
-   position slots. FR-322 SHALL state record-operand conformance for
-   `quire.op.function.call` and operation-call arguments, `quire.op.record.project`
-   and `quire.op.structural.eq`, and SHALL define the canonical-key order of
-   two distinct declarations as item 5 does.
-6. **QSL emitter:** item 3.
+5. **QSpec:** FR-208 SHALL name `Option` payload, collection element, tuple
+   position and union payload slots. FR-144 (canonical keys) SHALL define the
+   record key order across distinct declarations as item 5 does, keeping its
+   rule that keys are equal exactly when the values are FR-149-equal. FR-149
+   (composite `=`) and FR-143 (record equality, FR-143-AC-5) SHALL state that
+   two records of different declarations are unequal, not a refusal. FR-322
+   SHALL state record-operand conformance for `quire.op.function.call` and
+   operation-call arguments, `quire.op.record.project` and
+   `quire.op.structural.eq`.
+6. **QSL emitter:** items 3 and 9.
+7. **QSpec, event owner join:** FR-322 "Model-owned members" step 2 admits a
+   `model`/`record_value_type` node only for an FR-208 record value type and
+   gives an event type no form, so an event node's owner join refuses
+   `missing_declaration`/`missing-selection`. FR-322 SHALL add a
+   `model`/`event_type` semantic form (family `record`, field projection
+   admitted, equality refused as FR-208 gives events none), a step 2 row naming
+   `quire.meaning.model.event-type/v1`, and the owner-presence and semantic-form
+   entries of the V2 schema. Reusing `record_value_type` for events was
+   considered: it is the smaller edit, but it labels an event with a record
+   value type's equality and value semantics that FR-208 withholds.
 
 ## Inputs
 
@@ -223,14 +256,15 @@ QSL-737 enumerates all of these. Each owner adds its own specification.
 | --- | --- | --- |
 | FR-359-AC-1 | With `record OrderPlaced { order_id: UUID; occurred_at: Timestamp }`, a child `ExpressOrderPlaced` adding `promised_by: Timestamp`, whose effective fields are ordered `[promised_by, occurred_at, order_id]`, a grandchild `RushOrderPlaced` of `ExpressOrderPlaced` adding `rush_by: Timestamp`, and `f(e: OrderPlaced): Timestamp { e.occurred_at }`, passing an `ExpressOrderPlaced` or a `RushOrderPlaced` evaluates to its `occurred_at` and `e.order_id` to its `order_id`, never `promised_by` or `rush_by`. The same read through a record field, an `Option` payload and a `Sequence` element holding the child yields the same fields. A parent-typed read of `promised_by` refuses `ill_typed`/`type-mismatch` at check, naming the field, the cause the checker gives an undeclared record field today. | Test (TC-998) |
 | FR-359-AC-2 | When a child's type redefines an inherited field with a narrower record type, a parent-typed read of that field yields the child's redefining slot. When it redefines an `Integer` field as `Int[0, 9]`, a parent-typed read yields the stored integer unchanged, admitted at `Integer`. A read of an inherited field the child does not redefine yields the inherited slot. | Test (TC-998) |
-| FR-359-AC-3 | In the checked package for AC-1, `OrderPlaced`, `ExpressOrderPlaced` and `RushOrderPlaced` are each a `model`/`record_value_type` node with a `ModelOwner` and none is a `composite_type`; so is a domain event type. The body of `f` holds one `quire.op.record.project` application whose `field` member is `{declaration: OrderPlaced's node, name: occurred_at}`; the call to `f` takes its argument by `ref`, with no `convert` or other node between them; no node has a `supertypes` member. The package reads back `Verified`. | Test (TC-998) |
+| FR-359-AC-3 | In the checked package for AC-1, `OrderPlaced`, `ExpressOrderPlaced` and `RushOrderPlaced` are each a `model`/`record_value_type` node with a `ModelOwner` and none is a `composite_type`; a domain event type is a `model`/`event_type` node with a `ModelOwner`, and reads back `Verified` once cross-repo requirement 7 holds. The body of `f` holds one `quire.op.record.project` application whose `field` member is `{declaration: OrderPlaced's node, name: occurred_at}`; the call to `f` takes its argument by `ref`, with no `convert` or other node between them; no node has a `supertypes` member. The package reads back `Verified`. | Test (TC-998) |
 | FR-359-AC-4 | For `a == b` and `a != b` with `a: Money` bound to a `TaxedMoney` value and `b: Money` bound to a `Money` value with the same `amount_minor` and `currency`, `==` is `false` and `!=` is `true`, in either operand order. With a grandchild `GiftTaxedMoney` of `TaxedMoney`, `GiftTaxedMoney` against `Money`, against `TaxedMoney` and against another `GiftTaxedMoney` of equal fields give `false`, `false` and `true`. No checked-invariant refusal is reported. Two `TaxedMoney` values with equal effective fields are equal, and unequal when only `tax_minor` differs. | Test (TC-999) |
-| FR-359-AC-5 | Equality reaches a child inside another value by the same rule: two `Pair { first: Money; second: Money }` whose `first` fields hold a `TaxedMoney` and a `Money` of equal shared fields are unequal, and equal when both hold equal `TaxedMoney` values; the same holds for two `Option<Money>`, two `Sequence<Money>`, two `Set<Money>`, a tuple position and a union payload. The comparison of a child with a different most-specific type performs no text-leaf comparison. | Test (TC-999) |
+| FR-359-AC-5 | Equality reaches a child inside another value by the same rule: two `Pair { first: Money; second: Money }` whose `first` fields hold a `TaxedMoney` and a `Money` of equal shared fields are unequal, and equal when both hold equal `TaxedMoney` values; the same holds for two `Option<Money>`, two `Sequence<Money>`, two `Set<Money>`, a tuple position and a union payload. An `==` over two event-typed operands stays refused. The comparison of a child with a different most-specific type performs no text-leaf comparison. | Test (TC-999) |
 | FR-359-AC-6 | A record `Order { total: Money?; }` built with `total` holding a `TaxedMoney` checks, evaluates and is read back through `total`, `present(total)` and `value(total)` as the same `TaxedMoney` value, with its `tax_minor` and most-specific type intact. No `field-option-payload-rejected` fault is reported. A `Money` value at a `TaxedMoney?` field and a value of an unrelated record at a `Money?` field refuse `ill_typed`/`type-mismatch`. | Test (TC-1000) |
 | FR-359-AC-7 | `Sequence<Money>`, `Set<Money>`, `Bag<Money>` and `OrderedSet<Money>` literals holding a `TaxedMoney` element admit it and keep its identity through `contains`, iteration and `length`. A `Set<Money>` holding a `Money` and a `TaxedMoney` of equal shared fields has two elements, whose order is ascending by declaration key bytes, in either source order, and constructing it does not report `CanonicalKeyUnavailable`. A `Sequence<TaxedMoney>` expression at a `Sequence<Money>` parameter, and an `Option<TaxedMoney>` expression at an `Option<Money>` parameter, refuse `ill_typed`/`type-mismatch`. | Test (TC-1000) |
 | FR-359-AC-8 | Model-operation arguments: an operation parameter `m: Money` called with a `TaxedMoney` argument checks, is emitted, reads back `Verified` through `emit_and_read_v2` and runs, including through an `Upcast` of the operation and a dispatch guard or body binding, and its result of declared type `Money` may be a `TaxedMoney`. A `Money` argument at a `TaxedMoney` parameter and an unrelated record at a `Money` parameter refuse `ill_typed`/`type-mismatch`, naming the parameter. A function argument behaves the same way. The read-back half depends on cross-repo requirement 4. | Test (TC-1001) |
 | FR-359-AC-9 | A replay snapshot whose `Order.total: Money` holds `{"record":{"type":".../TaxedMoney","fields":{...}}}` admits, and so does the same record as the payload of an `Order.discount: Money?` field and as an element of a `Sequence<Money>` field and parameter. A `GiftTaxedMoney` admits at a `Money` slot and at a `TaxedMoney` slot, and a `TaxedMoney` at a `GiftTaxedMoney` slot refuses `wrong-value-kind`. A decode followed by an encode returns the same typed observation and digest, with `type` still naming the value's own record. A `type` naming an unrelated record, a record that is only an ancestor of the slot's type, or an object refuses `invalid_runtime_input`/`wrong-value-kind` at the first path reached in field order (FR-106-AC-15). A `TaxedMoney` payload missing `tax_minor` refuses `missing-member`, though a `Money` payload without it admits. | Test (TC-1002) |
 | FR-359-AC-10 | For a `TaxedMoney` at a `Money` slot, no QSL check, evaluation or replay path reports `EqualityOperandSourceNotAdmitted`, `ValueKindMismatch`, `CanonicalKeyUnavailable` or `field-option-payload-rejected`. A hand-built checked package whose `Option<Money>` payload is an unrelated record still reports `field-option-payload-rejected`, and one whose field read names a field absent from the value's declaration reports `field-slot-unresolved`. | Test (TC-1002) |
+| FR-359-AC-11 | Two units that select the same model under different aliases (`model M = ...` and `model N = ...`) assign every model record the same declaration key, equal to its model node key. A `Set<Money>` holding a `Money` and a `TaxedMoney` orders its elements identically in both, and a `TaxedMoney` built in one unit equals the same value built in the other. | Test (TC-1000) |
 
 ## Dependencies
 

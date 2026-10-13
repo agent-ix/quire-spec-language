@@ -48,3 +48,10 @@ scope:
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-359-AC-3 requires that the package for "the same program with `ExpressOrderPlaced` removed has the same read and call nodes with the same node ids". TC-998 step 5 goes further and compares "every node id". As written, neither can be satisfied. The AC-1 program calls `f` with an `ExpressOrderPlaced` argument, so that call cannot exist once the type is removed. A package that contains `ExpressOrderPlaced` also has nodes the other package lacks. The AC should name the nodes compared: the `f`/`g` function, parameter and `record.project` nodes, and the `OrderPlaced` record node. | FR-359-AC-3; TC-998 step 5 |
 | FND-002 | low | TC-998 step 6 hand-builds a package whose field read names an absent field and expects `field-slot-unresolved`. That is FR-359-AC-10, which TC-998's Scope and its `tests.md` row do not list. TC-1002 step 5 repeats the same case. Either drop step 6 or add AC-10 to TC-998's scope and row. | TC-998 step 6; FR-359-AC-10; spec/tests.md TC-998 row |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d449b0273 |
+| FND-002 | fixed | d449b0273 |

@@ -35,3 +35,9 @@ scope:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | FR-359 has no top-level requirement statement. Its Description is narrative ("This requirement states what the rest of QSL does with that value"). Items 5 ("all admit a child"), 6 ("admit a child ... by the same conformance rule") and 7 ("Replay decodes every record by ...") are indicative, with no `SHALL`. So the Option, collection, argument and replay obligations are binding only through their ACs. An event-driven statement would fix this, for example: "When a record value whose most-specific type conforms to a slot's record type reaches that slot at check, evaluation or replay, QSL SHALL ...". | FR-359 Description; FR-359 items 5-7 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d449b0273 |

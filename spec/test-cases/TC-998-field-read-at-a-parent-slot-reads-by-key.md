@@ -20,7 +20,7 @@ Catches an implementation that computes a field position from the parent and app
 2. Read the same fields through a record field `Holder.placed: OrderPlaced`, through an `OrderPlaced?` payload and through an element of `Sequence<OrderPlaced>`.
 3. Add `h(e: OrderPlaced): Timestamp { e.promised_by }`.
 4. Redeclare the child so it redefines `occurred_at` with a narrower record type, and read `occurred_at` and `order_id` at the parent-typed parameter. Redeclare a record with `Integer` field `n` and a child redefining `n` as `Int[0, 9]`, and read `n` at the parent-typed parameter.
-5. Emit the step 1 package with an `OrderPlaced` domain event type beside it and read it back. Inspect the nodes.
+5. Emit the step 1 package with an `OrderPlaced` domain event type beside it and read it back (the event node reads back `Verified` once QSpec FR-322 admits event owners). Inspect the nodes.
 
 ## Expected Results
 
@@ -28,5 +28,5 @@ Catches an implementation that computes a field position from the parent and app
 - Step 2 returns the same fields at every depth, and the value read back keeps its own most-specific type.
 - Step 3 refuses `ill_typed`/`type-mismatch` at the `promised_by` member of `h`'s body.
 - Step 4 returns the child's redefining slot for `occurred_at`, the inherited slot for `order_id`, and the stored integer of `n` unchanged, admitted at `Integer`.
-- Step 5 holds `OrderPlaced`, `ExpressOrderPlaced`, `RushOrderPlaced` and the event type each as a `model`/`record_value_type` node with a `ModelOwner` and none as a `composite_type`. `f`'s body holds one `quire.op.record.project` with `field` `{declaration: OrderPlaced's node, name: occurred_at}`. The call to `f` takes its argument by `ref` with no `convert` node between them. No node has a `supertypes` member. The package reads back `Verified`.
+- Step 5 holds `OrderPlaced`, `ExpressOrderPlaced`, `RushOrderPlaced` each as a `model`/`record_value_type` node with a `ModelOwner`, the event type as a `model`/`event_type` node with a `ModelOwner` and none as a `composite_type`. `f`'s body holds one `quire.op.record.project` with `field` `{declaration: OrderPlaced's node, name: occurred_at}`. The call to `f` takes its argument by `ref` with no `convert` node between them. No node has a `supertypes` member. The package reads back `Verified`.
 - Assertions compare typed values, causes, node tags and member paths, never message text or node ids.
