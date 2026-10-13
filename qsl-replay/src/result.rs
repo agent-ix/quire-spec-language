@@ -464,6 +464,11 @@ pub(crate) fn value_bytes(value: &Value) -> usize {
                 pending.extend(option.payload());
                 1
             }
+            // The variant digest, then the payload values.
+            Value::Union(union) => {
+                pending.extend(union.payload());
+                32
+            }
             Value::Composite(composite) => {
                 pending.extend(composite.slots().iter().filter_map(|slot| match slot {
                     quire_exact::FieldValue::Present(value) => Some(value),

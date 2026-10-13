@@ -332,14 +332,6 @@ pub enum AssemblyCause {
         /// The record's IR node identity.
         node: String,
     },
-    /// Source names a model variant type with a case whose name is not a
-    /// source identifier. The shared enumeration declaration holds
-    /// identifiers only, so such a type has no runtime enumeration yet; the
-    /// type's own declaration stays admitted (FR-360 item 4).
-    UnsupportedVariantType {
-        /// The name as written, `M::T`.
-        name: String,
-    },
     /// A `pre` or `post` state clause's operation names no operation of its
     /// context type's effective view (FR-104, FR-103).
     UnresolvedOperation {
@@ -383,7 +375,6 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
             | Self::UnresolvedOperation { .. } => Code::MissingDeclaration,
-            Self::UnsupportedVariantType { .. } => Code::UnsupportedConstruct,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
@@ -466,7 +457,6 @@ impl AssemblyCause {
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } => "duplicate-declaration",
-            Self::UnsupportedVariantType { .. } => "declaration-form",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
@@ -745,15 +735,16 @@ pub(crate) fn variant_type_declarations(
         if cases.len() != variant_type.members.len() {
             return Err(broken(&variant_type.key.node));
         }
-        declared.push((
+        let Some(type_declaration) = VariantTypeDeclaration::new(
+            *identity,
+            format!("{alias}::{}", variant_type.name),
             variant_type.key.clone(),
-            VariantTypeDeclaration::new(
-                *identity,
-                format!("{alias}::{}", variant_type.name),
-                node,
-                cases,
-            ),
-        ));
+            node,
+            cases,
+        ) else {
+            return Err(broken(&variant_type.key.node));
+        };
+        declared.push((variant_type.key.clone(), type_declaration));
     }
     Ok(declared)
 }
@@ -813,10 +804,8 @@ fn model_object_types(
     match variant_type_declarations(&model.view, alias, identity_limits) {
         Ok(declared) => {
             for (key, declaration) in declared {
-                if let Some(shape) = declaration.shape() {
-                    if let Some((owned, _)) = records.get_key_value(&key) {
-                        variant_shapes.insert(owned, shape);
-                    }
+                if let Some((owned, _)) = records.get_key_value(&key) {
+                    variant_shapes.insert(owned, declaration.shape());
                 }
                 variant_types.push(declaration);
             }
@@ -917,9 +906,7 @@ fn model_object_types(
             // Record and event declarations are emitted as composites below;
             // their effective fields are collected from the normalized view.
             // A variant type and its cases are collected from the normalized
-            // view below (FR-056 "Effective identity of a variant type");
-            // source naming one still refuses before this point
-            // (`AssemblyCause::UnsupportedVariantType`).
+            // view below (FR-056 "Effective identity of a variant type").
             DomainPackageRecord::Enum(_)
             | DomainPackageRecord::Variant(_)
             | DomainPackageRecord::RecordValueType(_)
@@ -1525,7 +1512,6 @@ fn check_names(
     unit: &Unit,
     object_types: &BTreeMap<String, EffectiveId>,
     model_composites: &BTreeSet<String>,
-    variant_types: &BTreeSet<String>,
     imports: &BTreeMap<String, AdmittedImport>,
     form: &TypeForm,
     errors: &mut Vec<AssemblyError>,
@@ -1553,13 +1539,7 @@ fn check_names(
                         | TypeFormHead::Collection(_)
                         | TypeFormHead::Population => continue,
                     };
-                    if variant_types.contains(name) {
-                        // FR-150: a model variant type referenced by source.
-                        errors.push(AssemblyError {
-                            cause: AssemblyCause::UnsupportedVariantType { name: name.clone() },
-                            span: target.span,
-                        });
-                    } else if !object_types.contains_key(name) {
+                    if !object_types.contains_key(name) {
                         errors.push(AssemblyError {
                             cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
                             span: target.span,
@@ -1568,13 +1548,6 @@ fn check_names(
                 }
             }
             TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
-                // FR-150: a model variant type referenced by source.
-                None | Some(0) if variant_types.contains(name) => {
-                    errors.push(AssemblyError {
-                        cause: AssemblyCause::UnsupportedVariantType { name: name.clone() },
-                        span: form.span,
-                    });
-                }
                 None | Some(0)
                     if object_types.contains_key(name) || model_composites.contains(name) => {}
                 None | Some(0)
@@ -1887,7 +1860,6 @@ impl PackageDeclarations {
         let mut model_composites = Vec::new();
         let mut model_variant_types = Vec::new();
         let mut model_records = ModelRecords::default();
-        let mut unshaped_variant_types = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
@@ -1914,13 +1886,6 @@ impl PackageDeclarations {
                     }
                     object_types.extend(types.objects);
                     model_composites.extend(types.composites);
-                    unshaped_variant_types.extend(
-                        types
-                            .variant_types
-                            .iter()
-                            .filter(|declared| declared.shape().is_none())
-                            .map(|declared| declared.name().to_owned()),
-                    );
                     model_variant_types.extend(types.variant_types);
                     model_records.extend(types.model_records);
                     match operation_clause_declarations(&selection.alias, model, &operations) {
@@ -1939,16 +1904,14 @@ impl PackageDeclarations {
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
-        let variant_type_names: BTreeSet<String> = unshaped_variant_types.into_iter().collect();
-        // A model composite or a variant type with a runtime enumeration is a
-        // declared type name; `M::T` is no source declaration of the unit.
+        // A model composite or a variant type is a declared type name; `M::T`
+        // is no source declaration of the unit.
         let model_composite_names: BTreeSet<String> = model_composites
             .iter()
             .map(|declaration| declaration.name().to_owned())
             .chain(
                 model_variant_types
                     .iter()
-                    .filter(|declared| declared.shape().is_some())
                     .map(|declared| declared.name().to_owned()),
             )
             .collect();
@@ -2085,7 +2048,6 @@ impl PackageDeclarations {
                 &unit,
                 &object_names,
                 &model_composite_names,
-                &variant_type_names,
                 &qualified,
                 &alias.target,
                 &mut errors,
@@ -2099,7 +2061,6 @@ impl PackageDeclarations {
                             &unit,
                             &object_names,
                             &model_composite_names,
-                            &variant_type_names,
                             &qualified,
                             &field.type_form,
                             &mut errors,
@@ -2112,7 +2073,6 @@ impl PackageDeclarations {
                             &unit,
                             &object_names,
                             &model_composite_names,
-                            &variant_type_names,
                             &qualified,
                             element,
                             &mut errors,
@@ -2127,7 +2087,6 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
-                    &variant_type_names,
                     &qualified,
                     form,
                     &mut errors,
@@ -2138,7 +2097,6 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
-                    &variant_type_names,
                     &qualified,
                     &form,
                     &mut errors,
@@ -2151,7 +2109,6 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
-                    &variant_type_names,
                     &qualified,
                     &form,
                     &mut errors,
@@ -2164,7 +2121,6 @@ impl PackageDeclarations {
                     &unit,
                     &object_names,
                     &model_composite_names,
-                    &variant_type_names,
                     &qualified,
                     &form,
                     &mut errors,
@@ -2196,13 +2152,11 @@ impl PackageDeclarations {
         }
         // FR-360 item 4: `M::T` names the variant type `T` as its enum type.
         for declared in &model_variant_types {
-            if let Some(shape) = declared.shape() {
-                names
-                    .types
-                    .entry(declared.name().to_owned())
-                    .or_default()
-                    .push(ValueType::Enum(shape));
-            }
+            names
+                .types
+                .entry(declared.name().to_owned())
+                .or_default()
+                .push(ValueType::Enum(declared.shape()));
         }
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
@@ -2406,7 +2360,6 @@ impl PackageDeclarations {
         let resolve = Resolve {
             profiles: &selections.profiles,
             object_names: &object_names,
-            variant_type_names: &variant_type_names,
             types: &types,
             operations: &operations,
             selected: &models,
@@ -2523,7 +2476,6 @@ impl PackageDeclarations {
 struct Resolve<'a> {
     profiles: &'a [qsl_foundation::selection::ProfileSelection],
     object_names: &'a BTreeMap<String, EffectiveId>,
-    variant_type_names: &'a BTreeSet<String>,
     types: &'a TypeEnvironment,
     operations: &'a OperationTable,
     selected: &'a [SelectedModel],
@@ -2545,7 +2497,6 @@ fn state_clauses(
     let Resolve {
         profiles,
         object_names,
-        variant_type_names,
         types,
         operations,
         selected,
@@ -2568,17 +2519,12 @@ fn state_clauses(
         }
         let context = object_names.get(&form.context.name).copied();
         let Some(context) = context else {
-            // FR-150: a model variant type referenced by source.
-            let cause = if variant_type_names.contains(&form.context.name) {
-                AssemblyCause::UnsupportedVariantType {
-                    name: form.context.name.clone(),
-                }
-            } else {
+            errors.push(error(
                 AssemblyCause::UnresolvedTypeName {
                     name: form.context.name.clone(),
-                }
-            };
-            errors.push(error(cause, form.context.span));
+                },
+                form.context.span,
+            ));
             continue;
         };
         let mut operation_key = None;
@@ -2733,7 +2679,6 @@ fn operation_bodies(
     let Resolve {
         profiles,
         object_names,
-        variant_type_names,
         types,
         operations,
         selected,
@@ -2771,12 +2716,10 @@ fn operation_bodies(
         };
         let context_name = format!("{}::{}", model.name, object.name);
         let Some(context) = object_names.get(&context_name).copied() else {
-            let cause = if variant_type_names.contains(&context_name) {
-                AssemblyCause::UnsupportedVariantType { name: context_name }
-            } else {
-                AssemblyCause::UnresolvedTypeName { name: context_name }
-            };
-            errors.push(error(cause, form.target_span));
+            errors.push(error(
+                AssemblyCause::UnresolvedTypeName { name: context_name },
+                form.target_span,
+            ));
             continue;
         };
         let (declaring, declaration) = match operations.resolve(types, context, &member.name) {

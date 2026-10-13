@@ -1191,7 +1191,7 @@ fn admit_variant(
     }
     let Some(declared) = references
         .variant_type(type_identity)
-        .filter(|declared| declared.shape().as_ref() == Some(slot))
+        .filter(|declared| &declared.shape() == slot)
     else {
         return Err(refuse("wrong-value-kind"));
     };

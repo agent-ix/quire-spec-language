@@ -42,7 +42,13 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 /// The FR-360 package linked as model `alias`, in a unit that declares only
 /// a function naming no variant type.
 fn package_as(alias: &str) -> CheckedPackage {
-    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    package_over(&fixture::document(), alias)
+}
+
+/// `document` linked as model `alias`, in a unit that declares only a
+/// function naming no variant type.
+fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
+    let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one model package");
@@ -98,8 +104,7 @@ fn variant_type(package: &CheckedPackage, alias: &str, name: &str) -> ValueType 
             .iter()
             .find(|declared| declared.name() == wanted)
             .unwrap_or_else(|| panic!("{wanted} is declared"))
-            .shape()
-            .expect("the variant type has an enum shape"),
+            .shape(),
     )
 }
 
@@ -532,5 +537,66 @@ fn an_option_of_a_case_compares_by_case() {
             equals(&package, &option_type, held(left), held(right)),
             expected
         );
+    }
+}
+
+/// FR-360-AC-6 over cases that are not source identifiers: `=` holds exactly
+/// for the same exact name and `!=` is its negation, in either operand order,
+/// whatever the case is spelled (`2x`, `Café`, `Gold Plus`).
+#[trace("FR-360-AC-6", "TC-1008")]
+#[test]
+fn equality_over_non_identifier_cases_is_by_the_exact_name() {
+    const CASES: [&str; 3] = ["2x", "Café", "Gold Plus"];
+    let package = package_over(
+        &fixture::with_types(vec![fixture::variant_type("Odd", &CASES)]),
+        "Config",
+    );
+    let odd = variant_type(&package, "Config", "Odd");
+    let declared = package
+        .graph()
+        .scope()
+        .variant_types()
+        .iter()
+        .find(|declared| declared.name() == "Config::Odd")
+        .expect("Odd is declared");
+    let values: Vec<Value> = CASES
+        .iter()
+        .map(|name| {
+            let rank = declared
+                .cases()
+                .iter()
+                .position(|case| case.name() == *name)
+                .expect("the case is declared");
+            Value::Enum(quire_exact::EnumMember::new(
+                declared.cases()[rank].variant(),
+                u32::try_from(rank).unwrap(),
+            ))
+        })
+        .collect();
+    let parameters = [("a", odd.clone()), ("b", odd)];
+    for (left, a) in values.iter().enumerate() {
+        for (right, b) in values.iter().enumerate() {
+            let arguments = || vec![a.clone(), b.clone()];
+            let equals = evaluate(
+                &package,
+                &parameters,
+                arguments(),
+                &equal(name("a"), name("b")),
+            );
+            let differs = evaluate(
+                &package,
+                &parameters,
+                arguments(),
+                &unequal(name("a"), name("b")),
+            );
+            assert!(
+                matches!(equals, Value::Boolean(held) if held == (left == right)),
+                "{left} = {right}"
+            );
+            assert!(
+                matches!(differs, Value::Boolean(held) if held == (left != right)),
+                "{left} != {right}"
+            );
+        }
     }
 }

@@ -21,7 +21,12 @@ mod fixture;
 
 /// The FR-360 package linked as model `alias`.
 fn package_as(alias: &str) -> CheckedPackage {
-    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    package_over(&fixture::document(), alias)
+}
+
+/// `document` linked as model `alias`.
+fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
+    let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one model package");
@@ -107,7 +112,7 @@ fn same_value(left: &Value, right: &Value) -> bool {
 }
 
 fn slot_of(declaration: &qsl_semantics::check::VariantTypeDeclaration) -> ValueType {
-    ValueType::Enum(declaration.shape().expect("the variant type has a shape"))
+    ValueType::Enum(declaration.shape())
 }
 
 fn member_of(declaration: &qsl_semantics::check::VariantTypeDeclaration, case: &str) -> Value {
@@ -170,4 +175,28 @@ fn a_case_admitted_under_two_aliases_is_one_value() {
     let left = converted(&config, witness(in_config, "Gold"), slot_of(in_config)).unwrap();
     let right = converted(&cfg, witness(in_cfg, "Gold"), slot_of(in_cfg)).unwrap();
     assert!(same_value(&left, &right));
+}
+
+/// A witness enum value naming a case that is not a source identifier is
+/// admitted by the exact case name at a slot of its variant type, and equals
+/// the case the type declares; a letter-case variant of the name refuses.
+#[trace("FR-360-AC-11", "TC-1010")]
+#[test]
+fn a_witness_enum_names_a_non_identifier_case_by_its_exact_name() {
+    const CASES: [&str; 3] = ["2x", "Café", "Gold Plus"];
+    let package = package_over(
+        &fixture::with_types(vec![fixture::variant_type("Odd", &CASES)]),
+        "Config",
+    );
+    let odd = declared(&package, "Config", "Odd");
+    for case in CASES {
+        let admitted = converted(&package, witness(odd, case), slot_of(odd))
+            .unwrap_or_else(|parameter| panic!("{case} refused at parameter {parameter}"));
+        assert!(same_value(&admitted, &member_of(odd, case)), "{case}");
+    }
+    assert_eq!(
+        converted(&package, witness(odd, "gold plus"), slot_of(odd)).err(),
+        Some(0),
+        "a letter-case variant of a case"
+    );
 }

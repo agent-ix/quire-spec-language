@@ -1594,7 +1594,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#d52d5f1b1c09a610fa3a601cc3d646fa68bae303"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#4f4b9cfcc077a17f3a2f7cc5c36c9a01373a5700"
 dependencies = [
  "jsonschema 0.17.1",
  "num-bigint",
@@ -1617,7 +1617,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#4c27c08e710aaf55cbad6d26f354412be10cdc1d"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#d41a1da39ed43c1ad536b752469953ad3dd7003a"
 dependencies = [
  "allocator-api2",
  "num-bigint",
@@ -1662,7 +1662,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#ce9a0f11a9a264a8c7268f9b644c63c0398004a1"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#a1fe08abb20bb697dcfec343b1871f467dab6655"
 dependencies = [
  "quire-canonical",
  "quire-exact",

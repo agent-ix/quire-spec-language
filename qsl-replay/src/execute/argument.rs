@@ -102,7 +102,6 @@ pub(super) fn enum_declarations(package: &CheckedPackage) -> Vec<EnumDeclaration
         .scope()
         .variant_types()
         .iter()
-        .filter(|variant_type| variant_type.shape().is_some())
         .map(|variant_type| EnumDeclaration {
             key: variant_type.node(),
             members: variant_type

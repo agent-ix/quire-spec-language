@@ -99,11 +99,7 @@ fn variant<'a>(
 }
 
 fn enum_of(declarations: &PackageDeclarations, alias: &str, name: &str) -> ValueType {
-    ValueType::Enum(
-        variant(declarations, alias, name)
-            .shape()
-            .expect("the variant type has an enum shape"),
-    )
+    ValueType::Enum(variant(declarations, alias, name).shape())
 }
 
 fn field_records<'a>(
@@ -691,7 +687,10 @@ struct Replay {
 }
 
 fn replay() -> Replay {
-    let document = fixture::document();
+    replay_over(fixture::document())
+}
+
+fn replay_over(document: serde_json::Value) -> Replay {
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -701,7 +700,7 @@ fn replay() -> Replay {
         "identity": fixture::PACKAGE, "version": "1",
         "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
     });
-    let declarations = assemble_as("Config", "");
+    let declarations = declarations_of(&document, "Config", "").0;
     let graph = declarations
         .clone()
         .check(CheckingLimits::default())
@@ -856,6 +855,59 @@ fn a_variant_form_is_admitted_at_a_field_a_payload_and_an_element() {
     assert_eq!(elements.len(), 2);
     assert!(same_value(&elements[0], &replay.case("Tier", "Gold")));
     assert!(same_value(&elements[1], &replay.case("Tier", "Standard")));
+}
+
+/// TC-1010 step 1 (FR-360-AC-9, FR-360-AC-11): the observation form names a
+/// case that is not a source identifier by its exact bytes. The value admits,
+/// equals the case the type declares, and encodes as the same form again; a
+/// letter-case variant of the name and a case of another variant type refuse
+/// at the nested value.
+#[trace("TC-1010", "FR-360-AC-9", "FR-360-AC-10", "FR-360-AC-11")]
+#[test]
+fn a_variant_form_names_a_non_identifier_case_by_its_exact_bytes() {
+    let replay = replay_over(fixture::with_odd_grade(&ODD_CASES));
+    let encoder = ValueEncoder::over(
+        replay.graph.model_selections(),
+        replay.graph.scope().types(),
+        &replay.packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the encoder reads the selected package");
+    for case in ODD_CASES {
+        let form = variant_json("Odd", case);
+        let closure = replay
+            .admit(json!({"grade": {"present": form}}))
+            .unwrap_or_else(|failure| panic!("{case} admits: {failure:?}"));
+        let FieldValue::Present(grade) = replay.slot(&closure, "grade") else {
+            panic!("{case}: the optional field is present");
+        };
+        assert!(same_value(&grade, &replay.case("Odd", case)), "{case}");
+        assert_eq!(
+            encoder
+                .encode(&grade)
+                .expect("a variant value encodes")
+                .to_json(),
+            form,
+            "{case}"
+        );
+    }
+    let refused = |grade: serde_json::Value| match replay.admit(json!({"grade": grade})) {
+        Err(AdmissionFailure::Refused(record)) => (record.code, record.cause),
+        other => panic!("a refusal, not {other:?}"),
+    };
+    assert_eq!(
+        refused(json!({"present": variant_json("Odd", "gold plus")})),
+        (qsl_foundation::Code::InvalidRuntimeInput, "invalid-value"),
+        "a letter-case variant of a case"
+    );
+    assert_eq!(
+        refused(json!({"present": variant_json("Tier", "Gold")})),
+        (
+            qsl_foundation::Code::InvalidRuntimeInput,
+            "wrong-value-kind"
+        ),
+        "a case of another variant type"
+    );
 }
 
 /// The refusal `fields` is admitted with, as its code, cause and nested path.
@@ -1080,26 +1132,18 @@ fn a_call_with_a_value_of_another_variant_type_refuses_at_the_argument() {
     );
 }
 
-/// TC-1009 step 3 and FR-360 item 12 (FR-360-AC-8): until the IR reader admits
-/// a `model`/`variant_type` node, a unit whose function takes a variant type
-/// refuses at emission with `ill_typed`/`type-mismatch` at the parameter's
-/// type node, and checks nothing else.
+/// TC-1009 step 3 and FR-360 item 12 (FR-360-AC-8): a unit whose function
+/// takes, returns or passes a variant type checks and lowers, with no
+/// refusal at the member's, parameter's or result's type node.
 #[trace("TC-1009", "FR-360-AC-8")]
 #[test]
-fn the_emitter_refuses_a_variant_typed_parameter_at_its_type_node() {
-    let refusals = check_refusals("function pick using v(t: Config::Tier): Boolean pure { true }");
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].cause, mismatch(), "{refusals:?}");
-    // The refusal's origin names the function `pick`.
-    assert_eq!(
-        refusals[0].location.origin,
-        quire_semantic_value::location::Origin::Body {
-            function: "pick".to_owned(),
-            index: 1
-        }
+fn a_variant_typed_parameter_and_result_check_and_lower() {
+    let refusals = check_refusals(
+        "function pick using v(t: Config::Tier): Config::Tier pure { t }\n\
+         function isGold using v(t: Config::Tier): Boolean pure { t = Config::Tier::Gold }\n\
+         function tierOf using v(s: Config::Settings): Config::Tier pure { s.tier }",
     );
-    // The same signature without the variant type raises nothing.
-    assert!(check_refusals("function pick using v(a: Integer): Boolean pure { true }").is_empty());
+    assert!(refusals.is_empty(), "{refusals:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1413,8 +1457,8 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
         .variant_types()
         .iter()
         .find(|declared| declared.name() == "Config::Tier")
-        .and_then(VariantTypeDeclaration::shape)
-        .expect("Tier has a shape");
+        .map(VariantTypeDeclaration::shape)
+        .expect("Tier is declared");
     let present = encoder
         .encode(&quire_exact::OptionValue::from_admitted(
             ValueType::Enum(tier_shape),
@@ -1510,17 +1554,106 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
         .is_none());
 }
 
-/// FR-360-AC-7: a tuple position holding a variant value needs a unit that
-/// declares a tuple naming the variant type, which the interim emitter refusal
-/// holds back like every other declaration of a unit naming the type, so tuple
-/// equality has no evaluation test until emission lands.
+/// FR-360-AC-7: a tuple naming a variant type checks and lowers, so its
+/// position is a variant-typed member like any other.
 #[trace("TC-1008", "FR-360-AC-7")]
 #[test]
-fn a_tuple_naming_a_variant_type_is_held_back_by_the_emitter() {
+fn a_tuple_naming_a_variant_type_checks() {
     let refusals = check_refusals("tuple Pair(Config::Tier, Config::Tier);");
-    assert!(!refusals.is_empty());
-    assert!(
-        refusals.iter().all(|refusal| refusal.cause == mismatch()),
-        "{refusals:?}"
+    assert!(refusals.is_empty(), "{refusals:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Case names that are not source identifiers
+// ---------------------------------------------------------------------------
+
+/// The cases of `Odd`, in ascending UTF-8 byte order of their names.
+const ODD_CASES: [&str; 3] = ["2x", "Café", "Gold Plus"];
+
+/// The FR-360 package with the variant types `Odd` (cases that are not
+/// identifiers) and `Mixed` (`Gold` beside `Gold Plus`).
+fn odd_document() -> Value {
+    fixture::with_types(vec![
+        fixture::variant_type("Odd", &ODD_CASES),
+        fixture::variant_type("Mixed", &["Gold Plus", "Gold"]),
+    ])
+}
+
+fn odd_refusals(declarations: &str) -> Vec<CheckRefusal> {
+    declarations_of(&odd_document(), "Config", declarations)
+        .0
+        .check(CheckingLimits::default())
+        .map(|_| Vec::new())
+        .unwrap_or_else(|refusals| refusals)
+}
+
+/// FR-360-AC-4, FR-056 "Variant types": a variant type whose case names are
+/// not identifiers (`2x`, `Café`, `Gold Plus`) has an enum shape whose members
+/// are the FR-141 identities over its node and the exact name, in ascending
+/// UTF-8 byte order of the names.
+#[trace("FR-360-AC-4", "TC-1007")]
+#[test]
+fn a_variant_type_with_non_identifier_cases_has_an_enum_shape_over_the_exact_names() {
+    let (declarations, _) = declarations_of(&odd_document(), "Config", "");
+    let odd = variant(&declarations, "Config", "Odd");
+    let names: Vec<&str> = odd
+        .cases()
+        .iter()
+        .map(qsl_semantics::check::VariantCaseDeclaration::name)
+        .collect();
+    assert_eq!(names, ODD_CASES);
+    for case in odd.cases() {
+        assert_eq!(
+            case.variant(),
+            qsl_semantics::value::enumeration::mint_variant_id(odd.node(), case.name()),
+            "{}",
+            case.name()
+        );
+    }
+    let shape = odd.shape();
+    assert!(!shape.is_ordered());
+    let members: Vec<_> = shape.variants().collect();
+    let expected: Vec<_> = odd
+        .cases()
+        .iter()
+        .map(qsl_semantics::check::VariantCaseDeclaration::variant)
+        .collect();
+    assert_eq!(members, expected);
+}
+
+/// FR-360-AC-4: a unit names a type with non-identifier cases in a parameter,
+/// result and field read, and `Config::Mixed::Gold` checks beside the case
+/// `Gold Plus`.
+#[trace("FR-360-AC-4", "TC-1007")]
+#[test]
+fn a_type_with_non_identifier_cases_is_named_and_its_identifier_case_checks() {
+    let refusals = odd_refusals(
+        "function same_odd using v(o: Config::Odd): Config::Odd pure { o }\n\
+         function gold using v(): Config::Mixed pure { Config::Mixed::Gold }",
     );
+    assert!(refusals.is_empty(), "{refusals:?}");
+}
+
+/// FR-360-AC-6, FR-141-AC-5: `=` and `!=` over a type with non-identifier
+/// cases check, and every ordering operator refuses
+/// `ill_typed`/`operator-ineligible`.
+#[trace("FR-360-AC-6", "TC-1008")]
+#[test]
+fn equality_is_allowed_and_ordering_is_refused_over_non_identifier_cases() {
+    let allowed = odd_refusals(
+        "function same using v(a: Config::Odd, b: Config::Odd): Boolean pure { a = b }\n\
+         function differs using v(a: Config::Odd, b: Config::Odd): Boolean pure { a != b }",
+    );
+    assert!(allowed.is_empty(), "{allowed:?}");
+    for operator in ["<", "<=", ">", ">="] {
+        let refused = odd_refusals(&format!(
+            "function ranks using v(a: Config::Odd, b: Config::Odd): Boolean pure {{ a {operator} b }}"
+        ));
+        assert_eq!(refused.len(), 1, "{operator}: {refused:?}");
+        assert_eq!(
+            refused[0].cause,
+            CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
+            "{operator}"
+        );
+    }
 }
