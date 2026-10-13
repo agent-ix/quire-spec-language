@@ -252,11 +252,13 @@ For AC-6, a hand-written `PartialEq` or `Hash`, a name beside a filler field,
 a local map, and the root crate's lane-private `QualifiedName` types are
 not covered.
 
-For AC-8, a field type under another name
-is not covered, and TC-260 step 4 is not backed. The raw view of a snapshot
-document's `record` member (`RawRecord.type_identity`) holds the wire `type`
-string until a checked declaration resolves it by lookup; it is a wire shape,
-not a model field type, and the scan allows that one field by name.
+For AC-8, the scan covers the struct fields and enum variant fields under
+`model` whose name contains `type`; a field type under another name is not
+covered, and TC-260 step 4 is not backed. Three raw wire views are allowed a
+bare string `type_identity` and are named in the scan: `RawRecord`, `RawNode`
+and the reader's `Open`, all of which hold a snapshot document's `record`
+`type` string until a checked declaration resolves it by lookup. They are wire
+shapes, not model field types.
 
 AC-5 is enforced for its `QualifiedName` half only (TC-251); the
 "or a bare string" half is investigated and documented as a gap, not
