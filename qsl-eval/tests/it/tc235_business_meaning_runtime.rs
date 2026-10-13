@@ -162,6 +162,16 @@ fn lifecycle_package(
     document: &serde_json::Value,
     body: &str,
 ) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
+    model_package(document, body, 23)
+}
+
+/// The K2-derived `document` normalized after exactly `charges`
+/// `normalize.record` charges and checked with `body` as its unit.
+fn model_package(
+    document: &serde_json::Value,
+    body: &str,
+    charges: usize,
+) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
     let (domain, packages) = read_k2(document);
     let (outcome, meter) = normalize_with_meter(&domain, ModelNormalizationLimits::default());
     let NormalizeOutcome::Completed(view) = outcome else {
@@ -173,8 +183,8 @@ fn lifecycle_package(
             .iter()
             .filter(|charge| **charge == ChargePoint::NormalizeRecord)
             .count(),
-        23,
-        "TC-235 M15 normalize.record charge count"
+        charges,
+        "TC-235 normalize.record charge count"
     );
     let digest = packages.keys().next().expect("lifecycle package digest");
     let unit = format!(
@@ -1263,4 +1273,245 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
         evaluate(flags_false),
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
+}
+
+/// K2 with `Fulfilment` given `attempts`, the invariant `NonNegativeAttempts`,
+/// the operation `restart` with its contract, and the closed population `PF`
+/// (TC-235 M16).
+fn process_document() -> serde_json::Value {
+    use crate::tc235_k2::{clause, field, id, mutate_k2, operation, origin, type_named_mut};
+    mutate_k2(|document| {
+        let process = type_named_mut(document, "Fulfilment");
+        process["fields"].as_array_mut().unwrap().push(field(
+            "Fulfilment",
+            "attempts",
+            "ix://quire/native/Integer",
+        ));
+        process["clauses"] = serde_json::json!([clause(
+            "Fulfilment",
+            "NonNegativeAttempts",
+            "self.attempts >= 0"
+        )]);
+        let mut restart = operation("Fulfilment", "restart");
+        restart["pre"] = serde_json::json!([{
+            "language": "quire",
+            "text": "self.attempts < 3",
+            "origin": origin("Fulfilment/restart"),
+        }]);
+        restart["post"] = serde_json::json!([{
+            "language": "quire",
+            "text": "self.attempts = pre(self.attempts) + 1",
+            "origin": origin("Fulfilment/restart"),
+        }]);
+        restart["frame"]["modifies"] = serde_json::json!([id("Fulfilment/attempts")]);
+        process["operations"].as_array_mut().unwrap().push(restart);
+        document["populations"] = serde_json::json!([{
+            "identity": id("PF"),
+            "displayName": id("PF"),
+            "kind": {"module": crate::tc235_k2::BUSINESS, "name": "population"},
+            "members": [id("Fulfilment")],
+            "extent": "closed",
+            "origin": origin("PF"),
+        }]);
+    })
+}
+
+/// An observation named `label` holding the `Fulfilment` runs `runs`, each
+/// `(object id, attempts)`.
+fn process_observation(
+    package: &CheckedPackage,
+    view: &EffectiveView,
+    label: &str,
+    runs: &[(&str, i64)],
+) -> (
+    qsl_semantics::model::observation::Observation,
+    Vec<ObjectReference>,
+) {
+    let fulfilment = view.type_identities()[&qsl_semantics::model::key::DeclarationKey {
+        package: crate::tc235_k2::PACKAGE.to_owned(),
+        node: crate::tc235_k2::id("Fulfilment"),
+    }];
+    let universe = view
+        .object_universe_of(&qsl_semantics::model::key::DeclarationKey {
+            package: crate::tc235_k2::PACKAGE.to_owned(),
+            node: crate::tc235_k2::id("Fulfilment"),
+        })
+        .expect("Fulfilment has an object universe")
+        .identity();
+    let references: Vec<_> = runs
+        .iter()
+        .map(|(object, _)| {
+            ObjectReference::new(universe, fulfilment, ObjectId::new(*object).unwrap())
+        })
+        .collect();
+    let objects = references
+        .iter()
+        .zip(runs)
+        .map(|(reference, (object, attempts))| {
+            let correlation = quire_exact::Uuid::from_canonical_text(&format!(
+                "00000000-0000-4000-8000-{:0>12}",
+                object.trim_start_matches('r')
+            ))
+            .expect("a canonical UUID");
+            (
+                reference.clone(),
+                vec![
+                    (
+                        "correlation_id",
+                        FieldValue::Present(Value::Uuid(correlation)),
+                    ),
+                    (
+                        "attempts",
+                        FieldValue::Present(Value::Integer(Integer::from(*attempts))),
+                    ),
+                ],
+            )
+        });
+    let closure = ObjectClosure::new(package.graph().scope().types(), objects, &[])
+        .expect("the runs close over the type");
+    (
+        qsl_semantics::model::observation::Observation {
+            identity: DocumentRef {
+                authority: "test".to_owned(),
+                identity: label.to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+                digest: [0; 32],
+            },
+            environment: ObjectEnvironment::new(closure),
+            populations: BTreeMap::from([(crate::tc235_k2::id("PF"), true)]),
+            out_of_range: Vec::new(),
+        },
+        references,
+    )
+}
+
+fn process_observations(
+    package: &CheckedPackage,
+    clause: &str,
+    current: Option<qsl_semantics::model::observation::Observation>,
+    pre: Option<qsl_semantics::model::observation::Observation>,
+    post: Option<qsl_semantics::model::observation::Observation>,
+    self_object: ObjectReference,
+) -> AdmittedObservations {
+    AdmittedObservations {
+        usage: Default::default(),
+        clause: package
+            .graph()
+            .state_clause(clause)
+            .expect("the unit declares the clause")
+            .identity(),
+        current,
+        pre,
+        post,
+        self_object,
+        receiver_invocation: None,
+        receiver_pre: None,
+        receiver_post: None,
+        parameters: Vec::new(),
+        result: None,
+        created: Vec::new(),
+        deleted: Vec::new(),
+    }
+}
+
+/// A completed Boolean: the evaluation carries no diagnostic code or cause.
+fn truth(package: &CheckedPackage, clause: &str, observations: &AdmittedObservations) -> bool {
+    let evaluated = package
+        .evaluate_clause(
+            &QualifiedName::unqualified(clause).unwrap(),
+            observations,
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("admitted observations evaluate");
+    match evaluated.evaluation.outcome {
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(
+            value,
+        ))) => value,
+        other => panic!("expected a completed Boolean, got {other:?}"),
+    }
+}
+
+/// TC-235 M16: the process invariant holds per run (`r1` `{attempts: 0}` true,
+/// `r2` `{attempts: -1}` a logical violation: a completed `false`, no
+/// diagnostic), and `restart` invoked on `r1` from `{attempts: 0}` to
+/// `{attempts: 1}` satisfies its precondition and postcondition, while from
+/// `{attempts: 3}` to `{attempts: 4}` only the precondition is `false`.
+///
+/// Mutation used (derived by reading the clause evaluator, not executed):
+/// binding `self` to the first run of the population rather than the selected
+/// one flips `r2` to `true`; binding `pre(...)` reads to the post observation
+/// flips run 2's postcondition to `false`; dropping the precondition's
+/// observation selection flips run 3's precondition. The located-violation
+/// path (`root (s1, object (universe of Fulfilment, ..., r2))`, no steps) is
+/// reported by no evaluator API for an object receiver (only an invocation
+/// receiver has a root path), so it is not asserted here.
+#[trace(
+    "QSpec-TC-235",
+    "QSpec-FR-208-AC-6",
+    "QSpec-FR-208-AC-10",
+    "QSpec-FR-208-AC-11"
+)]
+#[test]
+fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
+    let (package, view, _) = model_package(
+        &process_document(),
+        "invariant NonNegativeAttempts using v on M::Fulfilment at current { self.attempts >= 0 }\n\
+         pre RestartRequires using v on M::Fulfilment::restart { self.attempts < 3 }\n\
+         post RestartEnsures using v on M::Fulfilment::restart { self.attempts = pre(self.attempts) + 1 }",
+        25,
+    )
+    .expect("M16 checks");
+
+    // Run 1: invariant observation s1 holding r1 and r2.
+    let (s1, runs) = process_observation(&package, &view, "s1", &[("r1", 0), ("r2", -1)]);
+    let invariant = |run: usize| {
+        truth(
+            &package,
+            "NonNegativeAttempts",
+            &process_observations(
+                &package,
+                "NonNegativeAttempts",
+                Some(s1.clone()),
+                None,
+                None,
+                runs[run].clone(),
+            ),
+        )
+    };
+    assert!(invariant(0), "r1 holds");
+    assert!(!invariant(1), "r2 is a logical violation");
+
+    // Runs 2 and 3: `restart` on r1.
+    let restart = |from: i64, to: i64| {
+        let (pre, runs) = process_observation(&package, &view, "p1", &[("r1", from)]);
+        let (post, _) = process_observation(&package, &view, "q1", &[("r1", to)]);
+        let required = truth(
+            &package,
+            "RestartRequires",
+            &process_observations(
+                &package,
+                "RestartRequires",
+                None,
+                Some(pre.clone()),
+                None,
+                runs[0].clone(),
+            ),
+        );
+        let ensured = truth(
+            &package,
+            "RestartEnsures",
+            &process_observations(
+                &package,
+                "RestartEnsures",
+                None,
+                Some(pre),
+                Some(post),
+                runs[0].clone(),
+            ),
+        );
+        (required, ensured)
+    };
+    assert_eq!(restart(0, 1), (true, true));
+    assert!(!restart(3, 4).0, "attempts 3 does not satisfy attempts < 3");
 }

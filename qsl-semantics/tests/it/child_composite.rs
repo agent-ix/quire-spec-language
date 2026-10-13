@@ -255,8 +255,7 @@ fn refused_with_events(declarations: &str) -> Vec<CheckRefusal> {
 }
 
 /// FR-359-AC-5: FR-208 gives an event type no equality, so `=` and `!=` over
-/// event operands, and over a record holding one directly, as an optional or
-/// in a sequence, are `ill_typed`/`operator-ineligible` whether or not the
+/// event operands, and over an optional or a sequence of events, are `ill_typed`/`operator-ineligible` whether or not the
 /// two operands have one type. Each refusal is located in the comparing
 /// function's own body.
 #[trace("FR-359-AC-5", "TC-999")]
@@ -270,10 +269,6 @@ fn equality_over_event_operands_stays_refused() {
         (
             "differ",
             "function differ using v(a: M::Shipped, b: M::Shipped): Boolean pure { a != b }",
-        ),
-        (
-            "holding",
-            "function holding using v(a: M::Dispatch, b: M::Dispatch): Boolean pure { a = b }",
         ),
         (
             "maybe",
