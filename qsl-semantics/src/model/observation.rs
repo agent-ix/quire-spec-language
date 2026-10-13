@@ -860,20 +860,39 @@ fn model_views(
             .map_err(|_| fault("model-reconsistent-records"))?;
         let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
             NormalizeOutcome::Completed(view) => view,
-            // A reached ceiling is the stage's limit outcome naming its
-            // setting; any other refusal is a broken invariant, since the
-            // same packages already normalized at compile time.
+            // A reached ceiling of `ModelNormalizationLimits` is the caller's
+            // budget wherever it is read (ADR-014 section 1), so it refuses
+            // as the compile path does, naming its setting; any other
+            // refusal is a broken invariant, since the same packages already
+            // normalized at compile time.
             NormalizeOutcome::Incomplete(incomplete) => {
-                return Err(limit_refusal(&incomplete.limit_exceeded()))
+                return Err(caller_budget_refusal(
+                    &incomplete.limit_exceeded(),
+                    INSUFFICIENT_NEXT_CHARGE,
+                    &[
+                        ("stage", "model-normalization".to_owned()),
+                        (
+                            "accounting_contract",
+                            "ModelNormalizationLimitsV1".to_owned(),
+                        ),
+                        ("consumed", incomplete.consumed.to_string()),
+                        ("next_charge", incomplete.next_charge.to_string()),
+                        ("charge_point", incomplete.charge_point.as_str().to_owned()),
+                    ],
+                ))
             }
             NormalizeOutcome::Refused(refusals) => {
                 return Err(refusals
                     .iter()
-                    .find_map(|refusal| refusal.cause.limit_exceeded())
-                    .map_or_else(
-                        || fault("model-reconsistent-normalize"),
-                        |limit| limit_refusal(&limit),
-                    ))
+                    .find_map(|refusal| {
+                        let limit = refusal.cause.limit_exceeded()?;
+                        Some(caller_budget_refusal(
+                            &limit,
+                            refusal.cause.catalog_code().cause(),
+                            &[],
+                        ))
+                    })
+                    .unwrap_or_else(|| fault("model-reconsistent-normalize")))
             }
         };
         let by_effective_id = view
@@ -1037,6 +1056,27 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
     ))
 }
 
+/// A reached ceiling of the caller's model-normalization budget
+/// (`ModelNormalizationLimits`, ADR-014 B-2) as an admission refusal: the
+/// compile path's `resource_exhausted` with its `cause` (for example
+/// `ancestor-steps`, or `insufficient-next-charge` for a denied charge),
+/// carrying the `setting`, `bound` and `actual` of FR-255, the `retained`
+/// fields of a denied charge, and no limit `kind`, which only a stage limit
+/// has.
+fn caller_budget_refusal(
+    limit: &LimitExceeded,
+    cause: &'static str,
+    retained: &[(&'static str, String)],
+) -> AdmissionFailure {
+    let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
+    record.fields.extend(retained.iter().cloned());
+    if let Some(mut fields) = limit.catalog_fields() {
+        fields.remove("kind");
+        record.fields.extend(fields);
+    }
+    refuse(record)
+}
+
 /// `limit` as an admission refusal: `stage_limit_exceeded` with the limit's
 /// cause and its `kind`, `bound`, `actual` and `setting` fields (FR-255
 /// Behavior 1).
@@ -1092,6 +1132,9 @@ impl ReadMeter {
         Ok(())
     }
 }
+
+/// The catalog cause of a denied accounting charge.
+const INSUFFICIENT_NEXT_CHARGE: &str = "insufficient-next-charge";
 
 /// FR-259 B6: reading or encoding the document could not reserve
 /// `requested` bytes of memory.

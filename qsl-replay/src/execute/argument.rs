@@ -25,7 +25,8 @@ use quire_exact::{
     TextPayload, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use std::collections::HashMap;
 
 use super::ReplayRefusal;
 use crate::witness::{QuantityMagnitude, WitnessSlot, WitnessValue};
@@ -141,6 +142,9 @@ enum Step<'a> {
 /// The conversion of one package's arguments.
 struct Converter<'a> {
     types: &'a TypeEnvironment,
+    /// The checked composites by key bytes, built once: a record's wire
+    /// declaration digest is resolved against it, never minted into a key.
+    composites: HashMap<[u8; 32], &'a CompositeDeclaration>,
     enums: Vec<EnumDeclaration>,
     limits: &'a ScalarLimits,
     nodes: u64,
@@ -154,8 +158,13 @@ pub(super) fn convert_arguments(
     limits: &ScalarLimits,
 ) -> Result<Converted, Stopped> {
     let enums = enum_declarations(package);
+    let types = package.graph().scope().types();
     let mut converter = Converter {
-        types: package.graph().scope().types(),
+        types,
+        composites: types
+            .composites()
+            .map(|composite| (*composite.key().as_bytes(), composite))
+            .collect(),
         enums,
         limits,
         nodes: 0,
@@ -438,11 +447,16 @@ impl<'a> Converter<'a> {
                 // own `declaration` names, and its fields read by name against
                 // that declaration's fields, not the slot's. It is then
                 // admitted at the slot by conformance.
-                let key = NodeKey::from_digest(*declaration.as_bytes());
+                // The wire digest is resolved by lookup against the already
+                // checked composites (FR-087-AC-6), never minted into a key.
+                let record = *self
+                    .composites
+                    .get(declaration.as_bytes())
+                    .ok_or_else(refuse)?;
+                let key = record.key();
                 if !types.composite_conforms(key, *slot_key) {
                     return Err(refuse());
                 }
-                let record = types.composite(key).ok_or_else(refuse)?;
                 let CompositeShape::Record(declared_fields) = record.shape() else {
                     return Err(refuse());
                 };
