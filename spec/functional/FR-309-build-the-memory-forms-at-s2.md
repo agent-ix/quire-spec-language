@@ -23,7 +23,7 @@ relationships:
 ## Description
 
 When S2 builds the form of a protocol declaration under
-`quire.model.complete/v1`, it SHALL accept the memory surface forms of
+`quire.protocol.complete/v1`, it SHALL accept the memory surface forms of
 QSpec's shared grammar, the `memory-clause` of a `parallel`, the optional
 `ordering` of an `attempt` with its `memory-order`, and the `fence` control
 with its `fence-order`, and SHALL record each in the protocol forms with

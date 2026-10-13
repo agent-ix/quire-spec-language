@@ -18,7 +18,7 @@ Verify that every refusal is reported, per unit, that the selection is a header 
 2. Compile a library that selects the model profile imported by a unit that does not, then the reverse.
 3. Compile a unit with a `model` declaration, a supplied domain package and a model construct, whose only header profile is `quire.value.complete/v1`.
 4. Compile a unit whose profile `v` names `quire.model.complete/v1`; read the emitted lock.
-5. Compile a unit holding model constructs with the header profile set to the `ieee_profile` row's identity, then to `test:unknown-profile`.
+5. Compile a unit holding model constructs with the header profile set to the `ieee_profile` row's identity, then to `quire.protocol.complete/v1`, then to `test:unknown-profile`.
 6. Under `make conformance`, compare the DefinitionLock rows that come from QSpec's complete-model lock with the lock read from `QSPEC_DIR`.
 
 ## Expected Results
@@ -27,5 +27,5 @@ Verify that every refusal is reported, per unit, that the selection is a header 
 2. The unit lacking the selection gets its refusals; the other unit does not.
 3. Refused as TC-1012 to TC-1016 state; never compiles.
 4. The model layer resolves. `definition_selections` hold the model layer, `quire.state.graph/v1`, `quire.value.complete/v1`, their required layers and the complete-model lock's `always` rows, written out as a literal in the test, and no layer that requires the model layer.
-5. `unknown_profile`/`wrong-selection-role` then `unknown_profile`/`unsupported-selection`; no S3 refusal.
+5. `unknown_profile`/`wrong-selection-role`, then `unknown_profile`/`unsupported-selection` twice (an identity outside the five header-selectable layers); no S3 refusal.
 6. The rows (role, authority, identity, in order) and package-selection rules are equal.

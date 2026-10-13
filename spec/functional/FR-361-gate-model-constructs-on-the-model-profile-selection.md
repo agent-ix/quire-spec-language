@@ -42,7 +42,7 @@ produce no checked package.
 
 QSpec's shared grammar states the rule for the `operation-body`, the
 dispatched operation call and `lookup` form, and the `abstraction-decl`; QSL
-FR-304 and FR-308 apply it to the abstraction and protocol forms. Until this
+FR-304 applies it to the abstraction form. Until this
 requirement is built, QSL accepts every one of them under a package that
 selects only `quire.value.complete/v1`, and FR-102 and FR-302 record that
 the gate is not enforced.
@@ -70,8 +70,11 @@ its header `profile` declarations names the identity of the
    refusal code. A header identity that names no `header_selectable_layers`
    row keeps FR-110's refusals: `unknown_profile`/`unsupported-selection`
    when it names no catalog row, and `unknown_profile`/`wrong-selection-role`
-   when it names a `qualification_catalog` row only. The `quire.model.complete/v1`
-   row is a layer row, so it resolves.
+   when it names a `qualification_catalog` row only. The five rows of
+   `header_selectable_layers` (`quire.state.core/v1`, `quire.state.queries/v1`,
+   `quire.state.graph/v1`, `quire.value.complete/v1` and
+   `quire.model.complete/v1`) are header-selectable (FR-110, QSpec FR-453), so
+   `unknown_profile` refuses every identity outside those five.
 3. **The catalog holds the model lock.** `DefinitionLock::pinned()` SHALL hold
    the rows of QSpec's complete-model lock beside the complete-value lock's
    (the complete-model lock requires the complete-value lock). A unit whose
@@ -87,25 +90,49 @@ its header `profile` declarations names the identity of the
 ### Model construct families
 
 5. QSL SHALL treat these as the model constructs, each with its refusal
-   cause:
+   cause (QSpec shared grammar names the first, the third, the fifth and the
+   sixth; the `model` declaration is QSL's rule, item 5a):
 
    | Family | Construct | Cause |
    | --- | --- | --- |
    | `operation-body` | the `body <label> using <alias> on <model alias>::...` declaration | `declaration-form` |
    | `model-import` | the header-position `model <alias> = "<identity>" digest "<hex>";` declaration | `declaration-form` |
    | `abstraction` | the `abstraction-decl` declaration | `declaration-form` |
-   | `protocol-complete` | every complete protocol form FR-308 builds | `declaration-form` |
-   | `memory` | every memory clause, access ordering and fence form FR-309 builds | `declaration-form` |
    | `dispatch-call` | a postfix `receiver.member(args)` operation call | `expression-form` |
    | `lookup` | the `lookup<T>(p, r) absent m` expression | `expression-form` |
 
-6. A form of the state-clause family (`invariant`, `pre`, `post`, and
-   `pre(e)`, `result`, `self`, `reaches`) is not a model construct. State core
-   admits preconditions, postconditions and invariants (FR-110 "Layer
-   selection"), so a clause under a value-only unit is not refused for its
-   kind. A clause whose target names a model operation reaches that
-   operation only through a `model` declaration, and the `model-import`
-   family refuses that declaration (item 5).
+5a. **The `model` declaration is gated by QSL's own rule.** QSpec states no
+    gate for the `model` declaration. QSL gates it (family `model-import`) so
+    that a value-only unit cannot reach a model operation, and a QSpec row
+    stating the gate is requested. Until QSpec states it, the rule is QSL's.
+6. **Forms QSpec states no model gate for stay ungated.** These are not model
+   constructs: the state-clause family (`invariant`, `pre`, `post`, and
+   `pre(e)`, `result`, `self`, `reaches`), because state core admits
+   preconditions, postconditions and invariants (FR-110 "Layer selection"); the
+   `Population<T>` type, `allInstances` and field or relationship navigation;
+   and the `hyper`, `relation` and state-graph clauses. A clause whose target
+   names a model operation reaches that operation only through a `model`
+   declaration, which family `model-import` refuses (item 5a).
+6a. **Protocol, memory and temporal forms are not gated by this requirement.**
+    QSpec's shared grammar ("Complete-V1 facet grammar") names
+    `quire.protocol.complete/v1` as the facet of the protocol forms, including
+    the memory clause, memory order and fence (ADR-006 makes it the one
+    protocol admission profile), and `quire.temporal.complete/v1` as the
+    temporal facet. Neither is a model construct, and QSL's
+    `header_selectable_layers` has no row for either. Not gated: QSpec names
+    `quire.protocol.complete/v1` and `quire.temporal.complete/v1`; QSL has no
+    such layer. QSL adds no layer and no gate for them here; FR-308 and FR-309
+    name the protocol facet accordingly.
+6b. **Why the test is on the unit.** QSpec's shared grammar says a recognised
+    construct whose required facet is absent receives a located
+    `unsupported_construct` for a package, and FR-001 refuses a form with
+    `unsupported_construct` naming the unit's selected layers. FR-110's
+    per-alias layer rule alone would leave a construct with no `using` alias
+    (for example `abstraction-decl`) ungated, so the unit-level test is
+    needed; FR-110 and FR-453 state no unit-level model rule themselves, so
+    the unit-level reading of the model gate for the dispatched call, `lookup`,
+    `operation-body` and `abstraction-decl` is QSpec's package-level wording,
+    and its application to the `model-import` family is QSL's (item 5a).
 7. A form that the DefinitionLock's admitted-form set of a layer does not
    name stays refused by FR-110's layer rule. This requirement adds the
    unit-level selection test; it replaces no layer rule.
@@ -142,7 +169,7 @@ its header `profile` declarations names the identity of the
 ### Admission under the selection
 
 13. A unit that selects the model profile SHALL admit each family of item 5
-    exactly as FR-056, FR-102, FR-103, FR-302, FR-304, FR-308 and FR-309
+    exactly as FR-056, FR-102, FR-103, FR-302 and FR-304
     state. This requirement changes no behaviour of a selecting unit.
 14. Every fixture that exercises a model construct SHALL select
     `quire.model.complete/v1`, and every value-only fixture keeps
@@ -156,12 +183,12 @@ its header `profile` declarations names the identity of the
 | FR-361-AC-1 | A unit with the header profile `quire.value.complete/v1` and one `body` declaration refuses `unsupported_construct`/`declaration-form` at the declaration's span, retaining the family `operation-body`, the owning declaration, the selected header layers and the required layer `quire.model.complete/v1`, and produces no package; the model declaration the body targets is refused too, family `model-import`. The same unit with the header profile `quire.model.complete/v1` compiles and sets `has_body`. | Test (TC-1012) |
 | FR-361-AC-2 | A value-profile unit that calls `receiver.operation(args)` refuses `unsupported_construct`/`expression-form` at the call's span with the family `dispatch-call`; one that holds `lookup<T>(p, r) absent m` refuses the same way with the family `lookup` at that expression's span. The same two units with the model profile pass the refusal check. | Test (TC-1013) |
 | FR-361-AC-3 | A value-profile unit with an `abstraction-decl` refuses `unsupported_construct`/`declaration-form` at the declaration's span with the family `abstraction`; with the model profile it compiles to the same `CheckedAbstractionRelation` FR-304-AC-1 gives. A declaration with no binding refuses `invalid_syntax` before this check under either profile. | Test (TC-1014) |
-| FR-361-AC-4 | A value-profile unit holding a complete protocol form of FR-308 refuses `unsupported_construct`/`declaration-form` with the family `protocol-complete`; one holding a memory clause, ordering or fence form of FR-309 refuses it with the family `memory`; each at the form's span. The same units with the model profile build and check as FR-308 and FR-309 state. | Test (TC-1015) |
+| FR-361-AC-4 | A value-profile unit holding a protocol form (FR-308), a memory clause, ordering or fence (FR-309), a `hyper`, `relation` or state-graph clause, a `Population<T>` type, `allInstances`, field navigation or a state clause raises no `unsupported_construct` from this requirement; no gate is invented for a facet QSL has no layer for. | Test (TC-1015) |
 | FR-361-AC-5 | A value-profile unit holding a `model` declaration refuses `unsupported_construct`/`declaration-form` at the declaration's span with the family `model-import`, and produces no package, even when a domain package is supplied for it and even when the unit holds no other model construct. A value-profile unit holding a `pre` or `post` clause over only value-complete operands compiles. | Test (TC-1016) |
 | FR-361-AC-6 | A value-profile unit holding a model construct of every family refuses once per construct, in source order, every refusal retaining the selected layers and the required layer; a construct inside a declaration nothing uses is refused too. A library that selects the model profile imported by a unit that does not, and the reverse, each give the lacking unit its refusals. | Test (TC-1017) |
 | FR-361-AC-7 | The selection is the header and nothing else: a unit with no header profile naming the model identity and a `model` declaration, a supplied domain package and a model construct refuses as AC-1 to AC-5 state and never compiles; a unit naming `quire.value.complete/v1` as the only header profile never gets the model constructs admitted. | Test (TC-1017) |
 | FR-361-AC-8 | A header profile naming `quire.model.complete/v1` resolves; its emitted lock's `definition_selections` hold the model layer, `quire.state.graph/v1`, `quire.value.complete/v1` and the layers they require, and the complete-model lock's `package_selection.always` rows, and no layer that requires the model layer. | Test (TC-1017) |
-| FR-361-AC-9 | A header profile naming a `qualification_catalog` row (for example the `ieee_profile` identity) refuses `unknown_profile`/`wrong-selection-role`, and one naming `test:unknown-profile` refuses `unknown_profile`/`unsupported-selection`, in a unit that also holds model constructs; the E3 refusal is the only one reported. | Test (TC-1017) |
+| FR-361-AC-9 | A header profile naming an identity outside the five header-selectable layers refuses: a `qualification_catalog` row (for example the `ieee_profile` identity) `unknown_profile`/`wrong-selection-role`, `quire.protocol.complete/v1` and `test:unknown-profile` `unknown_profile`/`unsupported-selection`, in a unit that also holds model constructs; the E3 refusal is the only one reported. | Test (TC-1017) |
 | FR-361-AC-10 | Under `make conformance`, the rows of `DefinitionLock::pinned()` that come from the complete-model lock (role, authority and identity, in order, and its package-selection rules) equal QSpec's complete-model lock, read at run time. | Test (TC-1017) |
 
 ## Dependencies
@@ -174,9 +201,9 @@ its header `profile` declarations names the identity of the
 - FR-102 and FR-302 record that the `operation-body` gate is not enforced;
   they cross-reference this requirement. FR-304 and FR-308 state the
   abstraction and protocol refusals this requirement places at S3. FR-309
-  states the memory forms. FR-056 states the `model` declaration and
+  states the memory forms, whose facet is the protocol facet. FR-056 states the `model` declaration and
   domain-package intake.
-- QSpec shared grammar ("Complete-V1 facet grammar" and the model forms
+- QSpec ADR-006, shared grammar ("Complete-V1 facet grammar" and the model forms
   sections), `model-complete.md`, `complete-model-lock.json`,
   `native-diagnostics.md` (the `unsupported_construct` causes), FR-001,
   FR-450-AC-3 and FR-453.
