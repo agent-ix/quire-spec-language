@@ -506,8 +506,7 @@ pub fn check_operation_redefinition(
                 .map(|write| (write, true)),
         );
     for (write, receiver_only) in writes {
-        let path = index.field_lineage(write);
-        let covered = path.iter().any(|candidate| {
+        let covered = index.redefinition_reaches(write, |candidate| {
             redefined.effect.modifies.contains(candidate)
                 || (receiver_only && redefined.effect.receiver_modifies.contains(candidate))
         });
