@@ -707,7 +707,6 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
 /// type owned by the operation signature. Runtime-value-path comparison for
 /// `self.placed` versus `flags.placed` is an evaluator assertion and remains
 /// outside this source/assembly test.
-#[ignore = "expected red until PR #777 / QSL-729 record/event arms land"]
 #[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
@@ -740,6 +739,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
         let mut place = place;
         place["params"] = json!([{
             "identity": id("OrderLifecycle/place/flags"),
+            "origin": origin("OrderLifecycle/place/flags"),
             "name": "flags",
             "typeRef": id("Flags"),
             "presence": "required",
