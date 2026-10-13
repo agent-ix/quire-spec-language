@@ -2563,6 +2563,8 @@ fn systems_member_owners<'a>(
                 .chain(element_owner(&allocation.target_element, records))
                 .collect()
         }
+        // A variant case is a member of its variant type (FR-081).
+        DomainPackageRecord::Variant(case) => vec![&case.owner],
         _ => Vec::new(),
     }
 }

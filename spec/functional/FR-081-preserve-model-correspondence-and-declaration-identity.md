@@ -91,6 +91,12 @@ collapse those derived declarations by an identity-equivalence rule. An
 original whose kind has no selected derivation rule remains in the exact
 original inventory without acquiring an effective identity from this guarantee.
 
+A variant type is an effective type and each of its cases an effective member of
+it, each with one `qualify` fact `[declaration]` and no other (FR-056
+"Effective identity of a variant type"). A case's `original` is its case node's
+declaration key, so its identity does not depend on the order of the
+`variants` list.
+
 ### Losing redefinitions are retained, not deleted
 
 When two or more declared redefinitions of one member reach the same
@@ -161,6 +167,7 @@ charge point and SHALL expose no effective declaration for the run.
 | FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
 | FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
+| FR-081-AC-16 | Given a variant type with two cases, the effective view holds one effective type and two effective members of it, each derived from the key of its own declaration with one `qualify` fact; permuting the cases changes no effective identity or position. | Test (TC-1003) |
 
 ## Dependencies
 

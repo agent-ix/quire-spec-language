@@ -520,6 +520,52 @@ placeholder: QSL-738 owns fields typed by a variant type and replaces it. As
 with every declaration refusal, it leaves the package unadmitted; the variant
 type's declaration is not refused because it is a variant type.
 
+##### Effective identity of a variant type
+
+QSpec FR-208 says normalization admits a variant type as an effective type.
+FR-081 states the effective-identity contract; this section applies it. For each
+variant type the compiler SHALL derive, from the original declarations above:
+
+- one effective type for the `enum` export: `owner_effective_type` null,
+  `original` the type's declaration key, and one phase-2 `qualify` fact with
+  inputs `[declaration]`;
+- one effective member of that type per case: `owner_effective_type` the
+  variant type's effective identity, `original` the case node's declaration key
+  (`ix://<package identity>/variant/<Name>-<value>`, FR-154's variant slot, and
+  never the `variant` export key), and one `qualify` fact with inputs
+  `[declaration]`.
+
+A variant type declares no supertype, so it has no `inherit` fact, and it has no
+object universe. Its effective identity and each case's follow FR-081: the
+digest depends on the keys alone, so reordering the `variants` list changes no
+effective identity, entry or position; `Tier`'s `Gold` and `Level`'s `Gold`, and
+`Gold` and `gold`, are distinct effective members; and no presentation field
+enters any of them. The effective view lists the type among its effective types
+(`type_identities`) and each case among its members, and a package with a
+refused variant type has no effective view.
+
+The assembler SHALL declare each variant type of an admitted package in the
+package's type environment as `M::<artifact id>`, keyed by its effective
+identity, with its cases in ascending UTF-8 byte order of their names, each
+carrying its own effective identity. The declaration binds no source name:
+source that names the variant type still refuses under "Variant types" above,
+and the declaration adds no object type or enum literal to the unit's scope.
+
+A field, parameter or result typed by a variant type needs only this
+declaration, found by the effective identity of its `typeRef` target in the
+view's type identities; it needs no further record or identity. QSL-738 owns
+that typing and replaces the placeholder refusal above. This section adds no
+refusal of its own: every refusal of a variant type is typed under "Variant
+types" above, with its cause and `MemberPath`.
+
+If two cases of one variant type mint one identity, then the reader refuses the
+later case of the `variants` list first, with `invalid_model_binding`/
+`malformed-declaration`, path `TypeDefinition.variants[i].identity` with `i` the
+later case's position, located at that case's span, and retains its
+`DUPLICATE_IDENTITY` diagnostic. Intake never reads the later case, so the
+refusal names the case that causes the conflict, not the first holder of the
+identity.
+
 ### Declarations
 
 The compiler SHALL build declarations under FR-154: one original declaration per
@@ -715,6 +761,9 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-26 | A variant type with no case, a case with no source span, and a type bound to the variant-type meaning whose construct shape is not `enumeration` each refuse `invalid_model_binding`/`malformed-declaration`. Two cases named `Gold` with one identity are refused by the lift or the reader with that diagnostic retained and no declaration; two cases named `Gold` with distinct identities, in a document the reader admits, refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`. A case with no name is refused by the reader's schema. | Test (TC-996) |
 | FR-056-AC-27 | A clause naming `Tier` refuses `unsupported_construct`/`declaration-form` at the clause, while the package, `Tier`'s declaration and its `enum` and `variant` exports are admitted and equal to those of a package no clause names; with no clause naming `Tier`, no refusal is raised. | Test (TC-997) |
 | FR-056-AC-28 | A field whose `typeRef` names `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the field node, path `Field.typeRef`, and the package is unadmitted as for any declaration refusal. Fields typed by a variant type are owned by QSL-738. | Test (TC-997) |
+| FR-056-AC-29 | The TC-994 package normalizes to an effective view with one effective type for `Tier` and one for `Level` (owner null, `original` its declaration key, one `qualify` fact `[declaration]`), and one effective member per case (owner the variant type's effective identity, `original` the case node's key such as `.../variant/Tier-Gold`, one `qualify` fact). `type_identities` lists the two variant types and nothing else. `Tier`'s `Gold`, `Level`'s `Gold` and `Tier`'s `gold` have three distinct effective identities, and listing the cases `Standard` then `Gold` changes no effective identity, entry or position. | Test (TC-1003) |
+| FR-056-AC-30 | Two cases named `Gold` with distinct identities leave no effective view and refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`, even beside a valid variant type. Two cases that mint one identity (`Gold` and a `Silver` carrying `.../variant/Tier-Gold`), listed in either order, refuse once, `invalid_model_binding`/`malformed-declaration` at path `TypeDefinition.variants[1].identity`, located at the later case's span, with the reader's `DUPLICATE_IDENTITY` diagnostic. | Test (TC-1003) |
+| FR-056-AC-31 | The unit assembled over the TC-994 package declares `Config::Tier` with cases `Gold`, `Standard` and `Config::Level` with case `Gold` in the type environment, ascending by effective identity; each declaration's key is the effective identity the view gives the type, and each case's key is the view's effective identity for the case node. A unit that names no variant type assembles, and one that names one still refuses `unsupported_construct`/`declaration-form`. | Test (TC-1004) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17
