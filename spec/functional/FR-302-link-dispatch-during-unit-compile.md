@@ -63,9 +63,12 @@ receiver's static type is the root's declaring type, or any object type
 conforming to it, abstract or concrete and including a type that redefines
 the operation, names that root's table. S3 links the family of every root
 whose member name some call spells. A family that does not link refuses the
-compile only when a call needs it, that is, when the check finds no dispatch
-operation for a call's member; a same-named family of an unrelated type that
-no call reaches does not refuse the compile.
+compile only for a call that needs it: a call whose member the check finds no
+dispatch operation for, and whose receiver's static type is one the family's
+root answers for (its declaring type or a type conforming to it). That
+refusal is located at the call. A call on any other receiver type keeps the
+check's own refusal, and a same-named family of an unrelated type that no
+call reaches does not refuse the compile.
 
 The source-to-intake join SHALL use the resolved operation's
 `DeclarationKey` in the selected model's effective view. S3 SHALL resolve

@@ -19,6 +19,9 @@ use crate::family::{CheckContext, CheckOutcome, FamilyContract, FamilyKind};
 pub struct StateModelRefusal {
     /// The original static question's typed cause, retaining its raw vocabulary.
     pub cause: CheckCause,
+    /// For a call that found no dispatch operation: the receiver's static
+    /// type, which the missing operation's family is looked up by (FR-302).
+    pub receiver: Option<quire_exact::EffectiveId>,
 }
 
 impl StateModelRefusal {
@@ -130,7 +133,10 @@ impl FamilyContract for StateModelFamily {
         let location = &request.location;
         let refuse = |at: &Location, cause| CheckRefusal {
             location: at.clone(),
-            cause: CheckCause::StateModel(Box::new(StateModelRefusal { cause })),
+            cause: CheckCause::StateModel(Box::new(StateModelRefusal {
+                cause,
+                receiver: None,
+            })),
         };
         let mismatch =
             |at: &Location| refuse(at, CheckCause::IllTyped(IllTypedCause::TypeMismatch));
@@ -326,7 +332,13 @@ impl FamilyContract for StateModelFamily {
                         .find(|(_, operation)| {
                             operation.receiver_type == *receiver_type && operation.member == *member
                         })
-                        .ok_or_else(|| missing(member))?;
+                        .ok_or_else(|| {
+                            let mut refusal = missing(member);
+                            if let CheckCause::StateModel(model) = &mut refusal.cause {
+                                model.receiver = Some(*receiver_type);
+                            }
+                            refusal
+                        })?;
                     if operation.parameters.len() != *arity {
                         return Err(mismatch(location));
                     }

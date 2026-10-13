@@ -37,3 +37,45 @@ Whether each tests.md ✅ flip is earned:
 | FND-005 | low | The test `a_body_reads_its_receiver_and_its_renamed_parameter` is tagged TC-1011 / FR-302-AC-8. It verifies that `self` and a renamed parameter bind inside a body, not that arity or type is checked. Retag it to FR-302's join rule, or leave it untagged. | qsl-replay/tests/dispatch_link_compile.rs:525-529 |
 | FND-006 | low | The test `intake_reads_an_operations_redefines_property` is tagged TC-793 / FR-302-AC-1. It verifies that intake reads `redefines` (FR-103), not the linked tables. Retag it to an FR-103 criterion. | qsl-semantics/tests/it/dispatch_linking.rs:116-120 |
 | FND-007 | medium | Nothing tests the new region resolution. `synthesized_spans` is read by all three resolvers and by the three `declaration_region` methods, and lowering adds a new `generated` occurrence on every clause function. The emission test asserts only that the bytes are non-empty and deterministic. No test checks that a refusal or occurrence in a synthesized precondition function resolves to its unit `pre` clause, or that a body function's occurrence resolves to its `operation-body`. Deleting the `synthesized` arm in `resolve` would leave every test green, as long as emission still placed some region. Add one region assertion for each kind. | qsl-semantics/src/check/region.rs:98-120; qsl-semantics/src/check/lowering.rs:2728-2747; qsl-replay/tests/dispatch_link_compile.rs:540-583 |
+
+## Dispositions
+
+Re-checked at `d0c5332fbbb9586ce0ba8f887d7b276ccd7e5e3f`. The tests.md flips were judged against each TC's steps:
+
+- **TC-793:** steps 1-4 are covered, including the abstract `Mid` receiver.
+- **TC-795:** the record is asserted through `CompileRefusal::fields()`.
+- **TC-1011:** unchanged and earned.
+- **TC-1018:** all four steps, with regions and the `generated` occurrence.
+- **TC-1019:** all three steps.
+
+All five ✅ flips are earned.
+
+The coder ran no separate red runs for the new tests, so they were judged by mutation reasoning:
+
+- Restoring name-only refusal fails the first compile of the unrelated-family test.
+- Dropping the pending report turns the second compile into `MissingName`, and `refused_family` panics.
+- Restoring owner-plus-entries exposure fails the abstract-`Mid` compile.
+- Deleting the `synthesized` resolver arm, or the `with_spans` call, makes `region_text` panic.
+
+The body-dispatch test documents a gate that already existed (TC-196 D07). Its claim was verified in the code: `dispatch_admitted` (typing.rs:1007) runs before the operation lookup and refuses every context except invariant, pre and post (state_model.rs:303-311).
+
+The fix-round gate logs (`qsl726e-fixgate-*.log`) are green:
+
+- clippy exit 0
+- 11/11 `dispatch_link_compile`
+- 0 FAILED in the test log
+- root: 986 passed, 5 ignored
+- xtask: 182 passed
+- spec validation exit 0
+
+No new findings.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d0c5332fb |
+| FND-002 | fixed | d0c5332fb |
+| FND-003 | fixed | d0c5332fb |
+| FND-004 | fixed | d0c5332fb |
+| FND-005 | fixed | d0c5332fb |
+| FND-006 | fixed | d0c5332fb |
+| FND-007 | fixed | d0c5332fb |

@@ -675,6 +675,54 @@ fn an_unrelated_family_of_the_same_name_refuses_only_when_a_call_reaches_it() {
     let cause = refused_family(&refusal);
     assert_eq!(cause.catalog.cause(), "no-applicable");
     assert_eq!(cause.operation.node, operation_name("Other", "size"));
+    // The family's refusal is located at the call that needed it.
+    assert_at_clause(&refusal, "c2");
+
+    // A call on a receiver type that has no `size` anywhere is not that
+    // family's: it refuses `missing_declaration`/`missing-name` at the call.
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[
+            (
+                "Other",
+                "",
+                vec![
+                    query("Other", "size", &[], None),
+                    query("Other", "probe", &[], None),
+                ],
+            ),
+            ("Lone", "", vec![query("Lone", "probe", &[], None)]),
+        ],
+    );
+    let refusal = compile(
+        &document,
+        &format!("{declarations}pre c3 using v on Config::Lone::probe {{ self.size() > 0 }}\n"),
+        SpineLimits::default(),
+    )
+    .expect_err("Lone has no `size`");
+    assert_eq!(refusal.code(), Code::MissingDeclaration);
+    let CompileRefusal::Check { refusals, .. } = refusal.as_ref() else {
+        panic!("an S3 refusal, got {refusal:?}");
+    };
+    assert_eq!(refusals[0].cause.cause(), Some("missing-name"));
+    assert_at_clause(&refusal, "c3");
+}
+
+/// The first refusal of the S3 refusal `refusal` is located at the clause
+/// `clause`, and the refusal carries a source region.
+fn assert_at_clause(refusal: &CompileRefusal, clause: &str) {
+    let CompileRefusal::Check { refusals, region } = refusal else {
+        panic!("an S3 refusal, got {refusal:?}");
+    };
+    assert!(
+        matches!(&refusals[0].location.origin, Origin::StateClause { clause: found, .. } if found == clause),
+        "{:?}",
+        refusals[0].location
+    );
+    assert!(region.is_some(), "a region at the call");
 }
 
 /// FR-302-AC-1 (TC-793): a call whose receiver's static type is an abstract

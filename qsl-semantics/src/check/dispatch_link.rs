@@ -50,46 +50,60 @@ struct CalledFamily {
     member: String,
 }
 
+/// One family that did not link: the member name it answers to, the object
+/// types a call to it may have as receiver, and its refusal.
+#[derive(Debug)]
+struct PendingFamily {
+    member: String,
+    receivers: BTreeSet<EffectiveId>,
+    refusal: CheckRefusal,
+}
+
 /// The families that did not link, held until the unit is checked: a family
 /// matched by member name alone may be one no call reaches, and that must not
 /// refuse the unit (FR-302).
 #[derive(Debug, Default)]
-pub struct PendingLinks(Vec<(String, CheckRefusal)>);
+pub struct PendingLinks(Vec<PendingFamily>);
 
 impl PendingLinks {
-    /// The refusals of a unit whose check refused with `refusals`. A failed
-    /// family is reported when a call found no dispatch operation for its
-    /// member, in place of that call's own refusal; a failed family no call
-    /// needed is dropped.
+    /// The refusals of a unit whose check refused with `refusals`. A call
+    /// that found no dispatch operation, and whose receiver's static type is
+    /// one a failed family answers for under that member, is refused with
+    /// that family's refusal, at the call; the family is reported once, at
+    /// its first call. Every other refusal is kept as it is, and a failed
+    /// family no call needed is dropped.
     pub fn report(self, refusals: Vec<CheckRefusal>) -> Vec<CheckRefusal> {
-        let unresolved: BTreeSet<&str> = refusals.iter().filter_map(unresolved_member).collect();
-        let (named, _): (Vec<_>, Vec<_>) = self
-            .0
-            .into_iter()
-            .partition(|(member, _)| unresolved.contains(member.as_str()));
-        if named.is_empty() {
-            return refusals;
+        let mut reported = BTreeSet::new();
+        let mut kept = Vec::with_capacity(refusals.len());
+        for refusal in refusals {
+            let Some((member, receiver)) = unresolved_call(&refusal) else {
+                kept.push(refusal);
+                continue;
+            };
+            let family = self
+                .0
+                .iter()
+                .position(|family| family.member == member && family.receivers.contains(&receiver));
+            match family {
+                None => kept.push(refusal),
+                Some(index) if reported.insert(index) => {
+                    let mut family = self.0[index].refusal.clone();
+                    family.location = refusal.location;
+                    kept.push(family);
+                }
+                Some(_) => {}
+            }
         }
-        let members: BTreeSet<String> = named.iter().map(|(member, _)| member.clone()).collect();
-        let mut reported: Vec<CheckRefusal> =
-            named.into_iter().map(|(_, refusal)| refusal).collect();
-        reported.extend(refusals.into_iter().filter(|refusal| {
-            unresolved_member(refusal).is_none_or(|name| !members.contains(name))
-        }));
-        reported
-    }
-
-    /// Whether every family linked.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        kept
     }
 }
 
-/// The member a refusal says no dispatch operation was found for.
-fn unresolved_member(refusal: &CheckRefusal) -> Option<&str> {
+/// The member and receiver type of a call the check found no dispatch
+/// operation for.
+fn unresolved_call(refusal: &CheckRefusal) -> Option<(&str, EffectiveId)> {
     match &refusal.cause {
-        CheckCause::StateModel(model) => match &model.cause {
-            CheckCause::MissingName(name) => Some(name),
+        CheckCause::StateModel(model) => match (&model.cause, model.receiver) {
+            (CheckCause::MissingName(name), Some(receiver)) => Some((name, receiver)),
             _ => None,
         },
         _ => None,
@@ -149,7 +163,18 @@ impl PackageDeclarations {
             };
             match cause {
                 Ok((declarations, call)) => linked.push((family.alias, declarations, call)),
-                Err(cause) => pending.0.push((family.member, dispatch_link(cause))),
+                Err(cause) => {
+                    let receivers = clauses
+                        .as_ref()
+                        .and_then(|clauses| CallSite::of(&family.root, clauses))
+                        .map(|call| self.receiver_types(view, call.owner))
+                        .unwrap_or_default();
+                    pending.0.push(PendingFamily {
+                        member: family.member,
+                        receivers: receivers.into_iter().collect(),
+                        refusal: dispatch_link(cause),
+                    });
+                }
             }
         }
         let first_new = self.functions.len();
@@ -364,15 +389,7 @@ impl PackageDeclarations {
             .map(|operation| operation.receiver_type)
             .collect();
         if let (Some(call), Some(view)) = (&call, self.selected_views.get(alias)) {
-            let receivers: Vec<EffectiveId> = view
-                .type_identities()
-                .values()
-                .copied()
-                .filter(|candidate| {
-                    self.types.object_type(*candidate).is_some()
-                        && self.types.conforms(*candidate, call.owner)
-                })
-                .collect();
+            let receivers = self.receiver_types(view, call.owner);
             for receiver_type in receivers {
                 if exposed.insert(receiver_type) {
                     self.dispatch_operations.push(DispatchOperation {
@@ -408,6 +425,20 @@ impl PackageDeclarations {
                 .push(DispatchTable::new(entries, table.candidate_count()));
         }
         Ok(())
+    }
+
+    /// Every object type of `view` that conforms to `owner`, the declaring
+    /// type of a family's root, abstract or not: the static types of the
+    /// receivers whose calls name the family.
+    fn receiver_types(&self, view: &EffectiveView, owner: EffectiveId) -> Vec<EffectiveId> {
+        view.type_identities()
+            .values()
+            .copied()
+            .filter(|candidate| {
+                self.types.object_type(*candidate).is_some()
+                    && self.types.conforms(*candidate, owner)
+            })
+            .collect()
     }
 
     /// The span of the first unit `pre` clause that resolved to `key`.
