@@ -314,7 +314,7 @@ fn model_nodes(graph: &CheckedGraph) -> Vec<(NodeTag, &'static str, Value)> {
 }
 
 /// FR-359-AC-3 (records): every record value type is a model-owned
-/// `record_value_type` or `event_type` node, none is a `composite_type`, and
+/// `record_value_type` node, none is a `composite_type`, and
 /// no node carries a `supertypes` member or a conversion.
 #[trace("FR-359-AC-3", "TC-998")]
 #[test]
