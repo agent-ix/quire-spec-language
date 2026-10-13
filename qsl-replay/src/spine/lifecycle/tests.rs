@@ -14,7 +14,7 @@ use qsl_eval::value::{CallFailure, QualifiedName};
 use qsl_foundation::diagnostic::{
     Category, LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
 };
-use qsl_foundation::{Setting, SourceIdentity};
+use qsl_foundation::{Code, Setting, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
@@ -650,9 +650,11 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 }
 
 /// FR-260-AC-4 (FR-056-AC-2): a model document one byte over the caller's
-/// `intake.input_bytes` is a reached limit through `select` naming that
-/// setting, its bound and the document's size, never a missing package.
-#[trace("TC-732", "FR-260-AC-4")]
+/// `intake.input_bytes` refuses `resource_exhausted`/`intake-limit-exceeded`
+/// through `select` (ADR-014 section 1: `IntakeLimits` is a caller budget,
+/// not a stage's own limits type, FR-255 Behavior 1), naming that setting,
+/// its bound and the document's size, never a missing package.
+#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
@@ -666,14 +668,21 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     )
     .expect("the model fixture parses")
     .into_value();
-    let Err(StageFailure::Limit(exceeded)) =
+    let Err(StageFailure::Refused(refusal)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
-        panic!("a document over the intake limit is a reached limit");
+        panic!("a document over the intake limit is a caller-budget refusal");
     };
-    assert_eq!(exceeded.setting(), Setting::IntakeInputBytes);
-    assert_eq!(exceeded.configured_bound(), size - 1);
-    assert_eq!(exceeded.actual(), u128::from(size));
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(refusal.cause(), Some("intake-limit-exceeded"));
+    assert_eq!(
+        refusal.fields(),
+        Some(BTreeMap::from([
+            ("setting", "intake.input_bytes".to_owned()),
+            ("bound", (size - 1).to_string()),
+            ("actual", size.to_string()),
+        ]))
+    );
 }
 
 /// FR-276-AC-2 for `package`: the emitter polls the handle at entry and at
@@ -1048,12 +1057,26 @@ enum Reached {
     Output,
     /// It stopped at a limit.
     Limit(LimitExceeded),
+    /// It refused `resource_exhausted`: a ceiling of the caller's budget
+    /// (ADR-014 section 1), with the cause and the typed fields it carries.
+    Budget {
+        cause: Option<&'static str>,
+        fields: BTreeMap<&'static str, String>,
+    },
 }
 
 fn reached<T>(outcome: Result<Staged<T>, FrontEndFailure>) -> Reached {
     match outcome {
         Ok(_) => Reached::Output,
         Err(StageFailure::Limit(limit)) => Reached::Limit(limit),
+        Err(StageFailure::Refused(refusal)) if refusal.code() == Code::ResourceExhausted => {
+            Reached::Budget {
+                cause: refusal.cause(),
+                fields: refusal
+                    .fields()
+                    .expect("a caller-budget refusal carries fields"),
+            }
+        }
         Err(other) => panic!("expected an output or a limit, got {other:?}"),
     }
 }
@@ -1093,6 +1116,7 @@ fn assert_field_with(
                 assert_eq!(limit.setting(), field, "limit at {middle}");
                 low = middle + 1;
             }
+            Reached::Budget { .. } => panic!("`{field:?}` is a stage limit, not a budget"),
         }
     }
     let counter = low;
@@ -1104,6 +1128,56 @@ fn assert_field_with(
             assert_eq!(limit.configured_bound(), bound(counter - 1), "`{field:?}`");
         }
         Reached::Output => panic!("`{field:?}` at {} admits the input", counter - 1),
+        Reached::Budget { .. } => panic!("`{field:?}` is a stage limit, not a budget"),
+    }
+    assert!(
+        matches!(run(counter), Reached::Output),
+        "`{field:?}` at {counter}"
+    );
+    counter
+}
+
+/// [`assert_field`] for a field of the caller's budget (ADR-014 section 1,
+/// FR-255 Behavior 1): one below the counter the input reaches, `run`
+/// refuses `resource_exhausted` with `cause`, and the typed `setting`,
+/// `bound` and `actual` of `field`; at the counter it succeeds.
+fn assert_budget_field(
+    field: Setting,
+    cause: &str,
+    high: u64,
+    run: impl Fn(u64) -> Reached,
+) -> u64 {
+    assert!(
+        matches!(run(high), Reached::Output),
+        "`{field:?}` at {high} does not admit the input"
+    );
+    let (mut low, mut top) = (0_u64, high);
+    while low < top {
+        let middle = low + (top - low) / 2;
+        match run(middle) {
+            Reached::Output => top = middle,
+            Reached::Budget { fields, .. } => {
+                assert_eq!(fields["setting"], field.name(), "limit at {middle}");
+                low = middle + 1;
+            }
+            Reached::Limit(_) => panic!("`{field:?}` is a budget, not a stage limit"),
+        }
+    }
+    let counter = low;
+    assert!(counter > 0, "`{field:?}` is not reached by the input");
+    match run(counter - 1) {
+        Reached::Budget {
+            cause: seen,
+            fields,
+        } => {
+            assert_eq!(seen, Some(cause), "`{field:?}`");
+            assert_eq!(fields["setting"], field.name());
+            assert_eq!(fields["bound"], (counter - 1).to_string(), "`{field:?}`");
+            let actual: u128 = fields["actual"].parse().expect("a count");
+            assert!(actual > u128::from(counter - 1), "`{field:?}`");
+        }
+        Reached::Output => panic!("`{field:?}` at {} admits the input", counter - 1),
+        Reached::Limit(_) => panic!("`{field:?}` is a budget, not a stage limit"),
     }
     assert!(
         matches!(run(counter), Reached::Output),
@@ -1148,7 +1222,9 @@ fn parse_names_the_source_limit_field_it_reached() {
     let scale =
         match run(|limits, value| limits.work_units = usize::try_from(value).expect("small"))(1) {
             Reached::Limit(limit) => limit.configured_bound(),
-            Reached::Output => panic!("one step per token admits the fixture"),
+            Reached::Output | Reached::Budget { .. } => {
+                panic!("one step per token refuses the fixture at a stage limit")
+            }
         };
     assert_field_with(
         Setting::S1WorkUnits,
@@ -1163,13 +1239,17 @@ fn parse_names_the_source_limit_field_it_reached() {
     limits.source_bytes = bytes.len() - 1;
     match reached(parse(&request(bytes), limits, &Cancel::new())) {
         Reached::Limit(limit) => assert_eq!(limit.actual(), length),
-        Reached::Output => panic!("one byte short admits the fixture"),
+        Reached::Output | Reached::Budget { .. } => {
+            panic!("one byte short refuses the fixture at a stage limit")
+        }
     }
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `select`: each field of the model
-/// normalization limits that a charge reaches.
-#[trace("TC-758", "FR-277-AC-1")]
+/// normalization limits that a charge reaches. `ModelNormalizationLimitsV1`
+/// is a caller budget, so `select` refuses `resource_exhausted` naming the
+/// field (ADR-014 section 1, FR-255 Behavior 1), not `LimitExceeded`.
+#[trace("TC-758", "FR-277-AC-1", "FR-255-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
@@ -1189,39 +1269,39 @@ fn select_names_the_model_limit_field_it_reached() {
             reached(select(parsed, packages, limits, &Cancel::new()))
         }
     };
-    assert_field(
+    assert_budget_field(
         Setting::ModelDeclarationRecords,
-        FoundationKind::NodeCount,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.declaration_records = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelDerivationFacts,
-        FoundationKind::NodeCount,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.derivation_facts = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelEffectiveDeclarations,
-        FoundationKind::NodeCount,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.effective_declarations = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelAncestorSteps,
-        FoundationKind::EdgeCount,
+        "ancestor-steps",
         10_000,
         run(|limits, value| limits.ancestor_steps = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelHashedBytes,
-        FoundationKind::InputBytes,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.hashed_bytes = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelWorkUnits,
-        FoundationKind::WorkBudget,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.work_units = value),
     );

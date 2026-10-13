@@ -1981,8 +1981,8 @@ impl Disposition {
                 while let super::CompileRefusal::Dependency { refusal, .. } = source {
                     source = refusal.as_ref();
                 }
+                record.fields = source.fields();
                 if let super::CompileRefusal::Limit(limit) = source {
-                    record.fields = limit.catalog_fields();
                     record.locus = limit.locus().map(crate::outcome::OutcomeLocus::from);
                 }
                 result.refusal = Some(record);

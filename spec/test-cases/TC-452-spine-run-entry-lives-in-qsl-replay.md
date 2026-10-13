@@ -160,7 +160,7 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     (`"0202…02"` and `"0101…01"`, 64 characters each); exit 20.
   - `TypeMismatch`: `code` `ill_typed`, `cause` `type-mismatch`, no `fields`
     member; exit 20. `AncestorSteps`: `code` `resource_exhausted`, `cause`
-    `ancestor-steps`, no `fields` member; exit 22.
+    `ancestor-steps`, `fields` exactly `setting`, `bound` and `actual`; exit 22.
   - `undefined` with `reason` `precondition-false` and `absent-key`, exit 10.
   - `CallFailure::Fault`: a `runtime_invariant` command error at stage
     `call` with `details` `{"stage": "S6a", "invariant":

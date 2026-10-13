@@ -2632,10 +2632,13 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         ),
         "{limited:?}"
     );
+    // The ceiling is `ModelNormalizationLimitsV1`, the caller's budget
+    // (ADR-014 section 1, FR-255 Behavior 1).
     assert_eq!(
         limited.cause.code(),
-        qsl_foundation::Code::StageLimitExceeded
+        qsl_foundation::Code::ResourceExhausted
     );
+    assert_eq!(limited.cause.cause(), Some("insufficient-next-charge"));
     assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
 
     let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();

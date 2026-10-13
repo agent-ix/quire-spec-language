@@ -1172,8 +1172,20 @@ impl ModelRefusalCause {
                 ("required", crate::model::key::hex(expected.as_bytes())),
                 ("supplied", crate::model::key::hex(actual)),
             ])),
-            Self::FamilySteps { .. }
-            | Self::UnclosedMethodSet { .. }
+            // A caller-budget ceiling (ADR-014 section 1) carries the
+            // `setting`, `bound` and `actual` of FR-255 and no limit `kind`,
+            // which only a stage limit has.
+            Self::AncestorSteps { .. }
+            | Self::FamilySteps { .. }
+            | Self::IntakeLimitExceeded { .. } => {
+                let limit = self.limit_exceeded()?;
+                Some(std::collections::BTreeMap::from([
+                    ("setting", limit.setting().name().to_owned()),
+                    ("bound", limit.configured_bound().to_string()),
+                    ("actual", limit.actual().to_string()),
+                ]))
+            }
+            Self::UnclosedMethodSet { .. }
             | Self::UnknownOriginal { .. }
             | Self::UnknownCandidate { .. }
             | Self::NoApplicable { .. }
@@ -1188,7 +1200,6 @@ impl ModelRefusalCause {
             | Self::UnknownMember { .. }
             | Self::DerivationConflict { .. }
             | Self::UnsuppliedProducerRecord { .. }
-            | Self::AncestorSteps { .. }
             | Self::VarianceResult { .. }
             | Self::MultiplicityNarrowing { .. }
             | Self::SubsettingType { .. }
@@ -1231,7 +1242,6 @@ impl ModelRefusalCause {
             | Self::MissingSelection { .. }
             | Self::ContentMismatch { .. }
             | Self::ByteDigestMismatch { .. }
-            | Self::IntakeLimitExceeded { .. }
             | Self::PopulationIdentityLimitExceeded { .. }
             | Self::AllocationFailed { .. }
             | Self::NoncanonicalNumber { .. }
@@ -2078,6 +2088,45 @@ pub(crate) mod tests {
                 "{cause:?}"
             );
         }
+    }
+
+    /// FR-255 Behavior 1 (QSL-745 (b)): a caller-budget model refusal carries
+    /// the `setting`, `bound` and `actual` of the limit it reached, and no
+    /// limit `kind`, which only a stage limit has.
+    #[trace("FR-255-AC-1")]
+    #[test]
+    fn a_reached_model_ceiling_carries_setting_bound_and_actual() {
+        use super::{DeclarationKey, IntakeLimit};
+        let key = DeclarationKey::fixture("model.A");
+        let expected = |setting: &str, bound: &str, actual: &str| {
+            Some(std::collections::BTreeMap::from([
+                ("setting", setting.to_owned()),
+                ("bound", bound.to_owned()),
+                ("actual", actual.to_owned()),
+            ]))
+        };
+        assert_eq!(
+            ModelRefusalCause::ancestor_steps(
+                key.clone(),
+                7,
+                qsl_foundation::Setting::ModelAncestorSteps
+            )
+            .catalog_fields(),
+            expected("model.ancestor_steps", "7", "8")
+        );
+        assert_eq!(
+            ModelRefusalCause::family_steps(key, 9).catalog_fields(),
+            expected("model.family_steps", "9", "10")
+        );
+        assert_eq!(
+            ModelRefusalCause::IntakeLimitExceeded {
+                limit: IntakeLimit::InputBytes,
+                bound: 4096,
+                actual: 4097,
+            }
+            .catalog_fields(),
+            expected("intake.input_bytes", "4096", "4097")
+        );
     }
 
     #[test]

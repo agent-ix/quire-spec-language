@@ -21,7 +21,7 @@ use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, Parsed
 use crate::model::key::DeclarationKey;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_with_cancel, EffectiveView, NormalizeOutcome, Refusals};
-use crate::model::refusal::{MemberPath, MemberRoot};
+use crate::model::refusal::{MemberPath, MemberRoot, ModelRefusalCause};
 use qsl_forms::Expression;
 use quire_semantic_value::location::OperationClauseKind;
 
@@ -115,13 +115,60 @@ pub enum UnitIntakeCause {
 
 impl UnitIntakeCause {
     /// This cause's catalog code: the first model refusal's own, and
-    /// `stage_limit_exceeded` for a normalization ceiling.
+    /// `resource_exhausted` for a normalization ceiling, which is the
+    /// caller's budget wherever it is read (ADR-014 section 1).
     pub fn code(&self) -> Code {
         match self {
             Self::ArtifactDigest => Code::InvalidModelBinding,
             Self::Refused(refusals) => refusals[0].code,
-            Self::Limit(_) => Code::StageLimitExceeded,
+            Self::Limit(_) => Code::ResourceExhausted,
             Self::Invariant => Code::RuntimeInvariant,
+        }
+    }
+
+    /// The catalog cause under [`Self::code`], where the cause names one: the
+    /// first model refusal's own, and `insufficient-next-charge` for a denied
+    /// normalization charge.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::Refused(refusals) => Some(refusals[0].cause.catalog_code().cause()),
+            Self::Limit(_) => Some("insufficient-next-charge"),
+            Self::ArtifactDigest | Self::Invariant => None,
+        }
+    }
+
+    /// The catalog fields of a reached caller-budget ceiling (FR-255
+    /// Behavior 1): the `setting`, `bound` and `actual`, and for a denied
+    /// charge the retained `stage`, `accounting_contract`, `consumed`,
+    /// `next_charge` and `charge_point`. `None` for a cause that is no
+    /// ceiling.
+    pub fn limit_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        match self {
+            Self::Refused(refusals) => match refusals[0].cause {
+                ModelRefusalCause::AncestorSteps { .. }
+                | ModelRefusalCause::FamilySteps { .. }
+                | ModelRefusalCause::IntakeLimitExceeded { .. } => {
+                    refusals[0].cause.catalog_fields()
+                }
+                _ => None,
+            },
+            Self::Limit(incomplete) => {
+                let limit = incomplete.limit_exceeded();
+                Some(std::collections::BTreeMap::from([
+                    ("setting", limit.setting().name().to_owned()),
+                    ("bound", limit.configured_bound().to_string()),
+                    ("actual", limit.actual().to_string()),
+                    ("stage", "model-normalization".to_owned()),
+                    (
+                        "accounting_contract",
+                        "ModelNormalizationLimitsV1".to_owned(),
+                    ),
+                    ("consumed", incomplete.consumed.to_string()),
+                    ("next_charge", incomplete.next_charge.to_string()),
+                    ("charge_point", incomplete.charge_point.as_str().to_owned()),
+                ]))
+            }
+            Self::ArtifactDigest | Self::Invariant => None,
         }
     }
 }

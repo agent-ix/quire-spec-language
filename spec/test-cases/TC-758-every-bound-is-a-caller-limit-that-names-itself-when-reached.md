@@ -28,7 +28,7 @@ Tag the tests `#[trace("TC-758", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: each run succeeds.
-- Step 2: each run returns `LimitExceeded` whose limit kind, configured value and limits-field name are that field's; `execute` returns the outcome `Incomplete` naming the counter; `analyze` settles each open item `incomplete` with that limit as its cause.
+- Step 2: each run returns `LimitExceeded` whose limit kind, configured value and limits-field name are that field's, except `format.output_bytes`, which returns `resource_exhausted`, and each model-normalization field of `select`, which refuses `resource_exhausted` with `ancestor-steps`, `family-steps` or `insufficient-next-charge` and the fields `setting`, `bound` and `actual` of that field; `execute` returns the outcome `Incomplete` naming the counter; `analyze` settles each open item `incomplete` with that limit as its cause.
 - Step 3: each run succeeds.
 - Step 4: `check` succeeds, and the thread does not overflow its stack.
 - Step 5: `check` returns `LimitExceeded` naming `s3.nodes`; no outcome names a depth.

@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
-use qsl_foundation::diagnostic::{LimitExceeded, Locus};
+use qsl_foundation::diagnostic::{CatalogCoded, LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -233,13 +233,26 @@ impl CompileRefusal {
             Self::Dependency { refusal, .. } => refusal.cause(),
             Self::Link(refusal) => refusal.cause(),
             Self::Limit(limit) => Some(limit.kind().catalog_cause()),
+            Self::Intake { refusal, .. } => refusal.cause.cause(),
             Self::Source(_)
             | Self::Forms { .. }
-            | Self::Intake { .. }
             | Self::OperationClause { .. }
             | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
+        }
+    }
+
+    /// The typed fields of a reached limit this refusal reports: a stage
+    /// limit's `kind`, `bound`, `actual` and `setting`, or a caller-budget
+    /// ceiling's `setting`, `bound` and `actual` (FR-255 Behavior 1). `None`
+    /// for a refusal that is no limit.
+    pub fn fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        match self {
+            Self::Limit(limit) => limit.catalog_fields(),
+            Self::Intake { refusal, .. } => refusal.cause.limit_fields(),
+            Self::Dependency { refusal, .. } => refusal.fields(),
+            _ => None,
         }
     }
 

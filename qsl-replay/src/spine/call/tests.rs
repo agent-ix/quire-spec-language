@@ -1832,10 +1832,46 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     )))
     .unwrap()
     {
-        CallOutcome::Refused(CallRefusal::Family { code, .. }) => {
+        // QSL-745 (b): a reached caller-budget ceiling carries the setting,
+        // bound and actual of FR-255 Behavior 1, so it is a record.
+        CallOutcome::Refused(CallRefusal::Record { code, fields, .. }) => {
             assert_eq!(
                 code,
                 CatalogCode::new("resource_exhausted", "ancestor-steps")
+            );
+            assert_eq!(
+                fields,
+                BTreeMap::from([
+                    ("setting", "model.ancestor_steps".to_owned()),
+                    ("bound", "5".to_owned()),
+                    ("actual", "6".to_owned()),
+                ])
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let family_steps = ModelCause(ModelRefusalCause::family_steps(
+        DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "n".to_owned(),
+        },
+        3,
+    ));
+    match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(
+        Box::new(family_steps),
+    )))
+    .unwrap()
+    {
+        CallOutcome::Refused(CallRefusal::Record { code, fields, .. }) => {
+            assert_eq!(code, CatalogCode::new("resource_exhausted", "family-steps"));
+            assert_eq!(
+                fields,
+                BTreeMap::from([
+                    ("setting", "model.family_steps".to_owned()),
+                    ("bound", "3".to_owned()),
+                    ("actual", "4".to_owned()),
+                ])
             );
         }
         other => panic!("{other:?}"),
