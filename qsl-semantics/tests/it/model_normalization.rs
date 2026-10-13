@@ -122,6 +122,7 @@ fn operation_member_redefining(
             modifies: Vec::new(),
             creates: Vec::new(),
             deletes: Vec::new(),
+            ..Default::default()
         },
         requires: Vec::new(),
         ensures: Vec::new(),
@@ -5518,4 +5519,70 @@ fn subset_and_redefine_facts_of_one_member_are_ordered_together() {
         member.preimage.derivation[2].inputs,
         keys(&["model.B.y", "model.A.z"])
     );
+}
+
+/// An operation member on `ix://test/orders/A` whose frame is `effect`.
+fn operation_with_effect(effect: OperationEffect) -> DomainPackageRecord {
+    let DomainPackageRecord::OperationMember(mut record) =
+        operation_member("ix://test/orders/A/bump", "ix://test/orders/A")
+    else {
+        unreachable!("operation_member builds an operation member");
+    };
+    record.effect = effect;
+    DomainPackageRecord::OperationMember(record)
+}
+
+/// QSpec FR-013-AC-8: an every-object entry and a receiver-scoped entry for
+/// one field refuse the operation's frame `invalid_model_binding`/
+/// `conflicting-binding`, naming the field; either entry alone normalizes.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn an_every_object_and_a_receiver_scoped_entry_for_one_field_refuse_conflicting_binding() {
+    let field = DeclarationKey::fixture("ix://test/orders/A/x");
+    let normalize_with = |effect: OperationEffect| {
+        let mut records = fixture_f1().records;
+        records.push(operation_with_effect(effect));
+        normalize(
+            &DomainPackage::new(DomainPackageRef::fixture("n01"), records),
+            ModelNormalizationLimits::UNLIMITED,
+        )
+    };
+
+    let NormalizeOutcome::Refused(refusals) = normalize_with(OperationEffect {
+        modifies: vec![field.clone()],
+        receiver_modifies: vec![field.clone()],
+        ..Default::default()
+    }) else {
+        panic!("both scopes for one field must refuse");
+    };
+    assert_eq!(refusals.len(), 1);
+    let refusal = refusals.into_first();
+    assert_eq!(
+        refusal.code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    assert_eq!(refusal.cause.as_str(), "conflicting-binding");
+    assert_eq!(
+        refusal.cause,
+        ModelRefusalCause::ConflictingBinding {
+            key: field.clone(),
+            member: None,
+        }
+    );
+
+    for effect in [
+        OperationEffect {
+            modifies: vec![field.clone()],
+            ..Default::default()
+        },
+        OperationEffect {
+            receiver_modifies: vec![field.clone()],
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            matches!(normalize_with(effect), NormalizeOutcome::Completed(_)),
+            "one scope alone normalizes"
+        );
+    }
 }

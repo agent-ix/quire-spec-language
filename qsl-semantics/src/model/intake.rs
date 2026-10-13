@@ -4187,6 +4187,7 @@ fn resolve_frame(
         modifies,
         creates,
         deletes,
+        ..Default::default()
     })
 }
 
@@ -5871,6 +5872,7 @@ mod tests {
                     node: "ix://acme/orders/OtherType".to_owned(),
                 }],
                 deletes: Vec::new(),
+                ..Default::default()
             }
         );
     }

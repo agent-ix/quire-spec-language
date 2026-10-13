@@ -288,6 +288,7 @@ fn l07_scenario() -> Scenario {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     };
     let population = p1_population_key();
     let context = InvocationContext {

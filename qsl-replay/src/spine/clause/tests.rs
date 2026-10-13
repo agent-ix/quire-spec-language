@@ -5141,6 +5141,7 @@ fn s4_state_package_reads_back_through_i2() {
 mod call_site;
 mod frame;
 mod frame_replay;
+mod invocation_parameters;
 mod pre_call_invocation;
 mod state_clause_replay;
 mod witness;
