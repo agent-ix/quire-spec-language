@@ -16,6 +16,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::key::{
     DeclarationKey, EffectiveId, Fact, RuleRef, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    RULE_SUBSET,
 };
 use qsl_semantics::model::normalize::{
     normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
@@ -2382,6 +2383,9 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
         NormalizeRecord,
         NormalizeRecord,
         NormalizeRecord,
+        // Four phase-2 qualify facts, then the phase-4 subset fact of `B.y`
+        // (`model-complete.md` phase 4 row `normalize.subset/v1`).
+        NormalizeFact,
         NormalizeFact,
         NormalizeFact,
         NormalizeFact,
@@ -5253,4 +5257,193 @@ fn every_fixture_normalizes_identically_at_the_default_limits() {
             }
         }
     }
+}
+
+fn rules_of(entry: &qsl_semantics::model::normalize::ViewEntry) -> Vec<&'static str> {
+    entry
+        .preimage
+        .derivation
+        .iter()
+        .map(|fact| fact.rule.identity)
+        .collect()
+}
+
+fn keys(nodes: &[&str]) -> Vec<DeclarationKey> {
+    nodes
+        .iter()
+        .map(|node| DeclarationKey::fixture(*node))
+        .collect()
+}
+
+fn type_owner(view: &qsl_semantics::model::normalize::EffectiveView, node: &str) -> EffectiveId {
+    *view
+        .type_identities()
+        .get(&DeclarationKey::fixture(node))
+        .unwrap_or_else(|| panic!("{node} has an effective type identity"))
+}
+
+/// `B` specializes `A`; `B.y` subsets `A.x`.
+fn fixture_subset_direct() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subset-direct"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining("model.B.y", "model.B", "model.A", None, vec!["model.A.x"]),
+        ],
+    )
+}
+
+/// A subsetting field yields one phase-4 `normalize.subset` fact on the
+/// effective member, charged as one `normalize.fact` after the phase-3
+/// facts and with no redefinition-check or conflict-check.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn a_subsetting_field_derives_one_phase_4_subset_fact() {
+    let domain_package = fixture_subset_direct();
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the subsetting fixture completes");
+    };
+    let admitted = meter.admitted_charges();
+    let count = |point: ChargePoint| admitted.iter().filter(|p| **p == point).count();
+    assert_eq!(
+        count(ChargePoint::NormalizeFact),
+        7,
+        "four qualify, two inherit and one subset fact"
+    );
+    assert_eq!(count(ChargePoint::NormalizeRedefinitionCheck), 0);
+    assert_eq!(count(ChargePoint::NormalizeConflictCheck), 0);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 24);
+
+    let b = type_owner(&view, "model.B");
+    let subsetting = find_member(&view, &b, "model.B.y");
+    assert_eq!(
+        rules_of(subsetting),
+        vec![RULE_QUALIFY.identity, RULE_SUBSET.identity]
+    );
+    assert_eq!(
+        subsetting.preimage.derivation[1].inputs,
+        keys(&["model.B.y", "model.A.x"])
+    );
+    assert!(subsetting.visible, "subsetting derives no replacement");
+    let inherited = find_member(&view, &b, "model.A.x");
+    assert_eq!(rules_of(inherited), vec![RULE_INHERIT.identity]);
+    assert!(inherited.visible);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.derivation_facts = 6;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+            assert_eq!(incomplete.next_charge, 7);
+        }
+        other => panic!("expected the subset fact to be denied, got {other:?}"),
+    }
+}
+
+/// A subset fact exists on `(T, s)` for every `T` the subsetting field's
+/// owner reaches, with the ancestor path in front of the inputs.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn an_inherited_subsetting_field_derives_a_subset_fact_at_each_descendant() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subset-inherited"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining("model.B.y", "model.B", "model.A", None, vec!["model.A.x"]),
+        ],
+    );
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the fixture completes");
+    };
+    let fact_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|p| **p == ChargePoint::NormalizeFact)
+        .count();
+    assert_eq!(
+        fact_charges, 13,
+        "five qualify, three type inherit, three member inherit and two subset facts"
+    );
+    let at_b = find_member(&view, &type_owner(&view, "model.B"), "model.B.y");
+    assert_eq!(
+        rules_of(at_b),
+        vec![RULE_QUALIFY.identity, RULE_SUBSET.identity]
+    );
+    assert_eq!(
+        at_b.preimage.derivation[1].inputs,
+        keys(&["model.B.y", "model.A.x"])
+    );
+    let at_c = find_member(&view, &type_owner(&view, "model.C"), "model.B.y");
+    assert_eq!(
+        rules_of(at_c),
+        vec![RULE_INHERIT.identity, RULE_SUBSET.identity]
+    );
+    assert_eq!(
+        at_c.preimage.derivation[1].inputs,
+        keys(&["model.B", "model.B.y", "model.A.x"])
+    );
+}
+
+/// Subset and redefine facts of one effective member form one phase-4
+/// sequence in input order.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn subset_and_redefine_facts_of_one_member_are_ordered_together() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subset-and-redefine"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.A.z", "model.A", "model.A"),
+            field_member_redefining(
+                "model.B.y",
+                "model.B",
+                "model.A",
+                Some("model.A.z"),
+                vec!["model.A.x"],
+            ),
+        ],
+    );
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the fixture completes");
+    };
+    let fact_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|p| **p == ChargePoint::NormalizeFact)
+        .count();
+    assert_eq!(
+        fact_charges, 11,
+        "five qualify, three inherit, two redefine and one subset fact"
+    );
+    let member = find_member(&view, &type_owner(&view, "model.B"), "model.B.y");
+    assert_eq!(
+        rules_of(member),
+        vec![
+            RULE_QUALIFY.identity,
+            RULE_SUBSET.identity,
+            RULE_REDEFINE.identity
+        ]
+    );
+    assert_eq!(
+        member.preimage.derivation[1].inputs,
+        keys(&["model.B.y", "model.A.x"])
+    );
+    assert_eq!(
+        member.preimage.derivation[2].inputs,
+        keys(&["model.B.y", "model.A.z"])
+    );
 }
