@@ -115,6 +115,11 @@ Snapshot, format `quire.state.snapshot/v1`:
   when `observation` is `current`: the named initialization or handler
   observation the snapshot was taken at (`kind` `initialization` or
   `handler`), as QSpec's state contract requires of an invariant.
+- `invocation` is optional on a `pre` or `post` snapshot: the four identity
+  labels (`authority`, `identity`, `revision_namespace`, `revision`) of the
+  invocation document the snapshot observes. It carries no digest, because
+  the invocation's digest covers the snapshot's own. A snapshot without it
+  is unbound to any invocation.
 - `population` and `type` are declaration identities of the selected
   package; `fields` is keyed by member name.
 - A value is exactly one of `{"boolean": true|false}`,
@@ -265,7 +270,13 @@ required; check 10 settles it.
    `invalid_model_binding`/`wrong-model-selection`.
 5. Operation check. If an invocation's `context` or `operation` differs from
    the clause's, then admission SHALL refuse `wrong_snapshot`/
-   `wrong-invocation`.
+   `wrong-invocation`. If a `pre` or `post` snapshot of the invocation
+   names an `invocation` whose four labels differ from the selected
+   invocation's own identity, then admission SHALL refuse `wrong_snapshot`/
+   `wrong-invocation`, naming that snapshot, the selected invocation's
+   identity and the one the snapshot names, `pre` before `post`. A snapshot
+   that names none is not checked, and a `PreCall` selection has no
+   invocation to compare.
 6. **Populations and values**, per object of the selected documents in walk
    order:
    1. If the population names no population of the package, or the object's
