@@ -17,7 +17,7 @@
 //! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
 //! — FR-153 territory, not yet implemented anywhere in this crate (see
 //! `crate::model::conformance`'s own module doc).
-//! Operation members enter [`EffectiveView`] with qualify and inherit facts,
+//! Operation members enter [`EffectiveView`] with qualify (direct) or inherit (inherited) facts,
 //! then receive both redefine facts for each reachable redefinition. The
 //! `m + r` redefinition check counts field and operation members alike.
 //! Phase 2 also qualifies relationship and systems members at their resolved
@@ -2800,8 +2800,8 @@ fn build(
 
     // Phase 3, member level: each type's directly declared members (their
     // qualify facts were charged in phase 2) and the members it inherits
-    // along its ancestor paths. An inherited effective member starts with
-    // its own qualify fact, then records one inherit fact per ancestor path.
+    // along its ancestor paths. An inherited effective member records one
+    // inherit fact per ancestor path and no qualify fact (TC-195 N01).
     let mut member_preimages: HashMap<
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
@@ -2840,19 +2840,12 @@ fn build(
                 let entry = match member_preimages.entry(key) {
                     std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                     std::collections::hash_map::Entry::Vacant(entry) => {
-                        for _ in group {
-                            charges.fact()?;
-                        }
+                        // TC-195 N01: an inherited member derives the inherit
+                        // fact only; no qualify fact precedes it.
                         entry.insert(EffectiveDeclarationPreimage {
                             owner_effective_type: Some(owner_effective_id),
                             original: member.clone(),
-                            derivation: (0..group.len())
-                                .map(|ordinal| Fact {
-                                    ordinal,
-                                    rule: RULE_QUALIFY,
-                                    inputs: vec![member.clone()].into(),
-                                })
-                                .collect(),
+                            derivation: Vec::new(),
                         })
                     }
                 };
@@ -4866,10 +4859,10 @@ mod tests {
         assert_eq!(small.limit_kind, LimitKind::DerivationFacts);
         assert_eq!(large.limit_kind, LimitKind::DerivationFacts);
         // Three remaining fact charges admit B's type inheritance fact and
-        // the first inherited member's qualify+inherit pair. The next
-        // member's qualify charge is denied before its inheritance work, so
-        // only the ancestor walk and first member are counted at either size.
-        assert_eq!((small_steps, large_steps), (2, 2));
+        // the first two inherited members' inherit facts. The third member's
+        // inherit charge is denied before its inheritance work, so only the
+        // ancestor walk and two members are counted at either size.
+        assert_eq!((small_steps, large_steps), (3, 3));
 
         let lattice = ModelNormalizationLimits {
             derivation_facts: 200,
