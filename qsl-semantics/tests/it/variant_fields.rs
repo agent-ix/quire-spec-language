@@ -1058,7 +1058,7 @@ fn the_emitter_refuses_a_variant_typed_parameter_at_its_type_node() {
 
 use qsl_semantics::model::observation::{
     admit_observations, AdmittedObservations, ClauseFacts, ClauseSelection, ClauseSelectionInput,
-    OperationFacts, Provisions, SelectedObject,
+    OperationFacts, Provisions,
 };
 
 fn identity_json(reference: &DocumentRef) -> serde_json::Value {
