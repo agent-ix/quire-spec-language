@@ -8358,9 +8358,9 @@ mod tests {
                 detail: format!("package document exceeds intake's input_bytes limit of {bound}"),
             }
         );
-        let outcome = refusal.cause.limit_exceeded().expect("a limit outcome");
+        let outcome = refusal.cause.denial().expect("a caller-budget denial");
         assert_eq!(outcome.setting(), qsl_foundation::Setting::IntakeInputBytes);
-        assert_eq!(outcome.configured_bound(), bound);
+        assert_eq!(outcome.limit(), bound);
         assert_eq!(outcome.actual(), u128::from(bound) + 1);
         // Raised through the builder: judged on its content, not the size.
         let raised = at_bound.with_input_bytes(bound + 1);

@@ -654,20 +654,21 @@ mod tests {
 
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a record refusal renders every
     /// FR-096 member and exits by its catalog code's mapping -- `resource_exhausted`
-    /// (`ancestor-steps`'s own code) is incomplete, so it exits 22, not the
+    /// (`insufficient-next-charge`'s own code) is incomplete, so it exits 22, not the
     /// kernel-refusal row's hardcoded 20.
     #[test]
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_record_renders_and_exits_by_its_code() {
         use qsl_replay::spine::CallRefusal;
         let fields = std::collections::BTreeMap::from([
-            ("from", "test/orders".to_owned()),
+            ("setting", "model.ancestor_steps".to_owned()),
             ("limit", "5".to_owned()),
+            ("actual", "6".to_owned()),
         ]);
         let result = render(CallOutcome::Refused(CallRefusal::Record {
             code: qsl_foundation::diagnostic::CatalogCode::new(
                 "resource_exhausted",
-                "ancestor-steps",
+                "insufficient-next-charge",
             ),
             fields: fields.clone(),
             locus: None,
@@ -679,7 +680,7 @@ mod tests {
             serde_json::json!({
                 "kind": "refused",
                 "code": "resource_exhausted",
-                "cause": "ancestor-steps",
+                "cause": "insufficient-next-charge",
                 "fields": fields,
             })
         );

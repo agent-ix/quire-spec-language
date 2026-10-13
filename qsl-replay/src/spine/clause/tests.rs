@@ -1229,6 +1229,62 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     assert_eq!(report.package_id, None);
 }
 
+/// FR-255-AC-1 (QSL-745): a model-normalization ceiling and the intake byte
+/// limit reached while a clause run compiles are written to the native run
+/// result as `resource_exhausted` refusals with FR-255 Behavior 1's typed
+/// fields: the retained charge for the denied charge, and `kind`, `bound`,
+/// `actual`, `setting` for intake's size ceiling.
+#[trace("TC-720", "FR-255-AC-1")]
+#[test]
+fn run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling() {
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "snap".to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let selection = || ClauseRunSelection::Function {
+        name: "seven".to_owned(),
+        arguments: Vec::new(),
+        snapshot: label.clone(),
+    };
+    let refusal_of = |request: ClauseRunRequest| {
+        let report = run_clause(request).unwrap();
+        let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["disposition"]["stage"], "compile");
+        value["disposition"]["refusal"].clone()
+    };
+
+    let mut starved = request(selection());
+    starved.limits.model.work_units = 1;
+    let refusal = refusal_of(starved);
+    assert_eq!(refusal["code"], "resource_exhausted");
+    assert_eq!(refusal["cause"], "insufficient-next-charge");
+    let fields = &refusal["fields"];
+    assert_eq!(fields["setting"], "model.work_units");
+    assert_eq!(fields["limit"], "1");
+    assert_eq!(fields["stage"], "model-normalization");
+    assert_eq!(fields["accounting_contract"], "ModelNormalizationLimitsV1");
+    assert_eq!(fields["limit_kind"], "work_units");
+    for name in ["actual", "consumed", "next_charge", "charge_point"] {
+        assert!(fields.get(name).is_some(), "`{name}` is retained");
+    }
+
+    let mut oversize = request(selection());
+    oversize.limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(1);
+    let refusal = refusal_of(oversize);
+    assert_eq!(refusal["code"], "resource_exhausted");
+    assert_eq!(refusal["cause"], "intake-limit-exceeded");
+    assert_eq!(refusal["fields"]["kind"], "input-bytes-exceeded");
+    assert_eq!(refusal["fields"]["bound"], "1");
+    assert_eq!(refusal["fields"]["setting"], "intake.input_bytes");
+    assert!(refusal["fields"]["actual"]
+        .as_str()
+        .is_some_and(|actual| actual != "1"));
+}
+
 // ---------------------------------------------------------------------------
 // FR-106 check 1.6: unknown top-level members report document order, not
 // alphabetical order.

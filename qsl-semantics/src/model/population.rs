@@ -346,17 +346,29 @@ pub struct AdmissionIncomplete {
 }
 
 impl AdmissionIncomplete {
-    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
-    /// counter's setting, its bound and the total the denied charge would
-    /// have reached.
-    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
-        qsl_foundation::diagnostic::LimitExceeded::new(
+    /// This stop as the caller-budget denial FR-255 Behavior 1 describes
+    /// (`resource_exhausted`/`insufficient-next-charge`).
+    pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
+        qsl_foundation::diagnostic::BudgetDenial::charge(
             self.limit_kind.setting(),
             self.limit,
-            u128::from(self.consumed) + u128::from(self.next_charge),
+            qsl_foundation::diagnostic::DeniedCharge {
+                owner: ADMISSION_OWNER,
+                limit_kind: self.limit_kind.as_str(),
+                charge_point: self.charge_point.as_str(),
+                consumed: self.consumed,
+                next_charge: self.next_charge,
+            },
         )
     }
 }
+
+/// The owner of a `PopulationAdmissionLimitsV1` charge.
+pub const ADMISSION_OWNER: qsl_foundation::diagnostic::BudgetOwner =
+    qsl_foundation::diagnostic::BudgetOwner {
+        stage: "population-admission",
+        accounting_contract: "PopulationAdmissionLimitsV1",
+    };
 
 struct AdmissionCharge {
     point: AdmissionChargePoint,
@@ -985,7 +997,20 @@ enum PopulationIdentityFailure {
     InternalFault {
         fault: InternalFault,
         upstream_error: String,
+        encoder_limit: Option<EncoderLimit>,
     },
+}
+
+/// The canonical encoder's limit record, retained when the derived identity
+/// byte bound is reached (a broken invariant, not a limit).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EncoderLimit {
+    /// The encoder limit that was reached.
+    pub kind: quire_canonical::LimitKind,
+    /// The derived byte bound.
+    pub bound: u64,
+    /// The bytes the encoder required.
+    pub required: u64,
 }
 
 fn population_identity_encoding_failure(
@@ -993,12 +1018,18 @@ fn population_identity_encoding_failure(
 ) -> PopulationIdentityFailure {
     let detail = format!("bounded population identity encoding failed: {error}");
     let cause = match error {
+        // The byte bound is derived from the members (`population_id_byte_bound`),
+        // not configured, so a correct preimage never reaches it.
         quire_canonical::Error::Limit(limit) => {
-            ModelRefusalCause::PopulationIdentityLimitExceeded {
-                kind: limit.kind,
-                bound: limit.bound,
-                required: limit.required,
-            }
+            return PopulationIdentityFailure::InternalFault {
+                fault: InternalFault::new("population.identity", "identity-byte-bound-reached"),
+                upstream_error: error.to_string(),
+                encoder_limit: Some(EncoderLimit {
+                    kind: limit.kind,
+                    bound: limit.bound,
+                    required: limit.required,
+                }),
+            };
         }
         quire_canonical::Error::Allocation { requested } => {
             ModelRefusalCause::AllocationFailed { requested }
@@ -1007,6 +1038,7 @@ fn population_identity_encoding_failure(
             return PopulationIdentityFailure::InternalFault {
                 fault: InternalFault::new("population.identity", "canonical-encoding-failed"),
                 upstream_error: other.to_string(),
+                encoder_limit: None,
             };
         }
     };
@@ -1023,9 +1055,11 @@ fn population_identity_admission_failure(failure: PopulationIdentityFailure) -> 
         PopulationIdentityFailure::InternalFault {
             fault,
             upstream_error,
+            encoder_limit,
         } => AdmissionOutcome::InternalFault {
             fault,
             upstream_error,
+            encoder_limit,
         },
     }
 }
@@ -1129,6 +1163,9 @@ pub enum AdmissionOutcome {
         fault: InternalFault,
         /// The canonical encoder's diagnostic text for investigation.
         upstream_error: String,
+        /// The encoder's limit record, when the fault is the derived
+        /// identity byte bound being reached.
+        encoder_limit: Option<EncoderLimit>,
     },
     /// Object or subtype closure is not established. Not a refusal
     /// (`Code::IncompletePopulation`); no charge and no binding.
@@ -2503,13 +2540,16 @@ mod tests {
         assert_eq!(observations.digest_calls, 1);
     }
 
-    /// FND-008: a real digest byte-limit refusal retains the canonical
-    /// encoder's kind, bound and required-byte count.
+    /// FND-008 and QSL-745: the identity preimage's byte bound is derived from
+    /// the members, not configured (no setting, limits field or contract), so
+    /// reaching it is a broken invariant, `runtime_invariant`/
+    /// `established-invariant-broken`, never a limit. The fault retains the
+    /// canonical encoder's kind, bound and required-byte count.
     #[trace("TC-434", "NFR-012")]
     #[test]
-    fn population_identity_digest_limit_preserves_encoder_limit_details() {
+    fn population_identity_digest_limit_is_a_broken_invariant_retaining_encoder_details() {
         let members = BTreeMap::new();
-        let refusal = mint_population_id(
+        let failure = mint_population_id(
             &domain_package(),
             &DeclarationKey::fixture("model.pop"),
             AdmissionRole::Direct,
@@ -2519,20 +2559,21 @@ mod tests {
         )
         .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
 
-        let AdmissionOutcome::Refused(refusal) = population_identity_admission_failure(refusal)
+        let AdmissionOutcome::InternalFault {
+            fault,
+            encoder_limit: Some(limit),
+            ..
+        } = population_identity_admission_failure(failure)
         else {
-            panic!("canonical byte limit must remain a refusal");
+            panic!("the derived byte bound is an internal fault, not a refusal");
         };
-        assert_eq!(refusal.code, Code::ResourceExhausted);
-        assert!(matches!(
-            refusal.cause,
-            ModelRefusalCause::PopulationIdentityLimitExceeded {
-                kind: quire_canonical::LimitKind::CanonicalBytes,
-                bound: 0,
-                required,
-            } if required > 0
-        ));
-        assert!(refusal.detail.contains("canonical bytes limit exceeded"));
+        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
+        assert_eq!(fault.stage(), "population.identity");
+        assert_eq!(fault.invariant(), "identity-byte-bound-reached");
+        assert_eq!(limit.kind, quire_canonical::LimitKind::CanonicalBytes);
+        assert_eq!(limit.bound, 0);
+        assert!(limit.required > 0);
     }
 
     /// A reservation failure keeps its actual requested size.
@@ -2567,6 +2608,7 @@ mod tests {
         let AdmissionOutcome::InternalFault {
             fault,
             upstream_error,
+            encoder_limit,
         } = outcome
         else {
             panic!("unexpected canonical error must be an internal fault");
@@ -2585,6 +2627,7 @@ mod tests {
         assert_eq!(Code::RuntimeInvariant.category(), fault.category());
         assert_ne!(Code::RuntimeInvariant, Code::ResourceExhausted);
         assert_eq!(upstream_error, "unexpected serializer error");
+        assert_eq!(encoder_limit, None);
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {

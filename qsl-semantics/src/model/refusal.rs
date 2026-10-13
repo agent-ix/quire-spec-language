@@ -878,11 +878,9 @@ pub enum ModelRefusalCause {
     },
     /// ADR-011 Limits: a domain package document reached one of intake's
     /// parse limits, so it has no parsed form to digest or read. Names the
-    /// limit and its bound. ADR-013 T-4's `LimitExceeded` is the eventual
-    /// shared type for this; whether I1 intake is a stage is an open
-    /// catalog question (STD-98), so this stays `resource_exhausted` rather
-    /// than moving to `stage_limit_exceeded` with the other stage-limit
-    /// producers.
+    /// limit and its bound. The limit is a caller-set setting carried by
+    /// the intake limits type (FR-255 Behavior 1, FR-260 item 5), so it refuses
+    /// `resource_exhausted`.
     IntakeLimitExceeded {
         /// The limit the document reached.
         limit: IntakeLimit,
@@ -891,16 +889,6 @@ pub enum ModelRefusalCause {
         /// What the document measured: its length in bytes for the byte
         /// limit.
         actual: u64,
-    },
-    /// Bounded canonical encoding or hashing of a population identity reached
-    /// quire-canonical's byte limit. Carries the exact encoder limit record.
-    PopulationIdentityLimitExceeded {
-        /// The encoder limit that was reached.
-        kind: quire_canonical::LimitKind,
-        /// The configured byte bound.
-        bound: u64,
-        /// The required bytes recorded by the encoder.
-        required: u64,
     },
     /// Canonical encoding or digesting could not reserve memory. Not a
     /// limit: it names no bound and no setting.
@@ -1124,40 +1112,75 @@ impl ModelRefusalCause {
         }
     }
 
-    /// This refusal as the stage limit outcome FR-255 Behavior 1 describes,
-    /// when it is a reached step ceiling or intake's byte limit: the setting
-    /// that raises it, its bound and the count the refused step would have
-    /// reached.
-    pub fn limit_exceeded(&self) -> Option<qsl_foundation::diagnostic::LimitExceeded> {
-        let (setting, limit, reached) = match self {
-            Self::AncestorSteps {
+    /// This refusal as the caller-budget denial FR-255 Behavior 1 describes,
+    /// when it is a reached walk ceiling or intake's byte limit. A walk
+    /// ceiling is a denied meter charge of one edge past the bound
+    /// (QSpec FR-150-AC-11: `incomplete(ancestor_steps, limit, consumed,
+    /// 1, model.ancestor-edge)`), so it refuses
+    /// `resource_exhausted`/`insufficient-next-charge`; intake's byte limit
+    /// is a size ceiling and keeps `intake-limit-exceeded`.
+    pub fn denial(&self) -> Option<qsl_foundation::diagnostic::BudgetDenial> {
+        use crate::model::accounting::MODEL_NORMALIZATION_OWNER;
+        use crate::model::population::ADMISSION_OWNER;
+        use qsl_foundation::diagnostic::{BudgetDenial, DeniedCharge};
+        use qsl_foundation::Setting;
+        // A walk ceiling is a denied one-edge charge past the limit.
+        let walk = |setting, limit, owner, limit_kind, charge_point| {
+            BudgetDenial::charge(
                 setting,
                 limit,
-                reached,
-                ..
+                DeniedCharge {
+                    owner,
+                    limit_kind,
+                    charge_point,
+                    consumed: limit,
+                    next_charge: 1,
+                },
+            )
+        };
+        match self {
+            Self::AncestorSteps { limit, setting, .. } => {
+                Some(if *setting == Setting::AdmissionAncestorSteps {
+                    walk(
+                        *setting,
+                        *limit,
+                        ADMISSION_OWNER,
+                        "ancestor_steps",
+                        "admission.ancestor-edge",
+                    )
+                } else {
+                    walk(
+                        *setting,
+                        *limit,
+                        MODEL_NORMALIZATION_OWNER,
+                        "ancestor_steps",
+                        "model.ancestor-edge",
+                    )
+                })
             }
-            | Self::FamilySteps {
-                setting,
-                limit,
-                reached,
-                ..
-            } => (*setting, *limit, *reached),
+            Self::FamilySteps { limit, setting, .. } => Some(walk(
+                *setting,
+                *limit,
+                MODEL_NORMALIZATION_OWNER,
+                "family_steps",
+                "model.family-edge",
+            )),
             Self::IntakeLimitExceeded {
                 limit,
                 bound,
                 actual,
-            } => (limit.setting(), *bound, *actual),
-            _ => return None,
-        };
-        Some(qsl_foundation::diagnostic::LimitExceeded::new(
-            setting,
-            limit,
-            u128::from(reached),
-        ))
+            } => Some(BudgetDenial::size(
+                limit.setting(),
+                *bound,
+                u128::from(*actual),
+            )),
+            _ => None,
+        }
     }
 
     /// FR-096: the catalog payload of this cause, for a cause with a row in
-    /// FR-096's key table, else `None`: a cause with no row has no fields to
+    /// FR-096's key table (the walk ceilings and intake's byte limit take
+    /// FR-255 Behavior 1's caller-budget record, [`Self::denial`]), else `None`: a cause with no row has no fields to
     /// give, and an empty map would pass for a record with none required.
     /// Read from the variant, never from `detail`. Matched exhaustively, so
     /// a new cause forces a decision here.
@@ -1172,8 +1195,14 @@ impl ModelRefusalCause {
                 ("required", crate::model::key::hex(expected.as_bytes())),
                 ("supplied", crate::model::key::hex(actual)),
             ])),
-            Self::FamilySteps { .. }
-            | Self::UnclosedMethodSet { .. }
+            // A caller-budget ceiling (ADR-014 section 1): FR-255 Behavior 1's
+            // record, built once by `BudgetDenial`.
+            Self::AncestorSteps { .. }
+            | Self::FamilySteps { .. }
+            | Self::IntakeLimitExceeded { .. } => {
+                self.denial().map(|denial| denial.catalog_fields())
+            }
+            Self::UnclosedMethodSet { .. }
             | Self::UnknownOriginal { .. }
             | Self::UnknownCandidate { .. }
             | Self::NoApplicable { .. }
@@ -1188,7 +1217,6 @@ impl ModelRefusalCause {
             | Self::UnknownMember { .. }
             | Self::DerivationConflict { .. }
             | Self::UnsuppliedProducerRecord { .. }
-            | Self::AncestorSteps { .. }
             | Self::VarianceResult { .. }
             | Self::MultiplicityNarrowing { .. }
             | Self::SubsettingType { .. }
@@ -1231,8 +1259,6 @@ impl ModelRefusalCause {
             | Self::MissingSelection { .. }
             | Self::ContentMismatch { .. }
             | Self::ByteDigestMismatch { .. }
-            | Self::IntakeLimitExceeded { .. }
-            | Self::PopulationIdentityLimitExceeded { .. }
             | Self::AllocationFailed { .. }
             | Self::NoncanonicalNumber { .. }
             | Self::WrongModelSelection { .. }
@@ -1320,7 +1346,6 @@ impl ModelRefusalCause {
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
-            Self::PopulationIdentityLimitExceeded { .. } => "population-identity-limit-exceeded",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.cause(),
             Self::NoncanonicalNumber { inexact, .. } => inexact.as_str(),
             Self::DuplicateMember { .. } => "duplicate-member",
@@ -1379,8 +1404,7 @@ impl ModelRefusalCause {
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
             Self::FamilySteps { .. }
             | Self::AncestorSteps { .. }
-            | Self::IntakeLimitExceeded { .. }
-            | Self::PopulationIdentityLimitExceeded { .. } => "resource_exhausted",
+            | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.code(),
             Self::NoncanonicalNumber { .. } => "noncanonical_wire",
             Self::UnclosedMethodSet
@@ -1422,7 +1446,15 @@ impl ModelRefusalCause {
             | Self::DeclaredCreateDeleteOverlap { .. }
             | Self::DeclaredDeltaMismatch { .. } => "population_delta_mismatch",
         };
-        CatalogCode::new(code, self.as_str())
+        match self {
+            // A walk ceiling is a denied meter charge (QSpec FR-150-AC-11,
+            // FR-272): the catalog has no `ancestor-steps` or `family-steps`
+            // cause, only `insufficient-next-charge`.
+            Self::AncestorSteps { .. } | Self::FamilySteps { .. } => {
+                CatalogCode::new(code, "insufficient-next-charge")
+            }
+            _ => CatalogCode::new(code, self.as_str()),
+        }
     }
 }
 
@@ -1751,11 +1783,6 @@ pub mod fixtures {
             bound: 0,
             actual: 1,
         },
-        PopulationIdentityLimitExceeded => ModelRefusalCause::PopulationIdentityLimitExceeded {
-            kind: quire_canonical::LimitKind::CanonicalBytes,
-            bound: 1,
-            required: 2,
-        },
         AllocationFailed => ModelRefusalCause::AllocationFailed { requested: 0 },
         NoncanonicalNumber => ModelRefusalCause::NoncanonicalNumber {
             inexact: super::Inexact::Number,
@@ -1957,9 +1984,6 @@ pub(crate) mod tests {
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
-            ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => {
-                "population-identity-limit-exceeded"
-            }
             ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
             ModelRefusalCause::NoncanonicalNumber {
                 inexact: super::Inexact::Integer,
@@ -2021,7 +2045,6 @@ pub(crate) mod tests {
             ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
-            ModelRefusalCause::PopulationIdentityLimitExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::AllocationFailed { .. } => "resource_exhausted",
             ModelRefusalCause::NoncanonicalNumber { .. } => "noncanonical_wire",
             ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",
@@ -2072,12 +2095,109 @@ pub(crate) mod tests {
     #[test]
     fn catalog_code_gives_every_variant_its_code_and_tag() {
         for cause in exhaustive_samples() {
+            // QSpec FR-150-AC-11 and FR-272: a walk ceiling is a denied meter
+            // charge, so the catalog cause is `insufficient-next-charge`.
+            let tag = match cause {
+                ModelRefusalCause::AncestorSteps { .. } | ModelRefusalCause::FamilySteps { .. } => {
+                    "insufficient-next-charge"
+                }
+                _ => cause.as_str(),
+            };
             assert_eq!(
                 cause.catalog_code(),
-                CatalogCode::new(expected_code(&cause), cause.as_str()),
+                CatalogCode::new(expected_code(&cause), tag),
                 "{cause:?}"
             );
         }
+    }
+
+    /// FR-255 Behavior 1 (QSL-745 (b)) and QSpec FR-150-AC-11: a reached walk
+    /// ceiling is a denied one-edge charge past the effective limit; intake's
+    /// byte limit is a size ceiling carrying the stage-limit record. The walks
+    /// carry `setting`, `limit`, `actual` and the retained charge.
+    #[trace("FR-255-AC-1")]
+    #[test]
+    fn a_reached_model_ceiling_carries_its_caller_budget_record() {
+        use super::{DeclarationKey, IntakeLimit};
+        let key = DeclarationKey::fixture("model.A");
+        let fields = |pairs: &[(&'static str, &str)]| {
+            Some(
+                pairs
+                    .iter()
+                    .map(|(name, value)| (*name, (*value).to_owned()))
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            )
+        };
+        let ancestor = ModelRefusalCause::ancestor_steps(
+            key.clone(),
+            7,
+            qsl_foundation::Setting::ModelAncestorSteps,
+        );
+        assert_eq!(
+            ancestor.catalog_code(),
+            CatalogCode::new("resource_exhausted", "insufficient-next-charge")
+        );
+        assert_eq!(
+            ancestor.catalog_fields(),
+            fields(&[
+                ("setting", "model.ancestor_steps"),
+                ("limit", "7"),
+                ("actual", "8"),
+                ("stage", "model-normalization"),
+                ("accounting_contract", "ModelNormalizationLimitsV1"),
+                ("limit_kind", "ancestor_steps"),
+                ("consumed", "7"),
+                ("next_charge", "1"),
+                ("charge_point", "model.ancestor-edge"),
+            ])
+        );
+        let admission = ModelRefusalCause::ancestor_steps(
+            key.clone(),
+            7,
+            qsl_foundation::Setting::AdmissionAncestorSteps,
+        );
+        assert_eq!(
+            admission.catalog_fields(),
+            fields(&[
+                ("setting", "admission.ancestor_steps"),
+                ("limit", "7"),
+                ("actual", "8"),
+                ("stage", "population-admission"),
+                ("accounting_contract", "PopulationAdmissionLimitsV1"),
+                ("limit_kind", "ancestor_steps"),
+                ("consumed", "7"),
+                ("next_charge", "1"),
+                ("charge_point", "admission.ancestor-edge"),
+            ])
+        );
+        assert_eq!(
+            ModelRefusalCause::family_steps(key, 9).catalog_fields(),
+            fields(&[
+                ("setting", "model.family_steps"),
+                ("limit", "9"),
+                ("actual", "10"),
+                ("stage", "model-normalization"),
+                ("accounting_contract", "ModelNormalizationLimitsV1"),
+                ("limit_kind", "family_steps"),
+                ("consumed", "9"),
+                ("next_charge", "1"),
+                ("charge_point", "model.family-edge"),
+            ])
+        );
+        assert_eq!(
+            ModelRefusalCause::IntakeLimitExceeded {
+                limit: IntakeLimit::InputBytes,
+                bound: 4096,
+                actual: 4097,
+            }
+            .catalog_fields(),
+            fields(&[
+                ("kind", "input-bytes-exceeded"),
+                ("bound", "4096"),
+                ("actual", "4097"),
+                ("setting", "intake.input_bytes"),
+            ])
+        );
     }
 
     #[test]

@@ -4,8 +4,10 @@
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
 
+mod budget;
 mod locus;
 mod stage;
+pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
 
