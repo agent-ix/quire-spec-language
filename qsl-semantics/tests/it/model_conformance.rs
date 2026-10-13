@@ -1720,34 +1720,30 @@ fn c08_a_zero_ancestor_steps_limit_denies_the_first_followed_edge() {
         ancestor_steps: 0,
         ..ModelNormalizationLimits::UNLIMITED
     };
-    let ConformanceCheckOutcome::Refused(refusal) = check_chain(3, limits) else {
+    let ConformanceCheckOutcome::Incomplete(incomplete) = check_chain(3, limits) else {
         panic!("a nonempty walk at ancestor_steps 0 must be denied at its first edge");
     };
-    assert_eq!(refusal.code, Code::ResourceExhausted);
-    let fields = refusal
-        .cause
-        .catalog_fields()
-        .expect("a walk ceiling carries its denied-charge record");
-    for (name, expected) in [
-        ("stage", "model-normalization"),
-        ("limit_kind", "ancestor_steps"),
-        ("limit", "0"),
-        ("consumed", "0"),
-        ("next_charge", "1"),
-        ("charge_point", "model.ancestor-edge"),
-    ] {
-        assert_eq!(
-            fields.get(name).map(String::as_str),
-            Some(expected),
-            "{name} in {fields:?}"
-        );
-    }
+    assert_eq!(
+        incomplete,
+        qsl_semantics::model::accounting::Incomplete {
+            limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
+            limit: 0,
+            consumed: 0,
+            next_charge: 1,
+            charge_point: qsl_semantics::model::accounting::ChargePoint::ModelAncestorEdge,
+        }
+    );
+    let cause = qsl_semantics::check::CheckCause::ModelIncomplete(incomplete);
+    assert_eq!(
+        (cause.code(), cause.cause()),
+        (Code::ResourceExhausted, Some("insufficient-next-charge"))
+    );
 }
 
 /// TC-196 C09: when the owning axis work charge and the first ancestor edge
 /// are both unavailable, the ordered work-unit denial wins. The result is
-/// `incomplete(work_units, 0, 0, 1, conformance.axis)`, not the edge denial,
-/// and no edge is followed.
+/// `incomplete(work_units, 0, 0, <axis price>, conformance.axis)`, not the edge denial,
+/// and no edge is followed. The denied amount is the axis's priced work.
 ///
 /// Mutation used (derived by reading, not executed): walking the supertypes
 /// before charging the axis turns this outcome into the `ancestor_steps`
@@ -1768,7 +1764,9 @@ fn c09_an_unavailable_axis_work_charge_wins_before_a_simultaneous_edge_denial() 
             );
             assert_eq!(incomplete.limit, 0);
             assert_eq!(incomplete.consumed, 0);
-            assert_eq!(incomplete.next_charge, 1);
+            // The owning axis is priced from the selected type facts, not one
+            // flat unit; the denied charge is that whole price.
+            assert!(incomplete.next_charge >= 1);
             assert_eq!(
                 incomplete.charge_point,
                 qsl_semantics::model::accounting::ChargePoint::ConformanceAxis
