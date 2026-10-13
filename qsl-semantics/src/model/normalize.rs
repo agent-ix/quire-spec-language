@@ -2585,9 +2585,10 @@ fn element_owner<'a>(
     }
 }
 
-/// Phase-2 member owners in source-end order. A connection or allocation has
+/// Phase-2 member owners of the records that are not fields, clauses or
+/// operations: a variant case's type, and systems members in source-end order. A connection or allocation has
 /// a qualify fact at each end, even when both ends resolve to the same type.
-fn systems_member_owners<'a>(
+fn record_member_owners<'a>(
     record: &'a DomainPackageRecord,
     records: &HashMap<&DeclarationKey, &'a DomainPackageRecord>,
 ) -> Vec<&'a DeclarationKey> {
@@ -2618,6 +2619,8 @@ fn systems_member_owners<'a>(
                 .chain(element_owner(&allocation.target_element, records))
                 .collect()
         }
+        // A variant case is a member of its variant type (FR-081).
+        DomainPackageRecord::Variant(case) => vec![&case.owner],
         _ => Vec::new(),
     }
 }
@@ -2678,8 +2681,9 @@ fn build(
     let type_keys: Vec<DeclarationKey> = index.normalizable_types().cloned().collect();
 
     // Phase 2: owner-less type facts first, then each owner's member facts
-    // in key order. Systems end owners are resolved through the admitted
-    // declarations, before any effective identity is minted.
+    // in key order. The owners of systems members (resolved through the
+    // admitted declarations) and of variant cases are found before any
+    // effective identity is minted.
     let records_by_key: HashMap<_, _> = domain_package
         .records
         .iter()
@@ -2687,7 +2691,7 @@ fn build(
         .collect();
     let mut systems_by_owner: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
     for record in &domain_package.records {
-        for owner in systems_member_owners(record, &records_by_key) {
+        for owner in record_member_owners(record, &records_by_key) {
             systems_by_owner
                 .entry(owner.clone())
                 .or_default()
