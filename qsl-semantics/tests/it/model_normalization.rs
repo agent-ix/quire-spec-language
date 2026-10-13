@@ -5078,6 +5078,30 @@ fn a_three_cycle_lists_its_keys_in_path_order_rotated_to_the_least_key() {
     );
 }
 
+/// A cycle whose path order is not its key order: `B -> D -> C -> B` lists
+/// `[B, D, C]`, and its refusals follow declaration-key order, `B`, `C`, `D`.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn a_cycle_lists_path_order_and_refuses_in_declaration_key_order() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.unsorted-cycle"),
+        vec![
+            object_type("model.B", vec!["model.D"]),
+            object_type("model.C", vec!["model.B"]),
+            object_type("model.D", vec!["model.C"]),
+        ],
+    );
+    let cycle = ["model.B", "model.D", "model.C"];
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.B", &cycle),
+            cycle_refusal("model.C", &cycle),
+            cycle_refusal("model.D", &cycle),
+        ]))
+    );
+}
+
 /// TEST GAP (#193, PR #228 review): pins R01's own exact charge sequence and
 /// work-unit total for the closing `model.A`<->`model.B` mutual-cycle
 /// fixture -- `r01_a_closing_generalization_cycle_names_the_full_rotated_chain`'s

@@ -891,3 +891,25 @@ fn tc235_m19_derivation_conflict_member_paths() {
         ],
     );
 }
+
+/// A state machine cycle is a `specialization-cycle`, at each machine on it.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn a_state_machine_cycle_is_a_specialization_cycle() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["supertypes"] = json!([id("ExpressLifecycle")]);
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited"],
+                "OrderLifecycle/Placed",
+            ));
+    });
+    let cycle = ["ExpressLifecycle", "OrderLifecycle"];
+    assert_specialization_cycles(
+        &document,
+        &[("ExpressLifecycle", &cycle), ("OrderLifecycle", &cycle)],
+    );
+}
