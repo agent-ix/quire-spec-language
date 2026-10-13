@@ -1361,13 +1361,11 @@ fn a_case_in_expression_position_is_refused_by_s1_as_unexpected() {
         panic!("one diagnostic: {:?}", parsed.diagnostics());
     };
     assert_eq!(diagnostic.code, qsl_foundation::Code::InvalidSyntax);
-    assert_eq!(
-        diagnostic.cause,
-        qsl_foundation::diagnostic::Cause::UnexpectedToken
-    );
+    assert_eq!(diagnostic.cause, qsl_cst::CompleteCause::UnexpectedToken);
     let at = source.find("case t when").expect("in source");
     let region = diagnostic.region.as_ref().expect("a region");
-    assert_eq!((region.start, region.end), (at, at + "case".len()));
+    let at = u64::try_from(at).unwrap();
+    assert_eq!((region.start(), region.end()), (at, at + 4));
 }
 
 // ---------------------------------------------------------------------------
